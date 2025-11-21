@@ -1,0 +1,26 @@
+{
+  "name": "@kompose/auth",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "type": "module",
+  "scripts": {},
+  "devDependencies": {
+    "@kompose/config": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "better-auth": "catalog:",
+    "@better-auth/expo": "^1.3.28",
+    "dotenv": "catalog:",
+    "zod": "catalog:",
+    "@kompose/db": "workspace:*"
+  }
+}
