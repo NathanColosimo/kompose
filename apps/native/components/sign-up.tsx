@@ -1,175 +1,175 @@
-import { authClient } from "@/lib/auth-client";
-import { queryClient } from "@/utils/orpc";
 import { useState } from "react";
 import {
-	ActivityIndicator,
-	Text,
-	TextInput,
-	TouchableOpacity,
-	View,
-	StyleSheet,
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useColorScheme } from "@/lib/use-color-scheme";
+import { authClient } from "@/lib/auth-client";
 import { NAV_THEME } from "@/lib/constants";
+import { useColorScheme } from "@/lib/use-color-scheme";
+import { queryClient } from "@/utils/orpc";
 
 function SignUp() {
-	const { colorScheme } = useColorScheme();
-	const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
-	const [name, setName] = useState("");
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [isLoading, setIsLoading] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+  const { colorScheme } = useColorScheme();
+  const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-	async function handleSignUp() {
-		setIsLoading(true);
-		setError(null);
+  async function handleSignUp() {
+    setIsLoading(true);
+    setError(null);
 
-		await authClient.signUp.email(
-			{
-				name,
-				email,
-				password,
-			},
-			{
-				onError(error) {
-					setError(error.error?.message || "Failed to sign up");
-					setIsLoading(false);
-				},
-				onSuccess() {
-					setName("");
-					setEmail("");
-					setPassword("");
-					queryClient.refetchQueries();
-				},
-				onFinished() {
-					setIsLoading(false);
-				},
-			},
-		);
-	}
+    await authClient.signUp.email(
+      {
+        name,
+        email,
+        password,
+      },
+      {
+        onError(error) {
+          setError(error.error?.message || "Failed to sign up");
+          setIsLoading(false);
+        },
+        onSuccess() {
+          setName("");
+          setEmail("");
+          setPassword("");
+          queryClient.refetchQueries();
+        },
+        onFinished() {
+          setIsLoading(false);
+        },
+      }
+    );
+  }
 
-	return (
-		<View
-			style={[
-				styles.card,
-				{ backgroundColor: theme.card, borderColor: theme.border },
-			]}
-		>
-			<Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}
+    >
+      <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
 
-			{error ? (
-				<View
-					style={[
-						styles.errorContainer,
-						{ backgroundColor: theme.notification + "20" },
-					]}
-				>
-					<Text style={[styles.errorText, { color: theme.notification }]}>
-						{error}
-					</Text>
-				</View>
-			) : null}
+      {error ? (
+        <View
+          style={[
+            styles.errorContainer,
+            { backgroundColor: theme.notification + "20" },
+          ]}
+        >
+          <Text style={[styles.errorText, { color: theme.notification }]}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
 
-			<TextInput
-				style={[
-					styles.input,
-					{
-						color: theme.text,
-						borderColor: theme.border,
-						backgroundColor: theme.background,
-					},
-				]}
-				placeholder="Name"
-				placeholderTextColor={theme.text}
-				value={name}
-				onChangeText={setName}
-			/>
+      <TextInput
+        onChangeText={setName}
+        placeholder="Name"
+        placeholderTextColor={theme.text}
+        style={[
+          styles.input,
+          {
+            color: theme.text,
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+          },
+        ]}
+        value={name}
+      />
 
-			<TextInput
-				style={[
-					styles.input,
-					{
-						color: theme.text,
-						borderColor: theme.border,
-						backgroundColor: theme.background,
-					},
-				]}
-				placeholder="Email"
-				placeholderTextColor={theme.text}
-				value={email}
-				onChangeText={setEmail}
-				keyboardType="email-address"
-				autoCapitalize="none"
-			/>
+      <TextInput
+        autoCapitalize="none"
+        keyboardType="email-address"
+        onChangeText={setEmail}
+        placeholder="Email"
+        placeholderTextColor={theme.text}
+        style={[
+          styles.input,
+          {
+            color: theme.text,
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+          },
+        ]}
+        value={email}
+      />
 
-			<TextInput
-				style={[
-					styles.input,
-					{
-						color: theme.text,
-						borderColor: theme.border,
-						backgroundColor: theme.background,
-					},
-				]}
-				placeholder="Password"
-				placeholderTextColor={theme.text}
-				value={password}
-				onChangeText={setPassword}
-				secureTextEntry
-			/>
+      <TextInput
+        onChangeText={setPassword}
+        placeholder="Password"
+        placeholderTextColor={theme.text}
+        secureTextEntry
+        style={[
+          styles.input,
+          {
+            color: theme.text,
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+          },
+        ]}
+        value={password}
+      />
 
-			<TouchableOpacity
-				onPress={handleSignUp}
-				disabled={isLoading}
-				style={[
-					styles.button,
-					{ backgroundColor: theme.primary, opacity: isLoading ? 0.5 : 1 },
-				]}
-			>
-				{isLoading ? (
-					<ActivityIndicator size="small" color="#ffffff" />
-				) : (
-					<Text style={styles.buttonText}>Sign Up</Text>
-				)}
-			</TouchableOpacity>
-		</View>
-	);
+      <TouchableOpacity
+        disabled={isLoading}
+        onPress={handleSignUp}
+        style={[
+          styles.button,
+          { backgroundColor: theme.primary, opacity: isLoading ? 0.5 : 1 },
+        ]}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#ffffff" size="small" />
+        ) : (
+          <Text style={styles.buttonText}>Sign Up</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-	card: {
-		marginTop: 16,
-		padding: 16,
-		borderWidth: 1,
-	},
-	title: {
-		fontSize: 18,
-		fontWeight: "bold",
-		marginBottom: 12,
-	},
-	errorContainer: {
-		marginBottom: 12,
-		padding: 8,
-	},
-	errorText: {
-		fontSize: 14,
-	},
-	input: {
-		borderWidth: 1,
-		padding: 12,
-		fontSize: 16,
-		marginBottom: 12,
-	},
-	button: {
-		padding: 12,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	buttonText: {
-		color: "#ffffff",
-		fontSize: 16,
-	},
+  card: {
+    marginTop: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 12,
+  },
+  errorContainer: {
+    marginBottom: 12,
+    padding: 8,
+  },
+  errorText: {
+    fontSize: 14,
+  },
+  input: {
+    borderWidth: 1,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  button: {
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#ffffff",
+    fontSize: 16,
+  },
 });
 
 export { SignUp };

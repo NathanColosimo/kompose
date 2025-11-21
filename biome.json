@@ -22,9 +22,5 @@
       "!**/.source"
     ]
   },
-  "extends": [
-    "ultracite/core",
-    "ultracite/next",
-    "ultracite/react"
-  ]
+  "extends": ["ultracite/core", "ultracite/next", "ultracite/react"]
 }
