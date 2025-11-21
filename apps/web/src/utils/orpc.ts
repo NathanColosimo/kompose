@@ -22,8 +22,8 @@ export const queryClient = new QueryClient({
 
 export const link = new RPCLink({
   url: `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3001"}/api/rpc`,
-  fetch(url, options) {
-    return fetch(url, {
+  fetch(_url, options) {
+    return fetch(_url, {
       ...options,
       credentials: "include",
     });

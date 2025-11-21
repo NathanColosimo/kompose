@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",
-    "@types/react": "~19.1.10",
+    "@types/react": "catalog:",
     "typescript": "~5.8.2",
     "@kompose/config": "workspace:*"
   },
