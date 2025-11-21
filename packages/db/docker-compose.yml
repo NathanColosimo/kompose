@@ -2,7 +2,7 @@ name: kompose
 
 services:
   postgres:
-    image: postgres
+    image: postgres:17
     container_name: kompose-postgres
     environment:
       POSTGRES_DB: kompose
