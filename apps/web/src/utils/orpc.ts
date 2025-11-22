@@ -1,4 +1,5 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
+import { env } from "@kompose/env";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
@@ -21,7 +22,7 @@ export const queryClient = new QueryClient({
 });
 
 export const link = new RPCLink({
-  url: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/rpc`,
+  url: `${env.NEXT_PUBLIC_WEB_URL}/api/rpc`,
   fetch(_url, options) {
     return fetch(_url, {
       ...options,

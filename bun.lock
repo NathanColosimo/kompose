@@ -4,11 +4,6 @@
   "workspaces": {
     "": {
       "name": "kompose",
-      "dependencies": {
-        "dotenv": "^17.2.2",
-        "effect": "^3.19.6",
-        "zod": "^4.1.11",
-      },
       "devDependencies": {
         "@biomejs/biome": "2.3.6",
         "@types/node": "^22.13.11",
@@ -157,12 +152,27 @@
         "typescript": "^5",
       },
     },
+    "packages/env": {
+      "name": "@kompose/env",
+      "dependencies": {
+        "@t3-oss/env-nextjs": "catalog:",
+        "dotenv": "catalog:",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@kompose/config": "workspace:*",
+      },
+      "peerDependencies": {
+        "typescript": "^5",
+      },
+    },
     "packages/google-cal": {
       "name": "@kompose/google-cal",
       "version": "0.0.0",
       "dependencies": {
-        "effect": "^3.19.6",
+        "effect": "catalog:",
         "googleapis": "^166.0.0",
+        "is-stream": "^3.0.0",
       },
       "devDependencies": {
         "@kompose/config": "workspace:*",
@@ -174,10 +184,12 @@
     "@orpc/openapi": "^1.10.0",
     "@orpc/server": "^1.10.0",
     "@orpc/zod": "^1.10.0",
+    "@t3-oss/env-nextjs": "^0.13.8",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "better-auth": "^1.3.28",
     "dotenv": "^17.2.2",
+    "effect": "^3.19.6",
     "next": "16.0.0",
     "zod": "^4.1.12",
   },
@@ -626,6 +638,8 @@
 
     "@kompose/db": ["@kompose/db@workspace:packages/db"],
 
+    "@kompose/env": ["@kompose/env@workspace:packages/env"],
+
     "@kompose/google-cal": ["@kompose/google-cal@workspace:packages/google-cal"],
 
     "@levischuck/tiny-cbor": ["@levischuck/tiny-cbor@0.2.11", "", {}, "sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow=="],
@@ -879,6 +893,10 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.0.0", "", {}, "sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA=="],
 
     "@swc/helpers": ["@swc/helpers@0.5.15", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g=="],
+
+    "@t3-oss/env-core": ["@t3-oss/env-core@0.13.8", "", { "peerDependencies": { "arktype": "^2.1.0", "typescript": ">=5.0.0", "valibot": "^1.0.0-beta.7 || ^1.0.0", "zod": "^3.24.0 || ^4.0.0-beta.0" }, "optionalPeers": ["arktype", "typescript", "valibot", "zod"] }, "sha512-L1inmpzLQyYu4+Q1DyrXsGJYCXbtXjC4cICw1uAKv0ppYPQv656lhZPU91Qd1VS6SO/bou1/q5ufVzBGbNsUpw=="],
+
+    "@t3-oss/env-nextjs": ["@t3-oss/env-nextjs@0.13.8", "", { "dependencies": { "@t3-oss/env-core": "0.13.8" }, "peerDependencies": { "arktype": "^2.1.0", "typescript": ">=5.0.0", "valibot": "^1.0.0-beta.7 || ^1.0.0", "zod": "^3.24.0 || ^4.0.0-beta.0" }, "optionalPeers": ["arktype", "typescript", "valibot", "zod"] }, "sha512-QmTLnsdQJ8BiQad2W2nvV6oUpH4oMZMqnFEjhVpzU0h3sI9hn8zb8crjWJ1Amq453mGZs6A4v4ihIeBFDOrLeQ=="],
 
     "@tailwindcss/node": ["@tailwindcss/node@4.1.17", "", { "dependencies": { "@jridgewell/remapping": "^2.3.4", "enhanced-resolve": "^5.18.3", "jiti": "^2.6.1", "lightningcss": "1.30.2", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.1.17" } }, "sha512-csIkHIgLb3JisEFQ0vxr2Y57GUNYh447C8xzwj89U/8fdW8LhProdxvnVH6U8M2Y73QKiTIH+LWbK3V2BBZsAg=="],
 
@@ -1407,6 +1425,8 @@
     "is-fullwidth-code-point": ["is-fullwidth-code-point@3.0.0", "", {}, "sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg=="],
 
     "is-number": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+
+    "is-stream": ["is-stream@3.0.0", "", {}, "sha512-LnQR4bZ9IADDRSkvpqMGvt/tEJWclzklNgSw48V5EAaAeDd6qGvN8ei6k5p0tvxSR171VmGyHuTiAOfxAbr8kA=="],
 
     "is-wsl": ["is-wsl@2.2.0", "", { "dependencies": { "is-docker": "^2.0.0" } }, "sha512-fKzAra0rGJUUBwGBgNkHZuToZcn+TtXHpeCgmkMJMMYx1sQDYaCSyjJBSCa2nH1DGm7s3n1oBnohoVTBaN7Lww=="],
 

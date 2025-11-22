@@ -1,0 +1,24 @@
+{
+  "name": "@kompose/env",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "type": "module",
+  "scripts": {},
+  "devDependencies": {
+    "@kompose/config": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "dotenv": "catalog:",
+    "effect": "catalog:",
+    "@t3-oss/env-nextjs": "catalog:"
+  }
+}
