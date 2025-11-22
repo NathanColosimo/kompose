@@ -1,191 +1,72 @@
-import { useForm } from "@tanstack/react-form";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import z from "zod";
 import { authClient } from "@/lib/auth-client";
 import Loader from "./loader";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
 
-export default function SignUpForm({
-  onSwitchToSignIn,
-}: {
-  onSwitchToSignIn: () => void;
-}) {
-  const router = useRouter();
+export default function SignUpForm() {
   const { isPending } = authClient.useSession();
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const handleGoogleSignIn = async () => {
-    await authClient.signIn.social(
-      {
-        provider: "google",
-      },
-      {
-        onSuccess: () => {
-          router.push("/dashboard");
-        },
-        onError: (error) => {
-          toast.error(error.error.message || error.error.statusText);
-        },
-      }
-    );
-  };
-
-  const form = useForm({
-    defaultValues: {
-      email: "",
-      password: "",
-      name: "",
-    },
-    onSubmit: async ({ value }) => {
-      await authClient.signUp.email(
+  // Same Google entry point handles both sign in + sign up flows.
+  const handleGoogleSignUp = async () => {
+    if (isAuthenticating) {
+      return;
+    }
+    setIsAuthenticating(true);
+    try {
+      const baseUrl = window.location.origin;
+      await authClient.signIn.social(
         {
-          email: value.email,
-          password: value.password,
-          name: value.name,
+          provider: "google",
+          callbackURL: `${baseUrl}/dashboard`,
+          newUserCallbackURL: `${baseUrl}/dashboard`,
+          errorCallbackURL: `${baseUrl}/login`,
         },
         {
           onSuccess: () => {
-            router.push("/dashboard");
-            toast.success("Sign up successful");
+            toast.success("You're in! Redirecting to your timeline.");
           },
           onError: (error) => {
             toast.error(error.error.message || error.error.statusText);
           },
         }
       );
-    },
-    validators: {
-      onSubmit: z.object({
-        name: z.string().min(2, "Name must be at least 2 characters"),
-        email: z.email("Invalid email address"),
-        password: z.string().min(8, "Password must be at least 8 characters"),
-      }),
-    },
-  });
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
 
   if (isPending) {
     return <Loader />;
   }
 
   return (
-    <div className="mx-auto mt-10 w-full max-w-md p-6">
-      <h1 className="mb-6 text-center font-bold text-3xl">Create Account</h1>
-
-      <div className="mb-4">
-        <Button
-          className="w-full"
-          onClick={handleGoogleSignIn}
-          type="button"
-          variant="outline"
-        >
-          Sign up with Google
-        </Button>
+    <section className="space-y-6 rounded-3xl border border-border/60 bg-card/60 p-8 shadow-md">
+      <div className="space-y-2 text-center">
+        <p className="text-muted-foreground text-xs uppercase tracking-[0.35em]">
+          Create account
+        </p>
+        <h2 className="font-serif text-3xl">Start orchestrating hours</h2>
+        <p className="text-muted-foreground text-sm">
+          A Google account is all you need. Kompose spins up a workspace with
+          calendar sync, tasks, and AI ready to go.
+        </p>
       </div>
-
-      <div className="mb-4 flex items-center justify-center">
-        <span className="text-gray-500 text-sm">or sign up with email</span>
-      </div>
-
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          form.handleSubmit();
-        }}
+      <Button
+        className="w-full"
+        disabled={isAuthenticating}
+        onClick={handleGoogleSignUp}
+        size="lg"
+        type="button"
+        variant="outline"
       >
-        <div>
-          <form.Field name="name">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Name</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-        </div>
-
-        <div>
-          <form.Field name="email">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  type="email"
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-        </div>
-
-        <div>
-          <form.Field name="password">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  type="password"
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-        </div>
-
-        <form.Subscribe>
-          {(state) => (
-            <Button
-              className="w-full"
-              disabled={!state.canSubmit || state.isSubmitting}
-              type="submit"
-            >
-              {state.isSubmitting ? "Submitting..." : "Sign Up"}
-            </Button>
-          )}
-        </form.Subscribe>
-      </form>
-
-      <div className="mt-4 text-center">
-        <Button
-          className="text-indigo-600 hover:text-indigo-800"
-          onClick={onSwitchToSignIn}
-          variant="link"
-        >
-          Already have an account? Sign In
-        </Button>
-      </div>
-    </div>
+        {isAuthenticating ? "Contacting Google..." : "Create with Google"}
+      </Button>
+      <p className="text-center text-muted-foreground text-xs">
+        No passwords to manage. You can revoke access anytime from your Google
+        security dashboard.
+      </p>
+    </section>
   );
 }

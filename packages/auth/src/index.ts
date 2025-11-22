@@ -12,7 +12,7 @@ export const auth = betterAuth<BetterAuthOptions>({
     schema,
   }),
   trustedOrigins: [
-    process.env.CORS_ORIGIN as string,
+    process.env.NEXT_PUBLIC_WEB_URL as string,
     "mybettertapp://",
     "exp://",
   ],
