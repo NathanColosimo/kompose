@@ -145,8 +145,8 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 - **RPC**:
   - Use **oRPC** as a TS-first RPC layer.
   - Define a shared `AppRouter`:
-    - `calendar.list`
-    - `calendar.create`, `calendar.update`, `calendar.delete`
+    - `calendar.list`, `calendar.get`, `calendar.create`, `calendar.update`, `calendar.delete`
+    - `event.list`, `event.get`, `event.create`, `event.update`, `event.delete`
     - `task.list`, `task.create`, `task.update`, `task.delete`
     - `sync.pushChanges`, `sync.pullChanges`
     - `integration.linear.sync`, `integration.notion.sync`
@@ -311,4 +311,31 @@ packages/
   auth/ # Better Auth configuration and schema
   config/         # Configuration for the project
   db/  # Database schema and queries
+  google-cal/ # Google Calendar client & schema (Effect-based)
 ```
+
+---
+
+## 6. Recent Implementation Updates (Google Calendar & oRPC)
+
+### 6.1 Google Calendar Integration
+- **Client**: Implemented a **Google Calendar Client** using the **Effect** library (`packages/google-cal`).
+  - Uses `Effect.gen` for async control flow.
+  - Uses `@effect/schema` for strict runtime validation and typing of Google API responses.
+  - Supports: `listCalendars`, `getCalendar`, `createCalendar`, `updateCalendar`, `deleteCalendar`, `listEvents`, `getEvent`, `createEvent`, `updateEvent`, `deleteEvent`.
+  - **Schemas**: Defined strict `Calendar` and `Event` schemas matching Google's API but with cleaner types (e.g., `DateTimeUtc` for dates).
+  - **Output Format**: Handlers return **Encoded** data (strings for dates) to ensure compatibility with JSON-based RPC transport, while internal logic uses strict typing.
+
+### 6.2 oRPC Integration
+- **Contract-First**: Defined strict API contracts in `packages/api/src/routers/google-cal/contract.ts`.
+  - Uses `oc` (oRPC Contract) builder.
+  - Inputs and outputs are validated using `Schema.standardSchemaV1` wrapped around Effect schemas.
+- **Router Implementation**:
+  - `packages/api/src/routers/google-cal/router.ts` implements the contract.
+  - **Middleware**: Implemented `checkGoogleAccountIsLinked` helper (inside handlers) to securely fetch the user's Google Access Token from the database using the session's `userId`.
+  - **Handler Logic**:
+    1.  Verifies Google account linking via DB.
+    2.  Constructs an Effect program using the `GoogleCalendar` service.
+    3.  Provides the live service layer (`GoogleCalendarLive`) injected with the user's access token.
+    4.  Runs the effect and returns the result.
+  - **Error Handling**: Maps internal errors (AccountNotLinked, GoogleApiError) to standard `ORPCError` types for the client.

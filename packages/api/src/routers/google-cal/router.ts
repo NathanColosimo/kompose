@@ -1,0 +1,345 @@
+import { auth } from "@kompose/auth";
+import {
+  type GoogleApiError,
+  GoogleCalendar,
+  GoogleCalendarLive,
+} from "@kompose/google-cal/client";
+import { Calendar, CreateEventInput, Event } from "@kompose/google-cal/schema";
+import { implement, ORPCError } from "@orpc/server";
+import { Data, Effect, type ParseResult, Schema } from "effect";
+import { requireAuth } from "../..";
+import { googleCalContract } from "./contract";
+
+export class AccountNotLinkedError extends Data.TaggedError(
+  "AccountNotLinkedError"
+)<{
+  cause: unknown;
+}> {}
+
+export function handleError(
+  error: AccountNotLinkedError | GoogleApiError | ParseResult.ParseError,
+  accountId: string,
+  userId: string
+) {
+  switch (error._tag) {
+    case "AccountNotLinkedError":
+      throw new ORPCError("ACCOUNT_NOT_LINKED", {
+        message: JSON.stringify(error.cause),
+        data: {
+          accountId,
+          userId,
+        },
+      });
+    case "GoogleApiError":
+      throw new ORPCError("GOOGLE_API_ERROR", {
+        message: JSON.stringify(error.cause),
+        data: {
+          accountId,
+          userId,
+        },
+      });
+    case "ParseError":
+      throw new ORPCError("PARSE_ERROR", {
+        message: JSON.stringify(error.cause),
+        data: {
+          accountId,
+          userId,
+        },
+      });
+    default:
+      throw new ORPCError("UNKNOWN_ERROR", {
+        message: JSON.stringify(error),
+        data: {
+          accountId,
+          userId,
+        },
+      });
+  }
+}
+
+const checkGoogleAccountIsLinked = (userId: string, accountId: string) =>
+  Effect.gen(function* () {
+    const accessToken = yield* Effect.tryPromise({
+      try: () =>
+        auth.api.getAccessToken({
+          body: {
+            accountId,
+            userId,
+            providerId: "google",
+          },
+        }),
+      catch: (cause) => new AccountNotLinkedError({ cause }),
+    });
+
+    return accessToken.accessToken;
+  });
+
+export const os = implement(googleCalContract).use(requireAuth);
+
+export const googleCalRouter = os.router({
+  calendars: {
+    list: os.calendars.list.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const calendars = yield* service.listCalendars();
+          // Encode to match the contract output (plain objects with strings, not Date objects)
+          return yield* Schema.encode(Schema.Array(Calendar))(calendars);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (calendars) => calendars,
+          onFailure: (error) => {
+            switch (error._tag) {
+              case "AccountNotLinkedError":
+                throw new ORPCError("ACCOUNT_NOT_LINKED", {
+                  message: JSON.stringify(error.cause),
+                  data: {
+                    accountId: input.accountId,
+                    userId: context.user.id,
+                  },
+                });
+              case "GoogleApiError":
+                throw new ORPCError("GOOGLE_API_ERROR", {
+                  message: JSON.stringify(error.cause),
+                  data: {
+                    accountId: input.accountId,
+                    userId: context.user.id,
+                  },
+                });
+              case "ParseError":
+                throw new ORPCError("PARSE_ERROR", {
+                  message: JSON.stringify(error.cause),
+                  data: {
+                    accountId: input.accountId,
+                    userId: context.user.id,
+                  },
+                });
+              default:
+                throw new ORPCError("UNKNOWN_ERROR", {
+                  message: JSON.stringify(error),
+                  data: {
+                    accountId: input.accountId,
+                    userId: context.user.id,
+                  },
+                });
+            }
+          },
+        })
+      );
+    }),
+
+    get: os.calendars.get.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const calendar = yield* service.getCalendar(input.calendarId);
+          return yield* Schema.encode(Calendar)(calendar);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    create: os.calendars.create.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const calendar = yield* service.createCalendar(input.calendar);
+          return yield* Schema.encode(Calendar)(calendar);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    update: os.calendars.update.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const calendar = yield* service.updateCalendar(
+            input.calendarId,
+            input.calendar
+          );
+          return yield* Schema.encode(Calendar)(calendar);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    delete: os.calendars.delete.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.deleteCalendar(input.calendarId);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+  },
+
+  events: {
+    list: os.events.list.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const events = yield* service.listEvents(input.calendarId);
+          return yield* Schema.encode(Schema.Array(Event))(events);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    get: os.events.get.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const event = yield* service.getEvent(
+            input.calendarId,
+            input.eventId
+          );
+          return yield* Schema.encode(Event)(event);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    create: os.events.create.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const event = yield* service.createEvent(
+            input.calendarId,
+            yield* Schema.encode(CreateEventInput)(input.event)
+          );
+          return yield* Schema.encode(Event)(event);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    update: os.events.update.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const event = yield* service.updateEvent(
+            input.calendarId,
+            input.eventId,
+            yield* Schema.encode(CreateEventInput)(input.event)
+          );
+          return yield* Schema.encode(Event)(event);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+
+    delete: os.events.delete.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.deleteEvent(input.calendarId, input.eventId);
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(program);
+    }),
+  },
+});

@@ -1,6 +1,11 @@
 {
   "name": "@kompose/google-cal",
   "version": "0.0.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./schema": "./src/schema.ts"
+  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
@@ -8,7 +13,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/schema": "^0.75.5",
     "effect": "^3.19.6",
     "googleapis": "^166.0.0"
   },

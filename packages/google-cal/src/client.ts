@@ -1,6 +1,5 @@
-import { type ParseResult, Schema } from "@effect/schema";
-import { Context, Data, Effect, Layer } from "effect";
-import { google, type calendar_v3 } from "googleapis";
+import { Context, Data, Effect, Layer, type ParseResult, Schema } from "effect";
+import { type calendar_v3, google } from "googleapis";
 import {
   Calendar,
   type CreateCalendarInput,
@@ -13,19 +12,28 @@ import {
 export type GoogleCalendarService = {
   // Calendar Operations
   readonly listCalendars: () => Effect.Effect<
-    readonly Calendar[],
+    readonly (typeof Calendar.Type)[],
     GoogleApiError | ParseResult.ParseError
   >;
   readonly getCalendar: (
     calendarId: string
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<
+    typeof Calendar.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly createCalendar: (
     calendar: typeof CreateCalendarInput.Encoded
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<
+    typeof Calendar.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly updateCalendar: (
     calendarId: string,
-    calendar: typeof CreateCalendarInput.Encoded // Updates also shouldn't imply changing ID
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+    calendar: typeof CreateCalendarInput.Encoded
+  ) => Effect.Effect<
+    typeof Calendar.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly deleteCalendar: (
     calendarId: string
   ) => Effect.Effect<void, GoogleApiError>;
@@ -33,20 +41,32 @@ export type GoogleCalendarService = {
   // Event Operations
   readonly listEvents: (
     calendarId: string
-  ) => Effect.Effect<readonly Event[], GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<
+    readonly (typeof Event.Type)[],
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly getEvent: (
     calendarId: string,
     eventId: string
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<
+    typeof Event.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly createEvent: (
     calendarId: string,
     event: typeof CreateEventInput.Encoded
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<
+    typeof Event.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly updateEvent: (
     calendarId: string,
     eventId: string,
-    event: typeof CreateEventInput.Encoded // Updates also shouldn't imply changing ID
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+    event: typeof CreateEventInput.Encoded
+  ) => Effect.Effect<
+    typeof Event.Type,
+    GoogleApiError | ParseResult.ParseError
+  >;
   readonly deleteEvent: (
     calendarId: string,
     eventId: string

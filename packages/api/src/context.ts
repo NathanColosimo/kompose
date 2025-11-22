@@ -1,13 +1,20 @@
 import { auth } from "@kompose/auth";
+import type { Session, User } from "better-auth";
 import type { NextRequest } from "next/server";
 
-export async function createContext(req: NextRequest) {
+// used in RPCHandler in api route
+export async function createContext(req: NextRequest): Promise<Context> {
   const session = await auth.api.getSession({
     headers: req.headers,
   });
+
   return {
-    session,
+    session: session?.session,
+    user: session?.user,
   };
 }
 
-export type Context = Awaited<ReturnType<typeof createContext>>;
+export type Context = {
+  session?: Session;
+  user?: User;
+};
