@@ -32,8 +32,8 @@ function SignUp() {
         password,
       },
       {
-        onError(error) {
-          setError(error.error?.message || "Failed to sign up");
+        onError(err) {
+          setError(err.error?.message || "Failed to sign up");
           setIsLoading(false);
         },
         onSuccess() {
@@ -62,7 +62,7 @@ function SignUp() {
         <View
           style={[
             styles.errorContainer,
-            { backgroundColor: theme.notification + "20" },
+            { backgroundColor: `${theme.notification}20` },
           ]}
         >
           <Text style={[styles.errorText, { color: theme.notification }]}>

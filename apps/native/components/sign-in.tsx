@@ -33,8 +33,8 @@ function SignIn() {
         password: form.password,
       },
       {
-        onError(error) {
-          setError(error.error?.message || "Failed to sign in");
+        onError(err) {
+          setError(err.error?.message || "Failed to sign in");
           setIsLoading(false);
         },
         onSuccess() {
@@ -61,7 +61,7 @@ function SignIn() {
         <View
           style={[
             styles.errorContainer,
-            { backgroundColor: theme.notification + "20" },
+            { backgroundColor: `${theme.notification}20` },
           ]}
         >
           <Text style={[styles.errorText, { color: theme.notification }]}>

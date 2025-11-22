@@ -13,7 +13,7 @@ export function DatePicker() {
       <SidebarGroupContent>
         <div className="flex justify-center">
           <Calendar
-            className="[&_[role=gridcell].bg-accent]:bg-sidebar-primary [&_[role=gridcell].bg-accent]:text-sidebar-primary-foreground [&_[role=gridcell]]:w-[33px]"
+            className="[&_[role=gridcell].bg-accent]:bg-sidebar-primary [&_[role=gridcell].bg-accent]:text-sidebar-primary-foreground **:[[role=gridcell]]:w-[33px]"
             mode="single"
             onSelect={setDate}
             selected={date}
