@@ -1,6 +1,6 @@
 import { type ParseResult, Schema } from "@effect/schema";
 import { Context, Data, Effect, Layer } from "effect";
-import { google } from "googleapis";
+import { google, type calendar_v3 } from "googleapis";
 import {
   Calendar,
   type CreateCalendarInput,
@@ -173,7 +173,7 @@ const make = (accessToken: string): GoogleCalendarService => {
         try: () =>
           client.events.insert({
             calendarId,
-            requestBody: event,
+            requestBody: event as calendar_v3.Schema$Event,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
@@ -192,7 +192,7 @@ const make = (accessToken: string): GoogleCalendarService => {
           client.events.update({
             calendarId,
             eventId,
-            requestBody: event,
+            requestBody: event as calendar_v3.Schema$Event,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
