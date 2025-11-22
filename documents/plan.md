@@ -84,8 +84,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - **All main pages statically generated** (SSG) at build time:
     - `/` landing (hero with feature grid)
     - `/login` (tab-based auth with Google sign-in/sign-up)
-    - `/dashboard` (placeholder, to be built)
-    - `/settings`, `/integrations`, etc.
+    - `/dashboard/*` (dashboard, settings, integrations)
   - Data is **fetched client-side** via TanStack Query + RPC (no SSR data dependency, good for Tauri).
 - **Routing**:
   - Next.js App Router for routes.
@@ -98,6 +97,12 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - Typography: Libre Baskerville (serif), Lora (serif display), IBM Plex Mono (monospace)
   - Component library: shadcn/ui (Radix-based primitives).
   - Drag-and-drop: React DnD or `@dnd-kit/core` for dragging tasks onto calendar slots.
+- **Layout**:
+  - **Sidebar Layout**:
+    - Implemented `AppSidebar` (left) and `SidebarRight` components using `shadcn/ui` sidebar primitives.
+    - Dashboard layout persists across `/dashboard/*` routes using `dashboard/layout.tsx`.
+    - Right sidebar contains calendar date picker and calendar lists.
+    - Left sidebar contains navigation (Inbox) and task lists.
 - **Auth integration**:
   - Better Auth with Google OAuth only (v1).
   - Tab-based sign-in / sign-up UI on `/login`.
@@ -318,7 +323,7 @@ packages/
 
 ---
 
-## 6. Recent Implementation Updates (Google Calendar & oRPC)
+## 6. Recent Implementation Updates
 
 ### 6.1 Google Calendar Integration
 - **Client**: Implemented a **Google Calendar Client** using the **Effect** library (`packages/google-cal`).
@@ -341,3 +346,18 @@ packages/
     3.  Provides the live service layer (`GoogleCalendarLive`) injected with the user's access token.
     4.  Runs the effect and returns the result.
   - **Error Handling**: Maps internal errors (AccountNotLinked, GoogleApiError) to standard `ORPCError` types for the client.
+
+### 6.3 UI & Layout Implementation
+- **shadcn/ui Sidebar**: Integrated the new `shadcn/ui` sidebar components (`Sidebar`, `SidebarContent`, etc.).
+- **Dashboard Layout**:
+  - Created `apps/web/src/app/dashboard/layout.tsx` to manage persistent layout.
+  - **Left Sidebar (`AppSidebar`)**:
+    - Contains "Inbox" and task lists.
+    - Cleaned up navigation: removed command palette, team switcher, and unreads toggle.
+    - Connected to `better-auth` client to display real logged-in user data.
+    - Implemented logout functionality.
+  - **Right Sidebar (`SidebarRight`)**:
+    - Contains the calendar date picker and simplified calendar list.
+    - Made collapsible (`offcanvas` mode) with a resize rail.
+    - Fixed calendar date picker styling and functionality.
+- **Settings Page**: Added a placeholder settings page at `/dashboard/settings` linked from the user profile dropdown.
