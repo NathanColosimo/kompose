@@ -20,7 +20,7 @@ export function handleError(
   error: AccountNotLinkedError | GoogleApiError | ParseResult.ParseError,
   accountId: string,
   userId: string
-) {
+): never {
   switch (error._tag) {
     case "AccountNotLinkedError":
       throw new ORPCError("ACCOUNT_NOT_LINKED", {
@@ -100,42 +100,8 @@ export const googleCalRouter = os.router({
       return Effect.runPromise(
         Effect.match(program, {
           onSuccess: (calendars) => calendars,
-          onFailure: (error) => {
-            switch (error._tag) {
-              case "AccountNotLinkedError":
-                throw new ORPCError("ACCOUNT_NOT_LINKED", {
-                  message: JSON.stringify(error.cause),
-                  data: {
-                    accountId: input.accountId,
-                    userId: context.user.id,
-                  },
-                });
-              case "GoogleApiError":
-                throw new ORPCError("GOOGLE_API_ERROR", {
-                  message: JSON.stringify(error.cause),
-                  data: {
-                    accountId: input.accountId,
-                    userId: context.user.id,
-                  },
-                });
-              case "ParseError":
-                throw new ORPCError("PARSE_ERROR", {
-                  message: JSON.stringify(error.cause),
-                  data: {
-                    accountId: input.accountId,
-                    userId: context.user.id,
-                  },
-                });
-              default:
-                throw new ORPCError("UNKNOWN_ERROR", {
-                  message: JSON.stringify(error),
-                  data: {
-                    accountId: input.accountId,
-                    userId: context.user.id,
-                  },
-                });
-            }
-          },
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
         })
       );
     }),
@@ -158,7 +124,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (calendar) => calendar,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     create: os.calendars.create.handler(({ input, context }) => {
@@ -179,7 +151,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (calendar) => calendar,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     update: os.calendars.update.handler(({ input, context }) => {
@@ -203,7 +181,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (calendar) => calendar,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     delete: os.calendars.delete.handler(({ input, context }) => {
@@ -223,7 +207,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (result) => result,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
   },
 
@@ -246,7 +236,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (events) => events,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     get: os.events.get.handler(({ input, context }) => {
@@ -270,7 +266,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (event) => event,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     create: os.events.create.handler(({ input, context }) => {
@@ -294,7 +296,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (event) => event,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     update: os.events.update.handler(({ input, context }) => {
@@ -319,7 +327,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (event) => event,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
 
     delete: os.events.delete.handler(({ input, context }) => {
@@ -339,7 +353,13 @@ export const googleCalRouter = os.router({
         );
       });
 
-      return Effect.runPromise(program);
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (result) => result,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
     }),
   },
 });
