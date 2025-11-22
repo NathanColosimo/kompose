@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "dotenv": "^17.2.2",
+    "effect": "^3.19.6",
     "zod": "^4.1.11"
   },
   "devDependencies": {

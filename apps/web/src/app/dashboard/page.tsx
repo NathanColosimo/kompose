@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import Dashboard from "./dashboard";
-	
+
 export default function DashboardPage() {
   const { data: session } = authClient.useSession();
 

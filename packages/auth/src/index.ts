@@ -11,9 +11,22 @@ export const auth = betterAuth<BetterAuthOptions>({
     provider: "pg",
     schema,
   }),
-  trustedOrigins: [process.env.CORS_ORIGIN || "", "mybettertapp://", "exp://"],
+  trustedOrigins: [
+    process.env.CORS_ORIGIN as string,
+    "mybettertapp://",
+    "exp://",
+  ],
   emailAndPassword: {
-    enabled: true,
+    enabled: false,
+  },
+  socialProviders: {
+    google: {
+      prompt: "select_account",
+      accessType: "offline",
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      scope: ["https://www.googleapis.com/auth/calendar"],
+    },
   },
   plugins: [nextCookies(), expo()],
 });

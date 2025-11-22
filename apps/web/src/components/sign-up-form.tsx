@@ -16,6 +16,22 @@ export default function SignUpForm({
   const router = useRouter();
   const { isPending } = authClient.useSession();
 
+  const handleGoogleSignIn = async () => {
+    await authClient.signIn.social(
+      {
+        provider: "google",
+      },
+      {
+        onSuccess: () => {
+          router.push("/dashboard");
+        },
+        onError: (error) => {
+          toast.error(error.error.message || error.error.statusText);
+        },
+      }
+    );
+  };
+
   const form = useForm({
     defaultValues: {
       email: "",
@@ -56,6 +72,21 @@ export default function SignUpForm({
   return (
     <div className="mx-auto mt-10 w-full max-w-md p-6">
       <h1 className="mb-6 text-center font-bold text-3xl">Create Account</h1>
+
+      <div className="mb-4">
+        <Button
+          className="w-full"
+          onClick={handleGoogleSignIn}
+          type="button"
+          variant="outline"
+        >
+          Sign up with Google
+        </Button>
+      </div>
+
+      <div className="mb-4 flex items-center justify-center">
+        <span className="text-gray-500 text-sm">or sign up with email</span>
+      </div>
 
       <form
         className="space-y-4"

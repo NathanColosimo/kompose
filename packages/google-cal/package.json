@@ -1,0 +1,18 @@
+{
+  "name": "@kompose/google-cal",
+  "version": "0.0.0",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "biome check .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "effect": "^3.19.6",
+    "googleapis": "^166.0.0"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*"
+  }
+}

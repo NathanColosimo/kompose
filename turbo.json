@@ -10,7 +10,13 @@
     },
     "web#build": {
       "dependsOn": ["^build"],
-      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "NEXT_PUBLIC_WEB_URL"],
+      "env": [
+        "DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "NEXT_PUBLIC_WEB_URL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET"
+      ],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**"]
     },
