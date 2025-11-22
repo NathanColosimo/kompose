@@ -15,7 +15,7 @@ export default function SignInForm() {
     }
     setIsAuthenticating(true);
     try {
-      const baseUrl = window.location.origin
+      const baseUrl = window.location.origin;
       await authClient.signIn.social(
         {
           provider: "google",

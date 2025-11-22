@@ -1,10 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import SignInForm from "@/components/sign-in-form";
 import SignUpForm from "@/components/sign-up-form";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
+  const { data: session } = authClient.useSession();
+  const isSignedIn = !!session;
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isSignedIn) {
+      router.push("/dashboard");
+    }
+  }, [isSignedIn, router]);
+
   return (
     <main className="bg-background text-foreground">
       <div className="grid min-h-svh gap-12 lg:grid-cols-[1.1fr_0.9fr]">
@@ -38,17 +52,30 @@ export default function LoginPage() {
             </div>
             <p className="text-muted-foreground text-xs">
               Need help? Email{" "}
-              <a className="underline" href="mailto:hello@kompose.com">
-                hello@kompose.com
+              <a className="underline" href="--">
+                --
               </a>
             </p>
           </div>
         </section>
         <section className="flex items-center justify-center px-6 pt-12 pb-20">
-          <div className="w-full max-w-md space-y-10">
-            <SignInForm />
-            <div className="border-border/40 border-t" />
-            <SignUpForm />
+          <div className="w-full max-w-md">
+            <Tabs className="space-y-6" defaultValue="sign-in">
+              <TabsList className="w-full">
+                <TabsTrigger className="flex-1" value="sign-in">
+                  Sign in
+                </TabsTrigger>
+                <TabsTrigger className="flex-1" value="sign-up">
+                  Sign up
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="sign-in">
+                <SignInForm />
+              </TabsContent>
+              <TabsContent value="sign-up">
+                <SignUpForm />
+              </TabsContent>
+            </Tabs>
           </div>
         </section>
       </div>
