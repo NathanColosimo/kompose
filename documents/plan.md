@@ -82,8 +82,9 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 - **Framework**: Next.js (App Router)
 - **Rendering**:
   - **All main pages statically generated** (SSG) at build time:
-    - `/` landing
-    - `/app` shell (calendar/task UI shell)
+    - `/` landing (hero with feature grid)
+    - `/login` (tab-based auth with Google sign-in/sign-up)
+    - `/dashboard` (placeholder, to be built)
     - `/settings`, `/integrations`, etc.
   - Data is **fetched client-side** via TanStack Query + RPC (no SSR data dependency, good for Tauri).
 - **Routing**:
@@ -93,13 +94,14 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - TanStack Query (React Query) on the client
   - oRPC client for typed RPC calls to Next API endpoints.
 - **UI Layer**:
-  - React + TailwindCSS
-  - Component library: e.g. shadcn/ui for primitives.
+  - React + TailwindCSS (Tailwind v4 with oklch color system)
+  - Typography: Libre Baskerville (serif), Lora (serif display), IBM Plex Mono (monospace)
+  - Component library: shadcn/ui (Radix-based primitives).
   - Drag-and-drop: React DnD or `@dnd-kit/core` for dragging tasks onto calendar slots.
 - **Auth integration**:
-  - Better Auth Next.js integration with API route handlers:
-    - `POST /api/auth/*` etc.
-  - Client acquires session, user ID, and tokens, then passes user ID to app repos.
+  - Better Auth with Google OAuth only (v1).
+  - Tab-based sign-in / sign-up UI on `/login`.
+  - Redirect to `/dashboard` post-auth via Better Auth callback URLs.
 
 ### 4.2 Frontend – Desktop (Tauri + Next.js bundle)
 
