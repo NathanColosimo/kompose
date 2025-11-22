@@ -38,7 +38,9 @@
     "db:stop": "turbo -F @kompose/db db:stop",
     "db:down": "turbo -F @kompose/db db:down"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@radix-ui/react-switch": "^1.2.6"
+  },
   "devDependencies": {
     "turbo": "^2.5.4",
     "@biomejs/biome": "2.3.6",
