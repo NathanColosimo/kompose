@@ -170,6 +170,10 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 
 - **Primary DB**: Postgres
 - **ORM**: Drizzle ORM
+- **Drizzle Single Source of Truth**:
+  - Define tables in Drizzle (e.g., `packages/db/src/schema/task.ts`).
+  - Use `drizzle-zod` to generate Zod schemas (`taskInsertSchema`, `taskSelectSchema`, `taskUpdateSchema`) directly from table definitions.
+  - These Zod schemas are used for runtime validation in the API and type inference throughout the app.
 - **Schemas**:
   - `auth` schema (Better Auth generated; Postgres-only).
   - `app` schema:
@@ -185,10 +189,6 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - `calendarsSQLite`
   - `local_sync_stateSQLite` (sync cursors, last sync times, etc.)
   - Possibly `local_userSQLite` for cached profile info
-- **Type Sharing**:
-  - Shared TS types in `@kompose/domain` describing logical objects:
-    - `Event`, `Task`, `Calendar`, `TaskSource`, etc.
-  - Drizzle schemas per dialect (PG + SQLite) generated from the same conceptual model.
 
 ### 4.6 Sync Layer
 
@@ -361,3 +361,12 @@ packages/
     - Made collapsible (`offcanvas` mode) with a resize rail.
     - Fixed calendar date picker styling and functionality.
 - **Settings Page**: Added a placeholder settings page at `/dashboard/settings` linked from the user profile dropdown.
+
+### 6.4 Migration to Zod & drizzle-zod
+- **Strategy Shift**: Migrated core data models (Tasks, etc.) from Effect Schema to **Zod**.
+- **Schema Inference**:
+  - Using `drizzle-zod` to automatically generate Zod schemas (`Insert`, `Select`, `Update`) directly from Drizzle table definitions.
+  - This ensures the validation logic is always in sync with the database schema.
+- **Frontend Validation**:
+  - Refactored forms (e.g., Create Task) to use **React Hook Form** with `zodResolver`.
+  - Validation uses the same inferred Zod schemas from the backend package, ensuring end-to-end type safety.

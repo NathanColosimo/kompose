@@ -9,9 +9,12 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().min(1),
   },
   client: {
-    NEXT_PUBLIC_WEB_URL: z.string().min(1).regex(/^https?:\/\//),
+    NEXT_PUBLIC_WEB_URL: z
+      .string()
+      .min(1)
+      .regex(/^https?:\/\//),
   },
-  
+
   experimental__runtimeEnv: {
     NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL ?? "",
   },
