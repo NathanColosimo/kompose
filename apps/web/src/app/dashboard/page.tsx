@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { CalendarView } from "@/components/calendar/calendar-view";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,12 +10,8 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { useCalendarData } from "@/hooks/use-calendar-data";
 
 export default function Page() {
-  const [date, setDate] = useState(new Date());
-  const { events, isLoading } = useCalendarData(date);
-
   return (
     <div className="flex h-full flex-col">
       <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
@@ -39,14 +33,7 @@ export default function Page() {
         </Breadcrumb>
       </header>
 
-      <div className="flex-1 overflow-hidden">
-        <CalendarView
-          date={date}
-          events={events}
-          isLoading={isLoading}
-          onDateChange={setDate}
-        />
-      </div>
+      <div className="flex-1 overflow-hidden" />
     </div>
   );
 }

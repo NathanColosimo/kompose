@@ -1,3 +1,4 @@
+// biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import type * as React from "react";
 
