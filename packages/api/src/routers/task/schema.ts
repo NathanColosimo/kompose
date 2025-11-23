@@ -16,15 +16,15 @@ export const Task = Schema.Struct({
   updatedAt: Schema.DateFromSelf,
 });
 
-export const CreateTaskInput = Schema.Struct({
-  title: Schema.String,
-  description: Schema.optional(Schema.NullOr(Schema.String)),
-  status: Schema.optional(TaskStatus),
-  dueDate: Schema.optional(Schema.NullOr(Schema.Date)),
-  startDate: Schema.optional(Schema.NullOr(Schema.Date)),
-  startTime: Schema.optional(Schema.NullOr(Schema.Date)),
-  endTime: Schema.optional(Schema.NullOr(Schema.Date)),
-});
+export const CreateTaskInput = Task.pick(
+  "title",
+  "description",
+  "status",
+  "dueDate",
+  "startDate"
+);
+
+export type CreateTask = typeof CreateTaskInput.Type;
 
 export const UpdateTaskInput = Schema.partialWith(CreateTaskInput, {
   exact: true,

@@ -1,4 +1,4 @@
-import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarLeft } from "@/components/sidebar-left";
 import { SidebarRight } from "@/components/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
@@ -15,7 +15,7 @@ export default function DashboardLayout({
         } as React.CSSProperties
       }
     >
-      <AppSidebar />
+      <SidebarLeft />
       <SidebarInset>{children}</SidebarInset>
       <SidebarRight />
     </SidebarProvider>

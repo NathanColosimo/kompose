@@ -3,8 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Inbox } from "lucide-react";
-// biome-ignore lint/performance/noNamespaceImport: Imported Component
-import * as React from "react";
+import { type ComponentProps, useState } from "react";
+import { CreateTaskForm } from "@/components/create-task-form";
 import {
   Sidebar,
   SidebarContent,
@@ -29,10 +29,10 @@ const navMain = [
   },
 ];
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   // Note: I'm using state to show active item.
   // IRL you should use the url/router.
-  const [activeItem, setActiveItem] = React.useState(navMain[0]);
+  const [activeItem, setActiveItem] = useState(navMain[0]);
   const { setOpen } = useSidebar();
   const {
     data: tasks,
@@ -147,6 +147,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <div className="font-medium text-base text-foreground">
               {activeItem?.title}
             </div>
+            <CreateTaskForm />
           </div>
           <SidebarInput placeholder="Type to search..." />
         </SidebarHeader>

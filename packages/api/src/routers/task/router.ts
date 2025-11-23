@@ -1,9 +1,8 @@
 import { implement, ORPCError } from "@orpc/server";
-import { Effect, type ParseResult, Schema } from "effect";
+import { Effect, type ParseResult } from "effect";
 import { requireAuth } from "../..";
 import { type TaskRepositoryError, Tasks, TasksLive } from "./client";
 import { taskContract } from "./contract";
-import { Task } from "./schema";
 
 function handleError(
   error: TaskRepositoryError | ParseResult.ParseError
@@ -37,7 +36,7 @@ export const taskRouter = os.router({
     const program = Effect.gen(function* () {
       const service = yield* Tasks;
       const tasks = yield* service.listTasks(context.user.id);
-      return yield* Schema.encode(Schema.Array(Task))(tasks);
+      return tasks;
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(
@@ -53,7 +52,7 @@ export const taskRouter = os.router({
       const service = yield* Tasks;
       // input is already validated and parsed to domain objects (Dates) by oRPC middleware
       const task = yield* service.createTask(context.user.id, input);
-      return yield* Schema.encode(Task)(task);
+      return task;
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(
@@ -72,7 +71,7 @@ export const taskRouter = os.router({
         input.id,
         input.task
       );
-      return yield* Schema.encode(Task)(task);
+      return task;
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(

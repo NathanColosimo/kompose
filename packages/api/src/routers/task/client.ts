@@ -1,8 +1,12 @@
 import { db } from "@kompose/db";
-import { task } from "@kompose/db/schema/task";
+import {
+  type TaskInsert,
+  type TaskSelect,
+  type TaskUpdate,
+  taskTable,
+} from "@kompose/db/schema/task";
 import { and, desc, eq } from "drizzle-orm";
-import { Context, Data, Effect, Layer, Schema } from "effect";
-import { type CreateTaskInput, Task, type UpdateTaskInput } from "./schema";
+import { Context, Data, Effect, Layer } from "effect";
 
 // Error types
 export class TaskRepositoryError extends Data.TaggedError(
@@ -16,16 +20,16 @@ export class TaskRepositoryError extends Data.TaggedError(
 export type TaskService = {
   readonly listTasks: (
     userId: string
-  ) => Effect.Effect<readonly (typeof Task.Type)[], TaskRepositoryError>;
+  ) => Effect.Effect<TaskSelect[], TaskRepositoryError>;
   readonly createTask: (
     userId: string,
-    input: typeof CreateTaskInput.Type
-  ) => Effect.Effect<typeof Task.Type, TaskRepositoryError>;
+    input: TaskInsert
+  ) => Effect.Effect<TaskSelect, TaskRepositoryError>;
   readonly updateTask: (
     userId: string,
     taskId: string,
-    input: typeof UpdateTaskInput.Type
-  ) => Effect.Effect<typeof Task.Type, TaskRepositoryError>;
+    input: TaskUpdate
+  ) => Effect.Effect<TaskSelect, TaskRepositoryError>;
   readonly deleteTask: (
     userId: string,
     taskId: string
@@ -41,73 +45,66 @@ const make = (): TaskService => {
       try: () =>
         db
           .select()
-          .from(task)
-          .where(eq(task.userId, userId))
-          .orderBy(desc(task.createdAt)),
+          .from(taskTable)
+          .where(eq(taskTable.userId, userId))
+          .orderBy(desc(taskTable.createdAt)),
       catch: (cause) => {
         console.error(cause);
         return new TaskRepositoryError({ cause });
       },
-    }).pipe(
-      Effect.flatMap((rows) =>
-        Schema.decodeUnknown(Schema.Array(Task))(rows).pipe(
-          Effect.mapError((e) => new TaskRepositoryError({ cause: e }))
-        )
-      )
-    );
+    });
 
-  const createTask = (userId: string, input: typeof CreateTaskInput.Type) =>
+  const createTask = (userId: string, input: TaskInsert) =>
     Effect.tryPromise({
       try: () =>
         db
-          .insert(task)
+          .insert(taskTable)
           .values({ ...input, userId })
           .returning(),
       catch: (cause) => new TaskRepositoryError({ cause }),
     }).pipe(
-      Effect.map((rows) => rows[0]),
-      Effect.flatMap((row) =>
-        Schema.decodeUnknown(Task)(row).pipe(
-          Effect.mapError((e) => new TaskRepositoryError({ cause: e }))
-        )
+      Effect.flatMap((rows) =>
+        rows[0]
+          ? Effect.succeed(rows[0])
+          : Effect.fail(
+              new TaskRepositoryError({
+                message: "Failed to create task",
+                cause: "No result returned",
+              })
+            )
       )
     );
 
-  const updateTask = (
-    userId: string,
-    taskId: string,
-    input: typeof UpdateTaskInput.Type
-  ) =>
+  const updateTask = (userId: string, taskId: string, input: TaskUpdate) =>
     Effect.tryPromise({
       try: () =>
         db
-          .update(task)
+          .update(taskTable)
           .set({ ...input, updatedAt: new Date() })
-          .where(and(eq(task.id, taskId), eq(task.userId, userId)))
+          .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)))
           .returning(),
       catch: (cause) => new TaskRepositoryError({ cause }),
     }).pipe(
-      Effect.map((rows) => rows[0]),
-      Effect.flatMap((row) => {
-        if (!row) {
-          return Effect.fail(
-            new TaskRepositoryError({ cause: "Task not found" })
-          );
-        }
-        return Schema.decodeUnknown(Task)(row).pipe(
-          Effect.mapError((e) => new TaskRepositoryError({ cause: e }))
-        );
-      })
+      Effect.flatMap((rows) =>
+        rows[0]
+          ? Effect.succeed(rows[0])
+          : Effect.fail(
+              new TaskRepositoryError({
+                message: "Task not found",
+                cause: "No result returned",
+              })
+            )
+      )
     );
 
   const deleteTask = (userId: string, taskId: string) =>
     Effect.tryPromise({
       try: () =>
         db
-          .delete(task)
-          .where(and(eq(task.id, taskId), eq(task.userId, userId))),
+          .delete(taskTable)
+          .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId))),
       catch: (cause) => new TaskRepositoryError({ cause }),
-    }).pipe(Effect.asVoid);
+    });
 
   return {
     listTasks,

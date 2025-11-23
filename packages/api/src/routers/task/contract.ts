@@ -1,27 +1,27 @@
+import {
+  taskInsertSchema,
+  taskSelectSchema,
+  taskUpdateSchema,
+} from "@kompose/db/schema/task";
 import { oc } from "@orpc/contract";
-import { Schema } from "effect";
-import { CreateTaskInput, Task, UpdateTaskInput } from "./schema";
+import z from "zod";
 
-export const listTasks = oc.output(Schema.standardSchemaV1(Schema.Array(Task)));
+export const listTasks = oc.input(z.void()).output(z.array(taskSelectSchema));
 
-export const createTask = oc
-  .input(Schema.standardSchemaV1(CreateTaskInput))
-  .output(Schema.standardSchemaV1(Task));
+export const createTask = oc.input(taskInsertSchema).output(taskSelectSchema);
 
 export const updateTask = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        id: Schema.UUID,
-        task: UpdateTaskInput,
-      })
-    )
+    z.object({
+      id: z.uuidv7(),
+      task: taskUpdateSchema,
+    })
   )
-  .output(Schema.standardSchemaV1(Task));
+  .output(taskSelectSchema);
 
 export const deleteTask = oc
-  .input(Schema.standardSchemaV1(Schema.Struct({ id: Schema.UUID })))
-  .output(Schema.standardSchemaV1(Schema.Void));
+  .input(z.object({ id: z.uuidv7() }))
+  .output(z.void());
 
 export const taskContract = {
   list: listTasks,

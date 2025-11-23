@@ -21,18 +21,10 @@ export function SidebarRight({
 }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = authClient.useSession();
 
-  const user = session?.user
-    ? {
-        name: session.user.name,
-        email: session.user.email,
-        avatar: session.user.image || "",
-      }
-    : {
-        name: "User",
-        email: "user@example.com",
-        avatar: "",
-      };
-
+  const user = session?.user;
+  if (!user) {
+    return null;
+  }
   // Mock calendar data for now, simpler than before
   const calendars = [
     {
