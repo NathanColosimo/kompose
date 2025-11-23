@@ -15,6 +15,8 @@ export const task = pgTable("task", {
   title: text("title").notNull(),
   description: text("description"),
   status: taskStatusEnum("status").default("todo").notNull(),
+  dueDate: timestamp("due_date"),
+  startDate: timestamp("start_date"),
   startTime: timestamp("start_time"),
   endTime: timestamp("end_time"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

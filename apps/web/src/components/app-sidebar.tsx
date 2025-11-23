@@ -1,9 +1,10 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { Inbox } from "lucide-react";
 // biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as React from "react";
-
 import {
   Sidebar,
   SidebarContent,
@@ -16,44 +17,68 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { orpc } from "@/utils/orpc";
 
 // This is sample data
-const data = {
-  navMain: [
-    {
-      title: "Inbox",
-      url: "/dashboard",
-      icon: Inbox,
-      isActive: true,
-    },
-  ],
-  tasks: [
-    {
-      id: "1",
-      title: "Review project proposal",
-      date: "Today",
-      description: "Go through the new project proposal and add comments.",
-    },
-    {
-      id: "2",
-      title: "Team meeting",
-      date: "Tomorrow",
-      description: "Weekly sync with the engineering team.",
-    },
-    {
-      id: "3",
-      title: "Update documentation",
-      date: "2 days ago",
-      description: "Update the API documentation with the latest changes.",
-    },
-  ],
-};
+const navMain = [
+  {
+    title: "Inbox",
+    url: "/dashboard",
+    icon: Inbox,
+    isActive: true,
+  },
+];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Note: I'm using state to show active item.
   // IRL you should use the url/router.
-  const [activeItem, setActiveItem] = React.useState(data.navMain[0]);
+  const [activeItem, setActiveItem] = React.useState(navMain[0]);
   const { setOpen } = useSidebar();
+  const {
+    data: tasks,
+    isLoading,
+    error,
+  } = useQuery(orpc.tasks.list.queryOptions());
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="p-4 text-muted-foreground text-sm">
+          Loading tasks...
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="p-4 text-destructive text-sm">Failed to load tasks</div>
+      );
+    }
+
+    if (!tasks || tasks.length === 0) {
+      return (
+        <div className="p-4 text-muted-foreground text-sm">No tasks found.</div>
+      );
+    }
+
+    return tasks.map((task) => (
+      <a
+        className="flex flex-col items-start gap-2 whitespace-nowrap border-b p-4 text-sm leading-tight last:border-b-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        href={`/dashboard/${task.id}`}
+        key={task.id}
+      >
+        <div className="flex w-full items-center gap-2">
+          <span>{task.title}</span>{" "}
+          <span className="ml-auto text-muted-foreground text-xs">
+            {task.createdAt ? format(new Date(task.createdAt), "MMM d") : ""}
+          </span>
+        </div>
+        <span className="line-clamp-2 w-[260px] whitespace-break-spaces text-muted-foreground text-xs">
+          {task.description}
+        </span>
+      </a>
+    ));
+  };
 
   return (
     <Sidebar
@@ -89,7 +114,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroup>
             <SidebarGroupContent className="px-1.5 md:px-0">
               <SidebarMenu>
-                {data.navMain.map((item) => (
+                {navMain.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       className="px-2.5 md:px-2"
@@ -127,23 +152,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup className="px-0">
-            <SidebarGroupContent>
-              {data.tasks.map((task) => (
-                <a
-                  className="flex flex-col items-start gap-2 whitespace-nowrap border-b p-4 text-sm leading-tight last:border-b-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  href={`/dashboard/${task.id}`}
-                  key={task.id}
-                >
-                  <div className="flex w-full items-center gap-2">
-                    <span>{task.title}</span>{" "}
-                    <span className="ml-auto text-xs">{task.date}</span>
-                  </div>
-                  <span className="line-clamp-2 w-[260px] whitespace-break-spaces text-xs">
-                    {task.description}
-                  </span>
-                </a>
-              ))}
-            </SidebarGroupContent>
+            <SidebarGroupContent>{renderContent()}</SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>

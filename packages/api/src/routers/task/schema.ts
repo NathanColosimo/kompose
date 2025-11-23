@@ -8,6 +8,8 @@ export const Task = Schema.Struct({
   title: Schema.String,
   description: Schema.NullOr(Schema.String),
   status: TaskStatus,
+  dueDate: Schema.NullOr(Schema.DateFromSelf),
+  startDate: Schema.NullOr(Schema.DateFromSelf),
   startTime: Schema.NullOr(Schema.DateFromSelf),
   endTime: Schema.NullOr(Schema.DateFromSelf),
   createdAt: Schema.DateFromSelf,
@@ -18,6 +20,8 @@ export const CreateTaskInput = Schema.Struct({
   title: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: Schema.optional(TaskStatus),
+  dueDate: Schema.optional(Schema.NullOr(Schema.Date)),
+  startDate: Schema.optional(Schema.NullOr(Schema.Date)),
   startTime: Schema.optional(Schema.NullOr(Schema.Date)),
   endTime: Schema.optional(Schema.NullOr(Schema.Date)),
 });

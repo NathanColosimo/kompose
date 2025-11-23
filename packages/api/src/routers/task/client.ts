@@ -44,7 +44,10 @@ const make = (): TaskService => {
           .from(task)
           .where(eq(task.userId, userId))
           .orderBy(desc(task.createdAt)),
-      catch: (cause) => new TaskRepositoryError({ cause }),
+      catch: (cause) => {
+        console.error(cause);
+        return new TaskRepositoryError({ cause });
+      },
     }).pipe(
       Effect.flatMap((rows) =>
         Schema.decodeUnknown(Schema.Array(Task))(rows).pipe(
