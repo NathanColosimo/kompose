@@ -4,9 +4,8 @@ import {
   GoogleCalendar,
   GoogleCalendarLive,
 } from "@kompose/google-cal/client";
-import { Calendar, CreateEventInput, Event } from "@kompose/google-cal/schema";
 import { implement, ORPCError } from "@orpc/server";
-import { Data, Effect, type ParseResult, Schema } from "effect";
+import { Data, Effect, type ParseResult } from "effect";
 import { requireAuth } from "../..";
 import { googleCalContract } from "./contract";
 
@@ -88,8 +87,7 @@ export const googleCalRouter = os.router({
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           const calendars = yield* service.listCalendars();
-          // Encode to match the contract output (plain objects with strings, not Date objects)
-          return yield* Schema.encode(Schema.Array(Calendar))(calendars);
+          return calendars;
         });
 
         return yield* serviceEffect.pipe(
@@ -116,7 +114,7 @@ export const googleCalRouter = os.router({
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           const calendar = yield* service.getCalendar(input.calendarId);
-          return yield* Schema.encode(Calendar)(calendar);
+          return calendar;
         });
 
         return yield* serviceEffect.pipe(
@@ -143,7 +141,7 @@ export const googleCalRouter = os.router({
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           const calendar = yield* service.createCalendar(input.calendar);
-          return yield* Schema.encode(Calendar)(calendar);
+          return calendar;
         });
 
         return yield* serviceEffect.pipe(
@@ -173,7 +171,7 @@ export const googleCalRouter = os.router({
             input.calendarId,
             input.calendar
           );
-          return yield* Schema.encode(Calendar)(calendar);
+          return calendar;
         });
 
         return yield* serviceEffect.pipe(
@@ -228,7 +226,7 @@ export const googleCalRouter = os.router({
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           const events = yield* service.listEvents(input.calendarId);
-          return yield* Schema.encode(Schema.Array(Event))(events);
+          return events;
         });
 
         return yield* serviceEffect.pipe(
@@ -258,7 +256,7 @@ export const googleCalRouter = os.router({
             input.calendarId,
             input.eventId
           );
-          return yield* Schema.encode(Event)(event);
+          return event;
         });
 
         return yield* serviceEffect.pipe(
@@ -286,9 +284,9 @@ export const googleCalRouter = os.router({
           const service = yield* GoogleCalendar;
           const event = yield* service.createEvent(
             input.calendarId,
-            yield* Schema.encode(CreateEventInput)(input.event)
+            input.event
           );
-          return yield* Schema.encode(Event)(event);
+          return event;
         });
 
         return yield* serviceEffect.pipe(
@@ -317,9 +315,9 @@ export const googleCalRouter = os.router({
           const event = yield* service.updateEvent(
             input.calendarId,
             input.eventId,
-            yield* Schema.encode(CreateEventInput)(input.event)
+            input.event
           );
-          return yield* Schema.encode(Event)(event);
+          return event;
         });
 
         return yield* serviceEffect.pipe(

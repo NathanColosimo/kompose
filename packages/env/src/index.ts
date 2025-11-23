@@ -1,20 +1,18 @@
 import { createEnv } from "@t3-oss/env-nextjs";
-import { Schema } from "effect";
+import { z } from "zod";
 
 export const env = createEnv({
   server: {
-    DATABASE_URL: Schema.standardSchemaV1(Schema.NonEmptyString),
-    BETTER_AUTH_SECRET: Schema.standardSchemaV1(Schema.NonEmptyString),
-    GOOGLE_CLIENT_ID: Schema.standardSchemaV1(Schema.NonEmptyString),
-    GOOGLE_CLIENT_SECRET: Schema.standardSchemaV1(Schema.NonEmptyString),
+    DATABASE_URL: z.string().min(1),
+    BETTER_AUTH_SECRET: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
   },
   client: {
-    NEXT_PUBLIC_WEB_URL: Schema.standardSchemaV1(
-      Schema.NonEmptyString.pipe(Schema.pattern(/^https?:\/\//))
-    ),
+    NEXT_PUBLIC_WEB_URL: z.string().min(1).regex(/^https?:\/\//),
   },
-  // For Next.js >= 13.4.4, you only need to destructure client variables:
+  
   experimental__runtimeEnv: {
-    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
+    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL ?? "",
   },
 });

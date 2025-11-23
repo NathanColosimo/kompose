@@ -1,114 +1,87 @@
 import {
-  Calendar,
-  CreateCalendarInput,
-  CreateEventInput,
-  Event,
+  CalendarSchema,
+  CreateCalendarInputSchema,
+  CreateEventInputSchema,
+  EventSchema,
 } from "@kompose/google-cal/schema";
 import { oc } from "@orpc/contract";
-import { Schema } from "effect";
-
-// Helper to convert Effect Schema to Standard Schema V1
-// Note: Schema.standardSchemaV1 takes a Schema and returns a StandardSchemaV1 compliant object.
-// Nested Schemas (like inside Array) do NOT need to be wrapped; only the top-level one passed to 'oc.output' needs to be compliant.
+import { z } from "zod";
 
 export const listCalendars = oc
-  .input(Schema.standardSchemaV1(Schema.Struct({ accountId: Schema.String })))
-  .output(Schema.standardSchemaV1(Schema.Array(Calendar)));
+  .input(z.object({ accountId: z.string() }))
+  .output(z.array(CalendarSchema));
 
 export const getCalendar = oc
-  .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({ accountId: Schema.String, calendarId: Schema.String })
-    )
-  )
-  .output(Schema.standardSchemaV1(Calendar));
+  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .output(CalendarSchema);
 
 export const createCalendar = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({ accountId: Schema.String, calendar: CreateCalendarInput })
-    )
+    z.object({ accountId: z.string(), calendar: CreateCalendarInputSchema })
   )
-  .output(Schema.standardSchemaV1(Calendar));
+  .output(CalendarSchema);
 
 export const updateCalendar = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        accountId: Schema.String,
-        calendarId: Schema.String,
-        calendar: CreateCalendarInput,
-      })
-    )
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      calendar: CreateCalendarInputSchema,
+    })
   )
-  .output(Schema.standardSchemaV1(Calendar));
+  .output(CalendarSchema);
 
 export const deleteCalendar = oc
-  .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({ accountId: Schema.String, calendarId: Schema.String })
-    )
-  )
-  .output(Schema.standardSchemaV1(Schema.Void));
+  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .output(z.void());
 
 // --- Events ---
 
 export const listEvents = oc
-  .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({ accountId: Schema.String, calendarId: Schema.String })
-    )
-  )
-  .output(Schema.standardSchemaV1(Schema.Array(Event)));
+  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .output(z.array(EventSchema));
 
 export const getEvent = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        accountId: Schema.String,
-        calendarId: Schema.String,
-        eventId: Schema.String,
-      })
-    )
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      eventId: z.string(),
+    })
   )
-  .output(Schema.standardSchemaV1(Event));
+  .output(EventSchema);
 
 export const createEvent = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        accountId: Schema.String,
-        calendarId: Schema.String,
-        event: CreateEventInput,
-      })
-    )
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      event: CreateEventInputSchema,
+    })
   )
-  .output(Schema.standardSchemaV1(Event));
+  .output(EventSchema);
 
 export const updateEvent = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        accountId: Schema.String,
-        calendarId: Schema.String,
-        eventId: Schema.String,
-        event: CreateEventInput,
-      })
-    )
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      eventId: z.string(),
+      event: CreateEventInputSchema,
+    })
   )
-  .output(Schema.standardSchemaV1(Event));
+  .output(EventSchema);
 
 export const deleteEvent = oc
   .input(
-    Schema.standardSchemaV1(
-      Schema.Struct({
-        accountId: Schema.String,
-        calendarId: Schema.String,
-        eventId: Schema.String,
-      })
-    )
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      eventId: z.string(),
+      event: CreateEventInputSchema,
+    })
   )
-  .output(Schema.standardSchemaV1(Schema.Void));
+  .output(z.void());
 
 export const googleCalContract = {
   calendars: {

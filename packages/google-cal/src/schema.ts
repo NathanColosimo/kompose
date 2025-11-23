@@ -1,98 +1,113 @@
-import { Schema } from "effect";
+import { z } from "zod";
 
-export const Calendar = Schema.Struct({
-  id: Schema.String,
-  summary: Schema.String,
-  description: Schema.String,
-  timeZone: Schema.String,
-  primary: Schema.Boolean,
-  accessRole: Schema.String,
+export const CalendarSchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  description: z.string(),
+  timeZone: z.string(),
+  primary: z.boolean(),
+  accessRole: z.string(),
 });
+
+export type Calendar = z.infer<typeof CalendarSchema>;
 
 // Input for creating a calendar (ID is assigned by Google)
-export const CreateCalendarInput = Schema.Struct(Calendar.fields).pipe(
-  Schema.omit("id", "primary", "accessRole")
-);
-
-export const Event = Schema.Struct({
-  id: Schema.String,
-  summary: Schema.String,
-  description: Schema.optional(Schema.String),
-  location: Schema.optional(Schema.String),
-  status: Schema.optional(Schema.String),
-  htmlLink: Schema.optional(Schema.String),
-  colorId: Schema.optional(Schema.String),
-
-  start: Schema.Struct({
-    dateTime: Schema.optional(Schema.DateTimeUtc), // Decodes ISO string -> DateTime.Utc
-    date: Schema.optional(Schema.String),
-    timeZone: Schema.optional(Schema.String),
-  }),
-  end: Schema.Struct({
-    dateTime: Schema.optional(Schema.DateTimeUtc), // Decodes ISO string -> DateTime.Utc
-    date: Schema.optional(Schema.String),
-    timeZone: Schema.optional(Schema.String),
-  }),
-
-  recurrence: Schema.optional(Schema.Array(Schema.String)),
-  recurringEventId: Schema.optional(Schema.String),
-
-  organizer: Schema.optional(
-    Schema.Struct({
-      id: Schema.optional(Schema.String),
-      email: Schema.optional(Schema.String),
-      displayName: Schema.optional(Schema.String),
-      self: Schema.optional(Schema.Boolean),
-    })
-  ),
-
-  attendees: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        id: Schema.optional(Schema.String),
-        email: Schema.optional(Schema.String),
-        displayName: Schema.optional(Schema.String),
-        organizer: Schema.optional(Schema.Boolean),
-        self: Schema.optional(Schema.Boolean),
-        resource: Schema.optional(Schema.Boolean),
-        optional: Schema.optional(Schema.Boolean),
-        responseStatus: Schema.optional(Schema.String),
-        comment: Schema.optional(Schema.String),
-      })
-    )
-  ),
-
-  conferenceData: Schema.optional(
-    Schema.Struct({
-      entryPoints: Schema.optional(
-        Schema.Array(
-          Schema.Struct({
-            entryPointType: Schema.optional(Schema.String),
-            uri: Schema.optional(Schema.String),
-            label: Schema.optional(Schema.String),
-            pin: Schema.optional(Schema.String),
-            accessCode: Schema.optional(Schema.String),
-            meetingCode: Schema.optional(Schema.String),
-            passcode: Schema.optional(Schema.String),
-            password: Schema.optional(Schema.String),
-          })
-        )
-      ),
-      conferenceSolution: Schema.optional(
-        Schema.Struct({
-          key: Schema.optional(
-            Schema.Struct({ type: Schema.optional(Schema.String) })
-          ),
-          name: Schema.optional(Schema.String),
-          iconUri: Schema.optional(Schema.String),
-        })
-      ),
-      conferenceId: Schema.optional(Schema.String),
-    })
-  ),
+export const CreateCalendarInputSchema = CalendarSchema.omit({
+  id: true,
+  primary: true,
+  accessRole: true,
 });
 
+export type CreateCalendar = z.infer<typeof CreateCalendarInputSchema>;
+
+export const EventSchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  status: z.string().optional(),
+  htmlLink: z.string().optional(),
+  colorId: z.string().optional(),
+
+  start: z.object({
+    dateTime: z.string().optional(),
+    date: z.string().optional(),
+    timeZone: z.string().optional(),
+  }),
+
+  end: z.object({
+    dateTime: z.string().optional(),
+    date: z.string().optional(),
+    timeZone: z.string().optional(),
+  }),
+
+  recurrence: z.array(z.string()).optional(),
+  recurringEventId: z.string().optional(),
+
+  organizer: z
+    .object({
+      id: z.string().optional(),
+      email: z.string().optional(),
+      displayName: z.string().optional(),
+      self: z.boolean().optional(),
+    })
+    .optional(),
+
+  attendees: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        email: z.string().optional(),
+        displayName: z.string().optional(),
+        organizer: z.boolean().optional(),
+        self: z.boolean().optional(),
+        resource: z.boolean().optional(),
+        optional: z.boolean().optional(),
+        responseStatus: z.string().optional(),
+        comment: z.string().optional(),
+      })
+    )
+    .optional(),
+
+  conferenceData: z
+    .object({
+      entryPoints: z
+        .array(
+          z.object({
+            entryPointType: z.string().optional(),
+            uri: z.url().optional(),
+            label: z.string().optional(),
+            pin: z.string().optional(),
+            accessCode: z.string().optional(),
+            meetingCode: z.string().optional(),
+            passcode: z.string().optional(),
+            password: z.string().optional(),
+          })
+        )
+        .optional(),
+      conferenceSolution: z
+        .object({
+          key: z
+            .object({
+              type: z.string().optional(),
+            })
+            .optional(),
+          name: z.string().optional(),
+          iconUri: z.string().optional(),
+        })
+        .optional(),
+      conferenceId: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type Event = z.infer<typeof EventSchema>;
+
 // Input for creating an event (ID is assigned by Google)
-export const CreateEventInput = Event.pipe(
-  Schema.omit("id", "htmlLink", "organizer")
-);
+export const CreateEventInputSchema = EventSchema.omit({
+  id: true,
+  htmlLink: true,
+  organizer: true,
+});
+
+export type CreateEvent = z.infer<typeof CreateEventInputSchema>;
