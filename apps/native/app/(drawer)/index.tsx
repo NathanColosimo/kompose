@@ -17,10 +17,8 @@ import { orpc, queryClient } from "@/utils/orpc";
 export default function Home() {
   const { colorScheme } = useColorScheme();
   const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
-  const healthCheck = useQuery(orpc.healthCheck.queryOptions());
-  const privateData = useQuery(orpc.privateData.queryOptions());
-  const isConnected = healthCheck?.data === "OK";
-  const isLoading = healthCheck?.isLoading;
+  const tasks = useQuery(orpc.tasks.list.queryOptions());
+  const isConnected = tasks?.data !== undefined;
   const { data: session } = authClient.useSession();
 
   return (
@@ -90,35 +88,18 @@ export default function Home() {
                     { color: theme.text, opacity: 0.7 },
                   ]}
                 >
-                  {isLoading
-                    ? "Checking connection..."
-                    : isConnected
-                      ? "Connected to API"
-                      : "API Disconnected"}
+                  {(() => {
+                    if (tasks.isLoading) {
+                      return "Checking connection...";
+                    }
+                    if (isConnected) {
+                      return "Connected to API";
+                    }
+                    return "API Disconnected";
+                  })()}
                 </Text>
               </View>
             </View>
-          </View>
-
-          <View
-            style={[
-              styles.privateDataCard,
-              { backgroundColor: theme.card, borderColor: theme.border },
-            ]}
-          >
-            <Text style={[styles.cardTitle, { color: theme.text }]}>
-              Private Data
-            </Text>
-            {privateData && (
-              <Text
-                style={[
-                  styles.privateDataText,
-                  { color: theme.text, opacity: 0.7 },
-                ]}
-              >
-                {privateData.data?.message}
-              </Text>
-            )}
           </View>
 
           {!session?.user && (
