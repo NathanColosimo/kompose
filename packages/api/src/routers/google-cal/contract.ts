@@ -38,7 +38,14 @@ export const deleteCalendar = oc
 // --- Events ---
 
 export const listEvents = oc
-  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .input(
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      timeMin: z.string(),
+      timeMax: z.string(),
+    })
+  )
   .output(z.array(EventSchema));
 
 export const getEvent = oc

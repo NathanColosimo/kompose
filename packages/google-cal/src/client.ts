@@ -35,7 +35,9 @@ export type GoogleCalendarService = {
 
   // Event Operations
   readonly listEvents: (
-    calendarId: string
+    calendarId: string,
+    timeMin: string,
+    timeMax: string
   ) => Effect.Effect<Event[], GoogleApiError | ParseResult.ParseError>;
   readonly getEvent: (
     calendarId: string,
@@ -136,10 +138,17 @@ const make = (accessToken: string): GoogleCalendarService => {
 
   // --- Event Methods ---
 
-  const listEvents = (calendarId: string) =>
+  const listEvents = (calendarId: string, timeMin: string, timeMax: string) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () => client.events.list({ calendarId }),
+        try: () =>
+          client.events.list({
+            calendarId,
+            timeMin,
+            timeMax,
+            singleEvents: true,
+            orderBy: "startTime",
+          }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 

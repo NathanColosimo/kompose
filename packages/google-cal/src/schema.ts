@@ -3,10 +3,10 @@ import { z } from "zod";
 export const CalendarSchema = z.object({
   id: z.string(),
   summary: z.string(),
-  description: z.string(),
-  timeZone: z.string(),
-  primary: z.boolean(),
-  accessRole: z.string(),
+  description: z.string().optional(),
+  timeZone: z.string().optional(),
+  primary: z.boolean().optional(),
+  accessRole: z.string().optional(),
 });
 
 export type Calendar = z.infer<typeof CalendarSchema>;
@@ -22,7 +22,7 @@ export type CreateCalendar = z.infer<typeof CreateCalendarInputSchema>;
 
 export const EventSchema = z.object({
   id: z.string(),
-  summary: z.string(),
+  summary: z.string().optional(),
   description: z.string().optional(),
   location: z.string().optional(),
   status: z.string().optional(),

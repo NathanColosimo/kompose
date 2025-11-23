@@ -5,7 +5,7 @@ import {
   GoogleCalendarLive,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Data, Effect, type ParseResult } from "effect";
+import { Console, Data, Effect, type ParseResult } from "effect";
 import { requireAuth } from "../..";
 import { googleCalContract } from "./contract";
 
@@ -20,6 +20,15 @@ export function handleError(
   accountId: string,
   userId: string
 ): never {
+  // // Log error details for debugging
+  // console.error("Google Calendar Router Error:", {
+  //   errorType: error._tag,
+  //   message: (error as any).message || "Unknown error",
+  //   cause: (error as any).cause,
+  //   accountId,
+  //   userId,
+  // });
+
   switch (error._tag) {
     case "AccountNotLinkedError":
       throw new ORPCError("ACCOUNT_NOT_LINKED", {
@@ -78,6 +87,7 @@ export const os = implement(googleCalContract).use(requireAuth);
 export const googleCalRouter = os.router({
   calendars: {
     list: os.calendars.list.handler(({ input, context }) => {
+      Console.log("listCalendars input:", input);
       const program = Effect.gen(function* () {
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
@@ -225,7 +235,11 @@ export const googleCalRouter = os.router({
 
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const events = yield* service.listEvents(input.calendarId);
+          const events = yield* service.listEvents(
+            input.calendarId,
+            input.timeMin,
+            input.timeMax
+          );
           return events;
         });
 

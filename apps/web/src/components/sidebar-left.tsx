@@ -70,7 +70,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         <div className="flex w-full items-center gap-2">
           <span>{task.title}</span>{" "}
           <span className="ml-auto text-muted-foreground text-xs">
-            {task.createdAt ? format(new Date(task.createdAt), "MMM d") : ""}
+            {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
           </span>
         </div>
         <span className="line-clamp-2 w-[260px] whitespace-break-spaces text-muted-foreground text-xs">
