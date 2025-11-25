@@ -39,8 +39,8 @@ export type TaskService = {
 export class Tasks extends Context.Tag("Tasks")<Tasks, TaskService>() {}
 
 // Implementation
-const make = (): TaskService => {
-  const listTasks = (userId: string) =>
+const taskService: TaskService = {
+  listTasks: (userId) =>
     Effect.tryPromise({
       try: () =>
         db
@@ -52,9 +52,9 @@ const make = (): TaskService => {
         console.error(cause);
         return new TaskRepositoryError({ cause });
       },
-    });
+    }),
 
-  const createTask = (userId: string, input: TaskInsert) =>
+  createTask: (userId, input) =>
     Effect.tryPromise({
       try: () =>
         db
@@ -73,9 +73,9 @@ const make = (): TaskService => {
               })
             )
       )
-    );
+    ),
 
-  const updateTask = (userId: string, taskId: string, input: TaskUpdate) =>
+  updateTask: (userId, taskId, input) =>
     Effect.tryPromise({
       try: () =>
         db
@@ -95,23 +95,16 @@ const make = (): TaskService => {
               })
             )
       )
-    );
+    ),
 
-  const deleteTask = (userId: string, taskId: string) =>
+  deleteTask: (userId, taskId) =>
     Effect.tryPromise({
       try: () =>
         db
           .delete(taskTable)
           .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId))),
       catch: (cause) => new TaskRepositoryError({ cause }),
-    });
-
-  return {
-    listTasks,
-    createTask,
-    updateTask,
-    deleteTask,
-  };
+    }),
 };
 
-export const TasksLive = Layer.succeed(Tasks, make());
+export const TasksLive = Layer.succeed(Tasks, taskService);
