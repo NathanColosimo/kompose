@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port=3001",
-    "build": "turbo run db:migrate --filter @kompose/db && next build",
+    "build": "next build && turbo run db:migrate --filter @kompose/db",
     "start": "next start",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
