@@ -88,9 +88,9 @@ export function CreateTaskForm() {
           <div className="grid gap-2">
             <Label htmlFor="title">Title</Label>
             <Input id="title" placeholder="Task title" {...register("title")} />
-            {errors.title && (
+            {errors.title?.message ? (
               <p className="text-destructive text-xs">{errors.title.message}</p>
-            )}
+            ) : null}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="description">Description</Label>
@@ -99,11 +99,11 @@ export function CreateTaskForm() {
               placeholder="Add details..."
               {...register("description")}
             />
-            {errors.description && (
+            {errors.description?.message ? (
               <p className="text-destructive text-xs">
                 {errors.description.message}
               </p>
-            )}
+            ) : null}
           </div>
           <div className="grid gap-4">
             <div className="grid gap-2">
@@ -133,6 +133,7 @@ export function CreateTaskForm() {
                         mode="single"
                         onSelect={field.onChange}
                         selected={
+                          // biome-ignore lint/nursery/noLeakedRender: Field prop
                           field.value ? new Date(field.value) : undefined
                         }
                       />
@@ -140,11 +141,11 @@ export function CreateTaskForm() {
                   </Popover>
                 )}
               />
-              {errors.startDate && (
+              {errors.startDate?.message ? (
                 <p className="text-destructive text-xs">
                   {errors.startDate.message}
                 </p>
-              )}
+              ) : null}
             </div>
             <div className="grid gap-2">
               <Label>Due Date</Label>
@@ -173,6 +174,7 @@ export function CreateTaskForm() {
                         mode="single"
                         onSelect={field.onChange}
                         selected={
+                          // biome-ignore lint/nursery/noLeakedRender: Field prop
                           field.value ? new Date(field.value) : undefined
                         }
                       />
@@ -180,11 +182,11 @@ export function CreateTaskForm() {
                   </Popover>
                 )}
               />
-              {errors.dueDate && (
+              {errors.dueDate?.message ? (
                 <p className="text-destructive text-xs">
                   {errors.dueDate.message}
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
           <div className="flex justify-end">
