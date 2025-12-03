@@ -8,7 +8,6 @@
       "packages/*"
     ],
     "catalog": {
-      "next": "16.0.4",
       "zod": "^4.1.13",
       "@orpc/server": "^1.12.2",
       "@orpc/client": "^1.12.2",
@@ -19,9 +18,10 @@
       "dotenv": "^17.2.2",
       "effect": "^3.19.6",
       "@t3-oss/env-nextjs": "^0.13.8",
-      "@types/react": "19.2.7",
-      "@types/react-dom": "19.2.3",
-      "@types/node": "^24.10.1"
+      "@types/react": "^19.2.7",
+      "@types/react-dom": "^19.2.3",
+      "@types/node": "^24.10.1",
+      "next": "16.0.7"
     }
   },
   "scripts": {

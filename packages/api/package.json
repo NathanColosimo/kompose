@@ -14,8 +14,7 @@
     "@kompose/config": "workspace:*"
   },
   "peerDependencies": {
-    "typescript": "^5",
-    "next": "catalog:"
+    "typescript": "^5"
   },
   "dependencies": {
     "@orpc/server": "catalog:",
