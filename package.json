@@ -10,11 +10,11 @@
     "catalog": {
       "next": "16.0.4",
       "zod": "^4.1.13",
-      "@orpc/server": "^1.10.0",
-      "@orpc/client": "^1.10.0",
-      "@orpc/openapi": "^1.10.0",
-      "@orpc/zod": "^1.10.0",
-      "better-auth": "^1.4.3",
+      "@orpc/server": "^1.12.2",
+      "@orpc/client": "^1.12.2",
+      "@orpc/openapi": "^1.12.2",
+      "@orpc/zod": "^1.12.2",
+      "better-auth": "^1.4.5",
       "@better-auth/expo": "^1.4.2",
       "dotenv": "^17.2.2",
       "effect": "^3.19.6",
@@ -43,7 +43,7 @@
   "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "2.3.8",
-    "@effect/language-service": "^0.57.1",
+    "@effect/language-service": "^0.59.0",
     "turbo": "^2.5.4",
     "ultracite": "6.3.8"
   },
