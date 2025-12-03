@@ -1,10 +1,8 @@
 "use client";
 
 import type * as React from "react";
-
-import { Calendars } from "@/components/calendars";
-import { DatePicker } from "@/components/date-picker";
-import { NavUser } from "@/components/nav-user";
+import { NavUser } from "@/components/sidebar/nav-user";
+import { DatePicker } from "@/components/task-form/date-picker";
 import {
   Sidebar,
   SidebarContent,
@@ -25,13 +23,6 @@ export function SidebarRight({
   if (!user) {
     return null;
   }
-  // Mock calendar data for now, simpler than before
-  const calendars = [
-    {
-      name: "My Calendars",
-      items: ["Personal", "Work", "Family"],
-    },
-  ];
 
   return (
     <Sidebar collapsible="offcanvas" side="right" variant="sidebar" {...props}>
@@ -41,7 +32,6 @@ export function SidebarRight({
       <SidebarContent>
         <DatePicker />
         <SidebarSeparator className="mx-0" />
-        <Calendars calendars={calendars} />
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>{/* Removed New Calendar button */}</SidebarMenu>

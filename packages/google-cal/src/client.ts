@@ -1,12 +1,11 @@
+import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import { Context, Data, Effect, Layer, type ParseResult } from "effect";
-import { google } from "googleapis";
 import { z } from "zod";
 import {
   type Calendar,
   CalendarSchema,
   type CreateCalendar,
   type CreateEvent,
-  CreateEventInputSchema,
   type Event,
   EventSchema,
 } from "./schema";
@@ -73,66 +72,57 @@ export class GoogleApiError extends Data.TaggedError("GoogleApiError")<{
 // -- Implementation --
 
 const make = (accessToken: string): GoogleCalendarService => {
-  const auth = new google.auth.OAuth2();
-  auth.setCredentials({ access_token: accessToken });
-  const client = google.calendar({ version: "v3", auth });
+  const client = new GoogleCalendarClient({ accessToken });
 
   // --- Calendar Methods ---
 
   const listCalendars = () =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () => client.calendarList.list(),
+        try: () => client.users.me.calendarList.list(),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      if (!response.data.items) {
+      if (!response.items) {
         return [];
       }
 
-      return z.array(CalendarSchema).parse(response.data.items);
+      return z.array(CalendarSchema).parse(response.items);
     });
 
   const getCalendar = (calendarId: string) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () => client.calendars.get({ calendarId }),
+        try: () => client.users.me.calendarList.retrieve(calendarId),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response.data);
+      return CalendarSchema.parse(response);
     });
 
   const createCalendar = (calendar: CreateCalendar) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.insert({
-            requestBody: calendar,
-          }),
+        try: () => client.users.me.calendarList.create(calendar),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response.data);
+      return CalendarSchema.parse(response);
     });
 
   const updateCalendar = (calendarId: string, calendar: CreateCalendar) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.update({
-            calendarId,
-            requestBody: calendar,
-          }),
+        try: () => client.users.me.calendarList.update(calendarId, calendar),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response.data);
+      return CalendarSchema.parse(response);
     });
 
   const deleteCalendar = (calendarId: string) =>
     Effect.tryPromise({
-      try: () => client.calendars.delete({ calendarId }),
+      try: () => client.users.me.calendarList.delete(calendarId),
       catch: (cause) => new GoogleApiError({ cause }),
     }).pipe(Effect.asVoid);
 
@@ -142,8 +132,7 @@ const make = (accessToken: string): GoogleCalendarService => {
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
         try: () =>
-          client.events.list({
-            calendarId,
+          client.calendars.events.list(calendarId, {
             timeMin,
             timeMax,
             singleEvents: true,
@@ -152,35 +141,34 @@ const make = (accessToken: string): GoogleCalendarService => {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      if (!response.data.items) {
+      if (!response.items) {
         return [];
       }
 
-      return z.array(EventSchema).parse(response.data.items);
+      return z.array(EventSchema).parse(response.items);
     });
 
   const getEvent = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
-        try: () => client.events.get({ calendarId, eventId }),
+        try: () => client.calendars.events.retrieve(eventId, { calendarId }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response.data);
+      return EventSchema.parse(response);
     });
 
   const createEvent = (calendarId: string, event: CreateEvent) =>
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
         try: () =>
-          client.events.insert({
-            calendarId,
-            requestBody: CreateEventInputSchema.parse(event),
+          client.calendars.events.create(calendarId, {
+            ...event,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response.data);
+      return EventSchema.parse(response);
     });
 
   const updateEvent = (
@@ -191,20 +179,19 @@ const make = (accessToken: string): GoogleCalendarService => {
     Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
         try: () =>
-          client.events.update({
+          client.calendars.events.update(eventId, {
+            ...event,
             calendarId,
-            eventId,
-            requestBody: event,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response.data);
+      return EventSchema.parse(response);
     });
 
   const deleteEvent = (calendarId: string, eventId: string) =>
     Effect.tryPromise({
-      try: () => client.events.delete({ calendarId, eventId }),
+      try: () => client.calendars.events.delete(eventId, { calendarId }),
       catch: (cause) => new GoogleApiError({ cause }),
     }).pipe(Effect.asVoid);
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
-import Loader from "./loader";
-import { Button } from "./ui/button";
+import Loader from "../loader";
+import { Button } from "../ui/button";
 
 export default function SignInForm() {
   const { isPending } = authClient.useSession();

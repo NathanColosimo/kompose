@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import SignInForm from "@/components/sign-in-form";
-import SignUpForm from "@/components/sign-up-form";
+import SignInForm from "@/components/auth/sign-in-form";
+import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 

@@ -1,5 +1,5 @@
-import { SidebarLeft } from "@/components/sidebar-left";
-import { SidebarRight } from "@/components/sidebar-right";
+import { SidebarLeft } from "@/components/sidebar/sidebar-left";
+import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 export default function DashboardLayout({

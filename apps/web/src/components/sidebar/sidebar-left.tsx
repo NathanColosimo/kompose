@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Inbox } from "lucide-react";
 import { type ComponentProps, useState } from "react";
-import { CreateTaskForm } from "@/components/create-task-form";
+import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
   Sidebar,
   SidebarContent,

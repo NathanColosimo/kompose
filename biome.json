@@ -19,7 +19,8 @@
       "!**/.alchemy",
       "!**/.svelte-kit",
       "!**/wrangler.jsonc",
-      "!**/.source"
+      "!**/.source",
+      "!packages/google-cal/src"
     ]
   },
   "extends": ["ultracite/core", "ultracite/next", "ultracite/react"]
