@@ -2,7 +2,6 @@
 
 import type * as React from "react";
 import { NavUser } from "@/components/sidebar/nav-user";
-import { DatePicker } from "@/components/task-form/date-picker";
 import {
   Sidebar,
   SidebarContent,
@@ -30,7 +29,6 @@ export function SidebarRight({
         <NavUser user={user} />
       </SidebarHeader>
       <SidebarContent>
-        <DatePicker />
         <SidebarSeparator className="mx-0" />
       </SidebarContent>
       <SidebarFooter>
