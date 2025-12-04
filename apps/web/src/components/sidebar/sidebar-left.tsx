@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Inbox } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
@@ -18,6 +17,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { orpc } from "@/utils/orpc";
+import { TaskItem } from "./task-item";
 
 // This is sample data
 const navMain = [
@@ -61,23 +61,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       );
     }
 
-    return tasks.map((task) => (
-      <a
-        className="flex flex-col items-start gap-2 whitespace-nowrap border-b p-4 text-sm leading-tight last:border-b-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        href={`/dashboard/${task.id}`}
-        key={task.id}
-      >
-        <div className="flex w-full items-center gap-2">
-          <span>{task.title}</span>{" "}
-          <span className="ml-auto text-muted-foreground text-xs">
-            {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
-          </span>
-        </div>
-        <span className="line-clamp-2 w-[260px] whitespace-break-spaces text-muted-foreground text-xs">
-          {task.description}
-        </span>
-      </a>
-    ));
+    return tasks.map((task) => <TaskItem key={task.id} task={task} />);
   };
 
   return (

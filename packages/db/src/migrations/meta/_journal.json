@@ -15,6 +15,13 @@
       "when": 1763917831843,
       "tag": "0001_added_due_date_and_start_date",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764869221716,
+      "tag": "0002_remove_auto_uuid_v4",
+      "breakpoints": true
     }
   ]
 }

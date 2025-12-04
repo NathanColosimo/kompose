@@ -17,13 +17,14 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@orpc/server": "catalog:",
+    "@kompose/auth": "workspace:*",
+    "@kompose/db": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
+    "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "dotenv": "catalog:",
-    "zod": "catalog:",
-    "@kompose/auth": "workspace:*",
-    "@kompose/db": "workspace:*"
+    "uuidv7": "^1.1.0",
+    "zod": "catalog:"
   }
 }

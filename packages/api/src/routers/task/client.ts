@@ -7,7 +7,7 @@ import {
 } from "@kompose/db/schema/task";
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Data, Effect, Layer } from "effect";
-
+import { uuidv7 } from "uuidv7";
 // Error types
 export class TaskRepositoryError extends Data.TaggedError(
   "TaskRepositoryError"
@@ -59,7 +59,7 @@ const taskService: TaskService = {
       try: () =>
         db
           .insert(taskTable)
-          .values({ ...input, userId })
+          .values({ ...input, id: uuidv7(), userId })
           .returning(),
       catch: (cause) => new TaskRepositoryError({ cause }),
     }).pipe(

@@ -370,3 +370,37 @@ packages/
 - **Frontend Validation**:
   - Refactored forms (e.g., Create Task) to use **React Hook Form** with `zodResolver`.
   - Validation uses the same inferred Zod schemas from the backend package, ensuring end-to-end type safety.
+
+### 6.5 Calendar Week View & Drag-and-Drop
+- **Library**: Implemented drag-and-drop using `@dnd-kit/core` and `@dnd-kit/utilities`.
+- **Week View Components** (`apps/web/src/components/calendar/`):
+  - **`week-view.tsx`**: Main calendar grid displaying 7 days with all 24 hours.
+    - Scrollable time grid with fixed day headers.
+    - Auto-scrolls to 8am on mount.
+    - Groups and renders scheduled tasks by day.
+  - **`time-grid.tsx`**: Core grid components:
+    - `TimeSlot`: Droppable 30-minute slots (40px height each).
+    - `DayColumn`: Vertical column for a single day containing all time slots.
+    - `TimeGutter`: Left column showing hour labels (80px per hour).
+    - `DayHeader`: Header cell showing day name and date number.
+    - `parseSlotId`: Parses slot IDs to extract date/time in local timezone.
+  - **`calendar-event.tsx`**: Draggable scheduled task blocks positioned absolutely within day columns.
+  - **`dnd-context.tsx`**: DnD context provider wrapping sidebar and calendar.
+    - Handles drag start/end events.
+    - Optimistic updates via TanStack Query mutations.
+    - Default task duration: 30 minutes.
+- **Sidebar Task Item** (`apps/web/src/components/sidebar/task-item.tsx`):
+  - Tasks in the left sidebar are draggable onto the calendar.
+  - Shows "Scheduled" indicator for tasks with start times.
+  - Original item hidden during drag (DragOverlay shows preview).
+- **Dashboard Page** (`apps/web/src/app/dashboard/page.tsx`):
+  - Fixed header with week navigation (prev/next/today buttons) and date picker.
+  - Uses absolute positioning to ensure headers stay locked while time grid scrolls.
+- **State Management**:
+  - `currentDateAtom`: Currently selected date (Jotai atom).
+  - `weekStartAtom`, `weekEndAtom`, `weekDaysAtom`: Derived atoms for week boundaries.
+- **UUIDv7 Migration**:
+  - Task IDs now use UUIDv7 for time-ordered indexing benefits.
+  - Generated in backend (`packages/api/src/routers/task/client.ts`) using `uuidv7` package.
+  - Drizzle schema updated to not auto-generate UUIDs.
+  - API contracts validate with `z.uuidv7()`.
