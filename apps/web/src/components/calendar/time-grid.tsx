@@ -6,8 +6,8 @@ import { memo, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "./constants";
 
-/** Regex for parsing slot IDs - moved to top level for performance */
-const SLOT_ID_REGEX = /^slot-(\d{4}-\d{2}-\d{2})-(\d+)-(\d+)$/;
+/** Regex for parsing slot IDs (allows quarter-hour minutes) */
+const SLOT_ID_REGEX = /^slot-(\d{4}-\d{2}-\d{2})-(\d+)-(\d{1,2})$/;
 
 /** All 24 hours of the day */
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -25,23 +25,23 @@ type TimeSlotProps = {
   date: Date;
   /** Hour of day (0-23) */
   hour: number;
-  /** Whether this is the top half (0-29min) or bottom half (30-59min) */
-  isFirstHalf: boolean;
+  /** Minutes offset (0, 15, 30, 45) */
+  minutes: number;
   /** Children (CalendarEvents) to render inside this slot */
   children?: React.ReactNode;
 };
 
 /**
- * TimeSlot - A droppable 30-minute time slot in the calendar grid.
- * ID format: `slot-{ISO date}-{hour}-{0|30}` for precise drop targeting.
+ * TimeSlot - A droppable 15-minute time slot in the calendar grid.
+ * ID format: `slot-{ISO date}-{hour}-{minutes}` for precise drop targeting.
+ * Visual grid still shows lines every 30 minutes by styling only select slots.
  */
 export const TimeSlot = memo(function TimeSlotInner({
   date,
   hour,
-  isFirstHalf,
+  minutes,
   children,
 }: TimeSlotProps) {
-  const minutes = isFirstHalf ? 0 : 30;
   const slotId = `slot-${format(date, "yyyy-MM-dd")}-${hour}-${minutes}`;
 
   const { setNodeRef, isOver } = useDroppable({
@@ -53,11 +53,13 @@ export const TimeSlot = memo(function TimeSlotInner({
     },
   });
 
+  const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
+
   return (
     <div
       className={cn(
-        "h-10 border-border/30 border-b transition-colors",
-        isFirstHalf ? "border-border/50 border-t" : "",
+        "h-5 transition-colors", // 15-minute slot = 20px when base font size is default (h-5 => 1.25rem)
+        isThirtyMinuteBoundary ? "border-border/50 border-t" : "",
         isOver ? "bg-primary/10" : ""
       )}
       ref={setNodeRef}
@@ -93,11 +95,12 @@ export const DayColumn = memo(function DayColumnInner({
       className="relative flex shrink-0 flex-col border-border border-r"
       style={{ width, scrollSnapAlign: "start" }}
     >
-      {/* Time slots for each hour (2 slots per hour = 30min granularity) */}
+      {/* Time slots for each hour (4 slots per hour = 15min granularity) */}
       {hours.map((hour) => (
         <div className="relative" key={hour}>
-          <TimeSlot date={date} hour={hour} isFirstHalf={true} />
-          <TimeSlot date={date} hour={hour} isFirstHalf={false} />
+          {[0, 15, 30, 45].map((minutes) => (
+            <TimeSlot date={date} hour={hour} key={minutes} minutes={minutes} />
+          ))}
         </div>
       ))}
       {/* Overlay container for positioned events */}
