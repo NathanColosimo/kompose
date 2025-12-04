@@ -1,6 +1,6 @@
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { Context, Data, Effect, Layer, type ParseResult } from "effect";
-import { z } from "zod";
+import { Context, Data, Effect, Layer } from "effect";
+import { z, ZodError } from "zod";
 import {
   type Calendar,
   CalendarSchema,
@@ -16,18 +16,18 @@ export type GoogleCalendarService = {
   // Calendar Operations
   readonly listCalendars: () => Effect.Effect<
     Calendar[],
-    GoogleApiError | ParseResult.ParseError
+    GoogleApiError | ZodError
   >;
   readonly getCalendar: (
     calendarId: string
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
   readonly createCalendar: (
     calendar: CreateCalendar
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
   readonly updateCalendar: (
     calendarId: string,
     calendar: CreateCalendar
-  ) => Effect.Effect<Calendar, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
   readonly deleteCalendar: (
     calendarId: string
   ) => Effect.Effect<void, GoogleApiError>;
@@ -37,20 +37,20 @@ export type GoogleCalendarService = {
     calendarId: string,
     timeMin: string,
     timeMax: string
-  ) => Effect.Effect<Event[], GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Event[], GoogleApiError | ZodError>;
   readonly getEvent: (
     calendarId: string,
     eventId: string
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
   readonly createEvent: (
     calendarId: string,
     event: CreateEvent
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
   readonly updateEvent: (
     calendarId: string,
     eventId: string,
     event: CreateEvent
-  ) => Effect.Effect<Event, GoogleApiError | ParseResult.ParseError>;
+  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
   readonly deleteEvent: (
     calendarId: string,
     eventId: string
@@ -97,7 +97,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response);
+      const parsed = CalendarSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const createCalendar = (calendar: CreateCalendar) =>
@@ -107,7 +112,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response);
+      const parsed = CalendarSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const updateCalendar = (calendarId: string, calendar: CreateCalendar) =>
@@ -117,7 +127,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return CalendarSchema.parse(response);
+      const parsed = CalendarSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const deleteCalendar = (calendarId: string) =>
@@ -145,7 +160,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         return [];
       }
 
-      return z.array(EventSchema).parse(response.items);
+      const parsed = z.array(EventSchema).safeParse(response.items);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const getEvent = (calendarId: string, eventId: string) =>
@@ -155,7 +175,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response);
+      const parsed = EventSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const createEvent = (calendarId: string, event: CreateEvent) =>
@@ -168,7 +193,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response);
+      const parsed = EventSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const updateEvent = (
@@ -186,7 +216,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         catch: (cause) => new GoogleApiError({ cause }),
       });
 
-      return EventSchema.parse(response);
+      const parsed = EventSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(parsed.error);
+      }
+
+      return parsed.data;
     });
 
   const deleteEvent = (calendarId: string, eventId: string) =>
