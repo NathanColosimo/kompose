@@ -3,9 +3,10 @@ import {
   type GoogleApiError,
   GoogleCalendar,
   GoogleCalendarLive,
+  type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Console, Data, Effect, type ParseResult } from "effect";
+import { Console, Data, Effect } from "effect";
 import { requireAuth } from "../..";
 import { googleCalContract } from "./contract";
 
@@ -16,7 +17,7 @@ export class AccountNotLinkedError extends Data.TaggedError(
 }> {}
 
 export function handleError(
-  error: AccountNotLinkedError | GoogleApiError | ParseResult.ParseError,
+  error: AccountNotLinkedError | GoogleApiError | GoogleCalendarZodError,
   accountId: string,
   userId: string
 ): never {
@@ -46,12 +47,11 @@ export function handleError(
           userId,
         },
       });
-    case "ParseError":
+    case "GoogleCalendarZodError":
       throw new ORPCError("PARSE_ERROR", {
-        message: JSON.stringify(error.cause),
+        message: error.message,
         data: {
-          accountId,
-          userId,
+          cause: error.cause,
         },
       });
     default:

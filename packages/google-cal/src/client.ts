@@ -16,18 +16,18 @@ export type GoogleCalendarService = {
   // Calendar Operations
   readonly listCalendars: () => Effect.Effect<
     Calendar[],
-    GoogleApiError | ZodError
+    GoogleApiError | GoogleCalendarZodError
   >;
   readonly getCalendar: (
     calendarId: string
-  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | GoogleCalendarZodError>;
   readonly createCalendar: (
     calendar: CreateCalendar
-  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | GoogleCalendarZodError>;
   readonly updateCalendar: (
     calendarId: string,
     calendar: CreateCalendar
-  ) => Effect.Effect<Calendar, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Calendar, GoogleApiError | GoogleCalendarZodError>;
   readonly deleteCalendar: (
     calendarId: string
   ) => Effect.Effect<void, GoogleApiError>;
@@ -37,20 +37,20 @@ export type GoogleCalendarService = {
     calendarId: string,
     timeMin: string,
     timeMax: string
-  ) => Effect.Effect<Event[], GoogleApiError | ZodError>;
+  ) => Effect.Effect<Event[], GoogleApiError | GoogleCalendarZodError>;
   readonly getEvent: (
     calendarId: string,
     eventId: string
-  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
   readonly createEvent: (
     calendarId: string,
     event: CreateEvent
-  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
   readonly updateEvent: (
     calendarId: string,
     eventId: string,
     event: CreateEvent
-  ) => Effect.Effect<Event, GoogleApiError | ZodError>;
+  ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
   readonly deleteEvent: (
     calendarId: string,
     eventId: string
@@ -67,6 +67,10 @@ export class GoogleCalendar extends Context.Tag("GoogleCalendar")<
 export class GoogleApiError extends Data.TaggedError("GoogleApiError")<{
   cause: unknown;
   message?: string;
+}> {}
+
+export class GoogleCalendarZodError extends Data.TaggedError("GoogleCalendarZodError")<{
+  cause: ZodError;
 }> {}
 
 // -- Implementation --
@@ -99,7 +103,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = CalendarSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -114,7 +118,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = CalendarSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -129,7 +133,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = CalendarSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -162,7 +166,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = z.array(EventSchema).safeParse(response.items);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -177,7 +181,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = EventSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -195,7 +199,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = EventSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
 
       return parsed.data;
@@ -218,7 +222,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = EventSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(parsed.error);
+        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }) );
       }
 
       return parsed.data;
