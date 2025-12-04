@@ -149,6 +149,7 @@ type DayHeaderProps = {
 /**
  * DayHeader - Header cell showing day name and date number.
  * Uses fixed width and scroll-snap-align to stay aligned with day columns.
+ * Height: h-12 (48px) - compact design aligned with time gutter corner.
  */
 export const DayHeader = memo(function DayHeaderInner({
   date,
@@ -158,7 +159,7 @@ export const DayHeader = memo(function DayHeaderInner({
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col items-center justify-center border-border border-r py-2",
+        "flex h-12 shrink-0 items-center justify-center gap-2 border-border border-r",
         isToday ? "bg-primary/5" : ""
       )}
       style={{ width, scrollSnapAlign: "start" }}
@@ -168,7 +169,7 @@ export const DayHeader = memo(function DayHeaderInner({
       </span>
       <span
         className={cn(
-          "mt-1 flex size-8 items-center justify-center rounded-full font-semibold text-lg",
+          "flex size-7 items-center justify-center rounded-full font-semibold text-sm",
           isToday ? "bg-primary text-primary-foreground" : ""
         )}
       >

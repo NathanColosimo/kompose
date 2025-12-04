@@ -9,7 +9,6 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarRail,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 
@@ -29,7 +28,7 @@ export function SidebarRight({
         <NavUser user={user} />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarSeparator className="mx-0" />
+        
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>{/* Removed New Calendar button */}</SidebarMenu>

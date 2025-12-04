@@ -203,8 +203,8 @@ export function WeekView({ tasks }: WeekViewProps) {
     <div className="flex h-full">
       {/* Fixed time gutter column */}
       <div className="flex w-16 shrink-0 flex-col border-r bg-background">
-        {/* Empty corner cell above time gutter */}
-        <div className="h-[72px] shrink-0 border-b" />
+        {/* Empty corner cell above time gutter - h-[49px] matches header row (h-12 + border-b) */}
+        <div className="h-[49px] shrink-0 border-b" />
         {/* Time gutter - scrolls vertically with the body */}
         <div className="min-h-0 flex-1 overflow-hidden">
           <TimeGutterSynced scrollRef={scrollRef} />

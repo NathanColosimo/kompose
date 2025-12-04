@@ -10,7 +10,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
-  SidebarInput,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -126,14 +125,13 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
       <Sidebar className="hidden flex-1 md:flex" collapsible="none">
-        <SidebarHeader className="gap-3.5 border-b p-4">
-          <div className="flex w-full items-center justify-between">
+        <SidebarHeader className="h-16 border-b">
+          <div className="flex h-full w-full items-center justify-between px-4">
             <div className="font-medium text-base text-foreground">
               {activeItem?.title}
             </div>
             <CreateTaskForm />
           </div>
-          <SidebarInput placeholder="Type to search..." />
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup className="px-0">
