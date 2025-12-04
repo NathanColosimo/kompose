@@ -12,10 +12,8 @@ import {
   VISIBLE_DAYS,
 } from "@/atoms/current-date";
 import { CalendarEvent } from "./calendar-event";
+import { PIXELS_PER_HOUR } from "./constants";
 import { DayColumn, DayHeader, TimeGutter } from "./time-grid";
-
-/** Pixels per hour (2 slots × 40px each) */
-const PIXELS_PER_HOUR = 80;
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
@@ -222,7 +220,7 @@ export function WeekView({ tasks }: WeekViewProps) {
             {bufferedDays.map((day) => (
               <DayHeader
                 date={day}
-                isToday={isToday(day)}
+                isTodayHighlight={isToday(day)}
                 key={format(day, "yyyy-MM-dd")}
                 width={dayColumnWidth}
               />

@@ -1,15 +1,19 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { format, setHours, setMinutes } from "date-fns";
-import { memo } from "react";
+import { format, isToday, setHours, setMinutes } from "date-fns";
+import { memo, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { PIXELS_PER_HOUR } from "./constants";
 
 /** Regex for parsing slot IDs - moved to top level for performance */
 const SLOT_ID_REGEX = /^slot-(\d{4}-\d{2}-\d{2})-(\d+)-(\d+)$/;
 
 /** All 24 hours of the day */
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+/** Update interval for current time indicator (ms) */
+const TIME_UPDATE_INTERVAL_MS = 60_000;
 
 /** Generate array of hours for the time gutter */
 export function getHoursRange(): number[] {
@@ -82,6 +86,7 @@ export const DayColumn = memo(function DayColumnInner({
   children,
 }: DayColumnProps) {
   const hours = getHoursRange();
+  const isTodayColumn = isToday(date);
 
   return (
     <div
@@ -97,9 +102,50 @@ export const DayColumn = memo(function DayColumnInner({
       ))}
       {/* Overlay container for positioned events */}
       <div className="pointer-events-none absolute inset-0">{children}</div>
+      {/* Current time indicator - only shown on today's column */}
+      {isTodayColumn ? <CurrentTimeIndicator /> : null}
     </div>
   );
 });
+
+/**
+ * CurrentTimeIndicator - A bright horizontal line showing the current time.
+ * Updates position every minute.
+ */
+function CurrentTimeIndicator() {
+  const [topPosition, setTopPosition] = useState(() => calculateTimePosition());
+
+  // Update position every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTopPosition(calculateTimePosition());
+    }, TIME_UPDATE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div
+      className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+      style={{ top: `${topPosition}px`, transform: "translateY(-50%)" }}
+    >
+      {/* Left circle marker */}
+      <div className="size-2.5 shrink-0 rounded-full bg-red-500" />
+      {/* Horizontal line */}
+      <div className="h-0.5 flex-1 bg-red-500" />
+    </div>
+  );
+}
+
+/**
+ * Calculate vertical position in pixels for the current time.
+ */
+function calculateTimePosition(): number {
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  return (hours + minutes / 60) * PIXELS_PER_HOUR;
+}
 
 type TimeGutterProps = {
   /** Optional className override */
@@ -140,8 +186,8 @@ export const TimeGutter = memo(function TimeGutterInner({
 type DayHeaderProps = {
   /** The date to display */
   date: Date;
-  /** Whether this day is today */
-  isToday: boolean;
+  /** Whether this day is today (for highlighting) */
+  isTodayHighlight: boolean;
   /** Width of the header (CSS value) */
   width: string;
 };
@@ -153,14 +199,14 @@ type DayHeaderProps = {
  */
 export const DayHeader = memo(function DayHeaderInner({
   date,
-  isToday,
+  isTodayHighlight,
   width,
 }: DayHeaderProps) {
   return (
     <div
       className={cn(
         "flex h-12 shrink-0 items-center justify-center gap-2 border-border border-r",
-        isToday ? "bg-primary/5" : ""
+        isTodayHighlight ? "bg-primary/5" : ""
       )}
       style={{ width, scrollSnapAlign: "start" }}
     >
@@ -170,7 +216,7 @@ export const DayHeader = memo(function DayHeaderInner({
       <span
         className={cn(
           "flex size-7 items-center justify-center rounded-full font-semibold text-sm",
-          isToday ? "bg-primary text-primary-foreground" : ""
+          isTodayHighlight ? "bg-primary text-primary-foreground" : ""
         )}
       >
         {format(date, "d")}

@@ -27,9 +27,7 @@ export function SidebarRight({
       <SidebarHeader className="h-16 border-sidebar-border border-b">
         <NavUser user={user} />
       </SidebarHeader>
-      <SidebarContent>
-        
-      </SidebarContent>
+      <SidebarContent />
       <SidebarFooter>
         <SidebarMenu>{/* Removed New Calendar button */}</SidebarMenu>
       </SidebarFooter>
