@@ -12,14 +12,10 @@ import {
 } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { addMinutes } from "date-fns";
 import { useCallback, useState } from "react";
 import { orpc } from "@/utils/orpc";
 import { CalendarEventPreview } from "./calendar-event";
 import { parseSlotId } from "./time-grid";
-
-/** Default duration for newly scheduled tasks (in minutes) */
-const DEFAULT_TASK_DURATION_MINUTES = 30;
 
 type CalendarDndProviderProps = {
   children: React.ReactNode;
@@ -125,18 +121,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // Calculate end time (default 1 hour duration)
-      const endDateTime = addMinutes(
-        targetDateTime,
-        DEFAULT_TASK_DURATION_MINUTES
-      );
+      // Preserve existing duration when re-scheduling
+      const durationMinutes = task.durationMinutes;
 
       // Update the task with new schedule
       updateTaskMutation.mutate({
         id: task.id,
         task: {
           startTime: targetDateTime,
-          endTime: endDateTime,
+          durationMinutes,
         },
       });
     },

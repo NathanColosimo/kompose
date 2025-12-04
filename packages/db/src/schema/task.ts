@@ -1,4 +1,11 @@
-import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import {
   createInsertSchema,
   createSelectSchema,
@@ -24,7 +31,7 @@ export const taskTable = pgTable("task", {
   dueDate: timestamp("due_date"),
   startDate: timestamp("start_date"),
   startTime: timestamp("start_time"),
-  endTime: timestamp("end_time"),
+  durationMinutes: integer("duration_minutes").notNull().default(30),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

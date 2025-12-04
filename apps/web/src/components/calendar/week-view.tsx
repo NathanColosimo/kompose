@@ -295,14 +295,14 @@ function TimeGutterSynced({
  */
 export function calculateEventPosition(
   startTime: Date,
-  endTime: Date
+  durationMinutes: number
 ): { top: string; height: string } {
   const startHour = startTime.getHours() + startTime.getMinutes() / 60;
-  const endHour = endTime.getHours() + endTime.getMinutes() / 60;
+  const durationHours = durationMinutes / 60;
 
   // Grid starts at midnight (hour 0)
   const top = startHour * PIXELS_PER_HOUR;
-  const height = (endHour - startHour) * PIXELS_PER_HOUR;
+  const height = durationHours * PIXELS_PER_HOUR;
 
   return {
     top: `${top}px`,

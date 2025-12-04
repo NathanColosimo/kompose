@@ -58,6 +58,7 @@ export function CreateTaskForm() {
       description: "",
       // Default values need to be compatible with what the resolver expects or what the inputs expect
       startDate: new Date(),
+      durationMinutes: 30,
       dueDate: (() => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -90,6 +91,21 @@ export function CreateTaskForm() {
             <Input id="title" placeholder="Task title" {...register("title")} />
             {errors.title?.message ? (
               <p className="text-destructive text-xs">{errors.title.message}</p>
+            ) : null}
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="durationMinutes">Duration (minutes)</Label>
+            <Input
+              id="durationMinutes"
+              min={1}
+              step={5}
+              type="number"
+              {...register("durationMinutes", { valueAsNumber: true })}
+            />
+            {errors.durationMinutes?.message ? (
+              <p className="text-destructive text-xs">
+                {errors.durationMinutes.message}
+              </p>
             ) : null}
           </div>
           <div className="grid gap-2">

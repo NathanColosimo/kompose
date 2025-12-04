@@ -33,12 +33,10 @@ export const CalendarEvent = memo(function CalendarEventInner({
   }
 
   const startTime = new Date(task.startTime);
-  // Default to 1 hour if no end time
-  const endTime = task.endTime
-    ? new Date(task.endTime)
-    : new Date(startTime.getTime() + 60 * 60 * 1000);
+  const durationMinutes = task.durationMinutes;
+  const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
 
-  const { top, height } = calculateEventPosition(startTime, endTime);
+  const { top, height } = calculateEventPosition(startTime, durationMinutes);
 
   // Position style (no transform - DragOverlay handles the moving preview)
   const style: React.CSSProperties = {

@@ -22,6 +22,13 @@
       "when": 1764869221716,
       "tag": "0002_remove_auto_uuid_v4",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764888328778,
+      "tag": "0003_migrate_task_to_duration",
+      "breakpoints": true
     }
   ]
 }
