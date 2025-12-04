@@ -13,9 +13,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "catalog:",
-    "googleapis": "^166.0.0",
-    "is-stream": "^3.0.0"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@kompose/config": "workspace:*"

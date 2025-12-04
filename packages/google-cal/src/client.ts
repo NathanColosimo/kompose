@@ -71,7 +71,7 @@ export class GoogleApiError extends Data.TaggedError("GoogleApiError")<{
 
 // -- Implementation --
 
-const make = (accessToken: string): GoogleCalendarService => {
+function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
   const client = new GoogleCalendarClient({ accessToken });
 
   // --- Calendar Methods ---
@@ -212,4 +212,4 @@ const make = (accessToken: string): GoogleCalendarService => {
 // -- Layer --
 
 export const GoogleCalendarLive = (accessToken: string) =>
-  Layer.succeed(GoogleCalendar, make(accessToken));
+  Layer.succeed(GoogleCalendar, makeGoogleCalendarService(accessToken));
