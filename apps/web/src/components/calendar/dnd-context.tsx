@@ -149,6 +149,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   return (
     <DndContext
+      autoScroll={false}
       collisionDetection={closestCenter}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}

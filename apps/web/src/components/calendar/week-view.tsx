@@ -228,9 +228,9 @@ export function WeekView({ tasks }: WeekViewProps) {
           </div>
         </div>
 
-        {/* Scrollable day columns - horizontal (snap) + vertical */}
+        {/* Scrollable day columns - horizontal (snap) + vertical, scrollbar hidden */}
         <div
-          className="min-h-0 flex-1 overflow-auto"
+          className="min-h-0 flex-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onScroll={handleScroll}
           ref={scrollRef}
           style={{ scrollSnapType: "x mandatory" }}
