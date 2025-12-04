@@ -5,9 +5,6 @@ import { format, setHours, setMinutes } from "date-fns";
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 
-/** Grid always shows full 24 hours (0-23), scrollable to show ~12 at a time */
-export const CALENDAR_START_HOUR = 0;
-
 /** Regex for parsing slot IDs - moved to top level for performance */
 const SLOT_ID_REGEX = /^slot-(\d{4}-\d{2}-\d{2})-(\d+)-(\d+)$/;
 
@@ -69,21 +66,28 @@ export const TimeSlot = memo(function TimeSlotInner({
 type DayColumnProps = {
   /** The date for this column */
   date: Date;
+  /** Width of the column (CSS value) */
+  width: string;
   /** Scheduled tasks/events that fall on this day */
   children?: React.ReactNode;
 };
 
 /**
  * DayColumn - A single day column containing all time slots for that day.
+ * Uses fixed width and scroll-snap-align for horizontal scroll snapping.
  */
 export const DayColumn = memo(function DayColumnInner({
   date,
+  width,
   children,
 }: DayColumnProps) {
   const hours = getHoursRange();
 
   return (
-    <div className="relative flex flex-1 flex-col border-border border-r last:border-r-0">
+    <div
+      className="relative flex shrink-0 flex-col border-border border-r"
+      style={{ width, scrollSnapAlign: "start" }}
+    >
       {/* Time slots for each hour (2 slots per hour = 30min granularity) */}
       {hours.map((hour) => (
         <div className="relative" key={hour}>
@@ -138,21 +142,26 @@ type DayHeaderProps = {
   date: Date;
   /** Whether this day is today */
   isToday: boolean;
+  /** Width of the header (CSS value) */
+  width: string;
 };
 
 /**
  * DayHeader - Header cell showing day name and date number.
+ * Uses fixed width and scroll-snap-align to stay aligned with day columns.
  */
 export const DayHeader = memo(function DayHeaderInner({
   date,
   isToday,
+  width,
 }: DayHeaderProps) {
   return (
     <div
       className={cn(
-        "flex flex-1 flex-col items-center justify-center border-border border-r py-2 last:border-r-0",
+        "flex shrink-0 flex-col items-center justify-center border-border border-r py-2",
         isToday ? "bg-primary/5" : ""
       )}
+      style={{ width, scrollSnapAlign: "start" }}
     >
       <span className="font-medium text-muted-foreground text-xs uppercase">
         {format(date, "EEE")}

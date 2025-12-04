@@ -2,10 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { addWeeks, format, startOfToday, subWeeks } from "date-fns";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
-import { currentDateAtom } from "@/atoms/current-date";
+import { useCallback, useState } from "react";
+import { bufferCenterAtom, currentDateAtom } from "@/atoms/current-date";
 import { WeekView } from "@/components/calendar/week-view";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -20,23 +20,33 @@ import { orpc } from "@/utils/orpc";
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const setBufferCenter = useSetAtom(bufferCenterAtom);
 
   // Fetch all tasks for the calendar
   const { data: tasks = [], isLoading } = useQuery(
     orpc.tasks.list.queryOptions()
   );
 
+  // Navigate to a specific date (updates both currentDate and buffer center)
+  const navigateToDate = useCallback(
+    (date: Date) => {
+      setCurrentDate(date);
+      setBufferCenter(date);
+    },
+    [setCurrentDate, setBufferCenter]
+  );
+
   // Navigation helpers for week
   const goToPreviousWeek = () => {
-    setCurrentDate(subWeeks(currentDate, 1));
+    navigateToDate(subWeeks(currentDate, 1));
   };
 
   const goToNextWeek = () => {
-    setCurrentDate(addWeeks(currentDate, 1));
+    navigateToDate(addWeeks(currentDate, 1));
   };
 
   const goToToday = () => {
-    setCurrentDate(startOfToday());
+    navigateToDate(startOfToday());
   };
 
   return (
@@ -86,7 +96,19 @@ export default function Page() {
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const setBufferCenter = useSetAtom(bufferCenterAtom);
   const [open, setOpen] = useState(false);
+
+  const handleDateSelect = useCallback(
+    (date: Date | undefined) => {
+      if (date) {
+        setCurrentDate(date);
+        setBufferCenter(date);
+      }
+      setOpen(false);
+    },
+    [setCurrentDate, setBufferCenter]
+  );
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -104,10 +126,7 @@ function DatePopover() {
         <Calendar
           captionLayout="dropdown"
           mode="single"
-          onSelect={(date) => {
-            setCurrentDate(date);
-            setOpen(false);
-          }}
+          onSelect={handleDateSelect}
           required
           selected={currentDate}
         />

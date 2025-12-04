@@ -1,10 +1,16 @@
 "use client";
 
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { isToday } from "date-fns";
-import { useAtomValue } from "jotai";
-import { useEffect, useMemo, useRef } from "react";
-import { weekDaysAtom } from "@/atoms/current-date";
+import { format, isToday } from "date-fns";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  bufferCenterAtom,
+  bufferedDaysAtom,
+  currentDateAtom,
+  DAYS_BUFFER,
+  VISIBLE_DAYS,
+} from "@/atoms/current-date";
 import { CalendarEvent } from "./calendar-event";
 import { DayColumn, DayHeader, TimeGutter } from "./time-grid";
 
@@ -14,25 +20,146 @@ const PIXELS_PER_HOUR = 80;
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
 
+/** Debounce delay for scroll end detection (ms) */
+const SCROLL_DEBOUNCE_MS = 150;
+
+/** Threshold for shifting buffer (days from edge) */
+const BUFFER_SHIFT_THRESHOLD = 7;
+
 type WeekViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
   tasks: TaskSelect[];
 };
 
 /**
- * WeekView - The main calendar week grid displaying 7 days with time slots.
- * Renders scheduled tasks as positioned CalendarEvent blocks.
+ * WeekView - The main calendar week grid with infinite horizontal scroll.
+ * Renders buffered days with CSS scroll-snap for snap-to-day behavior.
  */
 export function WeekView({ tasks }: WeekViewProps) {
-  const weekDays = useAtomValue(weekDaysAtom);
+  const bufferedDays = useAtomValue(bufferedDaysAtom);
+  const setBufferCenter = useSetAtom(bufferCenterAtom);
+  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const isInitialMountRef = useRef(true);
 
-  // Scroll to 8am on mount
+  // Initial scroll to center (current date) and 8am on mount
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
+    if (!(scrollRef.current && isInitialMountRef.current)) {
+      return;
     }
-  }, []);
+
+    // Scroll vertically to 8am
+    scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
+
+    // Scroll horizontally to show buffer center (current date is at index DAYS_BUFFER)
+    const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
+    const targetScrollLeft = DAYS_BUFFER * dayWidth;
+    scrollRef.current.scrollLeft = targetScrollLeft;
+
+    if (headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = targetScrollLeft;
+    }
+
+    isInitialMountRef.current = false;
+  }, [bufferedDays.length]);
+
+  // When bufferCenter changes (external navigation), scroll to show the new center
+  // We use bufferedDays[DAYS_BUFFER] as the dependency since it IS the center date
+  const centerDate = bufferedDays[DAYS_BUFFER];
+  const centerDateKey = centerDate ? format(centerDate, "yyyy-MM-dd") : "";
+  const prevCenterRef = useRef(centerDateKey);
+
+  useEffect(() => {
+    if (!scrollRef.current || isInitialMountRef.current) {
+      return;
+    }
+
+    // Only scroll if the center actually changed (external navigation)
+    if (centerDateKey === prevCenterRef.current) {
+      return;
+    }
+    prevCenterRef.current = centerDateKey;
+
+    // Buffer center is always at index DAYS_BUFFER
+    const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
+    const targetScrollLeft = DAYS_BUFFER * dayWidth;
+
+    scrollRef.current.scrollTo({
+      left: targetScrollLeft,
+      behavior: "smooth",
+    });
+  }, [centerDateKey, bufferedDays.length]);
+
+  // Sync header scroll with body scroll and update currentDate on scroll end
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) {
+      return;
+    }
+
+    // Sync horizontal scroll between header and body
+    if (headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = scrollRef.current.scrollLeft;
+    }
+
+    // Debounce scroll end detection to update currentDate
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (!scrollRef.current) {
+        return;
+      }
+
+      // Calculate which day is at the left edge
+      const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
+      const scrollLeft = scrollRef.current.scrollLeft;
+      const dayIndex = Math.round(scrollLeft / dayWidth);
+      const newCurrentDate = bufferedDays[dayIndex];
+
+      if (!newCurrentDate) {
+        return;
+      }
+
+      // Update currentDate for display purposes (date picker, header)
+      if (
+        format(newCurrentDate, "yyyy-MM-dd") !==
+        format(currentDate, "yyyy-MM-dd")
+      ) {
+        setCurrentDate(newCurrentDate);
+      }
+
+      // Shift buffer if we're getting close to the edges
+      const daysFromCenter = dayIndex - DAYS_BUFFER;
+      if (Math.abs(daysFromCenter) > DAYS_BUFFER - BUFFER_SHIFT_THRESHOLD) {
+        // Shift buffer center to keep us near the middle
+        setBufferCenter(newCurrentDate);
+        // Scroll to new center position after buffer shifts
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            const newDayWidth =
+              scrollRef.current.scrollWidth / bufferedDays.length;
+            scrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
+            if (headerScrollRef.current) {
+              headerScrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
+            }
+          }
+        });
+      }
+    }, SCROLL_DEBOUNCE_MS);
+  }, [bufferedDays, currentDate, setCurrentDate, setBufferCenter]);
+
+  // Cleanup timeout on unmount
+  useEffect(
+    () => () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   // Filter to only tasks that have startTime (scheduled tasks)
   const scheduledTasks = useMemo(
@@ -44,17 +171,19 @@ export function WeekView({ tasks }: WeekViewProps) {
   const tasksByDay = useMemo(() => {
     const grouped = new Map<string, TaskSelect[]>();
 
-    for (const day of weekDays) {
-      const dayKey = day.toISOString().split("T")[0];
+    // Initialize all buffered days
+    for (const day of bufferedDays) {
+      const dayKey = format(day, "yyyy-MM-dd");
       grouped.set(dayKey, []);
     }
 
+    // Group tasks into their respective days
     for (const task of scheduledTasks) {
       if (!task.startTime) {
         continue;
       }
       const taskDate = new Date(task.startTime);
-      const dayKey = taskDate.toISOString().split("T")[0];
+      const dayKey = format(taskDate, "yyyy-MM-dd");
       const dayTasks = grouped.get(dayKey);
       if (dayTasks) {
         dayTasks.push(task);
@@ -62,46 +191,102 @@ export function WeekView({ tasks }: WeekViewProps) {
     }
 
     return grouped;
-  }, [weekDays, scheduledTasks]);
+  }, [bufferedDays, scheduledTasks]);
+
+  // Calculate total width as percentage (each day is 100/VISIBLE_DAYS % of viewport)
+  const totalWidthPercent = (bufferedDays.length / VISIBLE_DAYS) * 100;
+
+  // Each day column width as percentage of the parent container (not viewport)
+  const dayColumnWidth = `${100 / bufferedDays.length}%`;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Fixed header row with day names and dates */}
-      <div className="flex shrink-0 border-b bg-background">
+    <div className="flex h-full">
+      {/* Fixed time gutter column */}
+      <div className="flex w-16 shrink-0 flex-col border-r bg-background">
         {/* Empty corner cell above time gutter */}
-        <div className="w-16 shrink-0 border-r" />
-        {/* Day headers */}
-        {weekDays.map((day) => (
-          <DayHeader
-            date={day}
-            isToday={isToday(day)}
-            key={day.toISOString()}
-          />
-        ))}
-      </div>
-
-      {/* Scrollable time grid area - only this part scrolls */}
-      <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
-        <div className="flex">
-          {/* Time gutter (hours column) */}
-          <TimeGutter className="border-r" />
-
-          {/* Day columns */}
-          {weekDays.map((day) => {
-            const dayKey = day.toISOString().split("T")[0];
-            const dayTasks = tasksByDay.get(dayKey) ?? [];
-
-            return (
-              <DayColumn date={day} key={day.toISOString()}>
-                {/* Render positioned events for this day */}
-                {dayTasks.map((task) => (
-                  <CalendarEvent key={task.id} task={task} />
-                ))}
-              </DayColumn>
-            );
-          })}
+        <div className="h-[72px] shrink-0 border-b" />
+        {/* Time gutter - scrolls vertically with the body */}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <TimeGutterSynced scrollRef={scrollRef} />
         </div>
       </div>
+
+      {/* Main scrollable area (horizontal + vertical) */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Header row - horizontally scrollable (synced with body) */}
+        <div
+          className="shrink-0 overflow-hidden border-b bg-background"
+          ref={headerScrollRef}
+        >
+          <div className="flex" style={{ width: `${totalWidthPercent}%` }}>
+            {bufferedDays.map((day) => (
+              <DayHeader
+                date={day}
+                isToday={isToday(day)}
+                key={format(day, "yyyy-MM-dd")}
+                width={dayColumnWidth}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Scrollable day columns - horizontal (snap) + vertical */}
+        <div
+          className="min-h-0 flex-1 overflow-auto"
+          onScroll={handleScroll}
+          ref={scrollRef}
+          style={{ scrollSnapType: "x mandatory" }}
+        >
+          <div className="flex" style={{ width: `${totalWidthPercent}%` }}>
+            {bufferedDays.map((day) => {
+              const dayKey = format(day, "yyyy-MM-dd");
+              const dayTasks = tasksByDay.get(dayKey) ?? [];
+
+              return (
+                <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
+                  {dayTasks.map((task) => (
+                    <CalendarEvent key={task.id} task={task} />
+                  ))}
+                </DayColumn>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * TimeGutterSynced - Time gutter that syncs its vertical scroll with the main scroll area.
+ */
+function TimeGutterSynced({
+  scrollRef,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const gutterRef = useRef<HTMLDivElement>(null);
+
+  // Sync vertical scroll position with main scroll area
+  useEffect(() => {
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (gutterRef.current) {
+        gutterRef.current.scrollTop = scrollContainer.scrollTop;
+      }
+    };
+
+    scrollContainer.addEventListener("scroll", handleScroll);
+    return () => scrollContainer.removeEventListener("scroll", handleScroll);
+  }, [scrollRef]);
+
+  return (
+    <div className="h-full overflow-hidden" ref={gutterRef}>
+      <TimeGutter />
     </div>
   );
 }
