@@ -29,6 +29,8 @@ type TimeSlotProps = {
   minutes: number;
   /** Children (CalendarEvents) to render inside this slot */
   children?: React.ReactNode;
+  /** Whether this slot should be droppable (offscreen slots stay disabled) */
+  droppableDisabled?: boolean;
 };
 
 /**
@@ -41,6 +43,7 @@ export const TimeSlot = memo(function TimeSlotInner({
   hour,
   minutes,
   children,
+  droppableDisabled,
 }: TimeSlotProps) {
   const slotId = `slot-${format(date, "yyyy-MM-dd")}-${hour}-${minutes}`;
 
@@ -51,6 +54,8 @@ export const TimeSlot = memo(function TimeSlotInner({
       hour,
       minutes,
     },
+    // Avoid measuring / subscribing offscreen slots to reduce DnD work
+    disabled: droppableDisabled,
   });
 
   const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
@@ -76,6 +81,8 @@ type DayColumnProps = {
   width: string;
   /** Scheduled tasks/events that fall on this day */
   children?: React.ReactNode;
+  /** Whether to disable droppables for this day's slots */
+  droppableDisabled?: boolean;
 };
 
 /**
@@ -86,6 +93,7 @@ export const DayColumn = memo(function DayColumnInner({
   date,
   width,
   children,
+  droppableDisabled = false,
 }: DayColumnProps) {
   const hours = getHoursRange();
   const isTodayColumn = isToday(date);
@@ -99,7 +107,13 @@ export const DayColumn = memo(function DayColumnInner({
       {hours.map((hour) => (
         <div className="relative" key={hour}>
           {[0, 15, 30, 45].map((minutes) => (
-            <TimeSlot date={date} hour={hour} key={minutes} minutes={minutes} />
+            <TimeSlot
+              date={date}
+              droppableDisabled={droppableDisabled}
+              hour={hour}
+              key={minutes}
+              minutes={minutes}
+            />
           ))}
         </div>
       ))}

@@ -6,7 +6,7 @@ import {
   type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Console, Data, Effect } from "effect";
+import { Data, Effect } from "effect";
 import { requireAuth } from "../..";
 import { googleCalContract } from "./contract";
 
@@ -87,7 +87,6 @@ export const os = implement(googleCalContract).use(requireAuth);
 export const googleCalRouter = os.router({
   calendars: {
     list: os.calendars.list.handler(({ input, context }) => {
-      Console.log("listCalendars input:", input);
       const program = Effect.gen(function* () {
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,

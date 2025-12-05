@@ -97,7 +97,7 @@ export function CreateTaskForm() {
             <Label htmlFor="durationMinutes">Duration (minutes)</Label>
             <Input
               id="durationMinutes"
-              min={1}
+              min={5}
               step={5}
               type="number"
               {...register("durationMinutes", { valueAsNumber: true })}

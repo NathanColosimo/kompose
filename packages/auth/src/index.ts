@@ -18,7 +18,7 @@ export const auth = betterAuth<BetterAuthOptions>({
   },
   socialProviders: {
     google: {
-      prompt: "select_account",
+      prompt: "select_account consent",
       accessType: "offline",
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,

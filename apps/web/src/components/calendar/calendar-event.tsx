@@ -2,6 +2,7 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { format } from "date-fns";
 import { memo } from "react";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ export const CalendarEvent = memo(function CalendarEventInner({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `event-${task.id}`,
     data: {
-      type: "event",
+      type: "task",
       task,
     },
   });
@@ -84,3 +85,90 @@ export function CalendarEventPreview({ task }: { task: TaskSelect }) {
     </div>
   );
 }
+
+/**
+ * GoogleCalendarEvent - Non-draggable block for Google Calendar events.
+ * Uses the same positioning helper as tasks but stays pointer-passive for DnD.
+ */
+export const GoogleCalendarEvent = memo(function GoogleCalendarEventMemo({
+  event,
+  start,
+  end,
+  accountId,
+  calendarId,
+}: {
+  event: GoogleEvent;
+  start: Date;
+  end: Date;
+  accountId: string;
+  calendarId: string;
+}) {
+  const durationMinutes = Math.max(
+    1,
+    (end.getTime() - start.getTime()) / (60 * 1000)
+  );
+
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `google-event-${calendarId}-${event.id}`,
+    data: {
+      type: "google-event",
+      event,
+      accountId,
+      calendarId,
+      start,
+      end,
+    },
+  });
+
+  const { top, height } = calculateEventPosition(start, durationMinutes);
+
+  const style: React.CSSProperties = {
+    position: "absolute",
+    top,
+    height,
+    left: "2px",
+    right: "2px",
+  };
+
+  return (
+    <div
+      className={cn(
+        "pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "hover:shadow-md",
+        isDragging ? "opacity-0" : ""
+      )}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+    >
+      <div className="truncate font-medium text-xs">
+        {event.summary ?? "Google event"}
+      </div>
+      <div className="truncate text-[10px] opacity-85">
+        {format(start, "h:mm a")} - {format(end, "h:mm a")}
+      </div>
+    </div>
+  );
+});
+
+export const GoogleCalendarEventPreview = memo(
+  function GoogleCalendarEventPreviewMemo({
+    event,
+    start,
+  }: {
+    event: GoogleEvent;
+    start: Date;
+  }) {
+    return (
+      <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
+        <div className="truncate font-medium text-xs">
+          {event.summary ?? "Google event"}
+        </div>
+        <div className="truncate text-[10px] opacity-80">
+          {format(start, "h:mm a")}
+        </div>
+      </div>
+    );
+  }
+);

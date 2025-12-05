@@ -12,10 +12,14 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { orpc } from "@/utils/orpc";
-import { CalendarEventPreview } from "./calendar-event";
+import {
+  CalendarEventPreview,
+  GoogleCalendarEventPreview,
+} from "./calendar-event";
 import { PIXELS_PER_HOUR } from "./constants";
 import { parseSlotId } from "./time-grid";
 
@@ -23,19 +27,41 @@ type CalendarDndProviderProps = {
   children: React.ReactNode;
 };
 
+type PreviewRect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
+
+type DragData =
+  | {
+      type: "task";
+      task: TaskSelect;
+    }
+  | {
+      type: "google-event";
+      event: GoogleEvent;
+      accountId: string;
+      calendarId: string;
+      start: Date;
+      end: Date;
+    };
+
 /**
  * CalendarDndProvider - Wraps the calendar and sidebar with DnD context.
  * Handles drag events and task scheduling mutations.
  */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [activeTask, setActiveTask] = useState<TaskSelect | null>(null);
-  const [previewRect, setPreviewRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null>(null);
+  const [activeGoogleEvent, setActiveGoogleEvent] = useState<
+    (DragData & { type: "google-event" }) | null
+  >(null);
+  const [previewRect, setPreviewRect] = useState<PreviewRect | null>(null);
+  const previewFrameRef = useRef<number | null>(null);
+  const pendingPreviewRef = useRef<PreviewRect | null>(null);
   const queryClient = useQueryClient();
+  const stableChildren = useMemo(() => children, [children]);
 
   // Configure sensors for drag detection
   const sensors = useSensors(
@@ -91,11 +117,48 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     },
   });
 
+  const updateGoogleEventMutation = useMutation({
+    ...orpc.googleCal.events.update.mutationOptions(),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
+    },
+  });
+
+  const buildGoogleUpdatePayload = useCallback(
+    (event: GoogleEvent, start: Date, end: Date) => {
+      const {
+        id: _id,
+        htmlLink: _htmlLink,
+        organizer: _organizer,
+        ...rest
+      } = event;
+
+      return {
+        ...rest,
+        start: {
+          ...event.start,
+          dateTime: start.toISOString(),
+          date: undefined,
+        },
+        end: { ...event.end, dateTime: end.toISOString(), date: undefined },
+      };
+    },
+    []
+  );
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
-    const task = active.data.current?.task as TaskSelect | undefined;
-    if (task) {
-      setActiveTask(task);
+    const data = active.data.current as DragData | undefined;
+
+    if (data?.type === "task" && data.task) {
+      setActiveTask(data.task);
+      setActiveGoogleEvent(null);
+      return;
+    }
+
+    if (data?.type === "google-event") {
+      setActiveGoogleEvent(data);
+      setActiveTask(null);
     }
   }, []);
 
@@ -104,7 +167,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const { active, over } = event;
 
       setActiveTask(null);
+      setActiveGoogleEvent(null);
       setPreviewRect(null);
+      pendingPreviewRef.current = null;
+      if (previewFrameRef.current !== null) {
+        cancelAnimationFrame(previewFrameRef.current);
+        previewFrameRef.current = null;
+      }
 
       // No valid drop target
       if (!over) {
@@ -124,29 +193,56 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // Get the task being dragged
-      const task = active.data.current?.task as TaskSelect | undefined;
-      if (!task) {
+      const data = active.data.current as DragData | undefined;
+      if (!data) {
         return;
       }
 
-      // Preserve existing duration when re-scheduling
-      const durationMinutes = task.durationMinutes;
+      if (data.type === "task") {
+        const task = data.task;
+        const durationMinutes = task.durationMinutes;
 
-      // Update the task with new schedule
-      updateTaskMutation.mutate({
-        id: task.id,
-        task: {
-          startTime: targetDateTime,
-          durationMinutes,
-        },
-      });
+        updateTaskMutation.mutate({
+          id: task.id,
+          task: {
+            startTime: targetDateTime,
+            durationMinutes,
+          },
+        });
+        return;
+      }
+
+      if (data.type === "google-event") {
+        const durationMinutes =
+          (data.end.getTime() - data.start.getTime()) / (60 * 1000);
+        const newEnd = new Date(
+          targetDateTime.getTime() + durationMinutes * 60 * 1000
+        );
+
+        const payload = buildGoogleUpdatePayload(
+          data.event,
+          targetDateTime,
+          newEnd
+        );
+
+        updateGoogleEventMutation.mutate({
+          accountId: data.accountId,
+          calendarId: data.calendarId,
+          eventId: data.event.id,
+          event: payload,
+        });
+      }
     },
-    [updateTaskMutation]
+    [buildGoogleUpdatePayload, updateGoogleEventMutation, updateTaskMutation]
   );
 
   const handleDragCancel = useCallback(() => {
     setActiveTask(null);
+    pendingPreviewRef.current = null;
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
     setPreviewRect(null);
   }, []);
 
@@ -155,30 +251,50 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
     if (!(over && active)) {
       setPreviewRect(null);
+      pendingPreviewRef.current = null;
       return;
     }
 
-    const task = active.data.current?.task as TaskSelect | undefined;
-    if (!task) {
-      setPreviewRect(null);
-      return;
-    }
+    const data = active.data.current as DragData | undefined;
 
     const overRect = over.rect;
-    if (!overRect) {
+    if (!(overRect && data)) {
       setPreviewRect(null);
+      pendingPreviewRef.current = null;
       return;
     }
 
-    const durationMinutes = task.durationMinutes;
+    let durationMinutes: number | null = null;
+
+    if (data.type === "task") {
+      durationMinutes = data.task.durationMinutes;
+    } else if (data.type === "google-event") {
+      durationMinutes =
+        (data.end.getTime() - data.start.getTime()) / (60 * 1000);
+    }
+
+    if (durationMinutes === null) {
+      setPreviewRect(null);
+      pendingPreviewRef.current = null;
+      return;
+    }
+
     const height = (durationMinutes / 60) * PIXELS_PER_HOUR;
 
-    setPreviewRect({
+    pendingPreviewRef.current = {
       top: overRect.top,
       left: overRect.left,
       width: overRect.width,
       height,
-    });
+    };
+
+    if (previewFrameRef.current === null) {
+      previewFrameRef.current = requestAnimationFrame(() => {
+        previewFrameRef.current = null;
+        setPreviewRect(pendingPreviewRef.current);
+        pendingPreviewRef.current = null;
+      });
+    }
   }, []);
 
   return (
@@ -191,7 +307,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      {children}
+      {stableChildren}
 
       {/* Drop preview outline showing the eventual placement and duration */}
       {previewRect ? (
@@ -210,6 +326,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       {/* Drag overlay for smooth preview during drag */}
       <DragOverlay dropAnimation={null}>
         {activeTask ? <CalendarEventPreview task={activeTask} /> : null}
+        {!activeTask && activeGoogleEvent ? (
+          <GoogleCalendarEventPreview
+            event={activeGoogleEvent.event}
+            start={activeGoogleEvent.start}
+          />
+        ) : null}
       </DragOverlay>
     </DndContext>
   );
