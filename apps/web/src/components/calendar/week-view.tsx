@@ -1,38 +1,24 @@
 "use client";
 
-import { useDndMonitor } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { format, isToday } from "date-fns";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import {
   memo,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  bufferCenterAtom,
-  bufferedDaysAtom,
-  currentDateAtom,
-  DAYS_BUFFER,
-  VISIBLE_DAYS,
-} from "@/atoms/current-date";
+import { weekDaysAtom } from "@/atoms/current-date";
 import { CalendarEvent, GoogleCalendarEvent } from "./calendar-event";
 import { PIXELS_PER_HOUR } from "./constants";
 import { DayColumn, DayHeader, TimeGutter } from "./time-grid";
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
-
-/** Debounce delay for scroll end detection (ms) */
-const SCROLL_DEBOUNCE_MS = 150;
-
-/** Threshold for shifting buffer (days from edge) */
-const BUFFER_SHIFT_THRESHOLD = VISIBLE_DAYS;
 
 type WeekViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
@@ -138,79 +124,26 @@ function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
 }
 
 /**
- * WeekView - The main calendar week grid with infinite horizontal scroll.
- * Renders buffered days with CSS scroll-snap for snap-to-day behavior.
+ * WeekView - Fixed 7-day view starting from the current date. No horizontal scroll.
  */
 export const WeekView = memo(function WeekViewComponent({
   tasks,
   googleEvents = [],
   showGoogleEvents = false,
 }: WeekViewProps) {
-  const bufferedDays = useAtomValue(bufferedDaysAtom);
-  const setBufferCenter = useSetAtom(bufferCenterAtom);
-  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const weekDays = useAtomValue(weekDaysAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
-  // Prevent flicker by pausing scroll-derived updates during programmatic scrolls
-  const suppressScrollHandlingRef = useRef(false);
-  const programmaticScrollTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
-  const isInitialMountRef = useRef(true);
-  const [isDraggingEvent, setIsDraggingEvent] = useState(false);
-
-  // Track active drags so we can pause all auto-scroll/snap behavior mid-drag
-  useDndMonitor({
-    onDragStart: ({ active }) => {
-      const data = active.data.current as { type?: string } | undefined;
-      if (data?.type === "task" || data?.type === "google-event") {
-        setIsDraggingEvent(true);
-      }
-    },
-    onDragCancel: () => {
-      setIsDraggingEvent(false);
-    },
-    onDragEnd: () => {
-      setIsDraggingEvent(false);
-    },
-  });
-
-  // Initial scroll to center (current date) and 8am on mount
-  // useLayoutEffect ensures the initial scroll positioning happens before paint,
-  // so users never see the buffer jump from midnight to 8am or the wrong day.
-  useLayoutEffect(() => {
-    if (!(scrollRef.current && isInitialMountRef.current)) {
-      return;
-    }
-
-    suppressScrollHandlingRef.current = true;
-
-    // Scroll vertically to 8am
-    scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
-
-    // Scroll horizontally to show buffer center (current date is at index DAYS_BUFFER)
-    const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
-    const targetScrollLeft = DAYS_BUFFER * dayWidth;
-    scrollRef.current.scrollLeft = targetScrollLeft;
-
-    if (headerScrollRef.current) {
-      headerScrollRef.current.scrollLeft = targetScrollLeft;
-    }
-
-    // Allow scroll handling after the initial positioning settles
-    programmaticScrollTimeoutRef.current = setTimeout(() => {
-      suppressScrollHandlingRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-    }, SCROLL_DEBOUNCE_MS);
-
-    isInitialMountRef.current = false;
-  }, [bufferedDays.length]);
-
-  // Track header height (dates + all-day row) to align the gutter corner
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
 
+  // Scroll vertically to 8am on mount for a sensible default view
+  useLayoutEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
+    }
+  }, []);
+
+  // Track header height (dates + all-day row) to align the gutter corner
   useLayoutEffect(() => {
     const node = headerContainerRef.current;
     if (!node) {
@@ -225,138 +158,6 @@ export const WeekView = memo(function WeekViewComponent({
     return () => observer.disconnect();
   }, []);
 
-  // When bufferCenter changes (external navigation), scroll to show the new center
-  // We use bufferedDays[DAYS_BUFFER] as the dependency since it IS the center date
-  const centerDate = bufferedDays[DAYS_BUFFER];
-  const centerDateKey = centerDate ? format(centerDate, "yyyy-MM-dd") : "";
-  const prevCenterRef = useRef(centerDateKey);
-
-  // Keep the buffer center aligned before the browser paints to avoid header flicker
-  useLayoutEffect(() => {
-    if (!scrollRef.current || isInitialMountRef.current) {
-      return;
-    }
-
-    // Only scroll if the center actually changed (external navigation)
-    if (centerDateKey === prevCenterRef.current) {
-      return;
-    }
-    prevCenterRef.current = centerDateKey;
-
-    // Buffer center is always at index DAYS_BUFFER
-    const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
-    const targetScrollLeft = DAYS_BUFFER * dayWidth;
-
-    suppressScrollHandlingRef.current = true;
-    scrollRef.current.scrollTo({
-      left: targetScrollLeft,
-      behavior: "auto", // avoid cross-rail animation; keep header/grid in lockstep
-    });
-    if (headerScrollRef.current) {
-      headerScrollRef.current.scrollLeft = targetScrollLeft;
-    }
-
-    if (programmaticScrollTimeoutRef.current) {
-      clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-    programmaticScrollTimeoutRef.current = setTimeout(() => {
-      suppressScrollHandlingRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-    }, SCROLL_DEBOUNCE_MS);
-  }, [centerDateKey, bufferedDays.length]);
-
-  const processScrollEnd = useCallback(() => {
-    const container = scrollRef.current;
-    if (!container) {
-      return;
-    }
-
-    // Skip auto-alignment while dragging so the grid never moves unexpectedly
-    if (isDraggingEvent) {
-      return;
-    }
-
-    // During programmatic scrolls, ignore updating currentDate/buffer to avoid flicker
-    if (suppressScrollHandlingRef.current) {
-      return;
-    }
-
-    const dayWidth = container.scrollWidth / bufferedDays.length;
-    const dayIndex = Math.round(container.scrollLeft / dayWidth);
-    const newCurrentDate = bufferedDays[dayIndex];
-
-    if (!newCurrentDate) {
-      return;
-    }
-
-    const newDateKey = format(newCurrentDate, "yyyy-MM-dd");
-    const currentDateKey = format(currentDate, "yyyy-MM-dd");
-
-    if (newDateKey !== currentDateKey) {
-      setCurrentDate(newCurrentDate);
-    }
-
-    // Shift buffer if we're getting close to the edges
-    const daysFromCenter = dayIndex - DAYS_BUFFER;
-    if (Math.abs(daysFromCenter) <= DAYS_BUFFER - BUFFER_SHIFT_THRESHOLD) {
-      return;
-    }
-
-    suppressScrollHandlingRef.current = true;
-    setBufferCenter(newCurrentDate);
-
-    if (programmaticScrollTimeoutRef.current) {
-      clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-    programmaticScrollTimeoutRef.current = setTimeout(() => {
-      suppressScrollHandlingRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-    }, SCROLL_DEBOUNCE_MS);
-  }, [
-    bufferedDays,
-    currentDate,
-    isDraggingEvent,
-    setBufferCenter,
-    setCurrentDate,
-  ]);
-
-  // Sync header scroll with body scroll and update currentDate on scroll end
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) {
-      return;
-    }
-
-    // Sync horizontal scroll between header and body
-    if (headerScrollRef.current) {
-      headerScrollRef.current.scrollLeft = scrollRef.current.scrollLeft;
-    }
-
-    // Avoid kicking off any auto scroll handling while dragging an event
-    if (isDraggingEvent) {
-      return;
-    }
-
-    // Debounce scroll end detection to update currentDate
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-
-    scrollTimeoutRef.current = setTimeout(processScrollEnd, SCROLL_DEBOUNCE_MS);
-  }, [isDraggingEvent, processScrollEnd]);
-
-  // Cleanup timeout on unmount
-  useEffect(
-    () => () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      if (programmaticScrollTimeoutRef.current) {
-        clearTimeout(programmaticScrollTimeoutRef.current);
-      }
-    },
-    []
-  );
-
   // Filter to only tasks that have startTime (scheduled tasks)
   const scheduledTasks = useMemo(
     () => tasks.filter((task) => task.startTime !== null),
@@ -367,13 +168,11 @@ export const WeekView = memo(function WeekViewComponent({
   const tasksByDay = useMemo(() => {
     const grouped = new Map<string, TaskSelect[]>();
 
-    // Initialize all buffered days
-    for (const day of bufferedDays) {
+    for (const day of weekDays) {
       const dayKey = format(day, "yyyy-MM-dd");
       grouped.set(dayKey, []);
     }
 
-    // Group tasks into their respective days
     for (const task of scheduledTasks) {
       if (!task.startTime) {
         continue;
@@ -387,24 +186,21 @@ export const WeekView = memo(function WeekViewComponent({
     }
 
     return grouped;
-  }, [bufferedDays, scheduledTasks]);
+  }, [weekDays, scheduledTasks]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(
     () =>
       buildGoogleEventMaps({
-        bufferedDays,
+        bufferedDays: weekDays,
         googleEvents,
         showGoogleEvents,
       }),
-    [bufferedDays, googleEvents, showGoogleEvents]
+    [weekDays, googleEvents, showGoogleEvents]
   );
 
-  // Calculate total width as percentage (each day is 100/VISIBLE_DAYS % of viewport)
-  const totalWidthPercent = (bufferedDays.length / VISIBLE_DAYS) * 100;
-
-  // Each day column width as percentage of the parent container (not viewport)
-  const dayColumnWidth = `${100 / bufferedDays.length}%`;
+  // Each day column width as percentage of the parent container
+  const dayColumnWidth = `${100 / weekDays.length}%`;
 
   return (
     <div className="flex h-full">
@@ -418,22 +214,18 @@ export const WeekView = memo(function WeekViewComponent({
         </div>
       </div>
 
-      {/* Main scrollable area (horizontal + vertical) */}
+      {/* Main area with vertical scrolling only */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Header row - horizontally scrollable (synced with body) */}
+        {/* Header row */}
         <div
           className="sticky top-0 z-10 shrink-0 overflow-hidden border-b bg-background"
           ref={(node) => {
-            headerScrollRef.current = node;
             headerContainerRef.current = node;
           }}
         >
-          <div
-            className="flex flex-col"
-            style={{ width: `${totalWidthPercent}%` }}
-          >
+          <div className="flex flex-col" style={{ width: "100%" }}>
             <div className="flex">
-              {bufferedDays.map((day) => (
+              {weekDays.map((day) => (
                 <DayHeader
                   date={day}
                   isTodayHighlight={isToday(day)}
@@ -445,7 +237,7 @@ export const WeekView = memo(function WeekViewComponent({
 
             {showGoogleEvents ? (
               <div className="flex border-border border-t border-b bg-background/80">
-                {bufferedDays.map((day) => {
+                {weekDays.map((day) => {
                   const dayKey = format(day, "yyyy-MM-dd");
                   const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
@@ -472,29 +264,19 @@ export const WeekView = memo(function WeekViewComponent({
           </div>
         </div>
 
-        {/* Scrollable day columns - horizontal (snap) + vertical, scrollbar hidden */}
+        {/* Scrollable day columns - vertical only */}
         <div
-          className="min-h-0 flex-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          onScroll={handleScroll}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           ref={scrollRef}
-          style={{ scrollSnapType: isDraggingEvent ? "none" : "x mandatory" }}
         >
-          <div className="flex" style={{ width: `${totalWidthPercent}%` }}>
-            {bufferedDays.map((day, index) => {
+          <div className="flex w-full">
+            {weekDays.map((day) => {
               const dayKey = format(day, "yyyy-MM-dd");
               const dayTasks = tasksByDay.get(dayKey) ?? [];
               const dayGoogleEvents = timedEventsByDay?.get(dayKey) ?? [];
-              // Keep only a small window of droppables enabled to reduce measurement cost
-              const droppableDisabled =
-                Math.abs(index - DAYS_BUFFER) > VISIBLE_DAYS + 1;
 
               return (
-                <DayColumn
-                  date={day}
-                  droppableDisabled={droppableDisabled}
-                  key={dayKey}
-                  width={dayColumnWidth}
-                >
+                <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
                   {showGoogleEvents
                     ? dayGoogleEvents.map(
                         ({ event, start, end, accountId, calendarId }) => (

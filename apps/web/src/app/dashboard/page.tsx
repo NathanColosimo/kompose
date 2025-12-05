@@ -5,21 +5,18 @@ import {
   addDays,
   addWeeks,
   endOfDay,
+  endOfMonth,
   format,
   startOfDay,
+  startOfMonth,
   startOfToday,
   subDays,
   subWeeks,
 } from "date-fns";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  bufferCenterAtom,
-  bufferedDaysAtom,
-  currentDateAtom,
-  DAYS_BUFFER,
-} from "@/atoms/current-date";
+import { useCallback, useMemo, useState } from "react";
+import { currentDateAtom } from "@/atoms/current-date";
 import type { GoogleEventWithSource } from "@/components/calendar/week-view";
 import { WeekView } from "@/components/calendar/week-view";
 import { Button } from "@/components/ui/button";
@@ -35,22 +32,32 @@ import { Switch } from "@/components/ui/switch";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
-const EVENTS_WINDOW_DAYS = 30;
-const EVENTS_WINDOW_MARGIN_DAYS = 5;
+const EVENTS_WINDOW_PADDING_DAYS = 15;
 
 function buildEventWindow(center: Date) {
-  const start = startOfDay(subDays(center, EVENTS_WINDOW_DAYS));
-  const end = endOfDay(addDays(center, EVENTS_WINDOW_DAYS));
-  return { start, end };
+  const monthStart = startOfMonth(center);
+  const start = startOfDay(subDays(monthStart, EVENTS_WINDOW_PADDING_DAYS));
+  const end = endOfDay(
+    addDays(endOfMonth(monthStart), EVENTS_WINDOW_PADDING_DAYS)
+  );
+
+  return { start, end, monthStart };
 }
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const setBufferCenter = useSetAtom(bufferCenterAtom);
-  const bufferedDays = useAtomValue(bufferedDaysAtom);
   const [showGoogleEvents, setShowGoogleEvents] = useState(true);
-  const [eventWindow, setEventWindow] = useState(() =>
-    buildEventWindow(bufferedDays[DAYS_BUFFER] ?? startOfToday())
+  const eventWindow = useMemo(
+    () => buildEventWindow(currentDate),
+    [currentDate]
+  );
+
+  const timeRange = useMemo(
+    () => ({
+      timeMin: eventWindow.start.toISOString(),
+      timeMax: eventWindow.end.toISOString(),
+    }),
+    [eventWindow.end, eventWindow.start]
   );
 
   // Fetch all tasks for the calendar
@@ -67,35 +74,6 @@ export default function Page() {
       return accounts.filter((account) => account.providerId === "google");
     },
   });
-
-  // Expand the events window only when the buffered days approach its edges
-  useEffect(() => {
-    if (!bufferedDays.length) {
-      return;
-    }
-
-    const first = bufferedDays[0];
-    const last = bufferedDays.at(-1);
-
-    if (!last) {
-      return;
-    }
-    const startBuffer = subDays(eventWindow.start, EVENTS_WINDOW_MARGIN_DAYS);
-    const endBuffer = addDays(eventWindow.end, EVENTS_WINDOW_MARGIN_DAYS);
-
-    if (first < startBuffer || last > endBuffer) {
-      const newCenter = bufferedDays[DAYS_BUFFER] ?? first;
-      setEventWindow(buildEventWindow(newCenter));
-    }
-  }, [bufferedDays, eventWindow.end, eventWindow.start]);
-
-  const timeRange = useMemo(
-    () => ({
-      timeMin: eventWindow.start.toISOString(),
-      timeMax: eventWindow.end.toISOString(),
-    }),
-    [eventWindow.end, eventWindow.start]
-  );
 
   // Fetch calendars for each Google account
   const calendarQueries = useQueries({
@@ -165,9 +143,8 @@ export default function Page() {
   const navigateToDate = useCallback(
     (date: Date) => {
       setCurrentDate(date);
-      setBufferCenter(date);
     },
-    [setCurrentDate, setBufferCenter]
+    [setCurrentDate]
   );
 
   // Navigation helpers for week
@@ -248,18 +225,16 @@ export default function Page() {
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const setBufferCenter = useSetAtom(bufferCenterAtom);
   const [open, setOpen] = useState(false);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
         setCurrentDate(date);
-        setBufferCenter(date);
       }
       setOpen(false);
     },
-    [setCurrentDate, setBufferCenter]
+    [setCurrentDate]
   );
 
   return (
