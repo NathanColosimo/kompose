@@ -1,17 +1,34 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { authClient } from "@/lib/auth-client";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const { data: session, isPending } = authClient.useSession();
   const isMobile = useIsMobile();
+
+  // Redirect visitors without an active session back to the homepage.
+  useEffect(() => {
+    if (!(isPending || session)) {
+      router.replace("/");
+    }
+  }, [isPending, router, session]);
+
+  // Avoid rendering dashboard UI while we validate or redirect.
+  if (isPending || !session) {
+    return null;
+  }
 
   // For mobile visitors we skip the heavy dashboard and show a simple placeholder.
   if (isMobile) {

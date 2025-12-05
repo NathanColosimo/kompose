@@ -375,11 +375,12 @@ packages/
 - **Library**: Implemented drag-and-drop using `@dnd-kit/core` and `@dnd-kit/utilities`.
 - **Week View Components** (`apps/web/src/components/calendar/`):
   - **`week-view.tsx`**: Main calendar grid displaying 7 days with all 24 hours.
+    - Fixed 7-day view (no horizontal scroll); vertical scroll only.
     - Scrollable time grid with fixed day headers.
     - Auto-scrolls to 8am on mount.
     - Groups and renders scheduled tasks by day.
   - **`time-grid.tsx`**: Core grid components:
-    - `TimeSlot`: Droppable 30-minute slots (40px height each).
+    - `TimeSlot`: Droppable 15-minute slots (20px height each).
     - `DayColumn`: Vertical column for a single day containing all time slots.
     - `TimeGutter`: Left column showing hour labels (80px per hour).
     - `DayHeader`: Header cell showing day name and date number.
@@ -404,3 +405,8 @@ packages/
   - Generated in backend (`packages/api/src/routers/task/client.ts`) using `uuidv7` package.
   - Drizzle schema updated to not auto-generate UUIDs.
   - API contracts validate with `z.uuidv7()`.
+
+### 6.6 Calendar Event Fetch Window & Caching
+- **Month-anchored fetch window**: Google events fetched in a month-anchored window (start of month ±15 days) to avoid refetching when moving between days in the same month.
+- **Stable query keys**: TanStack Query keys include the month anchor so intra-month navigation reuses cache; crossing into a new month triggers a single refresh.
+- **Simplified layout**: Horizontal buffering/snap removed; week view uses a stable 7-day slice derived from `currentDate`.
