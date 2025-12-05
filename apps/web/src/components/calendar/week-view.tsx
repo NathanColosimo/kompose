@@ -22,7 +22,7 @@ const DEFAULT_SCROLL_HOUR = 8;
 const SCROLL_DEBOUNCE_MS = 150;
 
 /** Threshold for shifting buffer (days from edge) */
-const BUFFER_SHIFT_THRESHOLD = 7;
+const BUFFER_SHIFT_THRESHOLD = VISIBLE_DAYS;
 
 type WeekViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
@@ -40,6 +40,11 @@ export function WeekView({ tasks }: WeekViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+  // Prevent flicker by pausing scroll-derived updates during programmatic scrolls
+  const suppressScrollHandlingRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const isInitialMountRef = useRef(true);
 
   // Initial scroll to center (current date) and 8am on mount
@@ -47,6 +52,8 @@ export function WeekView({ tasks }: WeekViewProps) {
     if (!(scrollRef.current && isInitialMountRef.current)) {
       return;
     }
+
+    suppressScrollHandlingRef.current = true;
 
     // Scroll vertically to 8am
     scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
@@ -59,6 +66,12 @@ export function WeekView({ tasks }: WeekViewProps) {
     if (headerScrollRef.current) {
       headerScrollRef.current.scrollLeft = targetScrollLeft;
     }
+
+    // Allow scroll handling after the initial positioning settles
+    programmaticScrollTimeoutRef.current = setTimeout(() => {
+      suppressScrollHandlingRef.current = false;
+      programmaticScrollTimeoutRef.current = null;
+    }, SCROLL_DEBOUNCE_MS);
 
     isInitialMountRef.current = false;
   }, [bufferedDays.length]);
@@ -84,11 +97,73 @@ export function WeekView({ tasks }: WeekViewProps) {
     const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
     const targetScrollLeft = DAYS_BUFFER * dayWidth;
 
+    suppressScrollHandlingRef.current = true;
     scrollRef.current.scrollTo({
       left: targetScrollLeft,
-      behavior: "smooth",
+      behavior: "auto", // avoid cross-rail animation; keep header/grid in lockstep
     });
+
+    if (programmaticScrollTimeoutRef.current) {
+      clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    programmaticScrollTimeoutRef.current = setTimeout(() => {
+      suppressScrollHandlingRef.current = false;
+      programmaticScrollTimeoutRef.current = null;
+    }, SCROLL_DEBOUNCE_MS);
   }, [centerDateKey, bufferedDays.length]);
+
+  const processScrollEnd = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    // During programmatic scrolls, ignore updating currentDate/buffer to avoid flicker
+    if (suppressScrollHandlingRef.current) {
+      return;
+    }
+
+    const dayWidth = container.scrollWidth / bufferedDays.length;
+    const dayIndex = Math.round(container.scrollLeft / dayWidth);
+    const newCurrentDate = bufferedDays[dayIndex];
+
+    if (!newCurrentDate) {
+      return;
+    }
+
+    const newDateKey = format(newCurrentDate, "yyyy-MM-dd");
+    const currentDateKey = format(currentDate, "yyyy-MM-dd");
+
+    if (newDateKey !== currentDateKey) {
+      setCurrentDate(newCurrentDate);
+    }
+
+    // Shift buffer if we're getting close to the edges
+    const daysFromCenter = dayIndex - DAYS_BUFFER;
+    if (Math.abs(daysFromCenter) <= DAYS_BUFFER - BUFFER_SHIFT_THRESHOLD) {
+      return;
+    }
+
+    suppressScrollHandlingRef.current = true;
+    setBufferCenter(newCurrentDate);
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        const newDayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
+        scrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
+        if (headerScrollRef.current) {
+          headerScrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
+        }
+      }
+    });
+
+    if (programmaticScrollTimeoutRef.current) {
+      clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    programmaticScrollTimeoutRef.current = setTimeout(() => {
+      suppressScrollHandlingRef.current = false;
+      programmaticScrollTimeoutRef.current = null;
+    }, SCROLL_DEBOUNCE_MS);
+  }, [bufferedDays, currentDate, setBufferCenter, setCurrentDate]);
 
   // Sync header scroll with body scroll and update currentDate on scroll end
   const handleScroll = useCallback(() => {
@@ -106,54 +181,17 @@ export function WeekView({ tasks }: WeekViewProps) {
       clearTimeout(scrollTimeoutRef.current);
     }
 
-    scrollTimeoutRef.current = setTimeout(() => {
-      if (!scrollRef.current) {
-        return;
-      }
-
-      // Calculate which day is at the left edge
-      const dayWidth = scrollRef.current.scrollWidth / bufferedDays.length;
-      const scrollLeft = scrollRef.current.scrollLeft;
-      const dayIndex = Math.round(scrollLeft / dayWidth);
-      const newCurrentDate = bufferedDays[dayIndex];
-
-      if (!newCurrentDate) {
-        return;
-      }
-
-      // Update currentDate for display purposes (date picker, header)
-      if (
-        format(newCurrentDate, "yyyy-MM-dd") !==
-        format(currentDate, "yyyy-MM-dd")
-      ) {
-        setCurrentDate(newCurrentDate);
-      }
-
-      // Shift buffer if we're getting close to the edges
-      const daysFromCenter = dayIndex - DAYS_BUFFER;
-      if (Math.abs(daysFromCenter) > DAYS_BUFFER - BUFFER_SHIFT_THRESHOLD) {
-        // Shift buffer center to keep us near the middle
-        setBufferCenter(newCurrentDate);
-        // Scroll to new center position after buffer shifts
-        requestAnimationFrame(() => {
-          if (scrollRef.current) {
-            const newDayWidth =
-              scrollRef.current.scrollWidth / bufferedDays.length;
-            scrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
-            if (headerScrollRef.current) {
-              headerScrollRef.current.scrollLeft = DAYS_BUFFER * newDayWidth;
-            }
-          }
-        });
-      }
-    }, SCROLL_DEBOUNCE_MS);
-  }, [bufferedDays, currentDate, setCurrentDate, setBufferCenter]);
+    scrollTimeoutRef.current = setTimeout(processScrollEnd, SCROLL_DEBOUNCE_MS);
+  }, [processScrollEnd]);
 
   // Cleanup timeout on unmount
   useEffect(
     () => () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
+      }
+      if (programmaticScrollTimeoutRef.current) {
+        clearTimeout(programmaticScrollTimeoutRef.current);
       }
     },
     []

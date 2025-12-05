@@ -28,7 +28,7 @@ export const weekDaysAtom = atom<Date[]>((get) => {
 });
 
 /** Number of days to buffer before and after center date for infinite scroll */
-export const DAYS_BUFFER = 28;
+export const DAYS_BUFFER = 14;
 
 /** Number of days visible in the viewport at once */
 export const VISIBLE_DAYS = 7;
