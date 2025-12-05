@@ -3,7 +3,13 @@
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format, isToday } from "date-fns";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   bufferCenterAtom,
   bufferedDaysAtom,
