@@ -3,7 +3,7 @@
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format, isToday } from "date-fns";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   bufferCenterAtom,
   bufferedDaysAtom,
@@ -48,7 +48,9 @@ export function WeekView({ tasks }: WeekViewProps) {
   const isInitialMountRef = useRef(true);
 
   // Initial scroll to center (current date) and 8am on mount
-  useEffect(() => {
+  // useLayoutEffect ensures the initial scroll positioning happens before paint,
+  // so users never see the buffer jump from midnight to 8am or the wrong day.
+  useLayoutEffect(() => {
     if (!(scrollRef.current && isInitialMountRef.current)) {
       return;
     }
@@ -82,7 +84,8 @@ export function WeekView({ tasks }: WeekViewProps) {
   const centerDateKey = centerDate ? format(centerDate, "yyyy-MM-dd") : "";
   const prevCenterRef = useRef(centerDateKey);
 
-  useEffect(() => {
+  // Keep the buffer center aligned before the browser paints to avoid header flicker
+  useLayoutEffect(() => {
     if (!scrollRef.current || isInitialMountRef.current) {
       return;
     }
@@ -102,6 +105,9 @@ export function WeekView({ tasks }: WeekViewProps) {
       left: targetScrollLeft,
       behavior: "auto", // avoid cross-rail animation; keep header/grid in lockstep
     });
+    if (headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = targetScrollLeft;
+    }
 
     if (programmaticScrollTimeoutRef.current) {
       clearTimeout(programmaticScrollTimeoutRef.current);
