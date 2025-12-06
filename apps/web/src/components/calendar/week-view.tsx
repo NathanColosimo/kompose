@@ -13,9 +13,12 @@ import {
   useState,
 } from "react";
 import { weekDaysAtom } from "@/atoms/current-date";
-import { CalendarEvent, GoogleCalendarEvent } from "./calendar-event";
 import { PIXELS_PER_HOUR } from "./constants";
-import { DayColumn, DayHeader, TimeGutter } from "./time-grid";
+import { GoogleCalendarEvent } from "./events/google-event";
+import { TaskEvent } from "./events/task-event";
+import { DayColumn } from "./time-grid/day-column";
+import { DayHeader } from "./time-grid/day-header";
+import { TimeGutter } from "./time-grid/time-gutter";
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
@@ -292,7 +295,7 @@ export const WeekView = memo(function WeekViewComponent({
                       )
                     : null}
                   {dayTasks.map((task) => (
-                    <CalendarEvent key={task.id} task={task} />
+                    <TaskEvent key={task.id} task={task} />
                   ))}
                 </DayColumn>
               );
