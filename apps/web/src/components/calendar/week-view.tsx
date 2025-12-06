@@ -28,8 +28,6 @@ type WeekViewProps = {
   tasks: TaskSelect[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
-  /** Toggle to show or hide Google events */
-  showGoogleEvents?: boolean;
 };
 
 export type GoogleEventWithSource = {
@@ -55,11 +53,9 @@ function parseDateOnlyLocal(dateStr: string): Date {
 function buildGoogleEventMaps({
   bufferedDays,
   googleEvents,
-  showGoogleEvents,
 }: {
   bufferedDays: Date[];
   googleEvents: GoogleEventWithSource[];
-  showGoogleEvents: boolean;
 }): {
   timedEventsByDay: Map<string, PositionedGoogleEvent[]>;
   allDayEventsByDay: Map<string, AllDayGoogleEvent[]>;
@@ -71,10 +67,6 @@ function buildGoogleEventMaps({
     const key = format(day, "yyyy-MM-dd");
     timed.set(key, []);
     allDay.set(key, []);
-  }
-
-  if (!showGoogleEvents) {
-    return { timedEventsByDay: timed, allDayEventsByDay: allDay };
   }
 
   for (const sourceEvent of googleEvents) {
@@ -132,7 +124,6 @@ function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
 export const WeekView = memo(function WeekViewComponent({
   tasks,
   googleEvents = [],
-  showGoogleEvents = false,
 }: WeekViewProps) {
   const weekDays = useAtomValue(weekDaysAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -197,10 +188,19 @@ export const WeekView = memo(function WeekViewComponent({
       buildGoogleEventMaps({
         bufferedDays: weekDays,
         googleEvents,
-        showGoogleEvents,
       }),
-    [weekDays, googleEvents, showGoogleEvents]
+    [weekDays, googleEvents]
   );
+
+  const hasAllDayEvents = useMemo(
+    () =>
+      Array.from(allDayEventsByDay.values()).some(
+        (eventsForDay) => eventsForDay.length > 0
+      ),
+    [allDayEventsByDay]
+  );
+
+  const hasGoogleEvents = googleEvents.length > 0;
 
   // Each day column width as percentage of the parent container
   const dayColumnWidth = `${100 / weekDays.length}%`;
@@ -238,7 +238,7 @@ export const WeekView = memo(function WeekViewComponent({
               ))}
             </div>
 
-            {showGoogleEvents ? (
+            {hasAllDayEvents ? (
               <div className="flex border-border border-t border-b bg-background/80">
                 {weekDays.map((day) => {
                   const dayKey = format(day, "yyyy-MM-dd");
@@ -280,7 +280,7 @@ export const WeekView = memo(function WeekViewComponent({
 
               return (
                 <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
-                  {showGoogleEvents
+                  {hasGoogleEvents
                     ? dayGoogleEvents.map(
                         ({ event, start, end, accountId, calendarId }) => (
                           <GoogleCalendarEvent
