@@ -60,6 +60,15 @@ type DragData =
       calendarId: string;
       start: Date;
       end: Date;
+    }
+  | {
+      type: "google-event-resize";
+      event: GoogleEvent;
+      accountId: string;
+      calendarId: string;
+      start: Date;
+      end: Date;
+      direction: "start" | "end";
     };
 
 function isSameDayLocal(a: Date, b: Date): boolean {
@@ -128,10 +137,11 @@ function durationInMinutes(
  */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [activeTask, setActiveTask] = useState<TaskSelect | null>(null);
-  const [activeGoogleEvent, setActiveGoogleEvent] = useState<
-    (DragData & { type: "google-event" }) | null
-  >(null);
-  const [isResizingTask, setIsResizingTask] = useState(false);
+  const [activeGoogleEvent, setActiveGoogleEvent] = useState<Extract<
+    DragData,
+    { type: "google-event" | "google-event-resize" }
+  > | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
   const [previewRect, setPreviewRect] = useState<PreviewRect | null>(null);
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
@@ -213,7 +223,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const resetDragState = useCallback(() => {
     setActiveTask(null);
     setActiveGoogleEvent(null);
-    setIsResizingTask(false);
+    setIsResizing(false);
     clearPreview();
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
@@ -327,6 +337,59 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [buildGoogleUpdatePayload, updateGoogleEventMutation]
   );
 
+  const handleGoogleEventResizeDrop = useCallback(
+    ({
+      data,
+      targetDateTime,
+    }: {
+      data: Extract<DragData, { type: "google-event-resize" }>;
+      targetDateTime: Date;
+    }) => {
+      const originalStart = data.start;
+      const originalEnd = data.end;
+
+      if (!isSameDayLocal(originalStart, targetDateTime)) {
+        return;
+      }
+
+      if (data.direction === "start") {
+        const newStart = clampResizeStart(
+          targetDateTime,
+          originalStart,
+          originalEnd
+        );
+        const payload = buildGoogleUpdatePayload(
+          data.event,
+          newStart,
+          originalEnd
+        );
+
+        updateGoogleEventMutation.mutate({
+          accountId: data.accountId,
+          calendarId: data.calendarId,
+          eventId: data.event.id,
+          event: payload,
+        });
+        return;
+      }
+
+      const newEnd = clampResizeEnd(targetDateTime, originalStart);
+      const payload = buildGoogleUpdatePayload(
+        data.event,
+        originalStart,
+        newEnd
+      );
+
+      updateGoogleEventMutation.mutate({
+        accountId: data.accountId,
+        calendarId: data.calendarId,
+        eventId: data.event.id,
+        event: payload,
+      });
+    },
+    [buildGoogleUpdatePayload, updateGoogleEventMutation]
+  );
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     const data = active.data.current as DragData | undefined;
@@ -334,14 +397,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
       setActiveTask(data.task);
       setActiveGoogleEvent(null);
-      setIsResizingTask(data.type === "task-resize");
+      setIsResizing(data.type === "task-resize");
       return;
     }
 
-    if (data?.type === "google-event") {
+    if (data?.type === "google-event" || data?.type === "google-event-resize") {
       setActiveGoogleEvent(data);
       setActiveTask(null);
-      setIsResizingTask(false);
+      setIsResizing(data.type === "google-event-resize");
     }
   }, []);
 
@@ -370,26 +433,33 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      if (data.type === "task") {
-        handleTaskMoveDrop(data.task, targetDateTime);
-        return;
-      }
-
-      if (data.type === "task-resize") {
-        handleTaskResizeDrop({
-          task: data.task,
-          targetDateTime,
-          direction: data.direction,
-        });
-        return;
-      }
-
-      if (data.type === "google-event") {
-        handleGoogleEventDrop(data, targetDateTime);
+      switch (data.type) {
+        case "task":
+          handleTaskMoveDrop(data.task, targetDateTime);
+          return;
+        case "task-resize":
+          handleTaskResizeDrop({
+            task: data.task,
+            targetDateTime,
+            direction: data.direction,
+          });
+          return;
+        case "google-event":
+          handleGoogleEventDrop(data, targetDateTime);
+          return;
+        case "google-event-resize":
+          handleGoogleEventResizeDrop({
+            data,
+            targetDateTime,
+          });
+          return;
+        default:
+          return;
       }
     },
     [
       handleGoogleEventDrop,
+      handleGoogleEventResizeDrop,
       handleTaskMoveDrop,
       handleTaskResizeDrop,
       resetDragState,
@@ -428,6 +498,135 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     []
   );
 
+  const previewTaskMove = useCallback(
+    (
+      data: Extract<DragData, { type: "task" }>,
+      targetDateTime: Date,
+      columnTop: number,
+      overRect: Pick<PreviewRect, "left" | "width">
+    ) => {
+      const durationMinutes = data.task.durationMinutes;
+      const end = new Date(
+        targetDateTime.getTime() + durationMinutes * MS_PER_MINUTE
+      );
+      return buildPreviewRect({
+        start: targetDateTime,
+        end,
+        columnTop,
+        overRect,
+      });
+    },
+    [buildPreviewRect]
+  );
+
+  const previewTaskResize = useCallback(
+    (
+      data: Extract<DragData, { type: "task-resize" }>,
+      targetDateTime: Date,
+      columnTop: number,
+      overRect: Pick<PreviewRect, "left" | "width">
+    ): PreviewRect | null => {
+      if (!data.task.startTime) {
+        return null;
+      }
+
+      const originalStart = new Date(data.task.startTime);
+      const originalEnd = new Date(
+        originalStart.getTime() + data.task.durationMinutes * MS_PER_MINUTE
+      );
+
+      if (!isSameDayLocal(originalStart, targetDateTime)) {
+        return null;
+      }
+
+      if (data.direction === "start") {
+        const newStart = clampResizeStart(
+          targetDateTime,
+          originalStart,
+          originalEnd
+        );
+        return buildPreviewRect({
+          start: newStart,
+          end: originalEnd,
+          columnTop,
+          overRect,
+        });
+      }
+
+      const newEnd = clampResizeEnd(targetDateTime, originalStart);
+      return buildPreviewRect({
+        start: originalStart,
+        end: newEnd,
+        columnTop,
+        overRect,
+      });
+    },
+    [buildPreviewRect]
+  );
+
+  const previewGoogleMove = useCallback(
+    (
+      data: Extract<DragData, { type: "google-event" }>,
+      targetDateTime: Date,
+      columnTop: number,
+      overRect: Pick<PreviewRect, "left" | "width">
+    ) => {
+      const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
+      const end = new Date(
+        targetDateTime.getTime() + eventDurationMinutes * MS_PER_MINUTE
+      );
+      return buildPreviewRect({
+        start: targetDateTime,
+        end,
+        columnTop,
+        overRect,
+        minimum: 1,
+      });
+    },
+    [buildPreviewRect]
+  );
+
+  const previewGoogleResize = useCallback(
+    (
+      data: Extract<DragData, { type: "google-event-resize" }>,
+      targetDateTime: Date,
+      columnTop: number,
+      overRect: Pick<PreviewRect, "left" | "width">
+    ): PreviewRect | null => {
+      const originalStart = data.start;
+      const originalEnd = data.end;
+
+      if (!isSameDayLocal(originalStart, targetDateTime)) {
+        return null;
+      }
+
+      if (data.direction === "start") {
+        const newStart = clampResizeStart(
+          targetDateTime,
+          originalStart,
+          originalEnd
+        );
+        return buildPreviewRect({
+          start: newStart,
+          end: originalEnd,
+          columnTop,
+          overRect,
+          minimum: 1,
+        });
+      }
+
+      const newEnd = clampResizeEnd(targetDateTime, originalStart);
+      return buildPreviewRect({
+        start: originalStart,
+        end: newEnd,
+        columnTop,
+        overRect,
+        minimum: 1,
+      });
+    },
+    [buildPreviewRect]
+  );
+
   const computePreviewForDrag = useCallback(
     (
       data: DragData,
@@ -435,73 +634,24 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
-      if (data.type === "task") {
-        const durationMinutes = data.task.durationMinutes;
-        const end = new Date(
-          targetDateTime.getTime() + durationMinutes * MS_PER_MINUTE
-        );
-        return buildPreviewRect({
-          start: targetDateTime,
-          end,
-          columnTop,
-          overRect,
-        });
-      }
-
-      if (data.type === "task-resize" && data.task.startTime) {
-        const originalStart = new Date(data.task.startTime);
-        const originalEnd = new Date(
-          originalStart.getTime() + data.task.durationMinutes * MS_PER_MINUTE
-        );
-
-        if (!isSameDayLocal(originalStart, targetDateTime)) {
+      switch (data.type) {
+        case "task":
+          return previewTaskMove(data, targetDateTime, columnTop, overRect);
+        case "task-resize":
+          return previewTaskResize(data, targetDateTime, columnTop, overRect);
+        case "google-event":
+          return previewGoogleMove(data, targetDateTime, columnTop, overRect);
+        case "google-event-resize":
+          return previewGoogleResize(data, targetDateTime, columnTop, overRect);
+        default:
           return null;
-        }
-
-        if (data.direction === "start") {
-          const newStart = clampResizeStart(
-            targetDateTime,
-            originalStart,
-            originalEnd
-          );
-          return buildPreviewRect({
-            start: newStart,
-            end: originalEnd,
-            columnTop,
-            overRect,
-          });
-        }
-
-        const newEnd = clampResizeEnd(targetDateTime, originalStart);
-        return buildPreviewRect({
-          start: originalStart,
-          end: newEnd,
-          columnTop,
-          overRect,
-        });
       }
-
-      if (data.type === "google-event") {
-        const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
-        const end = new Date(
-          targetDateTime.getTime() + eventDurationMinutes * MS_PER_MINUTE
-        );
-        return buildPreviewRect({
-          start: targetDateTime,
-          end,
-          columnTop,
-          overRect,
-          minimum: 1,
-        });
-      }
-
-      return null;
     },
-    [buildPreviewRect]
+    [previewGoogleMove, previewGoogleResize, previewTaskMove, previewTaskResize]
   );
 
   const overlayContent = useMemo(() => {
-    if (activeTask && !isResizingTask) {
+    if (activeTask && !isResizing) {
       return (
         <CalendarEventPreview
           key={`task-overlay-${activeTask.id}`}
@@ -510,7 +660,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       );
     }
 
-    if (!activeTask && activeGoogleEvent) {
+    if (!activeTask && activeGoogleEvent && !isResizing) {
       return (
         <GoogleCalendarEventPreview
           event={activeGoogleEvent.event}
@@ -521,7 +671,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
 
     return null;
-  }, [activeGoogleEvent, activeTask, isResizingTask]);
+  }, [activeGoogleEvent, activeTask, isResizing]);
 
   const handleDragOver = useCallback(
     (event: DragOverEvent) => {

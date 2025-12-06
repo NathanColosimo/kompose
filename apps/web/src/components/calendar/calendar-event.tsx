@@ -157,6 +157,39 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventMemo({
       end,
     },
   });
+  // Dedicated handles for resizing without affecting drag-to-move behavior
+  const {
+    attributes: startAttributes,
+    listeners: startListeners,
+    setNodeRef: setStartHandleRef,
+  } = useDraggable({
+    id: `google-event-${calendarId}-${event.id}-resize-start`,
+    data: {
+      type: "google-event-resize",
+      event,
+      accountId,
+      calendarId,
+      start,
+      end,
+      direction: "start",
+    },
+  });
+  const {
+    attributes: endAttributes,
+    listeners: endListeners,
+    setNodeRef: setEndHandleRef,
+  } = useDraggable({
+    id: `google-event-${calendarId}-${event.id}-resize-end`,
+    data: {
+      type: "google-event-resize",
+      event,
+      accountId,
+      calendarId,
+      start,
+      end,
+      direction: "end",
+    },
+  });
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
 
@@ -171,7 +204,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventMemo({
   return (
     <div
       className={cn(
-        "pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "relative",
         "hover:shadow-md",
         isDragging ? "opacity-0" : ""
       )}
@@ -180,6 +214,18 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventMemo({
       {...attributes}
       {...listeners}
     >
+      <div
+        className="absolute inset-x-1 top-0 h-2 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        ref={setStartHandleRef}
+        {...startAttributes}
+        {...startListeners}
+      />
+      <div
+        className="absolute inset-x-1 bottom-0 h-2 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        ref={setEndHandleRef}
+        {...endAttributes}
+        {...endListeners}
+      />
       <div className="truncate font-medium text-xs">
         {event.summary ?? "Google event"}
       </div>
