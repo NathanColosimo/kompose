@@ -14,6 +14,7 @@ import {
 import type { TaskSelect } from "@kompose/db/schema/task";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { addMinutes } from "date-fns";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { orpc } from "@/utils/orpc";
 import {
@@ -433,6 +434,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
+      const isResizeEnd =
+        (data.type === "task-resize" || data.type === "google-event-resize") &&
+        data.direction === "end";
+      const targetDateTimeAdjusted = isResizeEnd
+        ? addMinutes(targetDateTime, MINUTES_STEP)
+        : targetDateTime;
+
       switch (data.type) {
         case "task":
           handleTaskMoveDrop(data.task, targetDateTime);
@@ -440,7 +448,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         case "task-resize":
           handleTaskResizeDrop({
             task: data.task,
-            targetDateTime,
+            targetDateTime: targetDateTimeAdjusted,
             direction: data.direction,
           });
           return;
@@ -450,7 +458,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         case "google-event-resize":
           handleGoogleEventResizeDrop({
             data,
-            targetDateTime,
+            targetDateTime: targetDateTimeAdjusted,
           });
           return;
         default:
@@ -634,15 +642,27 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
+      const isResizeEnd =
+        (data.type === "task-resize" || data.type === "google-event-resize") &&
+        data.direction === "end";
+      const effectiveTarget = isResizeEnd
+        ? addMinutes(targetDateTime, MINUTES_STEP)
+        : targetDateTime;
+
       switch (data.type) {
         case "task":
-          return previewTaskMove(data, targetDateTime, columnTop, overRect);
+          return previewTaskMove(data, effectiveTarget, columnTop, overRect);
         case "task-resize":
-          return previewTaskResize(data, targetDateTime, columnTop, overRect);
+          return previewTaskResize(data, effectiveTarget, columnTop, overRect);
         case "google-event":
-          return previewGoogleMove(data, targetDateTime, columnTop, overRect);
+          return previewGoogleMove(data, effectiveTarget, columnTop, overRect);
         case "google-event-resize":
-          return previewGoogleResize(data, targetDateTime, columnTop, overRect);
+          return previewGoogleResize(
+            data,
+            effectiveTarget,
+            columnTop,
+            overRect
+          );
         default:
           return null;
       }
