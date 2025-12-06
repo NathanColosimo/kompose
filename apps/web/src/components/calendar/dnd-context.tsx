@@ -23,6 +23,9 @@ import {
 import { PIXELS_PER_HOUR } from "./constants";
 import { parseSlotId } from "./time-grid";
 
+const MINUTES_STEP = 15;
+const MS_PER_MINUTE = 60_000;
+
 type CalendarDndProviderProps = {
   children: React.ReactNode;
 };
@@ -34,10 +37,21 @@ type PreviewRect = {
   height: number;
 };
 
+type SlotData = {
+  date: Date;
+  hour: number;
+  minutes: number;
+};
+
 type DragData =
   | {
       type: "task";
       task: TaskSelect;
+    }
+  | {
+      type: "task-resize";
+      task: TaskSelect;
+      direction: "start" | "end";
     }
   | {
       type: "google-event";
@@ -48,6 +62,66 @@ type DragData =
       end: Date;
     };
 
+function isSameDayLocal(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function clampDate(value: Date, min: Date, max: Date): Date {
+  if (value.getTime() < min.getTime()) {
+    return min;
+  }
+  if (value.getTime() > max.getTime()) {
+    return max;
+  }
+  return value;
+}
+
+function getDayBounds(base: Date): { dayStart: Date; dayEnd: Date } {
+  const dayStart = new Date(base);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  return { dayStart, dayEnd };
+}
+
+function clampResizeStart(
+  target: Date,
+  originalStart: Date,
+  originalEnd: Date
+): Date {
+  const { dayStart } = getDayBounds(originalStart);
+  const latestStart = new Date(
+    originalEnd.getTime() - MINUTES_STEP * MS_PER_MINUTE
+  );
+  const clampedToDay = clampDate(target, dayStart, originalEnd);
+  return clampedToDay.getTime() > latestStart.getTime()
+    ? latestStart
+    : clampedToDay;
+}
+
+function clampResizeEnd(target: Date, originalStart: Date): Date {
+  const { dayEnd } = getDayBounds(originalStart);
+  const earliestEnd = new Date(
+    originalStart.getTime() + MINUTES_STEP * MS_PER_MINUTE
+  );
+  return clampDate(target, earliestEnd, dayEnd);
+}
+
+function durationInMinutes(
+  start: Date,
+  end: Date,
+  minimum: number = MINUTES_STEP
+): number {
+  return Math.max(
+    minimum,
+    Math.round((end.getTime() - start.getTime()) / MS_PER_MINUTE)
+  );
+}
+
 /**
  * CalendarDndProvider - Wraps the calendar and sidebar with DnD context.
  * Handles drag events and task scheduling mutations.
@@ -57,6 +131,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [activeGoogleEvent, setActiveGoogleEvent] = useState<
     (DragData & { type: "google-event" }) | null
   >(null);
+  const [isResizingTask, setIsResizingTask] = useState(false);
   const [previewRect, setPreviewRect] = useState<PreviewRect | null>(null);
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
@@ -124,6 +199,94 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     },
   });
 
+  const slotDataToDate = useCallback((slot: SlotData) => {
+    const dateTime = new Date(slot.date);
+    dateTime.setHours(slot.hour, slot.minutes, 0, 0);
+    return dateTime;
+  }, []);
+
+  const clearPreview = useCallback(() => {
+    pendingPreviewRef.current = null;
+    setPreviewRect(null);
+  }, []);
+
+  const resetDragState = useCallback(() => {
+    setActiveTask(null);
+    setActiveGoogleEvent(null);
+    setIsResizingTask(false);
+    clearPreview();
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
+  }, [clearPreview]);
+
+  const handleTaskMoveDrop = useCallback(
+    (task: TaskSelect, startTime: Date) => {
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: {
+          startTime,
+          durationMinutes: task.durationMinutes,
+        },
+      });
+    },
+    [updateTaskMutation]
+  );
+
+  const handleTaskResizeDrop = useCallback(
+    (payload: {
+      task: TaskSelect;
+      targetDateTime: Date;
+      direction: "start" | "end";
+    }) => {
+      const { task, targetDateTime, direction } = payload;
+      if (!task.startTime) {
+        return;
+      }
+
+      const originalStart = new Date(task.startTime);
+      const originalEnd = new Date(
+        originalStart.getTime() + task.durationMinutes * MS_PER_MINUTE
+      );
+
+      // Resizing is restricted to the original task day
+      if (!isSameDayLocal(originalStart, targetDateTime)) {
+        return;
+      }
+
+      if (direction === "start") {
+        const newStart = clampResizeStart(
+          targetDateTime,
+          originalStart,
+          originalEnd
+        );
+        const newDuration = durationInMinutes(newStart, originalEnd);
+
+        updateTaskMutation.mutate({
+          id: task.id,
+          task: {
+            startTime: newStart,
+            durationMinutes: newDuration,
+          },
+        });
+        return;
+      }
+
+      const newEnd = clampResizeEnd(targetDateTime, originalStart);
+      const newDuration = durationInMinutes(originalStart, newEnd);
+
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: {
+          startTime: originalStart,
+          durationMinutes: newDuration,
+        },
+      });
+    },
+    [updateTaskMutation]
+  );
+
   const buildGoogleUpdatePayload = useCallback(
     (event: GoogleEvent, start: Date, end: Date) => {
       const {
@@ -146,19 +309,39 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     []
   );
 
+  const handleGoogleEventDrop = useCallback(
+    (data: Extract<DragData, { type: "google-event" }>, start: Date) => {
+      const durationMinutes =
+        (data.end.getTime() - data.start.getTime()) / (60 * 1000);
+      const newEnd = new Date(start.getTime() + durationMinutes * 60 * 1000);
+
+      const payload = buildGoogleUpdatePayload(data.event, start, newEnd);
+
+      updateGoogleEventMutation.mutate({
+        accountId: data.accountId,
+        calendarId: data.calendarId,
+        eventId: data.event.id,
+        event: payload,
+      });
+    },
+    [buildGoogleUpdatePayload, updateGoogleEventMutation]
+  );
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     const data = active.data.current as DragData | undefined;
 
-    if (data?.type === "task" && data.task) {
+    if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
       setActiveTask(data.task);
       setActiveGoogleEvent(null);
+      setIsResizingTask(data.type === "task-resize");
       return;
     }
 
     if (data?.type === "google-event") {
       setActiveGoogleEvent(data);
       setActiveTask(null);
+      setIsResizingTask(false);
     }
   }, []);
 
@@ -166,28 +349,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (event: DragEndEvent) => {
       const { active, over } = event;
 
-      setActiveTask(null);
-      setActiveGoogleEvent(null);
-      setPreviewRect(null);
-      pendingPreviewRef.current = null;
-      if (previewFrameRef.current !== null) {
-        cancelAnimationFrame(previewFrameRef.current);
-        previewFrameRef.current = null;
-      }
+      resetDragState();
 
-      // No valid drop target
       if (!over) {
         return;
       }
 
       const overId = String(over.id);
-
-      // Only handle drops on time slots
       if (!overId.startsWith("slot-")) {
         return;
       }
 
-      // Parse the slot to get the target datetime
       const targetDateTime = parseSlotId(overId);
       if (!targetDateTime) {
         return;
@@ -199,103 +371,198 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
 
       if (data.type === "task") {
-        const task = data.task;
-        const durationMinutes = task.durationMinutes;
+        handleTaskMoveDrop(data.task, targetDateTime);
+        return;
+      }
 
-        updateTaskMutation.mutate({
-          id: task.id,
-          task: {
-            startTime: targetDateTime,
-            durationMinutes,
-          },
+      if (data.type === "task-resize") {
+        handleTaskResizeDrop({
+          task: data.task,
+          targetDateTime,
+          direction: data.direction,
         });
         return;
       }
 
       if (data.type === "google-event") {
-        const durationMinutes =
-          (data.end.getTime() - data.start.getTime()) / (60 * 1000);
-        const newEnd = new Date(
-          targetDateTime.getTime() + durationMinutes * 60 * 1000
-        );
-
-        const payload = buildGoogleUpdatePayload(
-          data.event,
-          targetDateTime,
-          newEnd
-        );
-
-        updateGoogleEventMutation.mutate({
-          accountId: data.accountId,
-          calendarId: data.calendarId,
-          eventId: data.event.id,
-          event: payload,
-        });
+        handleGoogleEventDrop(data, targetDateTime);
       }
     },
-    [buildGoogleUpdatePayload, updateGoogleEventMutation, updateTaskMutation]
+    [
+      handleGoogleEventDrop,
+      handleTaskMoveDrop,
+      handleTaskResizeDrop,
+      resetDragState,
+    ]
   );
 
   const handleDragCancel = useCallback(() => {
-    setActiveTask(null);
-    pendingPreviewRef.current = null;
-    if (previewFrameRef.current !== null) {
-      cancelAnimationFrame(previewFrameRef.current);
-      previewFrameRef.current = null;
+    resetDragState();
+  }, [resetDragState]);
+
+  const buildPreviewRect = useCallback(
+    ({
+      start,
+      end,
+      columnTop,
+      overRect,
+      minimum = MINUTES_STEP,
+    }: {
+      start: Date;
+      end: Date;
+      columnTop: number;
+      overRect: Pick<PreviewRect, "left" | "width">;
+      minimum?: number;
+    }): PreviewRect => {
+      const startMinutes = start.getHours() * 60 + start.getMinutes();
+      const durationMinutes = durationInMinutes(start, end, minimum);
+      const height = Math.max((durationMinutes / 60) * PIXELS_PER_HOUR, 24);
+
+      return {
+        top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
+        left: overRect.left,
+        width: overRect.width,
+        height,
+      };
+    },
+    []
+  );
+
+  const computePreviewForDrag = useCallback(
+    (
+      data: DragData,
+      targetDateTime: Date,
+      columnTop: number,
+      overRect: Pick<PreviewRect, "left" | "width">
+    ): PreviewRect | null => {
+      if (data.type === "task") {
+        const durationMinutes = data.task.durationMinutes;
+        const end = new Date(
+          targetDateTime.getTime() + durationMinutes * MS_PER_MINUTE
+        );
+        return buildPreviewRect({
+          start: targetDateTime,
+          end,
+          columnTop,
+          overRect,
+        });
+      }
+
+      if (data.type === "task-resize" && data.task.startTime) {
+        const originalStart = new Date(data.task.startTime);
+        const originalEnd = new Date(
+          originalStart.getTime() + data.task.durationMinutes * MS_PER_MINUTE
+        );
+
+        if (!isSameDayLocal(originalStart, targetDateTime)) {
+          return null;
+        }
+
+        if (data.direction === "start") {
+          const newStart = clampResizeStart(
+            targetDateTime,
+            originalStart,
+            originalEnd
+          );
+          return buildPreviewRect({
+            start: newStart,
+            end: originalEnd,
+            columnTop,
+            overRect,
+          });
+        }
+
+        const newEnd = clampResizeEnd(targetDateTime, originalStart);
+        return buildPreviewRect({
+          start: originalStart,
+          end: newEnd,
+          columnTop,
+          overRect,
+        });
+      }
+
+      if (data.type === "google-event") {
+        const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
+        const end = new Date(
+          targetDateTime.getTime() + eventDurationMinutes * MS_PER_MINUTE
+        );
+        return buildPreviewRect({
+          start: targetDateTime,
+          end,
+          columnTop,
+          overRect,
+          minimum: 1,
+        });
+      }
+
+      return null;
+    },
+    [buildPreviewRect]
+  );
+
+  const overlayContent = useMemo(() => {
+    if (activeTask && !isResizingTask) {
+      return (
+        <CalendarEventPreview
+          key={`task-overlay-${activeTask.id}`}
+          task={activeTask}
+        />
+      );
     }
-    setPreviewRect(null);
-  }, []);
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-
-    if (!(over && active)) {
-      setPreviewRect(null);
-      pendingPreviewRef.current = null;
-      return;
+    if (!activeTask && activeGoogleEvent) {
+      return (
+        <GoogleCalendarEventPreview
+          event={activeGoogleEvent.event}
+          key={`google-overlay-${activeGoogleEvent.event.id}`}
+          start={activeGoogleEvent.start}
+        />
+      );
     }
 
-    const data = active.data.current as DragData | undefined;
+    return null;
+  }, [activeGoogleEvent, activeTask, isResizingTask]);
 
-    const overRect = over.rect;
-    if (!(overRect && data)) {
-      setPreviewRect(null);
-      pendingPreviewRef.current = null;
-      return;
-    }
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const { active, over } = event;
 
-    let durationMinutes: number | null = null;
+      if (!(over && active)) {
+        clearPreview();
+        return;
+      }
 
-    if (data.type === "task") {
-      durationMinutes = data.task.durationMinutes;
-    } else if (data.type === "google-event") {
-      durationMinutes =
-        (data.end.getTime() - data.start.getTime()) / (60 * 1000);
-    }
+      const data = active.data.current as DragData | undefined;
+      const overRect = over.rect;
+      const slotData = over.data?.current as SlotData | undefined;
 
-    if (durationMinutes === null) {
-      setPreviewRect(null);
-      pendingPreviewRef.current = null;
-      return;
-    }
+      if (!(overRect && data && slotData)) {
+        clearPreview();
+        return;
+      }
 
-    const height = (durationMinutes / 60) * PIXELS_PER_HOUR;
+      const targetDateTime = slotDataToDate(slotData);
+      const minutesFromDayStart = slotData.hour * 60 + slotData.minutes;
+      const columnTop =
+        overRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
 
-    pendingPreviewRef.current = {
-      top: overRect.top,
-      left: overRect.left,
-      width: overRect.width,
-      height,
-    };
+      pendingPreviewRef.current = computePreviewForDrag(
+        data,
+        targetDateTime,
+        columnTop,
+        { left: overRect.left, width: overRect.width }
+      );
 
-    if (previewFrameRef.current === null) {
-      previewFrameRef.current = requestAnimationFrame(() => {
-        previewFrameRef.current = null;
-        setPreviewRect(pendingPreviewRef.current);
-        pendingPreviewRef.current = null;
-      });
-    }
-  }, []);
+      if (previewFrameRef.current === null) {
+        previewFrameRef.current = requestAnimationFrame(() => {
+          previewFrameRef.current = null;
+          setPreviewRect(pendingPreviewRef.current);
+          pendingPreviewRef.current = null;
+        });
+      }
+    },
+    [clearPreview, computePreviewForDrag, slotDataToDate]
+  );
 
   return (
     <DndContext
@@ -324,15 +591,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       ) : null}
 
       {/* Drag overlay for smooth preview during drag */}
-      <DragOverlay dropAnimation={null}>
-        {activeTask ? <CalendarEventPreview task={activeTask} /> : null}
-        {!activeTask && activeGoogleEvent ? (
-          <GoogleCalendarEventPreview
-            event={activeGoogleEvent.event}
-            start={activeGoogleEvent.start}
-          />
-        ) : null}
-      </DragOverlay>
+      {overlayContent ? (
+        <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
+      ) : null}
     </DndContext>
   );
 }

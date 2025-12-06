@@ -27,6 +27,31 @@ export const CalendarEvent = memo(function CalendarEventInner({
       task,
     },
   });
+  // Dedicated handles for resizing without affecting drag-to-move behavior
+  const {
+    attributes: startAttributes,
+    listeners: startListeners,
+    setNodeRef: setStartHandleRef,
+  } = useDraggable({
+    id: `event-${task.id}-resize-start`,
+    data: {
+      type: "task-resize",
+      task,
+      direction: "start",
+    },
+  });
+  const {
+    attributes: endAttributes,
+    listeners: endListeners,
+    setNodeRef: setEndHandleRef,
+  } = useDraggable({
+    id: `event-${task.id}-resize-end`,
+    data: {
+      type: "task-resize",
+      task,
+      direction: "end",
+    },
+  });
 
   // Calculate position based on start and end times
   if (!task.startTime) {
@@ -51,7 +76,8 @@ export const CalendarEvent = memo(function CalendarEventInner({
   return (
     <div
       className={cn(
-        "pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "relative",
         "hover:shadow-md",
         // Hide original when dragging - DragOverlay shows the preview
         isDragging ? "opacity-0" : ""
@@ -61,6 +87,18 @@ export const CalendarEvent = memo(function CalendarEventInner({
       {...attributes}
       {...listeners}
     >
+      <div
+        className="absolute inset-x-1 top-0 h-2 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        ref={setStartHandleRef}
+        {...startAttributes}
+        {...startListeners}
+      />
+      <div
+        className="absolute inset-x-1 bottom-0 h-2 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        ref={setEndHandleRef}
+        {...endAttributes}
+        {...endListeners}
+      />
       <div className="truncate font-medium text-xs">{task.title}</div>
       <div className="truncate text-[10px] opacity-80">
         {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
