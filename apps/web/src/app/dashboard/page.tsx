@@ -13,10 +13,12 @@ import {
   subDays,
   subWeeks,
 } from "date-fns";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { currentDateAtom } from "@/atoms/current-date";
+import { visibleCalendarsAtom } from "@/atoms/visible-calendars";
+import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import type { GoogleEventWithSource } from "@/components/calendar/week-view";
 import { WeekView } from "@/components/calendar/week-view";
 import { Button } from "@/components/ui/button";
@@ -28,7 +30,6 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Switch } from "@/components/ui/switch";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
@@ -46,7 +47,7 @@ function buildEventWindow(center: Date) {
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const [showGoogleEvents, setShowGoogleEvents] = useState(true);
+  const visibleCalendars = useAtomValue(visibleCalendarsAtom);
   const eventWindow = useMemo(
     () => buildEventWindow(currentDate),
     [currentDate]
@@ -100,10 +101,32 @@ export default function Page() {
     [calendarQueries, googleAccounts]
   );
 
-  // Fetch events for each calendar within a stable ±30d window; keep previous
+  // Helper to check if a calendar is visible
+  const isCalendarVisible = useCallback(
+    (accountId: string, calendarId: string) => {
+      if (visibleCalendars.length === 0) {
+        return true; // All calendars visible when none explicitly selected
+      }
+      return visibleCalendars.some(
+        (c) => c.accountId === accountId && c.calendarId === calendarId
+      );
+    },
+    [visibleCalendars]
+  );
+
+  // Filter calendars to only those that are visible
+  const visibleGoogleCalendars = useMemo(
+    () =>
+      googleCalendars.filter((calendar) =>
+        isCalendarVisible(calendar.accountId, calendar.id)
+      ),
+    [googleCalendars, isCalendarVisible]
+  );
+
+  // Fetch events for each visible calendar within a stable ±30d window; keep previous
   // data so buffer shifts never blank the UI while revalidating.
   const eventsQueries = useQueries({
-    queries: googleCalendars.map((calendar) => {
+    queries: visibleGoogleCalendars.map((calendar) => {
       const options = orpc.googleCal.events.list.queryOptions({
         input: {
           accountId: calendar.accountId,
@@ -115,7 +138,6 @@ export default function Page() {
 
       return {
         ...options,
-        enabled: showGoogleEvents,
         staleTime: 60_000,
         keepPreviousData: true,
       } as typeof options;
@@ -125,7 +147,7 @@ export default function Page() {
   const googleEvents = useMemo<GoogleEventWithSource[]>(
     () =>
       eventsQueries.flatMap((query, index) => {
-        const calendar = googleCalendars[index];
+        const calendar = visibleGoogleCalendars[index];
         if (!(calendar && query.data)) {
           return [];
         }
@@ -136,7 +158,7 @@ export default function Page() {
           calendarId: calendar.id,
         }));
       }),
-    [eventsQueries, googleCalendars]
+    [eventsQueries, visibleGoogleCalendars]
   );
 
   // Navigate to a specific date (updates both currentDate and buffer center)
@@ -190,18 +212,11 @@ export default function Page() {
 
         <DatePopover />
 
-        <div className="ml-auto flex items-center gap-2 text-sm">
-          <Switch
-            checked={showGoogleEvents}
-            id="google-events-toggle"
-            onCheckedChange={setShowGoogleEvents}
+        <div className="ml-auto">
+          <GoogleAccountsDropdown
+            googleAccounts={googleAccounts}
+            googleCalendars={googleCalendars}
           />
-          <label
-            className="select-none text-muted-foreground"
-            htmlFor="google-events-toggle"
-          >
-            Google events
-          </label>
         </div>
       </header>
 
@@ -214,7 +229,7 @@ export default function Page() {
         ) : (
           <WeekView
             googleEvents={googleEvents}
-            showGoogleEvents={showGoogleEvents}
+            showGoogleEvents={visibleGoogleCalendars.length > 0 || visibleCalendars.length === 0}
             tasks={tasks}
           />
         )}
