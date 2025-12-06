@@ -80,13 +80,13 @@ export const TaskEvent = memo(function TaskEventInner({
       {...listeners}
     >
       <div
-        className="absolute inset-x-1 top-0 h-2 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        className="-top-1 absolute inset-x-0 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
         ref={setStartHandleRef}
         {...startAttributes}
         {...startListeners}
       />
       <div
-        className="absolute inset-x-1 bottom-0 h-2 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+        className="-bottom-1 absolute inset-x-0 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
         ref={setEndHandleRef}
         {...endAttributes}
         {...endListeners}
