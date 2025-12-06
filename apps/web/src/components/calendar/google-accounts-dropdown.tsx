@@ -1,37 +1,30 @@
 "use client";
 
 import type { Calendar } from "@kompose/google-cal/schema";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { useAtom } from "jotai";
+import { useQueries } from "@tanstack/react-query";
+import type { OAuth2UserInfo } from "better-auth";
+import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import {
   type CalendarIdentifier,
+  isCalendarVisibleAtom,
   visibleCalendarsAtom,
 } from "@/atoms/visible-calendars";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
-import { orpc } from "@/utils/orpc";
 
 type GoogleAccount = {
   id: string;
   accountId: string;
   providerId: string;
-};
-
-type GoogleAccountInfo = {
-  email: string;
-  name?: string;
-  picture?: string;
 };
 
 type CalendarWithAccount = Calendar & {
@@ -49,51 +42,85 @@ type GoogleAccountsDropdownProps = {
   googleCalendars: CalendarWithAccount[];
 };
 
+function matchesCalendar(
+  target: CalendarIdentifier,
+  accountId: string,
+  calendarId: string
+) {
+  return target.accountId === accountId && target.calendarId === calendarId;
+}
+
+function toCalendarIdentifier(
+  calendar: CalendarWithAccount
+): CalendarIdentifier {
+  return { accountId: calendar.accountId, calendarId: calendar.id };
+}
+
+// Preserve "empty array => all calendars visible" while toggling a single calendar
+function toggleCalendarSelection(
+  prev: CalendarIdentifier[],
+  target: CalendarIdentifier,
+  allCalendars: CalendarWithAccount[]
+): CalendarIdentifier[] {
+  if (prev.length === 0) {
+    const next = allCalendars
+      .filter(
+        (calendar) => !matchesCalendar(target, calendar.accountId, calendar.id)
+      )
+      .map(toCalendarIdentifier);
+    return next.length === allCalendars.length ? [] : next;
+  }
+
+  const exists = prev.some((c) =>
+    matchesCalendar(c, target.accountId, target.calendarId)
+  );
+  const next = exists
+    ? prev.filter(
+        (c) => !matchesCalendar(c, target.accountId, target.calendarId)
+      )
+    : [...prev, target];
+
+  return next.length === allCalendars.length ? [] : next;
+}
+
 export function GoogleAccountsDropdown({
   googleAccounts,
   googleCalendars,
 }: GoogleAccountsDropdownProps) {
   const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
+  const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
 
   // Fetch account info for each Google account to get their email
   const accountInfoQueries = useQueries({
     queries: googleAccounts.map((account) => ({
-      queryKey: ["google-account-info", account.id],
-      queryFn: async (): Promise<GoogleAccountInfo | null> => {
+      queryKey: ["google-account-info", account.accountId],
+      queryFn: async (): Promise<OAuth2UserInfo | null> => {
         try {
           const result = await authClient.accountInfo({
-            query: { accountId: account.id },
+            query: { accountId: account.accountId },
           });
-          if (result?.data) {
-            // The response contains user info from OAuth2
-            const userInfo = result.data.user;
-            return {
-              email: userInfo?.email ?? "",
-              name: userInfo?.name,
-              picture: userInfo?.image,
-            };
-          }
-          return null;
+          return result?.data?.user ?? null;
         } catch {
           return null;
         }
       },
-      staleTime: 5 * 60 * 1000, // 5 minutes
     })),
   });
 
   // Merge account info with accounts
-  const accountsWithInfo: AccountWithInfo[] = useMemo(() => {
-    return googleAccounts.map((account, index) => {
-      const query = accountInfoQueries[index];
-      return {
-        ...account,
-        email: query?.data?.email,
-        name: query?.data?.name,
-        isLoading: query?.isLoading,
-      };
-    });
-  }, [googleAccounts, accountInfoQueries]);
+  const accountsWithInfo: AccountWithInfo[] = useMemo(
+    () =>
+      googleAccounts.map((account, index) => {
+        const query = accountInfoQueries[index];
+        return {
+          ...account,
+          email: query?.data?.email ?? undefined,
+          name: query?.data?.name,
+          isLoading: query?.isLoading,
+        };
+      }),
+    [googleAccounts, accountInfoQueries]
+  );
 
   // Group calendars by account
   const calendarsByAccount = useMemo(() => {
@@ -110,133 +137,19 @@ export function GoogleAccountsDropdown({
     return grouped;
   }, [googleAccounts, googleCalendars]);
 
-  // Check if a calendar is currently visible
-  const isCalendarVisible = useCallback(
-    (accountId: string, calendarId: string) => {
-      // If no calendars are explicitly selected, all are visible
-      if (visibleCalendars.length === 0) {
-        return true;
-      }
-      return visibleCalendars.some(
-        (c) => c.accountId === accountId && c.calendarId === calendarId
-      );
-    },
-    [visibleCalendars]
-  );
-
   // Toggle a calendar's visibility
   const toggleCalendar = useCallback(
     (accountId: string, calendarId: string) => {
-      setVisibleCalendars((prev) => {
-        // If previously empty (all visible), initialize with all calendars except the toggled one
-        if (prev.length === 0) {
-          const allCalendars: CalendarIdentifier[] = [];
-          for (const calendar of googleCalendars) {
-            if (
-              !(
-                calendar.accountId === accountId && calendar.id === calendarId
-              )
-            ) {
-              allCalendars.push({
-                accountId: calendar.accountId,
-                calendarId: calendar.id,
-              });
-            }
-          }
-          return allCalendars;
-        }
-
-        // Check if calendar is already in the list
-        const existingIndex = prev.findIndex(
-          (c) => c.accountId === accountId && c.calendarId === calendarId
-        );
-
-        if (existingIndex >= 0) {
-          // Remove it (hide the calendar)
-          return prev.filter((_, i) => i !== existingIndex);
-        }
-        // Add it (show the calendar)
-        return [...prev, { accountId, calendarId }];
-      });
+      setVisibleCalendars((prev) =>
+        toggleCalendarSelection(
+          prev,
+          { accountId, calendarId },
+          googleCalendars
+        )
+      );
     },
     [setVisibleCalendars, googleCalendars]
   );
-
-  // Check if all calendars for an account are visible
-  const isAccountFullyVisible = useCallback(
-    (accountId: string) => {
-      const accountCalendars = calendarsByAccount.get(accountId) ?? [];
-      if (accountCalendars.length === 0) return false;
-      return accountCalendars.every((cal) =>
-        isCalendarVisible(accountId, cal.id)
-      );
-    },
-    [calendarsByAccount, isCalendarVisible]
-  );
-
-  // Check if any calendars for an account are visible
-  const isAccountPartiallyVisible = useCallback(
-    (accountId: string) => {
-      const accountCalendars = calendarsByAccount.get(accountId) ?? [];
-      if (accountCalendars.length === 0) return false;
-      const visibleCount = accountCalendars.filter((cal) =>
-        isCalendarVisible(accountId, cal.id)
-      ).length;
-      return visibleCount > 0 && visibleCount < accountCalendars.length;
-    },
-    [calendarsByAccount, isCalendarVisible]
-  );
-
-  // Toggle all calendars for an account
-  const toggleAccount = useCallback(
-    (accountId: string) => {
-      const accountCalendars = calendarsByAccount.get(accountId) ?? [];
-      const isFullyVisible = isAccountFullyVisible(accountId);
-
-      setVisibleCalendars((prev) => {
-        // If previously empty (all visible), we need to initialize the list
-        if (prev.length === 0) {
-          if (isFullyVisible) {
-            // Hiding this account: add all calendars except this account's
-            const allCalendars: CalendarIdentifier[] = [];
-            for (const calendar of googleCalendars) {
-              if (calendar.accountId !== accountId) {
-                allCalendars.push({
-                  accountId: calendar.accountId,
-                  calendarId: calendar.id,
-                });
-              }
-            }
-            return allCalendars;
-          }
-          // This shouldn't happen when prev is empty, but handle it
-          return prev;
-        }
-
-        if (isFullyVisible) {
-          // Hide all calendars for this account
-          return prev.filter((c) => c.accountId !== accountId);
-        }
-        // Show all calendars for this account
-        const newCalendars = accountCalendars
-          .filter((cal) => !isCalendarVisible(accountId, cal.id))
-          .map((cal) => ({ accountId, calendarId: cal.id }));
-        return [...prev, ...newCalendars];
-      });
-    },
-    [
-      calendarsByAccount,
-      isAccountFullyVisible,
-      setVisibleCalendars,
-      googleCalendars,
-      isCalendarVisible,
-    ]
-  );
-
-  // Show all calendars
-  const showAllCalendars = useCallback(() => {
-    setVisibleCalendars([]);
-  }, [setVisibleCalendars]);
 
   // Count of visible calendars
   const visibleCount = useMemo(() => {
@@ -267,50 +180,26 @@ export function GoogleAccountsDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        <div className="flex items-center justify-between px-2 py-1.5">
-          <DropdownMenuLabel className="p-0">Google Calendars</DropdownMenuLabel>
-          {visibleCalendars.length > 0 && (
-            <Button
-              className="h-auto p-0 text-xs"
-              onClick={showAllCalendars}
-              variant="link"
-            >
-              Show all
-            </Button>
-          )}
-        </div>
-        <DropdownMenuSeparator />
-
-        {accountsWithInfo.map((account) => {
+        {accountsWithInfo.map((account, accountIndex) => {
           const accountCalendars = calendarsByAccount.get(account.id) ?? [];
-          const isFullyVisible = isAccountFullyVisible(account.id);
-          const isPartiallyVisible = isAccountPartiallyVisible(account.id);
+          const isLastAccount = accountIndex === accountsWithInfo.length - 1;
 
           return (
             <div key={account.id}>
-              <div className="flex items-center gap-2 px-2 py-1.5">
-                <Checkbox
-                  checked={isFullyVisible ? true : isPartiallyVisible ? "indeterminate" : false}
-                  onCheckedChange={() => toggleAccount(account.id)}
-                />
-                <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex items-center px-2 py-1.5">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate font-medium text-sm">
                     {account.isLoading ? (
                       <RefreshCw className="inline size-3 animate-spin" />
                     ) : (
-                      account.email ?? account.name ?? "Google Account"
+                      (account.email ?? account.name ?? "Google Account")
                     )}
                   </span>
-                  {account.name && account.email && (
-                    <span className="truncate text-muted-foreground text-xs">
-                      {account.name}
-                    </span>
-                  )}
                 </div>
               </div>
 
               {/* Individual calendars for this account */}
-              <div className="ml-6 border-l pl-2">
+              <div className="ml-3 border-l pl-2">
                 {accountCalendars.map((calendar) => (
                   <DropdownMenuCheckboxItem
                     checked={isCalendarVisible(account.id, calendar.id)}
@@ -331,8 +220,7 @@ export function GoogleAccountsDropdown({
                 )}
               </div>
 
-              {accountsWithInfo.indexOf(account) <
-                accountsWithInfo.length - 1 && <DropdownMenuSeparator />}
+              {!isLastAccount && <DropdownMenuSeparator />}
             </div>
           );
         })}

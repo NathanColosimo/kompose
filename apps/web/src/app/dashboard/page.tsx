@@ -17,7 +17,7 @@ import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { currentDateAtom } from "@/atoms/current-date";
-import { visibleCalendarsAtom } from "@/atoms/visible-calendars";
+import { isCalendarVisibleAtom } from "@/atoms/visible-calendars";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import type { GoogleEventWithSource } from "@/components/calendar/week-view";
 import { WeekView } from "@/components/calendar/week-view";
@@ -47,7 +47,7 @@ function buildEventWindow(center: Date) {
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const visibleCalendars = useAtomValue(visibleCalendarsAtom);
+  const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
   const eventWindow = useMemo(
     () => buildEventWindow(currentDate),
     [currentDate]
@@ -101,26 +101,9 @@ export default function Page() {
     [calendarQueries, googleAccounts]
   );
 
-  // Helper to check if a calendar is visible
-  const isCalendarVisible = useCallback(
-    (accountId: string, calendarId: string) => {
-      if (visibleCalendars.length === 0) {
-        return true; // All calendars visible when none explicitly selected
-      }
-      return visibleCalendars.some(
-        (c) => c.accountId === accountId && c.calendarId === calendarId
-      );
-    },
-    [visibleCalendars]
-  );
-
   // Filter calendars to only those that are visible
-  const visibleGoogleCalendars = useMemo(
-    () =>
-      googleCalendars.filter((calendar) =>
-        isCalendarVisible(calendar.accountId, calendar.id)
-      ),
-    [googleCalendars, isCalendarVisible]
+  const visibleGoogleCalendars = googleCalendars.filter((calendar) =>
+    isCalendarVisible(calendar.accountId, calendar.id)
   );
 
   // Fetch events for each visible calendar within a stable ±30d window; keep previous
@@ -227,11 +210,7 @@ export default function Page() {
             Loading calendar...
           </div>
         ) : (
-          <WeekView
-            googleEvents={googleEvents}
-            showGoogleEvents={visibleGoogleCalendars.length > 0 || visibleCalendars.length === 0}
-            tasks={tasks}
-          />
+          <WeekView googleEvents={googleEvents} tasks={tasks} />
         )}
       </main>
     </div>
