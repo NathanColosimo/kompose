@@ -8,12 +8,14 @@ import {
   DragOverlay,
   type DragStartEvent,
   PointerSensor,
+  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import { orpc } from "@/utils/orpc";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
@@ -148,6 +150,23 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [updateTaskMutation]
   );
 
+  /**
+   * Handle unscheduling a task by removing its startTime but keeping the duration.
+   * Called when a task is dropped on the sidebar task list.
+   */
+  const handleTaskUnschedule = useCallback(
+    (task: TaskSelect) => {
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: {
+          startTime: null,
+          durationMinutes: task.durationMinutes,
+        },
+      });
+    },
+    [updateTaskMutation]
+  );
+
   const handleTaskResizeDrop = useCallback(
     (payload: {
       task: TaskSelect;
@@ -208,28 +227,23 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
   }, []);
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-
-      resetDragState();
-
-      if (!over) {
+  // Handle drops on the sidebar list by unscheduling task cards.
+  const handleSidebarDrop = useCallback(
+    (data: DragData) => {
+      if (data.type !== "task") {
         return;
       }
 
-      const overId = String(over.id);
-      if (!overId.startsWith("slot-")) {
-        return;
-      }
+      handleTaskUnschedule(data.task);
+    },
+    [handleTaskUnschedule]
+  );
 
+  // Route calendar slot drops to the correct drop handler based on drag type.
+  const handleSlotDrop = useCallback(
+    (data: DragData, overId: string) => {
       const targetDateTime = parseSlotId(overId);
       if (!targetDateTime) {
-        return;
-      }
-
-      const data = active.data.current as DragData | undefined;
-      if (!data) {
         return;
       }
 
@@ -269,8 +283,37 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       handleGoogleEventResizeDrop,
       handleTaskMoveDrop,
       handleTaskResizeDrop,
-      resetDragState,
     ]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      resetDragState();
+
+      if (!over) {
+        return;
+      }
+
+      const overId = String(over.id);
+      const data = active.data.current as DragData | undefined;
+      if (!data) {
+        return;
+      }
+
+      if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
+        handleSidebarDrop(data);
+        return;
+      }
+
+      if (!overId.startsWith("slot-")) {
+        return;
+      }
+
+      handleSlotDrop(data, overId);
+    },
+    [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -469,6 +512,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [previewGoogleMove, previewGoogleResize, previewTaskMove, previewTaskResize]
   );
 
+  // Prefer droppables the pointer is inside; fall back to closest center.
+  const collisionDetection = useCallback<typeof closestCenter>((args) => {
+    const intersections = rectIntersection(args);
+    if (intersections.length > 0) {
+      return intersections;
+    }
+    return closestCenter(args);
+  }, []);
+
   const overlayContent = useMemo(() => {
     if (activeTask && !isResizing) {
       return (
@@ -536,7 +588,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   return (
     <DndContext
       autoScroll={false}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useDroppable } from "@dnd-kit/core";
 import { useQuery } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { type ComponentProps, useState } from "react";
@@ -15,8 +16,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import { TaskItem } from "./task-item";
+
+/** Droppable ID for the sidebar task list area */
+export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
 // This is sample data
 const navMain = [
@@ -38,6 +43,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     isLoading,
     error,
   } = useQuery(orpc.tasks.list.queryOptions());
+
+  // Make the task list a droppable area
+  const { setNodeRef, isOver } = useDroppable({
+    id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
+  });
 
   const renderContent = () => {
     if (isLoading) {
@@ -125,19 +135,29 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
       <Sidebar className="hidden flex-1 md:flex" collapsible="none">
-        <SidebarHeader className="h-16 border-b">
-          <div className="flex h-full w-full items-center justify-between px-4">
-            <div className="font-medium text-base text-foreground">
-              {activeItem?.title}
+        <div
+          className={cn(
+            "flex h-full min-h-[200px] flex-1 flex-col transition-colors",
+            isOver ? "bg-primary/10" : ""
+          )}
+          ref={setNodeRef}
+        >
+          <SidebarHeader className="h-16 border-b">
+            <div className="flex h-full w-full items-center justify-between px-4">
+              <div className="font-medium text-base text-foreground">
+                {activeItem?.title}
+              </div>
+              <CreateTaskForm />
             </div>
-            <CreateTaskForm />
-          </div>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup className="px-0">
-            <SidebarGroupContent>{renderContent()}</SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
+          </SidebarHeader>
+          <SidebarContent className="flex-1">
+            <SidebarGroup className="flex-1 px-0">
+              <SidebarGroupContent className="flex-1">
+                {renderContent()}
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+        </div>
       </Sidebar>
     </Sidebar>
   );
