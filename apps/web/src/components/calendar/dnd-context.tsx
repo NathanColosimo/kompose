@@ -14,6 +14,7 @@ import {
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import { orpc } from "@/utils/orpc";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
@@ -148,6 +149,23 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [updateTaskMutation]
   );
 
+  /**
+   * Handle unscheduling a task by removing its startTime but keeping the duration.
+   * Called when a task is dropped on the sidebar task list.
+   */
+  const handleTaskUnschedule = useCallback(
+    (task: TaskSelect) => {
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: {
+          startTime: null,
+          durationMinutes: task.durationMinutes,
+        },
+      });
+    },
+    [updateTaskMutation]
+  );
+
   const handleTaskResizeDrop = useCallback(
     (payload: {
       task: TaskSelect;
@@ -219,17 +237,28 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
 
       const overId = String(over.id);
+      const data = active.data.current as DragData | undefined;
+      if (!data) {
+        return;
+      }
+
+      // Handle drops on the sidebar task list (unschedule task)
+      if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
+        // Only handle task drops - ignore Google Calendar events
+        if (data.type === "task") {
+          handleTaskUnschedule(data.task);
+        }
+        // Google Calendar events and resize operations do nothing when dropped on sidebar
+        return;
+      }
+
+      // Handle drops on calendar slots
       if (!overId.startsWith("slot-")) {
         return;
       }
 
       const targetDateTime = parseSlotId(overId);
       if (!targetDateTime) {
-        return;
-      }
-
-      const data = active.data.current as DragData | undefined;
-      if (!data) {
         return;
       }
 
@@ -269,6 +298,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       handleGoogleEventResizeDrop,
       handleTaskMoveDrop,
       handleTaskResizeDrop,
+      handleTaskUnschedule,
       resetDragState,
     ]
   );
