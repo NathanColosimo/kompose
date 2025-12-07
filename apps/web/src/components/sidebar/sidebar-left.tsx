@@ -1,5 +1,6 @@
 "use client";
 
+import { useDroppable } from "@dnd-kit/core";
 import { useQuery } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { type ComponentProps, useState } from "react";
@@ -15,8 +16,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import { TaskItem } from "./task-item";
+
+/** Droppable ID for the sidebar task list area */
+export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
 // This is sample data
 const navMain = [
@@ -38,6 +43,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     isLoading,
     error,
   } = useQuery(orpc.tasks.list.queryOptions());
+
+  // Make the task list a droppable area
+  const { setNodeRef, isOver } = useDroppable({
+    id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
+  });
 
   const renderContent = () => {
     if (isLoading) {
@@ -135,7 +145,15 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup className="px-0">
-            <SidebarGroupContent>{renderContent()}</SidebarGroupContent>
+            <SidebarGroupContent
+              ref={setNodeRef}
+              className={cn(
+                "min-h-[200px] transition-colors",
+                isOver && "bg-primary/10"
+              )}
+            >
+              {renderContent()}
+            </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
