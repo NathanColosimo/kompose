@@ -89,7 +89,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
       {/* Status checkbox */}
       <Checkbox
         checked={isDone}
-        className="mt-0.5 size-3.5 shrink-0"
+        className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer border-muted-foreground/70 bg-sidebar text-foreground transition-colors group-hover:border-foreground"
         onClick={handleStatusToggle}
       />
 

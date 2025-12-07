@@ -141,7 +141,7 @@ export const TaskEvent = memo(function TaskEventInner({
       <div className="flex items-start gap-1">
         <Checkbox
           checked={isDone}
-          className="mt-0.5 size-3 shrink-0 border-primary-foreground/50 data-[state=checked]:border-primary-foreground/50 data-[state=checked]:bg-primary-foreground/20"
+          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer"
           onClick={handleStatusToggle}
         />
         <div className="min-w-0 flex-1">
