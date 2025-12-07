@@ -8,6 +8,7 @@ import {
   DragOverlay,
   type DragStartEvent,
   PointerSensor,
+  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -226,37 +227,21 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
   }, []);
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-
-      resetDragState();
-
-      if (!over) {
+  // Handle drops on the sidebar list by unscheduling task cards.
+  const handleSidebarDrop = useCallback(
+    (data: DragData) => {
+      if (data.type !== "task") {
         return;
       }
 
-      const overId = String(over.id);
-      const data = active.data.current as DragData | undefined;
-      if (!data) {
-        return;
-      }
+      handleTaskUnschedule(data.task);
+    },
+    [handleTaskUnschedule]
+  );
 
-      // Handle drops on the sidebar task list (unschedule task)
-      if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
-        // Only handle task drops - ignore Google Calendar events
-        if (data.type === "task") {
-          handleTaskUnschedule(data.task);
-        }
-        // Google Calendar events and resize operations do nothing when dropped on sidebar
-        return;
-      }
-
-      // Handle drops on calendar slots
-      if (!overId.startsWith("slot-")) {
-        return;
-      }
-
+  // Route calendar slot drops to the correct drop handler based on drag type.
+  const handleSlotDrop = useCallback(
+    (data: DragData, overId: string) => {
       const targetDateTime = parseSlotId(overId);
       if (!targetDateTime) {
         return;
@@ -298,9 +283,37 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       handleGoogleEventResizeDrop,
       handleTaskMoveDrop,
       handleTaskResizeDrop,
-      handleTaskUnschedule,
-      resetDragState,
     ]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      resetDragState();
+
+      if (!over) {
+        return;
+      }
+
+      const overId = String(over.id);
+      const data = active.data.current as DragData | undefined;
+      if (!data) {
+        return;
+      }
+
+      if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
+        handleSidebarDrop(data);
+        return;
+      }
+
+      if (!overId.startsWith("slot-")) {
+        return;
+      }
+
+      handleSlotDrop(data, overId);
+    },
+    [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -499,6 +512,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [previewGoogleMove, previewGoogleResize, previewTaskMove, previewTaskResize]
   );
 
+  // Prefer droppables the pointer is inside; fall back to closest center.
+  const collisionDetection = useCallback<typeof closestCenter>((args) => {
+    const intersections = rectIntersection(args);
+    if (intersections.length > 0) {
+      return intersections;
+    }
+    return closestCenter(args);
+  }, []);
+
   const overlayContent = useMemo(() => {
     if (activeTask && !isResizing) {
       return (
@@ -566,7 +588,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   return (
     <DndContext
       autoScroll={false}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
