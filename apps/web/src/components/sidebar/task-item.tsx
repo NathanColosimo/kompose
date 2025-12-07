@@ -4,7 +4,6 @@ import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { GripVertical } from "lucide-react";
 import { memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
@@ -96,7 +95,12 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex w-full items-center gap-2">
-          <span className={cn("truncate", isDone && "text-muted-foreground line-through")}>
+          <span
+            className={cn(
+              "truncate",
+              isDone ? "text-muted-foreground line-through" : ""
+            )}
+          >
             {task.title}
           </span>
           <span className="ml-auto shrink-0 text-muted-foreground text-xs">

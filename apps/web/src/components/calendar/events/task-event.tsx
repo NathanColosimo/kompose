@@ -119,7 +119,7 @@ export const TaskEvent = memo(function TaskEventInner({
         "relative",
         "hover:shadow-md",
         isDragging ? "opacity-0" : "",
-        isDone && "opacity-60"
+        isDone ? "opacity-60" : ""
       )}
       ref={setNodeRef}
       style={style}
@@ -145,7 +145,12 @@ export const TaskEvent = memo(function TaskEventInner({
           onClick={handleStatusToggle}
         />
         <div className="min-w-0 flex-1">
-          <div className={cn("truncate font-medium text-xs", isDone && "line-through opacity-80")}>
+          <div
+            className={cn(
+              "truncate font-medium text-xs",
+              isDone ? "line-through opacity-80" : ""
+            )}
+          >
             {task.title}
           </div>
           <div className="truncate text-[10px] opacity-80">
