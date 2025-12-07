@@ -443,19 +443,21 @@ function SidebarGroupAction({
   );
 }
 
-function SidebarGroupContent({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+const SidebarGroupContent = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div">
+>(({ className, ...props }, ref) => {
   return (
     <div
+      ref={ref}
       className={cn("w-full text-sm", className)}
       data-sidebar="group-content"
       data-slot="sidebar-group-content"
       {...props}
     />
   );
-}
+});
+SidebarGroupContent.displayName = "SidebarGroupContent";
 
 function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
   return (
