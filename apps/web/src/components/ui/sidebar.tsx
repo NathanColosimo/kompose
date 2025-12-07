@@ -443,13 +443,13 @@ function SidebarGroupAction({
   );
 }
 
-type SidebarGroupContentProps = Omit<React.ComponentProps<"div">, "ref"> & {
-  contentRef?: React.Ref<HTMLDivElement>;
+type SidebarGroupContentProps = React.ComponentProps<"div"> & {
+  ref?: React.Ref<HTMLDivElement>;
 };
 
 function SidebarGroupContent({
   className,
-  contentRef,
+  ref: refProp,
   ...props
 }: SidebarGroupContentProps) {
   return (
@@ -457,7 +457,7 @@ function SidebarGroupContent({
       className={cn("w-full text-sm", className)}
       data-sidebar="group-content"
       data-slot="sidebar-group-content"
-      ref={contentRef}
+      ref={refProp}
       {...props}
     />
   );
