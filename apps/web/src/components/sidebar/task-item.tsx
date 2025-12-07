@@ -2,10 +2,12 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { GripVertical } from "lucide-react";
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { orpc } from "@/utils/orpc";
+import { Checkbox } from "../ui/checkbox";
 
 type TaskItemProps = {
   /** The task to display */
@@ -17,6 +19,7 @@ type TaskItemProps = {
  * Can be dragged onto the calendar to schedule the task.
  */
 export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
+  const queryClient = useQueryClient();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `task-${task.id}`,
     data: {
@@ -25,8 +28,50 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     },
   });
 
+  const updateTaskMutation = useMutation({
+    ...orpc.tasks.update.mutationOptions(),
+    onMutate: async ({ id, task: taskUpdate }) => {
+      await queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
+      const previousTasks = queryClient.getQueryData<TaskSelect[]>(
+        orpc.tasks.list.queryKey()
+      );
+      queryClient.setQueryData<TaskSelect[]>(
+        orpc.tasks.list.queryKey(),
+        (old) =>
+          old?.map((t) =>
+            t.id === id ? { ...t, ...taskUpdate, updatedAt: new Date() } : t
+          )
+      );
+      return { previousTasks };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(
+          orpc.tasks.list.queryKey(),
+          context.previousTasks
+        );
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
+    },
+  });
+
+  const handleStatusToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newStatus = task.status === "done" ? "todo" : "done";
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: { status: newStatus },
+      });
+    },
+    [task.id, task.status, updateTaskMutation]
+  );
+
   // Show if task is already scheduled
   const isScheduled = task.startTime !== null;
+  const isDone = task.status === "done";
 
   return (
     <div
@@ -41,12 +86,23 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
       {...attributes}
       {...listeners}
     >
-      {/* Drag handle indicator */}
-      <GripVertical className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+      {/* Status checkbox */}
+      <Checkbox
+        checked={isDone}
+        className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer border-muted-foreground/70 bg-sidebar text-foreground transition-colors group-hover:border-foreground"
+        onClick={handleStatusToggle}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex w-full items-center gap-2">
-          <span className="truncate">{task.title}</span>
+          <span
+            className={cn(
+              "truncate",
+              isDone ? "text-muted-foreground line-through" : ""
+            )}
+          >
+            {task.title}
+          </span>
           <span className="ml-auto shrink-0 text-muted-foreground text-xs">
             {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
           </span>

@@ -2,9 +2,12 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { orpc } from "@/utils/orpc";
+import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../week-view";
 
 type TaskEventProps = {
@@ -14,6 +17,7 @@ type TaskEventProps = {
 export const TaskEvent = memo(function TaskEventInner({
   task,
 }: TaskEventProps) {
+  const queryClient = useQueryClient();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `event-${task.id}`,
     data: {
@@ -48,6 +52,47 @@ export const TaskEvent = memo(function TaskEventInner({
     },
   });
 
+  const updateTaskMutation = useMutation({
+    ...orpc.tasks.update.mutationOptions(),
+    onMutate: async ({ id, task: taskUpdate }) => {
+      await queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
+      const previousTasks = queryClient.getQueryData<TaskSelect[]>(
+        orpc.tasks.list.queryKey()
+      );
+      queryClient.setQueryData<TaskSelect[]>(
+        orpc.tasks.list.queryKey(),
+        (old) =>
+          old?.map((t) =>
+            t.id === id ? { ...t, ...taskUpdate, updatedAt: new Date() } : t
+          )
+      );
+      return { previousTasks };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(
+          orpc.tasks.list.queryKey(),
+          context.previousTasks
+        );
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
+    },
+  });
+
+  const handleStatusToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newStatus = task.status === "done" ? "todo" : "done";
+      updateTaskMutation.mutate({
+        id: task.id,
+        task: { status: newStatus },
+      });
+    },
+    [task.id, task.status, updateTaskMutation]
+  );
+
   if (!task.startTime) {
     return null;
   }
@@ -57,6 +102,7 @@ export const TaskEvent = memo(function TaskEventInner({
   const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
 
   const { top, height } = calculateEventPosition(startTime, durationMinutes);
+  const isDone = task.status === "done";
 
   const style: React.CSSProperties = {
     position: "absolute",
@@ -72,7 +118,8 @@ export const TaskEvent = memo(function TaskEventInner({
         "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
         "relative",
         "hover:shadow-md",
-        isDragging ? "opacity-0" : ""
+        isDragging ? "opacity-0" : "",
+        isDone ? "opacity-60" : ""
       )}
       ref={setNodeRef}
       style={style}
@@ -91,9 +138,25 @@ export const TaskEvent = memo(function TaskEventInner({
         {...endAttributes}
         {...endListeners}
       />
-      <div className="truncate font-medium text-xs">{task.title}</div>
-      <div className="truncate text-[10px] opacity-80">
-        {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
+      <div className="flex items-start gap-1">
+        <Checkbox
+          checked={isDone}
+          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer"
+          onClick={handleStatusToggle}
+        />
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "truncate font-medium text-xs",
+              isDone ? "line-through opacity-80" : ""
+            )}
+          >
+            {task.title}
+          </div>
+          <div className="truncate text-[10px] opacity-80">
+            {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
+          </div>
+        </div>
       </div>
     </div>
   );
