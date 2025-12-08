@@ -1,24 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import {
-  addDays,
-  addWeeks,
-  endOfDay,
-  endOfMonth,
-  format,
-  startOfDay,
-  startOfMonth,
-  startOfToday,
-  subDays,
-  subWeeks,
-} from "date-fns";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { addWeeks, format, startOfToday, subWeeks } from "date-fns";
 import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { currentDateAtom } from "@/atoms/current-date";
+import { currentDateAtom, eventWindowAtom } from "@/atoms/current-date";
 import {
-  allGoogleCalendarEventsForWindowAtom,
+  type GoogleEventWithSource,
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
 } from "@/atoms/google-data";
@@ -35,40 +24,11 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { orpc } from "@/utils/orpc";
 
-const EVENTS_WINDOW_PADDING_DAYS = 15;
-
-function buildEventWindow(center: Date) {
-  const monthStart = startOfMonth(center);
-  const start = startOfDay(subDays(monthStart, EVENTS_WINDOW_PADDING_DAYS));
-  const end = endOfDay(
-    addDays(endOfMonth(monthStart), EVENTS_WINDOW_PADDING_DAYS)
-  );
-
-  return { start, end, monthStart };
-}
-
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const window = useAtomValue(eventWindowAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
-  const eventWindow = useMemo(
-    () => buildEventWindow(currentDate),
-    [currentDate]
-  );
-
-  const timeRange = useMemo(
-    () => ({
-      timeMin: eventWindow.start.toISOString(),
-      timeMax: eventWindow.end.toISOString(),
-    }),
-    [eventWindow.end, eventWindow.start]
-  );
-
-  // Stable key for events atomFamily to avoid recreating atoms every render
-  const eventsWindowKey = useMemo(
-    () => ({ timeMin: timeRange.timeMin, timeMax: timeRange.timeMax }),
-    [timeRange.timeMin, timeRange.timeMax]
-  );
 
   // Fetch all tasks for the calendar
   const { data: tasks = [], isLoading } = useQuery(
@@ -76,8 +36,40 @@ export default function Page() {
   );
 
   // Fetch events for each visible calendar within the current window
-  const googleEvents = useAtomValue(
-    allGoogleCalendarEventsForWindowAtom(eventsWindowKey)
+  const eventsQueries = useQueries({
+    queries: googleCalendars.map((calendar) => {
+      const options = orpc.googleCal.events.list.queryOptions({
+        input: {
+          accountId: calendar.accountId,
+          calendarId: calendar.calendar.id,
+          timeMin: window.timeMin,
+          timeMax: window.timeMax,
+        },
+      });
+
+      return {
+        ...options,
+        staleTime: 60_000,
+        keepPreviousData: true,
+      };
+    }),
+  });
+
+  const googleEvents = useMemo<GoogleEventWithSource[]>(
+    () =>
+      eventsQueries.flatMap((query, index) => {
+        const calendar = googleCalendars[index];
+        if (!(calendar && query.data)) {
+          return [];
+        }
+
+        return query.data.map((event) => ({
+          event,
+          accountId: calendar.accountId,
+          calendarId: calendar.calendar.id,
+        }));
+      }),
+    [eventsQueries, googleCalendars]
   );
 
   // Navigate to a specific date (updates both currentDate and buffer center)
