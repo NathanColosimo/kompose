@@ -50,26 +50,12 @@ function matchesCalendar(
   return target.accountId === accountId && target.calendarId === calendarId;
 }
 
-function toCalendarIdentifier(
-  calendar: CalendarWithSource
-): CalendarIdentifier {
-  return { accountId: calendar.accountId, calendarId: calendar.calendar.id };
-}
-
-// Preserve "empty array => all calendars visible" while toggling a single calendar
 function toggleCalendarSelection(
   prev: CalendarIdentifier[],
-  target: CalendarIdentifier,
-  allCalendars: CalendarWithSource[]
+  target: CalendarIdentifier
 ): CalendarIdentifier[] {
   if (prev.length === 0) {
-    const next = allCalendars
-      .filter(
-        (calendar) =>
-          !matchesCalendar(target, calendar.accountId, calendar.calendar.id)
-      )
-      .map(toCalendarIdentifier);
-    return next.length === allCalendars.length ? [] : next;
+    return [target];
   }
 
   const exists = prev.some((c) =>
@@ -81,7 +67,7 @@ function toggleCalendarSelection(
       )
     : [...prev, target];
 
-  return next.length === allCalendars.length ? [] : next;
+  return next;
 }
 
 export function GoogleAccountsDropdown({
@@ -132,10 +118,7 @@ export function GoogleAccountsDropdown({
     for (const calendar of googleCalendars) {
       const accountCalendars = grouped.get(calendar.accountId);
       if (accountCalendars) {
-        accountCalendars.push({
-          calendar: calendar.calendar,
-          accountId: calendar.accountId,
-        });
+        accountCalendars.push(calendar);
       }
     }
     return grouped;
@@ -145,23 +128,19 @@ export function GoogleAccountsDropdown({
   const toggleCalendar = useCallback(
     (accountId: string, calendarId: string) => {
       setVisibleCalendars((prev) =>
-        toggleCalendarSelection(
-          prev,
-          { accountId, calendarId },
-          googleCalendars
-        )
+        toggleCalendarSelection(prev ?? [], { accountId, calendarId })
       );
     },
-    [setVisibleCalendars, googleCalendars]
+    [setVisibleCalendars]
   );
 
   // Count of visible calendars
   const visibleCount = useMemo(() => {
-    if (visibleCalendars.length === 0) {
+    if (visibleCalendars === null) {
       return googleCalendars.length;
     }
     return visibleCalendars.length;
-  }, [visibleCalendars, googleCalendars]);
+  }, [googleCalendars.length, visibleCalendars]);
 
   const totalCount = googleCalendars.length;
 

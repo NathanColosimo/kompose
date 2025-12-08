@@ -6,9 +6,13 @@ import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { atomWithQuery } from "jotai-tanstack-query";
-import { isCalendarVisibleAtom } from "@/atoms/visible-calendars";
+import {
+  isCalendarVisibleAtom,
+  visibleCalendarsAtom,
+} from "@/atoms/visible-calendars";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
+import type { CalendarIdentifier } from "./visible-calendars";
 
 // --- Accounts ---
 
@@ -59,6 +63,20 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
     return query.data ?? [];
   });
 });
+
+export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
+  (get) => {
+    const stored = get(visibleCalendarsAtom);
+    if (stored !== null) {
+      return stored;
+    }
+    const calendars = get(googleCalendarsDataAtom);
+    return calendars.map((calendar) => ({
+      accountId: calendar.accountId,
+      calendarId: calendar.calendar.id,
+    }));
+  }
+);
 
 // --- Events per calendar + window ---
 

@@ -14,12 +14,9 @@ export type CalendarIdentifier = {
  * When empty, all calendars are shown (default behavior).
  * When populated, only calendars in the set are shown.
  */
-export const visibleCalendarsAtom = atomWithStorage<CalendarIdentifier[]>(
-  "visible-calendars",
-  [],
-  undefined,
-  { getOnInit: true }
-);
+export const visibleCalendarsAtom = atomWithStorage<
+  CalendarIdentifier[] | null
+>("visible-calendars", null, undefined, { getOnInit: true });
 
 /**
  * Helper atom to check if a specific calendar is visible.
@@ -28,9 +25,13 @@ export const visibleCalendarsAtom = atomWithStorage<CalendarIdentifier[]>(
 export const isCalendarVisibleAtom = atom(
   (get) => (accountId: string, calendarId: string) => {
     const visibleCalendars = get(visibleCalendarsAtom);
-    // If no calendars are explicitly selected, show all
-    if (visibleCalendars.length === 0) {
+    // When null, we treat as "all visible" (default until user picks)
+    if (visibleCalendars === null) {
       return true;
+    }
+    // If explicitly empty, user has hidden all
+    if (visibleCalendars.length === 0) {
+      return false;
     }
     return visibleCalendars.some(
       (c) => c.accountId === accountId && c.calendarId === calendarId

@@ -10,6 +10,7 @@ import {
   type GoogleEventWithSource,
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
+  resolvedVisibleCalendarIdsAtom,
 } from "@/atoms/google-data";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { WeekView } from "@/components/calendar/week-view";
@@ -29,6 +30,7 @@ export default function Page() {
   const window = useAtomValue(eventWindowAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
+  const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
   // Fetch all tasks for the calendar
   const { data: tasks = [], isLoading } = useQuery(
@@ -37,11 +39,11 @@ export default function Page() {
 
   // Fetch events for each visible calendar within the current window
   const eventsQueries = useQueries({
-    queries: googleCalendars.map((calendar) => {
+    queries: visibleGoogleCalendars.map((calendar) => {
       const options = orpc.googleCal.events.list.queryOptions({
         input: {
           accountId: calendar.accountId,
-          calendarId: calendar.calendar.id,
+          calendarId: calendar.calendarId,
           timeMin: window.timeMin,
           timeMax: window.timeMax,
         },
@@ -58,7 +60,7 @@ export default function Page() {
   const googleEvents = useMemo<GoogleEventWithSource[]>(
     () =>
       eventsQueries.flatMap((query, index) => {
-        const calendar = googleCalendars[index];
+        const calendar = visibleGoogleCalendars[index];
         if (!(calendar && query.data)) {
           return [];
         }
@@ -66,10 +68,10 @@ export default function Page() {
         return query.data.map((event) => ({
           event,
           accountId: calendar.accountId,
-          calendarId: calendar.calendar.id,
+          calendarId: calendar.calendarId,
         }));
       }),
-    [eventsQueries, googleCalendars]
+    [eventsQueries, visibleGoogleCalendars]
   );
 
   // Navigate to a specific date (updates both currentDate and buffer center)
