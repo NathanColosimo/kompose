@@ -76,6 +76,16 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   });
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
+  // Shrink block with equal inset on top and bottom to clarify boundaries.
+  const rawTopPx = Number.parseFloat(top);
+  const rawHeightPx = Number.parseFloat(height);
+  const VERTICAL_SHRINK_PX = 4;
+  const insetPx = VERTICAL_SHRINK_PX / 2;
+  const adjustedTopPx = Number.isNaN(rawTopPx) ? 0 : rawTopPx + insetPx;
+  const adjustedHeightPx = Math.max(
+    (Number.isNaN(rawHeightPx) ? 0 : rawHeightPx) - VERTICAL_SHRINK_PX,
+    20
+  );
 
   const normalizedPalette = useAtomValue(
     normalizedGoogleColorsAtomFamily(accountId)
@@ -91,8 +101,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const style: React.CSSProperties = {
     position: "absolute",
-    top,
-    height,
+    top: `${adjustedTopPx}px`,
+    height: `${adjustedHeightPx}px`,
     left: "2px",
     right: "2px",
     ...(backgroundColor && {

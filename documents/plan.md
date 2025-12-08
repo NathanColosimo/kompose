@@ -410,3 +410,8 @@ packages/
 - **Month-anchored fetch window**: Google events fetched in a month-anchored window (start of month ±15 days) to avoid refetching when moving between days in the same month.
 - **Stable query keys**: TanStack Query keys include the month anchor so intra-month navigation reuses cache; crossing into a new month triggers a single refresh.
 - **Simplified layout**: Horizontal buffering/snap removed; week view uses a stable 7-day slice derived from `currentDate`.
+
+### 6.7 Data & Color Updates (Google Calendar)
+- **Jotai data layer**: Accounts, calendars, and events now load via atoms (`googleAccountsAtom`, per-account `googleCalendarsAtomFamily`, per-window `googleCalendarEventsForWindowAtom`, and a flattening selector) instead of inline `useQuery/useQueries`.
+- **Minimal shapes**: Calendars carry `accountId` alongside the Google calendar, events carry `{ accountId, calendarId, event }`; no custom wrapper types beyond these tags.
+- **Palette normalization**: Added pastel normalization for Google colors via `normalizedGoogleColorsAtomFamily`; dropdown and event components render softened background colors while keeping IDs unchanged.

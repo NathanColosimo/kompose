@@ -14,7 +14,7 @@
 
 ## Drag data types
 - `task` / `task-resize` (`direction: start|end`).
-- `google-event` / `google-event-resize` (`direction: start|end`).
+- `google-event` / `google-event-resize` (`direction: start|end`), carrying `{ accountId, calendarId, event }`.
 
 ## Move behavior
 - Body drag uses `task`/`google-event` types; drop must be on `slot-*` id (local time via `parseSlotId`).
@@ -31,6 +31,9 @@
 - Height = duration/60 * `PIXELS_PER_HOUR`, min 24px.
 - Preview follows the same snapping/clamping rules (including end-handle +15min adjust).
 - Drag overlay (title pill) is shown only for move drags; hidden during resize drags (tasks and Google events).
+
+## Colors
+- Google event colors render using a normalized pastel palette (per-account `normalizedGoogleColorsAtomFamily`), keeping hue distinctions but softening saturation/lightness for UI fit.
 
 ## Mutations
 - Tasks: `orpc.tasks.update` with optimistic updates and refetch on settle.
