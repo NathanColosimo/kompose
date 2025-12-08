@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   addDays,
   addWeeks,
@@ -17,9 +17,12 @@ import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { currentDateAtom } from "@/atoms/current-date";
-import { isCalendarVisibleAtom } from "@/atoms/visible-calendars";
+import {
+  allGoogleCalendarEventsForWindowAtom,
+  googleAccountsDataAtom,
+  googleCalendarsDataAtom,
+} from "@/atoms/google-data";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
-import type { GoogleEventWithSource } from "@/components/calendar/week-view";
 import { WeekView } from "@/components/calendar/week-view";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -30,7 +33,6 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
 const EVENTS_WINDOW_PADDING_DAYS = 15;
@@ -47,7 +49,8 @@ function buildEventWindow(center: Date) {
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const googleCalendars = useAtomValue(googleCalendarsDataAtom);
   const eventWindow = useMemo(
     () => buildEventWindow(currentDate),
     [currentDate]
@@ -61,87 +64,20 @@ export default function Page() {
     [eventWindow.end, eventWindow.start]
   );
 
+  // Stable key for events atomFamily to avoid recreating atoms every render
+  const eventsWindowKey = useMemo(
+    () => ({ timeMin: timeRange.timeMin, timeMax: timeRange.timeMax }),
+    [timeRange.timeMin, timeRange.timeMax]
+  );
+
   // Fetch all tasks for the calendar
   const { data: tasks = [], isLoading } = useQuery(
     orpc.tasks.list.queryOptions()
   );
 
-  // Fetch all linked Google accounts from Better Auth
-  const { data: googleAccounts = [] } = useQuery({
-    queryKey: ["google-accounts"],
-    queryFn: async () => {
-      const result = await authClient.listAccounts();
-      const accounts = result?.data ?? [];
-      return accounts.filter((account) => account.providerId === "google");
-    },
-  });
-
-  // Fetch calendars for each Google account
-  const calendarQueries = useQueries({
-    queries: googleAccounts.map((account) => ({
-      ...orpc.googleCal.calendars.list.queryOptions({
-        input: { accountId: account.id },
-      }),
-    })),
-  });
-
-  const googleCalendars = useMemo(
-    () =>
-      calendarQueries.flatMap((query, index) => {
-        const account = googleAccounts[index];
-        if (!(account && query.data)) {
-          return [];
-        }
-
-        return query.data.map((calendar) => ({
-          ...calendar,
-          accountId: account.id,
-        }));
-      }),
-    [calendarQueries, googleAccounts]
-  );
-
-  // Filter calendars to only those that are visible
-  const visibleGoogleCalendars = googleCalendars.filter((calendar) =>
-    isCalendarVisible(calendar.accountId, calendar.id)
-  );
-
-  // Fetch events for each visible calendar within a stable ±30d window; keep previous
-  // data so buffer shifts never blank the UI while revalidating.
-  const eventsQueries = useQueries({
-    queries: visibleGoogleCalendars.map((calendar) => {
-      const options = orpc.googleCal.events.list.queryOptions({
-        input: {
-          accountId: calendar.accountId,
-          calendarId: calendar.id,
-          timeMin: timeRange.timeMin,
-          timeMax: timeRange.timeMax,
-        },
-      });
-
-      return {
-        ...options,
-        staleTime: 60_000,
-        keepPreviousData: true,
-      } as typeof options;
-    }),
-  });
-
-  const googleEvents = useMemo<GoogleEventWithSource[]>(
-    () =>
-      eventsQueries.flatMap((query, index) => {
-        const calendar = visibleGoogleCalendars[index];
-        if (!(calendar && query.data)) {
-          return [];
-        }
-
-        return query.data.map((event) => ({
-          event,
-          accountId: calendar.accountId,
-          calendar,
-        }));
-      }),
-    [eventsQueries, visibleGoogleCalendars]
+  // Fetch events for each visible calendar within the current window
+  const googleEvents = useAtomValue(
+    allGoogleCalendarEventsForWindowAtom(eventsWindowKey)
   );
 
   // Navigate to a specific date (updates both currentDate and buffer center)

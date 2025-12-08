@@ -1,10 +1,6 @@
 "use client";
 
 import type { TaskSelect } from "@kompose/db/schema/task";
-import type {
-  Calendar,
-  Event as GoogleEvent,
-} from "@kompose/google-cal/schema";
 import { format, isToday } from "date-fns";
 import { useAtomValue } from "jotai";
 import {
@@ -16,6 +12,7 @@ import {
   useState,
 } from "react";
 import { weekDaysAtom } from "@/atoms/current-date";
+import type { GoogleEventWithSource } from "@/atoms/google-data";
 import { PIXELS_PER_HOUR } from "./constants";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -25,19 +22,6 @@ import { TimeGutter } from "./time-grid/time-gutter";
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
-
-type WeekViewProps = {
-  /** All tasks to display (will be filtered to scheduled ones) */
-  tasks: TaskSelect[];
-  /** Google events (raw from API) to render separately from tasks */
-  googleEvents?: GoogleEventWithSource[];
-};
-
-export type GoogleEventWithSource = {
-  event: GoogleEvent;
-  accountId: string;
-  calendar: Calendar;
-};
 
 type PositionedGoogleEvent = GoogleEventWithSource & {
   start: Date;
@@ -118,6 +102,13 @@ function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
 
   return { ...sourceEvent, start, end } satisfies PositionedGoogleEvent;
 }
+
+type WeekViewProps = {
+  /** All tasks to display (will be filtered to scheduled ones) */
+  tasks: TaskSelect[];
+  /** Google events (raw from API) to render separately from tasks */
+  googleEvents?: GoogleEventWithSource[];
+};
 
 /**
  * WeekView - Fixed 7-day view starting from the current date. No horizontal scroll.
@@ -254,7 +245,7 @@ export const WeekView = memo(function WeekViewComponent({
                       {dayAllDay.map((item: AllDayGoogleEvent) => (
                         <span
                           className="truncate rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-[11px] text-primary"
-                          key={`${item.calendar.id}-${item.event.id}`}
+                          key={`${item.calendarId}-${item.event.id}`}
                           title={item.event.summary ?? "Google event"}
                         >
                           {item.event.summary ?? "Google event"}
@@ -283,13 +274,13 @@ export const WeekView = memo(function WeekViewComponent({
                 <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
-                        ({ event, start, end, calendar, accountId }) => (
+                        ({ event, start, end, calendarId, accountId }) => (
                           <GoogleCalendarEvent
                             accountId={accountId}
-                            calendar={calendar}
+                            calendarId={calendarId}
                             end={end}
                             event={event}
-                            key={`${calendar.id}-${event.id}-${start.toISOString()}`}
+                            key={`${calendarId}-${event.id}-${start.toISOString()}`}
                             start={start}
                           />
                         )

@@ -1,17 +1,11 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import type {
-  Calendar,
-  Event as GoogleEvent,
-} from "@kompose/google-cal/schema";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { format } from "date-fns";
 import { useAtomValue } from "jotai";
 import { memo } from "react";
-import {
-  calendarColorResolverAtomFamily,
-  googleColorsAtomFamily,
-} from "@/atoms/google-colors";
+import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../week-view";
 
@@ -20,7 +14,7 @@ type GoogleCalendarEventProps = {
   start: Date;
   end: Date;
   accountId: string;
-  calendar: Calendar;
+  calendarId: string;
 };
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
@@ -28,7 +22,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   start,
   end,
   accountId,
-  calendar,
+  calendarId,
 }: GoogleCalendarEventProps) {
   const durationMinutes = Math.max(
     1,
@@ -36,12 +30,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   );
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `google-event-${calendar.id}-${event.id}`,
+    id: `google-event-${calendarId}-${event.id}`,
     data: {
       type: "google-event",
       event,
       accountId,
-      calendarId: calendar.id,
+      calendarId,
       start,
       end,
     },
@@ -52,12 +46,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: startListeners,
     setNodeRef: setStartHandleRef,
   } = useDraggable({
-    id: `google-event-${calendar.id}-${event.id}-resize-start`,
+    id: `google-event-${calendarId}-${event.id}-resize-start`,
     data: {
       type: "google-event-resize",
       event,
       accountId,
-      calendarId: calendar.id,
+      calendarId,
       start,
       end,
       direction: "start",
@@ -69,12 +63,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: endListeners,
     setNodeRef: setEndHandleRef,
   } = useDraggable({
-    id: `google-event-${calendar.id}-${event.id}-resize-end`,
+    id: `google-event-${calendarId}-${event.id}-resize-end`,
     data: {
       type: "google-event-resize",
       event,
       accountId,
-      calendarId: calendar.id,
+      calendarId,
       start,
       end,
       direction: "end",
@@ -83,28 +77,17 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
 
-  const resolveCalendarColor = useAtomValue(
-    calendarColorResolverAtomFamily(accountId)
-  );
-
-  const {
-    backgroundColor: calendarBackgroundColor,
-    foregroundColor: calendarForegroundColor,
-  } = resolveCalendarColor(calendar);
-
-  const { data: colorsPalette } = useAtomValue(
-    googleColorsAtomFamily(accountId)
+  const normalizedPalette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(accountId)
   );
 
   const eventPalette =
-    event.colorId && colorsPalette?.event
-      ? colorsPalette.event[event.colorId]
+    event.colorId && normalizedPalette?.event
+      ? normalizedPalette.event[event.colorId]
       : undefined;
 
-  const backgroundColor =
-    eventPalette?.background ?? calendarBackgroundColor ?? undefined;
-  const foregroundColor =
-    eventPalette?.foreground ?? calendarForegroundColor ?? undefined;
+  const backgroundColor = eventPalette?.background ?? undefined;
+  const foregroundColor = eventPalette?.foreground ?? undefined;
 
   const style: React.CSSProperties = {
     position: "absolute",

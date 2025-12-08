@@ -1,12 +1,15 @@
 "use client";
 
-import type { Calendar } from "@kompose/google-cal/schema";
 import { useQueries } from "@tanstack/react-query";
 import type { OAuth2UserInfo } from "better-auth";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import { googleColorsAtomFamily } from "@/atoms/google-colors";
+import {
+  normalizedGoogleColorsAtomFamily,
+  pastelizeColor,
+} from "@/atoms/google-colors";
+import type { CalendarWithSource } from "@/atoms/google-data";
 import {
   type CalendarIdentifier,
   isCalendarVisibleAtom,
@@ -28,10 +31,6 @@ type GoogleAccount = {
   providerId: string;
 };
 
-type CalendarWithAccount = Calendar & {
-  accountId: string;
-};
-
 type AccountWithInfo = GoogleAccount & {
   email?: string;
   name?: string;
@@ -40,7 +39,7 @@ type AccountWithInfo = GoogleAccount & {
 
 type GoogleAccountsDropdownProps = {
   googleAccounts: GoogleAccount[];
-  googleCalendars: CalendarWithAccount[];
+  googleCalendars: CalendarWithSource[];
 };
 
 function matchesCalendar(
@@ -52,21 +51,22 @@ function matchesCalendar(
 }
 
 function toCalendarIdentifier(
-  calendar: CalendarWithAccount
+  calendar: CalendarWithSource
 ): CalendarIdentifier {
-  return { accountId: calendar.accountId, calendarId: calendar.id };
+  return { accountId: calendar.accountId, calendarId: calendar.calendar.id };
 }
 
 // Preserve "empty array => all calendars visible" while toggling a single calendar
 function toggleCalendarSelection(
   prev: CalendarIdentifier[],
   target: CalendarIdentifier,
-  allCalendars: CalendarWithAccount[]
+  allCalendars: CalendarWithSource[]
 ): CalendarIdentifier[] {
   if (prev.length === 0) {
     const next = allCalendars
       .filter(
-        (calendar) => !matchesCalendar(target, calendar.accountId, calendar.id)
+        (calendar) =>
+          !matchesCalendar(target, calendar.accountId, calendar.calendar.id)
       )
       .map(toCalendarIdentifier);
     return next.length === allCalendars.length ? [] : next;
@@ -125,14 +125,17 @@ export function GoogleAccountsDropdown({
 
   // Group calendars by account
   const calendarsByAccount = useMemo(() => {
-    const grouped = new Map<string, CalendarWithAccount[]>();
+    const grouped = new Map<string, CalendarWithSource[]>();
     for (const account of googleAccounts) {
       grouped.set(account.id, []);
     }
     for (const calendar of googleCalendars) {
       const accountCalendars = grouped.get(calendar.accountId);
       if (accountCalendars) {
-        accountCalendars.push(calendar);
+        accountCalendars.push({
+          calendar: calendar.calendar,
+          accountId: calendar.accountId,
+        });
       }
     }
     return grouped;
@@ -198,7 +201,7 @@ export function GoogleAccountsDropdown({
 
 type AccountCalendarsSectionProps = {
   account: AccountWithInfo;
-  calendars: CalendarWithAccount[];
+  calendars: CalendarWithSource[];
   isCalendarVisible: (accountId: string, calendarId: string) => boolean;
   toggleCalendar: (accountId: string, calendarId: string) => void;
   isLastAccount: boolean;
@@ -211,33 +214,39 @@ function AccountCalendarsSection({
   toggleCalendar,
   isLastAccount,
 }: AccountCalendarsSectionProps) {
-  const { data: palette } = useAtomValue(googleColorsAtomFamily(account.id));
+  const normalizedPalette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(account.id)
+  );
 
   const calendarItems = useMemo(
     () =>
       calendars.map((calendar) => {
-        const backgroundColor =
-          calendar.backgroundColor ??
-          (calendar.colorId
-            ? palette?.calendar?.[calendar.colorId]?.background
-            : undefined);
+        const backgroundColor = calendar.calendar.backgroundColor
+          ? pastelizeColor(calendar.calendar.backgroundColor)
+          : normalizedPalette?.calendar?.[calendar?.calendar.colorId ?? ""]
+              ?.background;
         const swatchStyle = backgroundColor
-          ? { backgroundColor, borderColor: backgroundColor }
+          ? {
+              backgroundColor,
+              borderColor: backgroundColor,
+            }
           : undefined;
 
         return (
           <DropdownMenuCheckboxItem
-            checked={isCalendarVisible(account.id, calendar.id)}
+            checked={isCalendarVisible(account.id, calendar.calendar.id)}
             className="cursor-pointer"
-            key={`${account.id}-${calendar.id}`}
-            onCheckedChange={() => toggleCalendar(account.id, calendar.id)}
+            key={`${account.id}-${calendar.calendar.id}`}
+            onCheckedChange={() =>
+              toggleCalendar(account.id, calendar.calendar.id)
+            }
             onSelect={(event) => event.preventDefault()}
           >
             <span
               className="mr-2 inline-block h-3 w-3 rounded-sm border"
               style={swatchStyle}
             />
-            <span className="truncate">{calendar.summary}</span>
+            <span className="truncate">{calendar.calendar.summary}</span>
           </DropdownMenuCheckboxItem>
         );
       }),
@@ -245,8 +254,8 @@ function AccountCalendarsSection({
       account.id,
       calendars,
       isCalendarVisible,
-      palette?.calendar,
       toggleCalendar,
+      normalizedPalette,
     ]
   );
 
