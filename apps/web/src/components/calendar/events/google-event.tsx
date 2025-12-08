@@ -1,9 +1,17 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type {
+  Calendar,
+  Event as GoogleEvent,
+} from "@kompose/google-cal/schema";
 import { format } from "date-fns";
+import { useAtomValue } from "jotai";
 import { memo } from "react";
+import {
+  calendarColorResolverAtomFamily,
+  googleColorsAtomFamily,
+} from "@/atoms/google-colors";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../week-view";
 
@@ -12,7 +20,7 @@ type GoogleCalendarEventProps = {
   start: Date;
   end: Date;
   accountId: string;
-  calendarId: string;
+  calendar: Calendar;
 };
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
@@ -20,7 +28,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   start,
   end,
   accountId,
-  calendarId,
+  calendar,
 }: GoogleCalendarEventProps) {
   const durationMinutes = Math.max(
     1,
@@ -28,12 +36,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   );
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `google-event-${calendarId}-${event.id}`,
+    id: `google-event-${calendar.id}-${event.id}`,
     data: {
       type: "google-event",
       event,
       accountId,
-      calendarId,
+      calendarId: calendar.id,
       start,
       end,
     },
@@ -44,12 +52,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: startListeners,
     setNodeRef: setStartHandleRef,
   } = useDraggable({
-    id: `google-event-${calendarId}-${event.id}-resize-start`,
+    id: `google-event-${calendar.id}-${event.id}-resize-start`,
     data: {
       type: "google-event-resize",
       event,
       accountId,
-      calendarId,
+      calendarId: calendar.id,
       start,
       end,
       direction: "start",
@@ -61,12 +69,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: endListeners,
     setNodeRef: setEndHandleRef,
   } = useDraggable({
-    id: `google-event-${calendarId}-${event.id}-resize-end`,
+    id: `google-event-${calendar.id}-${event.id}-resize-end`,
     data: {
       type: "google-event-resize",
       event,
       accountId,
-      calendarId,
+      calendarId: calendar.id,
       start,
       end,
       direction: "end",
@@ -75,18 +83,49 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
 
+  const resolveCalendarColor = useAtomValue(
+    calendarColorResolverAtomFamily(accountId)
+  );
+
+  const {
+    backgroundColor: calendarBackgroundColor,
+    foregroundColor: calendarForegroundColor,
+  } = resolveCalendarColor(calendar);
+
+  const { data: colorsPalette } = useAtomValue(
+    googleColorsAtomFamily(accountId)
+  );
+
+  const eventPalette =
+    event.colorId && colorsPalette?.event
+      ? colorsPalette.event[event.colorId]
+      : undefined;
+
+  const backgroundColor =
+    eventPalette?.background ?? calendarBackgroundColor ?? undefined;
+  const foregroundColor =
+    eventPalette?.foreground ?? calendarForegroundColor ?? undefined;
+
   const style: React.CSSProperties = {
     position: "absolute",
     top,
     height,
     left: "2px",
     right: "2px",
+    ...(backgroundColor && {
+      backgroundColor,
+      borderColor: backgroundColor,
+    }),
+    ...(foregroundColor && { color: foregroundColor }),
   };
 
   return (
     <div
       className={cn(
-        "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+        "group pointer-events-auto cursor-grab rounded-md border px-2 py-1 shadow-sm transition-shadow",
+        backgroundColor
+          ? ""
+          : "border-primary/20 bg-primary/90 text-primary-foreground",
         "relative",
         "hover:shadow-md",
         isDragging ? "opacity-0" : ""

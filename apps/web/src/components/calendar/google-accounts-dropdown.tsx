@@ -6,6 +6,7 @@ import type { OAuth2UserInfo } from "better-auth";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { googleColorsAtomFamily } from "@/atoms/google-colors";
 import {
   type CalendarIdentifier,
   isCalendarVisibleAtom,
@@ -180,51 +181,100 @@ export function GoogleAccountsDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        {accountsWithInfo.map((account, accountIndex) => {
-          const accountCalendars = calendarsByAccount.get(account.id) ?? [];
-          const isLastAccount = accountIndex === accountsWithInfo.length - 1;
-
-          return (
-            <div key={account.id}>
-              <div className="flex items-center px-2 py-1.5">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate font-medium text-sm">
-                    {account.isLoading ? (
-                      <RefreshCw className="inline size-3 animate-spin" />
-                    ) : (
-                      (account.email ?? account.name ?? "Google Account")
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {/* Individual calendars for this account */}
-              <div className="ml-3 border-l pl-2">
-                {accountCalendars.map((calendar) => (
-                  <DropdownMenuCheckboxItem
-                    checked={isCalendarVisible(account.id, calendar.id)}
-                    className="cursor-pointer"
-                    key={`${account.id}-${calendar.id}`}
-                    onCheckedChange={() =>
-                      toggleCalendar(account.id, calendar.id)
-                    }
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    <span className="truncate">{calendar.summary}</span>
-                  </DropdownMenuCheckboxItem>
-                ))}
-                {accountCalendars.length === 0 && (
-                  <span className="px-2 py-1.5 text-muted-foreground text-xs">
-                    No calendars found
-                  </span>
-                )}
-              </div>
-
-              {!isLastAccount && <DropdownMenuSeparator />}
-            </div>
-          );
-        })}
+        {accountsWithInfo.map((account, accountIndex) => (
+          <AccountCalendarsSection
+            account={account}
+            calendars={calendarsByAccount.get(account.id) ?? []}
+            isCalendarVisible={isCalendarVisible}
+            isLastAccount={accountIndex === accountsWithInfo.length - 1}
+            key={account.id}
+            toggleCalendar={toggleCalendar}
+          />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+type AccountCalendarsSectionProps = {
+  account: AccountWithInfo;
+  calendars: CalendarWithAccount[];
+  isCalendarVisible: (accountId: string, calendarId: string) => boolean;
+  toggleCalendar: (accountId: string, calendarId: string) => void;
+  isLastAccount: boolean;
+};
+
+function AccountCalendarsSection({
+  account,
+  calendars,
+  isCalendarVisible,
+  toggleCalendar,
+  isLastAccount,
+}: AccountCalendarsSectionProps) {
+  const { data: palette } = useAtomValue(googleColorsAtomFamily(account.id));
+
+  const calendarItems = useMemo(
+    () =>
+      calendars.map((calendar) => {
+        const backgroundColor =
+          calendar.backgroundColor ??
+          (calendar.colorId
+            ? palette?.calendar?.[calendar.colorId]?.background
+            : undefined);
+        const swatchStyle = backgroundColor
+          ? { backgroundColor, borderColor: backgroundColor }
+          : undefined;
+
+        return (
+          <DropdownMenuCheckboxItem
+            checked={isCalendarVisible(account.id, calendar.id)}
+            className="cursor-pointer"
+            key={`${account.id}-${calendar.id}`}
+            onCheckedChange={() => toggleCalendar(account.id, calendar.id)}
+            onSelect={(event) => event.preventDefault()}
+          >
+            <span
+              className="mr-2 inline-block h-3 w-3 rounded-sm border"
+              style={swatchStyle}
+            />
+            <span className="truncate">{calendar.summary}</span>
+          </DropdownMenuCheckboxItem>
+        );
+      }),
+    [
+      account.id,
+      calendars,
+      isCalendarVisible,
+      palette?.calendar,
+      toggleCalendar,
+    ]
+  );
+
+  return (
+    <div>
+      <div className="flex items-center px-2 py-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate font-medium text-sm">
+            {account.isLoading ? (
+              <RefreshCw className="inline size-3 animate-spin" />
+            ) : (
+              (account.email ?? account.name ?? "Google Account")
+            )}
+          </span>
+        </div>
+      </div>
+
+      {/* Individual calendars for this account */}
+      <div className="ml-3 border-l pl-2">
+        {calendarItems}
+        {calendars.length === 0 && (
+          <span className="px-2 py-1.5 text-muted-foreground text-xs">
+            No calendars found
+          </span>
+        )}
+      </div>
+
+      {!isLastAccount && <DropdownMenuSeparator />}
+    </div>
   );
 }

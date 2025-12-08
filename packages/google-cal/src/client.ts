@@ -4,6 +4,8 @@ import { z, ZodError } from "zod";
 import {
   type Calendar,
   CalendarSchema,
+  type Colors,
+  ColorsSchema,
   type CreateCalendar,
   type CreateEvent,
   type Event,
@@ -55,6 +57,12 @@ export type GoogleCalendarService = {
     calendarId: string,
     eventId: string
   ) => Effect.Effect<void, GoogleApiError>;
+
+  // Colors
+  readonly listColors: () => Effect.Effect<
+    Colors,
+    GoogleApiError | GoogleCalendarZodError
+  >;
 };
 
 export class GoogleCalendar extends Context.Tag("GoogleCalendar")<
@@ -222,7 +230,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const parsed = EventSchema.safeParse(response);
       if (!parsed.success) {
-        return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }) );
+        return yield* Effect.fail(
+          new GoogleCalendarZodError({ cause: parsed.error })
+        );
       }
 
       return parsed.data;
@@ -233,6 +243,23 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       try: () => client.calendars.events.delete(eventId, { calendarId }),
       catch: (cause) => new GoogleApiError({ cause }),
     }).pipe(Effect.asVoid);
+
+  const listColors = () =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () => client.listColors.listColors(),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+
+      const parsed = ColorsSchema.safeParse(response);
+      if (!parsed.success) {
+        return yield* Effect.fail(
+          new GoogleCalendarZodError({ cause: parsed.error })
+        );
+      }
+
+      return parsed.data;
+    });
 
   return {
     listCalendars,
@@ -245,6 +272,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
     createEvent,
     updateEvent,
     deleteEvent,
+    listColors,
   };
 };
 

@@ -138,7 +138,7 @@ export default function Page() {
         return query.data.map((event) => ({
           event,
           accountId: calendar.accountId,
-          calendarId: calendar.id,
+          calendar,
         }));
       }),
     [eventsQueries, visibleGoogleCalendars]

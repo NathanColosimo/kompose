@@ -1,7 +1,10 @@
 "use client";
 
 import type { TaskSelect } from "@kompose/db/schema/task";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type {
+  Calendar,
+  Event as GoogleEvent,
+} from "@kompose/google-cal/schema";
 import { format, isToday } from "date-fns";
 import { useAtomValue } from "jotai";
 import {
@@ -33,7 +36,7 @@ type WeekViewProps = {
 export type GoogleEventWithSource = {
   event: GoogleEvent;
   accountId: string;
-  calendarId: string;
+  calendar: Calendar;
 };
 
 type PositionedGoogleEvent = GoogleEventWithSource & {
@@ -41,9 +44,7 @@ type PositionedGoogleEvent = GoogleEventWithSource & {
   end: Date;
 };
 
-type AllDayGoogleEvent = GoogleEventWithSource & {
-  date: Date;
-};
+type AllDayGoogleEvent = GoogleEventWithSource & { date: Date };
 
 function parseDateOnlyLocal(dateStr: string): Date {
   const [year, month, day] = dateStr.split("-").map(Number);
@@ -253,7 +254,7 @@ export const WeekView = memo(function WeekViewComponent({
                       {dayAllDay.map((item: AllDayGoogleEvent) => (
                         <span
                           className="truncate rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-[11px] text-primary"
-                          key={`${item.calendarId}-${item.event.id}`}
+                          key={`${item.calendar.id}-${item.event.id}`}
                           title={item.event.summary ?? "Google event"}
                         >
                           {item.event.summary ?? "Google event"}
@@ -282,13 +283,13 @@ export const WeekView = memo(function WeekViewComponent({
                 <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
-                        ({ event, start, end, accountId, calendarId }) => (
+                        ({ event, start, end, calendar, accountId }) => (
                           <GoogleCalendarEvent
                             accountId={accountId}
-                            calendarId={calendarId}
+                            calendar={calendar}
                             end={end}
                             event={event}
-                            key={`${calendarId}-${event.id}-${start.toISOString()}`}
+                            key={`${calendar.id}-${event.id}-${start.toISOString()}`}
                             start={start}
                           />
                         )

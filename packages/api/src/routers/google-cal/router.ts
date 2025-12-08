@@ -224,6 +224,35 @@ export const googleCalRouter = os.router({
     }),
   },
 
+  colors: {
+    list: os.colors.list.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const colors = yield* service.listColors();
+          return colors;
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (colors) => colors,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
+    }),
+  },
+
   events: {
     list: os.events.list.handler(({ input, context }) => {
       const program = Effect.gen(function* () {

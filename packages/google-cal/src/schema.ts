@@ -7,6 +7,12 @@ export const CalendarSchema = z.object({
   timeZone: z.string().optional(),
   primary: z.boolean().optional(),
   accessRole: z.string().optional(),
+  backgroundColor: z.string().optional(),
+  foregroundColor: z.string().optional(),
+  colorId: z.string().optional(),
+  selected: z.boolean().optional(),
+  hidden: z.boolean().optional(),
+  summaryOverride: z.string().optional(),
 });
 
 export type Calendar = z.infer<typeof CalendarSchema>;
@@ -111,3 +117,28 @@ export const CreateEventInputSchema = EventSchema.omit({
 });
 
 export type CreateEvent = z.infer<typeof CreateEventInputSchema>;
+
+export const ColorsSchema = z.object({
+  kind: z.string().optional(),
+  updated: z.string().optional(),
+  calendar: z
+    .record(
+      z.string(),
+      z.object({
+        background: z.string().optional(),
+        foreground: z.string().optional(),
+      })
+    )
+    .optional(),
+  event: z
+    .record(
+      z.string(),
+      z.object({
+        background: z.string().optional(),
+        foreground: z.string().optional(),
+      })
+    )
+    .optional(),
+});
+
+export type Colors = z.infer<typeof ColorsSchema>;

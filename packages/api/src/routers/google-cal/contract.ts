@@ -1,5 +1,6 @@
 import {
   CalendarSchema,
+  ColorsSchema,
   CreateCalendarInputSchema,
   CreateEventInputSchema,
   EventSchema,
@@ -90,6 +91,10 @@ export const deleteEvent = oc
   )
   .output(z.void());
 
+export const listColors = oc
+  .input(z.object({ accountId: z.string() }))
+  .output(ColorsSchema);
+
 export const googleCalContract = {
   calendars: {
     list: listCalendars,
@@ -97,6 +102,9 @@ export const googleCalContract = {
     create: createCalendar,
     update: updateCalendar,
     delete: deleteCalendar,
+  },
+  colors: {
+    list: listColors,
   },
   events: {
     list: listEvents,
