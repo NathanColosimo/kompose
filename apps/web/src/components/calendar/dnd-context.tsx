@@ -13,10 +13,10 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
-import { orpc } from "@/utils/orpc";
+import { useUpdateGoogleEventMutation } from "@/hooks/use-update-google-event-mutation";
+import { useUpdateTaskMutation } from "@/hooks/use-update-task-mutation";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   buildGoogleMoveUpdate,
@@ -56,7 +56,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [previewRect, setPreviewRect] = useState<PreviewRect | null>(null);
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
-  const queryClient = useQueryClient();
   const stableChildren = useMemo(() => children, [children]);
 
   // Configure sensors for drag detection
@@ -70,55 +69,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   );
 
   // Mutation to update task schedule
-  const updateTaskMutation = useMutation({
-    ...orpc.tasks.update.mutationOptions(),
-    onMutate: async ({ id, task }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
-
-      // Snapshot previous value
-      const previousTasks = queryClient.getQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey()
-      );
-
-      // Optimistically update
-      queryClient.setQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey(),
-        (old) =>
-          old?.map((t) =>
-            t.id === id
-              ? {
-                  ...t,
-                  ...task,
-                  updatedAt: new Date(),
-                }
-              : t
-          )
-      );
-
-      return { previousTasks };
-    },
-    onError: (_err, _variables, context) => {
-      // Rollback on error
-      if (context?.previousTasks) {
-        queryClient.setQueryData(
-          orpc.tasks.list.queryKey(),
-          context.previousTasks
-        );
-      }
-    },
-    onSettled: () => {
-      // Refetch after mutation settles
-      queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
-    },
-  });
-
-  const updateGoogleEventMutation = useMutation({
-    ...orpc.googleCal.events.update.mutationOptions(),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
-    },
-  });
+  const updateTaskMutation = useUpdateTaskMutation();
+  const updateGoogleEventMutation = useUpdateGoogleEventMutation();
 
   const slotDataToDate = useCallback((slot: SlotData) => {
     const dateTime = new Date(slot.date);
