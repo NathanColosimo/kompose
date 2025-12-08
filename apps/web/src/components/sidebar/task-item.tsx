@@ -2,11 +2,10 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { memo, useCallback } from "react";
+import { useUpdateTaskMutation } from "@/hooks/use-update-task-mutation";
 import { cn } from "@/lib/utils";
-import { orpc } from "@/utils/orpc";
 import { Checkbox } from "../ui/checkbox";
 
 type TaskItemProps = {
@@ -19,7 +18,6 @@ type TaskItemProps = {
  * Can be dragged onto the calendar to schedule the task.
  */
 export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
-  const queryClient = useQueryClient();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `task-${task.id}`,
     data: {
@@ -28,34 +26,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     },
   });
 
-  const updateTaskMutation = useMutation({
-    ...orpc.tasks.update.mutationOptions(),
-    onMutate: async ({ id, task: taskUpdate }) => {
-      await queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
-      const previousTasks = queryClient.getQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey()
-      );
-      queryClient.setQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey(),
-        (old) =>
-          old?.map((t) =>
-            t.id === id ? { ...t, ...taskUpdate, updatedAt: new Date() } : t
-          )
-      );
-      return { previousTasks };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(
-          orpc.tasks.list.queryKey(),
-          context.previousTasks
-        );
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
-    },
-  });
+  const updateTaskMutation = useUpdateTaskMutation();
 
   const handleStatusToggle = useCallback(
     (e: React.MouseEvent) => {
@@ -107,11 +78,6 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
           </span>
         </div>
-        {task.description ? (
-          <span className="line-clamp-2 whitespace-break-spaces text-muted-foreground text-xs">
-            {task.description}
-          </span>
-        ) : null}
         {/** biome-ignore lint/nursery/noLeakedRender: task.startTime is not null */}
         {isScheduled && task.startTime ? (
           <span className="text-[10px] text-primary">
@@ -130,11 +96,6 @@ export function TaskItemPreview({ task }: { task: TaskSelect }) {
   return (
     <div className="w-64 cursor-grabbing rounded-md border bg-sidebar p-3 shadow-lg">
       <div className="truncate font-medium text-sm">{task.title}</div>
-      {task.description ? (
-        <div className="mt-1 line-clamp-1 text-muted-foreground text-xs">
-          {task.description}
-        </div>
-      ) : null}
     </div>
   );
 }
