@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
+import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../week-view";
 
@@ -113,52 +114,54 @@ export const TaskEvent = memo(function TaskEventInner({
   };
 
   return (
-    <div
-      className={cn(
-        "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
-        "relative",
-        "hover:shadow-md",
-        isDragging ? "opacity-0" : "",
-        isDone ? "opacity-60" : ""
-      )}
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-    >
+    <TaskEditPopover align="start" side="right" task={task}>
       <div
-        className="-top-1 absolute inset-x-0 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-        ref={setStartHandleRef}
-        {...startAttributes}
-        {...startListeners}
-      />
-      <div
-        className="-bottom-1 absolute inset-x-0 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-        ref={setEndHandleRef}
-        {...endAttributes}
-        {...endListeners}
-      />
-      <div className="flex items-start gap-1">
-        <Checkbox
-          checked={isDone}
-          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer"
-          onClick={handleStatusToggle}
+        className={cn(
+          "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+          "relative",
+          "hover:shadow-md",
+          isDragging ? "opacity-0" : "",
+          isDone ? "opacity-60" : ""
+        )}
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+      >
+        <div
+          className="-top-1 absolute inset-x-0 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
         />
-        <div className="min-w-0 flex-1">
-          <div
-            className={cn(
-              "truncate font-medium text-xs",
-              isDone ? "line-through opacity-80" : ""
-            )}
-          >
-            {task.title}
-          </div>
-          <div className="truncate text-[10px] opacity-80">
-            {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
+        <div
+          className="-bottom-1 absolute inset-x-0 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+        />
+        <div className="flex items-start gap-1">
+          <Checkbox
+            checked={isDone}
+            className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer"
+            onClick={handleStatusToggle}
+          />
+          <div className="min-w-0 flex-1">
+            <div
+              className={cn(
+                "truncate font-medium text-xs",
+                isDone ? "line-through opacity-80" : ""
+              )}
+            >
+              {task.title}
+            </div>
+            <div className="truncate text-[10px] opacity-80">
+              {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </TaskEditPopover>
   );
 });
 

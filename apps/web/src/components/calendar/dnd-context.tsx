@@ -16,7 +16,7 @@ import type { TaskSelect } from "@kompose/db/schema/task";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import { useUpdateGoogleEventMutation } from "@/hooks/use-update-google-event-mutation";
-import { useUpdateTaskMutation } from "@/hooks/use-update-task-mutation";
+import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   buildGoogleMoveUpdate,
@@ -69,7 +69,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   );
 
   // Mutation to update task schedule
-  const updateTaskMutation = useUpdateTaskMutation();
+  const { updateTask } = useTaskMutations();
   const updateGoogleEventMutation = useUpdateGoogleEventMutation();
 
   const slotDataToDate = useCallback((slot: SlotData) => {
@@ -97,9 +97,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelect, startTime: Date) => {
       const update = buildTaskMoveUpdate(task, startTime);
-      updateTaskMutation.mutate(update);
+      updateTask.mutate(update);
     },
-    [updateTaskMutation]
+    [updateTask]
   );
 
   /**
@@ -108,7 +108,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
    */
   const handleTaskUnschedule = useCallback(
     (task: TaskSelect) => {
-      updateTaskMutation.mutate({
+      updateTask.mutate({
         id: task.id,
         task: {
           startTime: null,
@@ -116,7 +116,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         },
       });
     },
-    [updateTaskMutation]
+    [updateTask]
   );
 
   const handleTaskResizeDrop = useCallback(
@@ -130,9 +130,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      updateTaskMutation.mutate(update);
+      updateTask.mutate(update);
     },
-    [updateTaskMutation]
+    [updateTask]
   );
 
   const handleGoogleEventDrop = useCallback(

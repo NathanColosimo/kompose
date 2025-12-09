@@ -2,12 +2,10 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type TaskInsert, taskInsertSchema } from "@kompose/db/schema/task";
-import { useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarIcon, Plus } from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -25,30 +23,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { orpc, queryClient } from "@/utils/orpc";
+import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 
 export function CreateTaskForm() {
   const [open, setOpen] = useState(false);
 
-  const createMutation = useMutation(
-    orpc.tasks.create.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
-        toast.success("Task created successfully");
-        setOpen(false);
-        reset();
-      },
-      onError: () => {
-        toast.error("Failed to create task");
-      },
-    })
-  );
+  const { createTask } = useTaskMutations();
 
   const {
     register,
     handleSubmit,
     control,
-    reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(taskInsertSchema),
@@ -68,9 +53,7 @@ export function CreateTaskForm() {
   });
 
   const onSubmit = async (data: TaskInsert) => {
-    await createMutation.mutateAsync({
-      ...data,
-    });
+    await createTask.mutateAsync(data);
   };
 
   return (
