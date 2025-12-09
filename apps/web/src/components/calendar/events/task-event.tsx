@@ -2,14 +2,13 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { orpc } from "@/utils/orpc";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../week-view";
+import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 
 type TaskEventProps = {
   task: TaskSelect;
@@ -18,7 +17,6 @@ type TaskEventProps = {
 export const TaskEvent = memo(function TaskEventInner({
   task,
 }: TaskEventProps) {
-  const queryClient = useQueryClient();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `event-${task.id}`,
     data: {
@@ -53,45 +51,18 @@ export const TaskEvent = memo(function TaskEventInner({
     },
   });
 
-  const updateTaskMutation = useMutation({
-    ...orpc.tasks.update.mutationOptions(),
-    onMutate: async ({ id, task: taskUpdate }) => {
-      await queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
-      const previousTasks = queryClient.getQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey()
-      );
-      queryClient.setQueryData<TaskSelect[]>(
-        orpc.tasks.list.queryKey(),
-        (old) =>
-          old?.map((t) =>
-            t.id === id ? { ...t, ...taskUpdate, updatedAt: new Date() } : t
-          )
-      );
-      return { previousTasks };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(
-          orpc.tasks.list.queryKey(),
-          context.previousTasks
-        );
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
-    },
-  });
+  const { updateTask } = useTaskMutations();
 
   const handleStatusToggle = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       const newStatus = task.status === "done" ? "todo" : "done";
-      updateTaskMutation.mutate({
+      updateTask.mutate({
         id: task.id,
         task: { status: newStatus },
       });
     },
-    [task.id, task.status, updateTaskMutation]
+    [task.id, task.status, updateTask]
   );
 
   if (!task.startTime) {
