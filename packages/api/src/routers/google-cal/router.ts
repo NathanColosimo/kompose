@@ -21,14 +21,14 @@ export function handleError(
   accountId: string,
   userId: string
 ): never {
-  // // Log error details for debugging
-  // console.error("Google Calendar Router Error:", {
-  //   errorType: error._tag,
-  //   message: (error as any).message || "Unknown error",
-  //   cause: (error as any).cause,
-  //   accountId,
-  //   userId,
-  // });
+  // Log error details for debugging
+  console.error("Google Calendar Router Error:", {
+    errorType: error._tag,
+    message: (error as any).message || "Unknown error",
+    cause: (error as any).cause,
+    accountId,
+    userId,
+  });
 
   switch (error._tag) {
     case "AccountNotLinkedError":
@@ -357,7 +357,39 @@ export const googleCalRouter = os.router({
           const event = yield* service.updateEvent(
             input.calendarId,
             input.eventId,
-            input.event
+            input.event,
+            input.scope
+          );
+          return event;
+        });
+
+        return yield* serviceEffect.pipe(
+          Effect.provide(GoogleCalendarLive(accessToken))
+        );
+      });
+
+      return Effect.runPromise(
+        Effect.match(program, {
+          onSuccess: (event) => event,
+          onFailure: (error) =>
+            handleError(error, input.accountId, context.user.id),
+        })
+      );
+    }),
+
+    move: os.events.move.handler(({ input, context }) => {
+      const program = Effect.gen(function* () {
+        const accessToken = yield* checkGoogleAccountIsLinked(
+          context.user.id,
+          input.accountId
+        );
+
+        const serviceEffect = Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          const event = yield* service.moveEvent(
+            input.calendarId,
+            input.eventId,
+            input.destinationCalendarId
           );
           return event;
         });

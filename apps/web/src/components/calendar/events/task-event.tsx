@@ -4,11 +4,11 @@ import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format } from "date-fns";
 import { memo, useCallback } from "react";
+import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../week-view";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 
 type TaskEventProps = {
   task: TaskSelect;

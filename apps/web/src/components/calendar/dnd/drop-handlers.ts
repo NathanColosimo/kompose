@@ -1,4 +1,6 @@
 import type { TaskSelect } from "@kompose/db/schema/task";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type { UpdateGoogleEventInput } from "@/hooks/use-update-google-event-mutation";
 import {
   clampResizeEnd,
   clampResizeStart,
@@ -71,7 +73,7 @@ export function buildGoogleUpdatePayload(
   event: DragData & { type: "google-event" | "google-event-resize" },
   start: Date,
   end: Date
-) {
+): GoogleEvent {
   const {
     id: _id,
     htmlLink: _htmlLink,
@@ -80,6 +82,7 @@ export function buildGoogleUpdatePayload(
   } = event.event;
 
   return {
+    id: event.event.id,
     ...rest,
     start: {
       ...event.event.start,
@@ -93,7 +96,7 @@ export function buildGoogleUpdatePayload(
 export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
   start: Date
-) {
+): UpdateGoogleEventInput {
   const durationMinutes =
     (data.end.getTime() - data.start.getTime()) / (60 * 1000);
   const newEnd = new Date(start.getTime() + durationMinutes * 60 * 1000);

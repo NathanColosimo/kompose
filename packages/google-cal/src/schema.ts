@@ -35,6 +35,15 @@ export const EventSchema = z.object({
   htmlLink: z.string().optional(),
   colorId: z.string().optional(),
 
+  // Present on recurring instances; identifies the original start of the series occurrence.
+  originalStartTime: z
+    .object({
+      dateTime: z.string().optional(),
+      date: z.string().optional(),
+      timeZone: z.string().optional(),
+    })
+    .optional(),
+
   start: z.object({
     dateTime: z.string().optional(),
     date: z.string().optional(),
@@ -109,6 +118,9 @@ export const EventSchema = z.object({
 
 export type Event = z.infer<typeof EventSchema>;
 
+export const RecurrenceScopeSchema = z.enum(["this", "all", "following"]);
+export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;
+
 // Input for creating an event (ID is assigned by Google)
 export const CreateEventInputSchema = EventSchema.omit({
   id: true,
@@ -140,5 +152,6 @@ export const ColorsSchema = z.object({
     )
     .optional(),
 });
+
 
 export type Colors = z.infer<typeof ColorsSchema>;

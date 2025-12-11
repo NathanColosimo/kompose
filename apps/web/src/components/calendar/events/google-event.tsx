@@ -8,6 +8,7 @@ import { memo } from "react";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../week-view";
+import { EventEditPopover } from "./event-edit-popover";
 
 type GoogleCalendarEventProps = {
   event: GoogleEvent;
@@ -113,40 +114,48 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   };
 
   return (
-    <div
-      className={cn(
-        "group pointer-events-auto cursor-grab rounded-md border px-2 py-1 shadow-sm transition-shadow",
-        backgroundColor
-          ? ""
-          : "border-primary/20 bg-primary/90 text-primary-foreground",
-        "relative",
-        "hover:shadow-md",
-        isDragging ? "opacity-0" : ""
-      )}
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
+    <EventEditPopover
+      accountId={accountId}
+      calendarId={calendarId}
+      end={end}
+      event={event}
+      start={start}
     >
       <div
-        className="-top-1 absolute inset-x-0 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-        ref={setStartHandleRef}
-        {...startAttributes}
-        {...startListeners}
-      />
-      <div
-        className="-bottom-1 absolute inset-x-0 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-        ref={setEndHandleRef}
-        {...endAttributes}
-        {...endListeners}
-      />
-      <div className="truncate font-medium text-xs">
-        {event.summary ?? "Google event"}
+        className={cn(
+          "group pointer-events-auto cursor-grab rounded-md border px-2 py-1 shadow-sm transition-shadow",
+          backgroundColor
+            ? ""
+            : "border-primary/20 bg-primary/90 text-primary-foreground",
+          "relative",
+          "hover:shadow-md",
+          isDragging ? "opacity-0" : ""
+        )}
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+      >
+        <div
+          className="-top-1 absolute inset-x-0 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
+        />
+        <div
+          className="-bottom-1 absolute inset-x-0 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+        />
+        <div className="truncate font-medium text-xs">
+          {event.summary ?? "Google event"}
+        </div>
+        <div className="truncate text-[10px] opacity-85">
+          {format(start, "h:mm a")} - {format(end, "h:mm a")}
+        </div>
       </div>
-      <div className="truncate text-[10px] opacity-85">
-        {format(start, "h:mm a")} - {format(end, "h:mm a")}
-      </div>
-    </div>
+    </EventEditPopover>
   );
 });
 

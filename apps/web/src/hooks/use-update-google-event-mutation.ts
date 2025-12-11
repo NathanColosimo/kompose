@@ -1,60 +1,67 @@
 "use client";
 
-import {
-  type QueryKey,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import type {
+  CreateEvent,
+  Event,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
-function extractTimeWindowFromQueryKey(queryKey: QueryKey) {
-  for (const part of queryKey) {
-    if (
-      part &&
-      typeof part === "object" &&
-      "timeMin" in part &&
-      "timeMax" in part
-    ) {
-      const maybe = part as Record<string, unknown>;
-      if (
-        typeof maybe.timeMin === "string" &&
-        typeof maybe.timeMax === "string"
-      ) {
-        return {
-          timeMin: maybe.timeMin,
-          timeMax: maybe.timeMax,
-        };
-      }
-    }
-  }
-  return null;
+export type UpdateGoogleEventInput = {
+  accountId: string;
+  calendarId: string;
+  targetCalendarId?: string;
+  eventId: string;
+  recurringEventId?: string | null;
+  recurrenceScope?: RecurrenceScope;
+  event: Event;
+};
+
+// Minimal sanitization to fit CreateEvent input (server handles recurrence logic).
+function sanitizeEventPayload(event: Event): CreateEvent {
+  const {
+    id: _id,
+    htmlLink: _htmlLink,
+    organizer: _organizer,
+    ...rest
+  } = event;
+  return rest;
 }
 
-function isoWithinWindow(
-  iso: string | undefined,
-  window: { timeMin: string; timeMax: string }
+async function moveEventIfNeeded(
+  variables: UpdateGoogleEventInput,
+  targetCalendarId: string,
+  targetEventId: string
 ) {
-  if (!iso) {
-    return false;
+  if (targetCalendarId === variables.calendarId) {
+    return;
   }
-  const ts = Date.parse(iso);
-  const min = Date.parse(window.timeMin);
-  const max = Date.parse(window.timeMax);
-  if (Number.isNaN(ts) || Number.isNaN(min) || Number.isNaN(max)) {
-    return false;
-  }
-  return ts >= min && ts <= max;
+
+  await orpc.googleCal.events.move.call({
+    accountId: variables.accountId,
+    calendarId: variables.calendarId,
+    eventId: targetEventId,
+    destinationCalendarId: targetCalendarId,
+  });
 }
 
 /**
- * Google event update mutation with optimistic cache patch per time window.
+ * Google event update mutation (delegates recurrence logic to backend).
  */
 export function useUpdateGoogleEventMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    ...orpc.googleCal.events.update.mutationOptions(),
-    onMutate: async (variables) => {
+    mutationFn: async (variables: UpdateGoogleEventInput) =>
+      orpc.googleCal.events.update.call({
+        accountId: variables.accountId,
+        calendarId: variables.calendarId,
+        eventId: variables.eventId,
+        event: sanitizeEventPayload(variables.event),
+        scope: variables.recurrenceScope ?? "this",
+      }),
+    onMutate: async () => {
       await queryClient.cancelQueries({
         queryKey: orpc.googleCal.events.key(),
       });
@@ -63,45 +70,7 @@ export function useUpdateGoogleEventMutation() {
         queryKey: orpc.googleCal.events.key(),
       });
 
-      const updatedKeys: QueryKey[] = [];
-      const windowKeysForNewStart: QueryKey[] = [];
-      const newStartIso =
-        variables.event.start.dateTime ?? variables.event.start.date;
-
-      for (const [queryKey, data] of previousQueries) {
-        const window = extractTimeWindowFromQueryKey(queryKey as QueryKey);
-        if (window && isoWithinWindow(newStartIso, window)) {
-          windowKeysForNewStart.push(queryKey as QueryKey);
-        }
-
-        if (!Array.isArray(data)) {
-          continue;
-        }
-
-        let found = false;
-        const next = data.map((event) => {
-          if (!(event && typeof event === "object" && "id" in event)) {
-            return event;
-          }
-          const record = event as Record<string, unknown>;
-          if (record.id !== variables.eventId) {
-            return event;
-          }
-          found = true;
-          return {
-            ...record,
-            start: variables.event.start,
-            end: variables.event.end,
-          };
-        });
-
-        if (found) {
-          updatedKeys.push(queryKey as QueryKey);
-          queryClient.setQueryData(queryKey, next);
-        }
-      }
-
-      return { previousQueries, updatedKeys, windowKeysForNewStart };
+      return { previousQueries };
     },
     onError: (_err, _variables, context) => {
       if (context?.previousQueries) {
@@ -110,25 +79,8 @@ export function useUpdateGoogleEventMutation() {
         }
       }
     },
-    onSettled: (_data, _error, _variables, context) => {
-      const keysToInvalidate: QueryKey[] = [];
-      const seen = new Set<string>();
-
-      for (const key of [
-        ...(context?.updatedKeys ?? []),
-        ...(context?.windowKeysForNewStart ?? []),
-      ]) {
-        const id = JSON.stringify(key);
-        if (seen.has(id)) {
-          continue;
-        }
-        seen.add(id);
-        keysToInvalidate.push(key);
-      }
-
-      for (const key of keysToInvalidate) {
-        queryClient.invalidateQueries({ queryKey: key, exact: true });
-      }
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
     },
   });
 }

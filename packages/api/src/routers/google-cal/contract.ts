@@ -4,6 +4,7 @@ import {
   CreateCalendarInputSchema,
   CreateEventInputSchema,
   EventSchema,
+  RecurrenceScopeSchema,
 } from "@kompose/google-cal/schema";
 import { oc } from "@orpc/contract";
 import { z } from "zod";
@@ -76,6 +77,18 @@ export const updateEvent = oc
       calendarId: z.string(),
       eventId: z.string(),
       event: CreateEventInputSchema,
+      scope: RecurrenceScopeSchema,
+    })
+  )
+  .output(EventSchema);
+
+export const moveEvent = oc
+  .input(
+    z.object({
+      accountId: z.string(),
+      calendarId: z.string(),
+      eventId: z.string(),
+      destinationCalendarId: z.string(),
     })
   )
   .output(EventSchema);
@@ -111,6 +124,7 @@ export const googleCalContract = {
     get: getEvent,
     create: createEvent,
     update: updateEvent,
+    move: moveEvent,
     delete: deleteEvent,
   },
 };
