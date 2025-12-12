@@ -1,9 +1,19 @@
 "use client";
 
-import { addDays, startOfToday, subDays } from "date-fns";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
-import { currentDateAtom, visibleDaysCountAtom } from "@/atoms/current-date";
+import {
+  currentDateAtom,
+  timezoneAtom,
+  visibleDaysCountAtom,
+} from "@/atoms/current-date";
+import {
+  addDays,
+  dateToPlainDate,
+  plainDateToDate,
+  subDays,
+  todayPlainDate,
+} from "@/lib/temporal-utils";
 
 // Shared options to prevent hotkeys from firing in input fields
 const hotkeyOptions = { enableOnFormTags: false } as const;
@@ -23,6 +33,7 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
 export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
+  const timeZone = useAtomValue(timezoneAtom);
 
   // Number keys 1-7 to set visible days count
   useHotkeys("1", () => setVisibleDaysCount(1), hotkeyOptions, []);
@@ -37,21 +48,39 @@ export function CalendarHotkeys() {
   useHotkeys("w", () => setVisibleDaysCount(7), hotkeyOptions, []);
 
   // "t" to go to today
-  useHotkeys("t", () => setCurrentDate(startOfToday()), hotkeyOptions, []);
+  useHotkeys(
+    "t",
+    () =>
+      setCurrentDate(plainDateToDate(todayPlainDate(timeZone), timeZone)),
+    hotkeyOptions,
+    [timeZone, setCurrentDate]
+  );
 
   // Arrow keys to navigate by visible days count
   useHotkeys(
     "ArrowLeft",
-    () => setCurrentDate(subDays(currentDate, visibleDaysCount)),
+    () =>
+      setCurrentDate(
+        plainDateToDate(
+          subDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
+          timeZone
+        )
+      ),
     hotkeyOptions,
-    [currentDate, visibleDaysCount, setCurrentDate]
+    [currentDate, timeZone, visibleDaysCount, setCurrentDate]
   );
 
   useHotkeys(
     "ArrowRight",
-    () => setCurrentDate(addDays(currentDate, visibleDaysCount)),
+    () =>
+      setCurrentDate(
+        plainDateToDate(
+          addDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
+          timeZone
+        )
+      ),
     hotkeyOptions,
-    [currentDate, visibleDaysCount, setCurrentDate]
+    [currentDate, timeZone, visibleDaysCount, setCurrentDate]
   );
 
   // This component only registers hotkeys, renders nothing
