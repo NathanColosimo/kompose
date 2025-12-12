@@ -134,17 +134,17 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
 
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
-      <Sidebar className="hidden flex-1 md:flex" collapsible="none">
+      <Sidebar className="hidden min-w-0 flex-1 md:flex" collapsible="none">
         <div
           className={cn(
-            "flex h-full min-h-[200px] flex-1 flex-col transition-colors",
+            "flex h-full min-h-[200px] w-full flex-1 flex-col transition-colors",
             isOver ? "bg-primary/10" : ""
           )}
           ref={setNodeRef}
         >
-          <SidebarHeader className="h-16 border-b">
-            <div className="flex h-full w-full items-center justify-between px-4">
-              <div className="font-medium text-base text-foreground">
+          <SidebarHeader className="h-16 shrink-0 border-b">
+            <div className="flex h-full w-full items-center justify-between gap-2 px-4">
+              <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
                 {activeItem?.title}
               </div>
               <CreateTaskForm />

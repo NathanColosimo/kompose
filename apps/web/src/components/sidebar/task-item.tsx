@@ -3,16 +3,34 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format } from "date-fns";
+import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
 import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
+import { Badge } from "../ui/badge";
 import { Checkbox } from "../ui/checkbox";
 
 type TaskItemProps = {
   /** The task to display */
   task: TaskSelect;
 };
+
+/**
+ * Formats duration in minutes to a human-readable string.
+ * e.g., 30 -> "30m", 90 -> "1h 30m", 120 -> "2h"
+ */
+function formatDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${remainingMinutes}m`;
+}
 
 /**
  * TaskItem - A draggable task item in the sidebar.
@@ -49,7 +67,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     <TaskEditPopover task={task}>
       <div
         className={cn(
-          "group flex cursor-grab items-start gap-2 border-b p-4 text-sm leading-tight transition-colors last:border-b-0",
+          "group flex cursor-grab items-start gap-3 border-b px-4 py-3 transition-colors last:border-b-0",
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           // Hide original when dragging - DragOverlay shows the preview
           isDragging ? "opacity-0" : "",
@@ -62,30 +80,45 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
         {/* Status checkbox */}
         <Checkbox
           checked={isDone}
-          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer border-muted-foreground/70 bg-sidebar text-foreground transition-colors group-hover:border-foreground"
+          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground/50 transition-colors group-hover:border-foreground"
           onClick={handleStatusToggle}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex w-full items-center gap-2">
-            <span
-              className={cn(
-                "truncate",
-                isDone ? "text-muted-foreground line-through" : ""
-              )}
-            >
-              {task.title}
-            </span>
-            <span className="ml-auto shrink-0 text-muted-foreground text-xs">
-              {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
-            </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {/* Task title */}
+          <span
+            className={cn(
+              "font-medium text-sm leading-tight",
+              isDone ? "text-muted-foreground line-through" : ""
+            )}
+          >
+            {task.title}
+          </span>
+
+          {/* Metadata badges row */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Duration badge */}
+            <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="secondary">
+              <Clock className="size-3" />
+              {formatDuration(task.durationMinutes)}
+            </Badge>
+
+            {/* Due date badge */}
+            {task.dueDate ? (
+              <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
+                <CalendarDays className="size-3" />
+                {format(new Date(task.dueDate), "MMM d")}
+              </Badge>
+            ) : null}
+
+            {/* Scheduled time badge */}
+            {task.startTime ? (
+              <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
+                <CalendarClock className="size-3" />
+                {format(new Date(task.startTime), "EEE h:mm a")}
+              </Badge>
+            ) : null}
           </div>
-          {/** biome-ignore lint/nursery/noLeakedRender: task.startTime is not null */}
-          {isScheduled && task.startTime ? (
-            <span className="text-[10px] text-primary">
-              Scheduled: {format(new Date(task.startTime), "EEE h:mm a")}
-            </span>
-          ) : null}
         </div>
       </div>
     </TaskEditPopover>
@@ -99,6 +132,12 @@ export function TaskItemPreview({ task }: { task: TaskSelect }) {
   return (
     <div className="w-64 cursor-grabbing rounded-md border bg-sidebar p-3 shadow-lg">
       <div className="truncate font-medium text-sm">{task.title}</div>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="secondary">
+          <Clock className="size-3" />
+          {formatDuration(task.durationMinutes)}
+        </Badge>
+      </div>
     </div>
   );
 }
