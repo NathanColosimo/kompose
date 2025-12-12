@@ -9,7 +9,7 @@ import { memo, useEffect } from "react";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { recurringEventMasterQueryOptions } from "@/hooks/use-recurring-event-master";
 import { cn } from "@/lib/utils";
-import { calculateEventPosition } from "../week-view";
+import { calculateEventPosition } from "../days-view";
 import { EventEditPopover } from "./event-edit-popover";
 
 type GoogleCalendarEventProps = {

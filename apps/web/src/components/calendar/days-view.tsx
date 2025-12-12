@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { weekDaysAtom } from "@/atoms/current-date";
+import { visibleDaysAtom } from "@/atoms/current-date";
 import type { GoogleEventWithSource } from "@/atoms/google-data";
 import { PIXELS_PER_HOUR } from "./constants";
 import { GoogleCalendarEvent } from "./events/google-event";
@@ -103,7 +103,7 @@ function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
   return { ...sourceEvent, start, end } satisfies PositionedGoogleEvent;
 }
 
-type WeekViewProps = {
+type DaysViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
   tasks: TaskSelect[];
   /** Google events (raw from API) to render separately from tasks */
@@ -111,13 +111,13 @@ type WeekViewProps = {
 };
 
 /**
- * WeekView - Fixed 7-day view starting from the current date. No horizontal scroll.
+ * DaysView - Displays 1-7 days starting from the current date.
  */
-export const WeekView = memo(function WeekViewComponent({
+export const DaysView = memo(function DaysViewComponent({
   tasks,
   googleEvents = [],
-}: WeekViewProps) {
-  const weekDays = useAtomValue(weekDaysAtom);
+}: DaysViewProps) {
+  const visibleDays = useAtomValue(visibleDaysAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
@@ -154,7 +154,7 @@ export const WeekView = memo(function WeekViewComponent({
   const tasksByDay = useMemo(() => {
     const grouped = new Map<string, TaskSelect[]>();
 
-    for (const day of weekDays) {
+    for (const day of visibleDays) {
       const dayKey = format(day, "yyyy-MM-dd");
       grouped.set(dayKey, []);
     }
@@ -172,16 +172,16 @@ export const WeekView = memo(function WeekViewComponent({
     }
 
     return grouped;
-  }, [weekDays, scheduledTasks]);
+  }, [visibleDays, scheduledTasks]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(
     () =>
       buildGoogleEventMaps({
-        bufferedDays: weekDays,
+        bufferedDays: visibleDays,
         googleEvents,
       }),
-    [weekDays, googleEvents]
+    [visibleDays, googleEvents]
   );
 
   const hasAllDayEvents = useMemo(
@@ -195,7 +195,7 @@ export const WeekView = memo(function WeekViewComponent({
   const hasGoogleEvents = googleEvents.length > 0;
 
   // Each day column width as percentage of the parent container
-  const dayColumnWidth = `${100 / weekDays.length}%`;
+  const dayColumnWidth = `${100 / visibleDays.length}%`;
 
   return (
     <div className="flex h-full">
@@ -220,7 +220,7 @@ export const WeekView = memo(function WeekViewComponent({
         >
           <div className="flex flex-col" style={{ width: "100%" }}>
             <div className="flex">
-              {weekDays.map((day) => (
+              {visibleDays.map((day) => (
                 <DayHeader
                   date={day}
                   isTodayHighlight={isToday(day)}
@@ -232,7 +232,7 @@ export const WeekView = memo(function WeekViewComponent({
 
             {hasAllDayEvents ? (
               <div className="flex border-border border-t border-b bg-background/80">
-                {weekDays.map((day) => {
+                {visibleDays.map((day) => {
                   const dayKey = format(day, "yyyy-MM-dd");
                   const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
@@ -265,7 +265,7 @@ export const WeekView = memo(function WeekViewComponent({
           ref={scrollRef}
         >
           <div className="flex w-full">
-            {weekDays.map((day) => {
+            {visibleDays.map((day) => {
               const dayKey = format(day, "yyyy-MM-dd");
               const dayTasks = tasksByDay.get(dayKey) ?? [];
               const dayGoogleEvents = timedEventsByDay?.get(dayKey) ?? [];
@@ -354,4 +354,4 @@ export function calculateEventPosition(
   };
 }
 
-WeekView.displayName = "WeekView";
+DaysView.displayName = "DaysView";

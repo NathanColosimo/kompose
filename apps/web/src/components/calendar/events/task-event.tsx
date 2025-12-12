@@ -8,7 +8,7 @@ import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
-import { calculateEventPosition } from "../week-view";
+import { calculateEventPosition } from "../days-view";
 
 type TaskEventProps = {
   task: TaskSelect;

@@ -8,6 +8,7 @@ import {
   subDays,
 } from "date-fns";
 import { atom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 
 /** User's timezone - defaults to browser/system timezone */
 export const timezoneAtom = atom<string>(
@@ -17,16 +18,37 @@ export const timezoneAtom = atom<string>(
 /** Currently selected/visible date for calendar view - defaults to today */
 export const currentDateAtom = atom<Date>(startOfToday());
 
-/** End of the visible 7-day range */
-export const weekEndAtom = atom<Date>((get) => {
+/** Number of visible days in the calendar view (1-7) with validation */
+const visibleDaysCountBaseAtom = atomWithStorage<number>(
+  "visible-days-count",
+  7,
+  undefined,
+  { getOnInit: true }
+);
+export const visibleDaysCountAtom = atom(
+  (get) => get(visibleDaysCountBaseAtom),
+  (_get, set, newValue: number) => {
+    // Clamp value to valid range 1-7, defaulting to 7 for invalid inputs
+    const rounded = Math.round(newValue);
+    const clamped = Number.isNaN(rounded)
+      ? 7
+      : Math.max(1, Math.min(7, rounded));
+    set(visibleDaysCountBaseAtom, clamped);
+  }
+);
+
+/** End of the visible day range (based on visibleDaysCountAtom) */
+export const visibleDaysEndAtom = atom<Date>((get) => {
   const start = get(currentDateAtom);
-  return addDays(start, 6);
+  const count = get(visibleDaysCountAtom);
+  return addDays(start, count - 1);
 });
 
-/** Array of 7 dates starting from the current date */
-export const weekDaysAtom = atom<Date[]>((get) => {
+/** Array of dates starting from the current date (length based on visibleDaysCountAtom) */
+export const visibleDaysAtom = atom<Date[]>((get) => {
   const start = get(currentDateAtom);
-  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  const count = get(visibleDaysCountAtom);
+  return Array.from({ length: count }, (_, i) => addDays(start, i));
 });
 
 const EVENTS_WINDOW_PADDING_DAYS = 15;

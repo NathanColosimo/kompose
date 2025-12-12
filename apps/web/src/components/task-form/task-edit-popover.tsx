@@ -2,7 +2,13 @@
 
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format, set } from "date-fns";
-import { CalendarCheck, CalendarIcon, Clock3, Timer } from "lucide-react";
+import {
+  CalendarCheck,
+  CalendarIcon,
+  Clock3,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import {
   type ReactElement,
   useCallback,
@@ -17,6 +23,18 @@ import {
   useForm,
   useWatch,
 } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -65,6 +83,10 @@ export function TaskEditPopover({
     setOpen(nextOpen);
   };
 
+  const handleClose = () => {
+    setOpen(false);
+  };
+
   return (
     <Popover onOpenChange={handleOpenChange} open={open}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
@@ -75,9 +97,11 @@ export function TaskEditPopover({
       >
         <TaskEditForm
           key={task.id}
+          onClose={handleClose}
           onRegisterSubmit={(fn) => {
             submitRef.current = fn;
           }}
+          open={open}
           task={task}
         />
       </PopoverContent>
@@ -88,11 +112,50 @@ export function TaskEditPopover({
 function TaskEditForm({
   task,
   onRegisterSubmit,
+  onClose,
+  open,
 }: {
   task: TaskSelect;
   onRegisterSubmit: (fn: () => void) => void;
+  onClose: () => void;
+  open: boolean;
 }) {
-  const { updateTask } = useTaskMutations();
+  const { updateTask, deleteTask } = useTaskMutations();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Opens confirmation dialog
+  const handleDeleteClick = useCallback(() => {
+    setShowDeleteConfirm(true);
+  }, []);
+
+  // Actually deletes the task after confirmation
+  const confirmDelete = useCallback(() => {
+    onClose();
+    deleteTask.mutate({ id: task.id });
+  }, [deleteTask, onClose, task.id]);
+
+  // Delete hotkey - only active when popover is open, skips text inputs
+  // Uses "backspace" for Mac compatibility (Mac's delete key = backspace)
+  useHotkeys(
+    "backspace, delete",
+    (e) => {
+      const target = e.target as HTMLElement;
+      const tagName = target.tagName.toLowerCase();
+      // Skip if focused on text input or textarea
+      if (
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select"
+      ) {
+        return;
+      }
+      e.preventDefault();
+      handleDeleteClick();
+    },
+    { enabled: open },
+    [handleDeleteClick, open]
+  );
+
   const initialValues = useMemo<TaskFormValues>(
     () => ({
       title: task.title ?? "",
@@ -349,6 +412,36 @@ function TaskEditForm({
           value={watchedValues.description}
         />
       </div>
+
+      <Separator />
+
+      {/* Delete button with confirmation dialog */}
+      <AlertDialog onOpenChange={setShowDeleteConfirm} open={showDeleteConfirm}>
+        <AlertDialogTrigger asChild>
+          <Button
+            className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            type="button"
+            variant="outline"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete task
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }

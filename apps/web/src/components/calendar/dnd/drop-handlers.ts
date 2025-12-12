@@ -1,6 +1,6 @@
 import type { TaskSelect } from "@kompose/db/schema/task";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import type { UpdateGoogleEventInput } from "@/hooks/use-update-google-event-mutation";
+import type { UpdateGoogleEventInput } from "@/hooks/use-google-event-mutations";
 import {
   clampResizeEnd,
   clampResizeStart,

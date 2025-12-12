@@ -15,7 +15,7 @@ import {
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
-import { useUpdateGoogleEventMutation } from "@/hooks/use-update-google-event-mutation";
+import { useGoogleEventMutations } from "@/hooks/use-google-event-mutations";
 import { useTaskMutations } from "@/hooks/use-update-task-mutation";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
@@ -70,7 +70,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Mutation to update task schedule
   const { updateTask } = useTaskMutations();
-  const updateGoogleEventMutation = useUpdateGoogleEventMutation();
+  const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
 
   const slotDataToDate = useCallback((slot: SlotData) => {
     const dateTime = new Date(slot.date);

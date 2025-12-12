@@ -6,7 +6,14 @@ import type {
 } from "@kompose/google-cal/schema";
 import { addDays, format } from "date-fns";
 import { useAtomValue } from "jotai";
-import { CalendarIcon, Clock3, Palette, Repeat, Timer } from "lucide-react";
+import {
+  CalendarIcon,
+  Clock3,
+  Palette,
+  Repeat,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import {
   type ReactElement,
   useCallback,
@@ -17,8 +24,19 @@ import {
   useState,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@/atoms/google-data";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -40,12 +58,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { useMoveGoogleEventMutation } from "@/hooks/use-move-google-event-mutation";
-import { useRecurringEventMaster } from "@/hooks/use-recurring-event-master";
 import {
   type UpdateGoogleEventInput,
-  useUpdateGoogleEventMutation,
-} from "@/hooks/use-update-google-event-mutation";
+  useGoogleEventMutations,
+} from "@/hooks/use-google-event-mutations";
+import { useMoveGoogleEventMutation } from "@/hooks/use-move-google-event-mutation";
+import { useRecurringEventMaster } from "@/hooks/use-recurring-event-master";
 import { cn } from "@/lib/utils";
 import {
   buildRecurrenceRule,
@@ -463,9 +481,15 @@ export function EventEditPopover({
   align = "start",
 }: EventEditPopoverProps) {
   const [open, setOpen] = useState(false);
-  const updateEvent = useUpdateGoogleEventMutation();
+  const { updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
   const calendars = useAtomValue(googleCalendarsDataAtom);
+
+  // Delete state for recurring events (scope dialog)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteScope, setDeleteScope] = useState<RecurrenceScope>("this");
+  // Delete state for non-recurring events (simple confirmation)
+  const [simpleDeleteConfirmOpen, setSimpleDeleteConfirmOpen] = useState(false);
 
   /**
    * The form registers a function that builds a save request synchronously.
@@ -532,6 +556,41 @@ export function EventEditPopover({
     });
     setPendingSave(null);
   }, [pendingSave, selectedScope, updateEvent]);
+
+  // Handle delete - opens appropriate confirmation dialog
+  const handleDelete = useCallback(() => {
+    setOpen(false);
+    // Show scope dialog for recurring events
+    if (event.recurringEventId || event.recurrence?.length) {
+      const defaultScope = event.recurringEventId ? "this" : "all";
+      setDeleteScope(defaultScope);
+      setDeleteDialogOpen(true);
+    } else {
+      // Non-recurring: show simple confirmation
+      setSimpleDeleteConfirmOpen(true);
+    }
+  }, [event.recurringEventId, event.recurrence?.length]);
+
+  // Commit delete for non-recurring events
+  const confirmSimpleDelete = useCallback(() => {
+    deleteEvent.mutate({
+      accountId,
+      calendarId,
+      eventId: event.id,
+      scope: "this",
+    });
+    setSimpleDeleteConfirmOpen(false);
+  }, [accountId, calendarId, deleteEvent, event.id]);
+
+  // Commit delete with selected scope
+  const commitDelete = useCallback(async () => {
+    await deleteEvent.mutateAsync({
+      accountId,
+      calendarId,
+      eventId: event.id,
+      scope: deleteScope,
+    });
+  }, [accountId, calendarId, deleteEvent, deleteScope, event.id]);
 
   const handleClose = useCallback(
     (intent?: "move") => {
@@ -604,10 +663,12 @@ export function EventEditPopover({
             calendarId={calendarId}
             end={end}
             event={event}
+            onDelete={handleDelete}
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
             }}
             onRequestMove={() => handleClose("move")}
+            open={open}
             start={start}
           />
         </PopoverContent>
@@ -726,11 +787,6 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         confirmLabel="Done"
         description="Choose how broadly to apply the move."
-        disabledScopes={
-          event.recurringEventId || event.recurrence?.length
-            ? undefined
-            : { all: true, following: true }
-        }
         onConfirm={() => {
           return;
         }}
@@ -740,6 +796,40 @@ export function EventEditPopover({
         title="Move scope"
         value={moveScope}
       />
+
+      {/* Delete scope dialog for recurring events */}
+      <RecurrenceScopeDialog
+        confirmLabel="Delete"
+        description="Choose how broadly to apply the deletion."
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={commitDelete}
+        onOpenChange={setDeleteDialogOpen}
+        onValueChange={setDeleteScope}
+        open={deleteDialogOpen}
+        title="Delete recurring event"
+        value={deleteScope}
+      />
+
+      {/* Simple delete confirmation for non-recurring events */}
+      <AlertDialog
+        onOpenChange={setSimpleDeleteConfirmOpen}
+        open={simpleDeleteConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSimpleDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -752,6 +842,8 @@ function EventEditForm({
   end,
   onRegisterCloseSaveRequest,
   onRequestMove,
+  onDelete,
+  open,
 }: {
   event: GoogleEvent;
   accountId: string;
@@ -760,7 +852,26 @@ function EventEditForm({
   end: Date;
   onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
   onRequestMove: () => void;
+  onDelete: () => void;
+  open: boolean;
 }) {
+  // Delete hotkey - only active when popover is open, skips text inputs
+  // Uses "backspace" for Mac compatibility (Mac's delete key = backspace)
+  useHotkeys(
+    "backspace, delete",
+    (e) => {
+      const target = e.target as HTMLElement;
+      const tagName = target.tagName.toLowerCase();
+      // Skip if focused on text input or textarea
+      if (tagName === "input" || tagName === "textarea") {
+        return;
+      }
+      e.preventDefault();
+      onDelete();
+    },
+    { enabled: open },
+    [onDelete, open]
+  );
   /**
    * We intentionally do not run mutations from inside the form.
    * The popover wrapper controls “save on close” and dialogs.
@@ -905,7 +1016,6 @@ function EventEditForm({
         accountId,
         calendarId,
         eventId: event.id,
-        recurringEventId: event.recurringEventId,
         event: {
           ...event,
           summary: values.summary.trim(),
@@ -1236,6 +1346,19 @@ function EventEditForm({
           </Popover>
         </div>
       )}
+
+      <Separator />
+
+      {/* Delete button */}
+      <Button
+        className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+        onClick={onDelete}
+        type="button"
+        variant="outline"
+      >
+        <Trash2 className="h-4 w-4" />
+        Delete event
+      </Button>
     </form>
   );
 }

@@ -1,19 +1,23 @@
 "use client";
 
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { addWeeks, format, startOfToday, subWeeks } from "date-fns";
+import { addDays, format, startOfToday, subDays } from "date-fns";
 import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { currentDateAtom, eventWindowAtom } from "@/atoms/current-date";
+import {
+  currentDateAtom,
+  eventWindowAtom,
+  visibleDaysCountAtom,
+} from "@/atoms/current-date";
 import {
   type GoogleEventWithSource,
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@/atoms/google-data";
+import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
-import { WeekView } from "@/components/calendar/week-view";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -27,6 +31,7 @@ import { orpc } from "@/utils/orpc";
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
   const window = useAtomValue(eventWindowAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
@@ -82,15 +87,6 @@ export default function Page() {
     [setCurrentDate]
   );
 
-  // Navigation helpers for week
-  const goToPreviousWeek = () => {
-    navigateToDate(subWeeks(currentDate, 1));
-  };
-
-  const goToNextWeek = () => {
-    navigateToDate(addWeeks(currentDate, 1));
-  };
-
   const goToToday = () => {
     navigateToDate(startOfToday());
   };
@@ -105,12 +101,24 @@ export default function Page() {
           orientation="vertical"
         />
 
-        {/* Week navigation controls */}
+        {/* Navigation controls */}
         <div className="flex items-center gap-1">
-          <Button onClick={goToPreviousWeek} size="icon" variant="ghost">
+          <Button
+            onClick={() => {
+              navigateToDate(subDays(currentDate, visibleDaysCount));
+            }}
+            size="icon"
+            variant="ghost"
+          >
             <ChevronLeft className="size-4" />
           </Button>
-          <Button onClick={goToNextWeek} size="icon" variant="ghost">
+          <Button
+            onClick={() => {
+              navigateToDate(addDays(currentDate, visibleDaysCount));
+            }}
+            size="icon"
+            variant="ghost"
+          >
             <ChevronRight className="size-4" />
           </Button>
           <Button
@@ -133,14 +141,14 @@ export default function Page() {
         </div>
       </header>
 
-      {/* Calendar week view - positioned below header */}
+      {/* Calendar days view - positioned below header */}
       <main className="absolute inset-x-0 top-16 bottom-0">
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Loading calendar...
           </div>
         ) : (
-          <WeekView googleEvents={googleEvents} tasks={tasks} />
+          <DaysView googleEvents={googleEvents} tasks={tasks} />
         )}
       </main>
     </div>
