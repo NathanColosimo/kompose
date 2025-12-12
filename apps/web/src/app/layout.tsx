@@ -1,3 +1,4 @@
+import "@js-temporal/polyfill/global";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Libre_Baskerville, Lora } from "next/font/google";
 import "../index.css";

@@ -1,13 +1,14 @@
 "use client";
 
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { addDays, format, startOfToday, subDays } from "date-fns";
 import { useAtom, useAtomValue } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+
 import {
   currentDateAtom,
   eventWindowAtom,
+  timezoneAtom,
   visibleDaysCountAtom,
 } from "@/atoms/current-date";
 import {
@@ -27,10 +28,19 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import {
+  addDays,
+  dateToPlainDate,
+  formatPlainDate,
+  plainDateToDate,
+  subDays,
+  todayPlainDate,
+} from "@/lib/temporal-utils";
 import { orpc } from "@/utils/orpc";
 
 export default function Page() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const timeZone = useAtomValue(timezoneAtom);
   const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
   const window = useAtomValue(eventWindowAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
@@ -88,7 +98,7 @@ export default function Page() {
   );
 
   const goToToday = () => {
-    navigateToDate(startOfToday());
+    navigateToDate(plainDateToDate(todayPlainDate(timeZone), timeZone));
   };
 
   return (
@@ -105,7 +115,12 @@ export default function Page() {
         <div className="flex items-center gap-1">
           <Button
             onClick={() => {
-              navigateToDate(subDays(currentDate, visibleDaysCount));
+              navigateToDate(
+                plainDateToDate(
+                  subDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
+                  timeZone
+                )
+              );
             }}
             size="icon"
             variant="ghost"
@@ -114,7 +129,12 @@ export default function Page() {
           </Button>
           <Button
             onClick={() => {
-              navigateToDate(addDays(currentDate, visibleDaysCount));
+              navigateToDate(
+                plainDateToDate(
+                  addDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
+                  timeZone
+                )
+              );
             }}
             size="icon"
             variant="ghost"
@@ -157,16 +177,18 @@ export default function Page() {
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const timeZone = useAtomValue(timezoneAtom);
   const [open, setOpen] = useState(false);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        setCurrentDate(date);
+        const asPlain = dateToPlainDate(date, timeZone);
+        setCurrentDate(plainDateToDate(asPlain, timeZone));
       }
       setOpen(false);
     },
-    [setCurrentDate]
+    [setCurrentDate, timeZone]
   );
 
   return (
@@ -178,7 +200,9 @@ function DatePopover() {
           variant="outline"
         >
           <CalendarIcon />
-          {currentDate ? format(currentDate, "PPP") : <span>Pick a date</span>}
+          {currentDate
+            ? formatPlainDate(dateToPlainDate(currentDate, timeZone))
+            : <span>Pick a date</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">
@@ -187,7 +211,7 @@ function DatePopover() {
           mode="single"
           onSelect={handleDateSelect}
           required
-          selected={currentDate}
+          selected={plainDateToDate(currentDate, timeZone)}
         />
       </PopoverContent>
     </Popover>
