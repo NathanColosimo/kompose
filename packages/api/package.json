@@ -25,6 +25,7 @@
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "dotenv": "catalog:",
+    "effect": "catalog:",
     "uuidv7": "^1.1.0",
     "zod": "catalog:"
   }
