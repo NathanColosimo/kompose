@@ -11,7 +11,8 @@
   "type": "module",
   "scripts": {},
   "devDependencies": {
-    "@kompose/config": "workspace:*"
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -21,6 +22,7 @@
     "@better-auth/expo": "catalog:",
     "dotenv": "catalog:",
     "zod": "catalog:",
-    "@kompose/db": "workspace:*"
+    "@kompose/db": "workspace:*",
+    "@kompose/env": "workspace:*"
   }
 }

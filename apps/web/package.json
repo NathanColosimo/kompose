@@ -16,6 +16,9 @@
     "@hookform/resolvers": "^5.2.2",
     "@kompose/api": "workspace:*",
     "@kompose/auth": "workspace:*",
+    "@kompose/db": "workspace:*",
+    "@kompose/env": "workspace:*",
+    "@kompose/google-cal": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
@@ -40,9 +43,10 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "jotai": "^2.16.0",
     "jotai-tanstack-query": "^0.11.0",
     "lucide-react": "^0.561.0",
-    "next": "^16.0.10",
+    "next": "catalog:",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.4.2",
     "react": "^19.2.3",
@@ -53,17 +57,18 @@
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.1",
     "tw-animate-css": "^1.3.4",
+    "uuidv7": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@kompose/config": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
+    "@tanstack/react-query-devtools": "catalog:",
+    "@tauri-apps/cli": "^2.9.6",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "tailwindcss": "^4.1.18",
-    "typescript": "^5.9.3",
-    "@tanstack/react-query-devtools": "^5.91.1",
-    "@tauri-apps/cli": "^2.9.6",
-    "@kompose/config": "workspace:*"
+    "typescript": "catalog:"
   }
 }

@@ -13,9 +13,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@kompose/config": "workspace:*"
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   }
 }

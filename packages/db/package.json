@@ -20,16 +20,18 @@
     "db:down": "docker compose down"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.8",
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:",
     "@types/pg": "^8.16.0",
-    "@kompose/config": "workspace:*"
+    "drizzle-kit": "^0.31.8"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@kompose/env": "workspace:*",
     "dotenv": "catalog:",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "postgres": "^3.4.7",
     "zod": "catalog:"

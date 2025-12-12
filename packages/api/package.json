@@ -11,7 +11,8 @@
   "type": "module",
   "scripts": {},
   "devDependencies": {
-    "@kompose/config": "workspace:*"
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -21,12 +22,16 @@
     "@kompose/db": "workspace:*",
     "@kompose/google-cal": "workspace:*",
     "@orpc/client": "catalog:",
+    "@orpc/contract": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
+    "better-auth": "catalog:",
     "dotenv": "catalog:",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "uuidv7": "^1.1.0",
+    "next": "catalog:",
+    "uuidv7": "catalog:",
     "zod": "catalog:"
   }
 }

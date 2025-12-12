@@ -11,7 +11,8 @@
   "type": "module",
   "scripts": {},
   "devDependencies": {
-    "@kompose/config": "workspace:*"
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -19,6 +20,7 @@
   "dependencies": {
     "dotenv": "catalog:",
     "effect": "catalog:",
+    "zod": "catalog:",
     "@t3-oss/env-nextjs": "catalog:"
   }
 }
