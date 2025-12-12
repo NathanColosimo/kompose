@@ -2,7 +2,7 @@
 
 import type { TaskSelect } from "@kompose/db/schema/task";
 import { format, set } from "date-fns";
-import { CalendarIcon, Clock3, Timer } from "lucide-react";
+import { CalendarCheck, CalendarIcon, Clock3, Timer } from "lucide-react";
 import {
   type ReactElement,
   useCallback,
@@ -35,6 +35,7 @@ type TaskFormValues = {
   title: string;
   description: string;
   startDateTime: Date | null;
+  dueDate: Date | null;
   durationMinutes: number;
 };
 
@@ -97,9 +98,16 @@ function TaskEditForm({
       title: task.title ?? "",
       description: task.description ?? "",
       startDateTime: task.startTime ? new Date(task.startTime) : null,
+      dueDate: task.dueDate ? new Date(task.dueDate) : null,
       durationMinutes: task.durationMinutes ?? 30,
     }),
-    [task.description, task.durationMinutes, task.startTime, task.title]
+    [
+      task.description,
+      task.dueDate,
+      task.durationMinutes,
+      task.startTime,
+      task.title,
+    ]
   );
 
   const { control, reset, setValue, handleSubmit, getValues } =
@@ -139,6 +147,7 @@ function TaskEditForm({
               })
             : null,
           startTime: startDateTime,
+          dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
         },
       });
@@ -180,6 +189,7 @@ function TaskEditForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
+      {/* Row 1: Start date, Start time, Duration */}
       <div className="grid grid-cols-3 gap-2">
         <Controller
           control={control}
@@ -194,8 +204,10 @@ function TaskEditForm({
                   )}
                   variant="outline"
                 >
-                  <CalendarIcon className="h-4 w-4" />
-                  {field.value ? format(field.value, "LLL dd") : "Start date"}
+                  <CalendarIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {field.value ? format(field.value, "LLL dd") : "Start"}
+                  </span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
@@ -230,8 +242,8 @@ function TaskEditForm({
               )}
               variant="outline"
             >
-              <Clock3 className="h-4 w-4" />
-              {startTimeValue || "Start time"}
+              <Clock3 className="h-4 w-4 shrink-0" />
+              <span className="truncate">{startTimeValue || "Time"}</span>
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-[220px]">
@@ -256,8 +268,10 @@ function TaskEditForm({
                   className="justify-start gap-2 text-xs"
                   variant="outline"
                 >
-                  <Timer className="h-4 w-4" />
-                  {field.value ? `${field.value} min` : "Duration"}
+                  <Timer className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {field.value ? `${field.value}m` : "Duration"}
+                  </span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-[220px] space-y-2">
@@ -282,6 +296,35 @@ function TaskEditForm({
           )}
         />
       </div>
+
+      {/* Row 2: Due date */}
+      <Controller
+        control={control}
+        name="dueDate"
+        render={({ field }) => (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                className={cn(
+                  "w-full justify-start gap-2 text-left font-medium text-xs",
+                  !field.value && "text-muted-foreground"
+                )}
+                variant="outline"
+              >
+                <CalendarCheck className="h-4 w-4 shrink-0" />
+                {field.value ? format(field.value, "LLL dd, yyyy") : "Due date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-auto p-0">
+              <Calendar
+                mode="single"
+                onSelect={(date) => field.onChange(date ?? null)}
+                selected={field.value ?? undefined}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
+      />
 
       <Separator />
 

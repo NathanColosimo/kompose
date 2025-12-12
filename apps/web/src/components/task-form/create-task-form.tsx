@@ -30,10 +30,18 @@ export function CreateTaskForm() {
 
   const { createTask } = useTaskMutations();
 
+  /** Helper to get default due date (tomorrow) */
+  const getDefaultDueDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  };
+
   const {
     register,
     handleSubmit,
     control,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(taskInsertSchema),
@@ -41,19 +49,24 @@ export function CreateTaskForm() {
       userId: "",
       title: "",
       description: "",
-      // Default values need to be compatible with what the resolver expects or what the inputs expect
       startDate: new Date(),
       durationMinutes: 30,
-      dueDate: (() => {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        return tomorrow;
-      })(),
+      dueDate: getDefaultDueDate(),
     },
   });
 
   const onSubmit = async (data: TaskInsert) => {
     await createTask.mutateAsync(data);
+    // Reset form to fresh defaults and close dialog
+    reset({
+      userId: "",
+      title: "",
+      description: "",
+      startDate: new Date(),
+      durationMinutes: 30,
+      dueDate: getDefaultDueDate(),
+    });
+    setOpen(false);
   };
 
   return (

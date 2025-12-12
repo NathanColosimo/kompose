@@ -4,7 +4,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 
 ## Behavior
 - Opens via `TaskEditPopover` wrapping a trigger element.
-- Saves title, description, start date/time, and duration when the popover closes (no live autosave).
+- Saves title, description, start date/time, due date, and duration when the popover closes (no live autosave).
 - Uses React Hook Form; values stay in sync while open.
 - Updates task via `useTaskMutations().updateTask`.
 
@@ -25,6 +25,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - Start date: shadcn calendar, formatted `LLL dd`.
 - Start time: shadcn popover with `time` input.
 - Duration: numeric minutes input.
+- Due date: shadcn calendar, formatted `LLL dd, yyyy`.
 - Title / description: controlled inputs bound to form state.
 
 ## Notes
