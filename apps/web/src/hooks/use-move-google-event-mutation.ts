@@ -1,48 +1,31 @@
 "use client";
 
-import type {
-  CreateEvent,
-  Event,
-  RecurrenceScope,
-} from "@kompose/google-cal/schema";
+import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
-export type UpdateGoogleEventInput = {
+export type MoveGoogleEventInput = {
   accountId: string;
   calendarId: string;
-  targetCalendarId?: string;
   eventId: string;
-  recurringEventId?: string | null;
-  recurrenceScope?: RecurrenceScope;
-  event: Event;
+  destinationCalendarId: string;
+  scope: RecurrenceScope;
 };
 
-// Minimal sanitization to fit CreateEvent input (server handles recurrence logic).
-function sanitizeEventPayload(event: Event): CreateEvent {
-  const {
-    id: _id,
-    htmlLink: _htmlLink,
-    organizer: _organizer,
-    ...rest
-  } = event;
-  return rest;
-}
-
 /**
- * Google event update mutation (delegates recurrence logic to backend).
+ * Google event move mutation (supports recurrence scope).
  */
-export function useUpdateGoogleEventMutation() {
+export function useMoveGoogleEventMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (variables: UpdateGoogleEventInput) =>
-      orpc.googleCal.events.update.call({
+    mutationFn: async (variables: MoveGoogleEventInput) =>
+      orpc.googleCal.events.move.call({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
         eventId: variables.eventId,
-        event: sanitizeEventPayload(variables.event),
-        scope: variables.recurrenceScope ?? "this",
+        destinationCalendarId: variables.destinationCalendarId,
+        scope: variables.scope,
       }),
     onMutate: async () => {
       await queryClient.cancelQueries({

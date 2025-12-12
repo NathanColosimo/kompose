@@ -19,6 +19,7 @@
   "dependencies": {
     "@kompose/auth": "workspace:*",
     "@kompose/db": "workspace:*",
+    "@kompose/google-cal": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",

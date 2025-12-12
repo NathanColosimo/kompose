@@ -24,8 +24,8 @@ export function handleError(
   // Log error details for debugging
   console.error("Google Calendar Router Error:", {
     errorType: error._tag,
-    message: (error as any).message || "Unknown error",
-    cause: (error as any).cause,
+    message: error.message || "Unknown error",
+    cause: error.cause,
     accountId,
     userId,
   });
@@ -389,7 +389,8 @@ export const googleCalRouter = os.router({
           const event = yield* service.moveEvent(
             input.calendarId,
             input.eventId,
-            input.destinationCalendarId
+            input.destinationCalendarId,
+            input.scope
           );
           return event;
         });

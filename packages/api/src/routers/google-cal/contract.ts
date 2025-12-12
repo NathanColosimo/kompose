@@ -89,6 +89,7 @@ export const moveEvent = oc
       calendarId: z.string(),
       eventId: z.string(),
       destinationCalendarId: z.string(),
+      scope: RecurrenceScopeSchema,
     })
   )
   .output(EventSchema);

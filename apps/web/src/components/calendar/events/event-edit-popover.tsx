@@ -1,28 +1,34 @@
 "use client";
 
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { useQuery } from "@tanstack/react-query";
-import { addDays, format, set } from "date-fns";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
+import { addDays, format } from "date-fns";
 import { useAtomValue } from "jotai";
 import { CalendarIcon, Clock3, Palette, Repeat, Timer } from "lucide-react";
 import {
   type ReactElement,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  Controller,
-  type SubmitHandler,
-  useForm,
-  useWatch,
-} from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@/atoms/google-data";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,12 +36,27 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { useUpdateGoogleEventMutation } from "@/hooks/use-update-google-event-mutation";
+import { useMoveGoogleEventMutation } from "@/hooks/use-move-google-event-mutation";
+import { useRecurringEventMaster } from "@/hooks/use-recurring-event-master";
+import {
+  type UpdateGoogleEventInput,
+  useUpdateGoogleEventMutation,
+} from "@/hooks/use-update-google-event-mutation";
 import { cn } from "@/lib/utils";
-import { orpc } from "@/utils/orpc";
+import {
+  buildRecurrenceRule,
+  buildTemporalPayload,
+  type Frequency,
+  parseRecurrence,
+  type RecurrenceEnd,
+  untilInputToRule,
+  untilRuleToInput,
+  WEEKDAYS,
+} from "./event-edit-utils";
 
 type EventEditPopoverProps = {
   event: GoogleEvent;
@@ -48,8 +69,6 @@ type EventEditPopoverProps = {
   align?: "start" | "center" | "end";
 };
 
-type RecurrenceScope = "this" | "all" | "following";
-
 type EventFormValues = {
   summary: string;
   description: string;
@@ -60,8 +79,6 @@ type EventFormValues = {
   endDate: Date | null;
   startTime: string;
   endTime: string;
-  calendarKey: string;
-  recurrenceScope: RecurrenceScope;
   recurrence: string[];
 };
 
@@ -71,143 +88,124 @@ type CalendarOption = {
   label: string;
 };
 
-const RECURRENCE_OPTIONS: { value: RecurrenceScope; label: string }[] = [
+type RecurrenceScopeOption = {
+  value: RecurrenceScope;
+  label: string;
+};
+
+const RECURRENCE_SCOPE_OPTIONS: RecurrenceScopeOption[] = [
   { value: "this", label: "Only this occurrence" },
   { value: "all", label: "Entire series" },
   { value: "following", label: "This and following" },
 ];
 
-type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | null;
-const WEEKDAYS: Array<{ value: string; label: string }> = [
-  { value: "MO", label: "Mon" },
-  { value: "TU", label: "Tue" },
-  { value: "WE", label: "Wed" },
-  { value: "TH", label: "Thu" },
-  { value: "FR", label: "Fri" },
-  { value: "SA", label: "Sat" },
-  { value: "SU", label: "Sun" },
-];
+function RecurrenceScopeDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  value,
+  onValueChange,
+  confirmLabel = "Save",
+  cancelLabel = "Cancel",
+  onCancel,
+  onConfirm,
+  disabledScopes,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  value: RecurrenceScope;
+  onValueChange: (value: RecurrenceScope) => void;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onCancel?: () => void;
+  onConfirm: () => void | Promise<void>;
+  disabledScopes?: Partial<Record<RecurrenceScope, boolean>>;
+}) {
+  const idBase = useId();
 
-type RecurrenceEnd =
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? (
+            <DialogDescription>{description}</DialogDescription>
+          ) : null}
+        </DialogHeader>
+
+        <RadioGroup
+          onValueChange={(next) => onValueChange(next as RecurrenceScope)}
+          value={value}
+        >
+          {RECURRENCE_SCOPE_OPTIONS.map((opt) => {
+            const id = `${idBase}-${opt.value}`;
+            const isDisabled = Boolean(disabledScopes?.[opt.value]);
+            return (
+              <Label
+                className={cn(
+                  "flex items-center gap-3 rounded-md border p-3",
+                  value === opt.value ? "bg-muted" : "",
+                  isDisabled
+                    ? "cursor-not-allowed opacity-60"
+                    : "cursor-pointer"
+                )}
+                htmlFor={id}
+                key={opt.value}
+              >
+                <RadioGroupItem
+                  disabled={isDisabled}
+                  id={id}
+                  value={opt.value}
+                />
+                <span className="text-sm">{opt.label}</span>
+              </Label>
+            );
+          })}
+        </RadioGroup>
+
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              onCancel?.();
+              onOpenChange(false);
+            }}
+            type="button"
+            variant="ghost"
+          >
+            {cancelLabel}
+          </Button>
+          <Button
+            onClick={async () => {
+              await onConfirm();
+              onOpenChange(false);
+            }}
+            type="button"
+          >
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type CloseSaveRequest =
   | { type: "none" }
-  | { type: "until"; date: string }
-  | { type: "count"; count: number };
-
-const UNTIL_RULE_REGEX_DATEONLY = /^(\d{4})(\d{2})(\d{2})$/;
-const UNTIL_RULE_REGEX_FULL =
-  /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(Z|[+-]\d{2}\d{2})?$/;
-
-function untilRuleToInput(raw?: string | null): string {
-  if (!raw) {
-    return "";
-  }
-  // Support date-only (YYYYMMDD) or date-time with optional offset.
-  const cleaned = raw.replace(/[-:]/g, "");
-  // Date only
-  const dateOnlyMatch = cleaned.match(UNTIL_RULE_REGEX_DATEONLY);
-  if (dateOnlyMatch) {
-    const [, y, m, d] = dateOnlyMatch;
-    return `${y}-${m}-${d}T00:00`;
-  }
-
-  // Date + time with optional Z/offset
-  const fullMatch = cleaned.match(UNTIL_RULE_REGEX_FULL);
-  if (!fullMatch) {
-    return "";
-  }
-  const [, y2, m2, d2, hh, mm, ss, offset] = fullMatch;
-  const iso = `${y2}-${m2}-${d2}T${hh}:${mm}:${ss}${offset ?? "Z"}`;
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) {
-    return "";
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-}
-
-function untilInputToRule(input?: string | null): string | null {
-  if (!input) {
-    return null;
-  }
-  // input: local datetime yyyy-MM-ddTHH:mm
-  const dt = new Date(input);
-  if (Number.isNaN(dt.getTime())) {
-    return null;
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const y = dt.getUTCFullYear();
-  const m = pad(dt.getUTCMonth() + 1);
-  const d = pad(dt.getUTCDate());
-  const hh = pad(dt.getUTCHours());
-  const mm = pad(dt.getUTCMinutes());
-  const ss = pad(dt.getUTCSeconds());
-  return `${y}${m}${d}T${hh}${mm}${ss}Z`;
-}
-
-// biome-ignore lint: RRULE parsing combines frequency, days, and end options.
-function parseRecurrence(rule?: string): {
-  freq: Frequency;
-  byDay: string[];
-  end: RecurrenceEnd;
-} {
-  if (!rule?.startsWith("RRULE:")) {
-    return { freq: null, byDay: [], end: { type: "none" } };
-  }
-  const body = rule.replace("RRULE:", "");
-  const parts = body.split(";");
-  let freq: Frequency = null;
-  let byDay: string[] = [];
-  let until: string | null = null;
-  let count: number | null = null;
-  for (const part of parts) {
-    const [key, value] = part.split("=");
-    if (
-      key === "FREQ" &&
-      (value === "DAILY" || value === "WEEKLY" || value === "MONTHLY")
-    ) {
-      freq = value;
-    }
-    if (key === "BYDAY" && value) {
-      byDay = value.split(",");
-    }
-    if (key === "UNTIL" && value) {
-      until = value;
-    }
-    if (key === "COUNT" && value) {
-      const parsed = Number.parseInt(value, 10);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        count = parsed;
-      }
-    }
-  }
-  let end: RecurrenceEnd = { type: "none" };
-  if (until !== null) {
-    end = { type: "until", date: until };
-  } else if (count !== null) {
-    end = { type: "count", count };
-  }
-  return { freq, byDay, end };
-}
-
-function buildRecurrenceRule(
-  freq: Frequency,
-  byDay: string[],
-  end: RecurrenceEnd
-): string | null {
-  if (!freq) {
-    return null;
-  }
-  const parts: string[] = [`FREQ=${freq}`];
-  if (freq === "WEEKLY" && byDay.length > 0) {
-    parts.push(`BYDAY=${byDay.join(",")}`);
-  }
-  if (end.type === "until") {
-    parts.push(`UNTIL=${end.date}`);
-  } else if (end.type === "count") {
-    parts.push(`COUNT=${end.count}`);
-  }
-  return `RRULE:${parts.join(";")}`;
-}
+  | {
+      type: "save";
+      /**
+       * Mutation payload that represents the user’s edits.
+       * We keep recurrence scope out of the form and ask for it after close.
+       */
+      variables: UpdateGoogleEventInput;
+      /** Whether this edit targets a recurring event (instance or master). */
+      isRecurring: boolean;
+      /** Which scope should be preselected in the post-close scope dialog. */
+      defaultScope: RecurrenceScope;
+    };
 
 function RecurrenceEditor({
   visible,
@@ -222,46 +220,76 @@ function RecurrenceEditor({
     () => parseRecurrence(recurrenceRule),
     [recurrenceRule]
   );
-  const [endMode, setEndMode] = useState<RecurrenceEnd["type"]>(
-    parsedRecurrence.end.type
+
+  type RecurrenceEditorValues = {
+    freq: Frequency;
+    byDay: string[];
+    endType: RecurrenceEnd["type"];
+    /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
+    untilRule: string;
+    count: number;
+  };
+
+  const defaultValues = useMemo<RecurrenceEditorValues>(() => {
+    const endType = parsedRecurrence.end.type;
+    return {
+      freq: parsedRecurrence.freq,
+      byDay: parsedRecurrence.byDay,
+      endType,
+      untilRule: endType === "until" ? parsedRecurrence.end.date : "",
+      count: endType === "count" ? parsedRecurrence.end.count : 5,
+    };
+  }, [parsedRecurrence.byDay, parsedRecurrence.end, parsedRecurrence.freq]);
+
+  const { control, reset, setValue } = useForm<RecurrenceEditorValues>({
+    defaultValues,
+  });
+  const watched = useWatch({ control }) as RecurrenceEditorValues | undefined;
+  // `useWatch` can briefly return undefined; fall back to stable defaults.
+  const values = watched ?? defaultValues;
+
+  const lastEmittedRuleRef = useRef<string | null>(null);
+
+  const buildEndFromValues = useCallback(
+    (v: RecurrenceEditorValues): RecurrenceEnd => {
+      if (v.endType === "none") {
+        return { type: "none" };
+      }
+      if (v.endType === "until") {
+        return v.untilRule
+          ? { type: "until", date: v.untilRule }
+          : { type: "none" };
+      }
+      if (v.endType === "count") {
+        return v.count > 0
+          ? { type: "count", count: v.count }
+          : { type: "none" };
+      }
+      return { type: "none" };
+    },
+    []
   );
-  const [endUntil, setEndUntil] = useState<string | null>(
-    parsedRecurrence.end.type === "until" ? parsedRecurrence.end.date : null
-  );
-  const [endCount, setEndCount] = useState<string>(
-    parsedRecurrence.end.type === "count"
-      ? String(parsedRecurrence.end.count)
-      : ""
-  );
+
+  // Sync internal editor state when the upstream rule changes (e.g. switching events),
+  // but avoid resetting when the change was emitted by this editor itself.
+  useEffect(() => {
+    const upstream = recurrenceRule ?? null;
+    if (upstream === lastEmittedRuleRef.current) {
+      return;
+    }
+    reset(defaultValues);
+  }, [defaultValues, recurrenceRule, reset]);
 
   useEffect(() => {
-    setEndMode(parsedRecurrence.end.type);
-    setEndUntil(
-      parsedRecurrence.end.type === "until" ? parsedRecurrence.end.date : null
-    );
-    setEndCount(
-      parsedRecurrence.end.type === "count"
-        ? String(parsedRecurrence.end.count)
-        : ""
-    );
-  }, [parsedRecurrence.end]);
-
-  const applyChange = useCallback(
-    (next: { freq?: Frequency; byDay?: string[]; end?: RecurrenceEnd }) => {
-      const nextRule = buildRecurrenceRule(
-        next.freq ?? parsedRecurrence.freq,
-        next.byDay ?? parsedRecurrence.byDay,
-        next.end ?? parsedRecurrence.end
-      );
-      onChange(nextRule);
-    },
-    [
-      onChange,
-      parsedRecurrence.byDay,
-      parsedRecurrence.end,
-      parsedRecurrence.freq,
-    ]
-  );
+    const end = buildEndFromValues(values);
+    const nextRule = buildRecurrenceRule(values.freq, values.byDay, end);
+    const normalizedNext = nextRule ?? null;
+    if (normalizedNext === lastEmittedRuleRef.current) {
+      return;
+    }
+    lastEmittedRuleRef.current = normalizedNext;
+    onChange(nextRule);
+  }, [onChange, values, buildEndFromValues]);
 
   if (!visible) {
     return null;
@@ -286,30 +314,35 @@ function RecurrenceEditor({
         <select
           className="h-8 rounded-md border px-2 text-xs"
           onChange={(e) => {
-            const nextFreq = (e.target.value || null) as Frequency;
-            applyChange({ freq: nextFreq });
+            const nextFreq = (e.target.value as Frequency) || "none";
+            setValue("freq", nextFreq);
+            if (nextFreq !== "WEEKLY") {
+              // Weekday selection only applies to weekly recurrence.
+              setValue("byDay", []);
+            }
           }}
-          value={parsedRecurrence.freq ?? ""}
+          value={values.freq}
         >
-          <option value="">None</option>
+          <option value="none">None</option>
           <option value="DAILY">Daily</option>
           <option value="WEEKLY">Weekly</option>
           <option value="MONTHLY">Monthly</option>
         </select>
       </div>
 
-      {parsedRecurrence.freq === "WEEKLY" && (
+      {values.freq === "WEEKLY" && (
         <div className="flex flex-wrap gap-2">
           {WEEKDAYS.map((day) => {
-            const active = parsedRecurrence.byDay.includes(day.value);
+            const active = values.byDay.includes(day.value);
             return (
               <Button
                 key={day.value}
                 onClick={() => {
+                  const current = values.byDay;
                   const next = active
-                    ? parsedRecurrence.byDay.filter((d) => d !== day.value)
-                    : [...parsedRecurrence.byDay, day.value];
-                  applyChange({ byDay: next });
+                    ? current.filter((d) => d !== day.value)
+                    : [...current, day.value];
+                  setValue("byDay", next);
                 }}
                 size="sm"
                 type="button"
@@ -327,85 +360,84 @@ function RecurrenceEditor({
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => {
-              setEndMode("none");
-              applyChange({ end: { type: "none" } });
+              setValue("endType", "none");
+              setValue("untilRule", "");
             }}
             size="sm"
             type="button"
-            variant={endMode === "none" ? "secondary" : "outline"}
+            variant={values.endType === "none" ? "secondary" : "outline"}
           >
             No end
           </Button>
           <Button
             onClick={() => {
               const fallback =
-                endUntil ??
+                values.untilRule ||
                 untilInputToRule(
                   `${new Date().toISOString().slice(0, 10)}T00:00`
-                ) ??
+                ) ||
                 `${new Date().toISOString().slice(0, 10)}T000000Z`;
-              setEndMode("until");
-              setEndUntil(fallback);
-              applyChange({ end: { type: "until", date: fallback } });
+              setValue("endType", "until");
+              setValue("untilRule", fallback);
             }}
             size="sm"
             type="button"
-            variant={endMode === "until" ? "secondary" : "outline"}
+            variant={values.endType === "until" ? "secondary" : "outline"}
           >
             On date
           </Button>
           <Button
             onClick={() => {
-              setEndMode("count");
-              const nextCount = endCount || "5";
-              setEndCount(nextCount);
-              applyChange({ end: { type: "count", count: Number(nextCount) } });
+              setValue("endType", "count");
+              setValue(
+                "count",
+                Number.isFinite(values.count) && values.count > 0
+                  ? values.count
+                  : 5
+              );
             }}
             size="sm"
             type="button"
-            variant={endMode === "count" ? "secondary" : "outline"}
+            variant={values.endType === "count" ? "secondary" : "outline"}
           >
             After N
           </Button>
         </div>
 
-        {endMode === "until" ? (
+        {values.endType === "until" ? (
           <Input
             className="w-44 text-xs"
             onChange={(e) => {
               const val = e.target.value;
               if (!val) {
-                setEndUntil(null);
-                applyChange({ end: { type: "none" } });
+                setValue("untilRule", "");
+                setValue("endType", "none");
                 return;
               }
               const normalized = untilInputToRule(val);
               if (!normalized) {
                 return;
               }
-              setEndUntil(normalized);
-              applyChange({ end: { type: "until", date: normalized } });
+              setValue("untilRule", normalized);
             }}
             type="datetime-local"
-            value={endUntil ? untilRuleToInput(endUntil) : ""}
+            value={values.untilRule ? untilRuleToInput(values.untilRule) : ""}
           />
         ) : null}
 
-        {endMode === "count" ? (
+        {values.endType === "count" ? (
           <div className="flex items-center gap-2">
             <Input
               className="w-20 text-xs"
               min={1}
               onChange={(e) => {
-                const val = e.target.value;
-                setEndCount(val);
-                const parsed = Number.parseInt(val, 10);
+                const parsed = Number.parseInt(e.target.value, 10);
                 if (Number.isFinite(parsed) && parsed > 0) {
-                  applyChange({ end: { type: "count", count: parsed } });
+                  setValue("count", parsed);
                 }
               }}
               type="number"
-              value={endCount}
+              value={values.count}
             />
             <span className="text-muted-foreground text-xs">occurrences</span>
           </div>
@@ -415,86 +447,7 @@ function RecurrenceEditor({
   );
 }
 
-type TemporalPayload = {
-  startPayload: { date?: string; dateTime?: string };
-  endPayload: { date?: string; dateTime?: string };
-  startDateTime: Date | null;
-  isAllDay: boolean;
-  occurrenceStart: Date;
-};
-
-function buildDateTimeValue(date: Date | null, time: string) {
-  if (!(date && time)) {
-    return null;
-  }
-  const [hours, minutes] = time.split(":").map(Number);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
-    return null;
-  }
-  return set(new Date(date), {
-    hours,
-    minutes,
-    seconds: 0,
-    milliseconds: 0,
-  });
-}
-
-function buildTemporalPayload(
-  values: EventFormValues,
-  clamp: (
-    start: Date | null,
-    end: Date | null
-  ) => {
-    start: Date | null;
-    end: Date | null;
-  }
-): TemporalPayload | null {
-  const isAllDayEvent = values.allDay;
-  const startDate = values.startDate;
-  const endDate = values.endDate ?? values.startDate;
-  if (!startDate) {
-    return null;
-  }
-
-  const resolvedTimes = clamp(startDate, endDate);
-
-  const startDateTime = buildDateTimeValue(
-    resolvedTimes.start,
-    values.startTime
-  );
-  const endDateTime = buildDateTimeValue(resolvedTimes.end, values.endTime);
-
-  const startPayload = isAllDayEvent
-    ? { date: format(startDate, "yyyy-MM-dd") }
-    : { dateTime: startDateTime?.toISOString() };
-  const endPayload = isAllDayEvent
-    ? {
-        date: resolvedTimes.end
-          ? format(addDays(resolvedTimes.end, 1), "yyyy-MM-dd")
-          : undefined,
-      }
-    : { dateTime: endDateTime?.toISOString() };
-
-  return {
-    startPayload,
-    endPayload,
-    startDateTime,
-    isAllDay: isAllDayEvent,
-    occurrenceStart: startDateTime ?? startDate,
-  };
-}
-
-function buildCalendarKey(accountId: string, calendarId: string) {
-  return `${accountId}:${calendarId}`;
-}
-
-function parseCalendarKey(key: string): CalendarOption | null {
-  const [accountId, calendarId] = key.split(":");
-  if (!(accountId && calendarId)) {
-    return null;
-  }
-  return { accountId, calendarId, label: "" };
-}
+// Temporal / calendar helpers live in `event-edit-utils.ts`.
 
 /**
  * Inline editor for Google events, mirroring TaskEditPopover behavior.
@@ -510,35 +463,284 @@ export function EventEditPopover({
   align = "start",
 }: EventEditPopoverProps) {
   const [open, setOpen] = useState(false);
-  const submitRef = useRef<(() => void) | null>(null);
+  const updateEvent = useUpdateGoogleEventMutation();
+  const moveEvent = useMoveGoogleEventMutation();
+  const calendars = useAtomValue(googleCalendarsDataAtom);
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && submitRef.current) {
-      submitRef.current();
+  /**
+   * The form registers a function that builds a save request synchronously.
+   * This lets the popover close immediately, then we can show dialogs / mutate.
+   */
+  const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
+    null
+  );
+
+  const [scopeDialogOpen, setScopeDialogOpen] = useState(false);
+  const [pendingSave, setPendingSave] = useState<{
+    variables: UpdateGoogleEventInput;
+    defaultScope: RecurrenceScope;
+  } | null>(null);
+  const [selectedScope, setSelectedScope] = useState<RecurrenceScope>("this");
+
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveScope, setMoveScope] = useState<RecurrenceScope>("this");
+  const [moveScopeDialogOpen, setMoveScopeDialogOpen] = useState(false);
+  const [moveDestinationCalendarId, setMoveDestinationCalendarId] = useState<
+    string | null
+  >(null);
+  const postSaveIntentRef = useRef<"move" | null>(null);
+
+  const calendarOptions = useMemo<CalendarOption[]>(
+    () =>
+      calendars
+        // Moving across Google accounts is not supported by this flow.
+        .filter((c) => c.accountId === accountId)
+        .map((c) => ({
+          accountId: c.accountId,
+          calendarId: c.calendar.id,
+          label: c.calendar.summary ?? "Calendar",
+        })),
+    [accountId, calendars]
+  );
+
+  const openMoveDialog = useCallback(() => {
+    const isRecurring = Boolean(
+      event.recurringEventId || event.recurrence?.length
+    );
+    let defaultScope: RecurrenceScope = "this";
+    if (isRecurring && !event.recurringEventId) {
+      defaultScope = "all";
     }
-    setOpen(nextOpen);
-  };
+    setMoveScope(defaultScope);
+
+    // Default destination = first calendar that is not the current one (if any).
+    const firstOther =
+      calendarOptions.find((c) => c.calendarId !== calendarId)?.calendarId ??
+      null;
+    setMoveDestinationCalendarId(firstOther);
+    setMoveDialogOpen(true);
+  }, [calendarId, calendarOptions, event.recurringEventId, event.recurrence]);
+
+  const commitPendingSave = useCallback(async () => {
+    if (!pendingSave) {
+      return;
+    }
+    const { variables } = pendingSave;
+    await updateEvent.mutateAsync({
+      ...variables,
+      recurrenceScope: selectedScope,
+    });
+    setPendingSave(null);
+  }, [pendingSave, selectedScope, updateEvent]);
+
+  const handleClose = useCallback(
+    (intent?: "move") => {
+      const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
+      setOpen(false);
+
+      if (request.type === "none") {
+        if (intent === "move") {
+          openMoveDialog();
+        }
+        return;
+      }
+
+      if (request.type === "save") {
+        if (request.isRecurring) {
+          setPendingSave({
+            variables: request.variables,
+            defaultScope: request.defaultScope,
+          });
+          setSelectedScope(request.defaultScope);
+          postSaveIntentRef.current = intent ?? null;
+          setScopeDialogOpen(true);
+          return;
+        }
+
+        if (intent === "move") {
+          // Ensure edits are saved before moving.
+          updateEvent
+            .mutateAsync({
+              ...request.variables,
+              recurrenceScope: "this",
+            })
+            .then(() => {
+              openMoveDialog();
+            })
+            .catch(() => null);
+          return;
+        }
+
+        updateEvent.mutate({
+          ...request.variables,
+          recurrenceScope: "this",
+        });
+      }
+    },
+    [openMoveDialog, updateEvent]
+  );
 
   return (
-    <Popover onOpenChange={handleOpenChange} open={open}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent
-        align={align}
-        className="w-[420px] space-y-3 p-4"
-        side={side}
+    <>
+      <Popover
+        onOpenChange={(nextOpen) => {
+          // When closing, build a save request *before* the form unmounts.
+          if (!nextOpen) {
+            handleClose();
+            return;
+          }
+          setOpen(true);
+        }}
+        open={open}
       >
-        <EventEditForm
-          accountId={accountId}
-          calendarId={calendarId}
-          end={end}
-          event={event}
-          onRegisterSubmit={(fn) => {
-            submitRef.current = fn;
-          }}
-          start={start}
-        />
-      </PopoverContent>
-    </Popover>
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+        <PopoverContent
+          align={align}
+          className="w-[420px] space-y-3 p-4"
+          side={side}
+        >
+          <EventEditForm
+            accountId={accountId}
+            calendarId={calendarId}
+            end={end}
+            event={event}
+            onRegisterCloseSaveRequest={(fn) => {
+              buildCloseSaveRequestRef.current = fn;
+            }}
+            onRequestMove={() => handleClose("move")}
+            start={start}
+          />
+        </PopoverContent>
+      </Popover>
+
+      {/* Post-close recurrence scope prompt. Only shown when the user actually edited. */}
+      <RecurrenceScopeDialog
+        description="Choose how broadly to apply your changes."
+        onCancel={() => {
+          // Cancelling the scope dialog discards the edits (no save).
+          setPendingSave(null);
+          postSaveIntentRef.current = null;
+        }}
+        onConfirm={async () => {
+          await commitPendingSave();
+          if (postSaveIntentRef.current === "move") {
+            postSaveIntentRef.current = null;
+            openMoveDialog();
+          }
+        }}
+        onOpenChange={setScopeDialogOpen}
+        onValueChange={setSelectedScope}
+        open={scopeDialogOpen}
+        title="Save recurring event changes"
+        value={selectedScope}
+      />
+
+      {/* Separate “Move to calendar…” flow. */}
+      <Dialog onOpenChange={setMoveDialogOpen} open={moveDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Move event</DialogTitle>
+            <DialogDescription>
+              Choose a destination calendar and how broadly to apply the move.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Destination calendar</Label>
+              <div className="grid gap-2">
+                {calendarOptions
+                  .filter((c) => c.calendarId !== calendarId)
+                  .map((c) => {
+                    const selected = moveDestinationCalendarId === c.calendarId;
+                    return (
+                      <Button
+                        className={cn(
+                          "justify-start",
+                          selected ? "bg-muted" : ""
+                        )}
+                        key={c.calendarId}
+                        onClick={() =>
+                          setMoveDestinationCalendarId(c.calendarId)
+                        }
+                        type="button"
+                        variant={selected ? "secondary" : "outline"}
+                      >
+                        {c.label}
+                      </Button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Scope</Label>
+              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                <div className="text-sm">
+                  {RECURRENCE_SCOPE_OPTIONS.find((o) => o.value === moveScope)
+                    ?.label ?? "Scope"}
+                </div>
+                <Button
+                  onClick={() => setMoveScopeDialogOpen(true)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Change…
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={() => setMoveDialogOpen(false)}
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!moveDestinationCalendarId || moveEvent.isPending}
+              onClick={async () => {
+                if (!moveDestinationCalendarId) {
+                  return;
+                }
+                await moveEvent.mutateAsync({
+                  accountId,
+                  calendarId,
+                  eventId: event.id,
+                  destinationCalendarId: moveDestinationCalendarId,
+                  scope: moveScope,
+                });
+                setMoveDialogOpen(false);
+              }}
+              type="button"
+            >
+              Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <RecurrenceScopeDialog
+        confirmLabel="Done"
+        description="Choose how broadly to apply the move."
+        disabledScopes={
+          event.recurringEventId || event.recurrence?.length
+            ? undefined
+            : { all: true, following: true }
+        }
+        onConfirm={() => {
+          return;
+        }}
+        onOpenChange={setMoveScopeDialogOpen}
+        onValueChange={setMoveScope}
+        open={moveScopeDialogOpen}
+        title="Move scope"
+        value={moveScope}
+      />
+    </>
   );
 }
 
@@ -548,44 +750,23 @@ function EventEditForm({
   calendarId,
   start,
   end,
-  onRegisterSubmit,
+  onRegisterCloseSaveRequest,
+  onRequestMove,
 }: {
   event: GoogleEvent;
   accountId: string;
   calendarId: string;
   start: Date;
   end: Date;
-  onRegisterSubmit: (fn: () => void) => void;
+  onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
+  onRequestMove: () => void;
 }) {
-  const calendars = useAtomValue(googleCalendarsDataAtom);
-  const updateEvent = useUpdateGoogleEventMutation();
-  const shouldFetchMaster =
-    !event.recurrence?.length && Boolean(event.recurringEventId);
-  const masterQuery = useQuery({
-    queryKey: [
-      "google-event-master",
-      accountId,
-      event.recurringEventId ?? "single",
-    ],
-    queryFn: () =>
-      orpc.googleCal.events.get.call({
-        accountId,
-        calendarId,
-        eventId: event.recurringEventId ?? event.id,
-      }),
-    enabled: shouldFetchMaster,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const calendarOptions = useMemo<CalendarOption[]>(
-    () =>
-      calendars.map((c) => ({
-        accountId: c.accountId,
-        calendarId: c.calendar.id,
-        label: c.calendar.summary ?? "Calendar",
-      })),
-    [calendars]
-  );
+  /**
+   * We intentionally do not run mutations from inside the form.
+   * The popover wrapper controls “save on close” and dialogs.
+   */
+  const hasUserEditedRef = useRef(false);
+  const masterQuery = useRecurringEventMaster({ accountId, calendarId, event });
 
   const isAllDay = Boolean(event.start?.date);
   const initialStartDate = useMemo(() => {
@@ -623,17 +804,12 @@ function EventEditForm({
         ? ""
         : format(initialStartDate ?? new Date(), "HH:mm"),
       endTime: isAllDay ? "" : format(initialEndDate ?? new Date(), "HH:mm"),
-      calendarKey: buildCalendarKey(accountId, calendarId),
-      recurrenceScope: event.recurringEventId ? "this" : "all",
       recurrence: recurrenceSource,
     }),
     [
-      accountId,
-      calendarId,
       event.colorId,
       event.description,
       event.location,
-      event.recurringEventId,
       event.summary,
       recurrenceSource,
       initialEndDate,
@@ -642,33 +818,21 @@ function EventEditForm({
     ]
   );
 
-  const { control, handleSubmit, reset, setValue, getValues } =
-    useForm<EventFormValues>({
-      defaultValues: initialValues,
-    });
+  const { control, reset, setValue, getValues } = useForm<EventFormValues>({
+    defaultValues: initialValues,
+  });
 
   // Keep form synced if event changes underneath.
   useEffect(() => {
+    // Reset “edited” tracking when the underlying event changes.
+    hasUserEditedRef.current = false;
     reset(initialValues, { keepDirty: false });
   }, [initialValues, reset]);
 
   const watchedValues = useWatch({ control });
 
-  const selectedCalendar = useMemo(() => {
-    const calendarKeyValue =
-      watchedValues.calendarKey ?? buildCalendarKey(accountId, calendarId);
-    const parsed = parseCalendarKey(calendarKeyValue);
-    if (!parsed) {
-      return { accountId, calendarId };
-    }
-    return {
-      accountId: parsed.accountId,
-      calendarId: parsed.calendarId,
-    };
-  }, [accountId, calendarId, watchedValues.calendarKey]);
-
   const paletteForAccount = useAtomValue(
-    normalizedGoogleColorsAtomFamily(selectedCalendar.accountId)
+    normalizedGoogleColorsAtomFamily(accountId)
   );
 
   const colorEntries = useMemo(
@@ -693,6 +857,7 @@ function EventEditForm({
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
     if (!value) {
+      hasUserEditedRef.current = true;
       setValue(field, "", { shouldDirty: true });
       return;
     }
@@ -701,6 +866,7 @@ function EventEditForm({
       return;
     }
 
+    hasUserEditedRef.current = true;
     setValue(
       field,
       `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
@@ -710,29 +876,36 @@ function EventEditForm({
     );
   };
 
-  const submit = useCallback<SubmitHandler<EventFormValues>>(
-    (values) => {
-      const parsedCalendar = parseCalendarKey(values.calendarKey);
-      const targetCalendar = parsedCalendar?.calendarId ?? calendarId;
+  const buildCloseSaveRequest = useCallback(
+    (values: EventFormValues): CloseSaveRequest => {
+      // If the user never interacted, do not send an update.
+      if (!hasUserEditedRef.current) {
+        return { type: "none" } satisfies CloseSaveRequest;
+      }
 
       const temporalPayload = buildTemporalPayload(
         values,
         clampToStartIfNeeded
       );
       if (!temporalPayload) {
-        return;
+        return { type: "none" } satisfies CloseSaveRequest;
       }
 
-      const recurrenceScope = values.recurrenceScope;
+      const isRecurring = Boolean(
+        event.recurringEventId ||
+          event.recurrence?.length ||
+          masterQuery.data?.recurrence?.length
+      );
+      const defaultScope: RecurrenceScope = event.recurringEventId
+        ? "this"
+        : "all";
 
-      // Prepare payload for mutation; leave recurrence untouched unless provided.
-      updateEvent.mutate({
+      // Prepare payload for mutation; recurrence scope is chosen after close.
+      const variables: UpdateGoogleEventInput = {
         accountId,
         calendarId,
-        targetCalendarId: targetCalendar,
         eventId: event.id,
         recurringEventId: event.recurringEventId,
-        recurrenceScope,
         event: {
           ...event,
           summary: values.summary.trim(),
@@ -749,24 +922,44 @@ function EventEditForm({
             ...temporalPayload.endPayload,
           },
         },
-      });
+      };
+
+      return {
+        type: "save",
+        variables,
+        isRecurring,
+        defaultScope,
+      };
     },
-    [accountId, calendarId, clampToStartIfNeeded, event, updateEvent]
+    [accountId, calendarId, clampToStartIfNeeded, event, masterQuery.data]
   );
 
-  // Register submit callback so popover close saves once.
+  // Register close-save callback so the popover can decide what to do on close.
   useEffect(() => {
-    onRegisterSubmit(() => {
-      submit(getValues());
+    onRegisterCloseSaveRequest(() => {
+      // This is called by the popover wrapper right before it closes.
+      return buildCloseSaveRequest(getValues());
     });
-  }, [getValues, onRegisterSubmit, submit]);
+  }, [buildCloseSaveRequest, getValues, onRegisterCloseSaveRequest]);
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = watchedValues.recurrence?.[0];
+  const canEditRecurrence = Boolean(
+    event.recurrence?.length ||
+      event.recurringEventId ||
+      masterQuery.data?.recurrence?.length
+  );
 
   return (
-    <form className="space-y-3" onSubmit={handleSubmit(submit)}>
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        // This form is saved from the popover wrapper (on close / action),
+        // so the inline submit should never do anything.
+        e.preventDefault();
+      }}
+    >
       <div className="flex items-center gap-3">
         <Popover>
           <PopoverTrigger asChild>
@@ -799,6 +992,7 @@ function EventEditForm({
                     key={colorKey}
                     onClick={(e) => {
                       e.preventDefault();
+                      hasUserEditedRef.current = true;
                       setValue("colorId", colorKey, { shouldDirty: true });
                     }}
                     style={{
@@ -811,9 +1005,10 @@ function EventEditForm({
               })}
               <Button
                 className="h-7 w-7 p-0 text-[10px]"
-                onClick={() =>
-                  setValue("colorId", undefined, { shouldDirty: true })
-                }
+                onClick={() => {
+                  hasUserEditedRef.current = true;
+                  setValue("colorId", undefined, { shouldDirty: true });
+                }}
                 type="button"
                 variant="ghost"
               >
@@ -825,32 +1020,22 @@ function EventEditForm({
 
         <Input
           className="flex-1"
-          onChange={(e) =>
-            setValue("summary", e.target.value, { shouldDirty: true })
-          }
+          onChange={(e) => {
+            hasUserEditedRef.current = true;
+            setValue("summary", e.target.value, { shouldDirty: true });
+          }}
           placeholder="Event title"
           value={watchedValues.summary}
         />
       </div>
 
       <Textarea
-        onChange={(e) =>
-          setValue("description", e.target.value, { shouldDirty: true })
-        }
+        onChange={(e) => {
+          hasUserEditedRef.current = true;
+          setValue("description", e.target.value, { shouldDirty: true });
+        }}
         placeholder="Add details..."
         value={watchedValues.description}
-      />
-
-      <RecurrenceEditor
-        onChange={(rule) =>
-          setValue("recurrence", rule ? [rule] : [], { shouldDirty: true })
-        }
-        recurrenceRule={recurrenceRule}
-        visible={Boolean(
-          event.recurrence?.length ||
-            event.recurringEventId ||
-            masterQuery.data?.recurrence?.length
-        )}
       />
 
       <div className="space-y-2">
@@ -858,9 +1043,10 @@ function EventEditForm({
           Location
         </Label>
         <Input
-          onChange={(e) =>
-            setValue("location", e.target.value, { shouldDirty: true })
-          }
+          onChange={(e) => {
+            hasUserEditedRef.current = true;
+            setValue("location", e.target.value, { shouldDirty: true });
+          }}
           placeholder="Where?"
           value={watchedValues.location}
         />
@@ -873,9 +1059,10 @@ function EventEditForm({
           <Switch
             checked={watchedValues.allDay}
             id="all-day-switch"
-            onCheckedChange={(checked) =>
-              setValue("allDay", checked, { shouldDirty: true })
-            }
+            onCheckedChange={(checked) => {
+              hasUserEditedRef.current = true;
+              setValue("allDay", checked, { shouldDirty: true });
+            }}
           />
           <Label
             className="font-medium text-muted-foreground text-xs"
@@ -884,10 +1071,38 @@ function EventEditForm({
             All day
           </Label>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          <Repeat className="h-4 w-4" />
-          <span>Recurrence scope</span>
-        </div>
+        {canEditRecurrence ? (
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={onRequestMove}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Move…
+            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button className="h-8 w-8" size="icon" variant="outline">
+                  <Repeat className="h-4 w-4" />
+                  <span className="sr-only">Edit recurrence</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[360px]">
+                <RecurrenceEditor
+                  onChange={(rule) => {
+                    hasUserEditedRef.current = true;
+                    setValue("recurrence", rule ? [rule] : [], {
+                      shouldDirty: true,
+                    });
+                  }}
+                  recurrenceRule={recurrenceRule}
+                  visible
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -917,6 +1132,7 @@ function EventEditForm({
                       next,
                       watchedValues.endDate ?? null
                     );
+                    hasUserEditedRef.current = true;
                     field.onChange(clamped.start);
                     setValue("endDate", clamped.end, { shouldDirty: true });
                   }}
@@ -953,6 +1169,7 @@ function EventEditForm({
                       watchedValues.startDate ?? null,
                       next
                     );
+                    hasUserEditedRef.current = true;
                     field.onChange(clamped.end);
                     setValue("startDate", clamped.start, { shouldDirty: true });
                   }}
@@ -1019,73 +1236,6 @@ function EventEditForm({
           </Popover>
         </div>
       )}
-
-      {Boolean(event.recurringEventId || event.recurrence?.length) && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-muted-foreground text-xs">
-            <Repeat className="h-4 w-4" />
-            <span>Recurrence</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            {RECURRENCE_OPTIONS.map((option) => {
-              const isSelected = watchedValues.recurrenceScope === option.value;
-              return (
-                <Button
-                  className={cn(
-                    "justify-start text-left text-xs",
-                    isSelected ? "bg-muted" : ""
-                  )}
-                  key={option.value}
-                  onClick={() =>
-                    setValue("recurrenceScope", option.value, {
-                      shouldDirty: true,
-                    })
-                  }
-                  type="button"
-                  variant={isSelected ? "secondary" : "outline"}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button className="justify-start gap-2 text-xs" variant="outline">
-              {calendarOptions.find(
-                (option) =>
-                  option.accountId === selectedCalendar.accountId &&
-                  option.calendarId === selectedCalendar.calendarId
-              )?.label ?? "Select calendar"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[280px] space-y-1 p-2">
-            {calendarOptions.map((option) => {
-              const key = buildCalendarKey(option.accountId, option.calendarId);
-              const isActive = watchedValues.calendarKey === key;
-              return (
-                <Button
-                  className={cn(
-                    "w-full justify-start text-left text-xs",
-                    isActive ? "bg-muted" : ""
-                  )}
-                  key={key}
-                  onClick={() =>
-                    setValue("calendarKey", key, { shouldDirty: true })
-                  }
-                  variant="ghost"
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </PopoverContent>
-        </Popover>
-      </div>
     </form>
   );
 }

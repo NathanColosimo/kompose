@@ -2,10 +2,12 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useAtomValue } from "jotai";
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
+import { recurringEventMasterQueryOptions } from "@/hooks/use-recurring-event-master";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../week-view";
 import { EventEditPopover } from "./event-edit-popover";
@@ -25,6 +27,31 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   accountId,
   calendarId,
 }: GoogleCalendarEventProps) {
+  const queryClient = useQueryClient();
+
+  // Prefetch the recurring master in the background so opening the popover is instant.
+  const shouldPrefetchMaster = Boolean(event.recurringEventId);
+  useEffect(() => {
+    if (!(shouldPrefetchMaster && event.recurringEventId)) {
+      return;
+    }
+    queryClient
+      .prefetchQuery(
+        recurringEventMasterQueryOptions({
+          accountId,
+          calendarId,
+          recurringEventId: event.recurringEventId,
+        })
+      )
+      .catch((_error) => null);
+  }, [
+    accountId,
+    calendarId,
+    event.recurringEventId,
+    queryClient,
+    shouldPrefetchMaster,
+  ]);
+
   const durationMinutes = Math.max(
     1,
     (end.getTime() - start.getTime()) / (60 * 1000)
