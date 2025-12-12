@@ -22,13 +22,13 @@ export function handleError(
   userId: string
 ): never {
   // Log error details for debugging
-  console.error("Google Calendar Router Error:", {
+  /* console.error("Google Calendar Router Error:", {
     errorType: error._tag,
     message: error.message || "Unknown error",
     cause: error.cause,
     accountId,
     userId,
-  });
+  }); */
 
   switch (error._tag) {
     case "AccountNotLinkedError":

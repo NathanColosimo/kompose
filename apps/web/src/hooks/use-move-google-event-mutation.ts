@@ -2,6 +2,7 @@
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
 export type MoveGoogleEventInput = {
@@ -38,7 +39,9 @@ export function useMoveGoogleEventMutation() {
 
       return { previousQueries };
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      toast.error(err.message);
+
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {
           queryClient.setQueryData(queryKey, data);

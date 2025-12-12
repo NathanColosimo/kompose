@@ -208,11 +208,6 @@ export class GoogleCalendarZodError extends Data.TaggedError("GoogleCalendarZodE
 
 function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
   const client = new GoogleCalendarClient({ accessToken });
-  const logError = (label: string, cause: unknown) =>
-    console.error(
-      `[google-cal][error][${label}]`,
-      typeof cause === "object" ? JSON.stringify(cause) : cause
-    );
 
   // --- Calendar Methods ---
 
@@ -344,11 +339,10 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
   /**
    * Parse an event response and standardize Zod errors.
    */
-  const parseEventResponse = (label: string, response: unknown) =>
+  const parseEventResponse = (response: unknown) =>
     Effect.gen(function* () {
       const parsed = EventSchema.safeParse(response);
       if (!parsed.success) {
-        logError(label, parsed.error);
         return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }
       return parsed.data;
@@ -363,12 +357,11 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             calendarId,
           }),
         catch: (cause) => {
-          logError("updateEvent:this:api", cause);
           return new GoogleApiError({ cause });
         },
       });
 
-      return yield* parseEventResponse("updateEvent:this:parse", response);
+      return yield* parseEventResponse(response);
     });
 
   const updateEventAll = (calendarId: string, eventId: string, event: CreateEvent) =>
@@ -403,12 +396,11 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             calendarId,
           }),
         catch: (cause) => {
-          logError("updateEvent:all:api", cause);
           return new GoogleApiError({ cause });
         },
       });
 
-      return yield* parseEventResponse("updateEvent:all:parse", response);
+      return yield* parseEventResponse(response);
     });
 
   const updateEventFollowing = (
@@ -426,6 +418,8 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           new GoogleApiError({ cause: new Error("Event is not a recurring event") })
         );
       }
+      // Keep a copy so we can recover if the series create fails after truncation.
+      const originalRecurrence = [...master.recurrence];
 
       const originalStartIso =
         event.originalStartTime?.dateTime ?? event.originalStartTime?.date;
@@ -461,13 +455,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             calendarId,
           }),
         catch: (cause) => {
-          logError("updateEvent:following:update-master", cause);
           return new GoogleApiError({ cause });
         },
       });
 
       // Validate the truncate update (even though we return the new series).
-      yield* parseEventResponse("updateEvent:following:parse-master", truncateMasterResponse);
+      yield* parseEventResponse(truncateMasterResponse);
 
       // Create new series starting at the edited occurrence.
       const newSeriesPayload = stripRecurringLink(
@@ -478,15 +471,38 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         })
       );
 
+      const restoreMasterRecurrence = Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(master.id, {
+            ...stripRecurringLink(
+              sanitizeEventPayload({
+                ...master,
+                recurrence: originalRecurrence,
+              })
+            ),
+            calendarId,
+          }),
+        catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
+      }).pipe(
+        Effect.catchAll(() => {
+          return Effect.succeed(undefined);
+        }),
+        Effect.asVoid
+      );
+
       const createResponse = yield* Effect.tryPromise({
         try: () => client.calendars.events.create(calendarId, newSeriesPayload),
         catch: (cause) => {
-          logError("updateEvent:following:create-series", cause);
           return new GoogleApiError({ cause });
         },
-      });
+      }).pipe(
+        Effect.catchAll((createError) =>
+          // Restores master recurrence on error while returning the original error.
+          restoreMasterRecurrence.pipe(Effect.zipRight(Effect.fail(createError)))
+        )
+      );
 
-      return yield* parseEventResponse("updateEvent:following:parse-series", createResponse);
+      return yield* parseEventResponse(createResponse);
     });
 
   const updateEvent = (
@@ -600,6 +616,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         const occurrenceStart = new Date(originalStartIso);
 
         // 1) Cut off the original series up to the edited occurrence.
+        const originalRecurrence = [...master.recurrence];
         const truncatedRecurrence = truncateRecurrenceForFollowing(
           master.recurrence,
           occurrenceStart,
@@ -638,10 +655,37 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           })
         );
 
+        const restoreMasterRecurrence = Effect.tryPromise({
+          try: () =>
+            client.calendars.events.update(master.id, {
+              ...stripRecurringLink(
+                sanitizeEventPayload({
+                  ...master,
+                  recurrence: originalRecurrence,
+                })
+              ),
+              calendarId,
+            }),
+          catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
+        }).pipe(
+          Effect.catchAll(() => {
+            return Effect.succeed(undefined);
+          }),
+          Effect.asVoid
+        );
+
         const createResponse = yield* Effect.tryPromise({
-          try: () => client.calendars.events.create(destinationCalendarId, newSeriesPayload),
-          catch: (cause) => new GoogleApiError({ cause }),
-        });
+          try: () =>
+            client.calendars.events.create(destinationCalendarId, newSeriesPayload),
+          catch: (cause) => {
+            return new GoogleApiError({ cause });
+          },
+        }).pipe(
+          Effect.catchAll((createError) =>
+            // Restores master recurrence on error while returning the original error.
+            restoreMasterRecurrence.pipe(Effect.zipRight(Effect.fail(createError)))
+          )
+        );
 
         const createdParsed = EventSchema.safeParse(createResponse);
         if (!createdParsed.success) {
@@ -698,14 +742,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       const master = yield* Effect.tryPromise({
         try: () => {
-          console.log("[google-cal][getMasterRecurrence] fetch", {
-            calendarId,
-            recurringEventId,
-          });
           return client.calendars.events.retrieve(recurringEventId, { calendarId });
         },
         catch: (cause) => {
-          console.error("[google-cal][getMasterRecurrence] fetch error", cause);
           return new GoogleApiError({ cause });
         },
       });
