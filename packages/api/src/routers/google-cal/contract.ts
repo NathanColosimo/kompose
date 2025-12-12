@@ -23,31 +23,55 @@ export const listCalendars = oc
   .input(ListCalendarsInputSchema)
   .output(z.array(CalendarSchema));
 
+export const GetCalendarInputSchema = z.object({
+  accountId: z.string(),
+  calendarId: z.string(),
+});
+export type GetCalendarInput = z.infer<typeof GetCalendarInputSchema>;
 /**
  * Get a calendar by ID for a given account.
  */
 export const getCalendar = oc
-  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .input(GetCalendarInputSchema)
   .output(CalendarSchema);
 
+export const CreateCalendarInputSchemaFull = z.object({
+  accountId: z.string(),
+  calendar: CreateCalendarInputSchema,
+});
+export type CreateCalendarInput = z.infer<typeof CreateCalendarInputSchemaFull>;
+/**
+ * Create a new calendar for a given account.
+ */
 export const createCalendar = oc
-  .input(
-    z.object({ accountId: z.string(), calendar: CreateCalendarInputSchema })
-  )
+  .input(CreateCalendarInputSchemaFull)
   .output(CalendarSchema);
 
+export const UpdateCalendarInputSchema = z.object({
+  accountId: z.string(),
+  calendarId: z.string(),
+  calendar: CreateCalendarInputSchema,
+});
+export type UpdateCalendarInput = z.infer<typeof UpdateCalendarInputSchema>;
+
+/**
+ * Update a calendar by ID for a given account.
+ */
 export const updateCalendar = oc
-  .input(
-    z.object({
-      accountId: z.string(),
-      calendarId: z.string(),
-      calendar: CreateCalendarInputSchema,
-    })
-  )
+  .input(UpdateCalendarInputSchema)
   .output(CalendarSchema);
 
+export const DeleteCalendarInputSchema = z.object({
+  accountId: z.string(),
+  calendarId: z.string(),
+});
+export type DeleteCalendarInput = z.infer<typeof DeleteCalendarInputSchema>;
+
+/**
+ * Delete a calendar by ID for a given account.
+ */
 export const deleteCalendar = oc
-  .input(z.object({ accountId: z.string(), calendarId: z.string() }))
+  .input(DeleteCalendarInputSchema)
   .output(z.void());
 
 // --- Events ---

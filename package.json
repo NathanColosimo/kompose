@@ -9,14 +9,16 @@
     ],
     "catalog": {
       "zod": "^4.1.13",
-      "@orpc/server": "^1.12.2",
-      "@orpc/client": "^1.12.2",
-      "@orpc/openapi": "^1.12.2",
-      "@orpc/zod": "^1.12.2",
-      "better-auth": "^1.4.5",
-      "@better-auth/expo": "^1.4.5",
+      "@orpc/server": "^1.12.3",
+      "@orpc/client": "^1.12.3",
+      "@orpc/openapi": "^1.12.3",
+      "@orpc/zod": "^1.12.3",
+      "@orpc/tanstack-query": "^1.12.3",
+      "better-auth": "^1.4.6",
+      "@better-auth/expo": "^1.4.6",
       "dotenv": "^17.2.2",
       "effect": "^3.19.6",
+      "@tanstack/react-query": "^5.90.12",
       "@t3-oss/env-nextjs": "^0.13.8",
       "@types/react": "^19.2.7",
       "@types/react-dom": "^19.2.3",
@@ -40,6 +42,9 @@
     "db:down": "turbo -F @kompose/db db:down"
   },
   "dependencies": {},
+  "overrides": {
+    "@tanstack/query-core": "5.90.12"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.3.8",
     "@effect/language-service": "^0.60.0",
