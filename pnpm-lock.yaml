@@ -34,7 +34,7 @@ catalogs:
       specifier: ^5.90.12
       version: 5.90.12
     '@tanstack/react-query-devtools':
-      specifier: ^5.90.12
+      specifier: ^5.91.1
       version: 5.91.1
     '@types/node':
       specifier: ^24.10.1
@@ -69,9 +69,6 @@ catalogs:
     zod:
       specifier: ^4.1.13
       version: 4.1.13
-
-overrides:
-  '@tanstack/query-core': 5.90.12
 
 importers:
 
@@ -1954,7 +1951,7 @@ packages:
     resolution: {integrity: sha512-XyDM6vorYkdHXm9pXi1q/FAfxNGtNRYKApU+cL8HE2LziTS7C33YnAhYsdHAHcWZ4kG8V+TEREQRlpv7QvAeyQ==}
     peerDependencies:
       '@orpc/client': 1.12.3
-      '@tanstack/query-core': 5.90.12
+      '@tanstack/query-core': '>=5.80.2'
 
   '@orpc/zod@1.12.3':
     resolution: {integrity: sha512-u/toZgIXDbTUHjb7xuEM3ktUaD/2AxTo8x7BndGlZM7uP+XpzsUzYHW128i9fsyYF55QQc0nXcGir99NmOSFzw==}
@@ -4264,7 +4261,7 @@ packages:
   jotai-tanstack-query@0.11.0:
     resolution: {integrity: sha512-Ys0u0IuuS6/okUJOulFTdCVfVaeKbm1+lKVSN9zHhIxtrAXl9FM4yu7fNvxM6fSz/NCE9tZOKR0MQ3hvplaH8A==}
     peerDependencies:
-      '@tanstack/query-core': 5.90.12
+      '@tanstack/query-core': '*'
       '@tanstack/react-query': '*'
       jotai: '>=2.0.0'
       react: ^18.0.0 || ^19.0.0
