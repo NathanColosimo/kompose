@@ -3,19 +3,20 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { useAtomValue } from "jotai";
 import { memo, useEffect } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
 import { recurringEventMasterQueryOptions } from "@/hooks/use-recurring-event-master";
+import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../days-view";
 import { EventEditPopover } from "./event-edit-popover";
 
 type GoogleCalendarEventProps = {
   event: GoogleEvent;
-  start: Date;
-  end: Date;
+  start: Temporal.ZonedDateTime;
+  end: Temporal.ZonedDateTime;
   accountId: string;
   calendarId: string;
 };
@@ -54,7 +55,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const durationMinutes = Math.max(
     1,
-    (end.getTime() - start.getTime()) / (60 * 1000)
+    Math.round(end.since(start).total({ unit: "minutes" }))
   );
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -144,9 +145,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     <EventEditPopover
       accountId={accountId}
       calendarId={calendarId}
-      end={end}
+      end={zonedDateTimeToDate(end)}
       event={event}
-      start={start}
+      start={zonedDateTimeToDate(start)}
     >
       <div
         className={cn(
@@ -179,7 +180,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           {event.summary ?? "Google event"}
         </div>
         <div className="truncate text-[10px] opacity-85">
-          {format(start, "h:mm a")} - {format(end, "h:mm a")}
+          {formatTime(start)} - {formatTime(end)}
         </div>
       </div>
     </EventEditPopover>
@@ -192,7 +193,7 @@ export const GoogleCalendarEventPreview = memo(
     start,
   }: {
     event: GoogleEvent;
-    start: Date;
+    start: Temporal.ZonedDateTime;
   }) {
     return (
       <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
@@ -200,7 +201,7 @@ export const GoogleCalendarEventPreview = memo(
           {event.summary ?? "Google event"}
         </div>
         <div className="truncate text-[10px] opacity-80">
-          {format(start, "h:mm a")}
+          {formatTime(start)}
         </div>
       </div>
     );

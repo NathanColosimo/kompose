@@ -31,6 +31,7 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "next": "catalog:",
+    "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:",
     "zod": "catalog:"
   }

@@ -2,9 +2,11 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { format } from "date-fns";
+import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
+import { timezoneAtom } from "@/atoms/current-date";
 import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { formatTime, isoStringToZonedDateTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
@@ -17,6 +19,8 @@ type TaskEventProps = {
 export const TaskEvent = memo(function TaskEventInner({
   task,
 }: TaskEventProps) {
+  const timeZone = useAtomValue(timezoneAtom);
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `event-${task.id}`,
     data: {
@@ -69,11 +73,17 @@ export const TaskEvent = memo(function TaskEventInner({
     return null;
   }
 
-  const startTime = new Date(task.startTime);
+  // Validate durationMinutes before use
   const durationMinutes = task.durationMinutes;
-  const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+  if (durationMinutes <= 0) {
+    return null;
+  }
 
-  const { top, height } = calculateEventPosition(startTime, durationMinutes);
+  // task.startTime is an ISO string from the database
+  const startZdt = isoStringToZonedDateTime(task.startTime, timeZone);
+  const endZdt = startZdt.add({ minutes: durationMinutes });
+
+  const { top, height } = calculateEventPosition(startZdt, durationMinutes);
   const isDone = task.status === "done";
 
   const style: React.CSSProperties = {
@@ -127,7 +137,7 @@ export const TaskEvent = memo(function TaskEventInner({
               {task.title}
             </div>
             <div className="truncate text-[10px] opacity-80">
-              {format(startTime, "h:mm a")} - {format(endTime, "h:mm a")}
+              {formatTime(startZdt)} - {formatTime(endZdt)}
             </div>
           </div>
         </div>
@@ -137,12 +147,14 @@ export const TaskEvent = memo(function TaskEventInner({
 });
 
 export function TaskEventPreview({ task }: { task: TaskSelect }) {
+  const timeZone = useAtomValue(timezoneAtom);
+
   return (
     <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
       <div className="truncate font-medium text-xs">{task.title}</div>
       {task.startTime ? (
         <div className="truncate text-[10px] opacity-80">
-          {format(new Date(task.startTime), "h:mm a")}
+          {formatTime(isoStringToZonedDateTime(task.startTime, timeZone))}
         </div>
       ) : null}
     </div>

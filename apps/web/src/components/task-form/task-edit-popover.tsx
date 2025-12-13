@@ -160,8 +160,10 @@ function TaskEditForm({
     () => ({
       title: task.title ?? "",
       description: task.description ?? "",
+      // Parse ISO timestamp string to Date for form
       startDateTime: task.startTime ? new Date(task.startTime) : null,
-      dueDate: task.dueDate ? new Date(task.dueDate) : null,
+      // Parse YYYY-MM-DD string to Date for form (appending T00:00 to parse as local)
+      dueDate: task.dueDate ? new Date(`${task.dueDate}T00:00`) : null,
       durationMinutes: task.durationMinutes ?? 30,
     }),
     [
@@ -187,30 +189,34 @@ function TaskEditForm({
 
   const submit = useCallback<SubmitHandler<TaskFormValues>>(
     (values) => {
-      const startDateTime = values.startDateTime
-        ? new Date(values.startDateTime)
-        : null;
-
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
+
+      // Convert Date to local datetime string for startTime (Postgres timestamp without timezone)
+      const startTimeStr = values.startDateTime
+        ? format(values.startDateTime, "yyyy-MM-dd'T'HH:mm:ss")
+        : null;
+
+      // Convert Date to YYYY-MM-DD string for startDate (using local timezone to avoid date shift)
+      const startDateStr = values.startDateTime
+        ? format(values.startDateTime, "yyyy-MM-dd")
+        : null;
+
+      // Convert Date to YYYY-MM-DD string for dueDate (using local timezone to avoid date shift)
+      const dueDateStr = values.dueDate
+        ? format(values.dueDate, "yyyy-MM-dd")
+        : null;
 
       updateTask.mutate({
         id: task.id,
         task: {
           title: values.title.trim(),
           description: values.description ?? "",
-          startDate: startDateTime
-            ? set(startDateTime, {
-                hours: 0,
-                minutes: 0,
-                seconds: 0,
-                milliseconds: 0,
-              })
-            : null,
-          startTime: startDateTime,
-          dueDate: values.dueDate,
+          startDate: startDateStr,
+          startTime: startTimeStr,
+          dueDate: dueDateStr,
           durationMinutes: normalizedDuration,
         },
       });

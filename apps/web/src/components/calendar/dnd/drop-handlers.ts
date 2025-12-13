@@ -1,44 +1,47 @@
 import type { TaskSelect } from "@kompose/db/schema/task";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type { Temporal } from "temporal-polyfill";
 import type { UpdateGoogleEventInput } from "@/hooks/use-google-event-mutations";
-import {
-  clampResizeEnd,
-  clampResizeStart,
-  durationInMinutes,
-  isSameDayLocal,
-  MS_PER_MINUTE,
-} from "./helpers";
+import { isoStringToZonedDateTime, isSameDay } from "@/lib/temporal-utils";
+import { clampResizeEnd, clampResizeStart, durationInMinutes } from "./helpers";
 import type { DragData, DragDirection } from "./types";
 
-export function buildTaskMoveUpdate(task: TaskSelect, startTime: Date) {
+/** Build task move update payload */
+export function buildTaskMoveUpdate(
+  task: TaskSelect,
+  startTime: Temporal.ZonedDateTime
+) {
   return {
     id: task.id,
     task: {
-      startTime,
+      // Store as local datetime (Postgres timestamp without timezone)
+      startTime: startTime.toPlainDateTime().toString(),
       durationMinutes: task.durationMinutes,
     },
   };
 }
 
+/** Build task resize update payload */
 export function buildTaskResizeUpdate({
   task,
   targetDateTime,
   direction,
+  timeZone,
 }: {
   task: TaskSelect;
-  targetDateTime: Date;
+  targetDateTime: Temporal.ZonedDateTime;
   direction: DragDirection;
+  timeZone: string;
 }) {
   if (!task.startTime) {
     return null;
   }
 
-  const originalStart = new Date(task.startTime);
-  const originalEnd = new Date(
-    originalStart.getTime() + task.durationMinutes * MS_PER_MINUTE
-  );
+  // Parse task.startTime (ISO string) to ZonedDateTime
+  const originalStart = isoStringToZonedDateTime(task.startTime, timeZone);
+  const originalEnd = originalStart.add({ minutes: task.durationMinutes });
 
-  if (!isSameDayLocal(originalStart, targetDateTime)) {
+  if (!isSameDay(originalStart, targetDateTime)) {
     return null;
   }
 
@@ -52,7 +55,8 @@ export function buildTaskResizeUpdate({
     return {
       id: task.id,
       task: {
-        startTime: newStart,
+        // Store as local datetime (Postgres timestamp without timezone)
+        startTime: newStart.toPlainDateTime().toString(),
         durationMinutes: newDuration,
       },
     };
@@ -63,16 +67,18 @@ export function buildTaskResizeUpdate({
   return {
     id: task.id,
     task: {
-      startTime: originalStart,
+      // Store as local datetime (Postgres timestamp without timezone)
+      startTime: originalStart.toPlainDateTime().toString(),
       durationMinutes: newDuration,
     },
   };
 }
 
+/** Build Google event update payload with new start/end times */
 export function buildGoogleUpdatePayload(
   event: DragData & { type: "google-event" | "google-event-resize" },
-  start: Date,
-  end: Date
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime
 ): GoogleEvent {
   const {
     id: _id,
@@ -86,20 +92,26 @@ export function buildGoogleUpdatePayload(
     ...rest,
     start: {
       ...event.event.start,
-      dateTime: start.toISOString(),
+      dateTime: start.toInstant().toString(),
       date: undefined,
     },
-    end: { ...event.event.end, dateTime: end.toISOString(), date: undefined },
+    end: {
+      ...event.event.end,
+      dateTime: end.toInstant().toString(),
+      date: undefined,
+    },
   };
 }
 
+/** Build Google event move update */
 export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
-  start: Date
+  start: Temporal.ZonedDateTime
 ): UpdateGoogleEventInput {
-  const durationMinutes =
-    (data.end.getTime() - data.start.getTime()) / (60 * 1000);
-  const newEnd = new Date(start.getTime() + durationMinutes * 60 * 1000);
+  const durationMins = Math.round(
+    data.end.since(data.start).total({ unit: "minutes" })
+  );
+  const newEnd = start.add({ minutes: durationMins });
   const event = buildGoogleUpdatePayload(data, start, newEnd);
 
   return {
@@ -110,17 +122,18 @@ export function buildGoogleMoveUpdate(
   };
 }
 
+/** Build Google event resize update */
 export function buildGoogleResizeUpdate({
   data,
   targetDateTime,
 }: {
   data: Extract<DragData, { type: "google-event-resize" }>;
-  targetDateTime: Date;
+  targetDateTime: Temporal.ZonedDateTime;
 }) {
   const originalStart = data.start;
   const originalEnd = data.end;
 
-  if (!isSameDayLocal(originalStart, targetDateTime)) {
+  if (!isSameDay(originalStart, targetDateTime)) {
     return null;
   }
 

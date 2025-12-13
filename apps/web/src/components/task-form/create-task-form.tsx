@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type TaskInsert, taskInsertSchema } from "@kompose/db/schema/task";
+import type { ClientTaskInsert } from "@kompose/api/routers/task/contract";
+import { clientTaskInsertSchema } from "@kompose/api/routers/task/contract";
 import { format } from "date-fns";
 import { CalendarIcon, Plus } from "lucide-react";
 import { useState } from "react";
@@ -24,17 +25,18 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { dateStringToDate, dateToDateString } from "@/lib/temporal-utils";
 
 export function CreateTaskForm() {
   const [open, setOpen] = useState(false);
 
   const { createTask } = useTaskMutations();
 
-  /** Helper to get default due date (tomorrow) */
-  const getDefaultDueDate = () => {
+  /** Helper to get default due date string (tomorrow) */
+  const getDefaultDueDateStr = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow;
+    return dateToDateString(tomorrow);
   };
 
   const {
@@ -43,28 +45,26 @@ export function CreateTaskForm() {
     control,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm({
-    resolver: zodResolver(taskInsertSchema),
+  } = useForm<ClientTaskInsert>({
+    resolver: zodResolver(clientTaskInsertSchema),
     defaultValues: {
-      userId: "",
       title: "",
       description: "",
-      startDate: new Date(),
+      startDate: dateToDateString(new Date()),
       durationMinutes: 30,
-      dueDate: getDefaultDueDate(),
+      dueDate: getDefaultDueDateStr(),
     },
   });
 
-  const onSubmit = async (data: TaskInsert) => {
+  const onSubmit = async (data: ClientTaskInsert) => {
     await createTask.mutateAsync(data);
     // Reset form to fresh defaults and close dialog
     reset({
-      userId: "",
       title: "",
       description: "",
-      startDate: new Date(),
+      startDate: dateToDateString(new Date()),
       durationMinutes: 30,
-      dueDate: getDefaultDueDate(),
+      dueDate: getDefaultDueDateStr(),
     });
     setOpen(false);
   };
@@ -134,7 +134,7 @@ export function CreateTaskForm() {
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
-                          format(field.value, "PPP")
+                          format(dateStringToDate(field.value), "PPP")
                         ) : (
                           <span>Pick a date</span>
                         )}
@@ -143,10 +143,14 @@ export function CreateTaskForm() {
                     <PopoverContent align="start" className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        onSelect={field.onChange}
+                        onSelect={(date) =>
+                          field.onChange(date ? dateToDateString(date) : null)
+                        }
                         selected={
-                          // biome-ignore lint/nursery/noLeakedRender: Field prop
-                          field.value ? new Date(field.value) : undefined
+                          // biome-ignore lint/nursery/noLeakedRender: prop
+                          field.value
+                            ? dateStringToDate(field.value)
+                            : undefined
                         }
                       />
                     </PopoverContent>
@@ -175,7 +179,7 @@ export function CreateTaskForm() {
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
-                          format(field.value, "PPP")
+                          format(dateStringToDate(field.value), "PPP")
                         ) : (
                           <span>Pick a date</span>
                         )}
@@ -184,10 +188,14 @@ export function CreateTaskForm() {
                     <PopoverContent align="start" className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        onSelect={field.onChange}
+                        onSelect={(date) =>
+                          field.onChange(date ? dateToDateString(date) : null)
+                        }
                         selected={
-                          // biome-ignore lint/nursery/noLeakedRender: Field prop
-                          field.value ? new Date(field.value) : undefined
+                          // biome-ignore lint/nursery/noLeakedRender: prop
+                          field.value
+                            ? dateStringToDate(field.value)
+                            : undefined
                         }
                       />
                     </PopoverContent>

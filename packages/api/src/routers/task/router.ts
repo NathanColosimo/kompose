@@ -1,3 +1,4 @@
+import type { TaskInsert } from "@kompose/db/schema/task";
 import { implement, ORPCError } from "@orpc/server";
 import { Effect, type ParseResult } from "effect";
 import { requireAuth } from "../..";
@@ -50,8 +51,8 @@ export const taskRouter = os.router({
   create: os.create.handler(({ input, context }) => {
     const program = Effect.gen(function* () {
       const service = yield* Tasks;
-      // input is already validated and parsed to domain objects (Dates) by oRPC middleware
-      const task = yield* service.createTask(context.user.id, input);
+      const taskInput: TaskInsert = { ...input, userId: context.user.id };
+      const task = yield* service.createTask(context.user.id, taskInput);
       return task;
     }).pipe(Effect.provide(TasksLive));
 

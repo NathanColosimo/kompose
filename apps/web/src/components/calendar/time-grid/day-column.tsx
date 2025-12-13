@@ -1,13 +1,15 @@
 "use client";
 
-import { isToday } from "date-fns";
 import { memo, useEffect, useState } from "react";
+import type { Temporal } from "temporal-polyfill";
+import { isToday } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
 type DayColumnProps = {
-  date: Date;
+  date: Temporal.PlainDate;
+  timeZone: string;
   width: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
@@ -15,6 +17,7 @@ type DayColumnProps = {
 
 export const DayColumn = memo(function DayColumnInner({
   date,
+  timeZone,
   width,
   children,
   droppableDisabled = false,
@@ -36,6 +39,7 @@ export const DayColumn = memo(function DayColumnInner({
               hour={hour}
               key={minutes}
               minutes={minutes}
+              timeZone={timeZone}
             />
           ))}
         </div>

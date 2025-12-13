@@ -1,11 +1,11 @@
 "use client";
 
-import { format } from "date-fns";
 import { memo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 
 type DayHeaderProps = {
-  date: Date;
+  date: Temporal.PlainDate;
   isTodayHighlight: boolean;
   width: string;
 };
@@ -24,7 +24,7 @@ export const DayHeader = memo(function DayHeaderInner({
       style={{ width, scrollSnapAlign: "start" }}
     >
       <span className="font-medium text-muted-foreground text-xs uppercase">
-        {format(date, "EEE")}
+        {date.toLocaleString(undefined, { weekday: "short" })}
       </span>
       <span
         className={cn(
@@ -32,7 +32,7 @@ export const DayHeader = memo(function DayHeaderInner({
           isTodayHighlight ? "bg-primary text-primary-foreground" : ""
         )}
       >
-        {format(date, "d")}
+        {date.day}
       </span>
     </div>
   );

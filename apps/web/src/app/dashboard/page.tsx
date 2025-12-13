@@ -1,10 +1,9 @@
 "use client";
 
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-
 import {
   currentDateAtom,
   eventWindowAtom,
@@ -39,7 +38,7 @@ import {
 import { orpc } from "@/utils/orpc";
 
 export default function Page() {
-  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const setCurrentDate = useSetAtom(currentDateAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
   const window = useAtomValue(eventWindowAtom);
@@ -89,17 +88,18 @@ export default function Page() {
     [eventsQueries, visibleGoogleCalendars]
   );
 
-  // Navigate to a specific date (updates both currentDate and buffer center)
-  const navigateToDate = useCallback(
-    (date: Date) => {
-      setCurrentDate(date);
-    },
-    [setCurrentDate]
-  );
+  // Navigate by visible days count (using functional updates for callback stability)
+  const goToPreviousPeriod = useCallback(() => {
+    setCurrentDate((prev) => subDays(prev, visibleDaysCount));
+  }, [setCurrentDate, visibleDaysCount]);
 
-  const goToToday = () => {
-    navigateToDate(plainDateToDate(todayPlainDate(timeZone), timeZone));
-  };
+  const goToNextPeriod = useCallback(() => {
+    setCurrentDate((prev) => addDays(prev, visibleDaysCount));
+  }, [setCurrentDate, visibleDaysCount]);
+
+  const goToToday = useCallback(() => {
+    setCurrentDate(todayPlainDate(timeZone));
+  }, [setCurrentDate, timeZone]);
 
   return (
     <div className="relative h-full">
@@ -113,32 +113,10 @@ export default function Page() {
 
         {/* Navigation controls */}
         <div className="flex items-center gap-1">
-          <Button
-            onClick={() => {
-              navigateToDate(
-                plainDateToDate(
-                  subDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
-                  timeZone
-                )
-              );
-            }}
-            size="icon"
-            variant="ghost"
-          >
+          <Button onClick={goToPreviousPeriod} size="icon" variant="ghost">
             <ChevronLeft className="size-4" />
           </Button>
-          <Button
-            onClick={() => {
-              navigateToDate(
-                plainDateToDate(
-                  addDays(dateToPlainDate(currentDate, timeZone), visibleDaysCount),
-                  timeZone
-                )
-              );
-            }}
-            size="icon"
-            variant="ghost"
-          >
+          <Button onClick={goToNextPeriod} size="icon" variant="ghost">
             <ChevronRight className="size-4" />
           </Button>
           <Button
@@ -180,11 +158,14 @@ function DatePopover() {
   const timeZone = useAtomValue(timezoneAtom);
   const [open, setOpen] = useState(false);
 
+  // Convert to Date for react-day-picker
+  const selectedDate = plainDateToDate(currentDate, timeZone);
+
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        const asPlain = dateToPlainDate(date, timeZone);
-        setCurrentDate(plainDateToDate(asPlain, timeZone));
+        // Convert from Date back to PlainDate
+        setCurrentDate(dateToPlainDate(date, timeZone));
       }
       setOpen(false);
     },
@@ -195,14 +176,11 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="w-[280px] justify-start text-left font-normal data-[empty=true]:text-muted-foreground"
-          data-empty={!currentDate}
+          className="w-[280px] justify-start text-left font-normal"
           variant="outline"
         >
           <CalendarIcon />
-          {currentDate
-            ? formatPlainDate(dateToPlainDate(currentDate, timeZone))
-            : <span>Pick a date</span>}
+          {formatPlainDate(currentDate)}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">
@@ -211,7 +189,7 @@ function DatePopover() {
           mode="single"
           onSelect={handleDateSelect}
           required
-          selected={plainDateToDate(currentDate, timeZone)}
+          selected={selectedDate}
         />
       </PopoverContent>
     </Popover>

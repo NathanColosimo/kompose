@@ -1,14 +1,16 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { memo } from "react";
+import { memo, useMemo } from "react";
+import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
-import { buildSlotId } from "./slot-utils";
+import type { SlotData } from "../dnd/types";
 
 type TimeSlotProps = {
-  date: Date;
+  date: Temporal.PlainDate;
   hour: number;
   minutes: number;
+  timeZone: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
 };
@@ -17,18 +19,32 @@ export const TimeSlot = memo(function TimeSlotInner({
   date,
   hour,
   minutes,
+  timeZone,
   children,
   droppableDisabled,
 }: TimeSlotProps) {
-  const slotId = buildSlotId(date, hour, minutes);
+  // Build slot ID for droppable identification
+  const slotId = `slot-${date.toString()}-${hour}-${minutes}`;
+
+  // Memoize the ZonedDateTime to avoid recreating on every render
+  const dateTime = useMemo(
+    () =>
+      Temporal.ZonedDateTime.from({
+        year: date.year,
+        month: date.month,
+        day: date.day,
+        hour,
+        minute: minutes,
+        timeZone,
+      }),
+    [date, hour, minutes, timeZone]
+  );
+
+  const slotData: SlotData = useMemo(() => ({ dateTime }), [dateTime]);
 
   const { setNodeRef, isOver } = useDroppable({
     id: slotId,
-    data: {
-      date,
-      hour,
-      minutes,
-    },
+    data: slotData,
     disabled: droppableDisabled,
   });
 

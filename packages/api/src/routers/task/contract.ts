@@ -8,7 +8,13 @@ import z from "zod";
 
 export const listTasks = oc.input(z.void()).output(z.array(taskSelectSchema));
 
-export const createTask = oc.input(taskInsertSchema).output(taskSelectSchema);
+/** Client-facing insert schema omits userId (added from auth context on server) */
+export const clientTaskInsertSchema = taskInsertSchema.omit({ userId: true });
+export type ClientTaskInsert = z.infer<typeof clientTaskInsertSchema>;
+
+export const createTask = oc
+  .input(clientTaskInsertSchema)
+  .output(taskSelectSchema);
 
 export const updateTask = oc
   .input(

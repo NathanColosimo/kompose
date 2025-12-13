@@ -2,10 +2,12 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelect } from "@kompose/db/schema/task";
-import { format } from "date-fns";
+import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
+import { timezoneAtom } from "@/atoms/current-date";
 import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { formatDateString, formatTimestampString } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Badge } from "../ui/badge";
@@ -37,6 +39,8 @@ function formatDuration(minutes: number): string {
  * Can be dragged onto the calendar to schedule the task.
  */
 export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
+  const timeZone = useAtomValue(timezoneAtom);
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `task-${task.id}`,
     data: {
@@ -107,7 +111,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.dueDate ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
                 <CalendarDays className="size-3" />
-                {format(new Date(task.dueDate), "MMM d")}
+                {formatDateString(task.dueDate)}
               </Badge>
             ) : null}
 
@@ -115,7 +119,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.startTime ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
                 <CalendarClock className="size-3" />
-                {format(new Date(task.startTime), "EEE h:mm a")}
+                {formatTimestampString(task.startTime, timeZone)}
               </Badge>
             ) : null}
           </div>
