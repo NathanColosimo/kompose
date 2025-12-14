@@ -1,9 +1,6 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import type { ClientTaskInsert } from "@kompose/api/routers/task/contract";
-import { clientTaskInsertSchema } from "@kompose/api/routers/task/contract";
-import { format } from "date-fns";
+import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { CalendarIcon, Plus } from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -24,47 +21,44 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
-import { dateStringToDate, dateToDateString } from "@/lib/temporal-utils";
+import { useTasks } from "@/hooks/use-tasks";
+import {
+  formatPlainDate,
+  pickerDateToTemporal,
+  temporalToPickerDate,
+  todayPlainDate,
+} from "@/lib/temporal-utils";
 
 export function CreateTaskForm() {
   const [open, setOpen] = useState(false);
 
-  const { createTask } = useTaskMutations();
-
-  /** Helper to get default due date string (tomorrow) */
-  const getDefaultDueDateStr = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return dateToDateString(tomorrow);
-  };
+  const { createTask } = useTasks();
 
   const {
     register,
     handleSubmit,
     control,
     reset,
-    formState: { errors, isSubmitting },
-  } = useForm<ClientTaskInsert>({
-    resolver: zodResolver(clientTaskInsertSchema),
+    formState: { isSubmitting },
+  } = useForm<ClientTaskInsertDecoded>({
     defaultValues: {
       title: "",
       description: "",
-      startDate: dateToDateString(new Date()),
+      startDate: todayPlainDate(),
       durationMinutes: 30,
-      dueDate: getDefaultDueDateStr(),
+      dueDate: todayPlainDate().add({ days: 1 }),
     },
   });
 
-  const onSubmit = async (data: ClientTaskInsert) => {
+  const onSubmit = async (data: ClientTaskInsertDecoded) => {
     await createTask.mutateAsync(data);
     // Reset form to fresh defaults and close dialog
     reset({
       title: "",
       description: "",
-      startDate: dateToDateString(new Date()),
+      startDate: todayPlainDate(),
       durationMinutes: 30,
-      dueDate: getDefaultDueDateStr(),
+      dueDate: todayPlainDate().add({ days: 1 }),
     });
     setOpen(false);
   };
@@ -85,9 +79,6 @@ export function CreateTaskForm() {
           <div className="grid gap-2">
             <Label htmlFor="title">Title</Label>
             <Input id="title" placeholder="Task title" {...register("title")} />
-            {errors.title?.message ? (
-              <p className="text-destructive text-xs">{errors.title.message}</p>
-            ) : null}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="durationMinutes">Duration (minutes)</Label>
@@ -98,11 +89,6 @@ export function CreateTaskForm() {
               type="number"
               {...register("durationMinutes", { valueAsNumber: true })}
             />
-            {errors.durationMinutes?.message ? (
-              <p className="text-destructive text-xs">
-                {errors.durationMinutes.message}
-              </p>
-            ) : null}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="description">Description</Label>
@@ -111,11 +97,6 @@ export function CreateTaskForm() {
               placeholder="Add details..."
               {...register("description")}
             />
-            {errors.description?.message ? (
-              <p className="text-destructive text-xs">
-                {errors.description.message}
-              </p>
-            ) : null}
           </div>
           <div className="grid gap-4">
             <div className="grid gap-2">
@@ -134,7 +115,7 @@ export function CreateTaskForm() {
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
-                          format(dateStringToDate(field.value), "PPP")
+                          formatPlainDate(field.value, { dateStyle: "long" })
                         ) : (
                           <span>Pick a date</span>
                         )}
@@ -144,12 +125,13 @@ export function CreateTaskForm() {
                       <Calendar
                         mode="single"
                         onSelect={(date) =>
-                          field.onChange(date ? dateToDateString(date) : null)
+                          field.onChange(
+                            date ? pickerDateToTemporal(date) : null
+                          )
                         }
                         selected={
-                          // biome-ignore lint/nursery/noLeakedRender: prop
                           field.value
-                            ? dateStringToDate(field.value)
+                            ? temporalToPickerDate(field.value)
                             : undefined
                         }
                       />
@@ -157,11 +139,6 @@ export function CreateTaskForm() {
                   </Popover>
                 )}
               />
-              {errors.startDate?.message ? (
-                <p className="text-destructive text-xs">
-                  {errors.startDate.message}
-                </p>
-              ) : null}
             </div>
             <div className="grid gap-2">
               <Label>Due Date</Label>
@@ -179,7 +156,7 @@ export function CreateTaskForm() {
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
-                          format(dateStringToDate(field.value), "PPP")
+                          formatPlainDate(field.value, { dateStyle: "long" })
                         ) : (
                           <span>Pick a date</span>
                         )}
@@ -189,12 +166,13 @@ export function CreateTaskForm() {
                       <Calendar
                         mode="single"
                         onSelect={(date) =>
-                          field.onChange(date ? dateToDateString(date) : null)
+                          field.onChange(
+                            date ? pickerDateToTemporal(date) : null
+                          )
                         }
                         selected={
-                          // biome-ignore lint/nursery/noLeakedRender: prop
                           field.value
-                            ? dateStringToDate(field.value)
+                            ? temporalToPickerDate(field.value)
                             : undefined
                         }
                       />
@@ -202,11 +180,6 @@ export function CreateTaskForm() {
                   </Popover>
                 )}
               />
-              {errors.dueDate?.message ? (
-                <p className="text-destructive text-xs">
-                  {errors.dueDate.message}
-                </p>
-              ) : null}
             </div>
           </div>
           <div className="flex justify-end">

@@ -1,6 +1,6 @@
 "use client";
 
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import {
   memo,
@@ -117,7 +117,7 @@ function toPositionedGoogleEvent(
 
 type DaysViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
-  tasks: TaskSelect[];
+  tasks: TaskSelectDecoded[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
 };
@@ -165,7 +165,7 @@ export const DaysView = memo(function DaysViewComponent({
 
   // Group scheduled tasks by day for efficient rendering
   const tasksByDay = useMemo(() => {
-    const grouped = new Map<string, TaskSelect[]>();
+    const grouped = new Map<string, TaskSelectDecoded[]>();
 
     for (const day of visibleDays) {
       const dayKey = day.toString();
@@ -176,8 +176,8 @@ export const DaysView = memo(function DaysViewComponent({
       if (!task.startTime) {
         continue;
       }
-      // task.startTime is an ISO string from the database
-      const taskZdt = isoStringToZonedDateTime(task.startTime, timeZone);
+      // task.startTime is PlainDateTime - convert to ZonedDateTime for day grouping
+      const taskZdt = task.startTime.toZonedDateTime(timeZone);
       const dayKey = taskZdt.toPlainDate().toString();
       const dayTasks = grouped.get(dayKey);
       if (dayTasks) {

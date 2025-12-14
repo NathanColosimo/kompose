@@ -1,19 +1,19 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import { timezoneAtom } from "@/atoms/current-date";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
-import { formatTime, isoStringToZonedDateTime } from "@/lib/temporal-utils";
+import { useTasks } from "@/hooks/use-tasks";
+import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../days-view";
 
 type TaskEventProps = {
-  task: TaskSelect;
+  task: TaskSelectDecoded;
 };
 
 export const TaskEvent = memo(function TaskEventInner({
@@ -55,7 +55,7 @@ export const TaskEvent = memo(function TaskEventInner({
     },
   });
 
-  const { updateTask } = useTaskMutations();
+  const { updateTask } = useTasks();
 
   const handleStatusToggle = useCallback(
     (e: React.MouseEvent) => {
@@ -79,8 +79,8 @@ export const TaskEvent = memo(function TaskEventInner({
     return null;
   }
 
-  // task.startTime is an ISO string from the database
-  const startZdt = isoStringToZonedDateTime(task.startTime, timeZone);
+  // task.startTime is PlainDateTime - convert to ZonedDateTime
+  const startZdt = task.startTime.toZonedDateTime(timeZone);
   const endZdt = startZdt.add({ minutes: durationMinutes });
 
   const { top, height } = calculateEventPosition(startZdt, durationMinutes);
@@ -146,7 +146,7 @@ export const TaskEvent = memo(function TaskEventInner({
   );
 });
 
-export function TaskEventPreview({ task }: { task: TaskSelect }) {
+export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   const timeZone = useAtomValue(timezoneAtom);
 
   return (
@@ -154,7 +154,7 @@ export function TaskEventPreview({ task }: { task: TaskSelect }) {
       <div className="truncate font-medium text-xs">{task.title}</div>
       {task.startTime ? (
         <div className="truncate text-[10px] opacity-80">
-          {formatTime(isoStringToZonedDateTime(task.startTime, timeZone))}
+          {formatTime(task.startTime.toZonedDateTime(timeZone))}
         </div>
       ) : null}
     </div>

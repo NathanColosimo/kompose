@@ -1,4 +1,4 @@
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import type { Temporal } from "temporal-polyfill";
 
@@ -19,11 +19,11 @@ export type PreviewRect = {
 export type DragData =
   | {
       type: "task";
-      task: TaskSelect;
+      task: TaskSelectDecoded;
     }
   | {
       type: "task-resize";
-      task: TaskSelect;
+      task: TaskSelectDecoded;
       direction: DragDirection;
     }
   | {

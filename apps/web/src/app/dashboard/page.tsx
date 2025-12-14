@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useTasks } from "@/hooks/use-tasks";
 import {
   dateToPlainDate,
   formatPlainDate,
@@ -44,10 +45,10 @@ export default function Page() {
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
   const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
-  // Fetch all tasks for the calendar
-  const { data: tasks = [], isLoading } = useQuery(
-    orpc.tasks.list.queryOptions()
-  );
+  // Fetch all tasks for the calendar (decoded to Temporal types)
+  const {
+    tasksQuery: { data: tasks = [], isLoading },
+  } = useTasks();
 
   // Fetch events for each visible calendar within the current window
   const eventsQueries = useQueries({

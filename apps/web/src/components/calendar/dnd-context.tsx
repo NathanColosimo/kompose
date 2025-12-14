@@ -12,19 +12,15 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { timezoneAtom } from "@/atoms/current-date";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import { useGoogleEventMutations } from "@/hooks/use-google-event-mutations";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
-import {
-  isoStringToZonedDateTime,
-  isSameDay,
-  minutesFromMidnight,
-} from "@/lib/temporal-utils";
+import { useTasks } from "@/hooks/use-tasks";
+import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   buildGoogleMoveUpdate,
@@ -52,7 +48,7 @@ type CalendarDndProviderProps = {
  */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const timeZone = useAtomValue(timezoneAtom);
-  const [activeTask, setActiveTask] = useState<TaskSelect | null>(null);
+  const [activeTask, setActiveTask] = useState<TaskSelectDecoded | null>(null);
   const [activeGoogleEvent, setActiveGoogleEvent] = useState<Extract<
     DragData,
     { type: "google-event" | "google-event-resize" }
@@ -74,7 +70,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   );
 
   // Mutation to update task schedule
-  const { updateTask } = useTaskMutations();
+  const { updateTask } = useTasks();
   const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
 
   const clearPreview = useCallback(() => {
@@ -94,7 +90,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   }, [clearPreview]);
 
   const handleTaskMoveDrop = useCallback(
-    (task: TaskSelect, startTime: Temporal.ZonedDateTime) => {
+    (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
       updateTask.mutate(update);
     },
@@ -106,7 +102,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
    * Called when a task is dropped on the sidebar task list.
    */
   const handleTaskUnschedule = useCallback(
-    (task: TaskSelect) => {
+    (task: TaskSelectDecoded) => {
       updateTask.mutate({
         id: task.id,
         task: {
@@ -120,7 +116,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const handleTaskResizeDrop = useCallback(
     (payload: {
-      task: TaskSelect;
+      task: TaskSelectDecoded;
       targetDateTime: Temporal.ZonedDateTime;
       direction: "start" | "end";
     }) => {
@@ -334,11 +330,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return null;
       }
 
-      // task.startTime is an ISO string from the database
-      const originalStart: Temporal.ZonedDateTime = isoStringToZonedDateTime(
-        data.task.startTime,
-        timeZone
-      );
+      // task.startTime is PlainDateTime - convert to ZonedDateTime
+      const originalStart: Temporal.ZonedDateTime =
+        data.task.startTime.toZonedDateTime(timeZone);
       const originalEnd: Temporal.ZonedDateTime = originalStart.add({
         minutes: data.task.durationMinutes,
       });

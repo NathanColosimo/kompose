@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useState } from "react";
-import type { Temporal } from "temporal-polyfill";
+import { Temporal } from "temporal-polyfill";
 import { isToday } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
@@ -72,9 +72,8 @@ function CurrentTimeIndicator() {
   );
 }
 
+/** Calculate the current time indicator position in pixels from top */
 function calculateTimePosition(): number {
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  return (hours + minutes / 60) * PIXELS_PER_HOUR;
+  const now = Temporal.Now.zonedDateTimeISO();
+  return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }

@@ -23,5 +23,12 @@
       "!packages/google-cal/src"
     ]
   },
-  "extends": ["ultracite/core", "ultracite/next", "ultracite/react"]
+  "extends": ["ultracite/core", "ultracite/next", "ultracite/react"],
+  "linter": {
+    "rules": {
+      "nursery": {
+        "noLeakedRender": "off"
+      }
+    }
+  }
 }

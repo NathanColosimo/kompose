@@ -1,11 +1,12 @@
 "use client";
 
-import type { TaskSelect } from "@kompose/db/schema/task";
-import { format, set } from "date-fns";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useAtomValue } from "jotai";
 import {
   CalendarCheck,
-  CalendarIcon,
+  CalendarClock,
   Clock3,
+  Inbox,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -24,6 +25,8 @@ import {
   useWatch,
 } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
+import { Temporal } from "temporal-polyfill";
+import { timezoneAtom } from "@/atoms/current-date";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,20 +48,31 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { useTasks } from "@/hooks/use-tasks";
+import {
+  formatPlainDate,
+  pickerDateToTemporal,
+  plainDateTimeToPickerDate,
+  temporalToPickerDate,
+} from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { Label } from "../ui/label";
 
+/** Form state uses Temporal types, convert to native Date only at picker boundary */
 type TaskFormValues = {
   title: string;
   description: string;
-  startDateTime: Date | null;
-  dueDate: Date | null;
+  /** Scheduled calendar datetime */
+  startTime: Temporal.PlainDateTime | null;
+  /** Start date - when task appears in inbox */
+  startDate: Temporal.PlainDate | null;
+  /** Due date - when task is due */
+  dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
 };
 
 type TaskEditPopoverProps = {
-  task: TaskSelect;
+  task: TaskSelectDecoded;
   children: ReactElement;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
@@ -115,12 +129,13 @@ function TaskEditForm({
   onClose,
   open,
 }: {
-  task: TaskSelect;
+  task: TaskSelectDecoded;
   onRegisterSubmit: (fn: () => void) => void;
   onClose: () => void;
   open: boolean;
 }) {
-  const { updateTask, deleteTask } = useTaskMutations();
+  const timeZone = useAtomValue(timezoneAtom);
+  const { updateTask, deleteTask } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Opens confirmation dialog
@@ -160,16 +175,19 @@ function TaskEditForm({
     () => ({
       title: task.title ?? "",
       description: task.description ?? "",
-      // Parse ISO timestamp string to Date for form
-      startDateTime: task.startTime ? new Date(task.startTime) : null,
-      // Parse YYYY-MM-DD string to Date for form (appending T00:00 to parse as local)
-      dueDate: task.dueDate ? new Date(`${task.dueDate}T00:00`) : null,
+      // task.startTime is already PlainDateTime from codec
+      startTime: task.startTime ?? null,
+      // task.startDate is Temporal.PlainDate from codec (inbox visibility)
+      startDate: task.startDate ?? null,
+      // task.dueDate is Temporal.PlainDate from codec
+      dueDate: task.dueDate ?? null,
       durationMinutes: task.durationMinutes ?? 30,
     }),
     [
       task.description,
       task.dueDate,
       task.durationMinutes,
+      task.startDate,
       task.startTime,
       task.title,
     ]
@@ -194,29 +212,15 @@ function TaskEditForm({
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
 
-      // Convert Date to local datetime string for startTime (Postgres timestamp without timezone)
-      const startTimeStr = values.startDateTime
-        ? format(values.startDateTime, "yyyy-MM-dd'T'HH:mm:ss")
-        : null;
-
-      // Convert Date to YYYY-MM-DD string for startDate (using local timezone to avoid date shift)
-      const startDateStr = values.startDateTime
-        ? format(values.startDateTime, "yyyy-MM-dd")
-        : null;
-
-      // Convert Date to YYYY-MM-DD string for dueDate (using local timezone to avoid date shift)
-      const dueDateStr = values.dueDate
-        ? format(values.dueDate, "yyyy-MM-dd")
-        : null;
-
+      // Pass Temporal types directly - mutation handles encoding
       updateTask.mutate({
         id: task.id,
         task: {
           title: values.title.trim(),
           description: values.description ?? "",
-          startDate: startDateStr,
-          startTime: startTimeStr,
-          dueDate: dueDateStr,
+          startDate: values.startDate,
+          startTime: values.startTime,
+          dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
         },
       });
@@ -231,13 +235,17 @@ function TaskEditForm({
     });
   }, [getValues, onRegisterSubmit, submit]);
 
-  const startTimeValue = watchedValues.startDateTime
-    ? format(watchedValues.startDateTime, "HH:mm")
+  // Get current startTime value (useWatch returns partial types)
+  const currentStartTime = getValues("startTime");
+
+  // Format start time for the time input (HH:mm)
+  const startTimeValue = currentStartTime
+    ? `${String(currentStartTime.hour).padStart(2, "0")}:${String(currentStartTime.minute).padStart(2, "0")}`
     : "";
 
   const handleTimeChange = (value: string) => {
     if (!value) {
-      setValue("startDateTime", null, { shouldDirty: true });
+      setValue("startTime", null, { shouldDirty: true });
       return;
     }
     const [hours, minutes] = value.split(":").map(Number);
@@ -245,24 +253,22 @@ function TaskEditForm({
       return;
     }
 
-    const base = watchedValues.startDateTime ?? new Date();
-    const next = set(base, {
-      hours,
-      minutes,
-      seconds: 0,
-      milliseconds: 0,
-    });
+    // Get the base datetime (either current startTime or now)
+    const base =
+      getValues("startTime") ?? Temporal.Now.plainDateTimeISO(timeZone);
+    // Update only the time portion
+    const next = base.with({ hour: hours, minute: minutes, second: 0 });
 
-    setValue("startDateTime", next, { shouldDirty: true });
+    setValue("startTime", next, { shouldDirty: true });
   };
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      {/* Row 1: Start date, Start time, Duration */}
+      {/* Row 1: Start time date, time, duration (calendar slot) */}
       <div className="grid grid-cols-3 gap-2">
         <Controller
           control={control}
-          name="startDateTime"
+          name="startTime"
           render={({ field }) => (
             <Popover>
               <PopoverTrigger asChild>
@@ -273,9 +279,14 @@ function TaskEditForm({
                   )}
                   variant="outline"
                 >
-                  <CalendarIcon className="h-4 w-4 shrink-0" />
+                  <CalendarClock className="h-4 w-4 shrink-0" />
                   <span className="truncate">
-                    {field.value ? format(field.value, "LLL dd") : "Start"}
+                    {field.value
+                      ? formatPlainDate(field.value.toPlainDate(), {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "Schedule"}
                   </span>
                 </Button>
               </PopoverTrigger>
@@ -287,15 +298,22 @@ function TaskEditForm({
                       field.onChange(null);
                       return;
                     }
-                    const current = field.value ?? new Date();
-                    const merged = set(current, {
-                      year: date.getFullYear(),
-                      month: date.getMonth(),
-                      date: date.getDate(),
+                    // Convert picker Date to PlainDate, preserve time
+                    const pickerDate = pickerDateToTemporal(date);
+                    const current =
+                      field.value ?? Temporal.Now.plainDateTimeISO(timeZone);
+                    const next = current.with({
+                      year: pickerDate.year,
+                      month: pickerDate.month,
+                      day: pickerDate.day,
                     });
-                    field.onChange(merged);
+                    field.onChange(next);
                   }}
-                  selected={field.value ?? undefined}
+                  selected={
+                    field.value
+                      ? plainDateTimeToPickerDate(field.value)
+                      : undefined
+                  }
                 />
               </PopoverContent>
             </Popover>
@@ -366,34 +384,86 @@ function TaskEditForm({
         />
       </div>
 
-      {/* Row 2: Due date */}
-      <Controller
-        control={control}
-        name="dueDate"
-        render={({ field }) => (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                className={cn(
-                  "w-full justify-start gap-2 text-left font-medium text-xs",
-                  !field.value && "text-muted-foreground"
-                )}
-                variant="outline"
-              >
-                <CalendarCheck className="h-4 w-4 shrink-0" />
-                {field.value ? format(field.value, "LLL dd, yyyy") : "Due date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto p-0">
-              <Calendar
-                mode="single"
-                onSelect={(date) => field.onChange(date ?? null)}
-                selected={field.value ?? undefined}
-              />
-            </PopoverContent>
-          </Popover>
-        )}
-      />
+      {/* Row 2: Start date (inbox visibility) and Due date */}
+      <div className="grid grid-cols-2 gap-2">
+        <Controller
+          control={control}
+          name="startDate"
+          render={({ field }) => (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  className={cn(
+                    "justify-start gap-2 text-left font-medium text-xs",
+                    !field.value && "text-muted-foreground"
+                  )}
+                  variant="outline"
+                >
+                  <Inbox className="h-4 w-4 shrink-0" />
+                  {field.value
+                    ? formatPlainDate(field.value, {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "Start date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  onSelect={(date) =>
+                    field.onChange(date ? pickerDateToTemporal(date) : null)
+                  }
+                  selected={
+                    field.value === undefined || field.value === null
+                      ? undefined
+                      : temporalToPickerDate(field.value)
+                  }
+                />
+              </PopoverContent>
+            </Popover>
+          )}
+        />
+
+        <Controller
+          control={control}
+          name="dueDate"
+          render={({ field }) => (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  className={cn(
+                    "justify-start gap-2 text-left font-medium text-xs",
+                    !field.value && "text-muted-foreground"
+                  )}
+                  variant="outline"
+                >
+                  <CalendarCheck className="h-4 w-4 shrink-0" />
+                  {field.value
+                    ? formatPlainDate(field.value, {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "Due date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  onSelect={(date) =>
+                    field.onChange(date ? pickerDateToTemporal(date) : null)
+                  }
+                  selected={
+                    field.value === undefined || field.value === null
+                      ? undefined
+                      : temporalToPickerDate(field.value)
+                  }
+                />
+              </PopoverContent>
+            </Popover>
+          )}
+        />
+      </div>
 
       <Separator />
 

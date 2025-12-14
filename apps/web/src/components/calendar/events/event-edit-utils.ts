@@ -1,4 +1,4 @@
-import { addDays, format, set } from "date-fns";
+import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
 
 export type Frequency = "none" | "DAILY" | "WEEKLY" | "MONTHLY";
 
@@ -155,7 +155,8 @@ export type TemporalPayload = {
   occurrenceStart: Date;
 };
 
-function buildDateTimeValue(date: Date | null, time: string) {
+/** Combine a Date and time string (HH:mm) into a single Date */
+function buildDateTimeValue(date: Date | null, time: string): Date | null {
   if (!(date && time)) {
     return null;
   }
@@ -163,12 +164,9 @@ function buildDateTimeValue(date: Date | null, time: string) {
   if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return null;
   }
-  return set(new Date(date), {
-    hours,
-    minutes,
-    seconds: 0,
-    milliseconds: 0,
-  });
+  const result = new Date(date);
+  result.setHours(hours, minutes, 0, 0);
+  return result;
 }
 
 export function buildTemporalPayload(
@@ -196,13 +194,16 @@ export function buildTemporalPayload(
   );
   const endDateTime = buildDateTimeValue(resolvedTimes.end, values.endTime);
 
+  // Use Temporal for date formatting to avoid timezone issues
   const startPayload = isAllDayEvent
-    ? { date: format(startDate, "yyyy-MM-dd") }
+    ? { date: dateToDateString(startDate) }
     : { dateTime: startDateTime?.toISOString() };
+
+  // For all-day events, Google Calendar uses exclusive end date (next day)
   const endPayload = isAllDayEvent
     ? {
         date: resolvedTimes.end
-          ? format(addDays(resolvedTimes.end, 1), "yyyy-MM-dd")
+          ? pickerDateToTemporal(resolvedTimes.end).add({ days: 1 }).toString()
           : undefined,
       }
     : { dateTime: endDateTime?.toISOString() };

@@ -1,21 +1,21 @@
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import type { Temporal } from "temporal-polyfill";
 import type { UpdateGoogleEventInput } from "@/hooks/use-google-event-mutations";
-import { isoStringToZonedDateTime, isSameDay } from "@/lib/temporal-utils";
+import { isSameDay } from "@/lib/temporal-utils";
 import { clampResizeEnd, clampResizeStart, durationInMinutes } from "./helpers";
 import type { DragData, DragDirection } from "./types";
 
-/** Build task move update payload */
+/** Build task move update payload - returns decoded types (Temporal) */
 export function buildTaskMoveUpdate(
-  task: TaskSelect,
+  task: TaskSelectDecoded,
   startTime: Temporal.ZonedDateTime
 ) {
   return {
     id: task.id,
     task: {
-      // Store as local datetime (Postgres timestamp without timezone)
-      startTime: startTime.toPlainDateTime().toString(),
+      // Return PlainDateTime directly - mutation handles encoding
+      startTime: startTime.toPlainDateTime(),
       durationMinutes: task.durationMinutes,
     },
   };
@@ -28,7 +28,7 @@ export function buildTaskResizeUpdate({
   direction,
   timeZone,
 }: {
-  task: TaskSelect;
+  task: TaskSelectDecoded;
   targetDateTime: Temporal.ZonedDateTime;
   direction: DragDirection;
   timeZone: string;
@@ -37,8 +37,8 @@ export function buildTaskResizeUpdate({
     return null;
   }
 
-  // Parse task.startTime (ISO string) to ZonedDateTime
-  const originalStart = isoStringToZonedDateTime(task.startTime, timeZone);
+  // task.startTime is PlainDateTime - convert to ZonedDateTime
+  const originalStart = task.startTime.toZonedDateTime(timeZone);
   const originalEnd = originalStart.add({ minutes: task.durationMinutes });
 
   if (!isSameDay(originalStart, targetDateTime)) {
@@ -55,8 +55,8 @@ export function buildTaskResizeUpdate({
     return {
       id: task.id,
       task: {
-        // Store as local datetime (Postgres timestamp without timezone)
-        startTime: newStart.toPlainDateTime().toString(),
+        // Return PlainDateTime directly - mutation handles encoding
+        startTime: newStart.toPlainDateTime(),
         durationMinutes: newDuration,
       },
     };
@@ -67,8 +67,8 @@ export function buildTaskResizeUpdate({
   return {
     id: task.id,
     task: {
-      // Store as local datetime (Postgres timestamp without timezone)
-      startTime: originalStart.toPlainDateTime().toString(),
+      // Return PlainDateTime directly - mutation handles encoding
+      startTime: originalStart.toPlainDateTime(),
       durationMinutes: newDuration,
     },
   };
