@@ -13,7 +13,7 @@ const PASTEL_MIN_LIGHTNESS = 0.78;
  * Colors palette per Google account, backed by TanStack Query cache.
  * Consumers can read via useAtomValue(googleColorsAtomFamily(accountId)).
  */
-export const googleColorsAtomFamily = atomFamily((accountId: string) =>
+const googleColorsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<Colors>(() => {
     const options = orpc.googleCal.colors.list.queryOptions({
       input: { accountId },

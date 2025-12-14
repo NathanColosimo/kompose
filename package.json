@@ -9,6 +9,7 @@
     "build": "turbo build",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
+    "knip": "knip",
     "db:push": "turbo -F @kompose/db db:push",
     "db:studio": "turbo -F @kompose/db db:studio",
     "db:generate": "turbo -F @kompose/db db:generate",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.8",
     "@effect/language-service": "^0.62.1",
+    "knip": "^5.73.4",
     "turbo": "^2.6.3",
     "typescript": "catalog:",
     "ultracite": "6.4.0"

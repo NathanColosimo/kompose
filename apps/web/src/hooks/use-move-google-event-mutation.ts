@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
-export type MoveGoogleEventInput = {
+type MoveGoogleEventInput = {
   accountId: string;
   calendarId: string;
   eventId: string;

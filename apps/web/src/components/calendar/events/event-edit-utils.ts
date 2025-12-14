@@ -139,7 +139,7 @@ export function buildRecurrenceRule(
   return `RRULE:${parts.join(";")}`;
 }
 
-export type TemporalFormValues = {
+type TemporalFormValues = {
   allDay: boolean;
   startDate: Date | null;
   endDate: Date | null;
@@ -147,7 +147,7 @@ export type TemporalFormValues = {
   endTime: string;
 };
 
-export type TemporalPayload = {
+type TemporalPayload = {
   startPayload: { date?: string; dateTime?: string };
   endPayload: { date?: string; dateTime?: string };
   startDateTime: Date | null;
@@ -215,18 +215,4 @@ export function buildTemporalPayload(
     isAllDay: isAllDayEvent,
     occurrenceStart: startDateTime ?? startDate,
   };
-}
-
-export function buildCalendarKey(accountId: string, calendarId: string) {
-  return `${accountId}:${calendarId}`;
-}
-
-export function parseCalendarKey(
-  key: string
-): { accountId: string; calendarId: string } | null {
-  const [accountId, calendarId] = key.split(":");
-  if (!(accountId && calendarId)) {
-    return null;
-  }
-  return { accountId, calendarId };
 }

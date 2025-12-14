@@ -13,11 +13,9 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
     "@kompose/api": "workspace:*",
     "@kompose/auth": "workspace:*",
-    "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
     "@kompose/google-cal": "workspace:*",
     "@orpc/client": "catalog:",
@@ -39,7 +37,6 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "temporal-polyfill": "catalog:",
     "@tanstack/react-query": "catalog:",
     "babel-plugin-react-compiler": "^1.0.0",
     "better-auth": "catalog:",
@@ -58,12 +55,12 @@
     "react-hotkeys-hook": "^5.2.1",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.1",
+    "temporal-polyfill": "catalog:",
     "tw-animate-css": "^1.3.4",
     "uuidv7": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@kompose/config": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
     "@tanstack/react-query-devtools": "catalog:",
     "@tauri-apps/cli": "^2.9.6",

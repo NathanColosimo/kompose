@@ -10,7 +10,7 @@ import { orpc } from "@/utils/orpc";
  * Note: `recurringEventId` is only unique within a calendar, so we include
  * `calendarId` in the key.
  */
-export function recurringEventMasterQueryKey(params: {
+function recurringEventMasterQueryKey(params: {
   accountId: string;
   calendarId: string;
   recurringEventId: string;

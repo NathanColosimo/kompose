@@ -75,7 +75,7 @@ export function buildTaskResizeUpdate({
 }
 
 /** Build Google event update payload with new start/end times */
-export function buildGoogleUpdatePayload(
+function buildGoogleUpdatePayload(
   event: DragData & { type: "google-event" | "google-event-resize" },
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime

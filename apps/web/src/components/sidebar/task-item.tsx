@@ -135,20 +135,3 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     </TaskEditPopover>
   );
 });
-
-/**
- * TaskItemPreview - Used in DragOverlay for drag preview.
- */
-export function TaskItemPreview({ task }: { task: TaskSelectDecoded }) {
-  return (
-    <div className="w-64 cursor-grabbing rounded-md border bg-sidebar p-3 shadow-lg">
-      <div className="truncate font-medium text-sm">{task.title}</div>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="secondary">
-          <Clock className="size-3" />
-          {formatDuration(task.durationMinutes)}
-        </Badge>
-      </div>
-    </div>
-  );
-}

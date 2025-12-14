@@ -191,11 +191,6 @@ export function dateToDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Convert YYYY-MM-DD string to Date (parsed as local time) */
-export function dateStringToDate(str: string): Date {
-  return new Date(`${str}T00:00`);
-}
-
 // ============================================================================
 // Date Picker Boundary Helpers
 // These convert between Temporal types and native Date for UI pickers.
@@ -224,17 +219,6 @@ export function pickerDateToTemporal(date: Date): Temporal.PlainDate {
 }
 
 /**
- * Convert a Temporal.Instant to a ZonedDateTime in the given timezone.
- * Useful for displaying scheduled times in the user's timezone.
- */
-export function instantToZonedDateTime(
-  instant: Temporal.Instant,
-  timeZone: string
-): Temporal.ZonedDateTime {
-  return instant.toZonedDateTimeISO(timeZone);
-}
-
-/**
  * Format a native Date to HH:mm string for time inputs.
  * Used at picker boundaries where native Date is required.
  */
@@ -242,21 +226,6 @@ export function formatTimeString(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
-}
-
-/**
- * Convert a native Date to Temporal.PlainDateTime.
- * Extracts local date and time components.
- */
-export function pickerDateToPlainDateTime(date: Date): Temporal.PlainDateTime {
-  return Temporal.PlainDateTime.from({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-    hour: date.getHours(),
-    minute: date.getMinutes(),
-    second: 0,
-  });
 }
 
 /**

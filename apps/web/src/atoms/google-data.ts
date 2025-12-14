@@ -7,7 +7,6 @@ import { atom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { atomWithQuery } from "jotai-tanstack-query";
 import {
-  isCalendarVisibleAtom,
   visibleCalendarsAtom,
 } from "@/atoms/visible-calendars";
 import { authClient } from "@/lib/auth-client";
@@ -16,7 +15,7 @@ import type { CalendarIdentifier } from "./visible-calendars";
 
 // --- Accounts ---
 
-export const googleAccountsAtom = atomWithQuery<Account[]>(() => ({
+const googleAccountsAtom = atomWithQuery<Account[]>(() => ({
   queryKey: ["google-accounts"],
   queryFn: async () => {
     const result = await authClient.listAccounts();
@@ -38,7 +37,7 @@ export type CalendarWithSource = {
   accountId: string;
 };
 
-export const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
+const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<CalendarWithSource[]>(() => ({
     queryKey: ["google-calendars", accountId],
     queryFn: async () => {
@@ -85,68 +84,3 @@ export type GoogleEventWithSource = {
   accountId: string;
   calendarId: string;
 };
-
-export const visibleGoogleCalendarsAtom = atom<CalendarWithSource[]>((get) => {
-  const calendars = get(googleCalendarsDataAtom);
-  const isVisible = get(isCalendarVisibleAtom);
-  return calendars.filter((calendar) =>
-    isVisible(calendar.accountId, calendar.calendar.id)
-  );
-});
-
-export const googleCalendarEventsForWindowAtom = atomFamily(
-  (key: {
-    accountId: string;
-    calendarId: string;
-    timeMin: string;
-    timeMax: string;
-  }) =>
-    atomWithQuery<GoogleEventWithSource[]>(() => ({
-      queryKey: [
-        "google-events",
-        key.accountId,
-        key.calendarId,
-        key.timeMin,
-        key.timeMax,
-      ],
-      queryFn: async () =>
-        orpc.googleCal.events.list
-          .call({
-            accountId: key.accountId,
-            calendarId: key.calendarId,
-            timeMin: key.timeMin,
-            timeMax: key.timeMax,
-          })
-          .then((events) =>
-            events.map((event) => ({
-              event,
-              accountId: key.accountId,
-              calendarId: key.calendarId,
-            }))
-          ),
-      staleTime: 5 * 60 * 1000,
-      keepPreviousData: true,
-    }))
-);
-
-export const allGoogleCalendarEventsForWindowAtom = atomFamily(
-  (window: { timeMin: string; timeMax: string }) =>
-    atom<GoogleEventWithSource[]>((get) => {
-      const calendars: CalendarWithSource[] = get(visibleGoogleCalendarsAtom);
-      const events: GoogleEventWithSource[] = [];
-      for (const calendar of calendars) {
-        const calendarEvents =
-          get(
-            googleCalendarEventsForWindowAtom({
-              accountId: calendar.accountId,
-              calendarId: calendar.calendar.id,
-              timeMin: window.timeMin,
-              timeMax: window.timeMax,
-            })
-          ).data ?? [];
-        events.push(...calendarEvents);
-      }
-
-      return events;
-    })
-);

@@ -38,10 +38,3 @@ export const isCalendarVisibleAtom = atom(
     );
   }
 );
-
-/**
- * Helper function to create a unique key for a calendar.
- */
-export function calendarKey(accountId: string, calendarId: string): string {
-  return `${accountId}:${calendarId}`;
-}

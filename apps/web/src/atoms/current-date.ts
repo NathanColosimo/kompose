@@ -34,13 +34,6 @@ export const visibleDaysCountAtom = atom(
   }
 );
 
-/** End of the visible day range (based on visibleDaysCountAtom) */
-export const visibleDaysEndAtom = atom<Temporal.PlainDate>((get) => {
-  const start = get(currentDateAtom);
-  const count = get(visibleDaysCountAtom);
-  return start.add({ days: count - 1 });
-});
-
 /** Array of PlainDates starting from the current date (length based on visibleDaysCountAtom) */
 export const visibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   const start = get(currentDateAtom);
