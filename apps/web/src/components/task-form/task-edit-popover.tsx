@@ -235,12 +235,9 @@ function TaskEditForm({
     });
   }, [getValues, onRegisterSubmit, submit]);
 
-  // Get current startTime value (useWatch returns partial types)
-  const currentStartTime = getValues("startTime");
-
-  // Format start time for the time input (HH:mm)
-  const startTimeValue = currentStartTime
-    ? `${String(currentStartTime.hour).padStart(2, "0")}:${String(currentStartTime.minute).padStart(2, "0")}`
+  // Format start time for the time input (HH:mm) - uses watchedValues for reactivity
+  const startTimeValue = watchedValues.startTime
+    ? `${String(watchedValues.startTime.hour).padStart(2, "0")}:${String(watchedValues.startTime.minute).padStart(2, "0")}`
     : "";
 
   const handleTimeChange = (value: string) => {
