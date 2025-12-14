@@ -1,6 +1,6 @@
 import type { Colors } from "@kompose/google-cal/schema";
 import { atom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { orpc } from "@/utils/orpc";
 

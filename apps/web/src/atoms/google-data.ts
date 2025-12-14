@@ -4,11 +4,9 @@ import type {
 } from "@kompose/google-cal/schema";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
-import {
-  visibleCalendarsAtom,
-} from "@/atoms/visible-calendars";
+import { visibleCalendarsAtom } from "@/atoms/visible-calendars";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 import type { CalendarIdentifier } from "./visible-calendars";
