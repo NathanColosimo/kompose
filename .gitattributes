@@ -1,8 +1,6 @@
 # Exclude pnpm-lock.yaml from diffs in PRs (but still commit it)
-pnpm-lock.yaml -diff linguist-generated=true
-
-# Exclude all .md files from diffs in PRs (but still commit them)
-*.md -diff linguist-generated=true
+# linguist-generated collapses files in GitHub PR diffs by default
+pnpm-lock.yaml linguist-generated=true
 
 # Exclude db migrations folder from diffs in PRs (but still commit them)
-packages/db/src/migrations/** -diff linguist-generated=true
+packages/db/src/migrations/** linguist-generated=true
