@@ -28,10 +28,16 @@ const date = Temporal.PlainDate.from({ year, month, day });
 const zdt = Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone });
 const duration = end.since(start).total({ unit: "minutes" });
 
+// ✓ Use .add() and .subtract() directly
+const nextWeek = date.add({ days: 7 });
+const yesterday = date.subtract({ days: 1 });
+const monthStart = date.with({ day: 1 });
+const monthEnd = date.with({ day: date.daysInMonth });
+
 // ✗ Avoid: Thin wrappers that hide the API
 const date = plainDateFromYMD(year, month, day);
-const zdt = zonedDateTimeFromDateAndTime(date, hour, minute, timeZone);
-const duration = durationMinutesBetween(start, end);
+const nextWeek = addDays(date, 7);  // Just use date.add({ days: 7 })
+const monthStart = startOfMonth(date);  // Just use date.with({ day: 1 })
 ```
 
 Utility functions in `temporal-utils.ts` are reserved for:
@@ -91,10 +97,14 @@ Temporal.PlainDate.from("2025-12-15")
 // Creating ZonedDateTime
 Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone })
 
-// Arithmetic - use .add() and .subtract()
+// Arithmetic - use .add() and .subtract() directly
 date.add({ days: 5 })
 date.subtract({ days: 3 })
 zdt.add({ minutes: 30 })
+
+// Month operations - use .with() directly
+date.with({ day: 1 })              // First day of month
+date.with({ day: date.daysInMonth })  // Last day of month
 
 // Duration between two ZonedDateTimes
 end.since(start).total({ unit: "minutes" })
@@ -112,13 +122,9 @@ getSystemTimeZone()           // "America/New_York"
 todayPlainDate(timeZone?)     // PlainDate for today
 
 // Day bounds (for range queries)
-startOfDayZoned(date, timeZone)   // Start of day
+startOfDayZoned(date, timeZone)   // Start of day as ZonedDateTime
 endOfDayZoned(date, timeZone)     // Exclusive end (start of next day)
 getDayBoundsZoned(date, timeZone) // { dayStart, dayEnd }
-
-// Month operations
-startOfMonth(date)            // First day of month
-endOfMonth(date)              // Last day of month
 
 // Comparison helpers
 isToday(date, timeZone?)      // Is PlainDate today?

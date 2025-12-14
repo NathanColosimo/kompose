@@ -7,7 +7,7 @@ import {
   timezoneAtom,
   visibleDaysCountAtom,
 } from "@/atoms/current-date";
-import { addDays, subDays, todayPlainDate } from "@/lib/temporal-utils";
+import { todayPlainDate } from "@/lib/temporal-utils";
 
 // Shared options to prevent hotkeys from firing in input fields
 const hotkeyOptions = { enableOnFormTags: false } as const;
@@ -52,14 +52,14 @@ export function CalendarHotkeys() {
   // Arrow keys to navigate by visible days count
   useHotkeys(
     "ArrowLeft",
-    () => setCurrentDate(subDays(currentDate, visibleDaysCount)),
+    () => setCurrentDate(currentDate.subtract({ days: visibleDaysCount })),
     hotkeyOptions,
     [currentDate, visibleDaysCount, setCurrentDate]
   );
 
   useHotkeys(
     "ArrowRight",
-    () => setCurrentDate(addDays(currentDate, visibleDaysCount)),
+    () => setCurrentDate(currentDate.add({ days: visibleDaysCount })),
     hotkeyOptions,
     [currentDate, visibleDaysCount, setCurrentDate]
   );

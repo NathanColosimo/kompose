@@ -1,37 +1,21 @@
 import { Temporal } from "temporal-polyfill";
 
+/** Get the system/browser timezone identifier (e.g., "America/New_York") */
 export function getSystemTimeZone() {
   return Temporal.Now.zonedDateTimeISO().timeZoneId;
 }
 
+/** Get today's date as a PlainDate in the given timezone */
 export function todayPlainDate(
   timeZone = getSystemTimeZone()
 ): Temporal.PlainDate {
   return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
 }
 
-export function addDays(
-  date: Temporal.PlainDate,
-  days: number
-): Temporal.PlainDate {
-  return date.add({ days });
-}
-
-export function subDays(
-  date: Temporal.PlainDate,
-  days: number
-): Temporal.PlainDate {
-  return date.subtract({ days });
-}
-
-export function startOfMonth(date: Temporal.PlainDate): Temporal.PlainDate {
-  return date.with({ day: 1 });
-}
-
-export function endOfMonth(date: Temporal.PlainDate): Temporal.PlainDate {
-  return date.with({ day: date.daysInMonth });
-}
-
+/**
+ * Convert a PlainDate to a ZonedDateTime at midnight (start of day).
+ * Use this for building range query start bounds.
+ */
 export function startOfDayZoned(
   date: Temporal.PlainDate,
   timeZone: string
@@ -55,6 +39,10 @@ export function endOfDayZoned(
     .add({ days: 1 });
 }
 
+/**
+ * Convert a PlainDate to a native Date at midnight in the given timezone.
+ * Used for UI pickers (e.g., shadcn Calendar) that require native Date objects.
+ */
 export function plainDateToDate(
   date: Temporal.PlainDate,
   timeZone: string
@@ -64,6 +52,10 @@ export function plainDateToDate(
   );
 }
 
+/**
+ * Convert a native Date to a PlainDate in the given timezone.
+ * Used for UI pickers (e.g., shadcn Calendar) that return native Date objects.
+ */
 export function dateToPlainDate(
   date: Date,
   timeZone: string
@@ -96,6 +88,10 @@ export function isoStringToZonedDateTime(
   return plainDateTime.toZonedDateTime(timeZone);
 }
 
+/**
+ * Format a PlainDate for display using Intl.DateTimeFormat.
+ * Default format: "Dec 15, 2025" (dateStyle: "medium")
+ */
 export function formatPlainDate(
   date: Temporal.PlainDate,
   options?: Intl.DateTimeFormatOptions
@@ -103,6 +99,10 @@ export function formatPlainDate(
   return date.toLocaleString(undefined, options ?? { dateStyle: "medium" });
 }
 
+/**
+ * Format a ZonedDateTime's time portion for display.
+ * Default format: "9:30 AM" (hour: "numeric", minute: "2-digit")
+ */
 export function formatTime(
   zdt: Temporal.ZonedDateTime,
   options?: Intl.DateTimeFormatOptions
@@ -114,6 +114,7 @@ export function formatTime(
   });
 }
 
+/** Check if two ZonedDateTimes fall on the same calendar day */
 export function isSameDay(
   a: Temporal.ZonedDateTime,
   b: Temporal.ZonedDateTime

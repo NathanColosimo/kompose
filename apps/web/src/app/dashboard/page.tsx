@@ -28,11 +28,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
-  addDays,
   dateToPlainDate,
   formatPlainDate,
   plainDateToDate,
-  subDays,
   todayPlainDate,
 } from "@/lib/temporal-utils";
 import { orpc } from "@/utils/orpc";
@@ -90,11 +88,11 @@ export default function Page() {
 
   // Navigate by visible days count (using functional updates for callback stability)
   const goToPreviousPeriod = useCallback(() => {
-    setCurrentDate((prev) => subDays(prev, visibleDaysCount));
+    setCurrentDate((prev) => prev.subtract({ days: visibleDaysCount }));
   }, [setCurrentDate, visibleDaysCount]);
 
   const goToNextPeriod = useCallback(() => {
-    setCurrentDate((prev) => addDays(prev, visibleDaysCount));
+    setCurrentDate((prev) => prev.add({ days: visibleDaysCount }));
   }, [setCurrentDate, visibleDaysCount]);
 
   const goToToday = useCallback(() => {

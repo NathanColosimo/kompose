@@ -3,13 +3,9 @@ import { atomWithStorage } from "jotai/utils";
 import type { Temporal } from "temporal-polyfill";
 
 import {
-  addDays,
   endOfDayZoned,
-  endOfMonth,
   getSystemTimeZone,
   startOfDayZoned,
-  startOfMonth,
-  subDays,
   todayPlainDate,
 } from "@/lib/temporal-utils";
 
@@ -42,27 +38,31 @@ export const visibleDaysCountAtom = atom(
 export const visibleDaysEndAtom = atom<Temporal.PlainDate>((get) => {
   const start = get(currentDateAtom);
   const count = get(visibleDaysCountAtom);
-  return addDays(start, count - 1);
+  return start.add({ days: count - 1 });
 });
 
 /** Array of PlainDates starting from the current date (length based on visibleDaysCountAtom) */
 export const visibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   const start = get(currentDateAtom);
   const count = get(visibleDaysCountAtom);
-  return Array.from({ length: count }, (_, i) => addDays(start, i));
+  return Array.from({ length: count }, (_, i) => start.add({ days: i }));
 });
 
 const EVENTS_WINDOW_PADDING_DAYS = 15;
 
 /** Build event window around a PlainDate center */
 function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {
-  const monthStart = startOfMonth(center);
+  // Get first day of the month
+  const monthStart = center.with({ day: 1 });
+  // Get last day of the month
+  const monthEnd = center.with({ day: center.daysInMonth });
+
   const start = startOfDayZoned(
-    subDays(monthStart, EVENTS_WINDOW_PADDING_DAYS),
+    monthStart.subtract({ days: EVENTS_WINDOW_PADDING_DAYS }),
     timeZone
   );
   const end = endOfDayZoned(
-    addDays(endOfMonth(monthStart), EVENTS_WINDOW_PADDING_DAYS),
+    monthEnd.add({ days: EVENTS_WINDOW_PADDING_DAYS }),
     timeZone
   );
 
