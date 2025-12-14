@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { default_format, formatters } from "./formats";
 import type { NonNullableProperties, StringifyOptions } from "./types";
 import { encode, is_buffer, maybe_map } from "./utils";

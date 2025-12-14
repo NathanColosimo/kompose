@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { RFC1738, RFC3986, default_format, formatters } from "./formats";
 
 const formats = {

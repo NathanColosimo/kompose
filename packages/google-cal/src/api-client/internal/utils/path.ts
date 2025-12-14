@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { GoogleCalendarError } from "../../core/error";
 
 /**

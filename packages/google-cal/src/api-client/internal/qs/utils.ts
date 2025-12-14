@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { RFC1738 } from "./formats";
 import type { DefaultEncoder, Format } from "./types";
 

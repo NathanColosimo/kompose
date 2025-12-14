@@ -9,7 +9,9 @@
     }
   },
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:"

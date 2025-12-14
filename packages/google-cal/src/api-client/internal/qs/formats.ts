@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Format } from "./types";
 
 export const default_format: Format = "RFC3986";

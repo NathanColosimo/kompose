@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "check": "biome check --write .",
+    "type-check": "turbo type-check",
     "dev": "turbo dev",
     "build": "turbo build",
-    "check-types": "turbo check-types",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
     "db:push": "turbo -F @kompose/db db:push",

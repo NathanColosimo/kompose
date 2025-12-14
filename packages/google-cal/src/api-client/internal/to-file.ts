@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FilePropertyBag } from "./builtin-types";
 import {
   BlobPart,

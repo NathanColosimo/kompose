@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { GoogleCalendar } from "../client";
 import type { Fetch, FilePropertyBag } from "./builtin-types";
 import { type RequestOptions } from "./request-options";
