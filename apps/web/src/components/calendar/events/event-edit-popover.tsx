@@ -4,7 +4,6 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { addDays, format } from "date-fns";
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
@@ -64,6 +63,11 @@ import {
 } from "@/hooks/use-google-event-mutations";
 import { useMoveGoogleEventMutation } from "@/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@/hooks/use-recurring-event-master";
+import {
+  formatPlainDate,
+  formatTimeString,
+  pickerDateToTemporal,
+} from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import {
   buildRecurrenceRule,
@@ -889,7 +893,14 @@ function EventEditForm({
 
   const initialEndDate = useMemo(() => {
     if (isAllDay && event.end?.date) {
-      return addDays(new Date(event.end.date), -1);
+      // Google all-day events use exclusive end date, subtract 1 day for display
+      const endPlainDate = pickerDateToTemporal(new Date(event.end.date));
+      const adjustedDate = endPlainDate.subtract({ days: 1 });
+      return new Date(
+        adjustedDate.year,
+        adjustedDate.month - 1,
+        adjustedDate.day
+      );
     }
     return end;
   }, [end, event.end?.date, isAllDay]);
@@ -913,8 +924,8 @@ function EventEditForm({
       endDate: initialEndDate ?? null,
       startTime: isAllDay
         ? ""
-        : format(initialStartDate ?? new Date(), "HH:mm"),
-      endTime: isAllDay ? "" : format(initialEndDate ?? new Date(), "HH:mm"),
+        : formatTimeString(initialStartDate ?? new Date()),
+      endTime: isAllDay ? "" : formatTimeString(initialEndDate ?? new Date()),
       recurrence: recurrenceSource,
     }),
     [
@@ -1230,7 +1241,12 @@ function EventEditForm({
                   variant="outline"
                 >
                   <CalendarIcon className="h-4 w-4" />
-                  {field.value ? format(field.value, "LLL dd") : "Start date"}
+                  {field.value
+                    ? formatPlainDate(pickerDateToTemporal(field.value), {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "Start date"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
@@ -1267,7 +1283,12 @@ function EventEditForm({
                   variant="outline"
                 >
                   <CalendarIcon className="h-4 w-4" />
-                  {field.value ? format(field.value, "LLL dd") : "End date"}
+                  {field.value
+                    ? formatPlainDate(pickerDateToTemporal(field.value), {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "End date"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">

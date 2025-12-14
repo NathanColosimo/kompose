@@ -1,22 +1,19 @@
-import {
-  addDays,
-  endOfDay,
-  endOfMonth,
-  startOfDay,
-  startOfMonth,
-  startOfToday,
-  subDays,
-} from "date-fns";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import type { Temporal } from "temporal-polyfill";
+
+import {
+  endOfDayZoned,
+  getSystemTimeZone,
+  startOfDayZoned,
+  todayPlainDate,
+} from "@/lib/temporal-utils";
 
 /** User's timezone - defaults to browser/system timezone */
-export const timezoneAtom = atom<string>(
-  Intl.DateTimeFormat().resolvedOptions().timeZone
-);
+export const timezoneAtom = atom<string>(getSystemTimeZone());
 
 /** Currently selected/visible date for calendar view - defaults to today */
-export const currentDateAtom = atom<Date>(startOfToday());
+export const currentDateAtom = atom<Temporal.PlainDate>(todayPlainDate());
 
 /** Number of visible days in the calendar view (1-7) with validation */
 const visibleDaysCountBaseAtom = atomWithStorage<number>(
@@ -38,26 +35,35 @@ export const visibleDaysCountAtom = atom(
 );
 
 /** End of the visible day range (based on visibleDaysCountAtom) */
-export const visibleDaysEndAtom = atom<Date>((get) => {
+export const visibleDaysEndAtom = atom<Temporal.PlainDate>((get) => {
   const start = get(currentDateAtom);
   const count = get(visibleDaysCountAtom);
-  return addDays(start, count - 1);
+  return start.add({ days: count - 1 });
 });
 
-/** Array of dates starting from the current date (length based on visibleDaysCountAtom) */
-export const visibleDaysAtom = atom<Date[]>((get) => {
+/** Array of PlainDates starting from the current date (length based on visibleDaysCountAtom) */
+export const visibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   const start = get(currentDateAtom);
   const count = get(visibleDaysCountAtom);
-  return Array.from({ length: count }, (_, i) => addDays(start, i));
+  return Array.from({ length: count }, (_, i) => start.add({ days: i }));
 });
 
 const EVENTS_WINDOW_PADDING_DAYS = 15;
 
-function buildEventWindow(center: Date) {
-  const monthStart = startOfMonth(center);
-  const start = startOfDay(subDays(monthStart, EVENTS_WINDOW_PADDING_DAYS));
-  const end = endOfDay(
-    addDays(endOfMonth(monthStart), EVENTS_WINDOW_PADDING_DAYS)
+/** Build event window around a PlainDate center */
+function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {
+  // Get first day of the month
+  const monthStart = center.with({ day: 1 });
+  // Get last day of the month
+  const monthEnd = center.with({ day: center.daysInMonth });
+
+  const start = startOfDayZoned(
+    monthStart.subtract({ days: EVENTS_WINDOW_PADDING_DAYS }),
+    timeZone
+  );
+  const end = endOfDayZoned(
+    monthEnd.add({ days: EVENTS_WINDOW_PADDING_DAYS }),
+    timeZone
   );
 
   return { start, end };
@@ -65,7 +71,13 @@ function buildEventWindow(center: Date) {
 
 export const eventWindowAtom = atom<{ timeMin: string; timeMax: string }>(
   (get) => {
-    const { start, end } = buildEventWindow(get(currentDateAtom));
-    return { timeMin: start.toISOString(), timeMax: end.toISOString() };
+    const { start, end } = buildEventWindow(
+      get(currentDateAtom),
+      get(timezoneAtom)
+    );
+    return {
+      timeMin: start.toInstant().toString(),
+      timeMax: end.toInstant().toString(),
+    };
   }
 );

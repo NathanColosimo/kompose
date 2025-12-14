@@ -1,8 +1,9 @@
 "use client";
 
 import { memo } from "react";
+import { formatHourLabel } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
-import { formatHourLabel, getHoursRange } from "./slot-utils";
+import { getHoursRange } from "./slot-utils";
 
 type TimeGutterProps = {
   className?: string;

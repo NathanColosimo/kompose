@@ -1,11 +1,13 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import type { TaskSelect } from "@kompose/db/schema/task";
-import { format } from "date-fns";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { timezoneAtom } from "@/atoms/current-date";
+import { useTasks } from "@/hooks/use-tasks";
+import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Badge } from "../ui/badge";
@@ -13,7 +15,7 @@ import { Checkbox } from "../ui/checkbox";
 
 type TaskItemProps = {
   /** The task to display */
-  task: TaskSelect;
+  task: TaskSelectDecoded;
 };
 
 /**
@@ -37,6 +39,8 @@ function formatDuration(minutes: number): string {
  * Can be dragged onto the calendar to schedule the task.
  */
 export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
+  const timeZone = useAtomValue(timezoneAtom);
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `task-${task.id}`,
     data: {
@@ -45,7 +49,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     },
   });
 
-  const { updateTask } = useTaskMutations();
+  const { updateTask } = useTasks();
 
   const handleStatusToggle = useCallback(
     (e: React.MouseEvent) => {
@@ -107,7 +111,10 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.dueDate ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
                 <CalendarDays className="size-3" />
-                {format(new Date(task.dueDate), "MMM d")}
+                {formatPlainDate(task.dueDate, {
+                  month: "short",
+                  day: "numeric",
+                })}
               </Badge>
             ) : null}
 
@@ -115,7 +122,11 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.startTime ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
                 <CalendarClock className="size-3" />
-                {format(new Date(task.startTime), "EEE h:mm a")}
+                {formatTime(task.startTime.toZonedDateTime(timeZone), {
+                  weekday: "short",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
               </Badge>
             ) : null}
           </div>
@@ -128,7 +139,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
 /**
  * TaskItemPreview - Used in DragOverlay for drag preview.
  */
-export function TaskItemPreview({ task }: { task: TaskSelect }) {
+export function TaskItemPreview({ task }: { task: TaskSelectDecoded }) {
   return (
     <div className="w-64 cursor-grabbing rounded-md border bg-sidebar p-3 shadow-lg">
       <div className="truncate font-medium text-sm">{task.title}</div>

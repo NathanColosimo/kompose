@@ -12,11 +12,15 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { Temporal } from "temporal-polyfill";
+import { timezoneAtom } from "@/atoms/current-date";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import { useGoogleEventMutations } from "@/hooks/use-google-event-mutations";
-import { useTaskMutations } from "@/hooks/use-update-task-mutation";
+import { useTasks } from "@/hooks/use-tasks";
+import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   buildGoogleMoveUpdate,
@@ -28,15 +32,11 @@ import {
   clampResizeEnd,
   clampResizeStart,
   durationInMinutes,
-  isSameDayLocal,
   MINUTES_STEP,
-  MS_PER_MINUTE,
-  shiftMinutes,
 } from "./dnd/helpers";
 import type { DragData, PreviewRect, SlotData } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
-import { parseSlotId } from "./time-grid/slot-utils";
 
 type CalendarDndProviderProps = {
   children: React.ReactNode;
@@ -47,7 +47,8 @@ type CalendarDndProviderProps = {
  * Handles drag events and task scheduling mutations.
  */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
-  const [activeTask, setActiveTask] = useState<TaskSelect | null>(null);
+  const timeZone = useAtomValue(timezoneAtom);
+  const [activeTask, setActiveTask] = useState<TaskSelectDecoded | null>(null);
   const [activeGoogleEvent, setActiveGoogleEvent] = useState<Extract<
     DragData,
     { type: "google-event" | "google-event-resize" }
@@ -69,14 +70,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   );
 
   // Mutation to update task schedule
-  const { updateTask } = useTaskMutations();
+  const { updateTask } = useTasks();
   const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
-
-  const slotDataToDate = useCallback((slot: SlotData) => {
-    const dateTime = new Date(slot.date);
-    dateTime.setHours(slot.hour, slot.minutes, 0, 0);
-    return dateTime;
-  }, []);
 
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
@@ -95,7 +90,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   }, [clearPreview]);
 
   const handleTaskMoveDrop = useCallback(
-    (task: TaskSelect, startTime: Date) => {
+    (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
       updateTask.mutate(update);
     },
@@ -107,7 +102,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
    * Called when a task is dropped on the sidebar task list.
    */
   const handleTaskUnschedule = useCallback(
-    (task: TaskSelect) => {
+    (task: TaskSelectDecoded) => {
       updateTask.mutate({
         id: task.id,
         task: {
@@ -121,22 +116,28 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const handleTaskResizeDrop = useCallback(
     (payload: {
-      task: TaskSelect;
-      targetDateTime: Date;
+      task: TaskSelectDecoded;
+      targetDateTime: Temporal.ZonedDateTime;
       direction: "start" | "end";
     }) => {
-      const update = buildTaskResizeUpdate(payload);
+      const update = buildTaskResizeUpdate({
+        ...payload,
+        timeZone,
+      });
       if (!update) {
         return;
       }
 
       updateTask.mutate(update);
     },
-    [updateTask]
+    [updateTask, timeZone]
   );
 
   const handleGoogleEventDrop = useCallback(
-    (data: Extract<DragData, { type: "google-event" }>, start: Date) => {
+    (
+      data: Extract<DragData, { type: "google-event" }>,
+      start: Temporal.ZonedDateTime
+    ) => {
       const update = buildGoogleMoveUpdate(data, start);
       updateGoogleEventMutation.mutate(update);
     },
@@ -149,7 +150,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime,
     }: {
       data: Extract<DragData, { type: "google-event-resize" }>;
-      targetDateTime: Date;
+      targetDateTime: Temporal.ZonedDateTime;
     }) => {
       const update = buildGoogleResizeUpdate({ data, targetDateTime });
       if (!update) {
@@ -193,17 +194,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Route calendar slot drops to the correct drop handler based on drag type.
   const handleSlotDrop = useCallback(
-    (data: DragData, overId: string) => {
-      const targetDateTime = parseSlotId(overId);
-      if (!targetDateTime) {
-        return;
-      }
+    (data: DragData, slotData: SlotData) => {
+      const targetDateTime = slotData.dateTime;
 
       const isResizeEnd =
         (data.type === "task-resize" || data.type === "google-event-resize") &&
         data.direction === "end";
       const targetDateTimeAdjusted = isResizeEnd
-        ? shiftMinutes(targetDateTime, MINUTES_STEP)
+        ? targetDateTime.add({ minutes: MINUTES_STEP })
         : targetDateTime;
 
       switch (data.type) {
@@ -259,11 +257,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      if (!overId.startsWith("slot-")) {
+      // Get slot data from droppable
+      const slotData = over.data?.current as SlotData | undefined;
+      if (!slotData?.dateTime) {
         return;
       }
 
-      handleSlotDrop(data, overId);
+      handleSlotDrop(data, slotData);
     },
     [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
@@ -280,15 +280,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       overRect,
       minimum = MINUTES_STEP,
     }: {
-      start: Date;
-      end: Date;
+      start: Temporal.ZonedDateTime;
+      end: Temporal.ZonedDateTime;
       columnTop: number;
       overRect: Pick<PreviewRect, "left" | "width">;
       minimum?: number;
     }): PreviewRect => {
-      const startMinutes = start.getHours() * 60 + start.getMinutes();
-      const durationMinutes = durationInMinutes(start, end, minimum);
-      const height = Math.max((durationMinutes / 60) * PIXELS_PER_HOUR, 24);
+      const startMinutes = minutesFromMidnight(start);
+      const duration = durationInMinutes(start, end, minimum);
+      const height = Math.max((duration / 60) * PIXELS_PER_HOUR, 24);
 
       return {
         top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
@@ -303,14 +303,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const previewTaskMove = useCallback(
     (
       data: Extract<DragData, { type: "task" }>,
-      targetDateTime: Date,
+      targetDateTime: Temporal.ZonedDateTime,
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ) => {
-      const durationMinutes = data.task.durationMinutes;
-      const end = new Date(
-        targetDateTime.getTime() + durationMinutes * MS_PER_MINUTE
-      );
+      const duration = data.task.durationMinutes;
+      const end = targetDateTime.add({ minutes: duration });
       return buildPreviewRect({
         start: targetDateTime,
         end,
@@ -324,7 +322,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const previewTaskResize = useCallback(
     (
       data: Extract<DragData, { type: "task-resize" }>,
-      targetDateTime: Date,
+      targetDateTime: Temporal.ZonedDateTime,
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
@@ -332,12 +330,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return null;
       }
 
-      const originalStart = new Date(data.task.startTime);
-      const originalEnd = new Date(
-        originalStart.getTime() + data.task.durationMinutes * MS_PER_MINUTE
-      );
+      // task.startTime is PlainDateTime - convert to ZonedDateTime
+      const originalStart: Temporal.ZonedDateTime =
+        data.task.startTime.toZonedDateTime(timeZone);
+      const originalEnd: Temporal.ZonedDateTime = originalStart.add({
+        minutes: data.task.durationMinutes,
+      });
 
-      if (!isSameDayLocal(originalStart, targetDateTime)) {
+      if (!isSameDay(originalStart, targetDateTime)) {
         return null;
       }
 
@@ -363,20 +363,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         overRect,
       });
     },
-    [buildPreviewRect]
+    [buildPreviewRect, timeZone]
   );
 
   const previewGoogleMove = useCallback(
     (
       data: Extract<DragData, { type: "google-event" }>,
-      targetDateTime: Date,
+      targetDateTime: Temporal.ZonedDateTime,
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ) => {
       const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
-      const end = new Date(
-        targetDateTime.getTime() + eventDurationMinutes * MS_PER_MINUTE
-      );
+      const end = targetDateTime.add({ minutes: eventDurationMinutes });
       return buildPreviewRect({
         start: targetDateTime,
         end,
@@ -391,14 +389,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const previewGoogleResize = useCallback(
     (
       data: Extract<DragData, { type: "google-event-resize" }>,
-      targetDateTime: Date,
+      targetDateTime: Temporal.ZonedDateTime,
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
       const originalStart = data.start;
       const originalEnd = data.end;
 
-      if (!isSameDayLocal(originalStart, targetDateTime)) {
+      if (!isSameDay(originalStart, targetDateTime)) {
         return null;
       }
 
@@ -432,7 +430,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const computePreviewForDrag = useCallback(
     (
       data: DragData,
-      targetDateTime: Date,
+      targetDateTime: Temporal.ZonedDateTime,
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
@@ -440,7 +438,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         (data.type === "task-resize" || data.type === "google-event-resize") &&
         data.direction === "end";
       const effectiveTarget = isResizeEnd
-        ? shiftMinutes(targetDateTime, MINUTES_STEP)
+        ? targetDateTime.add({ minutes: MINUTES_STEP })
         : targetDateTime;
 
       switch (data.type) {
@@ -514,8 +512,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      const targetDateTime = slotDataToDate(slotData);
-      const minutesFromDayStart = slotData.hour * 60 + slotData.minutes;
+      const targetDateTime = slotData.dateTime;
+      const minutesFromDayStart =
+        targetDateTime.hour * 60 + targetDateTime.minute;
       const columnTop =
         overRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
 
@@ -534,7 +533,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         });
       }
     },
-    [clearPreview, computePreviewForDrag, slotDataToDate]
+    [clearPreview, computePreviewForDrag]
   );
 
   return (

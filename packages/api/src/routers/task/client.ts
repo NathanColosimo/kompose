@@ -80,7 +80,7 @@ const taskService: TaskService = {
       try: () =>
         db
           .update(taskTable)
-          .set({ ...input, updatedAt: new Date() })
+          .set(input)
           .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)))
           .returning(),
       catch: (cause) => new TaskRepositoryError({ cause }),

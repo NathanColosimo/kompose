@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  date,
   integer,
   pgEnum,
   pgTable,
@@ -28,15 +30,18 @@ export const taskTable = pgTable("task", {
   title: text("title").notNull(),
   description: text("description"),
   status: taskStatusEnum("status").default("todo").notNull(),
-  dueDate: timestamp("due_date"),
-  startDate: timestamp("start_date"),
-  startTime: timestamp("start_time"),
+  /** Due date (calendar date only, no time) - when task is due */
+  dueDate: date("due_date", { mode: "string" }),
+  /** Start date (calendar date only, no time) - when task appears in inbox */
+  startDate: date("start_date", { mode: "string" }),
+  /** Start time (full timestamp as ISO string) - when scheduled on calendar */
+  startTime: timestamp("start_time", { mode: "string" }),
   durationMinutes: integer("duration_minutes").notNull().default(30),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string" })
     .notNull()
     .defaultNow()
-    .$onUpdate(() => new Date()),
+    .$onUpdate(() => sql`now()`),
 });
 
 export const taskSelectSchema = createSelectSchema(taskTable);

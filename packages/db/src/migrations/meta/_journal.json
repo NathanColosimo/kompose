@@ -29,6 +29,13 @@
       "when": 1764888328778,
       "tag": "0003_migrate_task_to_duration",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1765600721220,
+      "tag": "0004_migrate_task_date_fields",
+      "breakpoints": true
     }
   ]
 }

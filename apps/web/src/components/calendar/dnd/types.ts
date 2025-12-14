@@ -1,12 +1,12 @@
-import type { TaskSelect } from "@kompose/db/schema/task";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type { Temporal } from "temporal-polyfill";
 
 export type DragDirection = "start" | "end";
 
+/** Data attached to droppable time slots */
 export type SlotData = {
-  date: Date;
-  hour: number;
-  minutes: number;
+  dateTime: Temporal.ZonedDateTime;
 };
 
 export type PreviewRect = {
@@ -19,11 +19,11 @@ export type PreviewRect = {
 export type DragData =
   | {
       type: "task";
-      task: TaskSelect;
+      task: TaskSelectDecoded;
     }
   | {
       type: "task-resize";
-      task: TaskSelect;
+      task: TaskSelectDecoded;
       direction: DragDirection;
     }
   | {
@@ -31,15 +31,15 @@ export type DragData =
       event: GoogleEvent;
       accountId: string;
       calendarId: string;
-      start: Date;
-      end: Date;
+      start: Temporal.ZonedDateTime;
+      end: Temporal.ZonedDateTime;
     }
   | {
       type: "google-event-resize";
       event: GoogleEvent;
       accountId: string;
       calendarId: string;
-      start: Date;
-      end: Date;
+      start: Temporal.ZonedDateTime;
+      end: Temporal.ZonedDateTime;
       direction: DragDirection;
     };

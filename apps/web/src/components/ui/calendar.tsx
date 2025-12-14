@@ -204,7 +204,6 @@ function CalendarDayButton({
       data-range-middle={modifiers.range_middle}
       data-range-start={modifiers.range_start}
       data-selected-single={
-        // biome-ignore lint/nursery/noLeakedRender: Modifiers prop
         modifiers.selected &&
         !modifiers.range_start &&
         !modifiers.range_end &&

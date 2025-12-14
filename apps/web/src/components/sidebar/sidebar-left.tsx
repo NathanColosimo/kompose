@@ -1,7 +1,6 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { useQuery } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
@@ -16,8 +15,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useTasks } from "@/hooks/use-tasks";
 import { cn } from "@/lib/utils";
-import { orpc } from "@/utils/orpc";
 import { TaskItem } from "./task-item";
 
 /** Droppable ID for the sidebar task list area */
@@ -39,10 +38,8 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const [activeItem, setActiveItem] = useState(navMain[0]);
   const { setOpen } = useSidebar();
   const {
-    data: tasks,
-    isLoading,
-    error,
-  } = useQuery(orpc.tasks.list.queryOptions());
+    tasksQuery: { data: tasks, isLoading, error },
+  } = useTasks();
 
   // Make the task list a droppable area
   const { setNodeRef, isOver } = useDroppable({

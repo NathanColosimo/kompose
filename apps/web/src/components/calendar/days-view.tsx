@@ -1,7 +1,6 @@
 "use client";
 
-import type { TaskSelect } from "@kompose/db/schema/task";
-import { format, isToday } from "date-fns";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import {
   memo,
@@ -11,8 +10,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { visibleDaysAtom } from "@/atoms/current-date";
+import { Temporal } from "temporal-polyfill";
+import { timezoneAtom, visibleDaysAtom } from "@/atoms/current-date";
 import type { GoogleEventWithSource } from "@/atoms/google-data";
+import {
+  isoStringToZonedDateTime,
+  isToday,
+  minutesFromMidnight,
+} from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -24,23 +29,28 @@ import { TimeGutter } from "./time-grid/time-gutter";
 const DEFAULT_SCROLL_HOUR = 8;
 
 type PositionedGoogleEvent = GoogleEventWithSource & {
-  start: Date;
-  end: Date;
+  start: Temporal.ZonedDateTime;
+  end: Temporal.ZonedDateTime;
 };
 
-type AllDayGoogleEvent = GoogleEventWithSource & { date: Date };
+type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
 
-function parseDateOnlyLocal(dateStr: string): Date {
+function parseDateOnlyLocal(dateStr: string): Temporal.PlainDate {
   const [year, month, day] = dateStr.split("-").map(Number);
-  return new Date(year, month - 1, day);
+  if (!(year && month && day)) {
+    throw new Error(`Invalid date string: ${dateStr}`);
+  }
+  return Temporal.PlainDate.from({ year, month, day });
 }
 
 function buildGoogleEventMaps({
   bufferedDays,
   googleEvents,
+  timeZone,
 }: {
-  bufferedDays: Date[];
+  bufferedDays: Temporal.PlainDate[];
   googleEvents: GoogleEventWithSource[];
+  timeZone: string;
 }): {
   timedEventsByDay: Map<string, PositionedGoogleEvent[]>;
   allDayEventsByDay: Map<string, AllDayGoogleEvent[]>;
@@ -49,7 +59,7 @@ function buildGoogleEventMaps({
   const allDay = new Map<string, AllDayGoogleEvent[]>();
 
   for (const day of bufferedDays) {
-    const key = format(day, "yyyy-MM-dd");
+    const key = day.toString();
     timed.set(key, []);
     allDay.set(key, []);
   }
@@ -61,7 +71,7 @@ function buildGoogleEventMaps({
 
     if (startDate && !hasStartDateTime && !hasEndDateTime) {
       const parsed = parseDateOnlyLocal(startDate);
-      const key = format(parsed, "yyyy-MM-dd");
+      const key = parsed.toString();
       const bucket = allDay.get(key);
       if (bucket) {
         bucket.push({ ...sourceEvent, date: parsed });
@@ -69,12 +79,12 @@ function buildGoogleEventMaps({
       continue;
     }
 
-    const positioned = toPositionedGoogleEvent(sourceEvent);
+    const positioned = toPositionedGoogleEvent(sourceEvent, timeZone);
     if (!positioned) {
       continue;
     }
 
-    const dayKey = format(positioned.start, "yyyy-MM-dd");
+    const dayKey = positioned.start.toPlainDate().toString();
     const dayEvents = timed.get(dayKey);
     if (dayEvents) {
       dayEvents.push(positioned);
@@ -84,7 +94,10 @@ function buildGoogleEventMaps({
   return { timedEventsByDay: timed, allDayEventsByDay: allDay };
 }
 
-function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
+function toPositionedGoogleEvent(
+  sourceEvent: GoogleEventWithSource,
+  timeZone: string
+): PositionedGoogleEvent | null {
   const startStr =
     sourceEvent.event.start.dateTime ?? sourceEvent.event.start.date;
   const endStr = sourceEvent.event.end.dateTime ?? sourceEvent.event.end.date;
@@ -93,19 +106,18 @@ function toPositionedGoogleEvent(sourceEvent: GoogleEventWithSource) {
     return null;
   }
 
-  const start = new Date(startStr);
-  const end = new Date(endStr);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  try {
+    const start = isoStringToZonedDateTime(startStr, timeZone);
+    const end = isoStringToZonedDateTime(endStr, timeZone);
+    return { ...sourceEvent, start, end };
+  } catch {
     return null;
   }
-
-  return { ...sourceEvent, start, end } satisfies PositionedGoogleEvent;
 }
 
 type DaysViewProps = {
   /** All tasks to display (will be filtered to scheduled ones) */
-  tasks: TaskSelect[];
+  tasks: TaskSelectDecoded[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
 };
@@ -118,6 +130,7 @@ export const DaysView = memo(function DaysViewComponent({
   googleEvents = [],
 }: DaysViewProps) {
   const visibleDays = useAtomValue(visibleDaysAtom);
+  const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
@@ -152,10 +165,10 @@ export const DaysView = memo(function DaysViewComponent({
 
   // Group scheduled tasks by day for efficient rendering
   const tasksByDay = useMemo(() => {
-    const grouped = new Map<string, TaskSelect[]>();
+    const grouped = new Map<string, TaskSelectDecoded[]>();
 
     for (const day of visibleDays) {
-      const dayKey = format(day, "yyyy-MM-dd");
+      const dayKey = day.toString();
       grouped.set(dayKey, []);
     }
 
@@ -163,8 +176,9 @@ export const DaysView = memo(function DaysViewComponent({
       if (!task.startTime) {
         continue;
       }
-      const taskDate = new Date(task.startTime);
-      const dayKey = format(taskDate, "yyyy-MM-dd");
+      // task.startTime is PlainDateTime - convert to ZonedDateTime for day grouping
+      const taskZdt = task.startTime.toZonedDateTime(timeZone);
+      const dayKey = taskZdt.toPlainDate().toString();
       const dayTasks = grouped.get(dayKey);
       if (dayTasks) {
         dayTasks.push(task);
@@ -172,7 +186,7 @@ export const DaysView = memo(function DaysViewComponent({
     }
 
     return grouped;
-  }, [visibleDays, scheduledTasks]);
+  }, [visibleDays, scheduledTasks, timeZone]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(
@@ -180,8 +194,9 @@ export const DaysView = memo(function DaysViewComponent({
       buildGoogleEventMaps({
         bufferedDays: visibleDays,
         googleEvents,
+        timeZone,
       }),
-    [visibleDays, googleEvents]
+    [visibleDays, googleEvents, timeZone]
   );
 
   const hasAllDayEvents = useMemo(
@@ -223,8 +238,8 @@ export const DaysView = memo(function DaysViewComponent({
               {visibleDays.map((day) => (
                 <DayHeader
                   date={day}
-                  isTodayHighlight={isToday(day)}
-                  key={format(day, "yyyy-MM-dd")}
+                  isTodayHighlight={isToday(day, timeZone)}
+                  key={day.toString()}
                   width={dayColumnWidth}
                 />
               ))}
@@ -233,7 +248,7 @@ export const DaysView = memo(function DaysViewComponent({
             {hasAllDayEvents ? (
               <div className="flex border-border border-t border-b bg-background/80">
                 {visibleDays.map((day) => {
-                  const dayKey = format(day, "yyyy-MM-dd");
+                  const dayKey = day.toString();
                   const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
                   return (
@@ -266,12 +281,17 @@ export const DaysView = memo(function DaysViewComponent({
         >
           <div className="flex w-full">
             {visibleDays.map((day) => {
-              const dayKey = format(day, "yyyy-MM-dd");
+              const dayKey = day.toString();
               const dayTasks = tasksByDay.get(dayKey) ?? [];
               const dayGoogleEvents = timedEventsByDay?.get(dayKey) ?? [];
 
               return (
-                <DayColumn date={day} key={dayKey} width={dayColumnWidth}>
+                <DayColumn
+                  date={day}
+                  key={dayKey}
+                  timeZone={timeZone}
+                  width={dayColumnWidth}
+                >
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
                         ({ event, start, end, calendarId, accountId }) => (
@@ -280,7 +300,7 @@ export const DaysView = memo(function DaysViewComponent({
                             calendarId={calendarId}
                             end={end}
                             event={event}
-                            key={`${calendarId}-${event.id}-${start.toISOString()}`}
+                            key={`${calendarId}-${event.id}-${start.toString()}`}
                             start={start}
                           />
                         )
@@ -338,10 +358,10 @@ function TimeGutterSynced({
  * Returns CSS values for top and height.
  */
 export function calculateEventPosition(
-  startTime: Date,
+  startTime: Temporal.ZonedDateTime,
   durationMinutes: number
 ): { top: string; height: string } {
-  const startHour = startTime.getHours() + startTime.getMinutes() / 60;
+  const startHour = minutesFromMidnight(startTime) / 60;
   const durationHours = durationMinutes / 60;
 
   // Grid starts at midnight (hour 0)

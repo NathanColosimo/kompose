@@ -1,9 +1,13 @@
 "use client";
 
-import { addDays, startOfToday, subDays } from "date-fns";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
-import { currentDateAtom, visibleDaysCountAtom } from "@/atoms/current-date";
+import {
+  currentDateAtom,
+  timezoneAtom,
+  visibleDaysCountAtom,
+} from "@/atoms/current-date";
+import { todayPlainDate } from "@/lib/temporal-utils";
 
 // Shared options to prevent hotkeys from firing in input fields
 const hotkeyOptions = { enableOnFormTags: false } as const;
@@ -23,6 +27,7 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
 export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
+  const timeZone = useAtomValue(timezoneAtom);
 
   // Number keys 1-7 to set visible days count
   useHotkeys("1", () => setVisibleDaysCount(1), hotkeyOptions, []);
@@ -37,19 +42,24 @@ export function CalendarHotkeys() {
   useHotkeys("w", () => setVisibleDaysCount(7), hotkeyOptions, []);
 
   // "t" to go to today
-  useHotkeys("t", () => setCurrentDate(startOfToday()), hotkeyOptions, []);
+  useHotkeys(
+    "t",
+    () => setCurrentDate(todayPlainDate(timeZone)),
+    hotkeyOptions,
+    [timeZone, setCurrentDate]
+  );
 
   // Arrow keys to navigate by visible days count
   useHotkeys(
     "ArrowLeft",
-    () => setCurrentDate(subDays(currentDate, visibleDaysCount)),
+    () => setCurrentDate(currentDate.subtract({ days: visibleDaysCount })),
     hotkeyOptions,
     [currentDate, visibleDaysCount, setCurrentDate]
   );
 
   useHotkeys(
     "ArrowRight",
-    () => setCurrentDate(addDays(currentDate, visibleDaysCount)),
+    () => setCurrentDate(currentDate.add({ days: visibleDaysCount })),
     hotkeyOptions,
     [currentDate, visibleDaysCount, setCurrentDate]
   );
