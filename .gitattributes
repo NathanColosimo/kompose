@@ -1,0 +1,8 @@
+# Exclude pnpm-lock.yaml from diffs in PRs (but still commit it)
+pnpm-lock.yaml -diff
+
+# Exclude all .md files from diffs in PRs (but still commit them)
+*.md -diff
+
+# Exclude db migrations folder from diffs in PRs (but still commit them)
+packages/db/src/migrations/** -diff
