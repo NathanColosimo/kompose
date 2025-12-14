@@ -1,5 +1,8 @@
 import { Temporal } from "temporal-polyfill";
 
+/** Regex pattern to match timezone offsets at the end of ISO strings (e.g., "+05:00", "-05:00") */
+const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/;
+
 /** Get the system/browser timezone identifier (e.g., "America/New_York") */
 export function getSystemTimeZone() {
   return Temporal.Now.zonedDateTimeISO().timeZoneId;
@@ -69,6 +72,7 @@ export function dateToPlainDate(
  * Parse a timestamp string to ZonedDateTime.
  * Handles:
  * - UTC timestamps ending in 'Z' (e.g., "2025-12-12T21:00:00Z" from API)
+ * - ISO strings with timezone offsets (e.g., "2025-12-12T10:00:00-05:00" from Google Calendar)
  * - Postgres format with space (e.g., "2025-12-12 03:45:00" from TIMESTAMP column)
  */
 export function isoStringToZonedDateTime(
@@ -79,6 +83,14 @@ export function isoStringToZonedDateTime(
   if (isoString.endsWith("Z")) {
     return Temporal.Instant.from(isoString).toZonedDateTimeISO(timeZone);
   }
+
+  // Check if string has a timezone offset (e.g., "+05:00" or "-05:00")
+  // Pattern matches: timezone offset at the end of the string
+  if (TIMEZONE_OFFSET_PATTERN.test(isoString)) {
+    // Parse as Instant (handles offsets), then convert to target timezone
+    return Temporal.Instant.from(isoString).toZonedDateTimeISO(timeZone);
+  }
+
   // Normalize Postgres format "2025-12-12 03:45:00" to ISO "2025-12-12T03:45:00"
   const normalized = isoString.includes("T")
     ? isoString
