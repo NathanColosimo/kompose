@@ -28,7 +28,7 @@ export type CreateCalendar = z.infer<typeof CreateCalendarInputSchema>;
 
 export const EventSchema = z.object({
   id: z.string(),
-  summary: z.string(),
+  summary: z.string().optional(),
   description: z.string().optional(),
   location: z.string().optional(),
   status: z.string().optional(),
