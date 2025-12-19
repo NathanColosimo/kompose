@@ -2,9 +2,11 @@
 
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { useAtom } from "jotai";
 import { PanelLeftIcon } from "lucide-react";
 // biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as React from "react";
+import { sidebarOpenAtom } from "@/atoms/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -25,8 +27,6 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state";
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
@@ -69,25 +69,26 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen);
-  const open = openProp ?? _open;
+  // Use Jotai atom for sidebar state with localStorage persistence.
+  // If openProp is provided, use that for controlled mode; otherwise use the atom.
+  const [sidebarOpenAtomValue, setSidebarOpenAtomValue] =
+    useAtom(sidebarOpenAtom);
+  const open = openProp ?? sidebarOpenAtomValue;
+
   const setOpen = React.useCallback(
     // biome-ignore lint/nursery/noShadow: Shadowing variable
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value;
+
+      // If controlled (openProp provided), call the external handler
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
-        _setOpen(openState);
+        // Otherwise update the atom (which persists to localStorage)
+        setSidebarOpenAtomValue(openState);
       }
-
-      // This sets the cookie to keep the sidebar state.
-      // biome-ignore lint/suspicious/noDocumentCookie: Document Cookie
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
     },
-    [setOpenProp, open]
+    [setOpenProp, open, setSidebarOpenAtomValue]
   );
 
   // Helper to toggle the sidebar.

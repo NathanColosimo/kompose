@@ -1,12 +1,13 @@
 "use client";
 
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
   currentDateAtom,
   timezoneAtom,
   visibleDaysCountAtom,
 } from "@/atoms/current-date";
+import { sidebarOpenAtom } from "@/atoms/sidebar";
 import { todayPlainDate } from "@/lib/temporal-utils";
 
 // Shared options to prevent hotkeys from firing in input fields
@@ -19,6 +20,7 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * - 1-7: Set visible days count
  * - w: Set visible days to 7 (week view)
  * - t: Go to today
+ * - s: Toggle sidebar open/closed
  * - ArrowLeft: Navigate back by visible days count
  * - ArrowRight: Navigate forward by visible days count
  *
@@ -27,6 +29,7 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
 export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
+  const setSidebarOpen = useSetAtom(sidebarOpenAtom);
   const timeZone = useAtomValue(timezoneAtom);
 
   // Number keys 1-7 to set visible days count
@@ -48,6 +51,11 @@ export function CalendarHotkeys() {
     hotkeyOptions,
     [timeZone, setCurrentDate]
   );
+
+  // "s" to toggle sidebar
+  useHotkeys("s", () => setSidebarOpen((prev) => !prev), hotkeyOptions, [
+    setSidebarOpen,
+  ]);
 
   // Arrow keys to navigate by visible days count
   useHotkeys(

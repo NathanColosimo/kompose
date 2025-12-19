@@ -6,13 +6,14 @@ Keyboard shortcuts for Kompose calendar. Implemented using `react-hotkeys-hook`.
 
 These hotkeys work anywhere in the app (except when typing in input fields).
 
-| Key | Action |
-|-----|--------|
-| `1` - `7` | Set visible days count (1-7 days) |
-| `w` | Week view (7 days) |
-| `t` | Go to today |
-| `←` | Navigate back by visible days count |
-| `→` | Navigate forward by visible days count |
+| Key       | Action                                 |
+| --------- | -------------------------------------- |
+| `1` - `7` | Set visible days count (1-7 days)      |
+| `w`       | Week view (7 days)                     |
+| `t`       | Go to today                            |
+| `s`       | Toggle sidebar open/closed             |
+| `←`       | Navigate back by visible days count    |
+| `→`       | Navigate forward by visible days count |
 
 ## Contextual Hotkeys
 
@@ -22,8 +23,8 @@ These hotkeys only work in specific contexts.
 
 When an edit popover is open:
 
-| Key | Action |
-|-----|--------|
+| Key                    | Action                                  |
+| ---------------------- | --------------------------------------- |
 | `Backspace` / `Delete` | Delete item (shows confirmation dialog) |
 
 > **Note:** Delete hotkey is disabled when focus is on text inputs to allow normal editing.
