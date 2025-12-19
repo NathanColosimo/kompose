@@ -13,6 +13,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useTasks } from "@/hooks/use-tasks";
@@ -156,6 +157,9 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           </SidebarContent>
         </div>
       </Sidebar>
+
+      {/* Rail for toggling the left sidebar */}
+      <SidebarRail />
     </Sidebar>
   );
 }

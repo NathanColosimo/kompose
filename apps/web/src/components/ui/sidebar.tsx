@@ -6,7 +6,7 @@ import { useAtom } from "jotai";
 import { PanelLeftIcon } from "lucide-react";
 // biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as React from "react";
-import { sidebarOpenAtom } from "@/atoms/sidebar";
+import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/atoms/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -33,16 +33,31 @@ const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContextProps = {
-  state: "expanded" | "collapsed";
-  open: boolean;
-  setOpen: (open: boolean) => void;
+  // Left sidebar state
+  leftState: "expanded" | "collapsed";
+  leftOpen: boolean;
+  setLeftOpen: (open: boolean) => void;
+  toggleLeftSidebar: () => void;
+  // Right sidebar state
+  rightState: "expanded" | "collapsed";
+  rightOpen: boolean;
+  setRightOpen: (open: boolean) => void;
+  toggleRightSidebar: () => void;
+  // Mobile state (shared)
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
+  // Legacy compatibility - defaults to left sidebar
+  state: "expanded" | "collapsed";
+  open: boolean;
+  setOpen: (open: boolean) => void;
   toggleSidebar: () => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
+
+/** Context to track which side (left/right) the current Sidebar is on */
+const SidebarSideContext = React.createContext<"left" | "right">("left");
 
 function useSidebar() {
   const context = React.useContext(SidebarContext);
@@ -51,6 +66,11 @@ function useSidebar() {
   }
 
   return context;
+}
+
+/** Hook to get the current sidebar's side (left or right) */
+function useSidebarSide() {
+  return React.useContext(SidebarSideContext);
 }
 
 function SidebarProvider({
@@ -69,38 +89,57 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // Use Jotai atom for sidebar state with localStorage persistence.
-  // If openProp is provided, use that for controlled mode; otherwise use the atom.
-  const [sidebarOpenAtomValue, setSidebarOpenAtomValue] =
-    useAtom(sidebarOpenAtom);
-  const open = openProp ?? sidebarOpenAtomValue;
+  // Use Jotai atoms for left and right sidebar state with localStorage persistence.
+  const [leftOpenAtomValue, setLeftOpenAtomValue] =
+    useAtom(sidebarLeftOpenAtom);
+  const [rightOpenAtomValue, setRightOpenAtomValue] =
+    useAtom(sidebarRightOpenAtom);
 
-  const setOpen = React.useCallback(
-    // biome-ignore lint/nursery/noShadow: Shadowing variable
+  // Left sidebar state (controlled via openProp or atom)
+  const leftOpen = openProp ?? leftOpenAtomValue;
+  const setLeftOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
-      const openState = typeof value === "function" ? value(open) : value;
-
-      // If controlled (openProp provided), call the external handler
+      const openState = typeof value === "function" ? value(leftOpen) : value;
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
-        // Otherwise update the atom (which persists to localStorage)
-        setSidebarOpenAtomValue(openState);
+        setLeftOpenAtomValue(openState);
       }
     },
-    [setOpenProp, open, setSidebarOpenAtomValue]
+    [setOpenProp, leftOpen, setLeftOpenAtomValue]
   );
 
-  // Helper to toggle the sidebar.
-  const toggleSidebar = React.useCallback(
+  // Right sidebar state (always uses atom)
+  const rightOpen = rightOpenAtomValue;
+  const setRightOpen = React.useCallback(
+    (value: boolean | ((value: boolean) => boolean)) => {
+      const openState = typeof value === "function" ? value(rightOpen) : value;
+      setRightOpenAtomValue(openState);
+    },
+    [rightOpen, setRightOpenAtomValue]
+  );
+
+  // Helpers to toggle each sidebar
+  const toggleLeftSidebar = React.useCallback(
     () =>
       isMobile
         ? setOpenMobile((toggle) => !toggle)
-        : setOpen((toggle) => !toggle),
-    [isMobile, setOpen]
+        : setLeftOpen((toggle) => !toggle),
+    [isMobile, setLeftOpen]
   );
 
-  // Adds a keyboard shortcut to toggle the sidebar.
+  const toggleRightSidebar = React.useCallback(
+    () =>
+      isMobile
+        ? setOpenMobile((toggle) => !toggle)
+        : setRightOpen((toggle) => !toggle),
+    [isMobile, setRightOpen]
+  );
+
+  // Legacy toggle (defaults to left sidebar)
+  const toggleSidebar = toggleLeftSidebar;
+
+  // Adds a keyboard shortcut to toggle the left sidebar (Cmd/Ctrl+B).
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -108,29 +147,53 @@ function SidebarProvider({
         (event.metaKey || event.ctrlKey)
       ) {
         event.preventDefault();
-        toggleSidebar();
+        toggleLeftSidebar();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleSidebar]);
+  }, [toggleLeftSidebar]);
 
-  // We add a state so that we can do data-state="expanded" or "collapsed".
-  // This makes it easier to style the sidebar with Tailwind classes.
-  const state = open ? "expanded" : "collapsed";
+  // State strings for data attributes
+  const leftState = leftOpen ? "expanded" : "collapsed";
+  const rightState = rightOpen ? "expanded" : "collapsed";
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
-      state,
-      open,
-      setOpen,
+      // Left sidebar
+      leftState,
+      leftOpen,
+      setLeftOpen,
+      toggleLeftSidebar,
+      // Right sidebar
+      rightState,
+      rightOpen,
+      setRightOpen,
+      toggleRightSidebar,
+      // Mobile (shared)
       isMobile,
       openMobile,
       setOpenMobile,
+      // Legacy compatibility (defaults to left)
+      state: leftState,
+      open: leftOpen,
+      setOpen: setLeftOpen,
       toggleSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar]
+    [
+      leftState,
+      leftOpen,
+      setLeftOpen,
+      toggleLeftSidebar,
+      rightState,
+      rightOpen,
+      setRightOpen,
+      toggleRightSidebar,
+      isMobile,
+      openMobile,
+      toggleSidebar,
+    ]
   );
 
   return (
@@ -170,7 +233,18 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, leftState, rightState, openMobile, setOpenMobile } =
+    useSidebar();
+
+  // Pick the correct state based on which side this sidebar is on
+  const state = side === "right" ? rightState : leftState;
+
+  // Wrap children with side context so child components know which sidebar they're in
+  const wrappedChildren = (
+    <SidebarSideContext.Provider value={side}>
+      {children}
+    </SidebarSideContext.Provider>
+  );
 
   if (collapsible === "none") {
     return (
@@ -182,7 +256,7 @@ function Sidebar({
         data-slot="sidebar"
         {...props}
       >
-        {children}
+        {wrappedChildren}
       </div>
     );
   }
@@ -206,7 +280,7 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className="flex h-full w-full flex-col">{wrappedChildren}</div>
         </SheetContent>
       </Sheet>
     );
@@ -253,7 +327,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
         >
-          {children}
+          {wrappedChildren}
         </div>
       </div>
     </div>
@@ -287,7 +361,12 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleLeftSidebar, toggleRightSidebar } = useSidebar();
+  const side = useSidebarSide();
+
+  // Use the correct toggle function based on which sidebar this rail belongs to
+  const toggleSidebar =
+    side === "right" ? toggleRightSidebar : toggleLeftSidebar;
 
   return (
     <button

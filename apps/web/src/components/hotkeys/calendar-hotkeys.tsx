@@ -7,7 +7,7 @@ import {
   timezoneAtom,
   visibleDaysCountAtom,
 } from "@/atoms/current-date";
-import { sidebarOpenAtom } from "@/atoms/sidebar";
+import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/atoms/sidebar";
 import { todayPlainDate } from "@/lib/temporal-utils";
 
 // Shared options to prevent hotkeys from firing in input fields
@@ -20,7 +20,9 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * - 1-7: Set visible days count
  * - w: Set visible days to 7 (week view)
  * - t: Go to today
- * - s: Toggle sidebar open/closed
+ * - l: Toggle left sidebar
+ * - r: Toggle right sidebar
+ * - s: Toggle both sidebars (synced)
  * - ArrowLeft: Navigate back by visible days count
  * - ArrowRight: Navigate forward by visible days count
  *
@@ -29,7 +31,8 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
 export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
-  const setSidebarOpen = useSetAtom(sidebarOpenAtom);
+  const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
+  const setSidebarRightOpen = useSetAtom(sidebarRightOpenAtom);
   const timeZone = useAtomValue(timezoneAtom);
 
   // Number keys 1-7 to set visible days count
@@ -52,10 +55,27 @@ export function CalendarHotkeys() {
     [timeZone, setCurrentDate]
   );
 
-  // "s" to toggle sidebar
-  useHotkeys("s", () => setSidebarOpen((prev) => !prev), hotkeyOptions, [
-    setSidebarOpen,
+  // "l" to toggle left sidebar
+  useHotkeys("l", () => setSidebarLeftOpen((prev) => !prev), hotkeyOptions, [
+    setSidebarLeftOpen,
   ]);
+
+  // "r" to toggle right sidebar
+  useHotkeys("r", () => setSidebarRightOpen((prev) => !prev), hotkeyOptions, [
+    setSidebarRightOpen,
+  ]);
+
+  // "s" to toggle both sidebars (synced - toggle left and set right to match)
+  useHotkeys(
+    "s",
+    () => {
+      const newState = !sidebarLeftOpen;
+      setSidebarLeftOpen(newState);
+      setSidebarRightOpen(newState);
+    },
+    hotkeyOptions,
+    [sidebarLeftOpen, setSidebarLeftOpen, setSidebarRightOpen]
+  );
 
   // Arrow keys to navigate by visible days count
   useHotkeys(

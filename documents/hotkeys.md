@@ -11,7 +11,9 @@ These hotkeys work anywhere in the app (except when typing in input fields).
 | `1` - `7` | Set visible days count (1-7 days)      |
 | `w`       | Week view (7 days)                     |
 | `t`       | Go to today                            |
-| `s`       | Toggle sidebar open/closed             |
+| `l`       | Toggle left sidebar                    |
+| `r`       | Toggle right sidebar                   |
+| `s`       | Toggle both sidebars (synced)          |
 | `←`       | Navigate back by visible days count    |
 | `→`       | Navigate forward by visible days count |
 

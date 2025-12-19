@@ -25,8 +25,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTasks } from "@/hooks/use-tasks";
 import {
   dateToPlainDate,
@@ -104,12 +102,6 @@ export default function Page() {
     <div className="relative h-full">
       {/* Fixed header */}
       <header className="absolute inset-x-0 top-0 z-10 flex h-16 items-center gap-2 border-b bg-background px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator
-          className="mr-2 data-[orientation=vertical]:h-4"
-          orientation="vertical"
-        />
-
         {/* Navigation controls */}
         <div className="flex items-center gap-1">
           <Button onClick={goToPreviousPeriod} size="icon" variant="ghost">
