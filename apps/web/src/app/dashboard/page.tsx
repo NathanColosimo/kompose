@@ -104,10 +104,20 @@ export default function Page() {
       <header className="absolute inset-x-0 top-0 z-10 flex h-16 items-center gap-2 border-b bg-background px-4">
         {/* Navigation controls */}
         <div className="flex items-center gap-1">
-          <Button onClick={goToPreviousPeriod} size="icon" variant="ghost">
+          <Button
+            className="w-8"
+            onClick={goToPreviousPeriod}
+            size="sm"
+            variant="ghost"
+          >
             <ChevronLeft className="size-4" />
           </Button>
-          <Button onClick={goToNextPeriod} size="icon" variant="ghost">
+          <Button
+            className="w-8"
+            onClick={goToNextPeriod}
+            size="sm"
+            variant="ghost"
+          >
             <ChevronRight className="size-4" />
           </Button>
           <Button
@@ -167,10 +177,11 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="w-[280px] justify-start text-left font-normal"
+          className="h-8 justify-start gap-1.5 px-2.5 text-left font-normal"
+          size="sm"
           variant="outline"
         >
-          <CalendarIcon />
+          <CalendarIcon className="size-4" />
           {formatPlainDate(currentDate)}
         </Button>
       </PopoverTrigger>
