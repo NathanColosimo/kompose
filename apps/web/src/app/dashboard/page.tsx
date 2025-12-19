@@ -18,6 +18,7 @@ import {
 } from "@/atoms/google-data";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
+import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -132,11 +133,12 @@ export default function Page() {
 
         <DatePopover />
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <GoogleAccountsDropdown
             googleAccounts={googleAccounts}
             googleCalendars={googleCalendars}
           />
+          <ModeToggle />
         </div>
       </header>
 
