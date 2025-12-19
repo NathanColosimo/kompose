@@ -20,12 +20,12 @@
     "db:down": "turbo -F @kompose/db db:down"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.8",
-    "@effect/language-service": "^0.62.1",
-    "knip": "^5.73.4",
+    "@biomejs/biome": "^2.3.10",
+    "@effect/language-service": "^0.62.4",
+    "knip": "^5.75.1",
     "turbo": "^2.6.3",
     "typescript": "catalog:",
-    "ultracite": "6.4.0"
+    "ultracite": "^6.4.2"
   },
   "packageManager": "pnpm@10.25.0"
 }
