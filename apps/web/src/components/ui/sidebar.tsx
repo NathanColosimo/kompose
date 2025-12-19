@@ -98,6 +98,7 @@ function SidebarProvider({
   // Left sidebar state (controlled via openProp or atom)
   const leftOpen = openProp ?? leftOpenAtomValue;
   const setLeftOpen = React.useCallback(
+    // biome-ignore lint/nursery/noShadow: Shadowing variable
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(leftOpen) : value;
       if (setOpenProp) {
@@ -112,6 +113,7 @@ function SidebarProvider({
   // Right sidebar state (always uses atom)
   const rightOpen = rightOpenAtomValue;
   const setRightOpen = React.useCallback(
+    // biome-ignore lint/nursery/noShadow: Shadowing variable
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(rightOpen) : value;
       setRightOpenAtomValue(openState);
