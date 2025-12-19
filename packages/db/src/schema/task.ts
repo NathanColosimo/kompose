@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import {
   date,
   integer,
@@ -41,7 +40,7 @@ export const taskTable = pgTable("task", {
   updatedAt: timestamp("updated_at", { mode: "string" })
     .notNull()
     .defaultNow()
-    .$onUpdate(() => sql`now()`),
+    .$onUpdate(() => new Date().toISOString()),
 });
 
 export const taskSelectSchema = createSelectSchema(taskTable);
