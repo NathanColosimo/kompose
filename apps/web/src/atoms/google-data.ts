@@ -2,6 +2,7 @@ import type {
   Calendar,
   Event as GoogleEvent,
 } from "@kompose/google-cal/schema";
+import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomFamily } from "jotai-family";
@@ -21,7 +22,7 @@ const googleAccountsAtom = atomWithQuery<Account[]>(() => ({
     return accounts.filter((account) => account.providerId === "google");
   },
   staleTime: 1000 * 60 * 5,
-  keepPreviousData: true,
+  placeholderData: keepPreviousData,
 }));
 
 export const googleAccountsDataAtom = atom(
@@ -49,7 +50,7 @@ const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
       }));
     },
     staleTime: 5 * 60 * 1000,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   }))
 );
 

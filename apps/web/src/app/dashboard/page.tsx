@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
+import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -65,7 +65,7 @@ export default function Page() {
       return {
         ...options,
         staleTime: 60_000,
-        keepPreviousData: true,
+        placeholderData: keepPreviousData,
       };
     }),
   });

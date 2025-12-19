@@ -418,7 +418,11 @@ export const googleCalRouter = os.router({
 
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          return yield* service.deleteEvent(input.calendarId, input.eventId);
+          return yield* service.deleteEvent(
+            input.calendarId,
+            input.eventId,
+            input.scope
+          );
         });
 
         return yield* serviceEffect.pipe(

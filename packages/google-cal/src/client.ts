@@ -172,10 +172,20 @@ export type GoogleCalendarService = {
     destinationCalendarId: string,
     scope: RecurrenceScope
   ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
+  /**
+   * Delete an event, supporting recurring scopes.
+   *
+   * - `this`: cancels just the instance/eventId by setting status to "cancelled"
+   * - `all`: deletes the series master
+   * - `following`: truncates the original series at the occurrence date
+   *
+   * If `scope !== "this"` and the event is not recurring, this returns an error.
+   */
   readonly deleteEvent: (
     calendarId: string,
-    eventId: string
-  ) => Effect.Effect<void, GoogleApiError>;
+    eventId: string,
+    scope: RecurrenceScope
+  ) => Effect.Effect<void, GoogleApiError | GoogleCalendarZodError>;
   readonly getMasterRecurrence: (
     calendarId: string,
     event: Event
@@ -526,11 +536,160 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       }
     });
 
-  const deleteEvent = (calendarId: string, eventId: string) =>
-    Effect.tryPromise({
-      try: () => client.calendars.events.delete(eventId, { calendarId }),
-      catch: (cause) => new GoogleApiError({ cause }),
+  /**
+   * Delete a single instance by cancelling it (setting status to "cancelled").
+   * This creates an exception within the series without affecting other occurrences.
+   */
+  const deleteEventThis = (calendarId: string, eventId: string) =>
+    Effect.gen(function* () {
+      // Get the instance first to ensure it exists and preserve its structure
+      const instance = yield* getEvent(calendarId, eventId);
+
+      // Update the instance to set status to "cancelled"
+      // The API requires preserving essential fields for recurring event exceptions
+      yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(eventId, {
+            calendarId,
+            status: "cancelled",
+            start: instance.start,
+            end: instance.end,
+            ...(instance.originalStartTime && {
+              originalStartTime: instance.originalStartTime,
+            }),
+            ...(instance.recurringEventId && {
+              recurringEventId: instance.recurringEventId,
+            }),
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
     }).pipe(Effect.asVoid);
+
+  /**
+   * Delete the entire series by deleting the master event.
+   */
+  const deleteEventAll = (calendarId: string, eventId: string) =>
+    Effect.gen(function* () {
+      // Get the instance to resolve the master if needed
+      const instance = yield* getEvent(calendarId, eventId);
+
+      // Determine if this is already the master or an instance
+      const isRecurring = Boolean(
+        instance.recurringEventId || instance.recurrence?.length
+      );
+
+      let masterId = eventId;
+      if (instance.recurringEventId) {
+        // This is an instance, get the master
+        const master = yield* getMasterRecurrence(calendarId, instance);
+        masterId = master.id;
+      } else if (!isRecurring) {
+        // Not a recurring event, just delete it directly
+        return yield* Effect.tryPromise({
+          try: () => client.calendars.events.delete(eventId, { calendarId }),
+          catch: (cause) => new GoogleApiError({ cause }),
+        }).pipe(Effect.asVoid);
+      }
+
+      // Delete the master event
+      return yield* Effect.tryPromise({
+        try: () => client.calendars.events.delete(masterId, { calendarId }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      }).pipe(Effect.asVoid);
+    });
+
+  /**
+   * Delete all following instances by truncating the recurrence rule at the occurrence date.
+   */
+  const deleteEventFollowing = (calendarId: string, eventId: string) =>
+    Effect.gen(function* () {
+      // Get the instance to resolve the master and occurrence start
+      const instance = yield* getEvent(calendarId, eventId);
+
+      const isRecurring = Boolean(
+        instance.recurringEventId || instance.recurrence?.length
+      );
+      if (!isRecurring) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error(
+              "Cannot use recurrence scope for a non-recurring event"
+            ),
+          })
+        );
+      }
+
+      const master = yield* getMasterRecurrence(calendarId, instance);
+      if (!master.recurrence?.length) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Event is not a recurring event"),
+          })
+        );
+      }
+
+      // Get the occurrence start time
+      const originalStartIso =
+        instance.originalStartTime?.dateTime ??
+        instance.originalStartTime?.date ??
+        instance.start.dateTime ??
+        instance.start.date;
+
+      if (!originalStartIso) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Event start is not a date or dateTime"),
+          })
+        );
+      }
+
+      const occurrenceStart = new Date(originalStartIso);
+
+      // Truncate the recurrence rule at the occurrence date
+      const truncatedRecurrence = truncateRecurrenceForFollowing(
+        master.recurrence,
+        occurrenceStart,
+        Boolean(master.start.date)
+      );
+
+      // Update the master event with the truncated recurrence
+      yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(master.id, {
+            ...stripRecurringLink(
+              sanitizeEventPayload({
+                ...master,
+                recurrence: truncatedRecurrence,
+              })
+            ),
+            calendarId,
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+    }).pipe(Effect.asVoid);
+
+  /**
+   * Delete an event with scope handling for recurring events.
+   */
+  const deleteEvent = (
+    calendarId: string,
+    eventId: string,
+    scope: RecurrenceScope
+  ) =>
+    Effect.gen(function* () {
+      switch (scope) {
+        case "this":
+          return yield* deleteEventThis(calendarId, eventId);
+        case "all":
+          return yield* deleteEventAll(calendarId, eventId);
+        case "following":
+          return yield* deleteEventFollowing(calendarId, eventId);
+        default:
+          return yield* Effect.fail(
+            new GoogleApiError({ cause: new Error("Invalid recurrence scope") })
+          );
+      }
+    });
 
   const moveSingleEvent = (
     calendarId: string,
