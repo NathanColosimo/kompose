@@ -4,12 +4,12 @@ packages:
 
 catalog:
   '@better-auth/expo': ^1.4.7
-  '@orpc/client': ^1.12.3
-  '@orpc/contract': ^1.12.3
-  '@orpc/openapi': ^1.12.3
-  '@orpc/server': ^1.12.3
-  '@orpc/tanstack-query': ^1.12.3
-  '@orpc/zod': ^1.12.3
+  '@orpc/client': ^1.13.0
+  '@orpc/contract': ^1.13.0
+  '@orpc/openapi': ^1.13.0
+  '@orpc/server': ^1.13.0
+  '@orpc/tanstack-query': ^1.13.0
+  '@orpc/zod': ^1.13.0
   '@t3-oss/env-nextjs': ^0.13.10
   '@tanstack/react-query': ^5.90.12
   '@tanstack/react-query-devtools': ^5.91.1
