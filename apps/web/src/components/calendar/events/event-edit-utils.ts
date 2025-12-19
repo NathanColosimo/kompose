@@ -128,7 +128,7 @@ export function buildRecurrenceRule(
     return null;
   }
   const parts: string[] = [`FREQ=${freq}`];
-  if (freq === "WEEKLY" && byDay.length > 0) {
+  if (byDay.length > 0) {
     parts.push(`BYDAY=${byDay.join(",")}`);
   }
   if (end.type === "until") {
