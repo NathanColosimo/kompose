@@ -155,7 +155,7 @@ export function GoogleAccountsDropdown({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button className="gap-2" size="sm" variant="outline">
+        <Button className="gap-2" size="lg" variant="outline">
           <span className="text-sm">
             Calendars ({visibleCount}/{totalCount})
           </span>

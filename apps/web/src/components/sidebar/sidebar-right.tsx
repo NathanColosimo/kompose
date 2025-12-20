@@ -24,7 +24,7 @@ export function SidebarRight({
 
   return (
     <Sidebar collapsible="offcanvas" side="right" variant="sidebar" {...props}>
-      <SidebarHeader className="h-16 border-sidebar-border border-b">
+      <SidebarHeader className="h-12 shrink-0 overflow-hidden border-sidebar-border border-b">
         <NavUser user={user} />
       </SidebarHeader>
       <SidebarContent />

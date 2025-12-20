@@ -102,29 +102,19 @@ export default function Page() {
   return (
     <div className="relative h-full">
       {/* Fixed header */}
-      <header className="absolute inset-x-0 top-0 z-10 flex h-16 items-center gap-2 border-b bg-background px-4">
+      <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center gap-2 border-b bg-background px-4">
         {/* Navigation controls */}
         <div className="flex items-center gap-1">
-          <Button
-            className="w-8"
-            onClick={goToPreviousPeriod}
-            size="sm"
-            variant="ghost"
-          >
+          <Button onClick={goToPreviousPeriod} size="icon-lg" variant="ghost">
             <ChevronLeft className="size-4" />
           </Button>
-          <Button
-            className="w-8"
-            onClick={goToNextPeriod}
-            size="sm"
-            variant="ghost"
-          >
+          <Button onClick={goToNextPeriod} size="icon-lg" variant="ghost">
             <ChevronRight className="size-4" />
           </Button>
           <Button
             className="ml-1"
             onClick={goToToday}
-            size="sm"
+            size="lg"
             variant="outline"
           >
             Today
@@ -143,7 +133,7 @@ export default function Page() {
       </header>
 
       {/* Calendar days view - positioned below header */}
-      <main className="absolute inset-x-0 top-16 bottom-0">
+      <main className="absolute inset-x-0 top-12 bottom-0">
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Loading calendar...
@@ -179,12 +169,12 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="h-8 justify-start gap-1.5 px-2.5 text-left font-normal"
-          size="sm"
+          className="justify-start gap-1.5 px-2.5 text-left font-normal"
+          size="lg"
           variant="outline"
         >
           <CalendarIcon className="size-4" />
-          {formatPlainDate(currentDate)}
+          <span>{formatPlainDate(currentDate)}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

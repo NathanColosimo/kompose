@@ -1,5 +1,4 @@
-// biome-ignore lint/performance/noNamespaceImport: Imported Component
-import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
+import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 
 function Collapsible({
   ...props

@@ -140,7 +140,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           )}
           ref={setNodeRef}
         >
-          <SidebarHeader className="h-16 shrink-0 border-b">
+          <SidebarHeader className="h-12 shrink-0 border-b">
             <div className="flex h-full w-full items-center justify-between gap-2 px-4">
               <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
                 {activeItem?.title}
