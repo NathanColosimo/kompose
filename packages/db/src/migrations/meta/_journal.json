@@ -36,6 +36,13 @@
       "when": 1765600721220,
       "tag": "0004_migrate_task_date_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1766540664247,
+      "tag": "0005_update_start_time",
+      "breakpoints": true
     }
   ]
 }

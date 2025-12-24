@@ -1,0 +1,1 @@
+ALTER TABLE "task" ALTER COLUMN "start_time" SET DATA TYPE time;

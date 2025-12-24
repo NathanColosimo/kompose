@@ -38,9 +38,9 @@ import type { DragData, PreviewRect, SlotData } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 
-type CalendarDndProviderProps = {
+interface CalendarDndProviderProps {
   children: React.ReactNode;
-};
+}
 
 /**
  * CalendarDndProvider - Wraps the calendar and sidebar with DnD context.
@@ -98,7 +98,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   );
 
   /**
-   * Handle unscheduling a task by removing its startTime but keeping the duration.
+   * Handle unscheduling a task by clearing startDate and startTime but keeping the duration.
    * Called when a task is dropped on the sidebar task list.
    */
   const handleTaskUnschedule = useCallback(
@@ -106,6 +106,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       updateTask.mutate({
         id: task.id,
         task: {
+          startDate: null,
           startTime: null,
           durationMinutes: task.durationMinutes,
         },
@@ -326,13 +327,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       columnTop: number,
       overRect: Pick<PreviewRect, "left" | "width">
     ): PreviewRect | null => {
-      if (!data.task.startTime) {
+      // Need both startDate and startTime for a scheduled task
+      if (!(data.task.startDate && data.task.startTime)) {
         return null;
       }
 
-      // task.startTime is PlainDateTime - convert to ZonedDateTime
+      // Combine startDate + startTime into ZonedDateTime
       const originalStart: Temporal.ZonedDateTime =
-        data.task.startTime.toZonedDateTime(timeZone);
+        data.task.startDate.toZonedDateTime({
+          timeZone,
+          plainTime: data.task.startTime,
+        });
       const originalEnd: Temporal.ZonedDateTime = originalStart.add({
         minutes: data.task.durationMinutes,
       });

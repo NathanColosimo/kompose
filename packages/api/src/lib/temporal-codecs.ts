@@ -15,6 +15,20 @@ export const plainDateCodec = z.codec(
 );
 
 /**
+ * Zod codec: HH:mm:ss or HH:mm string ↔ Temporal.PlainTime
+ * Used for time-only fields like startTime (time of day without date).
+ * Validation delegated to Temporal.PlainTime.from() which validates actual time ranges.
+ */
+export const plainTimeCodec = z.codec(
+  z.string(),
+  z.custom<Temporal.PlainTime>(),
+  {
+    decode: (str) => Temporal.PlainTime.from(str),
+    encode: (time) => time.toString(),
+  }
+);
+
+/**
  * Zod codec: ISO timestamp string ↔ Temporal.Instant
  * Handles both:
  * - UTC timestamps ending in 'Z' (e.g., "2025-12-12T21:00:00Z")

@@ -12,9 +12,9 @@ import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../days-view";
 
-type TaskEventProps = {
+interface TaskEventProps {
   task: TaskSelectDecoded;
-};
+}
 
 export const TaskEvent = memo(function TaskEventInner({
   task,
@@ -69,7 +69,8 @@ export const TaskEvent = memo(function TaskEventInner({
     [task.id, task.status, updateTask]
   );
 
-  if (!task.startTime) {
+  // Need both startDate and startTime to display on calendar
+  if (!(task.startDate && task.startTime)) {
     return null;
   }
 
@@ -79,8 +80,11 @@ export const TaskEvent = memo(function TaskEventInner({
     return null;
   }
 
-  // task.startTime is PlainDateTime - convert to ZonedDateTime
-  const startZdt = task.startTime.toZonedDateTime(timeZone);
+  // Combine startDate + startTime into ZonedDateTime
+  const startZdt = task.startDate.toZonedDateTime({
+    timeZone,
+    plainTime: task.startTime,
+  });
   const endZdt = startZdt.add({ minutes: durationMinutes });
 
   const { top, height } = calculateEventPosition(startZdt, durationMinutes);
@@ -149,12 +153,18 @@ export const TaskEvent = memo(function TaskEventInner({
 export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   const timeZone = useAtomValue(timezoneAtom);
 
+  // Combine startDate + startTime if both exist for time display
+  const startZdt =
+    task.startDate && task.startTime
+      ? task.startDate.toZonedDateTime({ timeZone, plainTime: task.startTime })
+      : null;
+
   return (
     <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
       <div className="truncate font-medium text-xs">{task.title}</div>
-      {task.startTime ? (
+      {startZdt ? (
         <div className="truncate text-[10px] opacity-80">
-          {formatTime(task.startTime.toZonedDateTime(timeZone))}
+          {formatTime(startZdt)}
         </div>
       ) : null}
     </div>

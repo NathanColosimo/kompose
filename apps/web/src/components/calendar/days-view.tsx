@@ -115,12 +115,12 @@ function toPositionedGoogleEvent(
   }
 }
 
-type DaysViewProps = {
+interface DaysViewProps {
   /** All tasks to display (will be filtered to scheduled ones) */
   tasks: TaskSelectDecoded[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
-};
+}
 
 /**
  * DaysView - Displays 1-7 days starting from the current date.
@@ -157,9 +157,12 @@ export const DaysView = memo(function DaysViewComponent({
     return () => observer.disconnect();
   }, []);
 
-  // Filter to only tasks that have startTime (scheduled tasks)
+  // Filter to only tasks that have both startDate AND startTime (scheduled tasks)
   const scheduledTasks = useMemo(
-    () => tasks.filter((task) => task.startTime !== null),
+    () =>
+      tasks.filter(
+        (task) => task.startDate !== null && task.startTime !== null
+      ),
     [tasks]
   );
 
@@ -173,12 +176,11 @@ export const DaysView = memo(function DaysViewComponent({
     }
 
     for (const task of scheduledTasks) {
-      if (!task.startTime) {
+      if (!task.startDate) {
         continue;
       }
-      // task.startTime is PlainDateTime - convert to ZonedDateTime for day grouping
-      const taskZdt = task.startTime.toZonedDateTime(timeZone);
-      const dayKey = taskZdt.toPlainDate().toString();
+      // Use startDate directly for grouping (startDate is PlainDate)
+      const dayKey = task.startDate.toString();
       const dayTasks = grouped.get(dayKey);
       if (dayTasks) {
         dayTasks.push(task);
@@ -186,7 +188,7 @@ export const DaysView = memo(function DaysViewComponent({
     }
 
     return grouped;
-  }, [visibleDays, scheduledTasks, timeZone]);
+  }, [visibleDays, scheduledTasks]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(

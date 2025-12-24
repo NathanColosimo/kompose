@@ -4,11 +4,11 @@ import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 
-type DayHeaderProps = {
+interface DayHeaderProps {
   date: Temporal.PlainDate;
   isTodayHighlight: boolean;
   width: string;
-};
+}
 
 export const DayHeader = memo(function DayHeaderInner({
   date,

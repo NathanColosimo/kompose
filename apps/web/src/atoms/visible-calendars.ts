@@ -2,10 +2,10 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 /** Type representing a calendar identifier with its account */
-export type CalendarIdentifier = {
+export interface CalendarIdentifier {
   accountId: string;
   calendarId: string;
-};
+}
 
 /**
  * Atom to store which calendars are currently visible.

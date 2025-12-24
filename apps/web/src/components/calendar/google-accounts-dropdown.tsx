@@ -25,11 +25,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
 
-type GoogleAccount = {
+interface GoogleAccount {
   id: string;
   accountId: string;
   providerId: string;
-};
+}
 
 type AccountWithInfo = GoogleAccount & {
   email?: string;
@@ -37,10 +37,10 @@ type AccountWithInfo = GoogleAccount & {
   isLoading?: boolean;
 };
 
-type GoogleAccountsDropdownProps = {
+interface GoogleAccountsDropdownProps {
   googleAccounts: GoogleAccount[];
   googleCalendars: CalendarWithSource[];
-};
+}
 
 function matchesCalendar(
   target: CalendarIdentifier,
@@ -178,13 +178,13 @@ export function GoogleAccountsDropdown({
   );
 }
 
-type AccountCalendarsSectionProps = {
+interface AccountCalendarsSectionProps {
   account: AccountWithInfo;
   calendars: CalendarWithSource[];
   isCalendarVisible: (accountId: string, calendarId: string) => boolean;
   toggleCalendar: (accountId: string, calendarId: string) => void;
   isLastAccount: boolean;
-};
+}
 
 function AccountCalendarsSection({
   account,

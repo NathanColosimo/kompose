@@ -31,10 +31,10 @@ export const googleAccountsDataAtom = atom(
 
 // --- Calendars per account ---
 
-export type CalendarWithSource = {
+export interface CalendarWithSource {
   calendar: Calendar;
   accountId: string;
-};
+}
 
 const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<CalendarWithSource[]>(() => ({
@@ -78,8 +78,8 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
 
 // --- Events per calendar + window ---
 
-export type GoogleEventWithSource = {
+export interface GoogleEventWithSource {
   event: GoogleEvent;
   accountId: string;
   calendarId: string;
-};
+}

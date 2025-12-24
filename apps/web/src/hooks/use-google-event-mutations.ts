@@ -11,13 +11,13 @@ import { orpc } from "@/utils/orpc";
  * The contract's UpdateEventInput expects CreateEvent, but we accept Event here
  * and sanitize it before sending.
  */
-export type UpdateGoogleEventInput = {
+export interface UpdateGoogleEventInput {
   accountId: string;
   calendarId: string;
   eventId: string;
   event: Event;
   recurrenceScope?: "this" | "all" | "following";
-};
+}
 
 /**
  * Minimal sanitization to fit CreateEvent input (server handles recurrence logic).

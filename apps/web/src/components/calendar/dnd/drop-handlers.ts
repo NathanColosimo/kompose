@@ -9,13 +9,14 @@ import type { DragData, DragDirection } from "./types";
 /** Build task move update payload - returns decoded types (Temporal) */
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
-  startTime: Temporal.ZonedDateTime
+  targetDateTime: Temporal.ZonedDateTime
 ) {
   return {
     id: task.id,
     task: {
-      // Return PlainDateTime directly - mutation handles encoding
-      startTime: startTime.toPlainDateTime(),
+      // Separate date and time for new schema
+      startDate: targetDateTime.toPlainDate(),
+      startTime: targetDateTime.toPlainTime(),
       durationMinutes: task.durationMinutes,
     },
   };
@@ -33,12 +34,16 @@ export function buildTaskResizeUpdate({
   direction: DragDirection;
   timeZone: string;
 }) {
-  if (!task.startTime) {
+  // Need both startDate and startTime for a scheduled task
+  if (!(task.startDate && task.startTime)) {
     return null;
   }
 
-  // task.startTime is PlainDateTime - convert to ZonedDateTime
-  const originalStart = task.startTime.toZonedDateTime(timeZone);
+  // Combine startDate + startTime into ZonedDateTime
+  const originalStart = task.startDate.toZonedDateTime({
+    timeZone,
+    plainTime: task.startTime,
+  });
   const originalEnd = originalStart.add({ minutes: task.durationMinutes });
 
   if (!isSameDay(originalStart, targetDateTime)) {
@@ -55,8 +60,9 @@ export function buildTaskResizeUpdate({
     return {
       id: task.id,
       task: {
-        // Return PlainDateTime directly - mutation handles encoding
-        startTime: newStart.toPlainDateTime(),
+        // Separate date and time for new schema
+        startDate: newStart.toPlainDate(),
+        startTime: newStart.toPlainTime(),
         durationMinutes: newDuration,
       },
     };
@@ -67,8 +73,9 @@ export function buildTaskResizeUpdate({
   return {
     id: task.id,
     task: {
-      // Return PlainDateTime directly - mutation handles encoding
-      startTime: originalStart.toPlainDateTime(),
+      // Separate date and time for new schema (date unchanged for end resize)
+      startDate: originalStart.toPlainDate(),
+      startTime: originalStart.toPlainTime(),
       durationMinutes: newDuration,
     },
   };

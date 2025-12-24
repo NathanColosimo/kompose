@@ -17,7 +17,7 @@ export class TaskRepositoryError extends Data.TaggedError(
 }> {}
 
 // Service Definition
-export type TaskService = {
+export interface TaskService {
   readonly listTasks: (
     userId: string
   ) => Effect.Effect<TaskSelect[], TaskRepositoryError>;
@@ -34,7 +34,7 @@ export type TaskService = {
     userId: string,
     taskId: string
   ) => Effect.Effect<void, TaskRepositoryError>;
-};
+}
 
 export class Tasks extends Context.Tag("Tasks")<Tasks, TaskService>() {}
 

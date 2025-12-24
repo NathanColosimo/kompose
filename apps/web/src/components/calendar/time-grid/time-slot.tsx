@@ -6,14 +6,14 @@ import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 import type { SlotData } from "../dnd/types";
 
-type TimeSlotProps = {
+interface TimeSlotProps {
   date: Temporal.PlainDate;
   hour: number;
   minutes: number;
   timeZone: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
-};
+}
 
 export const TimeSlot = memo(function TimeSlotInner({
   date,

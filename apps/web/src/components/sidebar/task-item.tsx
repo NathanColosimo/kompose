@@ -13,10 +13,10 @@ import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Badge } from "../ui/badge";
 import { Checkbox } from "../ui/checkbox";
 
-type TaskItemProps = {
+interface TaskItemProps {
   /** The task to display */
   task: TaskSelectDecoded;
-};
+}
 
 /**
  * Formats duration in minutes to a human-readable string.
@@ -63,8 +63,12 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     [task.id, task.status, updateTask]
   );
 
-  // Show if task is already scheduled
-  const isScheduled = task.startTime !== null;
+  // Combine startDate + startTime into ZonedDateTime for display
+  const scheduledZdt =
+    task.startDate && task.startTime
+      ? task.startDate.toZonedDateTime({ timeZone, plainTime: task.startTime })
+      : null;
+
   const isDone = task.status === "done";
 
   return (
@@ -75,7 +79,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           // Hide original when dragging - DragOverlay shows the preview
           isDragging ? "opacity-0" : "",
-          isScheduled ? "opacity-60" : ""
+          scheduledZdt ? "opacity-60" : ""
         )}
         ref={setNodeRef}
         {...attributes}
@@ -118,11 +122,11 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
               </Badge>
             ) : null}
 
-            {/* Scheduled time badge */}
-            {task.startTime ? (
+            {/* Scheduled time badge - only show when both date and time are set */}
+            {scheduledZdt ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
                 <CalendarClock className="size-3" />
-                {formatTime(task.startTime.toZonedDateTime(timeZone), {
+                {formatTime(scheduledZdt, {
                   weekday: "short",
                   hour: "numeric",
                   minute: "2-digit",

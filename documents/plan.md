@@ -6,7 +6,7 @@ Kompose is a **calendar + task orchestration app** with:
 
 - Calendar + tasks in one unified timeline.
 - Ability to **drag tasks onto the calendar** (turn backlog items into scheduled time blocks).
-- **AI assistant** that can create/update/delete events and tasks from natural language (“Block 2 hours tomorrow afternoon to work on Kompose sync engine”, “Move my Linear bugfix task to Friday morning”, etc.).
+- **AI assistant** that can create/update/delete events and tasks from natural language ("Block 2 hours tomorrow afternoon to work on Kompose sync engine", "Move my Linear bugfix task to Friday morning", etc.).
 - Integrations with tools like **Notion**, **Linear**, etc. for auto-syncing tasks/issues.
 - **Global fuzzy search** (command palette style) over:
   - Events
@@ -18,7 +18,7 @@ Kompose is a **calendar + task orchestration app** with:
   with **online-only** (for now) on the web.
 
 Name: **Kompose**  
-Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
+Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ---
 
@@ -28,7 +28,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
    - Users should manage their day from Kompose instead of bouncing between calendar, todo apps, Linear, Notion, etc.
 
 2. **Natural language control via AI**
-   - “Make time for X”, “Reschedule that”, “Show me my deep work tasks this week”.
+   - "Make time for X", "Reschedule that", "Show me my deep work tasks this week".
    - AI acts as a *personal ops assistant* over your schedule & tasks.
 
 3. **Local-first experience where it matters**
@@ -37,7 +37,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 
 4. **Composable integrations**
    - Integrations are first-class, not one-off hacks.
-   - Same internal model for “task” whether it comes from Kompose, Notion, Linear, etc.
+   - Same internal model for "task" whether it comes from Kompose, Notion, Linear, etc.
 
 5. **Command palette everything**
    - Fuzzy search + actions: open things, run actions, trigger AI, navigate views.
@@ -68,7 +68,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 
 ### Sync
 
-- “Local-first, cloud-synced” model for events & tasks:
+- "Local-first, cloud-synced" model for events & tasks:
   - Local DB as source of truth on mobile/desktop.
   - Periodic and event-based sync with server via oRPC.
   - Simple **LWW (last-write-wins)** for v1, with change sets and cursors.
@@ -142,7 +142,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - Save `currentUserId` and tokens; local tables use `userId` field, no auth tables.
 - **AI & Commands**:
   - Command palette UI (e.g., modal) with fuzzy search and action execution.
-  - “Ask Kompose AI” text input that calls backend AI endpoint.
+  - "Ask Kompose AI" text input that calls backend AI endpoint.
 
 ---
 
@@ -180,7 +180,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
     - `eventsPG`
     - `tasksPG`
     - `calendarsPG`
-    - `task_sourcesPG` (e.g., “kompose”, “notion”, “linear”)
+    - `task_sourcesPG` (e.g., "kompose", "notion", "linear")
     - `integration_accountsPG` (per-user OAuth tokens & metadata)
     - `ai_sessionsPG` / `ai_logsPG` (optional)
 - **SQLite Schemas** (for mobile/desktop):
@@ -198,7 +198,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
     - `userId`
     - `updatedAt` (timestamp / integer)
     - `deletedAt` or `isDeleted`
-    - `source` (e.g., “kompose”, “linear”, “notion”)
+    - `source` (e.g., "kompose", "linear", "notion")
 - **Client → Server**
   - `sync.pushChanges(changeSet)`:
     - changeSet contains created/updated/deleted events & tasks from local DB.
@@ -252,7 +252,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
   - `scheduleTask`, `rescheduleBlock`
 - **Safety**:
   - Validate all AI-suggested changes before applying.
-  - Optionally present a “preview” diff to the user for confirmation (especially for bulk changes).
+  - Optionally present a "preview" diff to the user for confirmation (especially for bulk changes).
 
 ---
 
@@ -261,20 +261,20 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 - **Integration Accounts**:
   - `integration_accountsPG` with:
     - `userId`
-    - `provider` (“notion”, “linear”, …)
+    - `provider` ("notion", "linear", …)
     - access/refresh tokens
     - scopes, metadata
 - **Sync Model**:
   - Periodic background jobs (cron or queue-based) that:
     - fetch tasks/issues from each provider
-    - normalise into Kompose’s internal `Task` model with `source="linear"` or `source="notion"`
+    - normalise into Kompose's internal `Task` model with `source="linear"` or `source="notion"`
   - Webhooks where possible (e.g. Linear) to reduce polling.
 - **Direction**:
   - v1: **one-way import** (external → Kompose).
   - v2: Two-way sync with conflict handling.
 - **User Experience**:
   - In UI, tasks show their origin (icon + label).
-  - Some operations (like “close Linear issue”) call provider APIs as part of the mutation.
+  - Some operations (like "close Linear issue") call provider APIs as part of the mutation.
 
 ---
 
@@ -297,7 +297,7 @@ Tagline (draft): *“Compose your time, tasks, and tools into one schedule.”*
 - **Command Palette**:
   - Unified UI in all clients:
     - quick open item
-    - run actions (e.g., “create task”, “schedule task”, “jump to date”).
+    - run actions (e.g., "create task", "schedule task", "jump to date").
   - AI search:
     - free-form text goes to AI endpoint that can combine search + actions.
 
@@ -415,3 +415,22 @@ packages/
 - **Jotai data layer**: Accounts, calendars, and events now load via atoms (`googleAccountsAtom`, per-account `googleCalendarsAtomFamily`, per-window `googleCalendarEventsForWindowAtom`, and a flattening selector) instead of inline `useQuery/useQueries`.
 - **Minimal shapes**: Calendars carry `accountId` alongside the Google calendar, events carry `{ accountId, calendarId, event }`; no custom wrapper types beyond these tags.
 - **Palette normalization**: Added pastel normalization for Google colors via `normalizedGoogleColorsAtomFamily`; dropdown and event components render softened background colors while keeping IDs unchanged.
+
+### 6.8 Task Date/Time Schema Refactor
+- **Problem**: `startTime` previously stored both date AND time as a timestamp, making `startDate` redundant when scheduling.
+- **Solution**: Split into separate fields:
+  - `startDate: date("start_date")` — calendar date for inbox visibility or calendar display
+  - `startTime: time("start_time")` — time of day only (HH:mm:ss format, no `mode` option in Drizzle)
+- **Display Logic**:
+  - No fields: task in default inbox
+  - `startDate` only: task visible in inbox on that date, not on calendar
+  - Both fields: task scheduled on calendar at that date+time
+- **API Codecs**: Added `plainTimeCodec` for `Temporal.PlainTime` ↔ `HH:mm:ss` conversion in all contracts (select, insert, update).
+- **Frontend Updates**:
+  - TaskEvent, TaskItem: Only render when BOTH `startDate` AND `startTime` exist
+  - DaysView: Filter tasks to require both fields; grouping uses `startDate` directly
+  - TaskEditPopover: Separate date picker (startDate) and time picker (startTime)
+  - DnD handlers: Return `{ startDate: PlainDate, startTime: PlainTime }` on move/resize
+  - DnD context: Unschedule clears both fields; preview resize combines both for ZonedDateTime
+- **Optimistic Updates**: Updated TanStack Query mutations to use `onSuccess` that directly updates cache with server response instead of `onSettled` → `invalidateQueries`, eliminating flicker on drop.
+- **Drizzle Gotcha**: `time()` column type does not accept `mode` option (unlike `timestamp` and `date`); defaults to string representation.

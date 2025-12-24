@@ -4,6 +4,7 @@ import {
   pgEnum,
   pgTable,
   text,
+  time,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -31,10 +32,10 @@ export const taskTable = pgTable("task", {
   status: taskStatusEnum("status").default("todo").notNull(),
   /** Due date (calendar date only, no time) - when task is due */
   dueDate: date("due_date", { mode: "string" }),
-  /** Start date (calendar date only, no time) - when task appears in inbox */
+  /** Start date (calendar date) - when task appears in inbox or on calendar */
   startDate: date("start_date", { mode: "string" }),
-  /** Start time (full timestamp as ISO string) - when scheduled on calendar */
-  startTime: timestamp("start_time", { mode: "string" }),
+  /** Start time (time of day only, HH:mm:ss) - combined with startDate for calendar scheduling */
+  startTime: time("start_time"),
   durationMinutes: integer("duration_minutes").notNull().default(30),
   createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "string" })

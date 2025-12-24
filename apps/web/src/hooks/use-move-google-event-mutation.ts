@@ -5,13 +5,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
-type MoveGoogleEventInput = {
+interface MoveGoogleEventInput {
   accountId: string;
   calendarId: string;
   eventId: string;
   destinationCalendarId: string;
   scope: RecurrenceScope;
-};
+}
 
 /**
  * Google event move mutation (supports recurrence scope).

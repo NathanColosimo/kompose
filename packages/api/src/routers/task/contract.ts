@@ -8,7 +8,7 @@ import z from "zod";
 import {
   instantCodec,
   plainDateCodec,
-  plainDateTimeCodec,
+  plainTimeCodec,
 } from "../../lib/temporal-codecs";
 
 // ============================================================================
@@ -22,7 +22,7 @@ import {
 export const taskSelectCodec = taskSelectSchema.extend({
   dueDate: plainDateCodec.nullable(),
   startDate: plainDateCodec.nullable(),
-  startTime: plainDateTimeCodec.nullable(),
+  startTime: plainTimeCodec.nullable(),
   createdAt: instantCodec,
   updatedAt: instantCodec,
 });
@@ -45,7 +45,7 @@ export type TaskSelectDecoded = z.output<typeof taskSelectCodec>;
 export const taskUpdateCodec = taskUpdateSchema.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
-  startTime: plainDateTimeCodec.nullable().optional(),
+  startTime: plainTimeCodec.nullable().optional(),
   createdAt: instantCodec.optional(),
   updatedAt: instantCodec.optional(),
 });
@@ -67,7 +67,7 @@ export type TaskUpdateDecoded = z.output<typeof taskUpdateCodec>;
 export const taskInsertCodec = taskInsertSchema.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
-  startTime: plainDateTimeCodec.nullable().optional(),
+  startTime: plainTimeCodec.nullable().optional(),
   createdAt: instantCodec.optional(),
   updatedAt: instantCodec.optional(),
 });

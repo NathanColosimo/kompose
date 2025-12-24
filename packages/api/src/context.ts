@@ -14,7 +14,7 @@ export async function createContext(req: NextRequest): Promise<Context> {
   };
 }
 
-export type Context = {
+export interface Context {
   session?: Session;
   user?: User;
-};
+}

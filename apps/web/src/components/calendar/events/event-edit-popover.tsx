@@ -80,7 +80,7 @@ import {
   WEEKDAYS,
 } from "./event-edit-utils";
 
-type EventEditPopoverProps = {
+interface EventEditPopoverProps {
   event: GoogleEvent;
   accountId: string;
   calendarId: string;
@@ -89,9 +89,9 @@ type EventEditPopoverProps = {
   children: ReactElement;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
-};
+}
 
-type EventFormValues = {
+interface EventFormValues {
   summary: string;
   description: string;
   location: string;
@@ -102,18 +102,18 @@ type EventFormValues = {
   startTime: string;
   endTime: string;
   recurrence: string[];
-};
+}
 
-type CalendarOption = {
+interface CalendarOption {
   accountId: string;
   calendarId: string;
   label: string;
-};
+}
 
-type RecurrenceScopeOption = {
+interface RecurrenceScopeOption {
   value: RecurrenceScope;
   label: string;
-};
+}
 
 const RECURRENCE_SCOPE_OPTIONS: RecurrenceScopeOption[] = [
   { value: "this", label: "Only this occurrence" },
@@ -243,14 +243,14 @@ function RecurrenceEditor({
     [recurrenceRule]
   );
 
-  type RecurrenceEditorValues = {
+  interface RecurrenceEditorValues {
     freq: Frequency;
     byDay: string[];
     endType: RecurrenceEnd["type"];
     /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
     untilRule: string;
     count: number;
-  };
+  }
 
   const defaultValues = useMemo<RecurrenceEditorValues>(() => {
     const endType = parsedRecurrence.end.type;

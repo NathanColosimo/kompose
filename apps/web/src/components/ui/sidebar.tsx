@@ -32,7 +32,7 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
-type SidebarContextProps = {
+interface SidebarContextProps {
   // Left sidebar state
   leftState: "expanded" | "collapsed";
   leftOpen: boolean;
@@ -52,7 +52,7 @@ type SidebarContextProps = {
   open: boolean;
   setOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-};
+}
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
@@ -98,7 +98,6 @@ function SidebarProvider({
   // Left sidebar state (controlled via openProp or atom)
   const leftOpen = openProp ?? leftOpenAtomValue;
   const setLeftOpen = React.useCallback(
-    // biome-ignore lint/nursery/noShadow: Shadowing variable
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(leftOpen) : value;
       if (setOpenProp) {
@@ -113,7 +112,6 @@ function SidebarProvider({
   // Right sidebar state (always uses atom)
   const rightOpen = rightOpenAtomValue;
   const setRightOpen = React.useCallback(
-    // biome-ignore lint/nursery/noShadow: Shadowing variable
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(rightOpen) : value;
       setRightOpenAtomValue(openState);

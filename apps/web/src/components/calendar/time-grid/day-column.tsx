@@ -7,13 +7,13 @@ import { PIXELS_PER_HOUR } from "../constants";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
-type DayColumnProps = {
+interface DayColumnProps {
   date: Temporal.PlainDate;
   timeZone: string;
   width: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
-};
+}
 
 export const DayColumn = memo(function DayColumnInner({
   date,

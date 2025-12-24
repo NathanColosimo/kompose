@@ -5,9 +5,9 @@ import { formatHourLabel } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { getHoursRange } from "./slot-utils";
 
-type TimeGutterProps = {
+interface TimeGutterProps {
   className?: string;
-};
+}
 
 export const TimeGutter = memo(function TimeGutterInner({
   className,

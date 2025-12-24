@@ -5,16 +5,16 @@ import type { Temporal } from "temporal-polyfill";
 export type DragDirection = "start" | "end";
 
 /** Data attached to droppable time slots */
-export type SlotData = {
+export interface SlotData {
   dateTime: Temporal.ZonedDateTime;
-};
+}
 
-export type PreviewRect = {
+export interface PreviewRect {
   top: number;
   left: number;
   width: number;
   height: number;
-};
+}
 
 export type DragData =
   | {

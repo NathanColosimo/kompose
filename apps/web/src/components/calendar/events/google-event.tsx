@@ -13,13 +13,13 @@ import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../days-view";
 import { EventEditPopover } from "./event-edit-popover";
 
-type GoogleCalendarEventProps = {
+interface GoogleCalendarEventProps {
   event: GoogleEvent;
   start: Temporal.ZonedDateTime;
   end: Temporal.ZonedDateTime;
   accountId: string;
   calendarId: string;
-};
+}
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   event,

@@ -139,21 +139,21 @@ export function buildRecurrenceRule(
   return `RRULE:${parts.join(";")}`;
 }
 
-type TemporalFormValues = {
+interface TemporalFormValues {
   allDay: boolean;
   startDate: Date | null;
   endDate: Date | null;
   startTime: string;
   endTime: string;
-};
+}
 
-type TemporalPayload = {
+interface TemporalPayload {
   startPayload: { date?: string; dateTime?: string };
   endPayload: { date?: string; dateTime?: string };
   startDateTime: Date | null;
   isAllDay: boolean;
   occurrenceStart: Date;
-};
+}
 
 /** Combine a Date and time string (HH:mm) into a single Date */
 function buildDateTimeValue(date: Date | null, time: string): Date | null {
