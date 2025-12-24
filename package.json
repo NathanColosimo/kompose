@@ -21,11 +21,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
-    "@effect/language-service": "^0.62.4",
+    "@effect/language-service": "^0.62.5",
     "knip": "^5.75.1",
-    "turbo": "^2.6.3",
+    "turbo": "^2.7.2",
     "typescript": "catalog:",
-    "ultracite": "^6.4.2"
+    "ultracite": "^6.5.0"
   },
-  "packageManager": "pnpm@10.25.0"
+  "packageManager": "pnpm@10.26.2"
 }

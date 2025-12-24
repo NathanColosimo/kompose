@@ -3,7 +3,7 @@ packages:
   - packages/*
 
 catalog:
-  '@better-auth/expo': ^1.4.7
+  '@better-auth/expo': ^1.4.9
   '@orpc/client': ^1.13.0
   '@orpc/contract': ^1.13.0
   '@orpc/openapi': ^1.13.0
@@ -16,11 +16,11 @@ catalog:
   '@types/node': ^24.10.1
   '@types/react': ^19.2.7
   '@types/react-dom': ^19.2.3
-  better-auth: ^1.4.7
+  better-auth: ^1.4.9
   dotenv: ^17.2.2
   drizzle-orm: ^0.45.1
   effect: ^3.19.13
-  next: ^16.1.0
+  next: ^16.1.1
   temporal-polyfill: ^0.3.0
   typescript: ^5.9.3
   uuidv7: ^1.1.0
