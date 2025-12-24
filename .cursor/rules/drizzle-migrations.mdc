@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+When changing the db schema, don't manually create the sql or journal or json files, let the user run the `db:generate` command at their own discretion to generate the files. Generating the files and actually running the migration isn't needed for typesafety.
