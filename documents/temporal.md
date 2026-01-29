@@ -11,12 +11,12 @@ This project uses the [Temporal API](https://developer.mozilla.org/en-US/docs/We
 
 ## Core Types
 
-| Type | Use Case | Example |
-|------|----------|---------|
-| `PlainDate` | Calendar dates without time (due dates, start dates) | `2025-12-15` |
+| Type            | Use Case                                                    | Example                              |
+| --------------- | ----------------------------------------------------------- | ------------------------------------ |
+| `PlainDate`     | Calendar dates without time (due dates, start dates)        | `2025-12-15`                         |
 | `ZonedDateTime` | Full datetime with timezone (scheduled times, event bounds) | `2025-12-15T09:30[America/New_York]` |
-| `Instant` | UTC timestamp (API communication, database) | `2025-12-15T14:30:00Z` |
-| `PlainTime` | Time of day without date | `09:30` |
+| `Instant`       | UTC timestamp (API communication, database)                 | `2025-12-15T14:30:00Z`               |
+| `PlainTime`     | Time of day without date                                    | `09:30`                              |
 
 ## Philosophy: Use Temporal API Directly
 
@@ -25,7 +25,14 @@ Prefer using Temporal's native `.from()` constructors and methods over thin wrap
 ```typescript
 // ✓ Prefer: Use Temporal API directly
 const date = Temporal.PlainDate.from({ year, month, day });
-const zdt = Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone });
+const zdt = Temporal.ZonedDateTime.from({
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  timeZone,
+});
 const duration = end.since(start).total({ unit: "minutes" });
 
 // ✓ Use .add() and .subtract() directly
@@ -36,11 +43,12 @@ const monthEnd = date.with({ day: date.daysInMonth });
 
 // ✗ Avoid: Thin wrappers that hide the API
 const date = plainDateFromYMD(year, month, day);
-const nextWeek = addDays(date, 7);  // Just use date.add({ days: 7 })
-const monthStart = startOfMonth(date);  // Just use date.with({ day: 1 })
+const nextWeek = addDays(date, 7); // Just use date.add({ days: 7 })
+const monthStart = startOfMonth(date); // Just use date.with({ day: 1 })
 ```
 
 Utility functions in `temporal-utils.ts` are reserved for:
+
 - **Parsing/formatting** with project-specific logic (e.g., Postgres timestamp format)
 - **Domain logic** that combines multiple operations (e.g., `getDayBoundsZoned`)
 - **Bridge functions** for native Date interop at UI boundaries
@@ -80,7 +88,7 @@ import { dateToDateString, dateStringToDate } from "@/lib/temporal-utils";
 <Calendar
   selected={field.value ? dateStringToDate(field.value) : undefined}
   onSelect={(date) => field.onChange(date ? dateToDateString(date) : null)}
-/>
+/>;
 ```
 
 ## Utility Functions
@@ -91,27 +99,27 @@ Utilities in `apps/web/src/lib/temporal-utils.ts` handle project-specific concer
 
 ```typescript
 // Creating dates
-Temporal.PlainDate.from({ year: 2025, month: 12, day: 15 })
-Temporal.PlainDate.from("2025-12-15")
+Temporal.PlainDate.from({ year: 2025, month: 12, day: 15 });
+Temporal.PlainDate.from("2025-12-15");
 
 // Creating ZonedDateTime
-Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone })
+Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone });
 
 // Arithmetic - use .add() and .subtract() directly
-date.add({ days: 5 })
-date.subtract({ days: 3 })
-zdt.add({ minutes: 30 })
+date.add({ days: 5 });
+date.subtract({ days: 3 });
+zdt.add({ minutes: 30 });
 
 // Month operations - use .with() directly
-date.with({ day: 1 })              // First day of month
-date.with({ day: date.daysInMonth })  // Last day of month
+date.with({ day: 1 }); // First day of month
+date.with({ day: date.daysInMonth }); // Last day of month
 
 // Duration between two ZonedDateTimes
-end.since(start).total({ unit: "minutes" })
+end.since(start).total({ unit: "minutes" });
 
 // Comparison
-Temporal.ZonedDateTime.compare(a, b)  // -1, 0, or 1
-date1.equals(date2)                    // boolean
+Temporal.ZonedDateTime.compare(a, b); // -1, 0, or 1
+date1.equals(date2); // boolean
 ```
 
 ### Project Utilities
@@ -141,26 +149,26 @@ minutesFromMidnight(zdt)      // Minutes since midnight
 
 ```typescript
 // Date ↔ PlainDate
-dateToPlainDate(date, timeZone)
-plainDateToDate(date, timeZone)
+dateToPlainDate(date, timeZone);
+plainDateToDate(date, timeZone);
 
 // Date ↔ ZonedDateTime
-dateToZonedDateTime(date, timeZone)
-zonedDateTimeToDate(zdt)
+dateToZonedDateTime(date, timeZone);
+zonedDateTimeToDate(zdt);
 
 // Date ↔ String (for form fields with date pickers)
-dateToDateString(date)        // Date → "2025-12-15" (local timezone)
-dateStringToDate(str)         // "2025-12-15" → Date (local midnight)
+dateToDateString(date); // Date → "2025-12-15" (local timezone)
+dateStringToDate(str); // "2025-12-15" → Date (local midnight)
 ```
 
 ### Parsing Database Strings
 
 ```typescript
 // Parse Postgres timestamp (handles "2025-12-15 09:30:00" format with space)
-isoStringToZonedDateTime(str, timeZone)
+isoStringToZonedDateTime(str, timeZone);
 
 // For API output
-zonedDateTimeToISOString(zdt)  // → "2025-12-15T14:30:00.000Z"
+zonedDateTimeToISOString(zdt); // → "2025-12-15T14:30:00.000Z"
 ```
 
 ### Formatting
@@ -243,7 +251,7 @@ const form = useForm({
 <Calendar
   selected={field.value ? dateStringToDate(field.value) : undefined}
   onSelect={(date) => field.onChange(date ? dateToDateString(date) : null)}
-/>
+/>;
 ```
 
 ## Gotchas
@@ -251,6 +259,7 @@ const form = useForm({
 ### Postgres Timestamp Storage
 
 Postgres `timestamp` (without time zone) stores bare datetime values without timezone info:
+
 - **Input**: `2025-12-15T14:00:00Z` → Postgres strips the `Z` and stores `2025-12-15 14:00:00`
 - **Output**: Returns `2025-12-15 14:00:00` (no `Z`)
 
@@ -258,10 +267,10 @@ This means you must store **local datetime**, not UTC:
 
 ```typescript
 // ✓ Correct: Store local datetime (preserves wall-clock time)
-startTime: zdt.toPlainDateTime().toString()  // "2025-12-15T09:00:00"
+startTime: zdt.toPlainDateTime().toString(); // "2025-12-15T09:00:00"
 
 // ✗ Wrong: toInstant converts to UTC, Postgres strips Z, time shifts
-startTime: zdt.toInstant().toString()  // "2025-12-15T14:00:00Z" → stored as 14:00, read as 14:00 local
+startTime: zdt.toInstant().toString(); // "2025-12-15T14:00:00Z" → stored as 14:00, read as 14:00 local
 ```
 
 For APIs that expect UTC (like Google Calendar), use `.toInstant().toString()`.

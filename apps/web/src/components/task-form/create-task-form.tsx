@@ -3,7 +3,7 @@
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { CalendarIcon, Plus } from "lucide-react";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -28,6 +28,7 @@ import {
   temporalToPickerDate,
   todayPlainDate,
 } from "@/lib/temporal-utils";
+import { RecurrenceEditor } from "./recurrence-editor";
 
 export function CreateTaskForm() {
   const [open, setOpen] = useState(false);
@@ -47,8 +48,12 @@ export function CreateTaskForm() {
       startDate: todayPlainDate(),
       durationMinutes: 30,
       dueDate: todayPlainDate().add({ days: 1 }),
+      recurrence: null,
     },
   });
+
+  // Watch startDate for recurrence editor reference
+  const startDate = useWatch({ control, name: "startDate" });
 
   const onSubmit = async (data: ClientTaskInsertDecoded) => {
     await createTask.mutateAsync(data);
@@ -59,6 +64,7 @@ export function CreateTaskForm() {
       startDate: todayPlainDate(),
       durationMinutes: 30,
       dueDate: todayPlainDate().add({ days: 1 }),
+      recurrence: null,
     });
     setOpen(false);
   };
@@ -111,7 +117,7 @@ export function CreateTaskForm() {
                         className={`w-full justify-start text-left font-normal ${
                           !field.value && "text-muted-foreground"
                         }`}
-                        variant={"outline"}
+                        variant="outline"
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
@@ -152,7 +158,7 @@ export function CreateTaskForm() {
                         className={`w-full justify-start text-left font-normal ${
                           !field.value && "text-muted-foreground"
                         }`}
-                        variant={"outline"}
+                        variant="outline"
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? (
@@ -178,6 +184,21 @@ export function CreateTaskForm() {
                       />
                     </PopoverContent>
                   </Popover>
+                )}
+              />
+            </div>
+            {/* Recurrence */}
+            <div className="grid gap-2">
+              <Label>Repeat</Label>
+              <Controller
+                control={control}
+                name="recurrence"
+                render={({ field }) => (
+                  <RecurrenceEditor
+                    onChange={field.onChange}
+                    referenceDate={startDate}
+                    value={field.value ?? null}
+                  />
                 )}
               />
             </div>

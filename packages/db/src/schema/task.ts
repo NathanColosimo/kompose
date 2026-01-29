@@ -1,6 +1,8 @@
 import {
+  boolean,
   date,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -13,8 +15,56 @@ import {
   createSelectSchema,
   createUpdateSchema,
 } from "drizzle-zod";
-import type z from "zod";
+import z from "zod";
 import { user } from "./auth";
+
+// ============================================================================
+// RECURRENCE SCHEMA (Zod discriminated union for JSONB column)
+// ============================================================================
+
+const dailyRecurrence = z.object({
+  freq: z.literal("DAILY"),
+  interval: z.number().int().positive().default(1),
+});
+
+const weeklyRecurrence = z.object({
+  freq: z.literal("WEEKLY"),
+  interval: z.number().int().positive().default(1),
+  byDay: z.array(z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"])).min(1),
+});
+
+const monthlyRecurrence = z.object({
+  freq: z.literal("MONTHLY"),
+  interval: z.number().int().positive().default(1),
+  byMonthDay: z.number().int().min(1).max(31),
+});
+
+const yearlyRecurrence = z.object({
+  freq: z.literal("YEARLY"),
+  interval: z.number().int().positive().default(1),
+});
+
+const baseRecurrence = z.discriminatedUnion("freq", [
+  dailyRecurrence,
+  weeklyRecurrence,
+  monthlyRecurrence,
+  yearlyRecurrence,
+]);
+
+const recurrenceEndOptions = z
+  .object({
+    until: z.string().optional(), // ISO date string "2025-12-31"
+    count: z.number().int().positive().max(1000).optional(), // End after N occurrences
+  })
+  .partial();
+
+/** Task recurrence pattern - discriminated union by frequency type */
+export const taskRecurrenceSchema = z.intersection(
+  baseRecurrence,
+  recurrenceEndOptions
+);
+
+export type TaskRecurrence = z.infer<typeof taskRecurrenceSchema>;
 
 export const taskStatusEnum = pgEnum("task_status", [
   "todo",
@@ -37,6 +87,15 @@ export const taskTable = pgTable("task", {
   /** Start time (time of day only, HH:mm:ss) - combined with startDate for calendar scheduling */
   startTime: time("start_time"),
   durationMinutes: integer("duration_minutes").notNull().default(30),
+
+  // Recurrence fields
+  /** Points to the master task of the series. null=non-recurring, self=master, other=occurrence */
+  seriesMasterId: uuid("series_master_id"),
+  /** Recurrence pattern (stored on master only). JSONB discriminated union by freq. */
+  recurrence: jsonb("recurrence").$type<TaskRecurrence | null>(),
+  /** True if this occurrence was individually edited (protected during series regeneration) */
+  isException: boolean("is_exception").default(false).notNull(),
+
   createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "string" })
     .notNull()
@@ -44,11 +103,21 @@ export const taskTable = pgTable("task", {
     .$onUpdate(() => new Date().toISOString()),
 });
 
-export const taskSelectSchema = createSelectSchema(taskTable);
-export const taskInsertSchema = createInsertSchema(taskTable).omit({
-  id: true,
+export const taskSelectSchema = createSelectSchema(taskTable).safeExtend({
+  recurrence: taskRecurrenceSchema.nullable(),
 });
-export const taskUpdateSchema = createUpdateSchema(taskTable);
+
+export const taskInsertSchema = createInsertSchema(taskTable)
+  .safeExtend({
+    recurrence: taskRecurrenceSchema.nullable().optional(),
+  })
+  .omit({
+    id: true,
+  });
+
+export const taskUpdateSchema = createUpdateSchema(taskTable).safeExtend({
+  recurrence: taskRecurrenceSchema.nullable().optional(),
+});
 
 export type TaskSelect = typeof taskTable.$inferSelect;
 export type TaskInsert = Omit<typeof taskTable.$inferInsert, "id">;

@@ -43,6 +43,13 @@
       "when": 1766540664247,
       "tag": "0005_update_start_time",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1766601313098,
+      "tag": "0006_add_recurring_tasks",
+      "breakpoints": true
     }
   ]
 }

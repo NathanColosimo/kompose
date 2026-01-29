@@ -12,12 +12,25 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  TaskSelectDecoded,
+  UpdateScope,
+} from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { timezoneAtom } from "@/atoms/current-date";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useGoogleEventMutations } from "@/hooks/use-google-event-mutations";
 import { useTasks } from "@/hooks/use-tasks";
 import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
@@ -37,6 +50,12 @@ import {
 import type { DragData, PreviewRect, SlotData } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
+
+/** Pending task update waiting for scope selection */
+interface PendingTaskUpdate {
+  id: string;
+  task: object;
+}
 
 interface CalendarDndProviderProps {
   children: React.ReactNode;
@@ -58,6 +77,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
   const stableChildren = useMemo(() => children, [children]);
+
+  // State for pending recurring task updates that need scope selection
+  const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
+    null
+  );
 
   // Configure sensors for drag detection
   const sensors = useSensors(
@@ -92,6 +116,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
+
+      // If recurring, show scope selection dialog
+      if (task.seriesMasterId) {
+        setPendingUpdate({ id: update.id, task: update.task });
+        return;
+      }
+
       updateTask.mutate(update);
     },
     [updateTask]
@@ -110,6 +141,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           startTime: null,
           durationMinutes: task.durationMinutes,
         },
+        // Unscheduling affects just this occurrence
+        scope: "this",
       });
     },
     [updateTask]
@@ -126,6 +159,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         timeZone,
       });
       if (!update) {
+        return;
+      }
+
+      // If recurring, show scope selection dialog
+      if (payload.task.seriesMasterId) {
+        setPendingUpdate({ id: update.id, task: update.task });
         return;
       }
 
@@ -541,36 +580,82 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [clearPreview, computePreviewForDrag]
   );
 
+  // Handle scope selection for recurring task updates
+  const handleScopeSelect = useCallback(
+    (scope: UpdateScope) => {
+      if (!pendingUpdate) {
+        return;
+      }
+      updateTask.mutate({
+        id: pendingUpdate.id,
+        task: pendingUpdate.task,
+        scope,
+      });
+      setPendingUpdate(null);
+    },
+    [pendingUpdate, updateTask]
+  );
+
+  const handleScopeDialogClose = useCallback(() => {
+    setPendingUpdate(null);
+  }, []);
+
   return (
-    <DndContext
-      autoScroll={false}
-      collisionDetection={collisionDetection}
-      onDragCancel={handleDragCancel}
-      onDragEnd={handleDragEnd}
-      onDragOver={handleDragOver}
-      onDragStart={handleDragStart}
-      sensors={sensors}
-    >
-      {stableChildren}
+    <>
+      <DndContext
+        autoScroll={false}
+        collisionDetection={collisionDetection}
+        onDragCancel={handleDragCancel}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragStart={handleDragStart}
+        sensors={sensors}
+      >
+        {stableChildren}
 
-      {/* Drop preview outline showing the eventual placement and duration */}
-      {previewRect ? (
-        <div
-          aria-hidden
-          className="pointer-events-none fixed z-30 rounded-md border-2 border-primary/70 bg-primary/10"
-          style={{
-            top: previewRect.top,
-            left: previewRect.left,
-            width: previewRect.width,
-            height: previewRect.height,
-          }}
-        />
-      ) : null}
+        {/* Drop preview outline showing the eventual placement and duration */}
+        {previewRect ? (
+          <div
+            aria-hidden
+            className="pointer-events-none fixed z-30 rounded-md border-2 border-primary/70 bg-primary/10"
+            style={{
+              top: previewRect.top,
+              left: previewRect.left,
+              width: previewRect.width,
+              height: previewRect.height,
+            }}
+          />
+        ) : null}
 
-      {/* Drag overlay for smooth preview during drag */}
-      {overlayContent ? (
-        <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
-      ) : null}
-    </DndContext>
+        {/* Drag overlay for smooth preview during drag */}
+        {overlayContent ? (
+          <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
+        ) : null}
+      </DndContext>
+
+      {/* Scope selection dialog for recurring tasks */}
+      <AlertDialog
+        onOpenChange={(open) => !open && handleScopeDialogClose()}
+        open={pendingUpdate !== null}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update recurring task</AlertDialogTitle>
+            <AlertDialogDescription>
+              This is a recurring task. Which occurrences do you want to update?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleScopeSelect("this")}>
+              Only this occurrence
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => handleScopeSelect("following")}>
+              This and following
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -11,6 +11,21 @@ import {
   plainTimeCodec,
 } from "../../lib/temporal-codecs";
 
+// Re-export recurrence types for frontend use
+export type { TaskRecurrence } from "@kompose/db/schema/task";
+
+// ============================================================================
+// SCOPE ENUMS (for recurring task operations)
+// ============================================================================
+
+/** Scope for updating recurring tasks */
+export const updateScopeSchema = z.enum(["this", "all", "following"]);
+export type UpdateScope = z.infer<typeof updateScopeSchema>;
+
+/** Scope for deleting recurring tasks */
+export const deleteScopeSchema = z.enum(["this", "following"]);
+export type DeleteScope = z.infer<typeof deleteScopeSchema>;
+
 // ============================================================================
 // SELECT CODEC (for API responses - decodes strings to Temporal)
 // ============================================================================
@@ -18,6 +33,7 @@ import {
 /**
  * Task select codec with Temporal types for date/time fields.
  * Used for output contracts - decodes string dates to Temporal objects.
+ * Note: recurrence stays as-is (already typed correctly from schema)
  */
 export const taskSelectCodec = taskSelectSchema.extend({
   dueDate: plainDateCodec.nullable(),
@@ -25,6 +41,7 @@ export const taskSelectCodec = taskSelectSchema.extend({
   startTime: plainTimeCodec.nullable(),
   createdAt: instantCodec,
   updatedAt: instantCodec,
+  // seriesMasterId, recurrence, isException are already correctly typed from schema
 });
 
 /** Task type with Temporal date/time fields (decoded from API) */
@@ -96,19 +113,27 @@ export const listTasks = oc.input(z.void()).output(z.array(taskSelectSchema));
 
 export const createTask = oc
   .input(clientTaskInsertSchema)
-  .output(taskSelectSchema);
+  .output(z.array(taskSelectSchema)); // Returns array (single for non-recurring, multiple for recurring)
 
 export const updateTask = oc
   .input(
     z.object({
       id: z.uuidv7(),
       task: taskUpdateSchema,
+      /** Scope for recurring tasks: this (single), all (entire series), following (this + future) */
+      scope: updateScopeSchema,
     })
   )
-  .output(taskSelectSchema);
+  .output(z.array(taskSelectSchema)); // Returns array since "all"/"following" can update multiple
 
 export const deleteTask = oc
-  .input(z.object({ id: z.uuidv7() }))
+  .input(
+    z.object({
+      id: z.uuidv7(),
+      /** Scope for recurring tasks: this (single), following (this + future) */
+      scope: deleteScopeSchema,
+    })
+  )
   .output(z.void());
 
 export const taskContract = {

@@ -58,6 +58,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
       updateTask.mutate({
         id: task.id,
         task: { status: newStatus },
+        scope: "this",
       });
     },
     [task.id, task.status, updateTask]

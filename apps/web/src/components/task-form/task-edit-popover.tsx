@@ -1,6 +1,10 @@
 "use client";
 
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  DeleteScope,
+  TaskRecurrence,
+  TaskSelectDecoded,
+} from "@kompose/api/routers/task/contract";
 import {
   CalendarCheck,
   CalendarClock,
@@ -53,6 +57,7 @@ import {
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { Label } from "../ui/label";
+import { RecurrenceEditor } from "./recurrence-editor";
 
 /** Form state uses Temporal types, convert to native Date only at picker boundary */
 interface TaskFormValues {
@@ -65,6 +70,8 @@ interface TaskFormValues {
   /** Due date - when task is due */
   dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
+  /** Recurrence pattern (null = non-recurring) */
+  recurrence: TaskRecurrence | null;
 }
 
 interface TaskEditPopoverProps {
@@ -133,16 +140,22 @@ function TaskEditForm({
   const { updateTask, deleteTask } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Check if this task is part of a recurring series
+  const isRecurring = task.seriesMasterId !== null;
+
   // Opens confirmation dialog
   const handleDeleteClick = useCallback(() => {
     setShowDeleteConfirm(true);
   }, []);
 
-  // Actually deletes the task after confirmation
-  const confirmDelete = useCallback(() => {
-    onClose();
-    deleteTask.mutate({ id: task.id });
-  }, [deleteTask, onClose, task.id]);
+  // Delete with specified scope
+  const confirmDelete = useCallback(
+    (scope: DeleteScope) => {
+      onClose();
+      deleteTask.mutate({ id: task.id, scope });
+    },
+    [deleteTask, onClose, task.id]
+  );
 
   // Delete hotkey - only active when popover is open, skips text inputs
   // Uses "backspace" for Mac compatibility (Mac's delete key = backspace)
@@ -170,28 +183,33 @@ function TaskEditForm({
     () => ({
       title: task.title ?? "",
       description: task.description ?? "",
-      // task.startDate is Temporal.PlainDate - calendar date for inbox/calendar
       startDate: task.startDate ?? null,
-      // task.startTime is Temporal.PlainTime - time of day only
       startTime: task.startTime ?? null,
-      // task.dueDate is Temporal.PlainDate from codec
       dueDate: task.dueDate ?? null,
       durationMinutes: task.durationMinutes ?? 30,
+      recurrence: task.recurrence ?? null,
     }),
     [
       task.description,
       task.dueDate,
       task.durationMinutes,
+      task.recurrence,
       task.startDate,
       task.startTime,
       task.title,
     ]
   );
 
-  const { control, reset, setValue, handleSubmit, getValues } =
-    useForm<TaskFormValues>({
-      defaultValues: initialValues,
-    });
+  const {
+    control,
+    reset,
+    setValue,
+    handleSubmit,
+    getValues,
+    formState: { isDirty },
+  } = useForm<TaskFormValues>({
+    defaultValues: initialValues,
+  });
 
   // Keep the form in sync if the task changes externally.
   useEffect(() => {
@@ -199,6 +217,8 @@ function TaskEditForm({
   }, [initialValues, reset]);
 
   const watchedValues = useWatch({ control });
+  // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
+  const startDate = useWatch({ control, name: "startDate" });
 
   const submit = useCallback<SubmitHandler<TaskFormValues>>(
     (values) => {
@@ -207,7 +227,12 @@ function TaskEditForm({
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
 
-      // Pass Temporal types directly - mutation handles encoding
+      // Non-recurring tasks or recurring tasks with no recurrence change: scope="this"
+      // Recurrence pattern changes force scope="following"
+      const recurrenceChanged =
+        JSON.stringify(values.recurrence) !==
+        JSON.stringify(task.recurrence ?? null);
+
       updateTask.mutate({
         id: task.id,
         task: {
@@ -217,18 +242,24 @@ function TaskEditForm({
           startTime: values.startTime,
           dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
+          recurrence: values.recurrence,
         },
+        // Use "following" scope if recurrence changed, otherwise "this"
+        scope: recurrenceChanged ? "following" : "this",
       });
     },
-    [task.durationMinutes, task.id, updateTask]
+    [task.durationMinutes, task.id, task.recurrence, updateTask]
   );
 
   // Register submit callback so the popover can trigger save on close.
+  // Only submit if the form has been modified.
   useEffect(() => {
     onRegisterSubmit(() => {
-      submit(getValues());
+      if (isDirty) {
+        submit(getValues());
+      }
     });
-  }, [getValues, onRegisterSubmit, submit]);
+  }, [getValues, isDirty, onRegisterSubmit, submit]);
 
   // Format start time for the time input (HH:mm) - uses watchedValues for reactivity
   const startTimeValue = watchedValues.startTime
@@ -357,8 +388,8 @@ function TaskEditForm({
         />
       </div>
 
-      {/* Row 2: Due date */}
-      <div className="grid grid-cols-1 gap-2">
+      {/* Row 2: Due date and Recurrence */}
+      <div className="grid grid-cols-2 gap-2">
         <Controller
           control={control}
           name="dueDate"
@@ -397,6 +428,19 @@ function TaskEditForm({
             </Popover>
           )}
         />
+
+        {/* Recurrence editor */}
+        <Controller
+          control={control}
+          name="recurrence"
+          render={({ field }) => (
+            <RecurrenceEditor
+              onChange={field.onChange}
+              referenceDate={startDate}
+              value={field.value}
+            />
+          )}
+        />
       </div>
 
       <Separator />
@@ -406,7 +450,9 @@ function TaskEditForm({
           Title
         </Label>
         <Input
-          onChange={(e) => setValue("title", e.target.value)}
+          onChange={(e) =>
+            setValue("title", e.target.value, { shouldDirty: true })
+          }
           placeholder="Task title"
           value={watchedValues.title}
         />
@@ -417,7 +463,9 @@ function TaskEditForm({
           Description
         </Label>
         <Textarea
-          onChange={(e) => setValue("description", e.target.value)}
+          onChange={(e) =>
+            setValue("description", e.target.value, { shouldDirty: true })
+          }
           placeholder="Add details..."
           value={watchedValues.description}
         />
@@ -425,7 +473,7 @@ function TaskEditForm({
 
       <Separator />
 
-      {/* Delete button with confirmation dialog */}
+      {/* Delete button with confirmation dialog - shows scope options for recurring tasks */}
       <AlertDialog onOpenChange={setShowDeleteConfirm} open={showDeleteConfirm}>
         <AlertDialogTrigger asChild>
           <Button
@@ -441,14 +489,32 @@ function TaskEditForm({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete task?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone.
+              {isRecurring
+                ? "This is a recurring task. Choose what to delete."
+                : "This action cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter
+            className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
+          >
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
-              Delete
-            </AlertDialogAction>
+            {isRecurring ? (
+              <>
+                <AlertDialogAction onClick={() => confirmDelete("this")}>
+                  Only this occurrence
+                </AlertDialogAction>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => confirmDelete("following")}
+                >
+                  This and following
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => confirmDelete("this")}>
+                Delete
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

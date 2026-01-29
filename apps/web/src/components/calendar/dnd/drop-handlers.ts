@@ -1,4 +1,7 @@
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  TaskSelectDecoded,
+  UpdateScope,
+} from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import type { Temporal } from "temporal-polyfill";
 import type { UpdateGoogleEventInput } from "@/hooks/use-google-event-mutations";
@@ -10,7 +13,7 @@ import type { DragData, DragDirection } from "./types";
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
   targetDateTime: Temporal.ZonedDateTime
-) {
+): { id: string; task: object; scope: UpdateScope } {
   return {
     id: task.id,
     task: {
@@ -19,6 +22,8 @@ export function buildTaskMoveUpdate(
       startTime: targetDateTime.toPlainTime(),
       durationMinutes: task.durationMinutes,
     },
+    // Dragging always updates just this occurrence
+    scope: "this",
   };
 }
 
@@ -33,7 +38,7 @@ export function buildTaskResizeUpdate({
   targetDateTime: Temporal.ZonedDateTime;
   direction: DragDirection;
   timeZone: string;
-}) {
+}): { id: string; task: object; scope: UpdateScope } | null {
   // Need both startDate and startTime for a scheduled task
   if (!(task.startDate && task.startTime)) {
     return null;
@@ -65,6 +70,8 @@ export function buildTaskResizeUpdate({
         startTime: newStart.toPlainTime(),
         durationMinutes: newDuration,
       },
+      // Resizing always updates just this occurrence
+      scope: "this",
     };
   }
 
@@ -78,6 +85,8 @@ export function buildTaskResizeUpdate({
       startTime: originalStart.toPlainTime(),
       durationMinutes: newDuration,
     },
+    // Resizing always updates just this occurrence
+    scope: "this",
   };
 }
 
