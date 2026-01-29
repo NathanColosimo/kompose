@@ -2,6 +2,7 @@
   "name": "kompose",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.4",
   "scripts": {
     "check": "biome check --write .",
     "type-check": "turbo type-check",
