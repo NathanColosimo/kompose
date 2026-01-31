@@ -24,7 +24,10 @@ import {
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { normalizedGoogleColorsAtomFamily } from "@/atoms/google-colors";
+import {
+  normalizedGoogleColorsAtomFamily,
+  pastelizeColor,
+} from "@/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@/atoms/google-data";
 import {
   AlertDialog,
@@ -956,6 +959,16 @@ function EventEditForm({
   const paletteForAccount = useAtomValue(
     normalizedGoogleColorsAtomFamily(accountId)
   );
+  const calendars = useAtomValue(googleCalendarsDataAtom);
+
+  // Find the calendar this event belongs to, for fallback color display
+  const calendar = calendars.find(
+    (c) => c.accountId === accountId && c.calendar.id === calendarId
+  );
+  // Pastelise the calendar's background color for consistency with event colors
+  const calendarFallbackColor = pastelizeColor(
+    calendar?.calendar.backgroundColor
+  );
 
   const colorEntries = useMemo(
     () =>
@@ -1094,7 +1107,9 @@ function EventEditForm({
                 background:
                   colorEntries.find(
                     ([key]) => key === watchedValues.colorId
-                  )?.[1]?.background ?? undefined,
+                  )?.[1]?.background ??
+                  calendarFallbackColor ??
+                  undefined,
               }}
               type="button"
             />
