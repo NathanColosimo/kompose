@@ -11,12 +11,8 @@ import {
 } from "./use-event-creation";
 
 interface CreationPreviewProps {
-  /** Reference to the scrollable container for position calculations */
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   /** The PlainDate of this column */
   columnDate: Temporal.PlainDate;
-  /** Width of the column (CSS value like "14.28%") */
-  columnWidth: string;
 }
 
 /**
@@ -24,9 +20,7 @@ interface CreationPreviewProps {
  * Renders a faint 30-min block on hover, or a more prominent block during drag.
  */
 export const CreationPreview = memo(function CreationPreviewComponent({
-  scrollContainerRef,
   columnDate,
-  columnWidth,
 }: CreationPreviewProps) {
   const { state, actions, popoverTimes } = useEventCreation();
   const { isCreating, hoverDateTime, startDateTime, endDateTime } = state;

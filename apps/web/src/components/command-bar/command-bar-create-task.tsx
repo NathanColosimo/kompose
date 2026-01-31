@@ -58,11 +58,15 @@ export function CommandBarCreateTask({
   const isValid = parsed.title.length > 0;
 
   // Ref to always have the latest create handler without re-registering
-  const handleCreateRef = useRef<() => void>(() => {});
+  const handleCreateRef = useRef<() => void>(() => {
+    return;
+  });
 
   // Update ref to latest closure (no dependencies needed, runs every render)
   handleCreateRef.current = () => {
-    if (!isValid || createTask.isPending) return;
+    if (!isValid || createTask.isPending) {
+      return;
+    }
 
     const taskData: ClientTaskInsertDecoded = {
       title: parsed.title,

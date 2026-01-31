@@ -26,7 +26,9 @@ export interface ParsedTaskInput {
  * Tokens are: =duration, >dueDate, ~startDate
  * Each pattern captures the value after the symbol until the next token or end.
  */
+const DURATION_PATTERN = /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/;
 const TOKEN_PATTERN = /([=~>])([^=~>]+)/g;
+const FIRST_TOKEN_PATTERN = /[=~>]/;
 
 /**
  * Parse duration string into minutes.
@@ -39,13 +41,17 @@ function parseDuration(durationStr: string): number | null {
   const trimmed = durationStr.trim().toLowerCase();
 
   // Match hours and/or minutes: "2h", "30m", "1h30m", "2h30"
-  const match = trimmed.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/);
-  if (!match) return null;
+  const match = trimmed.match(DURATION_PATTERN);
+  if (!match) {
+    return null;
+  }
 
   const hours = match[1] ? Number.parseInt(match[1], 10) : 0;
   const minutes = match[2] ? Number.parseInt(match[2], 10) : 0;
 
-  if (hours === 0 && minutes === 0) return null;
+  if (hours === 0 && minutes === 0) {
+    return null;
+  }
 
   return hours * 60 + minutes;
 }
@@ -73,7 +79,9 @@ function parseNaturalDate(
   referenceDate?: Date
 ): Temporal.PlainDate | null {
   const parsed = chrono.parseDate(dateStr.trim(), referenceDate);
-  if (!parsed) return null;
+  if (!parsed) {
+    return null;
+  }
   return dateToPlainDate(parsed);
 }
 
@@ -108,7 +116,7 @@ export function parseTaskInput(
   };
 
   // Find the first special token to extract the title
-  const firstTokenMatch = input.match(/[=~>]/);
+  const firstTokenMatch = input.match(FIRST_TOKEN_PATTERN);
   if (firstTokenMatch?.index !== undefined) {
     result.title = input.slice(0, firstTokenMatch.index).trim();
   } else {
@@ -124,7 +132,11 @@ export function parseTaskInput(
   // Reset regex state
   TOKEN_PATTERN.lastIndex = 0;
 
-  while ((match = TOKEN_PATTERN.exec(tokenSection)) !== null) {
+  while (true) {
+    match = TOKEN_PATTERN.exec(tokenSection);
+    if (!match) {
+      break;
+    }
     const [, symbol, value] = match;
     const trimmedValue = value.trim();
 
@@ -144,17 +156,14 @@ export function parseTaskInput(
         result.startDateRaw = trimmedValue;
         result.startDate = parseNaturalDate(trimmedValue, referenceDate);
         break;
+      default:
+        break;
     }
   }
 
   return result;
 }
 
-/**
- * Format duration in minutes to a human-readable string.
- * @param minutes - Duration in minutes
- * @returns Formatted string like "2h", "30m", "1h 30m"
- */
 export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;

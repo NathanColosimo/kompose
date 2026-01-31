@@ -506,7 +506,6 @@ export function EventEditPopover({
 }: EventEditPopoverProps) {
   // Determine mode: explicit prop, or infer from event presence
   const mode = modeProp ?? (event ? "edit" : "create");
-  const isCreateMode = mode === "create";
 
   // Support both controlled and uncontrolled open state
   const [internalOpen, setInternalOpen] = useState(false);
