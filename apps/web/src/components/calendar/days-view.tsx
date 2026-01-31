@@ -4,6 +4,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -19,6 +20,12 @@ import {
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
+import {
+  CreationPreview,
+  EventCreationPopover,
+  EventCreationProvider,
+  useEventCreation,
+} from "./event-creation";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
 import { DayColumn } from "./time-grid/day-column";
@@ -124,8 +131,23 @@ interface DaysViewProps {
 
 /**
  * DaysView - Displays 1-7 days starting from the current date.
+ * Wrapped with EventCreationProvider to enable click-and-drag event creation.
  */
 export const DaysView = memo(function DaysViewComponent({
+  tasks,
+  googleEvents = [],
+}: DaysViewProps) {
+  return (
+    <EventCreationProvider>
+      <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+    </EventCreationProvider>
+  );
+});
+
+/**
+ * Inner component that has access to EventCreationContext.
+ */
+const DaysViewInner = memo(function DaysViewInnerComponent({
   tasks,
   googleEvents = [],
 }: DaysViewProps) {
@@ -134,6 +156,39 @@ export const DaysView = memo(function DaysViewComponent({
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
+
+  // Event creation context for click-and-drag
+  const { actions } = useEventCreation();
+
+  // Memoize handlers to avoid recreating on each render
+  const handleSlotHover = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      actions.onSlotHover(dateTime);
+    },
+    [actions]
+  );
+
+  const handleSlotLeave = useCallback(() => {
+    actions.onSlotLeave();
+  }, [actions]);
+
+  const handleSlotMouseDown = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      actions.onSlotMouseDown(dateTime);
+    },
+    [actions]
+  );
+
+  const handleSlotDragMove = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      actions.onSlotDragMove(dateTime);
+    },
+    [actions]
+  );
+
+  const handleSlotMouseUp = useCallback(() => {
+    actions.onSlotMouseUp();
+  }, [actions]);
 
   // Scroll vertically to 8am on mount for a sensible default view
   useLayoutEffect(() => {
@@ -291,9 +346,20 @@ export const DaysView = memo(function DaysViewComponent({
                 <DayColumn
                   date={day}
                   key={dayKey}
+                  onSlotDragMove={handleSlotDragMove}
+                  onSlotHover={handleSlotHover}
+                  onSlotLeave={handleSlotLeave}
+                  onSlotMouseDown={handleSlotMouseDown}
+                  onSlotMouseUp={handleSlotMouseUp}
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
+                  {/* Creation preview for this column */}
+                  <CreationPreview
+                    columnDate={day}
+                    columnWidth={dayColumnWidth}
+                    scrollContainerRef={scrollRef}
+                  />
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
                         ({ event, start, end, calendarId, accountId }) => (
@@ -316,6 +382,9 @@ export const DaysView = memo(function DaysViewComponent({
             })}
           </div>
         </div>
+
+        {/* Event creation popover - shows after click-and-drag */}
+        <EventCreationPopover />
       </div>
     </div>
   );

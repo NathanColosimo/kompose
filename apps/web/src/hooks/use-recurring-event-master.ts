@@ -52,17 +52,22 @@ export function recurringEventMasterQueryOptions(params: {
 export function useRecurringEventMaster(params: {
   accountId: string;
   calendarId: string;
-  event: GoogleEvent;
+  event: GoogleEvent | null;
   /** Override default enable behavior if needed. */
   enabled?: boolean;
 }) {
+  // If no event is provided (e.g., create mode), disable the query
   const shouldFetchByDefault =
-    !params.event.recurrence?.length && Boolean(params.event.recurringEventId);
+    params.event !== null &&
+    !params.event.recurrence?.length &&
+    Boolean(params.event.recurringEventId);
 
-  const recurringEventId = params.event.recurringEventId;
+  const recurringEventId = params.event?.recurringEventId;
 
   const enabled =
-    Boolean(recurringEventId) && (params.enabled ?? shouldFetchByDefault);
+    params.event !== null &&
+    Boolean(recurringEventId) &&
+    (params.enabled ?? shouldFetchByDefault);
 
   // When disabled, we still use a unique key (includes `event.id`) so we don't
   // accidentally share a disabled key across unrelated events.
@@ -76,7 +81,7 @@ export function useRecurringEventMaster(params: {
         "google-event-master",
         params.accountId,
         params.calendarId,
-        params.event.id,
+        params.event?.id ?? "no-event",
         "disabled",
       ] as const);
 

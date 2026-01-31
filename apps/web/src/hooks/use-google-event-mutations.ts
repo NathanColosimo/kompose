@@ -7,6 +7,15 @@ import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
 /**
+ * Input for creating a new Google Calendar event.
+ */
+export interface CreateGoogleEventInput {
+  accountId: string;
+  calendarId: string;
+  event: CreateEvent;
+}
+
+/**
  * Extended update input that includes the full Event for client-side sanitization.
  * The contract's UpdateEventInput expects CreateEvent, but we accept Event here
  * and sanitize it before sending.
@@ -33,10 +42,27 @@ function sanitizeEventPayload(event: Event): CreateEvent {
 }
 
 /**
- * Google event mutations for update and delete operations.
+ * Google event mutations for create, update, and delete operations.
  */
 export function useGoogleEventMutations() {
   const queryClient = useQueryClient();
+
+  // Create a new Google Calendar event
+  const createEvent = useMutation({
+    mutationFn: async (variables: CreateGoogleEventInput) =>
+      orpc.googleCal.events.create.call({
+        accountId: variables.accountId,
+        calendarId: variables.calendarId,
+        event: variables.event,
+      }),
+    onError: (err) => {
+      toast.error(err.message);
+    },
+    onSettled: () => {
+      // Invalidate events cache to refetch with new event
+      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
+    },
+  });
 
   const updateEvent = useMutation({
     mutationFn: async (variables: UpdateGoogleEventInput) =>
@@ -136,5 +162,5 @@ export function useGoogleEventMutations() {
     },
   });
 
-  return { updateEvent, deleteEvent };
+  return { createEvent, updateEvent, deleteEvent };
 }

@@ -13,6 +13,16 @@ interface DayColumnProps {
   width: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
+  /** Called when mouse enters a slot (for hover preview) */
+  onSlotHover?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse leaves the column area */
+  onSlotLeave?: () => void;
+  /** Called when mouse down on a slot (start event creation) */
+  onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse moves over a slot during creation drag */
+  onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse up on a slot (end event creation) */
+  onSlotMouseUp?: () => void;
 }
 
 export const DayColumn = memo(function DayColumnInner({
@@ -21,6 +31,11 @@ export const DayColumn = memo(function DayColumnInner({
   width,
   children,
   droppableDisabled = false,
+  onSlotHover,
+  onSlotLeave,
+  onSlotMouseDown,
+  onSlotDragMove,
+  onSlotMouseUp,
 }: DayColumnProps) {
   const hours = getHoursRange();
   const isTodayColumn = isToday(date);
@@ -28,6 +43,7 @@ export const DayColumn = memo(function DayColumnInner({
   return (
     <div
       className="relative flex shrink-0 flex-col border-border border-r last:border-r-0"
+      onMouseLeave={onSlotLeave}
       style={{ width, scrollSnapAlign: "start" }}
     >
       {hours.map((hour) => (
@@ -39,6 +55,10 @@ export const DayColumn = memo(function DayColumnInner({
               hour={hour}
               key={minutes}
               minutes={minutes}
+              onSlotDragMove={onSlotDragMove}
+              onSlotHover={onSlotHover}
+              onSlotMouseDown={onSlotMouseDown}
+              onSlotMouseUp={onSlotMouseUp}
               timeZone={timeZone}
             />
           ))}

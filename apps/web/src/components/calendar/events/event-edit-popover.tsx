@@ -7,6 +7,7 @@ import type {
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
+  Check,
   Clock3,
   Palette,
   Repeat,
@@ -58,9 +59,9 @@ import {
 } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  type CreateGoogleEventInput,
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@/hooks/use-google-event-mutations";
@@ -84,7 +85,8 @@ import {
 } from "./event-edit-utils";
 
 interface EventEditPopoverProps {
-  event: GoogleEvent;
+  /** The event to edit. Optional for create mode. */
+  event?: GoogleEvent;
   accountId: string;
   calendarId: string;
   start: Date;
@@ -92,6 +94,12 @@ interface EventEditPopoverProps {
   children: ReactElement;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
+  /** Whether the popover is in create or edit mode. Defaults based on event presence. */
+  mode?: "create" | "edit";
+  /** Controlled open state (optional). If provided, the popover is controlled. */
+  open?: boolean;
+  /** Callback when open state changes (for controlled mode). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface EventFormValues {
@@ -230,6 +238,11 @@ type CloseSaveRequest =
       isRecurring: boolean;
       /** Which scope should be preselected in the post-close scope dialog. */
       defaultScope: RecurrenceScope;
+    }
+  | {
+      type: "create";
+      /** Payload for creating a new event */
+      payload: CreateGoogleEventInput;
     };
 
 function RecurrenceEditor({
@@ -476,6 +489,7 @@ function RecurrenceEditor({
 
 /**
  * Inline editor for Google events, mirroring TaskEditPopover behavior.
+ * Supports both create and edit modes.
  */
 export function EventEditPopover({
   event,
@@ -486,9 +500,30 @@ export function EventEditPopover({
   children,
   side = "right",
   align = "start",
+  mode: modeProp,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: EventEditPopoverProps) {
-  const [open, setOpen] = useState(false);
-  const { updateEvent, deleteEvent } = useGoogleEventMutations();
+  // Determine mode: explicit prop, or infer from event presence
+  const mode = modeProp ?? (event ? "edit" : "create");
+  const isCreateMode = mode === "create";
+
+  // Support both controlled and uncontrolled open state
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = useCallback(
+    (nextOpen: boolean) => {
+      if (isControlled) {
+        controlledOnOpenChange?.(nextOpen);
+      } else {
+        setInternalOpen(nextOpen);
+      }
+    },
+    [isControlled, controlledOnOpenChange]
+  );
+
+  const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
   const calendars = useAtomValue(googleCalendarsDataAtom);
 
@@ -535,6 +570,10 @@ export function EventEditPopover({
   );
 
   const openMoveDialog = useCallback(() => {
+    // Move is only available in edit mode
+    if (!event) {
+      return;
+    }
     const isRecurring = Boolean(
       event.recurringEventId || event.recurrence?.length
     );
@@ -550,7 +589,7 @@ export function EventEditPopover({
       null;
     setMoveDestinationCalendarId(firstOther);
     setMoveDialogOpen(true);
-  }, [calendarId, calendarOptions, event.recurringEventId, event.recurrence]);
+  }, [calendarId, calendarOptions, event]);
 
   const commitPendingSave = useCallback(async () => {
     if (!pendingSave) {
@@ -564,8 +603,11 @@ export function EventEditPopover({
     setPendingSave(null);
   }, [pendingSave, selectedScope, updateEvent]);
 
-  // Handle delete - opens appropriate confirmation dialog
+  // Handle delete - opens appropriate confirmation dialog (edit mode only)
   const handleDelete = useCallback(() => {
+    if (!event) {
+      return;
+    }
     setOpen(false);
     // Show scope dialog for recurring events
     if (event.recurringEventId || event.recurrence?.length) {
@@ -576,10 +618,13 @@ export function EventEditPopover({
       // Non-recurring: show simple confirmation
       setSimpleDeleteConfirmOpen(true);
     }
-  }, [event.recurringEventId, event.recurrence?.length]);
+  }, [event, setOpen]);
 
   // Commit delete for non-recurring events
   const confirmSimpleDelete = useCallback(() => {
+    if (!event) {
+      return;
+    }
     deleteEvent.mutate({
       accountId,
       calendarId,
@@ -587,17 +632,20 @@ export function EventEditPopover({
       scope: "this",
     });
     setSimpleDeleteConfirmOpen(false);
-  }, [accountId, calendarId, deleteEvent, event.id]);
+  }, [accountId, calendarId, deleteEvent, event]);
 
   // Commit delete with selected scope
   const commitDelete = useCallback(async () => {
+    if (!event) {
+      return;
+    }
     await deleteEvent.mutateAsync({
       accountId,
       calendarId,
       eventId: event.id,
       scope: deleteScope,
     });
-  }, [accountId, calendarId, deleteEvent, deleteScope, event.id]);
+  }, [accountId, calendarId, deleteEvent, deleteScope, event]);
 
   const handleClose = useCallback(
     (intent?: "move") => {
@@ -608,6 +656,12 @@ export function EventEditPopover({
         if (intent === "move") {
           openMoveDialog();
         }
+        return;
+      }
+
+      // Handle create mode
+      if (request.type === "create") {
+        createEvent.mutate(request.payload);
         return;
       }
 
@@ -643,7 +697,7 @@ export function EventEditPopover({
         });
       }
     },
-    [openMoveDialog, updateEvent]
+    [createEvent, openMoveDialog, setOpen, updateEvent]
   );
 
   return (
@@ -670,6 +724,7 @@ export function EventEditPopover({
             calendarId={calendarId}
             end={end}
             event={event}
+            mode={mode}
             onDelete={handleDelete}
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
@@ -774,6 +829,9 @@ export function EventEditPopover({
                 if (!moveDestinationCalendarId) {
                   return;
                 }
+                if (!event) {
+                  return;
+                }
                 await moveEvent.mutateAsync({
                   accountId,
                   calendarId,
@@ -847,22 +905,25 @@ function EventEditForm({
   calendarId,
   start,
   end,
+  mode,
   onRegisterCloseSaveRequest,
   onRequestMove,
   onDelete,
   open,
 }: {
-  event: GoogleEvent;
+  event?: GoogleEvent;
   accountId: string;
   calendarId: string;
   start: Date;
   end: Date;
+  mode: "create" | "edit";
   onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
   onRequestMove: () => void;
   onDelete: () => void;
   open: boolean;
 }) {
-  // Delete hotkey - only active when popover is open, skips text inputs
+  const isCreateMode = mode === "create";
+  // Delete hotkey - only active when popover is open in edit mode, skips text inputs
   // Uses "backspace" for Mac compatibility (Mac's delete key = backspace)
   useHotkeys(
     "backspace, delete",
@@ -876,26 +937,32 @@ function EventEditForm({
       e.preventDefault();
       onDelete();
     },
-    { enabled: open },
-    [onDelete, open]
+    { enabled: open && !isCreateMode },
+    [onDelete, open, isCreateMode]
   );
   /**
    * We intentionally do not run mutations from inside the form.
    * The popover wrapper controls “save on close” and dialogs.
    */
   const hasUserEditedRef = useRef(false);
-  const masterQuery = useRecurringEventMaster({ accountId, calendarId, event });
 
-  const isAllDay = Boolean(event.start?.date);
+  // Only query for recurring event master in edit mode when event exists
+  const masterQuery = useRecurringEventMaster({
+    accountId,
+    calendarId,
+    event: event ?? (null as GoogleEvent | null),
+  });
+
+  const isAllDay = Boolean(event?.start?.date);
   const initialStartDate = useMemo(() => {
-    if (isAllDay && event.start?.date) {
+    if (isAllDay && event?.start?.date) {
       return new Date(event.start.date);
     }
     return start;
-  }, [event.start?.date, isAllDay, start]);
+  }, [event?.start?.date, isAllDay, start]);
 
   const initialEndDate = useMemo(() => {
-    if (isAllDay && event.end?.date) {
+    if (isAllDay && event?.end?.date) {
       // Google all-day events use exclusive end date, subtract 1 day for display
       const endPlainDate = pickerDateToTemporal(new Date(event.end.date));
       const adjustedDate = endPlainDate.subtract({ days: 1 });
@@ -906,22 +973,22 @@ function EventEditForm({
       );
     }
     return end;
-  }, [end, event.end?.date, isAllDay]);
+  }, [end, event?.end?.date, isAllDay]);
 
   const recurrenceSource = useMemo(
     () =>
-      event.recurrence?.length
+      event?.recurrence?.length
         ? event.recurrence
         : (masterQuery.data?.recurrence ?? []),
-    [event.recurrence, masterQuery.data?.recurrence]
+    [event?.recurrence, masterQuery.data?.recurrence]
   );
 
   const initialValues = useMemo<EventFormValues>(
     () => ({
-      summary: event.summary ?? "",
-      description: event.description ?? "",
-      location: event.location ?? "",
-      colorId: event.colorId ?? undefined,
+      summary: event?.summary ?? "",
+      description: event?.description ?? "",
+      location: event?.location ?? "",
+      colorId: event?.colorId ?? undefined,
       allDay: isAllDay,
       startDate: initialStartDate ?? null,
       endDate: initialEndDate ?? null,
@@ -932,10 +999,10 @@ function EventEditForm({
       recurrence: recurrenceSource,
     }),
     [
-      event.colorId,
-      event.description,
-      event.location,
-      event.summary,
+      event?.colorId,
+      event?.description,
+      event?.location,
+      event?.summary,
       recurrenceSource,
       initialEndDate,
       initialStartDate,
@@ -1013,7 +1080,42 @@ function EventEditForm({
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      // If the user never interacted, do not send an update.
+      // Handle create mode
+      if (isCreateMode) {
+        // In create mode, require a title
+        const trimmedTitle = values.summary.trim();
+        if (!trimmedTitle) {
+          return { type: "none" } satisfies CloseSaveRequest;
+        }
+
+        const temporalPayload = buildTemporalPayload(
+          values,
+          clampToStartIfNeeded
+        );
+        if (!temporalPayload) {
+          return { type: "none" } satisfies CloseSaveRequest;
+        }
+
+        return {
+          type: "create",
+          payload: {
+            accountId,
+            calendarId,
+            event: {
+              summary: trimmedTitle,
+              description: values.description?.trim() || undefined,
+              location: values.location?.trim() || undefined,
+              colorId: values.colorId ?? undefined,
+              recurrence:
+                values.recurrence?.length > 0 ? values.recurrence : undefined,
+              start: temporalPayload.startPayload,
+              end: temporalPayload.endPayload,
+            },
+          },
+        };
+      }
+
+      // Edit mode: If the user never interacted, do not send an update.
       if (!hasUserEditedRef.current) {
         return { type: "none" } satisfies CloseSaveRequest;
       }
@@ -1027,11 +1129,11 @@ function EventEditForm({
       }
 
       const isRecurring = Boolean(
-        event.recurringEventId ||
-          event.recurrence?.length ||
+        event?.recurringEventId ||
+          event?.recurrence?.length ||
           masterQuery.data?.recurrence?.length
       );
-      const defaultScope: RecurrenceScope = event.recurringEventId
+      const defaultScope: RecurrenceScope = event?.recurringEventId
         ? "this"
         : "all";
 
@@ -1039,20 +1141,21 @@ function EventEditForm({
       const variables: UpdateGoogleEventInput = {
         accountId,
         calendarId,
-        eventId: event.id,
+        eventId: event?.id ?? "",
         event: {
           ...event,
+          id: event?.id ?? "",
           summary: values.summary.trim(),
           description: values.description ?? "",
           location: values.location ?? "",
           colorId: values.colorId ?? undefined,
-          recurrence: values.recurrence ?? event.recurrence,
+          recurrence: values.recurrence ?? event?.recurrence,
           start: {
-            ...event.start,
+            ...event?.start,
             ...temporalPayload.startPayload,
           },
           end: {
-            ...event.end,
+            ...event?.end,
             ...temporalPayload.endPayload,
           },
         },
@@ -1065,7 +1168,14 @@ function EventEditForm({
         defaultScope,
       };
     },
-    [accountId, calendarId, clampToStartIfNeeded, event, masterQuery.data]
+    [
+      accountId,
+      calendarId,
+      clampToStartIfNeeded,
+      event,
+      isCreateMode,
+      masterQuery.data,
+    ]
   );
 
   // Register close-save callback so the popover can decide what to do on close.
@@ -1079,11 +1189,14 @@ function EventEditForm({
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = watchedValues.recurrence?.[0];
-  const canEditRecurrence = Boolean(
-    event.recurrence?.length ||
-      event.recurringEventId ||
-      masterQuery.data?.recurrence?.length
-  );
+  // In create mode, always allow recurrence editing. In edit mode, only if the event is recurring.
+  const canEditRecurrence =
+    isCreateMode ||
+    Boolean(
+      event?.recurrence?.length ||
+        event?.recurringEventId ||
+        masterQuery.data?.recurrence?.length
+    );
 
   return (
     <form
@@ -1155,12 +1268,13 @@ function EventEditForm({
         </Popover>
 
         <Input
+          autoFocus={isCreateMode}
           className="flex-1"
           onChange={(e) => {
             hasUserEditedRef.current = true;
             setValue("summary", e.target.value, { shouldDirty: true });
           }}
-          placeholder="Event title"
+          placeholder={isCreateMode ? "Event title (required)" : "Event title"}
           value={watchedValues.summary}
         />
       </div>
@@ -1191,24 +1305,33 @@ function EventEditForm({
       <Separator />
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={watchedValues.allDay}
-            id="all-day-switch"
-            onCheckedChange={(checked) => {
-              hasUserEditedRef.current = true;
-              setValue("allDay", checked, { shouldDirty: true });
-            }}
-          />
-          <Label
-            className="font-medium text-muted-foreground text-xs"
-            htmlFor="all-day-switch"
+        {/* All-day toggle button with checkbox indicator */}
+        <Button
+          className="gap-2 text-xs"
+          onClick={() => {
+            hasUserEditedRef.current = true;
+            setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {/* Checkbox indicator */}
+          <div
+            className={cn(
+              "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+              watchedValues.allDay
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-muted-foreground/50 bg-transparent"
+            )}
           >
-            All day
-          </Label>
-        </div>
-        {canEditRecurrence ? (
-          <div className="flex items-center gap-2">
+            {watchedValues.allDay ? <Check className="h-3 w-3" /> : null}
+          </div>
+          All day
+        </Button>
+        <div className="flex items-center gap-2">
+          {/* Move button - only in edit mode for recurring events */}
+          {!isCreateMode && canEditRecurrence ? (
             <Button
               onClick={onRequestMove}
               size="sm"
@@ -1217,6 +1340,9 @@ function EventEditForm({
             >
               Move…
             </Button>
+          ) : null}
+          {/* Recurrence editor - available in create mode and for recurring events in edit mode */}
+          {canEditRecurrence ? (
             <Popover>
               <PopoverTrigger asChild>
                 <Button className="h-8 w-8" size="icon" variant="outline">
@@ -1237,8 +1363,8 @@ function EventEditForm({
                 />
               </PopoverContent>
             </Popover>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -1383,18 +1509,21 @@ function EventEditForm({
         </div>
       )}
 
-      <Separator />
-
-      {/* Delete button */}
-      <Button
-        className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-        onClick={onDelete}
-        type="button"
-        variant="outline"
-      >
-        <Trash2 className="h-4 w-4" />
-        Delete event
-      </Button>
+      {/* Delete button - only in edit mode */}
+      {isCreateMode ? null : (
+        <>
+          <Separator />
+          <Button
+            className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={onDelete}
+            type="button"
+            variant="outline"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete event
+          </Button>
+        </>
+      )}
     </form>
   );
 }

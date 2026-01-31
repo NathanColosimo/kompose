@@ -1,7 +1,7 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 import type { SlotData } from "../dnd/types";
@@ -13,6 +13,14 @@ interface TimeSlotProps {
   timeZone: string;
   children?: React.ReactNode;
   droppableDisabled?: boolean;
+  /** Called when mouse enters the slot (for hover preview) */
+  onSlotHover?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse down on the slot (start event creation) */
+  onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse moves over the slot during creation drag */
+  onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse up on the slot (end event creation) */
+  onSlotMouseUp?: () => void;
 }
 
 export const TimeSlot = memo(function TimeSlotInner({
@@ -22,6 +30,10 @@ export const TimeSlot = memo(function TimeSlotInner({
   timeZone,
   children,
   droppableDisabled,
+  onSlotHover,
+  onSlotMouseDown,
+  onSlotDragMove,
+  onSlotMouseUp,
 }: TimeSlotProps) {
   // Build slot ID for droppable identification
   const slotId = `slot-${date.toString()}-${hour}-${minutes}`;
@@ -50,6 +62,43 @@ export const TimeSlot = memo(function TimeSlotInner({
 
   const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
 
+  // Mouse event handlers for event creation
+  const handleMouseEnter = useCallback(
+    (e: React.MouseEvent) => {
+      // Only trigger hover if primary button is pressed (during drag) or no buttons pressed
+      if (e.buttons === 1 && onSlotDragMove) {
+        // Dragging with left button pressed
+        onSlotDragMove(dateTime);
+      } else if (e.buttons === 0 && onSlotHover) {
+        // Just hovering
+        onSlotHover(dateTime);
+      }
+    },
+    [dateTime, onSlotHover, onSlotDragMove]
+  );
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle left mouse button
+      if (e.button !== 0) {
+        return;
+      }
+      onSlotMouseDown?.(dateTime);
+    },
+    [dateTime, onSlotMouseDown]
+  );
+
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle left mouse button
+      if (e.button !== 0) {
+        return;
+      }
+      onSlotMouseUp?.();
+    },
+    [onSlotMouseUp]
+  );
+
   return (
     <div
       className={cn(
@@ -57,6 +106,9 @@ export const TimeSlot = memo(function TimeSlotInner({
         isThirtyMinuteBoundary ? "border-border/50 border-t" : "",
         isOver ? "bg-primary/10" : ""
       )}
+      onMouseDown={handleMouseDown}
+      onMouseEnter={handleMouseEnter}
+      onMouseUp={handleMouseUp}
       ref={setNodeRef}
     >
       {children}
