@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
+import { CommandBar } from "@/components/command-bar/command-bar";
 import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
@@ -47,6 +48,7 @@ export default function DashboardLayout({
       {/* DndContext wraps both sidebar (drag source) and content (drop target) */}
       <CalendarDndProvider>
         <CalendarHotkeys />
+        <CommandBar />
         <SidebarLeft />
         <SidebarInset>{children}</SidebarInset>
         <SidebarRight />

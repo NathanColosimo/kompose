@@ -2,6 +2,7 @@
 
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
+import { commandBarOpenAtom } from "@/atoms/command-bar";
 import {
   currentDateAtom,
   timezoneAtom,
@@ -17,6 +18,7 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * CalendarHotkeys - Global hotkey bindings for calendar navigation and view control.
  *
  * Hotkeys:
+ * - meta+k: Open command bar
  * - 1-7: Set visible days count
  * - w: Set visible days to 7 (week view)
  * - t: Go to today
@@ -33,7 +35,19 @@ export function CalendarHotkeys() {
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
   const setSidebarRightOpen = useSetAtom(sidebarRightOpenAtom);
+  const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const timeZone = useAtomValue(timezoneAtom);
+
+  // "meta+k" (cmd+k on Mac) to open command bar
+  useHotkeys(
+    "meta+k",
+    (e) => {
+      e.preventDefault(); // Prevent browser's default cmd+k behavior
+      setCommandBarOpen(true);
+    },
+    { enableOnFormTags: true }, // Allow opening even when in form fields
+    [setCommandBarOpen]
+  );
 
   // Number keys 1-7 to set visible days count
   useHotkeys("1", () => setVisibleDaysCount(1), hotkeyOptions, []);
