@@ -34,23 +34,23 @@ export function AppHeader() {
 
   return (
     <header
-      className={cn(
-        "flex h-10 shrink-0 items-center border-b bg-background px-2",
-        // Make the header draggable in Tauri (no effect on web)
-        "[--webkit-app-region:drag]"
-      )}
-      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      className="flex h-10 shrink-0 items-center border-b bg-background px-2"
+      // Tauri v2 uses data-tauri-drag-region for window dragging (no effect on web)
+      data-tauri-drag-region
     >
       {/* Left: Traffic light safe area (~76px for macOS traffic lights) */}
-      <div className="w-[76px] shrink-0" />
+      <div className="w-[76px] shrink-0" data-tauri-drag-region />
 
-      {/* Center: Search bar */}
-      <div className="flex flex-1 justify-center">
+      {/* Center: Search bar - container is draggable, button is not */}
+      <div className="flex flex-1 justify-center" data-tauri-drag-region>
         <SearchButton />
       </div>
 
-      {/* Right: User menu */}
-      <div className="flex w-[76px] shrink-0 justify-end">
+      {/* Right: User menu - container is draggable, dropdown is not */}
+      <div
+        className="flex w-[76px] shrink-0 justify-end"
+        data-tauri-drag-region
+      >
         {user && <UserMenu user={user} />}
       </div>
     </header>
@@ -68,12 +68,9 @@ function SearchButton() {
     <button
       className={cn(
         "flex h-7 w-full max-w-md items-center gap-2 rounded-md border bg-muted/50 px-3 text-muted-foreground text-sm transition-colors",
-        "hover:bg-muted hover:text-foreground",
-        // Prevent drag on interactive elements
-        "[--webkit-app-region:no-drag]"
+        "hover:bg-muted hover:text-foreground"
       )}
       onClick={() => setCommandBarOpen(true)}
-      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       type="button"
     >
       <Search className="size-4 shrink-0" />
@@ -111,10 +108,7 @@ function UserMenu({ user }: { user: User }) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        className="rounded-full outline-none ring-offset-background [--webkit-app-region:no-drag] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
+      <DropdownMenuTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
         <Avatar className="size-7 cursor-pointer">
           <AvatarImage alt={user.name} src={user.image || ""} />
           <AvatarFallback className="text-xs">{initials}</AvatarFallback>
