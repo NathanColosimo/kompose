@@ -1,3 +1,4 @@
+import * as Linking from "expo-linking";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -19,7 +20,47 @@ function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Google sign-in (preferred path).
+   *
+   * Better Auth handles new vs existing users internally, so this works for
+   * "sign up" as well.
+   */
+  async function handleGoogleSignUp() {
+    if (isSocialLoading) {
+      return;
+    }
+
+    setIsSocialLoading(true);
+    setError(null);
+
+    const callbackURL = Linking.createURL("/(drawer)/(tabs)");
+    const errorCallbackURL = Linking.createURL("/(drawer)");
+
+    await authClient.signIn.social(
+      {
+        provider: "google",
+        callbackURL,
+        newUserCallbackURL: callbackURL,
+        errorCallbackURL,
+      },
+      {
+        onError(err) {
+          setError(err.error?.message || "Failed to sign up with Google");
+          setIsSocialLoading(false);
+        },
+        onSuccess() {
+          queryClient.refetchQueries();
+        },
+        onFinished() {
+          setIsSocialLoading(false);
+        },
+      }
+    );
+  }
 
   async function handleSignUp() {
     setIsLoading(true);
@@ -70,6 +111,24 @@ function SignUp() {
           </Text>
         </View>
       ) : null}
+
+      <TouchableOpacity
+        disabled={isSocialLoading}
+        onPress={handleGoogleSignUp}
+        style={[
+          styles.socialButton,
+          {
+            backgroundColor: theme.primary,
+            opacity: isSocialLoading ? 0.5 : 1,
+          },
+        ]}
+      >
+        {isSocialLoading ? (
+          <ActivityIndicator color="#ffffff" size="small" />
+        ) : (
+          <Text style={styles.buttonText}>Create with Google</Text>
+        )}
+      </TouchableOpacity>
 
       <TextInput
         onChangeText={setName}
@@ -154,6 +213,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 14,
+  },
+  socialButton: {
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   input: {
     borderWidth: 1,
