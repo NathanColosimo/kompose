@@ -248,7 +248,7 @@ export const DaysView = memo(function DaysViewComponent({
             </div>
 
             {hasAllDayEvents ? (
-              <div className="flex border-border border-t border-b bg-background/80">
+              <div className="flex border-border border-t bg-background/80">
                 {visibleDays.map((day) => {
                   const dayKey = day.toString();
                   const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];

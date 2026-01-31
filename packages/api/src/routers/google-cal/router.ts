@@ -6,7 +6,7 @@ import {
   type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Data, Effect } from "effect";
+import { Console, Data, Effect } from "effect";
 import { requireAuth } from "../..";
 import { googleCalContract } from "./contract";
 
@@ -235,6 +235,7 @@ export const googleCalRouter = os.router({
         const serviceEffect = Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           const colors = yield* service.listColors();
+          yield* Console.log(colors);
           return colors;
         });
 
@@ -268,6 +269,11 @@ export const googleCalRouter = os.router({
             input.timeMin,
             input.timeMax
           );
+          for (const event of events) {
+            if (event.summary?.includes("Work")) {
+              yield* Console.log(event.colorId);
+            }
+          }
           return events;
         });
 

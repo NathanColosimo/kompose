@@ -18,7 +18,7 @@ export const DayHeader = memo(function DayHeaderInner({
   return (
     <div
       className={cn(
-        "flex h-12 shrink-0 items-center justify-center gap-2 border-border border-r",
+        "flex h-12 shrink-0 items-center justify-center gap-2 border-border border-r last:border-r-0",
         isTodayHighlight ? "bg-primary/5" : ""
       )}
       style={{ width, scrollSnapAlign: "start" }}
