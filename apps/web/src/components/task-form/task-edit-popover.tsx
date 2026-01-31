@@ -11,6 +11,7 @@ import {
   Clock3,
   Timer,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   type ReactElement,
@@ -284,7 +285,7 @@ function TaskEditForm({
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
       {/* Row 1: Start date, time, duration (calendar scheduling) */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
         <Controller
           control={control}
           name="startDate"
@@ -301,10 +302,10 @@ function TaskEditForm({
                   <CalendarClock className="h-4 w-4 shrink-0" />
                   <span className="truncate">
                     {field.value
-                      ? formatPlainDate(field.value, {
+                      ? `Start: ${formatPlainDate(field.value, {
                           month: "short",
                           day: "numeric",
-                        })
+                        })}`
                       : "Schedule"}
                   </span>
                 </Button>
@@ -319,6 +320,20 @@ function TaskEditForm({
                     field.value ? temporalToPickerDate(field.value) : undefined
                   }
                 />
+                {field.value && (
+                  <div className="border-t p-2">
+                    <Button
+                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                      onClick={() => field.onChange(null)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear date
+                    </Button>
+                  </div>
+                )}
               </PopoverContent>
             </Popover>
           )}
@@ -405,10 +420,10 @@ function TaskEditForm({
                 >
                   <CalendarCheck className="h-4 w-4 shrink-0" />
                   {field.value
-                    ? formatPlainDate(field.value, {
+                    ? `Due: ${formatPlainDate(field.value, {
                         month: "short",
                         day: "numeric",
-                      })
+                      })}`
                     : "Due date"}
                 </Button>
               </PopoverTrigger>
@@ -424,6 +439,20 @@ function TaskEditForm({
                       : temporalToPickerDate(field.value)
                   }
                 />
+                {field.value && (
+                  <div className="border-t p-2">
+                    <Button
+                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                      onClick={() => field.onChange(null)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear date
+                    </Button>
+                  </div>
+                )}
               </PopoverContent>
             </Popover>
           )}

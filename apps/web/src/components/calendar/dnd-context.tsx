@@ -18,7 +18,7 @@ import type {
 } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { Temporal } from "temporal-polyfill";
+import { Temporal } from "temporal-polyfill";
 import { timezoneAtom } from "@/atoms/current-date";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import {
@@ -131,9 +131,27 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   /**
    * Handle unscheduling a task by clearing startDate and startTime but keeping the duration.
    * Called when a task is dropped on the sidebar task list.
+   * If dropped on the "Today" tab, sets startDate to today but clears startTime (unplanned for today).
    */
   const handleTaskUnschedule = useCallback(
-    (task: TaskSelectDecoded) => {
+    (task: TaskSelectDecoded, activeTab?: string) => {
+      // When dropping on the "Today" tab, set startDate to today but clear startTime
+      // This places the task in the "Unplanned" section for today
+      if (activeTab === "Today") {
+        const today = Temporal.Now.plainDateISO(timeZone);
+        updateTask.mutate({
+          id: task.id,
+          task: {
+            startDate: today,
+            startTime: null,
+            durationMinutes: task.durationMinutes,
+          },
+          scope: "this",
+        });
+        return;
+      }
+
+      // Default behavior: clear both startDate and startTime (move to inbox)
       updateTask.mutate({
         id: task.id,
         task: {
@@ -145,7 +163,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         scope: "this",
       });
     },
-    [updateTask]
+    [updateTask, timeZone]
   );
 
   const handleTaskResizeDrop = useCallback(
@@ -222,12 +240,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Handle drops on the sidebar list by unscheduling task cards.
   const handleSidebarDrop = useCallback(
-    (data: DragData) => {
+    (data: DragData, activeTab?: string) => {
       if (data.type !== "task") {
         return;
       }
 
-      handleTaskUnschedule(data.task);
+      handleTaskUnschedule(data.task, activeTab);
     },
     [handleTaskUnschedule]
   );
@@ -293,7 +311,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
 
       if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
-        handleSidebarDrop(data);
+        // Extract the active tab from the droppable's data
+        const sidebarData = over.data?.current as
+          | { activeTab?: string }
+          | undefined;
+        handleSidebarDrop(data, sidebarData?.activeTab);
         return;
       }
 
@@ -551,7 +573,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const overRect = over.rect;
       const slotData = over.data?.current as SlotData | undefined;
 
-      if (!(overRect && data && slotData)) {
+      // Only show preview when hovering over calendar slots (which have dateTime)
+      // Sidebar droppables have different data (e.g. activeTab) without dateTime
+      if (!(overRect && data && slotData?.dateTime)) {
         clearPreview();
         return;
       }

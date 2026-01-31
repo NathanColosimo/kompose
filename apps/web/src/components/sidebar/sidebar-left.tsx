@@ -1,8 +1,12 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { Inbox } from "lucide-react";
-import { type ComponentProps, useState } from "react";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useAtomValue } from "jotai";
+import { CalendarClock, Inbox } from "lucide-react";
+import { type ComponentProps, useMemo, useState } from "react";
+import { Temporal } from "temporal-polyfill";
+import { timezoneAtom } from "@/atoms/current-date";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
   Sidebar,
@@ -17,35 +21,102 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useTasks } from "@/hooks/use-tasks";
+import { todayPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskItem } from "./task-item";
 
 /** Droppable ID for the sidebar task list area */
 export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
-// This is sample data
+// Navigation tabs for the sidebar icon strip
 const navMain = [
   {
     title: "Inbox",
     url: "/dashboard",
     icon: Inbox,
-    isActive: true,
+  },
+  {
+    title: "Today",
+    url: "/dashboard",
+    icon: CalendarClock,
   },
 ];
 
+// ============================================================================
+// TASK FILTERS
+// ============================================================================
+
+/** Filter out recurring tasks (both masters and occurrences) */
+const isNonRecurring = (task: TaskSelectDecoded): boolean =>
+  task.seriesMasterId === null;
+
+/** Inbox: uncompleted tasks with no startDate/startTime */
+const isInboxTask = (task: TaskSelectDecoded): boolean =>
+  task.status !== "done" && task.startDate === null && task.startTime === null;
+
+/** Overdue: uncompleted tasks with due date in the past */
+const isOverdue = (
+  task: TaskSelectDecoded,
+  today: Temporal.PlainDate
+): boolean =>
+  task.status !== "done" &&
+  task.dueDate !== null &&
+  Temporal.PlainDate.compare(task.dueDate, today) < 0;
+
+/** Unplanned: tasks with past/today startDate, no startTime, due date in future (or null) */
+const isUnplanned = (
+  task: TaskSelectDecoded,
+  today: Temporal.PlainDate
+): boolean =>
+  task.startDate !== null &&
+  task.startTime === null &&
+  Temporal.PlainDate.compare(task.startDate, today) <= 0 &&
+  (task.dueDate === null ||
+    Temporal.PlainDate.compare(task.dueDate, today) > 0);
+
 export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
-  // Note: I'm using state to show active item.
-  // IRL you should use the url/router.
   const [activeItem, setActiveItem] = useState(navMain[0]);
   const { setOpen } = useSidebar();
+  const timeZone = useAtomValue(timezoneAtom);
   const {
     tasksQuery: { data: tasks, isLoading, error },
   } = useTasks();
 
-  // Make the task list a droppable area
+  // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
     id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
+    data: {
+      activeTab: activeItem?.title ?? "Inbox",
+    },
   });
+
+  // Get today's date for filtering
+  const today = useMemo(() => todayPlainDate(timeZone), [timeZone]);
+
+  // Filter and sort tasks based on active view
+  const { inboxTasks, overdueTasks, unplannedTasks } = useMemo(() => {
+    if (!tasks) {
+      return { inboxTasks: [], overdueTasks: [], unplannedTasks: [] };
+    }
+
+    // Base filter: exclude recurring tasks
+    const nonRecurring = tasks.filter(isNonRecurring);
+
+    // Inbox: uncompleted, no startDate/startTime, sorted by updatedAt desc
+    const inbox = nonRecurring
+      .filter(isInboxTask)
+      .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
+
+    // Today view sections
+    const overdue = nonRecurring.filter((t) => isOverdue(t, today));
+    const unplanned = nonRecurring.filter((t) => isUnplanned(t, today));
+
+    return {
+      inboxTasks: inbox,
+      overdueTasks: overdue,
+      unplannedTasks: unplanned,
+    };
+  }, [tasks, today]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -62,13 +133,62 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       );
     }
 
-    if (!tasks || tasks.length === 0) {
+    // Inbox view: flat list sorted by updatedAt
+    if (activeItem?.title === "Inbox") {
+      if (inboxTasks.length === 0) {
+        return (
+          <div className="p-4 text-muted-foreground text-sm">
+            No tasks in inbox.
+          </div>
+        );
+      }
+      return inboxTasks.map((task) => <TaskItem key={task.id} task={task} />);
+    }
+
+    // Today view: sections for Overdue and Unplanned
+    if (activeItem?.title === "Today") {
+      const hasOverdue = overdueTasks.length > 0;
+      const hasUnplanned = unplannedTasks.length > 0;
+
+      if (!(hasOverdue || hasUnplanned)) {
+        return (
+          <div className="p-4 text-muted-foreground text-sm">
+            Nothing for today.
+          </div>
+        );
+      }
+
       return (
-        <div className="p-4 text-muted-foreground text-sm">No tasks found.</div>
+        <div className="flex flex-col">
+          {/* Overdue section */}
+          {hasOverdue && (
+            <div>
+              <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Overdue
+              </div>
+              {overdueTasks.map((task) => (
+                <TaskItem key={task.id} task={task} />
+              ))}
+            </div>
+          )}
+
+          {/* Unplanned section */}
+          {hasUnplanned && (
+            <div>
+              <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Unplanned
+              </div>
+              {unplannedTasks.map((task) => (
+                <TaskItem key={task.id} task={task} />
+              ))}
+            </div>
+          )}
+        </div>
       );
     }
 
-    return tasks.map((task) => <TaskItem key={task.id} task={task} />);
+    // Fallback (shouldn't happen)
+    return null;
   };
 
   return (

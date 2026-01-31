@@ -1,7 +1,7 @@
 "use client";
 
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
-import { CalendarIcon, Plus } from "lucide-react";
+import { CalendarIcon, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { Button } from "@/components/ui/button";
@@ -141,6 +141,20 @@ export function CreateTaskForm() {
                             : undefined
                         }
                       />
+                      {field.value && (
+                        <div className="border-t p-2">
+                          <Button
+                            className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => field.onChange(null)}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <X className="h-4 w-4" />
+                            Clear date
+                          </Button>
+                        </div>
+                      )}
                     </PopoverContent>
                   </Popover>
                 )}
@@ -182,6 +196,20 @@ export function CreateTaskForm() {
                             : undefined
                         }
                       />
+                      {field.value && (
+                        <div className="border-t p-2">
+                          <Button
+                            className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => field.onChange(null)}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <X className="h-4 w-4" />
+                            Clear date
+                          </Button>
+                        </div>
+                      )}
                     </PopoverContent>
                   </Popover>
                 )}
