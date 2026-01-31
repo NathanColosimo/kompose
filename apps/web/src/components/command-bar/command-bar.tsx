@@ -1,7 +1,7 @@
 "use client";
 
 import { useAtom } from "jotai";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { commandBarOpenAtom } from "@/atoms/command-bar";
 import {
   Command,
@@ -9,6 +9,7 @@ import {
   CommandInput,
   CommandList,
 } from "@/components/ui/command";
+import { CommandBarCreateTask } from "./command-bar-create-task";
 import { CommandBarRoot } from "./command-bar-root";
 import { CommandBarSearchTasks } from "./command-bar-search-tasks";
 
@@ -16,8 +17,9 @@ import { CommandBarSearchTasks } from "./command-bar-search-tasks";
  * Available views in the command bar.
  * - root: Main actions list
  * - search-tasks: Task search sub-view
+ * - create-task: Create task with NLP input
  */
-type CommandBarView = "root" | "search-tasks";
+type CommandBarView = "root" | "search-tasks" | "create-task";
 
 /**
  * CommandBar - Unified command palette (cmd+k) for quick actions.
@@ -33,6 +35,9 @@ export function CommandBar() {
   const [view, setView] = useState<CommandBarView>("root");
   const [search, setSearch] = useState("");
 
+  // Ref to store the create task submit function
+  const createTaskSubmitRef = useRef<(() => void) | null>(null);
+
   // Reset state when dialog closes
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -46,7 +51,7 @@ export function CommandBar() {
     [setOpen]
   );
 
-  // Handle escape key: go back to root if in sub-view, otherwise close
+  // Handle keyboard events at the Command level
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -56,6 +61,12 @@ export function CommandBar() {
           setSearch("");
         }
         // If in root view, let the dialog handle closing
+      }
+
+      // Handle Enter in create-task view
+      if (e.key === "Enter" && view === "create-task") {
+        e.preventDefault();
+        createTaskSubmitRef.current?.();
       }
     },
     [view]
@@ -72,6 +83,8 @@ export function CommandBar() {
     switch (view) {
       case "search-tasks":
         return "Search tasks...";
+      case "create-task":
+        return "Task title =duration >due ~start...";
       default:
         return "Type a command or search...";
     }
@@ -88,6 +101,15 @@ export function CommandBar() {
         <CommandList>
           {view === "root" && <CommandBarRoot onNavigate={navigateToView} />}
           {view === "search-tasks" && <CommandBarSearchTasks search={search} />}
+          {view === "create-task" && (
+            <CommandBarCreateTask
+              onCreated={() => setSearch("")}
+              onRegisterSubmit={(fn) => {
+                createTaskSubmitRef.current = fn;
+              }}
+              search={search}
+            />
+          )}
         </CommandList>
       </Command>
     </CommandDialog>

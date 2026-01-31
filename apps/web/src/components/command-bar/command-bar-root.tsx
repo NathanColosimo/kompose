@@ -7,7 +7,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 
-type CommandBarView = "root" | "search-tasks";
+type CommandBarView = "root" | "search-tasks" | "create-task";
 
 interface CommandBarRootProps {
   onNavigate: (view: CommandBarView) => void;
@@ -17,7 +17,7 @@ type Action = {
   id: string;
   label: string;
   icon: React.ElementType;
-  view: CommandBarView | null;
+  view: Exclude<CommandBarView, "root">;
 };
 
 /**
@@ -35,9 +35,9 @@ const actions: Action[] = [
     id: "create-task",
     label: "Create Task",
     icon: PlusCircleIcon,
-    view: null, // Placeholder - not implemented yet
+    view: "create-task",
   },
-] as const;
+];
 
 /**
  * CommandBarRoot - The main actions list shown when the command bar opens.
@@ -47,10 +47,7 @@ const actions: Action[] = [
  */
 export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
   const handleSelect = (action: Action) => {
-    if (action.view) {
-      onNavigate(action.view);
-    }
-    // Future: handle direct actions (like create-task) here
+    onNavigate(action.view);
   };
 
   return (
@@ -59,7 +56,6 @@ export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
       <CommandGroup heading="Actions">
         {actions.map((action) => (
           <CommandItem
-            disabled={action.view === null}
             key={action.id}
             onSelect={() => handleSelect(action)}
             value={action.label}

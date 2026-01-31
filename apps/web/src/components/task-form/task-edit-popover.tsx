@@ -5,6 +5,7 @@ import type {
   TaskRecurrence,
   TaskSelectDecoded,
 } from "@kompose/api/routers/task/contract";
+import { useAtom } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
@@ -29,6 +30,7 @@ import {
 } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
+import { focusedTaskIdAtom } from "@/atoms/command-bar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +95,16 @@ export function TaskEditPopover({
 }: TaskEditPopoverProps) {
   const [open, setOpen] = useState(false);
   const submitRef = useRef<(() => void) | null>(null);
+  const [focusedTaskId, setFocusedTaskId] = useAtom(focusedTaskIdAtom);
+
+  // Open popover when this task is focused via command bar search
+  useEffect(() => {
+    if (focusedTaskId === task.id) {
+      setOpen(true);
+      // Clear the focused task ID after opening
+      setFocusedTaskId(null);
+    }
+  }, [focusedTaskId, task.id, setFocusedTaskId]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && submitRef.current) {
