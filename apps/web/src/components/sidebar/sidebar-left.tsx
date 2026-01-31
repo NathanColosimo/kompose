@@ -204,23 +204,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         className="w-[calc(var(--sidebar-width-icon)+1px)]! border-r"
         collapsible="none"
       >
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild className="md:h-8 md:p-0" size="lg">
-                <a href="/dashboard">
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <Inbox className="size-4" />
-                  </div>
-                  <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">Kompose</span>
-                    <span className="truncate text-xs">App</span>
-                  </div>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupContent className="px-1.5 md:px-0">

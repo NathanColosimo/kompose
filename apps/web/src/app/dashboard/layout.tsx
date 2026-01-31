@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { AppHeader } from "@/components/app-header";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
 import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
@@ -38,22 +39,37 @@ export default function DashboardLayout({
   }
 
   return (
-    <SidebarProvider
+    <div
+      className="flex h-svh flex-col"
       style={
         {
-          "--sidebar-width": "350px",
+          // Header height used by sidebars to offset from top
+          "--header-height": "2.5rem",
         } as React.CSSProperties
       }
     >
-      {/* DndContext wraps both sidebar (drag source) and content (drop target) */}
-      <CalendarDndProvider>
-        <CalendarHotkeys />
-        <CommandBar />
-        <SidebarLeft />
-        <SidebarInset>{children}</SidebarInset>
-        <SidebarRight />
-      </CalendarDndProvider>
-    </SidebarProvider>
+      {/* App-wide header with search bar and user menu */}
+      <AppHeader />
+
+      {/* Main content area below header */}
+      <SidebarProvider
+        className="min-h-0 flex-1"
+        style={
+          {
+            "--sidebar-width": "350px",
+          } as React.CSSProperties
+        }
+      >
+        {/* DndContext wraps both sidebar (drag source) and content (drop target) */}
+        <CalendarDndProvider>
+          <CalendarHotkeys />
+          <CommandBar />
+          <SidebarLeft />
+          <SidebarInset>{children}</SidebarInset>
+          <SidebarRight />
+        </CalendarDndProvider>
+      </SidebarProvider>
+    </div>
   );
 }
 
