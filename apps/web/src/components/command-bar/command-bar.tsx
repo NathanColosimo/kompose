@@ -1,8 +1,8 @@
 "use client";
 
+import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useAtom } from "jotai";
 import { useCallback, useRef, useState } from "react";
-import { commandBarOpenAtom } from "@/atoms/command-bar";
 import {
   Command,
   CommandDialog,

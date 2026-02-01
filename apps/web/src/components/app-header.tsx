@@ -1,10 +1,10 @@
 "use client";
 
+import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import type { User } from "better-auth";
 import { useSetAtom } from "jotai";
 import { LogOut, Search, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { commandBarOpenAtom } from "@/atoms/command-bar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,

@@ -2,11 +2,12 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { CalendarClock, Inbox } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
 import { Temporal } from "temporal-polyfill";
-import { timezoneAtom } from "@/atoms/current-date";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
   Sidebar,
@@ -20,7 +21,6 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useTasks } from "@/hooks/use-tasks";
 import { todayPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskItem } from "./task-item";

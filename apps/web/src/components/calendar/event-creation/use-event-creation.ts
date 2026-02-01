@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  googleCalendarsDataAtom,
+  resolvedVisibleCalendarIdsAtom,
+} from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
 import {
   createContext,
@@ -9,10 +13,6 @@ import {
   useState,
 } from "react";
 import { Temporal } from "temporal-polyfill";
-import {
-  googleCalendarsDataAtom,
-  resolvedVisibleCalendarIdsAtom,
-} from "@/atoms/google-data";
 import { isSameDay } from "@/lib/temporal-utils";
 import { MINUTES_STEP } from "../dnd/helpers";
 

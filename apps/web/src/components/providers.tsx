@@ -1,12 +1,41 @@
 "use client";
 
+import { createWebStorageAdapter, StateProvider } from "@kompose/state";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { queryClient } from "@/utils/orpc";
+import { useMemo } from "react";
+import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
+import { orpc, queryClient } from "@/utils/orpc";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const storage = useMemo(() => createWebStorageAdapter(), []);
+  const stateAuthClient = useMemo(
+    () => ({
+      useSession: authClient.useSession,
+      listAccounts: async () => {
+        const result = await authClient.listAccounts();
+        if (!(result && "data" in result) || result.data == null) {
+          return null;
+        }
+        return { data: result.data };
+      },
+    }),
+    []
+  );
+  const config = useMemo(
+    () => ({
+      orpc,
+      authClient: stateAuthClient,
+      notifyError: (error: Error) => {
+        toast.error(error.message);
+      },
+    }),
+    [stateAuthClient]
+  );
+
   return (
     <ThemeProvider
       attribute="class"
@@ -15,7 +44,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
     >
       <QueryClientProvider client={queryClient}>
-        {children}
+        <StateProvider config={config} storage={storage}>
+          {children}
+        </StateProvider>
         <ReactQueryDevtools />
       </QueryClientProvider>
       <Toaster richColors />

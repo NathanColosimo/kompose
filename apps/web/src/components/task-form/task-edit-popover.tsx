@@ -5,6 +5,8 @@ import type {
   TaskRecurrence,
   TaskSelectDecoded,
 } from "@kompose/api/routers/task/contract";
+import { focusedTaskIdAtom } from "@kompose/state/atoms/command-bar";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtom } from "jotai";
 import {
   CalendarCheck,
@@ -30,7 +32,6 @@ import {
 } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
-import { focusedTaskIdAtom } from "@/atoms/command-bar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +53,6 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useTasks } from "@/hooks/use-tasks";
 import {
   formatPlainDate,
   pickerDateToTemporal,

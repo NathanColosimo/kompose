@@ -1,21 +1,22 @@
 "use client";
 
-import { keepPreviousData, useQueries } from "@tanstack/react-query";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
 import {
   currentDateAtom,
   eventWindowAtom,
   timezoneAtom,
   visibleDaysCountAtom,
-} from "@/atoms/current-date";
+} from "@kompose/state/atoms/current-date";
 import {
   type GoogleEventWithSource,
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
-} from "@/atoms/google-data";
+} from "@kompose/state/atoms/google-data";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { keepPreviousData, useQueries } from "@tanstack/react-query";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -26,7 +27,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useTasks } from "@/hooks/use-tasks";
 import {
   dateToPlainDate,
   formatPlainDate,

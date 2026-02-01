@@ -9,8 +9,8 @@ import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { authClient } from "@/lib/auth-client";
+import { useIsMobile } from "@/lib/use-mobile";
 
 export default function DashboardLayout({
   children,

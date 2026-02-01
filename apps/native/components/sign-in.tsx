@@ -1,16 +1,15 @@
-import * as Linking from "expo-linking";
+import { createURL } from "expo-linking";
+import { AlertCircle } from "lucide-react-native";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator } from "react-native";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
-import { NAV_THEME } from "@/lib/constants";
-import { useColorScheme } from "@/lib/use-color-scheme";
+import { useColorScheme } from "@/lib/color-scheme-context";
+import { NAV_THEME } from "@/lib/theme";
 import { queryClient } from "@/utils/orpc";
 
 function SignIn() {
@@ -41,8 +40,8 @@ function SignIn() {
 
     // Expo Router supports group-qualified hrefs for navigation; using the same
     // shape in deep links keeps things unambiguous.
-    const callbackURL = Linking.createURL("/(drawer)/(tabs)");
-    const errorCallbackURL = Linking.createURL("/(drawer)");
+    const callbackURL = createURL("/(tabs)");
+    const errorCallbackURL = createURL("/(tabs)/settings");
 
     await authClient.signIn.social(
       {
@@ -92,135 +91,51 @@ function SignIn() {
   }
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: theme.card, borderColor: theme.border },
-      ]}
-    >
-      <Text style={[styles.title, { color: theme.text }]}>Sign In</Text>
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle>Sign In</CardTitle>
+      </CardHeader>
+      <CardContent className="gap-3">
+        {error ? (
+          <Alert icon={AlertCircle} variant="destructive">
+            <AlertTitle>Sign in failed</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      {error ? (
-        <View
-          style={[
-            styles.errorContainer,
-            { backgroundColor: `${theme.notification}20` },
-          ]}
-        >
-          <Text style={[styles.errorText, { color: theme.notification }]}>
-            {error}
-          </Text>
-        </View>
-      ) : null}
+        <Button disabled={isSocialLoading} onPress={handleGoogleSignIn}>
+          {isSocialLoading ? (
+            <ActivityIndicator color={theme.colors.card} size="small" />
+          ) : (
+            <Text>Continue with Google</Text>
+          )}
+        </Button>
 
-      <TouchableOpacity
-        disabled={isSocialLoading}
-        onPress={handleGoogleSignIn}
-        style={[
-          styles.socialButton,
-          {
-            backgroundColor: theme.primary,
-            opacity: isSocialLoading ? 0.5 : 1,
-          },
-        ]}
-      >
-        {isSocialLoading ? (
-          <ActivityIndicator color="#ffffff" size="small" />
-        ) : (
-          <Text style={styles.buttonText}>Continue with Google</Text>
-        )}
-      </TouchableOpacity>
+        <Input
+          autoCapitalize="none"
+          keyboardType="email-address"
+          onChangeText={(value) => handleFormChange("email", value)}
+          placeholder="Email"
+          value={form.email}
+        />
 
-      <TextInput
-        autoCapitalize="none"
-        keyboardType="email-address"
-        onChangeText={(value) => handleFormChange("email", value)}
-        placeholder="Email"
-        placeholderTextColor={theme.text}
-        style={[
-          styles.input,
-          {
-            color: theme.text,
-            borderColor: theme.border,
-            backgroundColor: theme.background,
-          },
-        ]}
-        value={form.email}
-      />
+        <Input
+          onChangeText={(value) => handleFormChange("password", value)}
+          placeholder="Password"
+          secureTextEntry
+          value={form.password}
+        />
 
-      <TextInput
-        onChangeText={(value) => handleFormChange("password", value)}
-        placeholder="Password"
-        placeholderTextColor={theme.text}
-        secureTextEntry
-        style={[
-          styles.input,
-          {
-            color: theme.text,
-            borderColor: theme.border,
-            backgroundColor: theme.background,
-          },
-        ]}
-        value={form.password}
-      />
-
-      <TouchableOpacity
-        disabled={isLoading}
-        onPress={handleLogin}
-        style={[
-          styles.button,
-          { backgroundColor: theme.primary, opacity: isLoading ? 0.5 : 1 },
-        ]}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#ffffff" size="small" />
-        ) : (
-          <Text style={styles.buttonText}>Sign In</Text>
-        )}
-      </TouchableOpacity>
-    </View>
+        <Button disabled={isLoading} onPress={handleLogin}>
+          {isLoading ? (
+            <ActivityIndicator color={theme.colors.card} size="small" />
+          ) : (
+            <Text>Sign In</Text>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    marginTop: 16,
-    padding: 16,
-    borderWidth: 1,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 12,
-  },
-  errorContainer: {
-    marginBottom: 12,
-    padding: 8,
-  },
-  errorText: {
-    fontSize: 14,
-  },
-  socialButton: {
-    padding: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  input: {
-    borderWidth: 1,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  button: {
-    padding: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 16,
-  },
-});
 
 export { SignIn };

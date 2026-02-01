@@ -1,0 +1,42 @@
+{
+  "name": "@kompose/state",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./atoms/*": {
+      "default": "./src/atoms/*.ts"
+    },
+    "./hooks/*": {
+      "default": "./src/hooks/*.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@kompose/api": "workspace:*",
+    "@kompose/google-cal": "workspace:*",
+    "@orpc/tanstack-query": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "better-auth": "catalog:",
+    "jotai": "catalog:",
+    "jotai-family": "catalog:",
+    "jotai-tanstack-query": "catalog:",
+    "temporal-polyfill": "catalog:",
+    "uuidv7": "catalog:"
+  }
+}

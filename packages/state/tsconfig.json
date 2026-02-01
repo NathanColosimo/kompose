@@ -1,0 +1,12 @@
+{
+  "extends": "@kompose/config/tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "composite": true,
+    "strictNullChecks": true
+  }
+}

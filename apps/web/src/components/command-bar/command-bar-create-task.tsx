@@ -1,6 +1,7 @@
 "use client";
 
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   CalendarIcon,
   CheckIcon,
@@ -14,7 +15,6 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { useTasks } from "@/hooks/use-tasks";
 import {
   formatDuration,
   type ParsedTaskInput,

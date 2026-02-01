@@ -1,6 +1,11 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import {
+  timezoneAtom,
+  visibleDaysAtom,
+} from "@kompose/state/atoms/current-date";
+import type { GoogleEventWithSource } from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
 import {
   memo,
@@ -12,8 +17,6 @@ import {
   useState,
 } from "react";
 import { Temporal } from "temporal-polyfill";
-import { timezoneAtom, visibleDaysAtom } from "@/atoms/current-date";
-import type { GoogleEventWithSource } from "@/atoms/google-data";
 import {
   isoStringToZonedDateTime,
   isToday,

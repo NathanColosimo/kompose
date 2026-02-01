@@ -1,6 +1,7 @@
 "use client";
 
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { CalendarIcon, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -21,7 +22,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { useTasks } from "@/hooks/use-tasks";
 import {
   formatPlainDate,
   pickerDateToTemporal,

@@ -6,7 +6,6 @@ import { useAtom } from "jotai";
 import { PanelLeftIcon } from "lucide-react";
 // biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as React from "react";
-import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/atoms/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -24,8 +23,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/state/sidebar";
 
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";

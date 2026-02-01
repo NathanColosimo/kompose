@@ -1,6 +1,12 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import {
+  commandBarOpenAtom,
+  focusedTaskIdAtom,
+} from "@kompose/state/atoms/command-bar";
+import { currentDateAtom } from "@kompose/state/atoms/current-date";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useSetAtom } from "jotai";
 import {
   CalendarIcon,
@@ -9,14 +15,11 @@ import {
   InboxIcon,
 } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import { commandBarOpenAtom, focusedTaskIdAtom } from "@/atoms/command-bar";
-import { currentDateAtom } from "@/atoms/current-date";
 import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { useTasks } from "@/hooks/use-tasks";
 import { formatPlainDate } from "@/lib/temporal-utils";
 
 interface CommandBarSearchTasksProps {

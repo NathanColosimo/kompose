@@ -2,16 +2,16 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import {
+  normalizedGoogleColorsAtomFamily,
+  pastelizeColor,
+} from "@kompose/state/atoms/google-colors";
+import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import { recurringEventMasterQueryOptions } from "@kompose/state/hooks/use-recurring-event-master";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { memo, useEffect } from "react";
 import type { Temporal } from "temporal-polyfill";
-import {
-  normalizedGoogleColorsAtomFamily,
-  pastelizeColor,
-} from "@/atoms/google-colors";
-import { googleCalendarsDataAtom } from "@/atoms/google-data";
-import { recurringEventMasterQueryOptions } from "@/hooks/use-recurring-event-master";
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../days-view";

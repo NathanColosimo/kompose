@@ -1,20 +1,20 @@
 "use client";
 
+import {
+  normalizedGoogleColorsAtomFamily,
+  pastelizeColor,
+} from "@kompose/state/atoms/google-colors";
+import type { CalendarWithSource } from "@kompose/state/atoms/google-data";
+import {
+  type CalendarIdentifier,
+  isCalendarVisibleAtom,
+  visibleCalendarsAtom,
+} from "@kompose/state/atoms/visible-calendars";
 import { useQueries } from "@tanstack/react-query";
 import type { OAuth2UserInfo } from "better-auth";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import {
-  normalizedGoogleColorsAtomFamily,
-  pastelizeColor,
-} from "@/atoms/google-colors";
-import type { CalendarWithSource } from "@/atoms/google-data";
-import {
-  type CalendarIdentifier,
-  isCalendarVisibleAtom,
-  visibleCalendarsAtom,
-} from "@/atoms/visible-calendars";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

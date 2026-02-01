@@ -2,10 +2,10 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
-import { timezoneAtom } from "@/atoms/current-date";
-import { useTasks } from "@/hooks/use-tasks";
 import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";

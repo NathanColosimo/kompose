@@ -1,0 +1,6 @@
+---
+globs: apps/native/**
+alwaysApply: false
+---
+
+Prefer clear icons over buttons with text in them for mobile

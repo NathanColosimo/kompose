@@ -3,8 +3,8 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type { UpdateGoogleEventInput } from "@kompose/state/hooks/use-google-event-mutations";
 import type { Temporal } from "temporal-polyfill";
-import type { UpdateGoogleEventInput } from "@/hooks/use-google-event-mutations";
 import { isSameDay } from "@/lib/temporal-utils";
 import { clampResizeEnd, clampResizeStart, durationInMinutes } from "./helpers";
 import type { DragData, DragDirection } from "./types";

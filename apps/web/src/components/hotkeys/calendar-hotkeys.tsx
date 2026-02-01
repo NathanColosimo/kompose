@@ -1,15 +1,15 @@
 "use client";
 
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useHotkeys } from "react-hotkeys-hook";
-import { commandBarOpenAtom } from "@/atoms/command-bar";
+import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import {
   currentDateAtom,
   timezoneAtom,
   visibleDaysCountAtom,
-} from "@/atoms/current-date";
-import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/atoms/sidebar";
+} from "@kompose/state/atoms/current-date";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useHotkeys } from "react-hotkeys-hook";
 import { todayPlainDate } from "@/lib/temporal-utils";
+import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/state/sidebar";
 
 // Shared options to prevent hotkeys from firing in input fields
 const hotkeyOptions = { enableOnFormTags: false } as const;
