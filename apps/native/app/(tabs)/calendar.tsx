@@ -14,9 +14,11 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useQueryClient } from "@tanstack/react-query";
+import { CalendarClock, CalendarDays } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -26,6 +28,7 @@ import { Temporal } from "temporal-polyfill";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import { Container } from "@/components/container";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,6 +39,10 @@ const PIXELS_PER_HOUR = 80;
 const MINUTES_STEP = 15;
 const DEFAULT_SCROLL_HOUR = 8;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+// Swipe thresholds to switch days without interfering with vertical scroll.
+const SWIPE_ACTIVATION_DISTANCE = 16;
+const SWIPE_TRIGGER_DISTANCE = 60;
+const SWIPE_VERTICAL_TOLERANCE = 12;
 
 function getSystemTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -332,6 +339,31 @@ export default function CalendarTab() {
     setCurrentDate(todayPlainDate(timeZone));
   }, [timeZone]);
 
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gestureState) => {
+          const absDx = Math.abs(gestureState.dx);
+          const absDy = Math.abs(gestureState.dy);
+          return (
+            absDx > SWIPE_ACTIVATION_DISTANCE &&
+            absDy < SWIPE_VERTICAL_TOLERANCE &&
+            absDx > absDy * 1.5
+          );
+        },
+        onPanResponderRelease: (_evt, gestureState) => {
+          if (gestureState.dx <= -SWIPE_TRIGGER_DISTANCE) {
+            goToNext();
+            return;
+          }
+          if (gestureState.dx >= SWIPE_TRIGGER_DISTANCE) {
+            goToPrevious();
+          }
+        },
+      }),
+    [goToNext, goToPrevious]
+  );
+
   const openCreateEventAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
       if (!defaultCalendar) {
@@ -485,43 +517,44 @@ export default function CalendarTab() {
 
   return (
     <Container>
-      {/* Header */}
-      <View className="flex-row items-center justify-between gap-3 px-4 pt-3 pb-2">
-        <View className="flex-row items-center gap-2">
-          <Button onPress={goToPrevious} size="sm" variant="outline">
-            <Text>{"<"}</Text>
-          </Button>
-          <Button onPress={goToNext} size="sm" variant="outline">
-            <Text>{">"}</Text>
-          </Button>
-          <Button onPress={goToToday} size="sm" variant="outline">
-            <Text>Today</Text>
-          </Button>
-        </View>
-
-        <View className="flex-row items-center gap-2">
-          <View className="flex-row">
-            {[1, 2, 3].map((n) => (
-              <Button
-                className={visibleDaysCount === n ? "bg-card" : undefined}
-                key={n}
-                onPress={() => setVisibleDaysCount(n as 1 | 2 | 3)}
-                size="sm"
-                variant="outline"
-              >
-                <Text>{n}d</Text>
-              </Button>
-            ))}
+      <View className="flex-1" {...swipeResponder.panHandlers}>
+        {/* Header */}
+        <View className="flex-row items-center justify-between gap-3 px-4 pt-0 pb-2">
+          <View className="flex-row items-center gap-2">
+            <Button
+              accessibilityLabel="Go to today"
+              onPress={goToToday}
+              size="icon"
+              variant="outline"
+            >
+              <Icon as={CalendarClock} size={18} />
+            </Button>
           </View>
-          <Button
-            onPress={() => setIsPickerOpen(true)}
-            size="sm"
-            variant="outline"
-          >
-            <Text>Calendars</Text>
-          </Button>
+
+          <View className="flex-row items-center gap-2">
+            <View className="flex-row">
+              {[1, 2, 3].map((n) => (
+                <Button
+                  className={visibleDaysCount === n ? "bg-card" : undefined}
+                  key={n}
+                  onPress={() => setVisibleDaysCount(n as 1 | 2 | 3)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Text>{n}d</Text>
+                </Button>
+              ))}
+            </View>
+            <Button
+              accessibilityLabel="Select calendars"
+              onPress={() => setIsPickerOpen(true)}
+              size="icon"
+              variant="outline"
+            >
+              <Icon as={CalendarDays} size={18} />
+            </Button>
+          </View>
         </View>
-      </View>
 
       {/* Day headers */}
       <View className="flex-row border-border border-t border-b">
@@ -712,6 +745,8 @@ export default function CalendarTab() {
           </View>
         </View>
       </ScrollView>
+
+      </View>
 
       {/* Calendar visibility picker */}
       <CalendarPickerModal
