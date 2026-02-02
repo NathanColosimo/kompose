@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "kompose",
+    "name": "Kompose",
     "slug": "kompose",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mybettertapp",
+    "scheme": "kompose",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mybettertapp"
+      "bundleIdentifier": "com.nathancolosimo.kompose"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mybettertapp"
+      "package": "com.nathancolosimo.kompose"
     },
     "web": {
       "output": "static",
