@@ -349,13 +349,6 @@ export default function TasksTab() {
   const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
-  // Inbox-like list: non-done tasks that are not scheduled (no startDate/time).
-  const inboxTasks = tasks
-    .filter((t) => t.status !== "done")
-    .filter((t) => t.startDate === null && t.startTime === null)
-    .filter((t) => t.seriesMasterId === null)
-    .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
-
   // Modal state (create/edit).
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingTask, setEditingTask] =
@@ -370,6 +363,16 @@ export default function TasksTab() {
   );
   const pendingDoneTimeouts = React.useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
+  );
+  // Inbox-like list: keep pending-done tasks visible for undo.
+  const inboxTasks = React.useMemo(
+    () =>
+      tasks
+        .filter((t) => t.startDate === null && t.startTime === null)
+        .filter((t) => t.seriesMasterId === null)
+        .filter((t) => t.status !== "done" || pendingDoneIds.has(t.id))
+        .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt)),
+    [pendingDoneIds, tasks]
   );
 
   const durationHourOptions = React.useMemo(
@@ -422,6 +425,13 @@ export default function TasksTab() {
         clearTimeout(existingTimeout);
       }
 
+      // Mark done immediately and keep an undo window in the inbox list.
+      updateTask.mutate({
+        id: task.id,
+        scope: "this",
+        task: { status: "done" },
+      });
+
       setPendingDoneIds((prev) => {
         const next = new Set(prev);
         next.add(task.id);
@@ -429,11 +439,6 @@ export default function TasksTab() {
       });
 
       const timeoutId = setTimeout(() => {
-        updateTask.mutate({
-          id: task.id,
-          scope: "this",
-          task: { status: "done" },
-        });
         pendingDoneTimeouts.current.delete(task.id);
         setPendingDoneIds((prev) => {
           const next = new Set(prev);
@@ -447,15 +452,28 @@ export default function TasksTab() {
     [updateTask]
   );
 
+  const undoPendingDone = React.useCallback(
+    (task: TaskSelectDecoded) => {
+      // Restore the task immediately and remove the undo state.
+      updateTask.mutate({
+        id: task.id,
+        scope: "this",
+        task: { status: "todo" },
+      });
+      clearPendingDone(task.id);
+    },
+    [clearPendingDone, updateTask]
+  );
+
   const togglePendingDone = React.useCallback(
     (task: TaskSelectDecoded) => {
       if (pendingDoneIds.has(task.id)) {
-        clearPendingDone(task.id);
+        undoPendingDone(task);
         return;
       }
       startPendingDone(task);
     },
-    [clearPendingDone, pendingDoneIds, startPendingDone]
+    [pendingDoneIds, startPendingDone, undoPendingDone]
   );
 
   // Memoize to keep the header action stable.
@@ -614,7 +632,7 @@ export default function TasksTab() {
                               accessibilityLabel="Undo mark done"
                               onPress={(event) => {
                                 event.stopPropagation();
-                                clearPendingDone(item.id);
+                                undoPendingDone(item);
                               }}
                               size="icon"
                               variant="ghost"
