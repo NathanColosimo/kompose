@@ -541,7 +541,11 @@ function TaskEditForm({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             {isRecurring ? (
               <>
-                <AlertDialogAction onClick={() => confirmDelete("this")}>
+                {/* Auto-focus "Only this" as the safer default for recurring tasks */}
+                <AlertDialogAction
+                  autoFocus
+                  onClick={() => confirmDelete("this")}
+                >
                   Only this occurrence
                 </AlertDialogAction>
                 <AlertDialogAction
@@ -552,7 +556,11 @@ function TaskEditForm({
                 </AlertDialogAction>
               </>
             ) : (
-              <AlertDialogAction onClick={() => confirmDelete("this")}>
+              // Auto-focus delete button so Enter confirms deletion
+              <AlertDialogAction
+                autoFocus
+                onClick={() => confirmDelete("this")}
+              >
                 Delete
               </AlertDialogAction>
             )}

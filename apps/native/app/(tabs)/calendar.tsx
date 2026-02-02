@@ -170,6 +170,19 @@ export default function CalendarTab() {
     [currentDate, timeZone]
   );
 
+  const getEventsQueryKey = useCallback(
+    (calendar: CalendarIdentifier) =>
+      orpc.googleCal.events.list.queryOptions({
+        input: {
+          accountId: calendar.accountId,
+          calendarId: calendar.calendarId,
+          timeMin: window.timeMin,
+          timeMax: window.timeMax,
+        },
+      }).queryKey,
+    [window.timeMax, window.timeMin]
+  );
+
   // Tasks (for scheduled task blocks).
   const { tasksQuery, updateTask, deleteTask } = useTasks();
   const tasks = tasksQuery.data ?? [];
@@ -414,9 +427,11 @@ export default function CalendarTab() {
       });
     }
 
-    queryClient.invalidateQueries({ queryKey: ["google-events"] });
+    queryClient.invalidateQueries({
+      queryKey: getEventsQueryKey(eventDraft.calendar),
+    });
     closeEventModal();
-  }, [closeEventModal, eventDraft, queryClient]);
+  }, [closeEventModal, eventDraft, getEventsQueryKey, queryClient]);
 
   const deleteEvent = useCallback(async () => {
     if (!(eventDraft && eventDraft.mode === "edit" && eventDraft.eventId)) {
@@ -428,9 +443,11 @@ export default function CalendarTab() {
       eventId: eventDraft.eventId,
       scope: "this",
     });
-    queryClient.invalidateQueries({ queryKey: ["google-events"] });
+    queryClient.invalidateQueries({
+      queryKey: getEventsQueryKey(eventDraft.calendar),
+    });
     closeEventModal();
-  }, [closeEventModal, eventDraft, queryClient]);
+  }, [closeEventModal, eventDraft, getEventsQueryKey, queryClient]);
 
   const openEditTask = useCallback((task: TaskSelectDecoded) => {
     setEditingTask(task);
@@ -487,23 +504,16 @@ export default function CalendarTab() {
     }
     for (const calendar of visibleCalendarIds) {
       queryClient.invalidateQueries({
-        queryKey: [
-          "google-events",
-          calendar.accountId,
-          calendar.calendarId,
-          window.timeMin,
-          window.timeMax,
-        ],
+        queryKey: getEventsQueryKey(calendar),
       });
     }
   }, [
     accountIds,
+    getEventsQueryKey,
     googleAccountsQuery,
     queryClient,
     tasksQuery,
     visibleCalendarIds,
-    window.timeMax,
-    window.timeMin,
   ]);
 
   // Scroll to 8am on first mount.

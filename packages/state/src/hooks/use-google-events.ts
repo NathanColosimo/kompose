@@ -37,13 +37,6 @@ export function useGoogleEvents({
           timeMax: window.timeMax,
         },
       }),
-      queryKey: [
-        "google-events",
-        calendar.accountId,
-        calendar.calendarId,
-        window.timeMin,
-        window.timeMax,
-      ],
       placeholderData: keepPreviousData,
       staleTime: 60_000,
     })),

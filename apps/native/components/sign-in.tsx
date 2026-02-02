@@ -10,7 +10,7 @@ import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { NAV_THEME } from "@/lib/theme";
-import { queryClient } from "@/utils/orpc";
+import { invalidateSessionQueries } from "@/utils/orpc";
 
 function SignIn() {
   const { colorScheme } = useColorScheme();
@@ -56,7 +56,7 @@ function SignIn() {
         },
         onSuccess() {
           // Refresh cached RPC queries once we have a session.
-          queryClient.refetchQueries();
+          invalidateSessionQueries();
         },
         onFinished() {
           setIsSocialLoading(false);
@@ -81,7 +81,7 @@ function SignIn() {
         },
         onSuccess() {
           setForm({ email: "", password: "" });
-          queryClient.refetchQueries();
+          invalidateSessionQueries();
         },
         onFinished() {
           setIsLoading(false);

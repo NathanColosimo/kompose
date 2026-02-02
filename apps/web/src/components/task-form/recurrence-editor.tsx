@@ -2,7 +2,7 @@
 
 import type { TaskRecurrence } from "@kompose/api/routers/task/contract";
 import { CalendarIcon, Repeat, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -75,6 +75,7 @@ export function RecurrenceEditor({
         <RecurrenceForm
           onChange={onChange}
           onClose={() => setOpen(false)}
+          open={open}
           referenceDate={referenceDate}
           value={value}
         />
@@ -88,22 +89,47 @@ function RecurrenceForm({
   value,
   onChange,
   onClose,
+  open,
   referenceDate,
-}: RecurrenceEditorProps & { onClose: () => void }) {
-  // Local state for building the recurrence
-  const [freq, setFreq] = useState<Frequency>(value?.freq ?? "WEEKLY");
-  const [interval, setInterval] = useState(getInterval(value));
-  const [byDay, setByDay] = useState<DayCode[]>(getByDay(value, referenceDate));
-  const [byMonthDay, setByMonthDay] = useState(
-    getByMonthDay(value, referenceDate)
+}: RecurrenceEditorProps & { onClose: () => void; open: boolean }) {
+  const initialState = useMemo(
+    () => ({
+      freq: (value?.freq ?? "WEEKLY") as Frequency,
+      interval: getInterval(value),
+      byDay: getByDay(value, referenceDate),
+      byMonthDay: getByMonthDay(value, referenceDate),
+      endType: getEndType(value),
+      until: getUntilDate(value),
+      count: value?.count ?? 10,
+    }),
+    [referenceDate, value]
   );
+
+  // Local state for building the recurrence
+  const [freq, setFreq] = useState<Frequency>(initialState.freq);
+  const [interval, setInterval] = useState(initialState.interval);
+  const [byDay, setByDay] = useState<DayCode[]>(initialState.byDay);
+  const [byMonthDay, setByMonthDay] = useState(initialState.byMonthDay);
   const [endType, setEndType] = useState<"never" | "until" | "count">(
-    getEndType(value)
+    initialState.endType
   );
   const [until, setUntil] = useState<Temporal.PlainDate | null>(
-    getUntilDate(value)
+    initialState.until
   );
-  const [count, setCount] = useState(value?.count ?? 10);
+  const [count, setCount] = useState(initialState.count);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setFreq(initialState.freq);
+    setInterval(initialState.interval);
+    setByDay(initialState.byDay);
+    setByMonthDay(initialState.byMonthDay);
+    setEndType(initialState.endType);
+    setUntil(initialState.until);
+    setCount(initialState.count);
+  }, [initialState, open]);
 
   // Toggle a day in the byDay array
   const toggleDay = useCallback((day: DayCode) => {

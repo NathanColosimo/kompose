@@ -81,6 +81,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const {
     tasksQuery: { data: tasks, isLoading, error },
   } = useTasks();
+  const activeView = activeItem?.title ?? "Inbox";
 
   // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
@@ -118,7 +119,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     };
   }, [tasks, today]);
 
-  const renderContent = () => {
+  const content = useMemo(() => {
     if (isLoading) {
       return (
         <div className="p-4 text-muted-foreground text-sm">
@@ -134,7 +135,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     }
 
     // Inbox view: flat list sorted by updatedAt
-    if (activeItem?.title === "Inbox") {
+    if (activeView === "Inbox") {
       if (inboxTasks.length === 0) {
         return (
           <div className="p-4 text-muted-foreground text-sm">
@@ -146,7 +147,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     }
 
     // Today view: sections for Overdue and Unplanned
-    if (activeItem?.title === "Today") {
+    if (activeView === "Today") {
       const hasOverdue = overdueTasks.length > 0;
       const hasUnplanned = unplannedTasks.length > 0;
 
@@ -189,7 +190,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
 
     // Fallback (shouldn't happen)
     return null;
-  };
+  }, [activeView, error, inboxTasks, isLoading, overdueTasks, unplannedTasks]);
 
   return (
     <Sidebar
@@ -253,8 +254,8 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           </SidebarHeader>
           <SidebarContent className="flex-1">
             <SidebarGroup className="flex-1 px-0">
-              <SidebarGroupContent className="flex-1">
-                {renderContent()}
+              <SidebarGroupContent className="flex-1" key={activeView}>
+                {content}
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>

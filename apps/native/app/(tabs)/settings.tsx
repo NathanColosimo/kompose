@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
-import { queryClient } from "@/utils/orpc";
+import { clearSessionQueries } from "@/utils/orpc";
 
 export default function SettingsScreen() {
   const { data: session } = authClient.useSession();
@@ -46,7 +46,7 @@ export default function SettingsScreen() {
               <Button
                 onPress={() => {
                   authClient.signOut();
-                  queryClient.invalidateQueries();
+                  clearSessionQueries();
                 }}
                 variant="destructive"
               >

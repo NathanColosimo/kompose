@@ -12,25 +12,42 @@ import {
   taskSelectCodec,
   taskUpdateCodec,
 } from "@kompose/api/routers/task/contract";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
-import { TASKS_QUERY_KEY, tasksQueryAtom } from "../atoms/tasks";
-import { useStateConfig } from "../config";
+import { TASKS_QUERY_KEY } from "../atoms/tasks";
+import { hasSessionAtom, useStateConfig } from "../config";
 
 /**
  * Centralized hook for task fetching and mutations.
+ * Follows the same pattern as Google events: useQuery for fetching,
+ * optimistic updates in onMutate, rollback in onError, invalidate in onSettled.
  */
 export function useTasks() {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
+  const hasSession = useAtomValue(hasSessionAtom);
 
-  // Use the shared tasks query atom so multiple consumers reuse the cache.
-  const tasksQuery = useAtomValue(tasksQueryAtom);
+  // Fetch tasks using useQuery directly (same pattern as useGoogleEvents)
+  const tasksQuery = useQuery({
+    queryKey: TASKS_QUERY_KEY,
+    enabled: hasSession,
+    queryFn: async () => {
+      const tasks = await orpc.tasks.list.call();
+      return tasks.map((task) => taskSelectCodec.parse(task));
+    },
+    staleTime: 1000 * 60 * 5,
+    placeholderData: keepPreviousData,
+  });
 
   /**
-   * Create task mutation with optimistic updates for single tasks.
+   * Create task mutation with optimistic updates.
    */
   const createTask = useMutation({
     mutationFn: async (task: ClientTaskInsertDecoded) => {
@@ -39,8 +56,9 @@ export function useTasks() {
       return results.map((t) => taskSelectCodec.parse(t));
     },
     onMutate: async (task: ClientTaskInsertDecoded) => {
+      // Skip optimistic update for recurring tasks (creates multiple)
       if (task.recurrence) {
-        return { previousTasks: undefined, isOptimistic: false };
+        return { previousTasks: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
@@ -69,35 +87,21 @@ export function useTasks() {
         ...(old ?? []),
         optimisticTask,
       ]);
-      return { previousTasks, isOptimistic: true };
+
+      return { previousTasks };
     },
     onError: (_err, _variables, context) => {
-      if (context?.isOptimistic && context?.previousTasks) {
+      if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onSuccess: (createdTasks, _variables, context) => {
-      if (context?.isOptimistic && createdTasks.length === 1) {
-        queryClient.setQueryData<TaskSelectDecoded[]>(
-          TASKS_QUERY_KEY,
-          (old) => {
-            if (!old) {
-              return createdTasks;
-            }
-            const withoutOptimistic = old.filter(
-              (t) => t.userId !== "optimistic"
-            );
-            return [...withoutOptimistic, ...createdTasks];
-          }
-        );
-      } else {
-        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
-      }
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
 
   /**
-   * Update task mutation with optimistic updates for scope="this".
+   * Update task mutation with optimistic updates.
    */
   const updateTask = useMutation({
     mutationFn: async ({
@@ -126,8 +130,9 @@ export function useTasks() {
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
+      // Only optimistic update for scope="this" (single task)
       if (scope !== "this") {
-        return { previousTasks: undefined, isOptimistic: false };
+        return { previousTasks: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
@@ -146,59 +151,48 @@ export function useTasks() {
             : t
         )
       );
-      return { previousTasks, isOptimistic: true };
+
+      return { previousTasks };
     },
     onError: (_err, _variables, context) => {
-      if (context?.isOptimistic && context?.previousTasks) {
+      if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onSuccess: (updatedTasks, _variables, context) => {
-      if (context?.isOptimistic) {
-        queryClient.setQueryData<TaskSelectDecoded[]>(
-          TASKS_QUERY_KEY,
-          (old) => {
-            if (!old) {
-              return old;
-            }
-            const updatedMap = new Map(updatedTasks.map((t) => [t.id, t]));
-            return old.map((t) => updatedMap.get(t.id) ?? t);
-          }
-        );
-      } else {
-        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
-      }
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
 
   /**
-   * Delete task mutation with optimistic updates for scope="this".
+   * Delete task mutation with optimistic updates.
    */
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
       await orpc.tasks.delete.call({ id, scope }),
     onMutate: async ({ id, scope }: { id: string; scope: DeleteScope }) => {
+      // Only optimistic update for scope="this" (single task)
       if (scope !== "this") {
-        return { previousTasks: undefined, isOptimistic: false };
+        return { previousTasks: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
+
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
         old?.filter((t) => t.id !== id)
       );
-      return { previousTasks, isOptimistic: true };
+
+      return { previousTasks };
     },
     onError: (_err, _variables, context) => {
-      if (context?.isOptimistic && context?.previousTasks) {
+      if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onSuccess: (_data, _variables, context) => {
-      if (!context?.isOptimistic) {
-        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
-      }
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
 

@@ -10,7 +10,7 @@ import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { NAV_THEME } from "@/lib/theme";
-import { queryClient } from "@/utils/orpc";
+import { invalidateSessionQueries } from "@/utils/orpc";
 
 function SignUp() {
   const { colorScheme } = useColorScheme();
@@ -52,7 +52,7 @@ function SignUp() {
           setIsSocialLoading(false);
         },
         onSuccess() {
-          queryClient.refetchQueries();
+          invalidateSessionQueries();
         },
         onFinished() {
           setIsSocialLoading(false);
@@ -80,7 +80,7 @@ function SignUp() {
           setName("");
           setEmail("");
           setPassword("");
-          queryClient.refetchQueries();
+          invalidateSessionQueries();
         },
         onFinished() {
           setIsLoading(false);
