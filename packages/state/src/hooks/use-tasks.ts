@@ -12,14 +12,12 @@ import {
   taskSelectCodec,
   taskUpdateCodec,
 } from "@kompose/api/routers/task/contract";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
-import { hasSessionAtom, useStateConfig } from "../config";
-
-/** Query key for tasks - shared between query and mutations. */
-const TASKS_KEY = ["tasks", "list"] as const;
+import { TASKS_QUERY_KEY, tasksQueryAtom } from "../atoms/tasks";
+import { useStateConfig } from "../config";
 
 /**
  * Centralized hook for task fetching and mutations.
@@ -27,18 +25,9 @@ const TASKS_KEY = ["tasks", "list"] as const;
 export function useTasks() {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
-  const hasSession = useAtomValue(hasSessionAtom);
 
-  // Fetch and decode tasks.
-  const tasksQuery = useQuery({
-    queryKey: TASKS_KEY,
-    enabled: hasSession,
-    queryFn: async () => {
-      const tasks = await orpc.tasks.list.call();
-      return tasks.map((t) => taskSelectCodec.parse(t));
-    },
-    staleTime: 1000 * 60 * 5,
-  });
+  // Use the shared tasks query atom so multiple consumers reuse the cache.
+  const tasksQuery = useAtomValue(tasksQueryAtom);
 
   /**
    * Create task mutation with optimistic updates for single tasks.
@@ -54,9 +43,9 @@ export function useTasks() {
         return { previousTasks: undefined, isOptimistic: false };
       }
 
-      await queryClient.cancelQueries({ queryKey: TASKS_KEY });
+      await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
-        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_KEY);
+        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
 
       const now = Temporal.Now.instant();
       const optimisticTask: TaskSelectDecoded = {
@@ -76,7 +65,7 @@ export function useTasks() {
         isException: false,
       };
 
-      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_KEY, (old) => [
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) => [
         ...(old ?? []),
         optimisticTask,
       ]);
@@ -84,22 +73,25 @@ export function useTasks() {
     },
     onError: (_err, _variables, context) => {
       if (context?.isOptimistic && context?.previousTasks) {
-        queryClient.setQueryData(TASKS_KEY, context.previousTasks);
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
     onSuccess: (createdTasks, _variables, context) => {
       if (context?.isOptimistic && createdTasks.length === 1) {
-        queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_KEY, (old) => {
-          if (!old) {
-            return createdTasks;
+        queryClient.setQueryData<TaskSelectDecoded[]>(
+          TASKS_QUERY_KEY,
+          (old) => {
+            if (!old) {
+              return createdTasks;
+            }
+            const withoutOptimistic = old.filter(
+              (t) => t.userId !== "optimistic"
+            );
+            return [...withoutOptimistic, ...createdTasks];
           }
-          const withoutOptimistic = old.filter(
-            (t) => t.userId !== "optimistic"
-          );
-          return [...withoutOptimistic, ...createdTasks];
-        });
+        );
       } else {
-        queryClient.invalidateQueries({ queryKey: TASKS_KEY });
+        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
       }
     },
   });
@@ -138,11 +130,11 @@ export function useTasks() {
         return { previousTasks: undefined, isOptimistic: false };
       }
 
-      await queryClient.cancelQueries({ queryKey: TASKS_KEY });
+      await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
-        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_KEY);
+        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
 
-      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_KEY, (old) =>
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
         old?.map((t) =>
           t.id === id
             ? {
@@ -158,20 +150,23 @@ export function useTasks() {
     },
     onError: (_err, _variables, context) => {
       if (context?.isOptimistic && context?.previousTasks) {
-        queryClient.setQueryData(TASKS_KEY, context.previousTasks);
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
     onSuccess: (updatedTasks, _variables, context) => {
       if (context?.isOptimistic) {
-        queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_KEY, (old) => {
-          if (!old) {
-            return old;
+        queryClient.setQueryData<TaskSelectDecoded[]>(
+          TASKS_QUERY_KEY,
+          (old) => {
+            if (!old) {
+              return old;
+            }
+            const updatedMap = new Map(updatedTasks.map((t) => [t.id, t]));
+            return old.map((t) => updatedMap.get(t.id) ?? t);
           }
-          const updatedMap = new Map(updatedTasks.map((t) => [t.id, t]));
-          return old.map((t) => updatedMap.get(t.id) ?? t);
-        });
+        );
       } else {
-        queryClient.invalidateQueries({ queryKey: TASKS_KEY });
+        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
       }
     },
   });
@@ -187,22 +182,22 @@ export function useTasks() {
         return { previousTasks: undefined, isOptimistic: false };
       }
 
-      await queryClient.cancelQueries({ queryKey: TASKS_KEY });
+      await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
-        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_KEY);
-      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_KEY, (old) =>
+        queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
         old?.filter((t) => t.id !== id)
       );
       return { previousTasks, isOptimistic: true };
     },
     onError: (_err, _variables, context) => {
       if (context?.isOptimistic && context?.previousTasks) {
-        queryClient.setQueryData(TASKS_KEY, context.previousTasks);
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
     onSuccess: (_data, _variables, context) => {
       if (!context?.isOptimistic) {
-        queryClient.invalidateQueries({ queryKey: TASKS_KEY });
+        queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
       }
     },
   });

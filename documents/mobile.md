@@ -26,7 +26,7 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 
 ## Key architecture decisions (current)
 
-- **Expo SDK 55 (beta/preview)** + **New Architecture**.
+- **Expo SDK 54 (stable)**.
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection.
 - **Date/time inputs**: native pickers via `@react-native-community/datetimepicker`.
@@ -45,7 +45,7 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 ### Tasks implementation
 
 - Screen: `apps/native/app/(tabs)/index.tsx`
-- Data hook: `apps/native/hooks/use-tasks.ts`
+- Data hook: `packages/state/src/hooks/use-tasks.ts` (imported via `@kompose/state/hooks`)
 
 ### Google calendar visibility picker
 
@@ -56,9 +56,9 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 - Picker UI modal:
   - `apps/native/components/calendar/calendar-picker-modal.tsx`
 - Google accounts / calendars / events hooks:
-  - `apps/native/hooks/use-google-accounts.ts`
-  - `apps/native/hooks/use-google-calendars.ts`
-  - `apps/native/hooks/use-google-events.ts`
+  - `packages/state/src/hooks/use-google-accounts.ts` (imported via `@kompose/state/hooks`)
+  - `packages/state/src/hooks/use-google-calendars.ts` (imported via `@kompose/state/hooks`)
+  - `packages/state/src/hooks/use-google-events.ts` (imported via `@kompose/state/hooks`)
 
 ### Calendar implementation
 
@@ -116,20 +116,12 @@ NativeWind uses CSS variables for theming. To dynamically switch themes at runti
 2. Add the variable to both `light` and `dark` objects in `lib/theme-vars.ts`
 3. Add the Tailwind color mapping in `tailwind.config.ts`
 
-## Expo SDK 55 upgrade notes
+## Expo SDK 54 baseline
 
-We upgraded `apps/native` from Expo SDK 54 → **SDK 55 (preview/beta)** so we can use:
-- **New Architecture by default**
-- **React Native 0.83.x** / **React 19.2**
-
-Changes:
-- `apps/native/package.json` now has:
-  - `expo@^55.0.0-preview.7`
-  - `react-native@0.83.1`
-  - `react@19.2.0`
-  - plus SDK55-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
-- Removed `newArchEnabled` from `apps/native/app.json` (SDK 55 removed that config option).
-- Ran `expo prebuild --clean` to regenerate `ios/` + `android/`.
+Current versions in `apps/native/package.json`:
+- `expo@~54.0.33`
+- `react-native@0.81.5`
+- SDK54-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
 
 ## Build + bundling issues we hit (and fixes)
 
@@ -144,9 +136,9 @@ Fix:
 Note:
 - `expo prebuild --clean` regenerated `.xcode.env.local` again later, so we re-applied the stable path.
 
-### 2) Metro bundling failed after SDK 55 upgrade (old router path)
+### 2) Metro bundling failed (old router path)
 
-We confirmed runtime resolution was correct (SDK 55), and the fix was to fully restart Metro:
+We confirmed runtime resolution was correct, and the fix was to fully restart Metro:
 - stop the running Expo CLI (Ctrl+C)
 - restart with `bun run dev` (clears cache)
 
@@ -155,7 +147,7 @@ We confirmed runtime resolution was correct (SDK 55), and the fix was to fully r
 `@better-auth/expo` dynamically imports `expo-network`.
 
 Fix:
-- Installed `expo-network` (SDK55-compatible) into `apps/native`.
+- Installed `expo-network` into `apps/native`.
 
 ## Environment variables
 

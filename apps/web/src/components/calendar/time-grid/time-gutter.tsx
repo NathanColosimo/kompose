@@ -21,7 +21,7 @@ export const TimeGutter = memo(function TimeGutterInner({
           className="relative flex h-20 items-start justify-end pr-2 text-muted-foreground text-xs"
           key={hour}
         >
-          <span className="-translate-y-2">{formatHourLabel(hour)}</span>
+          <span>{formatHourLabel(hour)}</span>
         </div>
       ))}
     </div>

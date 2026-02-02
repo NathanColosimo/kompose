@@ -475,6 +475,37 @@ export default function CalendarTab() {
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollView>(null);
 
+  const refreshCalendarData = useCallback(() => {
+    tasksQuery.refetch();
+    googleAccountsQuery.refetch();
+
+    // Only refresh visible calendars and the active window to avoid broad invalidation.
+    for (const accountId of accountIds) {
+      queryClient.invalidateQueries({
+        queryKey: ["google-calendars", accountId],
+      });
+    }
+    for (const calendar of visibleCalendarIds) {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "google-events",
+          calendar.accountId,
+          calendar.calendarId,
+          window.timeMin,
+          window.timeMax,
+        ],
+      });
+    }
+  }, [
+    accountIds,
+    googleAccountsQuery,
+    queryClient,
+    tasksQuery,
+    visibleCalendarIds,
+    window.timeMax,
+    window.timeMin,
+  ]);
+
   // Scroll to 8am on first mount.
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -574,12 +605,7 @@ export default function CalendarTab() {
         ref={scrollRef}
         refreshControl={
           <RefreshControl
-            onRefresh={() => {
-              tasksQuery.refetch();
-              googleAccountsQuery.refetch();
-              queryClient.invalidateQueries({ queryKey: ["google-calendars"] });
-              queryClient.invalidateQueries({ queryKey: ["google-events"] });
-            }}
+            onRefresh={refreshCalendarData}
             refreshing={
               tasksQuery.isFetching ||
               isFetchingGoogleEvents ||

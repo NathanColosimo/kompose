@@ -4,6 +4,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { memo, useCallback, useMemo } from "react";
 import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
+import { PIXELS_PER_HOUR } from "../constants";
+import { MINUTES_STEP } from "../dnd/helpers";
 import type { SlotData } from "../dnd/types";
 
 interface TimeSlotProps {
@@ -65,34 +67,69 @@ export const TimeSlot = memo(function TimeSlotInner({
 
   const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
 
-  // Mouse event handlers for event creation
-  const handleMouseEnter = useCallback(
-    (e: React.MouseEvent) => {
-      // Only trigger hover if primary button is pressed (during drag) or no buttons pressed
+  const getSnappedDateTimeFromPointer = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      const column = event.currentTarget.closest(
+        "[data-day-column]"
+      ) as HTMLElement | null;
+      if (!column) {
+        return dateTime;
+      }
+      const rect = column.getBoundingClientRect();
+      const offsetY = Math.min(
+        Math.max(event.clientY - rect.top, 0),
+        rect.height
+      );
+      const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
+      // Snap to the nearest grid step so hover/drag align with 15-min slots.
+      const snappedMinutes =
+        Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+      const clampedMinutes = Math.min(
+        Math.max(snappedMinutes, 0),
+        24 * 60 - MINUTES_STEP
+      );
+      const hour = Math.floor(clampedMinutes / 60);
+      const minute = clampedMinutes % 60;
+      return Temporal.ZonedDateTime.from({
+        year: date.year,
+        month: date.month,
+        day: date.day,
+        hour,
+        minute,
+        timeZone,
+      });
+    },
+    [date, timeZone, dateTime]
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      const snappedDateTime = getSnappedDateTimeFromPointer(e);
       if (e.buttons === 1 && onSlotDragMove) {
-        // Dragging with left button pressed
-        onSlotDragMove(dateTime);
-      } else if (e.buttons === 0 && onSlotHover) {
-        // Just hovering
-        onSlotHover(dateTime);
+        onSlotDragMove(snappedDateTime);
+        return;
+      }
+      if (e.buttons === 0 && onSlotHover) {
+        onSlotHover(snappedDateTime);
       }
     },
-    [dateTime, onSlotHover, onSlotDragMove]
+    [getSnappedDateTimeFromPointer, onSlotDragMove, onSlotHover]
   );
 
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent<HTMLButtonElement>) => {
       // Only handle left mouse button
       if (e.button !== 0) {
         return;
       }
-      onSlotMouseDown?.(dateTime);
+      e.preventDefault();
+      onSlotMouseDown?.(getSnappedDateTimeFromPointer(e));
     },
-    [dateTime, onSlotMouseDown]
+    [getSnappedDateTimeFromPointer, onSlotMouseDown]
   );
 
   const handleMouseUp = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent<HTMLButtonElement>) => {
       // Only handle left mouse button
       if (e.button !== 0) {
         return;
@@ -102,29 +139,18 @@ export const TimeSlot = memo(function TimeSlotInner({
     [onSlotMouseUp]
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== "Enter" && e.key !== " ") {
-        return;
-      }
-      e.preventDefault();
-      onSlotMouseDown?.(dateTime);
-      onSlotMouseUp?.();
-    },
-    [dateTime, onSlotMouseDown, onSlotMouseUp]
-  );
-
   return (
     <button
       className={cn(
-        "h-5 w-full appearance-none bg-transparent p-0 text-left transition-colors",
+        "block h-5 min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none transition-colors",
         isThirtyMinuteBoundary ? "border-border/50 border-t" : "",
         isOver ? "bg-primary/10" : ""
       )}
-      onKeyDown={handleKeyDown}
+      data-calendar-slot
       onMouseDown={handleMouseDown}
-      onMouseEnter={handleMouseEnter}
+      onMouseEnter={handleMouseMove}
       onMouseLeave={onSlotLeave}
+      onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       ref={setNodeRef}
       type="button"

@@ -49,24 +49,31 @@ export default function Page() {
     tasksQuery: { data: tasks = [], isLoading },
   } = useTasks();
 
+  // Memoize query options to avoid recreating arrays on every render.
+  const eventsQueryOptions = useMemo(
+    () =>
+      visibleGoogleCalendars.map((calendar) => {
+        const options = orpc.googleCal.events.list.queryOptions({
+          input: {
+            accountId: calendar.accountId,
+            calendarId: calendar.calendarId,
+            timeMin: window.timeMin,
+            timeMax: window.timeMax,
+          },
+        });
+
+        return {
+          ...options,
+          staleTime: 60_000,
+          placeholderData: keepPreviousData,
+        };
+      }),
+    [visibleGoogleCalendars, window.timeMin, window.timeMax]
+  );
+
   // Fetch events for each visible calendar within the current window
   const eventsQueries = useQueries({
-    queries: visibleGoogleCalendars.map((calendar) => {
-      const options = orpc.googleCal.events.list.queryOptions({
-        input: {
-          accountId: calendar.accountId,
-          calendarId: calendar.calendarId,
-          timeMin: window.timeMin,
-          timeMax: window.timeMax,
-        },
-      });
-
-      return {
-        ...options,
-        staleTime: 60_000,
-        placeholderData: keepPreviousData,
-      };
-    }),
+    queries: eventsQueryOptions,
   });
 
   const googleEvents = useMemo<GoogleEventWithSource[]>(

@@ -36,6 +36,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     }),
     [stateAuthClient]
   );
+  // Only mount devtools in development to avoid production overhead.
+  const showReactQueryDevtools = process.env.NODE_ENV === "development";
 
   return (
     <ThemeProvider
@@ -48,7 +50,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <StateProvider config={config} storage={storage}>
           {children}
         </StateProvider>
-        <ReactQueryDevtools />
+        {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>
       <Toaster richColors />
     </ThemeProvider>
