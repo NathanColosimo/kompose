@@ -5,7 +5,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
-import { Plus, X } from "lucide-react-native";
+import { Plus, Undo2, X } from "lucide-react-native";
 import React from "react";
 import {
   FlatList,
@@ -18,11 +18,15 @@ import {
 import { Temporal } from "temporal-polyfill";
 import { Container } from "@/components/container";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColorScheme } from "@/lib/color-scheme-context";
+import { cn } from "@/lib/utils";
 
 function getSystemTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -65,6 +69,9 @@ function formatDurationMinutes(minutes: number): string {
 
   return `${hours}h ${remainder}m`;
 }
+
+// Delay before finalizing a task as done (allows undo).
+const UNDO_DELAY_MS = 5000;
 
 // Convert a plain date into a JS Date using the device's local timezone.
 function plainDateToDate(plainDate: Temporal.PlainDate): Date {
@@ -357,6 +364,13 @@ export default function TasksTab() {
     buildEmptyDraft(timeZone)
   );
   const [isDurationPickerOpen, setIsDurationPickerOpen] = React.useState(false);
+  // Track pending "done" actions so we can show undo for 5s.
+  const [pendingDoneIds, setPendingDoneIds] = React.useState<Set<string>>(
+    () => new Set()
+  );
+  const pendingDoneTimeouts = React.useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  );
 
   const durationHourOptions = React.useMemo(
     () => Array.from({ length: 6 }, (_, index) => index),
@@ -376,6 +390,73 @@ export default function TasksTab() {
 
   // Date/time picker state (native picker).
   const [picker, setPicker] = React.useState<TaskPickerState>(null);
+
+  React.useEffect(() => {
+    // Clean up any pending timeouts on unmount.
+    return () => {
+      pendingDoneTimeouts.current.forEach((timeoutId) =>
+        clearTimeout(timeoutId)
+      );
+      pendingDoneTimeouts.current.clear();
+    };
+  }, []);
+
+  const clearPendingDone = React.useCallback((taskId: string) => {
+    const timeoutId = pendingDoneTimeouts.current.get(taskId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      pendingDoneTimeouts.current.delete(taskId);
+    }
+    setPendingDoneIds((prev) => {
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
+
+  const startPendingDone = React.useCallback(
+    (task: TaskSelectDecoded) => {
+      // Reset any existing timer so users always get a full undo window.
+      const existingTimeout = pendingDoneTimeouts.current.get(task.id);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      setPendingDoneIds((prev) => {
+        const next = new Set(prev);
+        next.add(task.id);
+        return next;
+      });
+
+      const timeoutId = setTimeout(() => {
+        updateTask.mutate({
+          id: task.id,
+          scope: "this",
+          task: { status: "done" },
+        });
+        pendingDoneTimeouts.current.delete(task.id);
+        setPendingDoneIds((prev) => {
+          const next = new Set(prev);
+          next.delete(task.id);
+          return next;
+        });
+      }, UNDO_DELAY_MS);
+
+      pendingDoneTimeouts.current.set(task.id, timeoutId);
+    },
+    [updateTask]
+  );
+
+  const togglePendingDone = React.useCallback(
+    (task: TaskSelectDecoded) => {
+      if (pendingDoneIds.has(task.id)) {
+        clearPendingDone(task.id);
+        return;
+      }
+      startPendingDone(task);
+    },
+    [clearPendingDone, pendingDoneIds, startPendingDone]
+  );
 
   // Memoize to keep the header action stable.
   const openCreate = React.useCallback(() => {
@@ -449,15 +530,12 @@ export default function TasksTab() {
     closeModal();
   }
 
-  function handleToggleDone() {
+  function handleModalDone() {
     if (!editingTask) {
       return;
     }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: editingTask.status === "done" ? "todo" : "done" },
-    });
+    // Trigger the undoable "done" flow, then close the modal.
+    startPendingDone(editingTask);
     closeModal();
   }
 
@@ -481,7 +559,7 @@ export default function TasksTab() {
     <Container>
       {/* Task list */}
       <FlatList
-        contentContainerClassName="px-4 pb-6"
+        contentContainerClassName="px-4 pb-6 pt-2 gap-3"
         data={inboxTasks}
         keyExtractor={(t) => t.id}
         ListEmptyComponent={
@@ -502,29 +580,65 @@ export default function TasksTab() {
             tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
           />
         }
-        renderItem={({ item }) => (
-          <Pressable
-            className="border-border border-b py-3 active:bg-card"
-            onPress={() => openEdit(item)}
-          >
-            <View className="flex-row items-center justify-between gap-3">
-              <Text
-                className="flex-1 font-semibold text-base text-foreground"
-                numberOfLines={1}
+        renderItem={({ item }) => {
+          const isPendingDone = pendingDoneIds.has(item.id);
+
+          return (
+            <Card className={cn("gap-3 py-3", isPendingDone && "opacity-70")}>
+              <Pressable
+                className="rounded-xl"
+                onPress={() => openEdit(item)}
               >
-                {item.title}
-              </Text>
-              <Text className="text-muted-foreground text-xs">
-                {item.durationMinutes}m
-              </Text>
-            </View>
-            {item.dueDate ? (
-              <Text className="mt-1 text-muted-foreground text-xs">
-                Due {formatPlainDateLong(item.dueDate)}
-              </Text>
-            ) : null}
-          </Pressable>
-        )}
+                <CardContent className="px-4">
+                  <View className="flex-row items-start gap-3">
+                    <Checkbox
+                      accessibilityLabel="Mark task done"
+                      checked={isPendingDone}
+                      onCheckedChange={() => togglePendingDone(item)}
+                      onPress={(event) => event.stopPropagation()}
+                    />
+                    <View className="flex-1">
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text
+                          className="flex-1 font-semibold text-base text-foreground"
+                          numberOfLines={1}
+                        >
+                          {item.title}
+                        </Text>
+                        <View className="flex-row items-center gap-1.5">
+                          <Text className="text-muted-foreground text-xs">
+                            {item.durationMinutes}m
+                          </Text>
+                          {isPendingDone ? (
+                            <Button
+                              accessibilityLabel="Undo mark done"
+                              onPress={(event) => {
+                                event.stopPropagation();
+                                clearPendingDone(item.id);
+                              }}
+                              size="icon"
+                              variant="ghost"
+                            >
+                              <Icon as={Undo2} size={16} />
+                            </Button>
+                          ) : null}
+                        </View>
+                      </View>
+                      {item.dueDate ? (
+                        <>
+                          <Separator className="my-2" />
+                          <Text className="text-muted-foreground text-xs">
+                            Due {formatPlainDateLong(item.dueDate)}
+                          </Text>
+                        </>
+                      ) : null}
+                    </View>
+                  </View>
+                </CardContent>
+              </Pressable>
+            </Card>
+          );
+        }}
       />
 
       {/* Create/Edit Modal */}
@@ -545,6 +659,17 @@ export default function TasksTab() {
                 <Text>Close</Text>
               </Button>
             </View>
+
+            {editingTask ? (
+              <View className="mb-3 flex-row items-center gap-2">
+                <Checkbox
+                  accessibilityLabel="Mark task done"
+                  checked={pendingDoneIds.has(editingTask.id)}
+                  onCheckedChange={handleModalDone}
+                />
+                <Text className="text-foreground text-sm">Mark done</Text>
+              </View>
+            ) : null}
 
             {/* Title input */}
             <Input
@@ -593,14 +718,6 @@ export default function TasksTab() {
 
             {/* Modal footer */}
             <View className="mt-2 flex-row items-center justify-end gap-2.5">
-              {editingTask ? (
-                <Button onPress={handleToggleDone} variant="outline">
-                  <Text>
-                    {editingTask.status === "done" ? "Mark todo" : "Mark done"}
-                  </Text>
-                </Button>
-              ) : null}
-
               {editingTask ? (
                 <Button onPress={handleDelete} variant="destructive">
                   <Text>Delete</Text>
