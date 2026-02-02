@@ -15,6 +15,8 @@ interface TimeSlotProps {
   droppableDisabled?: boolean;
   /** Called when mouse enters the slot (for hover preview) */
   onSlotHover?: (dateTime: Temporal.ZonedDateTime) => void;
+  /** Called when mouse leaves the slot/column */
+  onSlotLeave?: () => void;
   /** Called when mouse down on the slot (start event creation) */
   onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse moves over the slot during creation drag */
@@ -31,6 +33,7 @@ export const TimeSlot = memo(function TimeSlotInner({
   children,
   droppableDisabled,
   onSlotHover,
+  onSlotLeave,
   onSlotMouseDown,
   onSlotDragMove,
   onSlotMouseUp,
@@ -99,19 +102,34 @@ export const TimeSlot = memo(function TimeSlotInner({
     [onSlotMouseUp]
   );
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key !== "Enter" && e.key !== " ") {
+        return;
+      }
+      e.preventDefault();
+      onSlotMouseDown?.(dateTime);
+      onSlotMouseUp?.();
+    },
+    [dateTime, onSlotMouseDown, onSlotMouseUp]
+  );
+
   return (
-    <div
+    <button
       className={cn(
-        "h-5 transition-colors",
+        "h-5 w-full appearance-none bg-transparent p-0 text-left transition-colors",
         isThirtyMinuteBoundary ? "border-border/50 border-t" : "",
         isOver ? "bg-primary/10" : ""
       )}
+      onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
       onMouseEnter={handleMouseEnter}
+      onMouseLeave={onSlotLeave}
       onMouseUp={handleMouseUp}
       ref={setNodeRef}
+      type="button"
     >
       {children}
-    </div>
+    </button>
   );
 });

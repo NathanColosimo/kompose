@@ -157,7 +157,8 @@ export function useEventCreationState(): EventCreationContextValue {
       if (!defaultCalendar) {
         return;
       }
-      setState({
+      setState((prev) => ({
+        ...prev,
         isCreating: true,
         startDateTime: dateTime,
         endDateTime: dateTime.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
@@ -165,7 +166,7 @@ export function useEventCreationState(): EventCreationContextValue {
         calendarId: defaultCalendar.calendarId,
         accountId: defaultCalendar.accountId,
         showPopover: false,
-      });
+      }));
     },
     [defaultCalendar]
   );

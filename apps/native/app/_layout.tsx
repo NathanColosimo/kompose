@@ -1,6 +1,6 @@
 import "../global.css";
 
-import { StateProvider } from "@kompose/state";
+import { StateProvider } from "@kompose/state/state-provider";
 import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";

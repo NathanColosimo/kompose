@@ -1,4 +1,4 @@
-import type { StorageAdapter } from "@kompose/state";
+import type { StorageAdapter } from "@kompose/state/storage";
 // biome-ignore lint/performance/noNamespaceImport: SecureStore is a namespace object
 import * as SecureStore from "expo-secure-store";
 

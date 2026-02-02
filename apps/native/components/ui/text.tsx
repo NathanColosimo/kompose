@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noNamespaceImport: Imported component
 import * as Slot from "@rn-primitives/slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";

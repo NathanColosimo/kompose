@@ -1,3 +1,6 @@
+/** biome-ignore-all lint/a11y/useSemanticElements: Imported Component */
+/** biome-ignore-all lint/a11y/useKeyWithClickEvents: Imported Component */
+/** biome-ignore-all lint/a11y/noNoninteractiveElementInteractions: Imported Component */
 "use client";
 
 import { cva, type VariantProps } from "class-variance-authority";

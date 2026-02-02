@@ -54,12 +54,10 @@ export function CommandBar() {
   // Handle keyboard events at the Command level
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (view !== "root") {
-          e.preventDefault();
-          setView("root");
-          setSearch("");
-        }
+      if (e.key === "Escape" && view !== "root") {
+        e.preventDefault();
+        setView("root");
+        setSearch("");
         // If in root view, let the dialog handle closing
       }
 

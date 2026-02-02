@@ -8,6 +8,7 @@
       "!**/.turbo",
       "!**/dev-dist",
       "!**/.zed",
+      "!**/.cursor",
       "!**/.vscode",
       "!**/routeTree.gen.ts",
       "!**/src-tauri",

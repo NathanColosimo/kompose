@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noNamespaceImport: Imported component
 import * as SeparatorPrimitive from "@rn-primitives/separator";
 import { cn } from "@/lib/utils";
 

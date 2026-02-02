@@ -1,14 +1,14 @@
 {
   "name": "@kompose/state",
   "exports": {
-    ".": {
-      "default": "./src/index.ts"
-    },
     "./atoms/*": {
       "default": "./src/atoms/*.ts"
     },
     "./hooks/*": {
       "default": "./src/hooks/*.ts"
+    },
+    "./state-provider": {
+      "default": "./src/state-provider.tsx"
     },
     "./*": {
       "default": "./src/*.ts"

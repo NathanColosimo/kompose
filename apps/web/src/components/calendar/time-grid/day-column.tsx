@@ -43,7 +43,6 @@ export const DayColumn = memo(function DayColumnInner({
   return (
     <div
       className="relative flex shrink-0 flex-col border-border border-r last:border-r-0"
-      onMouseLeave={onSlotLeave}
       style={{ width, scrollSnapAlign: "start" }}
     >
       {hours.map((hour) => (
@@ -57,6 +56,7 @@ export const DayColumn = memo(function DayColumnInner({
               minutes={minutes}
               onSlotDragMove={onSlotDragMove}
               onSlotHover={onSlotHover}
+              onSlotLeave={onSlotLeave}
               onSlotMouseDown={onSlotMouseDown}
               onSlotMouseUp={onSlotMouseUp}
               timeZone={timeZone}

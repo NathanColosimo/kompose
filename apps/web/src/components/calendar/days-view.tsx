@@ -23,12 +23,10 @@ import {
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
-import {
-  CreationPreview,
-  EventCreationPopover,
-  EventCreationProvider,
-  useEventCreation,
-} from "./event-creation";
+import { CreationPreview } from "./event-creation/creation-preview";
+import { EventCreationPopover } from "./event-creation/event-creation-popover";
+import { EventCreationProvider } from "./event-creation/event-creation-provider";
+import { useEventCreation } from "./event-creation/use-event-creation";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
 import { DayColumn } from "./time-grid/day-column";
@@ -358,14 +356,16 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   width={dayColumnWidth}
                 >
                   {/* Creation preview for this column */}
-                  <CreationPreview
-                    columnDate={day}
-                    columnWidth={dayColumnWidth}
-                    scrollContainerRef={scrollRef}
-                  />
+                  <CreationPreview columnDate={day} />
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
-                        ({ event, start, end, calendarId, accountId }) => (
+                        ({
+                          event,
+                          start,
+                          end,
+                          calendarId,
+                          accountId,
+                        }: PositionedGoogleEvent) => (
                           <GoogleCalendarEvent
                             accountId={accountId}
                             calendarId={calendarId}

@@ -68,7 +68,7 @@
     "@babel/core": "^7.28.6",
     "@babel/plugin-transform-react-jsx": "^7.28.6",
     "@kompose/config": "workspace:*",
-    "@types/react": "~19.1.10",
+    "@types/react": "catalog:",
     "typescript": "~5.9.3"
   },
   "private": true

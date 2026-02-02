@@ -62,7 +62,9 @@ export function CommandBarSearchTasks({ search }: CommandBarSearchTasksProps) {
 
   // Filter tasks: exclude completed, exclude recurring, match search query
   const filteredTasks = useMemo(() => {
-    if (!tasks) return [];
+    if (!tasks) {
+      return [];
+    }
 
     // Base filters: exclude completed and recurring tasks
     const searchable = tasks.filter(
@@ -71,7 +73,9 @@ export function CommandBarSearchTasks({ search }: CommandBarSearchTasksProps) {
     );
 
     // If no search query, return all searchable tasks
-    if (!search.trim()) return searchable;
+    if (!search.trim()) {
+      return searchable;
+    }
 
     // Filter by title match
     const query = search.toLowerCase();

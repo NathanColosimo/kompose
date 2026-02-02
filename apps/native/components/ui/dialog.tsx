@@ -1,3 +1,5 @@
+// biome-ignore-all lint/performance/noNamespaceImport: Imported component
+// biome-ignore-all lint/complexity/noUselessFragments: Fragment is necessary
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { X } from "lucide-react-native";
 import * as React from "react";

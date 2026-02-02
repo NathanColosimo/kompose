@@ -1,4 +1,4 @@
-import * as chrono from "chrono-node";
+import { parseDate } from "chrono-node";
 import { Temporal } from "temporal-polyfill";
 
 /**
@@ -78,7 +78,7 @@ function parseNaturalDate(
   dateStr: string,
   referenceDate?: Date
 ): Temporal.PlainDate | null {
-  const parsed = chrono.parseDate(dateStr.trim(), referenceDate);
+  const parsed = parseDate(dateStr.trim(), referenceDate);
   if (!parsed) {
     return null;
   }

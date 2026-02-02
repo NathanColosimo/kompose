@@ -1077,43 +1077,44 @@ function EventEditForm({
     );
   };
 
-  const buildCloseSaveRequest = useCallback(
+  const buildCreateCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      // Handle create mode
-      if (isCreateMode) {
-        // In create mode, require a title
-        const trimmedTitle = values.summary.trim();
-        if (!trimmedTitle) {
-          return { type: "none" } satisfies CloseSaveRequest;
-        }
-
-        const temporalPayload = buildTemporalPayload(
-          values,
-          clampToStartIfNeeded
-        );
-        if (!temporalPayload) {
-          return { type: "none" } satisfies CloseSaveRequest;
-        }
-
-        return {
-          type: "create",
-          payload: {
-            accountId,
-            calendarId,
-            event: {
-              summary: trimmedTitle,
-              description: values.description?.trim() || undefined,
-              location: values.location?.trim() || undefined,
-              colorId: values.colorId ?? undefined,
-              recurrence:
-                values.recurrence?.length > 0 ? values.recurrence : undefined,
-              start: temporalPayload.startPayload,
-              end: temporalPayload.endPayload,
-            },
-          },
-        };
+      const trimmedTitle = values.summary.trim();
+      if (!trimmedTitle) {
+        return { type: "none" } satisfies CloseSaveRequest;
       }
 
+      const temporalPayload = buildTemporalPayload(
+        values,
+        clampToStartIfNeeded
+      );
+      if (!temporalPayload) {
+        return { type: "none" } satisfies CloseSaveRequest;
+      }
+
+      return {
+        type: "create",
+        payload: {
+          accountId,
+          calendarId,
+          event: {
+            summary: trimmedTitle,
+            description: values.description?.trim() || undefined,
+            location: values.location?.trim() || undefined,
+            colorId: values.colorId ?? undefined,
+            recurrence:
+              values.recurrence?.length > 0 ? values.recurrence : undefined,
+            start: temporalPayload.startPayload,
+            end: temporalPayload.endPayload,
+          },
+        },
+      };
+    },
+    [accountId, calendarId, clampToStartIfNeeded]
+  );
+
+  const buildEditCloseSaveRequest = useCallback(
+    (values: EventFormValues): CloseSaveRequest => {
       // Edit mode: If the user never interacted, do not send an update.
       if (!hasUserEditedRef.current) {
         return { type: "none" } satisfies CloseSaveRequest;
@@ -1167,14 +1168,15 @@ function EventEditForm({
         defaultScope,
       };
     },
-    [
-      accountId,
-      calendarId,
-      clampToStartIfNeeded,
-      event,
-      isCreateMode,
-      masterQuery.data,
-    ]
+    [accountId, calendarId, clampToStartIfNeeded, event, masterQuery.data]
+  );
+
+  const buildCloseSaveRequest = useCallback(
+    (values: EventFormValues): CloseSaveRequest =>
+      isCreateMode
+        ? buildCreateCloseSaveRequest(values)
+        : buildEditCloseSaveRequest(values),
+    [buildCreateCloseSaveRequest, buildEditCloseSaveRequest, isCreateMode]
   );
 
   // Register close-save callback so the popover can decide what to do on close.

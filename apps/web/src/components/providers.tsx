@@ -1,6 +1,7 @@
 "use client";
 
-import { createWebStorageAdapter, StateProvider } from "@kompose/state";
+import { StateProvider } from "@kompose/state/state-provider";
+import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useMemo } from "react";

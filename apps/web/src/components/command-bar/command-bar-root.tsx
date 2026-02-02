@@ -13,12 +13,12 @@ interface CommandBarRootProps {
   onNavigate: (view: CommandBarView) => void;
 }
 
-type Action = {
+interface Action {
   id: string;
   label: string;
   icon: React.ElementType;
   view: Exclude<CommandBarView, "root">;
-};
+}
 
 /**
  * Available actions in the command bar root view.

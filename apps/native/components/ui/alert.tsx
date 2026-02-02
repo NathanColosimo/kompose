@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noNamespaceImport: Imported component
 import type { LucideIcon } from "lucide-react-native";
 import * as React from "react";
 import { View, type ViewProps } from "react-native";
