@@ -48,8 +48,7 @@ export default function SignInForm() {
         </p>
         <h2 className="font-serif text-3xl">Welcome back</h2>
         <p className="text-muted-foreground text-sm">
-          Pick up where you left off. Kompose remembers your last plan, focus
-          blocks, and AI threads.
+          Your timeline and integrations are ready.
         </p>
       </div>
       <Button
