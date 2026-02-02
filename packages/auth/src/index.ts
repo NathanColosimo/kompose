@@ -9,11 +9,15 @@ import { nextCookies } from "better-auth/next-js";
 
 export const auth = betterAuth<BetterAuthOptions>({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
+  advanced: {
+    // Prefix Better Auth cookies for Kompose.
+    cookiePrefix: "kompose",
+  },
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,
   }),
-  trustedOrigins: [env.NEXT_PUBLIC_WEB_URL, "mybettertapp://", "exp://"],
+  trustedOrigins: [env.NEXT_PUBLIC_WEB_URL, "kompose://", "exp://"],
   emailAndPassword: {
     enabled: false,
   },
