@@ -47,10 +47,10 @@ export default function SignUpForm() {
         <p className="text-muted-foreground text-xs uppercase tracking-[0.35em]">
           Create account
         </p>
-        <h2 className="font-serif text-3xl">Start orchestrating hours</h2>
+        <h2 className="font-serif text-3xl">Create your Kompose workspace</h2>
         <p className="text-muted-foreground text-sm">
-          A Google account is all you need. Kompose spins up a workspace with
-          calendar sync, tasks, and AI ready to go.
+          Connect Google to get calendar sync, tasks, and AI orchestration in
+          minutes.
         </p>
       </div>
       <Button

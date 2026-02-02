@@ -25,18 +25,17 @@ export default function LoginPage() {
         <section className="relative hidden flex-col justify-between overflow-hidden border-border/50 bg-linear-to-br from-primary/15 via-background to-background p-10 text-left lg:flex">
           <div className="space-y-6">
             <Link className="text-muted-foreground text-sm" href="/">
-              Back to kompose.com
+              Back to kompose.dev
             </Link>
             <p className="text-muted-foreground text-sm uppercase tracking-[0.35em]">
               kompose
             </p>
             <h1 className="font-serif text-5xl leading-tight">
-              Your entire work week, orchestrated in one calm timeline.
+              Your calendar and tasks, orchestrated together.
             </h1>
             <p className="text-lg text-muted-foreground">
-              Drag backlog tasks onto your calendar, let AI negotiate changes,
-              and keep every integration in sync. Kompose turns chaotic juggling
-              into deliberate planning.
+              Schedule backlog work by drag-and-drop, keep integrations synced,
+              and ask the AI assistant to reshuffle.
             </p>
           </div>
           <div className="space-y-3">
@@ -61,11 +60,17 @@ export default function LoginPage() {
         <section className="flex items-center justify-center px-6 pt-12 pb-20">
           <div className="w-full max-w-md">
             <Tabs className="space-y-6" defaultValue="sign-in">
-              <TabsList className="w-full">
-                <TabsTrigger className="flex-1" value="sign-in">
+              <TabsList className="w-full border border-border/60 bg-linear-to-r from-primary/15 via-sky-500/15 to-indigo-500/15 shadow-sm">
+                <TabsTrigger
+                  className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-sky-500/30 dark:data-[state=active]:ring-sky-400/20"
+                  value="sign-in"
+                >
                   Sign in
                 </TabsTrigger>
-                <TabsTrigger className="flex-1" value="sign-up">
+                <TabsTrigger
+                  className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-sky-500/30 dark:data-[state=active]:ring-sky-400/20"
+                  value="sign-up"
+                >
                   Sign up
                 </TabsTrigger>
               </TabsList>
