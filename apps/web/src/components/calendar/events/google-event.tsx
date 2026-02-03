@@ -195,9 +195,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         <div className="truncate font-medium text-xs">
           {event.summary ?? "Google event"}
         </div>
-        <div className="truncate text-[10px] opacity-85">
-          {formatTime(start)} - {formatTime(end)}
-        </div>
+        {/* Hide time for short events (<30min) to prevent overflow */}
+        {durationMinutes >= 30 && (
+          <div className="truncate text-[10px] opacity-85">
+            {formatTime(start)} - {formatTime(end)}
+          </div>
+        )}
       </div>
     </EventEditPopover>
   );

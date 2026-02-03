@@ -55,16 +55,18 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       };
     }
 
-    // Show hover preview when not creating
+    // Show hover preview when not creating, centered on cursor
     if (hoverDateTime && !isCreating) {
       const hoverDate = hoverDateTime.toPlainDate();
       if (!hoverDate.equals(columnDate)) {
         return null;
       }
+      // Offset start by half duration to center preview on cursor
+      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
       return {
         type: "hover" as const,
-        start: hoverDateTime,
-        end: hoverDateTime.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        start: hoverDateTime.subtract({ minutes: halfDuration }),
+        end: hoverDateTime.add({ minutes: halfDuration }),
       };
     }
 

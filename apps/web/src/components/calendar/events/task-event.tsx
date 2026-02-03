@@ -141,9 +141,12 @@ export const TaskEvent = memo(function TaskEventInner({
             >
               {task.title}
             </div>
-            <div className="truncate text-[10px] opacity-80">
-              {formatTime(startZdt)} - {formatTime(endZdt)}
-            </div>
+            {/* Hide time for short events (<30min) to prevent overflow */}
+            {durationMinutes >= 30 && (
+              <div className="truncate text-[10px] opacity-80">
+                {formatTime(startZdt)} - {formatTime(endZdt)}
+              </div>
+            )}
           </div>
         </div>
       </div>
