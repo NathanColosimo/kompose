@@ -49,6 +49,18 @@ const isUnplanned = (
   (task.dueDate === null ||
     Temporal.PlainDate.compare(task.dueDate, today) > 0);
 
+/** Done today: completed tasks updated on today's local date. */
+const isDoneToday = (
+  task: TaskSelectDecoded,
+  today: Temporal.PlainDate,
+  timeZone: string
+): boolean =>
+  task.status === "done" &&
+  Temporal.PlainDate.compare(
+    task.updatedAt.toZonedDateTimeISO(timeZone).toPlainDate(),
+    today
+  ) === 0;
+
 /**
  * Shared task sections to keep Inbox/Today parity across web and native.
  */
@@ -63,32 +75,44 @@ export function useTaskSections() {
     [timeZone]
   );
 
-  const { inboxTasks, overdueTasks, unplannedTasks } = useMemo(() => {
-    const tasks = tasksQuery.data ?? [];
-    if (tasks.length === 0) {
-      return { inboxTasks: [], overdueTasks: [], unplannedTasks: [] };
-    }
+  const { inboxTasks, overdueTasks, unplannedTasks, doneTasks } =
+    useMemo(() => {
+      const tasks = tasksQuery.data ?? [];
+      if (tasks.length === 0) {
+        return {
+          inboxTasks: [],
+          overdueTasks: [],
+          unplannedTasks: [],
+          doneTasks: [],
+        };
+      }
 
-    // Base filter: exclude recurring tasks to match sidebar behavior.
-    const nonRecurring = tasks.filter(isNonRecurring);
+      // Base filter: exclude recurring tasks to match sidebar behavior.
+      const nonRecurring = tasks.filter(isNonRecurring);
 
-    // Inbox: uncompleted, no startDate/startTime, sorted by updatedAt desc.
-    const inbox = nonRecurring
-      .filter(isInboxTask)
-      .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
+      // Inbox: uncompleted, no startDate/startTime, sorted by updatedAt desc.
+      const inbox = nonRecurring
+        .filter(isInboxTask)
+        .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
 
-    // Today view sections: overdue tasks and unplanned tasks.
-    const overdue = nonRecurring.filter((task) =>
-      isOverdue(task, today, nowZdt, timeZone)
-    );
-    const unplanned = nonRecurring.filter((task) => isUnplanned(task, today));
+      // Today view sections: overdue tasks and unplanned tasks.
+      const overdue = tasks.filter(
+        (task) =>
+          task.status !== "done" && isOverdue(task, today, nowZdt, timeZone)
+      );
+      const unplanned = nonRecurring.filter(
+        (task) => task.status !== "done" && isUnplanned(task, today)
+      );
+      // Done: completed today in the user's timezone.
+      const done = tasks.filter((task) => isDoneToday(task, today, timeZone));
 
-    return {
-      inboxTasks: inbox,
-      overdueTasks: overdue,
-      unplannedTasks: unplanned,
-    };
-  }, [tasksQuery.data, timeZone, today, nowZdt]);
+      return {
+        inboxTasks: inbox,
+        overdueTasks: overdue,
+        unplannedTasks: unplanned,
+        doneTasks: done,
+      };
+    }, [tasksQuery.data, timeZone, today, nowZdt]);
 
   return {
     tasksQuery,
@@ -98,5 +122,6 @@ export function useTaskSections() {
     inboxTasks,
     overdueTasks,
     unplannedTasks,
+    doneTasks,
   };
 }

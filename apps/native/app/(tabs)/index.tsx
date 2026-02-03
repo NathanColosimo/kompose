@@ -320,7 +320,8 @@ type TaskListItem =
 // Build the Today view sections (Overdue and Unplanned).
 function buildTodaySections(
   overdueTasks: TaskSelectDecoded[],
-  unplannedTasks: TaskSelectDecoded[]
+  unplannedTasks: TaskSelectDecoded[],
+  doneTasks: TaskSelectDecoded[]
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
@@ -328,6 +329,9 @@ function buildTodaySections(
   }
   if (unplannedTasks.length > 0) {
     sections.push({ title: "Unplanned", data: unplannedTasks });
+  }
+  if (doneTasks.length > 0) {
+    sections.push({ title: "Done", data: doneTasks });
   }
   return sections;
 }
@@ -514,6 +518,7 @@ export default function TasksTab() {
     inboxTasks,
     overdueTasks,
     unplannedTasks,
+    doneTasks,
   } = useTaskSections();
 
   // Track the active task view to mirror the web sidebar.
@@ -521,8 +526,8 @@ export default function TasksTab() {
 
   // Build the Today sections so the list can render headers.
   const todaySections = React.useMemo(
-    () => buildTodaySections(overdueTasks, unplannedTasks),
-    [overdueTasks, unplannedTasks]
+    () => buildTodaySections(overdueTasks, unplannedTasks, doneTasks),
+    [doneTasks, overdueTasks, unplannedTasks]
   );
 
   // Modal state (create/edit).

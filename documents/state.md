@@ -21,6 +21,7 @@
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
+- `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using timezone-aware filters.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
 - `index.ts`: Public exports for shared atoms/hooks/types.
 - `state-provider.tsx`: State hydrator/provider wiring and session gating.

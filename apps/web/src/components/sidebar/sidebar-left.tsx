@@ -1,6 +1,7 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { CalendarClock, Inbox } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
@@ -37,6 +38,112 @@ const navMain = [
   },
 ];
 
+function renderEmptyMessage(message: string) {
+  return <div className="p-4 text-muted-foreground text-sm">{message}</div>;
+}
+
+function renderInboxContent(inboxTasks: TaskSelectDecoded[]) {
+  if (inboxTasks.length === 0) {
+    return renderEmptyMessage("No tasks in inbox.");
+  }
+  return inboxTasks.map((task) => <TaskItem key={task.id} task={task} />);
+}
+
+function renderTodayContent({
+  overdueTasks,
+  doneTasks,
+  unplannedTasks,
+}: {
+  overdueTasks: TaskSelectDecoded[];
+  doneTasks: TaskSelectDecoded[];
+  unplannedTasks: TaskSelectDecoded[];
+}) {
+  const hasOverdue = overdueTasks.length > 0;
+  const hasUnplanned = unplannedTasks.length > 0;
+  const hasDone = doneTasks.length > 0;
+
+  if (!(hasOverdue || hasUnplanned || hasDone)) {
+    return renderEmptyMessage("Nothing for today.");
+  }
+
+  return (
+    <div className="flex flex-col">
+      {/* Overdue section */}
+      {hasOverdue && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Overdue
+          </div>
+          {overdueTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {/* Unplanned section */}
+      {hasUnplanned && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Unplanned
+          </div>
+          {unplannedTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {/* Done section */}
+      {hasDone && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Done
+          </div>
+          {doneTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getSidebarContent({
+  activeView,
+  doneTasks,
+  error,
+  inboxTasks,
+  isLoading,
+  overdueTasks,
+  unplannedTasks,
+}: {
+  activeView: string;
+  doneTasks: TaskSelectDecoded[];
+  error: unknown;
+  inboxTasks: TaskSelectDecoded[];
+  isLoading: boolean;
+  overdueTasks: TaskSelectDecoded[];
+  unplannedTasks: TaskSelectDecoded[];
+}) {
+  if (isLoading) {
+    return renderEmptyMessage("Loading tasks...");
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-destructive text-sm">Failed to load tasks</div>
+    );
+  }
+
+  switch (activeView) {
+    case "Inbox":
+      return renderInboxContent(inboxTasks);
+    case "Today":
+      return renderTodayContent({ doneTasks, overdueTasks, unplannedTasks });
+    default:
+      return null;
+  }
+}
+
 export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const [activeItem, setActiveItem] = useState(navMain[0]);
   const { setOpen } = useSidebar();
@@ -45,6 +152,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     inboxTasks,
     overdueTasks,
     unplannedTasks,
+    doneTasks,
   } = useTaskSections();
   const activeView = activeItem?.title ?? "Inbox";
 
@@ -56,78 +164,27 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     },
   });
 
-  const content = useMemo(() => {
-    if (isLoading) {
-      return (
-        <div className="p-4 text-muted-foreground text-sm">
-          Loading tasks...
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="p-4 text-destructive text-sm">Failed to load tasks</div>
-      );
-    }
-
-    // Inbox view: flat list sorted by updatedAt
-    if (activeView === "Inbox") {
-      if (inboxTasks.length === 0) {
-        return (
-          <div className="p-4 text-muted-foreground text-sm">
-            No tasks in inbox.
-          </div>
-        );
-      }
-      return inboxTasks.map((task) => <TaskItem key={task.id} task={task} />);
-    }
-
-    // Today view: sections for Overdue and Unplanned
-    if (activeView === "Today") {
-      const hasOverdue = overdueTasks.length > 0;
-      const hasUnplanned = unplannedTasks.length > 0;
-
-      if (!(hasOverdue || hasUnplanned)) {
-        return (
-          <div className="p-4 text-muted-foreground text-sm">
-            Nothing for today.
-          </div>
-        );
-      }
-
-      return (
-        <div className="flex flex-col">
-          {/* Overdue section */}
-          {hasOverdue && (
-            <div>
-              <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                Overdue
-              </div>
-              {overdueTasks.map((task) => (
-                <TaskItem key={task.id} task={task} />
-              ))}
-            </div>
-          )}
-
-          {/* Unplanned section */}
-          {hasUnplanned && (
-            <div>
-              <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                Unplanned
-              </div>
-              {unplannedTasks.map((task) => (
-                <TaskItem key={task.id} task={task} />
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Fallback (shouldn't happen)
-    return null;
-  }, [activeView, error, inboxTasks, isLoading, overdueTasks, unplannedTasks]);
+  const content = useMemo(
+    () =>
+      getSidebarContent({
+        activeView,
+        doneTasks,
+        error,
+        inboxTasks,
+        isLoading,
+        overdueTasks,
+        unplannedTasks,
+      }),
+    [
+      activeView,
+      doneTasks,
+      error,
+      inboxTasks,
+      isLoading,
+      overdueTasks,
+      unplannedTasks,
+    ]
+  );
 
   return (
     <Sidebar
