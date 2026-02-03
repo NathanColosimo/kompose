@@ -126,10 +126,10 @@ export function CommandBarCreateTask({
                   {/* Duration badge */}
                   {parsed.durationMinutes && (
                     <Badge
-                      className="h-5 gap-1 px-1.5 text-[10px]"
+                      className="h-6 gap-1.5 px-2 text-[11px]"
                       variant="secondary"
                     >
-                      <ClockIcon className="size-3" />
+                      <ClockIcon className="size-3.5" />
                       {formatDuration(parsed.durationMinutes)}
                     </Badge>
                   )}
@@ -137,10 +137,10 @@ export function CommandBarCreateTask({
                   {/* Due date badge */}
                   {parsed.dueDate && (
                     <Badge
-                      className="h-5 gap-1 px-1.5 text-[10px]"
+                      className="h-6 gap-1.5 px-2 text-[11px]"
                       variant="secondary"
                     >
-                      <CalendarIcon className="size-3" />
+                      <CalendarIcon className="size-3.5" />
                       {formatPlainDate(parsed.dueDate, {
                         month: "short",
                         day: "numeric",
@@ -151,10 +151,10 @@ export function CommandBarCreateTask({
                   {/* Start date badge */}
                   {parsed.startDate && (
                     <Badge
-                      className="h-5 gap-1 px-1.5 text-[10px]"
+                      className="h-6 gap-1.5 px-2 text-[11px]"
                       variant="secondary"
                     >
-                      <PlayCircleIcon className="size-3" />
+                      <PlayCircleIcon className="size-3.5" />
                       {formatPlainDate(parsed.startDate, {
                         month: "short",
                         day: "numeric",
@@ -167,7 +167,7 @@ export function CommandBarCreateTask({
           </CommandGroup>
 
           {/* Keybind hints footer */}
-          <div className="flex justify-center gap-3 border-t px-3 py-2 text-muted-foreground text-xs">
+          <div className="flex justify-center gap-3 border-t px-3 py-2.5 text-muted-foreground text-sm">
             <span>
               <code className="rounded bg-muted px-1">=</code> duration
             </span>

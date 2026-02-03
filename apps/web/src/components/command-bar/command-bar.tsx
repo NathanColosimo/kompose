@@ -89,8 +89,8 @@ export function CommandBar() {
   };
 
   return (
-    <CommandDialog onOpenChange={handleOpenChange} open={open}>
-      <Command onKeyDown={handleKeyDown} shouldFilter={view === "root"}>
+    <CommandDialog onOpenChange={handleOpenChange} open={open} size="lg">
+      <Command onKeyDown={handleKeyDown} shouldFilter={view === "root"} size="lg">
         <CommandInput
           onValueChange={setSearch}
           placeholder={getPlaceholder()}

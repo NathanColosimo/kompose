@@ -130,8 +130,8 @@ export function CommandBarSearchTasks({ search }: CommandBarSearchTasksProps) {
 
             {/* Location indicator */}
             {isScheduled ? (
-              <span className="flex items-center gap-1 text-muted-foreground text-xs">
-                <CalendarIcon className="size-3" />
+              <span className="flex items-center gap-1 text-muted-foreground text-sm">
+                <CalendarIcon className="size-3.5" />
                 {task.startDate &&
                   formatPlainDate(task.startDate, {
                     month: "short",
@@ -139,8 +139,8 @@ export function CommandBarSearchTasks({ search }: CommandBarSearchTasksProps) {
                   })}
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-muted-foreground text-xs">
-                <InboxIcon className="size-3" />
+              <span className="flex items-center gap-1 text-muted-foreground text-sm">
+                <InboxIcon className="size-3.5" />
                 Inbox
               </span>
             )}
