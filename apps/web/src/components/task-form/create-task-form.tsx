@@ -5,6 +5,7 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { CalendarIcon, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
+import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -46,6 +47,7 @@ export function CreateTaskForm() {
       title: "",
       description: "",
       startDate: todayPlainDate(),
+      startTime: null,
       durationMinutes: 30,
       dueDate: todayPlainDate().add({ days: 1 }),
       recurrence: null,
@@ -62,6 +64,7 @@ export function CreateTaskForm() {
       title: "",
       description: "",
       startDate: todayPlainDate(),
+      startTime: null,
       durationMinutes: 30,
       dueDate: todayPlainDate().add({ days: 1 }),
       recurrence: null,
@@ -158,6 +161,50 @@ export function CreateTaskForm() {
                     </PopoverContent>
                   </Popover>
                 )}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="startTime">Start Time</Label>
+              <Controller
+                control={control}
+                name="startTime"
+                render={({ field }) => {
+                  const value = field.value
+                    ? `${String(field.value.hour).padStart(2, "0")}:${String(
+                        field.value.minute
+                      ).padStart(2, "0")}`
+                    : "";
+
+                  return (
+                    <Input
+                      id="startTime"
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        if (!nextValue) {
+                          field.onChange(null);
+                          return;
+                        }
+
+                        const [hours, minutes] = nextValue
+                          .split(":")
+                          .map(Number);
+                        if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+                          return;
+                        }
+
+                        // Convert time input into a Temporal.PlainTime for storage.
+                        field.onChange(
+                          Temporal.PlainTime.from({
+                            hour: hours,
+                            minute: minutes,
+                          })
+                        );
+                      }}
+                      type="time"
+                      value={value}
+                    />
+                  );
+                }}
               />
             </div>
             <div className="grid gap-2">

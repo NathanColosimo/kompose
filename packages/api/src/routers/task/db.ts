@@ -1,6 +1,6 @@
 import { db } from "@kompose/db";
 import { type TaskUpdate, taskTable } from "@kompose/db/schema/task";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { Effect } from "effect";
 import { TaskRepositoryError } from "./client";
 
@@ -22,6 +22,43 @@ export const dbSelectById = (userId: string, taskId: string) =>
         .select()
         .from(taskTable)
         .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId))),
+    catch: (cause) => new TaskRepositoryError({ cause }),
+  });
+
+export const dbSelectBySeries = (userId: string, seriesMasterId: string) =>
+  Effect.tryPromise({
+    try: () =>
+      db
+        .select()
+        .from(taskTable)
+        .where(
+          and(
+            eq(taskTable.seriesMasterId, seriesMasterId),
+            eq(taskTable.userId, userId)
+          )
+        )
+        .orderBy(asc(taskTable.startDate)),
+    catch: (cause) => new TaskRepositoryError({ cause }),
+  });
+
+export const dbSelectBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string
+) =>
+  Effect.tryPromise({
+    try: () =>
+      db
+        .select()
+        .from(taskTable)
+        .where(
+          and(
+            eq(taskTable.seriesMasterId, seriesMasterId),
+            eq(taskTable.userId, userId),
+            gte(taskTable.startDate, fromDate)
+          )
+        )
+        .orderBy(asc(taskTable.startDate)),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
 
