@@ -1,5 +1,6 @@
 import { Command as CommandPrimitive } from "cmdk";
 import { CheckIcon, SearchIcon } from "lucide-react";
+// biome-ignore lint/performance/noNamespaceImport: Imported component
 import * as React from "react";
 import {
   Dialog,
@@ -68,7 +69,7 @@ function CommandDialog({
       <DialogContent
         className={cn(
           "top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0",
-          isLarge && "sm:!max-w-md",
+          isLarge && "sm:max-w-md!",
           className
         )}
         showCloseButton={showCloseButton}
@@ -108,10 +109,7 @@ function CommandInput({
         />
         <InputGroupAddon className={cn(isLarge && "text-sm/relaxed")}>
           <SearchIcon
-            className={cn(
-              "size-3.5 shrink-0 opacity-50",
-              isLarge && "size-4"
-            )}
+            className={cn("size-3.5 shrink-0 opacity-50", isLarge && "size-4")}
           />
         </InputGroupAddon>
       </InputGroup>

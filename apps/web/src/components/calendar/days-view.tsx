@@ -526,7 +526,8 @@ export function calculateEventPosition(
 
   return {
     top: `${top}px`,
-    height: `${Math.max(height, 24)}px`, // Minimum height of 24px
+    // Minimum height matches a 15-minute slot (20px).
+    height: `${Math.max(height, 20)}px`,
   };
 }
 

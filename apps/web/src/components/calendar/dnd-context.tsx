@@ -350,7 +350,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }): PreviewRect => {
       const startMinutes = minutesFromMidnight(start);
       const duration = durationInMinutes(start, end, minimum);
-      const height = Math.max((duration / 60) * PIXELS_PER_HOUR, 24);
+      // Ensure 15-minute blocks render at slot height (20px).
+      const height = Math.max((duration / 60) * PIXELS_PER_HOUR, 20);
 
       return {
         top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,

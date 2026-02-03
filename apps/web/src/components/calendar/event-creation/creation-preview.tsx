@@ -108,7 +108,8 @@ export const CreationPreview = memo(function CreationPreviewComponent({
     end.since(start).total({ unit: "minutes" })
   );
   const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-  const height = Math.max((durationMinutes / 60) * PIXELS_PER_HOUR, 24);
+  // Keep short previews aligned to a 15-minute slot height (20px).
+  const height = Math.max((durationMinutes / 60) * PIXELS_PER_HOUR, 20);
 
   return (
     <div
