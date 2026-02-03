@@ -17,25 +17,21 @@ const STORAGE_KEY = "visible-calendars";
 /**
  * Persisted calendar visibility selection.
  *
- * - `null`: treat as "all calendars visible" (default)
  * - `[]`: explicitly hide all calendars
  * - `[...ids]`: only those calendars visible
  */
-export type VisibleCalendars = CalendarIdentifier[] | null;
+export type VisibleCalendars = CalendarIdentifier[];
 
 export async function loadVisibleCalendars(): Promise<VisibleCalendars> {
   const raw = await SecureStore.getItemAsync(STORAGE_KEY);
   if (!raw) {
-    return null;
+    return [];
   }
   try {
-    // We only store `null` or an array.
+    // We only store an array.
     const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null) {
-      return null;
-    }
     if (!Array.isArray(parsed)) {
-      return null;
+      return [];
     }
     // Basic validation - keep it defensive.
     const cleaned: CalendarIdentifier[] = parsed
@@ -55,7 +51,7 @@ export async function loadVisibleCalendars(): Promise<VisibleCalendars> {
       }));
     return cleaned;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -68,10 +64,6 @@ export function isCalendarVisible(
   accountId: string,
   calendarId: string
 ): boolean {
-  // Default = show all.
-  if (visibleCalendars === null) {
-    return true;
-  }
   // Explicitly hide all.
   if (visibleCalendars.length === 0) {
     return false;

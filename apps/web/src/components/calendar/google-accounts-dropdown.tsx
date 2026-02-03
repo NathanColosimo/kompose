@@ -7,12 +7,12 @@ import {
 import type { CalendarWithSource } from "@kompose/state/atoms/google-data";
 import {
   type CalendarIdentifier,
-  isCalendarVisibleAtom,
-  visibleCalendarsAtom,
+  isCalendarVisible,
 } from "@kompose/state/atoms/visible-calendars";
+import { useVisibleCalendars } from "@kompose/state/hooks/use-visible-calendars";
 import { useQueries } from "@tanstack/react-query";
 import type { OAuth2UserInfo } from "better-auth";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -74,8 +74,7 @@ export function GoogleAccountsDropdown({
   googleAccounts,
   googleCalendars,
 }: GoogleAccountsDropdownProps) {
-  const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
-  const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
+  const { visibleCalendars, setVisibleCalendars } = useVisibleCalendars();
 
   // Fetch account info for each Google account to get their email
   const accountInfoQueries = useQueries({
@@ -128,19 +127,22 @@ export function GoogleAccountsDropdown({
   const toggleCalendar = useCallback(
     (accountId: string, calendarId: string) => {
       setVisibleCalendars((prev) =>
-        toggleCalendarSelection(prev ?? [], { accountId, calendarId })
+        toggleCalendarSelection(prev, { accountId, calendarId })
       );
     },
     [setVisibleCalendars]
   );
 
+  const isCalendarVisibleForSelection = useCallback(
+    (accountId: string, calendarId: string) =>
+      isCalendarVisible(visibleCalendars, accountId, calendarId),
+    [visibleCalendars]
+  );
+
   // Count of visible calendars
   const visibleCount = useMemo(() => {
-    if (visibleCalendars === null) {
-      return googleCalendars.length;
-    }
     return visibleCalendars.length;
-  }, [googleCalendars.length, visibleCalendars]);
+  }, [visibleCalendars]);
 
   const totalCount = googleCalendars.length;
 
@@ -167,7 +169,7 @@ export function GoogleAccountsDropdown({
           <AccountCalendarsSection
             account={account}
             calendars={calendarsByAccount.get(account.id) ?? []}
-            isCalendarVisible={isCalendarVisible}
+            isCalendarVisible={isCalendarVisibleForSelection}
             isLastAccount={accountIndex === accountsWithInfo.length - 1}
             key={account.id}
             toggleCalendar={toggleCalendar}

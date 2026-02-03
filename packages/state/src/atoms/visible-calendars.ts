@@ -11,19 +11,51 @@ export interface CalendarIdentifier {
 
 /**
  * Persisted calendar visibility selection.
- *
- * - `null`: treat as "all calendars visible" (default)
- * - `[]`: explicitly hide all calendars
- * - `[...ids]`: only those calendars visible
  */
-export type VisibleCalendars = CalendarIdentifier[] | null;
+export type VisibleCalendars = CalendarIdentifier[];
+
+/**
+ * Persisted visibility mode to distinguish defaults from user customizations.
+ *
+ * - `unset`: no user choice yet (defaults to "all")
+ * - `all`: keep all calendars visible (auto-add new calendars)
+ * - `custom`: explicit user selection (may be empty to hide all)
+ */
+export type VisibleCalendarsMode = "unset" | "all" | "custom";
 
 /**
  * Atom to store which calendars are currently visible.
  */
-export const visibleCalendarsAtom = createPersistedAtom<VisibleCalendars>(
+const rawVisibleCalendarsAtom = createPersistedAtom<VisibleCalendars | null>(
   "visible-calendars",
   null
+);
+
+/**
+ * Public atom that normalizes legacy `null` storage into an empty list.
+ */
+export const visibleCalendarsAtom = atom(
+  (get) => get(rawVisibleCalendarsAtom) ?? [],
+  (
+    get,
+    set,
+    update: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
+  ) => {
+    const prev = get(rawVisibleCalendarsAtom) ?? [];
+    const next =
+      typeof update === "function"
+        ? (update as (prev: VisibleCalendars) => VisibleCalendars)(prev)
+        : update;
+    set(rawVisibleCalendarsAtom, next);
+  }
+);
+
+/**
+ * Tracks whether the user is in "all" or "custom" mode.
+ */
+export const visibleCalendarsModeAtom = createPersistedAtom<VisibleCalendarsMode>(
+  "visible-calendars-mode",
+  "unset"
 );
 
 /**
@@ -34,9 +66,6 @@ export function isCalendarVisible(
   accountId: string,
   calendarId: string
 ): boolean {
-  if (visibleCalendars === null) {
-    return true;
-  }
   if (visibleCalendars.length === 0) {
     return false;
   }

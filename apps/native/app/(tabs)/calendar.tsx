@@ -3,7 +3,6 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import {
   type CalendarIdentifier,
   isCalendarVisible,
-  type VisibleCalendars,
 } from "@kompose/state/atoms/visible-calendars";
 import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
 import { useGoogleCalendars } from "@kompose/state/hooks/use-google-calendars";
@@ -202,21 +201,13 @@ export default function CalendarTab() {
 
   const { calendars: googleCalendars } = useGoogleCalendars(accountIds);
 
-  const { visibleCalendars, setVisibleCalendars } = useVisibleCalendars();
-  const effectiveVisibleCalendars: VisibleCalendars = visibleCalendars ?? null;
+  const {
+    visibleCalendars,
+    setVisibleCalendars,
+    setVisibleCalendarsAll,
+  } = useVisibleCalendars();
 
-  const visibleCalendarIds = useMemo<CalendarIdentifier[]>(() => {
-    if (googleCalendars.length === 0) {
-      return [];
-    }
-    if (effectiveVisibleCalendars === null) {
-      return googleCalendars.map((c) => ({
-        accountId: c.accountId,
-        calendarId: c.calendar.id,
-      }));
-    }
-    return effectiveVisibleCalendars;
-  }, [effectiveVisibleCalendars, googleCalendars]);
+  const visibleCalendarIds = visibleCalendars;
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({
@@ -322,14 +313,14 @@ export default function CalendarTab() {
 
   const calendarOptions = useMemo(() => {
     const visible = googleCalendars.filter((c) =>
-      isCalendarVisible(effectiveVisibleCalendars, c.accountId, c.calendar.id)
+      isCalendarVisible(visibleCalendars, c.accountId, c.calendar.id)
     );
     return visible.map((c) => ({
       accountId: c.accountId,
       calendarId: c.calendar.id,
       label: c.calendar.summary ?? "Calendar",
     }));
-  }, [effectiveVisibleCalendars, googleCalendars]);
+  }, [visibleCalendars, googleCalendars]);
 
   const defaultCalendar = calendarOptions[0];
 
@@ -756,7 +747,8 @@ export default function CalendarTab() {
         onClose={() => setIsPickerOpen(false)}
         open={isPickerOpen}
         setVisibleCalendars={setVisibleCalendars}
-        visibleCalendars={effectiveVisibleCalendars}
+        setVisibleCalendarsAll={setVisibleCalendarsAll}
+        visibleCalendars={visibleCalendars}
       />
 
       {/* Create/Edit Google event modal */}

@@ -19,13 +19,13 @@ interface CalendarPickerModalProps {
   setVisibleCalendars: (
     next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
   ) => void;
+  setVisibleCalendarsAll: () => void;
 }
 
 /**
  * Calendar visibility picker for mobile.
  *
  * Behavior:
- * - `visibleCalendars === null` => show all
  * - `visibleCalendars === []` => hide all
  * - else => show selected set
  */
@@ -36,6 +36,7 @@ export function CalendarPickerModal({
   googleCalendars,
   visibleCalendars,
   setVisibleCalendars,
+  setVisibleCalendarsAll,
 }: CalendarPickerModalProps) {
   const calendarsByAccount = useMemo(() => {
     const map = new Map<string, CalendarWithSource[]>();
@@ -70,7 +71,7 @@ export function CalendarPickerModal({
 
           {/* Show all / Hide all actions */}
           <View className="mb-3 flex-row gap-2">
-            <Button onPress={() => setVisibleCalendars(null)} variant="outline">
+            <Button onPress={setVisibleCalendarsAll} variant="outline">
               <Text>Show all</Text>
             </Button>
             <Button onPress={() => setVisibleCalendars([])} variant="outline">
@@ -110,8 +111,7 @@ export function CalendarPickerModal({
                             key={`${account.id}-${calendar.id}`}
                             onPress={() =>
                               setVisibleCalendars((prev) => {
-                                const base = prev ?? [];
-                                return toggleCalendarSelection(base, {
+                                return toggleCalendarSelection(prev, {
                                   accountId: account.id,
                                   calendarId: calendar.id,
                                 });

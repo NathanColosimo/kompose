@@ -9,7 +9,10 @@ import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig, hasSessionAtom } from "../config";
 import type { CalendarIdentifier } from "./visible-calendars";
-import { visibleCalendarsAtom } from "./visible-calendars";
+import {
+  visibleCalendarsAtom,
+  visibleCalendarsModeAtom,
+} from "./visible-calendars";
 
 // --- Accounts ---
 
@@ -76,10 +79,12 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
 export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
     const stored = get(visibleCalendarsAtom);
-    if (stored !== null) {
+    const calendars = get(googleCalendarsDataAtom);
+    const mode = get(visibleCalendarsModeAtom);
+    // Only honor the stored list when the user explicitly customized it.
+    if (mode === "custom") {
       return stored;
     }
-    const calendars = get(googleCalendarsDataAtom);
     return calendars.map((calendar) => ({
       accountId: calendar.accountId,
       calendarId: calendar.calendar.id,
