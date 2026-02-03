@@ -5,6 +5,7 @@ import {
   isCalendarVisible,
   type VisibleCalendars,
 } from "@kompose/state/atoms/visible-calendars";
+import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
 import { useGoogleCalendars } from "@kompose/state/hooks/use-google-calendars";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
@@ -210,18 +211,26 @@ export default function CalendarTab() {
   const { visibleCalendars, setVisibleCalendars } = useVisibleCalendars();
   const effectiveVisibleCalendars: VisibleCalendars = visibleCalendars ?? null;
 
+  const allCalendarIds = useMemo<CalendarIdentifier[]>(
+    () =>
+      googleCalendars.map((calendar) => ({
+        accountId: calendar.accountId,
+        calendarId: calendar.calendar.id,
+      })),
+    [googleCalendars]
+  );
+
+  useEnsureVisibleCalendars(allCalendarIds);
+
   const visibleCalendarIds = useMemo<CalendarIdentifier[]>(() => {
     if (googleCalendars.length === 0) {
       return [];
     }
     if (effectiveVisibleCalendars === null) {
-      return googleCalendars.map((c) => ({
-        accountId: c.accountId,
-        calendarId: c.calendar.id,
-      }));
+      return allCalendarIds;
     }
     return effectiveVisibleCalendars;
-  }, [effectiveVisibleCalendars, googleCalendars]);
+  }, [allCalendarIds, effectiveVisibleCalendars, googleCalendars.length]);
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({

@@ -51,6 +51,15 @@ export function CalendarPickerModal({
     return map;
   }, [googleAccounts, googleCalendars]);
 
+  const allCalendarIds = useMemo(
+    () =>
+      googleCalendars.map((calendar) => ({
+        accountId: calendar.accountId,
+        calendarId: calendar.calendar.id,
+      })),
+    [googleCalendars]
+  );
+
   return (
     <Modal
       animationType="slide"
@@ -110,7 +119,7 @@ export function CalendarPickerModal({
                             key={`${account.id}-${calendar.id}`}
                             onPress={() =>
                               setVisibleCalendars((prev) => {
-                                const base = prev ?? [];
+                                const base = prev ?? allCalendarIds;
                                 return toggleCalendarSelection(base, {
                                   accountId: account.id,
                                   calendarId: calendar.id,

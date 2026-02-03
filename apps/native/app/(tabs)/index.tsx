@@ -1,11 +1,11 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
-import { Plus, X } from "lucide-react-native";
+import { CalendarClock, Inbox, Plus, X } from "lucide-react-native";
 import React from "react";
 import {
   FlatList,
@@ -308,6 +308,173 @@ type TaskPickerState =
   | { kind: "startTime"; mode: "time" }
   | null;
 
+interface TaskSection {
+  title: string;
+  data: TaskSelectDecoded[];
+}
+
+type TaskListItem =
+  | { type: "header"; title: string }
+  | { type: "task"; task: TaskSelectDecoded };
+
+// Build the Today view sections (Overdue and Unplanned).
+function buildTodaySections(
+  overdueTasks: TaskSelectDecoded[],
+  unplannedTasks: TaskSelectDecoded[]
+): TaskSection[] {
+  const sections: TaskSection[] = [];
+  if (overdueTasks.length > 0) {
+    sections.push({ title: "Overdue", data: overdueTasks });
+  }
+  if (unplannedTasks.length > 0) {
+    sections.push({ title: "Unplanned", data: unplannedTasks });
+  }
+  return sections;
+}
+
+function buildTodayItems(sections: TaskSection[]): TaskListItem[] {
+  const items: TaskListItem[] = [];
+  for (const section of sections) {
+    if (section.data.length === 0) {
+      continue;
+    }
+    items.push({ type: "header", title: section.title });
+    for (const task of section.data) {
+      items.push({ type: "task", task });
+    }
+  }
+  return items;
+}
+
+// Shared row renderer for task list items.
+function TaskRow({
+  item,
+  onPress,
+}: {
+  item: TaskSelectDecoded;
+  onPress: (task: TaskSelectDecoded) => void;
+}) {
+  return (
+    <Pressable
+      className="border-border border-b py-3 active:bg-card"
+      onPress={() => onPress(item)}
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <Text
+          className="flex-1 font-semibold text-base text-foreground"
+          numberOfLines={1}
+        >
+          {item.title}
+        </Text>
+        <Text className="text-muted-foreground text-xs">
+          {item.durationMinutes}m
+        </Text>
+      </View>
+      {item.dueDate ? (
+        <Text className="mt-1 text-muted-foreground text-xs">
+          Due {formatPlainDateLong(item.dueDate)}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+interface TaskListProps {
+  activeTab: "Inbox" | "Today";
+  inboxTasks: TaskSelectDecoded[];
+  todaySections: TaskSection[];
+  isLoading: boolean;
+  isFetching: boolean;
+  tintColor: string;
+  onRefresh: () => void;
+  onPressTask: (task: TaskSelectDecoded) => void;
+}
+
+// Shared list renderer for Inbox and Today views.
+function TaskList({
+  activeTab,
+  inboxTasks,
+  todaySections,
+  isLoading,
+  isFetching,
+  tintColor,
+  onRefresh,
+  onPressTask,
+}: TaskListProps) {
+  const emptyMessage =
+    activeTab === "Inbox" ? "No tasks in inbox." : "Nothing for today.";
+
+  if (activeTab === "Inbox") {
+    return (
+      <FlatList
+        contentContainerClassName="px-4 pb-6"
+        contentInsetAdjustmentBehavior="automatic"
+        data={inboxTasks}
+        keyExtractor={(t) => t.id}
+        ListEmptyComponent={
+          isLoading ? (
+            <Text className="pt-8 text-center text-muted-foreground">
+              Loading...
+            </Text>
+          ) : (
+            <Text className="pt-8 text-center text-muted-foreground">
+              {emptyMessage}
+            </Text>
+          )
+        }
+        refreshControl={
+          <RefreshControl
+            onRefresh={onRefresh}
+            refreshing={isFetching}
+            tintColor={tintColor}
+          />
+        }
+        renderItem={({ item }) => <TaskRow item={item} onPress={onPressTask} />}
+      />
+    );
+  }
+
+  const todayItems = buildTodayItems(todaySections);
+
+  return (
+    <FlatList
+      contentContainerClassName="px-4 pb-6"
+      contentInsetAdjustmentBehavior="automatic"
+      data={todayItems}
+      keyExtractor={(item) =>
+        item.type === "header" ? `header-${item.title}` : item.task.id
+      }
+      ListEmptyComponent={
+        isLoading ? (
+          <Text className="pt-8 text-center text-muted-foreground">
+            Loading...
+          </Text>
+        ) : (
+          <Text className="pt-8 text-center text-muted-foreground">
+            {emptyMessage}
+          </Text>
+        )
+      }
+      refreshControl={
+        <RefreshControl
+          onRefresh={onRefresh}
+          refreshing={isFetching}
+          tintColor={tintColor}
+        />
+      }
+      renderItem={({ item }) =>
+        item.type === "header" ? (
+          <Text className="py-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
+            {item.title}
+          </Text>
+        ) : (
+          <TaskRow item={item.task} onPress={onPressTask} />
+        )
+      }
+    />
+  );
+}
+
 function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   return {
     title: task.title,
@@ -339,15 +506,24 @@ export default function TasksTab() {
   const { isDarkColorScheme } = useColorScheme();
   const timeZone = getSystemTimeZone();
 
-  const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
-  const tasks = tasksQuery.data ?? [];
+  const {
+    tasksQuery,
+    createTask,
+    updateTask,
+    deleteTask,
+    inboxTasks,
+    overdueTasks,
+    unplannedTasks,
+  } = useTaskSections();
 
-  // Inbox-like list: non-done tasks that are not scheduled (no startDate/time).
-  const inboxTasks = tasks
-    .filter((t) => t.status !== "done")
-    .filter((t) => t.startDate === null && t.startTime === null)
-    .filter((t) => t.seriesMasterId === null)
-    .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
+  // Track the active task view to mirror the web sidebar.
+  const [activeTab, setActiveTab] = React.useState<"Inbox" | "Today">("Inbox");
+
+  // Build the Today sections so the list can render headers.
+  const todaySections = React.useMemo(
+    () => buildTodaySections(overdueTasks, unplannedTasks),
+    [overdueTasks, unplannedTasks]
+  );
 
   // Modal state (create/edit).
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -462,69 +638,51 @@ export default function TasksTab() {
   }
 
   React.useLayoutEffect(() => {
-    // Keep the add action in the nav header to avoid duplicate titles.
+    // Render task actions in the nav header row.
     navigation.setOptions({
       headerRight: () => (
-        <Button
-          accessibilityLabel="New task"
-          onPress={openCreate}
-          size="icon"
-          variant="ghost"
-        >
-          <Icon as={Plus} size={18} />
-        </Button>
+        <View className="flex-row items-center gap-2">
+          <Button
+            accessibilityLabel="Show inbox tasks"
+            onPress={() => setActiveTab("Inbox")}
+            size="icon"
+            variant={activeTab === "Inbox" ? "secondary" : "outline"}
+          >
+            <Icon as={Inbox} size={16} />
+          </Button>
+          <Button
+            accessibilityLabel="Show today tasks"
+            onPress={() => setActiveTab("Today")}
+            size="icon"
+            variant={activeTab === "Today" ? "secondary" : "outline"}
+          >
+            <Icon as={CalendarClock} size={16} />
+          </Button>
+          <Button
+            accessibilityLabel="New task"
+            onPress={openCreate}
+            size="icon"
+            variant="ghost"
+          >
+            <Icon as={Plus} size={18} />
+          </Button>
+        </View>
       ),
     });
-  }, [navigation, openCreate]);
+  }, [activeTab, navigation, openCreate]);
 
   return (
-    <Container>
+    <Container edges={["left", "right", "bottom"]}>
       {/* Task list */}
-      <FlatList
-        contentContainerClassName="px-4 pb-6"
-        data={inboxTasks}
-        keyExtractor={(t) => t.id}
-        ListEmptyComponent={
-          tasksQuery.isLoading ? (
-            <Text className="pt-8 text-center text-muted-foreground">
-              Loading...
-            </Text>
-          ) : (
-            <Text className="pt-8 text-center text-muted-foreground">
-              No tasks in inbox.
-            </Text>
-          )
-        }
-        refreshControl={
-          <RefreshControl
-            onRefresh={() => tasksQuery.refetch()}
-            refreshing={tasksQuery.isFetching}
-            tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
-          />
-        }
-        renderItem={({ item }) => (
-          <Pressable
-            className="border-border border-b py-3 active:bg-card"
-            onPress={() => openEdit(item)}
-          >
-            <View className="flex-row items-center justify-between gap-3">
-              <Text
-                className="flex-1 font-semibold text-base text-foreground"
-                numberOfLines={1}
-              >
-                {item.title}
-              </Text>
-              <Text className="text-muted-foreground text-xs">
-                {item.durationMinutes}m
-              </Text>
-            </View>
-            {item.dueDate ? (
-              <Text className="mt-1 text-muted-foreground text-xs">
-                Due {formatPlainDateLong(item.dueDate)}
-              </Text>
-            ) : null}
-          </Pressable>
-        )}
+      <TaskList
+        activeTab={activeTab}
+        inboxTasks={inboxTasks}
+        isFetching={tasksQuery.isFetching}
+        isLoading={tasksQuery.isLoading}
+        onPressTask={openEdit}
+        onRefresh={() => tasksQuery.refetch()}
+        tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
+        todaySections={todaySections}
       />
 
       {/* Create/Edit Modal */}

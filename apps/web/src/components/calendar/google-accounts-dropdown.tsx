@@ -8,8 +8,10 @@ import type { CalendarWithSource } from "@kompose/state/atoms/google-data";
 import {
   type CalendarIdentifier,
   isCalendarVisibleAtom,
+  toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
+import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useQueries } from "@tanstack/react-query";
 import type { OAuth2UserInfo } from "better-auth";
 import { useAtom, useAtomValue } from "jotai";
@@ -42,40 +44,23 @@ interface GoogleAccountsDropdownProps {
   googleCalendars: CalendarWithSource[];
 }
 
-function matchesCalendar(
-  target: CalendarIdentifier,
-  accountId: string,
-  calendarId: string
-) {
-  return target.accountId === accountId && target.calendarId === calendarId;
-}
-
-function toggleCalendarSelection(
-  prev: CalendarIdentifier[],
-  target: CalendarIdentifier
-): CalendarIdentifier[] {
-  if (prev.length === 0) {
-    return [target];
-  }
-
-  const exists = prev.some((c) =>
-    matchesCalendar(c, target.accountId, target.calendarId)
-  );
-  const next = exists
-    ? prev.filter(
-        (c) => !matchesCalendar(c, target.accountId, target.calendarId)
-      )
-    : [...prev, target];
-
-  return next;
-}
-
 export function GoogleAccountsDropdown({
   googleAccounts,
   googleCalendars,
 }: GoogleAccountsDropdownProps) {
   const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
   const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
+
+  const allCalendarIds = useMemo<CalendarIdentifier[]>(
+    () =>
+      googleCalendars.map((calendar) => ({
+        accountId: calendar.accountId,
+        calendarId: calendar.calendar.id,
+      })),
+    [googleCalendars]
+  );
+
+  useEnsureVisibleCalendars(allCalendarIds);
 
   // Fetch account info for each Google account to get their email
   const accountInfoQueries = useQueries({
@@ -128,10 +113,13 @@ export function GoogleAccountsDropdown({
   const toggleCalendar = useCallback(
     (accountId: string, calendarId: string) => {
       setVisibleCalendars((prev) =>
-        toggleCalendarSelection(prev ?? [], { accountId, calendarId })
+        toggleCalendarSelection(prev ?? allCalendarIds, {
+          accountId,
+          calendarId,
+        })
       );
     },
-    [setVisibleCalendars]
+    [allCalendarIds, setVisibleCalendars]
   );
 
   // Count of visible calendars
