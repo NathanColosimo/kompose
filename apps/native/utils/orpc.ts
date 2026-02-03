@@ -12,6 +12,15 @@ export const queryClient = new QueryClient({
       console.log(error);
     },
   }),
+  defaultOptions: {
+    queries: {
+      // Prevent aggressive refetching that causes constant UI refreshes
+      staleTime: 1000 * 60, // Consider data fresh for 1 minute
+      refetchOnWindowFocus: true, // Don't refetch when app comes to foreground
+      refetchOnMount: true, // Don't refetch on component mount if data exists
+      retry: 1, // Only retry failed queries once
+    },
+  },
 });
 
 export const link = new RPCLink({

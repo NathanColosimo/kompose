@@ -151,17 +151,22 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Start creation on mouse down
+  // Start creation on mouse down, centered on cursor position
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
         return;
       }
+      // Offset start by half duration to center the event on cursor (matches hover preview)
+      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
+      const centeredStart = dateTime.subtract({ minutes: halfDuration });
       setState((prev) => ({
         ...prev,
         isCreating: true,
-        startDateTime: dateTime,
-        endDateTime: dateTime.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        startDateTime: centeredStart,
+        endDateTime: centeredStart.add({
+          minutes: DEFAULT_EVENT_DURATION_MINUTES,
+        }),
         hoverDateTime: null,
         calendarId: defaultCalendar.calendarId,
         accountId: defaultCalendar.accountId,

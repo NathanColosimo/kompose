@@ -1,7 +1,5 @@
 import { ScrollView, View } from "react-native";
 import { ModeToggle } from "@/components/mode-toggle";
-import { SignIn } from "@/components/sign-in";
-import { SignUp } from "@/components/sign-up";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,7 +16,10 @@ export default function SettingsScreen() {
   const { data: session } = authClient.useSession();
 
   return (
-    <ScrollView className="flex-1 bg-background">
+    <ScrollView
+      className="flex-1 bg-background"
+      contentInsetAdjustmentBehavior="automatic"
+    >
       <View className="p-4">
         {/* Theme toggle */}
         <Card className="mb-4">
@@ -31,7 +32,7 @@ export default function SettingsScreen() {
           </CardContent>
         </Card>
 
-        {/* Account section */}
+        {/* Account section - only shown when signed in */}
         {session?.user ? (
           <Card className="mb-4">
             <CardHeader>
@@ -54,12 +55,7 @@ export default function SettingsScreen() {
               </Button>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            <SignIn />
-            <SignUp />
-          </>
-        )}
+        ) : null}
       </View>
     </ScrollView>
   );

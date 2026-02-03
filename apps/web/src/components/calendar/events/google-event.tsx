@@ -23,6 +23,12 @@ interface GoogleCalendarEventProps {
   end: Temporal.ZonedDateTime;
   accountId: string;
   calendarId: string;
+  /** Column index for horizontal positioning (0, 1, or 2) */
+  columnIndex?: number;
+  /** Total columns in this item's collision group */
+  totalColumns?: number;
+  /** Z-index for stacking order */
+  zIndex?: number;
 }
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
@@ -31,6 +37,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   end,
   accountId,
   calendarId,
+  columnIndex = 0,
+  totalColumns = 1,
+  zIndex = 1,
 }: GoogleCalendarEventProps) {
   const queryClient = useQueryClient();
 
@@ -144,12 +153,18 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const foregroundColor =
     eventPalette?.foreground ?? calendar?.calendar.foregroundColor ?? undefined;
 
+  // Calculate horizontal positioning based on collision layout
+  const columnWidth = 100 / totalColumns;
+  const leftPercent = columnIndex * columnWidth;
+
   const style: React.CSSProperties = {
     position: "absolute",
     top: `${adjustedTopPx}px`,
     height: `${adjustedHeightPx}px`,
-    left: "2px",
-    right: "2px",
+    // Horizontal positioning: divide available width by totalColumns
+    left: `calc(${leftPercent}% + 2px)`,
+    width: `calc(${columnWidth}% - 4px)`,
+    zIndex,
     ...(backgroundColor && {
       backgroundColor,
       borderColor: backgroundColor,

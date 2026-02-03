@@ -14,10 +14,19 @@ import { calculateEventPosition } from "../days-view";
 
 interface TaskEventProps {
   task: TaskSelectDecoded;
+  /** Column index for horizontal positioning (0, 1, or 2) */
+  columnIndex?: number;
+  /** Total columns in this item's collision group */
+  totalColumns?: number;
+  /** Z-index for stacking order */
+  zIndex?: number;
 }
 
 export const TaskEvent = memo(function TaskEventInner({
   task,
+  columnIndex = 0,
+  totalColumns = 1,
+  zIndex = 1,
 }: TaskEventProps) {
   const timeZone = useAtomValue(timezoneAtom);
 
@@ -91,12 +100,18 @@ export const TaskEvent = memo(function TaskEventInner({
   const { top, height } = calculateEventPosition(startZdt, durationMinutes);
   const isDone = task.status === "done";
 
+  // Calculate horizontal positioning based on collision layout
+  const columnWidth = 100 / totalColumns;
+  const leftPercent = columnIndex * columnWidth;
+
   const style: React.CSSProperties = {
     position: "absolute",
     top,
     height,
-    left: "2px",
-    right: "2px",
+    // Horizontal positioning: divide available width by totalColumns
+    left: `calc(${leftPercent}% + 2px)`,
+    width: `calc(${columnWidth}% - 4px)`,
+    zIndex,
   };
 
   return (

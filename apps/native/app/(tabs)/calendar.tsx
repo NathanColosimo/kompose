@@ -22,6 +22,7 @@ import {
   ScrollView,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import { Container } from "@/components/container";
@@ -36,6 +37,10 @@ const PIXELS_PER_HOUR = 80;
 const MINUTES_STEP = 15;
 const DEFAULT_SCROLL_HOUR = 8;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+// Swipe thresholds for horizontal navigation without interfering with vertical scroll.
+const SWIPE_ACTIVATION_DISTANCE = 16;
+const SWIPE_TRIGGER_DISTANCE = 60;
+const SWIPE_VERTICAL_TOLERANCE = 12;
 
 function getSystemTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -345,6 +350,24 @@ export default function CalendarTab() {
     setCurrentDate(todayPlainDate(timeZone));
   }, [timeZone]);
 
+  // Horizontal swipe gesture for navigating between day sets.
+  // .runOnJS(true) runs handlers on JS thread for state updates.
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activeOffsetX([-SWIPE_ACTIVATION_DISTANCE, SWIPE_ACTIVATION_DISTANCE])
+        .failOffsetY([-SWIPE_VERTICAL_TOLERANCE, SWIPE_VERTICAL_TOLERANCE])
+        .onEnd((event) => {
+          if (event.translationX <= -SWIPE_TRIGGER_DISTANCE) {
+            goToNext();
+          } else if (event.translationX >= SWIPE_TRIGGER_DISTANCE) {
+            goToPrevious();
+          }
+        }),
+    [goToNext, goToPrevious]
+  );
+
   const openCreateEventAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
       if (!defaultCalendar) {
@@ -526,228 +549,232 @@ export default function CalendarTab() {
 
   return (
     <Container>
-      {/* Header */}
-      <View className="flex-row items-center justify-between gap-3 px-4 pt-3 pb-2">
-        <View className="flex-row items-center gap-2">
-          <Button onPress={goToPrevious} size="sm" variant="outline">
-            <Text>{"<"}</Text>
-          </Button>
-          <Button onPress={goToNext} size="sm" variant="outline">
-            <Text>{">"}</Text>
-          </Button>
-          <Button onPress={goToToday} size="sm" variant="outline">
-            <Text>Today</Text>
-          </Button>
-        </View>
+      <GestureDetector gesture={swipeGesture}>
+        <View className="flex-1">
+          {/* Header */}
+          <View className="flex-row items-center justify-between gap-3 px-4 pt-3 pb-2">
+            <View className="flex-row items-center gap-2">
+              <Button onPress={goToPrevious} size="sm" variant="outline">
+                <Text>{"<"}</Text>
+              </Button>
+              <Button onPress={goToNext} size="sm" variant="outline">
+                <Text>{">"}</Text>
+              </Button>
+              <Button onPress={goToToday} size="sm" variant="outline">
+                <Text>Today</Text>
+              </Button>
+            </View>
 
-        <View className="flex-row items-center gap-2">
-          <View className="flex-row">
-            {[1, 2, 3].map((n) => (
+            <View className="flex-row items-center gap-2">
+              <View className="flex-row">
+                {[1, 2, 3].map((n) => (
+                  <Button
+                    className={visibleDaysCount === n ? "bg-card" : undefined}
+                    key={n}
+                    onPress={() => setVisibleDaysCount(n as 1 | 2 | 3)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Text>{n}d</Text>
+                  </Button>
+                ))}
+              </View>
               <Button
-                className={visibleDaysCount === n ? "bg-card" : undefined}
-                key={n}
-                onPress={() => setVisibleDaysCount(n as 1 | 2 | 3)}
+                onPress={() => setIsPickerOpen(true)}
                 size="sm"
                 variant="outline"
               >
-                <Text>{n}d</Text>
+                <Text>Calendars</Text>
               </Button>
-            ))}
-          </View>
-          <Button
-            onPress={() => setIsPickerOpen(true)}
-            size="sm"
-            variant="outline"
-          >
-            <Text>Calendars</Text>
-          </Button>
-        </View>
-      </View>
-
-      {/* Day headers */}
-      <View className="flex-row border-border border-t border-b">
-        <View className="w-16 border-border border-r" />
-        <View className="flex-1 flex-row">
-          {visibleDays.map((day) => (
-            <View
-              className="flex-1 border-border border-r px-2 py-2"
-              key={day.toString()}
-            >
-              <Text className="font-bold text-foreground text-xs">
-                {day.toString()}
-              </Text>
             </View>
-          ))}
-        </View>
-      </View>
+          </View>
 
-      {/* All-day events row */}
-      {hasAllDayEvents ? (
-        <View className="flex-row border-border border-b">
-          <View className="w-16 border-border border-r" />
-          <View className="flex-1 flex-row">
-            {visibleDays.map((day) => {
-              const items = allDayEventsByDay.get(day.toString()) ?? [];
-              return (
+          {/* Day headers */}
+          <View className="flex-row border-border border-t border-b">
+            <View className="w-16 border-border border-r" />
+            <View className="flex-1 flex-row">
+              {visibleDays.map((day) => (
                 <View
-                  className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
-                  key={`${day.toString()}-allday`}
+                  className="flex-1 border-border border-r px-2 py-2"
+                  key={day.toString()}
                 >
-                  {items.slice(0, 3).map((e) => (
-                    <Text
-                      className="bg-card px-1.5 py-1 text-[11px] text-foreground"
-                      key={`${e.source.calendarId}-${e.source.event.id}`}
-                      numberOfLines={1}
-                    >
-                      {e.source.event.summary ?? "All-day"}
-                    </Text>
-                  ))}
+                  <Text className="font-bold text-foreground text-xs">
+                    {day.toString()}
+                  </Text>
                 </View>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-
-      {/* Scrollable time grid */}
-      <ScrollView
-        className="flex-1"
-        ref={scrollRef}
-        refreshControl={
-          <RefreshControl
-            onRefresh={refreshCalendarData}
-            refreshing={
-              tasksQuery.isFetching ||
-              isFetchingGoogleEvents ||
-              googleAccountsQuery.isFetching
-            }
-            tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
-          />
-        }
-      >
-        <View className="flex-row">
-          {/* Time gutter */}
-          <View className="w-16 border-border border-r">
-            {HOURS.map((hour) => (
-              <View
-                className="justify-start px-1.5 pt-0.5"
-                key={`gutter-${hour}`}
-                style={{ height: PIXELS_PER_HOUR }}
-              >
-                <Text className="text-[10px] text-muted-foreground">
-                  {hour.toString().padStart(2, "0")}:00
-                </Text>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
 
-          {/* Day columns */}
-          <View className="flex-1 flex-row">
-            {visibleDays.map((day) => {
-              const dayKey = day.toString();
-              const dayEvents = timedEventsByDay.get(dayKey) ?? [];
-              const dayTasks = tasksByDay.get(dayKey) ?? [];
-
-              return (
-                <Pressable
-                  className="relative flex-1 border-border border-r"
-                  key={dayKey}
-                  onPress={(e) => {
-                    const y = e.nativeEvent.locationY;
-                    const minutes = (y / PIXELS_PER_HOUR) * 60;
-                    openCreateEventAt(day, minutes);
-                  }}
-                  style={{ height: totalHeight }}
-                >
-                  {/* Hour lines */}
-                  {HOURS.map((hour) => (
+          {/* All-day events row */}
+          {hasAllDayEvents ? (
+            <View className="flex-row border-border border-b">
+              <View className="w-16 border-border border-r" />
+              <View className="flex-1 flex-row">
+                {visibleDays.map((day) => {
+                  const items = allDayEventsByDay.get(day.toString()) ?? [];
+                  return (
                     <View
-                      className="absolute right-0 left-0 border-border border-t"
-                      key={`${dayKey}-line-${hour}`}
-                      style={{ top: hour * PIXELS_PER_HOUR }}
-                    />
-                  ))}
-
-                  {/* Google events */}
-                  {dayEvents.map((evt) => {
-                    const startMinutes = minutesFromMidnight(evt.start);
-                    const durationMinutes = Math.max(
-                      MINUTES_STEP,
-                      Math.round(
-                        evt.end.since(evt.start).total({ unit: "minutes" })
-                      )
-                    );
-                    const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                    const height = Math.max(
-                      (durationMinutes / 60) * PIXELS_PER_HOUR,
-                      24
-                    );
-
-                    return (
-                      <Pressable
-                        className="absolute right-1.5 left-1.5 border border-primary bg-primary p-1.5"
-                        key={`${evt.source.calendarId}-${evt.source.event.id}-${evt.start.toString()}`}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          openEditEvent(evt);
-                        }}
-                        style={{ top, height }}
-                      >
+                      className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
+                      key={`${day.toString()}-allday`}
+                    >
+                      {items.slice(0, 3).map((e) => (
                         <Text
-                          className="font-bold text-primary-foreground text-xs"
-                          numberOfLines={2}
+                          className="bg-card px-1.5 py-1 text-[11px] text-foreground"
+                          key={`${e.source.calendarId}-${e.source.event.id}`}
+                          numberOfLines={1}
                         >
-                          {evt.source.event.summary ?? "Event"}
+                          {e.source.event.summary ?? "All-day"}
                         </Text>
-                      </Pressable>
-                    );
-                  })}
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
 
-                  {/* Scheduled tasks */}
-                  {dayTasks.map((task) => {
-                    if (!(task.startDate && task.startTime)) {
-                      return null;
-                    }
-                    const start = task.startDate.toZonedDateTime({
-                      timeZone,
-                      plainTime: task.startTime,
-                    });
-                    const startMinutes = minutesFromMidnight(start);
-                    const durationMinutes = Math.max(
-                      MINUTES_STEP,
-                      task.durationMinutes
-                    );
-                    const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                    const height = Math.max(
-                      (durationMinutes / 60) * PIXELS_PER_HOUR,
-                      24
-                    );
+          {/* Scrollable time grid */}
+          <ScrollView
+            className="flex-1"
+            ref={scrollRef}
+            refreshControl={
+              <RefreshControl
+                onRefresh={refreshCalendarData}
+                refreshing={
+                  tasksQuery.isFetching ||
+                  isFetchingGoogleEvents ||
+                  googleAccountsQuery.isFetching
+                }
+                tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
+              />
+            }
+          >
+            <View className="flex-row">
+              {/* Time gutter */}
+              <View className="w-16 border-border border-r">
+                {HOURS.map((hour) => (
+                  <View
+                    className="justify-start px-1.5 pt-0.5"
+                    key={`gutter-${hour}`}
+                    style={{ height: PIXELS_PER_HOUR }}
+                  >
+                    <Text className="text-[10px] text-muted-foreground">
+                      {hour.toString().padStart(2, "0")}:00
+                    </Text>
+                  </View>
+                ))}
+              </View>
 
-                    return (
-                      <Pressable
-                        className="absolute right-1.5 left-1.5 border border-border bg-card p-1.5"
-                        key={task.id}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          openEditTask(task);
-                        }}
-                        style={{ top, height }}
-                      >
-                        <Text
-                          className="font-bold text-foreground text-xs"
-                          numberOfLines={2}
-                        >
-                          {task.title}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </Pressable>
-              );
-            })}
-          </View>
+              {/* Day columns */}
+              <View className="flex-1 flex-row">
+                {visibleDays.map((day) => {
+                  const dayKey = day.toString();
+                  const dayEvents = timedEventsByDay.get(dayKey) ?? [];
+                  const dayTasks = tasksByDay.get(dayKey) ?? [];
+
+                  return (
+                    <Pressable
+                      className="relative flex-1 border-border border-r"
+                      key={dayKey}
+                      onPress={(e) => {
+                        const y = e.nativeEvent.locationY;
+                        const minutes = (y / PIXELS_PER_HOUR) * 60;
+                        openCreateEventAt(day, minutes);
+                      }}
+                      style={{ height: totalHeight }}
+                    >
+                      {/* Hour lines */}
+                      {HOURS.map((hour) => (
+                        <View
+                          className="absolute right-0 left-0 border-border border-t"
+                          key={`${dayKey}-line-${hour}`}
+                          style={{ top: hour * PIXELS_PER_HOUR }}
+                        />
+                      ))}
+
+                      {/* Google events */}
+                      {dayEvents.map((evt) => {
+                        const startMinutes = minutesFromMidnight(evt.start);
+                        const durationMinutes = Math.max(
+                          MINUTES_STEP,
+                          Math.round(
+                            evt.end.since(evt.start).total({ unit: "minutes" })
+                          )
+                        );
+                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                        const height = Math.max(
+                          (durationMinutes / 60) * PIXELS_PER_HOUR,
+                          24
+                        );
+
+                        return (
+                          <Pressable
+                            className="absolute right-1.5 left-1.5 border border-primary bg-primary p-1.5"
+                            key={`${evt.source.calendarId}-${evt.source.event.id}-${evt.start.toString()}`}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              openEditEvent(evt);
+                            }}
+                            style={{ top, height }}
+                          >
+                            <Text
+                              className="font-bold text-primary-foreground text-xs"
+                              numberOfLines={2}
+                            >
+                              {evt.source.event.summary ?? "Event"}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+
+                      {/* Scheduled tasks */}
+                      {dayTasks.map((task) => {
+                        if (!(task.startDate && task.startTime)) {
+                          return null;
+                        }
+                        const start = task.startDate.toZonedDateTime({
+                          timeZone,
+                          plainTime: task.startTime,
+                        });
+                        const startMinutes = minutesFromMidnight(start);
+                        const durationMinutes = Math.max(
+                          MINUTES_STEP,
+                          task.durationMinutes
+                        );
+                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                        const height = Math.max(
+                          (durationMinutes / 60) * PIXELS_PER_HOUR,
+                          24
+                        );
+
+                        return (
+                          <Pressable
+                            className="absolute right-1.5 left-1.5 border border-border bg-card p-1.5"
+                            key={task.id}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              openEditTask(task);
+                            }}
+                            style={{ top, height }}
+                          >
+                            <Text
+                              className="font-bold text-foreground text-xs"
+                              numberOfLines={2}
+                            >
+                              {task.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </ScrollView>
         </View>
-      </ScrollView>
+      </GestureDetector>
 
       {/* Calendar visibility picker */}
       <CalendarPickerModal

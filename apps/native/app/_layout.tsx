@@ -1,14 +1,15 @@
 import "../global.css";
 
 import { StateProvider } from "@kompose/state/state-provider";
-import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { Platform, View } from "react-native";
+import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SignIn } from "@/components/sign-in";
+import { Text } from "@/components/ui/text";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -25,11 +26,13 @@ export const unstable_settings = {
 };
 
 /**
- * Inner layout that consumes the color scheme context.
- * Separated so it can access the shared theme state.
+ * Inner layout that consumes the color scheme context and auth state.
+ * Shows sign-in screen when not authenticated.
  */
 function RootLayoutContent() {
   const { colorScheme, isDarkColorScheme, isLoaded } = useColorScheme();
+  const { data: session, isPending: isSessionLoading } =
+    authClient.useSession();
 
   // Update Android nav bar when color scheme changes
   React.useEffect(() => {
@@ -38,13 +41,59 @@ function RootLayoutContent() {
     }
   }, [colorScheme]);
 
-  // Wait for theme preference to load
-  if (!isLoaded) {
-    return null;
+  // Wait for theme preference and session to load
+  if (!isLoaded || isSessionLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  // Get the current theme for navigation styling
+  const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
+
+  // Show sign-in screen when not authenticated
+  if (!session?.user) {
+    return (
+      <>
+        <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+        <GestureHandlerRootView
+          className={isDarkColorScheme ? "dark flex-1" : "flex-1"}
+        >
+          <View
+            className="flex-1"
+            style={isDarkColorScheme ? themeVars.dark : themeVars.light}
+          >
+            <ScrollView
+              className="flex-1 bg-background"
+              contentContainerStyle={{
+                flexGrow: 1,
+                justifyContent: "center",
+                padding: 24,
+              }}
+              contentInsetAdjustmentBehavior="automatic"
+            >
+              <View className="gap-6">
+                <View className="items-center gap-2">
+                  <Text className="font-bold text-2xl text-foreground">
+                    Welcome to Kompose
+                  </Text>
+                  <Text className="text-center text-muted-foreground">
+                    Sign in to access your calendar and tasks
+                  </Text>
+                </View>
+                <SignIn />
+              </View>
+            </ScrollView>
+          </View>
+        </GestureHandlerRootView>
+      </>
+    );
   }
 
   return (
-    <ThemeProvider value={isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light}>
+    <>
       <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
       <GestureHandlerRootView
         className={isDarkColorScheme ? "dark flex-1" : "flex-1"}
@@ -54,7 +103,13 @@ function RootLayoutContent() {
           className="flex-1"
           style={isDarkColorScheme ? themeVars.dark : themeVars.light}
         >
-          <Stack>
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: theme.colors.background },
+              headerTintColor: theme.colors.text,
+              contentStyle: { backgroundColor: theme.colors.background },
+            }}
+          >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen
               name="modal"
@@ -64,7 +119,7 @@ function RootLayoutContent() {
           <PortalHost />
         </View>
       </GestureHandlerRootView>
-    </ThemeProvider>
+    </>
   );
 }
 

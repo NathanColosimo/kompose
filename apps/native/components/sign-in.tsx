@@ -1,47 +1,45 @@
 import { createURL } from "expo-linking";
 import { AlertCircle } from "lucide-react-native";
 import { useState } from "react";
-import { ActivityIndicator } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { NAV_THEME } from "@/lib/theme";
 import { invalidateSessionQueries } from "@/utils/orpc";
 
+/**
+ * Google-only sign in component.
+ * Email/password auth is not enabled for this app.
+ */
 function SignIn() {
   const { colorScheme } = useColorScheme();
   const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
-  const [form, setForm] = useState({ email: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
-  const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleFormChange(field: "email" | "password", value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
   /**
-   * Google sign-in (preferred path).
-   *
-   * Uses Better Auth's Expo integration to open the system browser and then
-   * deep-link back into the app via the configured `scheme` in `app.json`.
+   * Google sign-in using Better Auth's Expo integration.
+   * Opens the system browser and deep-links back via the app scheme.
    */
   async function handleGoogleSignIn() {
-    if (isSocialLoading) {
+    if (isLoading) {
       return;
     }
 
-    setIsSocialLoading(true);
+    setIsLoading(true);
     setError(null);
 
-    // Expo Router supports group-qualified hrefs for navigation; using the same
-    // shape in deep links keeps things unambiguous.
-    const callbackURL = createURL("/(tabs)");
-    const errorCallbackURL = createURL("/(tabs)/settings");
+    // Use route paths (groups like "(tabs)" are not part of the URL).
+    const callbackURL = createURL("");
+    const errorCallbackURL = createURL("settings");
+
+    // Debug: Log the URLs being used
+    console.log("[SignIn] Server URL:", process.env.EXPO_PUBLIC_SERVER_URL);
+    console.log("[SignIn] Callback URL:", callbackURL);
+    console.log("[SignIn] Error Callback URL:", errorCallbackURL);
 
     await authClient.signIn.social(
       {
@@ -52,35 +50,9 @@ function SignIn() {
       {
         onError(err) {
           setError(err.error?.message || "Failed to sign in with Google");
-          setIsSocialLoading(false);
-        },
-        onSuccess() {
-          // Refresh cached RPC queries once we have a session.
-          invalidateSessionQueries();
-        },
-        onFinished() {
-          setIsSocialLoading(false);
-        },
-      }
-    );
-  }
-
-  async function handleLogin() {
-    setIsLoading(true);
-    setError(null);
-
-    await authClient.signIn.email(
-      {
-        email: form.email,
-        password: form.password,
-      },
-      {
-        onError(err) {
-          setError(err.error?.message || "Failed to sign in");
           setIsLoading(false);
         },
         onSuccess() {
-          setForm({ email: "", password: "" });
           invalidateSessionQueries();
         },
         onFinished() {
@@ -91,50 +63,22 @@ function SignIn() {
   }
 
   return (
-    <Card className="mt-4">
-      <CardHeader>
-        <CardTitle>Sign In</CardTitle>
-      </CardHeader>
-      <CardContent className="gap-3">
-        {error ? (
-          <Alert icon={AlertCircle} variant="destructive">
-            <AlertTitle>Sign in failed</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
+    <View className="gap-4">
+      {error ? (
+        <Alert icon={AlertCircle} variant="destructive">
+          <AlertTitle>Sign in failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        <Button disabled={isSocialLoading} onPress={handleGoogleSignIn}>
-          {isSocialLoading ? (
-            <ActivityIndicator color={theme.colors.card} size="small" />
-          ) : (
-            <Text>Continue with Google</Text>
-          )}
-        </Button>
-
-        <Input
-          autoCapitalize="none"
-          keyboardType="email-address"
-          onChangeText={(value) => handleFormChange("email", value)}
-          placeholder="Email"
-          value={form.email}
-        />
-
-        <Input
-          onChangeText={(value) => handleFormChange("password", value)}
-          placeholder="Password"
-          secureTextEntry
-          value={form.password}
-        />
-
-        <Button disabled={isLoading} onPress={handleLogin}>
-          {isLoading ? (
-            <ActivityIndicator color={theme.colors.card} size="small" />
-          ) : (
-            <Text>Sign In</Text>
-          )}
-        </Button>
-      </CardContent>
-    </Card>
+      <Button disabled={isLoading} onPress={handleGoogleSignIn}>
+        {isLoading ? (
+          <ActivityIndicator color={theme.colors.card} size="small" />
+        ) : (
+          <Text>Continue with Google</Text>
+        )}
+      </Button>
+    </View>
   );
 }
 

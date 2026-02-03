@@ -22,6 +22,11 @@ import {
   isToday,
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
+import {
+  calculateCollisionLayout,
+  type ItemLayout,
+  type PositionedItem,
+} from "./collision-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
@@ -267,6 +272,65 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
   const hasGoogleEvents = googleEvents.length > 0;
 
+  // Calculate collision layouts for all visible days
+  // Combines tasks and google events into unified collision groups
+  const collisionLayoutsByDay = useMemo(() => {
+    const layoutsByDay = new Map<string, Map<string, ItemLayout>>();
+
+    for (const day of visibleDays) {
+      const dayKey = day.toString();
+      const dayTasks = tasksByDay.get(dayKey) ?? [];
+      const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
+
+      // Convert tasks to PositionedItems
+      // Filter and type-narrow to tasks with both startDate and startTime
+      const taskItems: PositionedItem[] = dayTasks
+        .filter(
+          (
+            task
+          ): task is typeof task & {
+            startDate: NonNullable<typeof task.startDate>;
+            startTime: NonNullable<typeof task.startTime>;
+          } => task.startDate !== null && task.startTime !== null
+        )
+        .map((task) => {
+          const startZdt = task.startDate.toZonedDateTime({
+            timeZone,
+            plainTime: task.startTime,
+          });
+          const startMinutes = minutesFromMidnight(startZdt);
+          const endMinutes = startMinutes + (task.durationMinutes ?? 30);
+          return {
+            id: `task-${task.id}`,
+            type: "task" as const,
+            startMinutes,
+            endMinutes,
+          };
+        });
+
+      // Convert google events to PositionedItems
+      const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
+        const startMinutes = minutesFromMidnight(ge.start);
+        const endMinutes = minutesFromMidnight(ge.end);
+        return {
+          id: `google-${ge.calendarId}-${ge.event.id}`,
+          type: "google-event" as const,
+          startMinutes,
+          // Handle events that might cross midnight or have same start/end
+          endMinutes:
+            endMinutes > startMinutes ? endMinutes : startMinutes + 30,
+        };
+      });
+
+      // Calculate layout for all items on this day
+      const allItems = [...taskItems, ...googleItems];
+      const layout = calculateCollisionLayout(allItems);
+      layoutsByDay.set(dayKey, layout);
+    }
+
+    return layoutsByDay;
+  }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
+
   // Each day column width as percentage of the parent container
   const dayColumnWidth = `${100 / visibleDays.length}%`;
 
@@ -342,6 +406,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
               const dayKey = day.toString();
               const dayTasks = tasksByDay.get(dayKey) ?? [];
               const dayGoogleEvents = timedEventsByDay?.get(dayKey) ?? [];
+              const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
               return (
                 <DayColumn
@@ -365,21 +430,38 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                           end,
                           calendarId,
                           accountId,
-                        }: PositionedGoogleEvent) => (
-                          <GoogleCalendarEvent
-                            accountId={accountId}
-                            calendarId={calendarId}
-                            end={end}
-                            event={event}
-                            key={`${calendarId}-${event.id}-${start.toString()}`}
-                            start={start}
-                          />
-                        )
+                        }: PositionedGoogleEvent) => {
+                          const layoutKey = `google-${calendarId}-${event.id}`;
+                          const layout = dayLayouts?.get(layoutKey);
+                          return (
+                            <GoogleCalendarEvent
+                              accountId={accountId}
+                              calendarId={calendarId}
+                              columnIndex={layout?.columnIndex}
+                              end={end}
+                              event={event}
+                              key={`${calendarId}-${event.id}-${start.toString()}`}
+                              start={start}
+                              totalColumns={layout?.totalColumns}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        }
                       )
                     : null}
-                  {dayTasks.map((task) => (
-                    <TaskEvent key={task.id} task={task} />
-                  ))}
+                  {dayTasks.map((task) => {
+                    const layoutKey = `task-${task.id}`;
+                    const layout = dayLayouts?.get(layoutKey);
+                    return (
+                      <TaskEvent
+                        columnIndex={layout?.columnIndex}
+                        key={task.id}
+                        task={task}
+                        totalColumns={layout?.totalColumns}
+                        zIndex={layout?.zIndex}
+                      />
+                    );
+                  })}
                 </DayColumn>
               );
             })}
