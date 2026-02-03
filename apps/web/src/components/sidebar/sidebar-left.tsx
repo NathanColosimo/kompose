@@ -54,14 +54,29 @@ const isNonRecurring = (task: TaskSelectDecoded): boolean =>
 const isInboxTask = (task: TaskSelectDecoded): boolean =>
   task.status !== "done" && task.startDate === null && task.startTime === null;
 
-/** Overdue: uncompleted tasks with due date in the past */
+/** Overdue: uncompleted tasks with past due date or past start time */
 const isOverdue = (
   task: TaskSelectDecoded,
-  today: Temporal.PlainDate
-): boolean =>
-  task.status !== "done" &&
-  task.dueDate !== null &&
-  Temporal.PlainDate.compare(task.dueDate, today) < 0;
+  today: Temporal.PlainDate,
+  nowZdt: Temporal.ZonedDateTime,
+  timeZone: string
+): boolean => {
+  const hasPastDueDate =
+    task.dueDate !== null &&
+    Temporal.PlainDate.compare(task.dueDate, today) < 0;
+  const hasPastStartTime =
+    task.startDate !== null &&
+    task.startTime !== null &&
+    Temporal.ZonedDateTime.compare(
+      task.startDate.toZonedDateTime({
+        timeZone,
+        plainTime: task.startTime,
+      }),
+      nowZdt
+    ) < 0;
+
+  return task.status !== "done" && (hasPastDueDate || hasPastStartTime);
+};
 
 /** Unplanned: tasks with past/today startDate, no startTime, due date in future (or null) */
 const isUnplanned = (
@@ -91,8 +106,12 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     },
   });
 
-  // Get today's date for filtering
+  // Get today's date/time for filtering
   const today = useMemo(() => todayPlainDate(timeZone), [timeZone]);
+  const nowZdt = useMemo(
+    () => Temporal.Now.zonedDateTimeISO(timeZone),
+    [timeZone]
+  );
 
   // Filter and sort tasks based on active view
   const { inboxTasks, overdueTasks, unplannedTasks } = useMemo(() => {
@@ -109,7 +128,9 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
 
     // Today view sections
-    const overdue = nonRecurring.filter((t) => isOverdue(t, today));
+    const overdue = nonRecurring.filter((t) =>
+      isOverdue(t, today, nowZdt, timeZone)
+    );
     const unplanned = nonRecurring.filter((t) => isUnplanned(t, today));
 
     return {
@@ -117,7 +138,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       overdueTasks: overdue,
       unplannedTasks: unplanned,
     };
-  }, [tasks, today]);
+  }, [tasks, timeZone, today, nowZdt]);
 
   const content = useMemo(() => {
     if (isLoading) {
