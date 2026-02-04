@@ -2,9 +2,13 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
+import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
+import type { LucideIcon } from "lucide-react";
 import { CalendarClock, Inbox } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
+import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
   Sidebar,
@@ -25,16 +29,26 @@ import { TaskItem } from "./task-item";
 export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
 // Navigation tabs for the sidebar icon strip
-const navMain = [
+interface SidebarNavItem {
+  id: string;
+  title: string;
+  icon: LucideIcon;
+  type: "base" | "tag";
+  tagId?: string;
+}
+
+const navMain: SidebarNavItem[] = [
   {
+    id: "inbox",
     title: "Inbox",
-    url: "/dashboard",
     icon: Inbox,
+    type: "base",
   },
   {
+    id: "today",
     title: "Today",
-    url: "/dashboard",
     icon: CalendarClock,
+    type: "base",
   },
 ];
 
@@ -107,23 +121,88 @@ function renderTodayContent({
   );
 }
 
+function renderTagContent({
+  overdueTasks,
+  todoTasks,
+  doneTasks,
+}: {
+  overdueTasks: TaskSelectDecoded[];
+  todoTasks: TaskSelectDecoded[];
+  doneTasks: TaskSelectDecoded[];
+}) {
+  const hasOverdue = overdueTasks.length > 0;
+  const hasTodo = todoTasks.length > 0;
+  const hasDone = doneTasks.length > 0;
+
+  if (!(hasOverdue || hasTodo || hasDone)) {
+    return renderEmptyMessage("No tasks for this tag.");
+  }
+
+  return (
+    <div className="flex flex-col">
+      {hasOverdue && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Overdue
+          </div>
+          {overdueTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {hasTodo && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Todo
+          </div>
+          {todoTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {hasDone && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Done
+          </div>
+          {doneTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function getSidebarContent({
-  activeView,
+  activeItem,
   doneTasks,
   error,
   inboxTasks,
   isLoading,
   overdueTasks,
+  tagDoneTasks,
+  tagOverdueTasks,
+  tagTodoTasks,
   unplannedTasks,
 }: {
-  activeView: string;
+  activeItem: SidebarNavItem | null;
   doneTasks: TaskSelectDecoded[];
   error: unknown;
   inboxTasks: TaskSelectDecoded[];
   isLoading: boolean;
   overdueTasks: TaskSelectDecoded[];
+  tagDoneTasks: TaskSelectDecoded[];
+  tagOverdueTasks: TaskSelectDecoded[];
+  tagTodoTasks: TaskSelectDecoded[];
   unplannedTasks: TaskSelectDecoded[];
 }) {
+  if (!activeItem) {
+    return null;
+  }
+
   if (isLoading) {
     return renderEmptyMessage("Loading tasks...");
   }
@@ -134,10 +213,18 @@ function getSidebarContent({
     );
   }
 
-  switch (activeView) {
-    case "Inbox":
+  if (activeItem.type === "tag") {
+    return renderTagContent({
+      overdueTasks: tagOverdueTasks,
+      todoTasks: tagTodoTasks,
+      doneTasks: tagDoneTasks,
+    });
+  }
+
+  switch (activeItem.id) {
+    case "inbox":
       return renderInboxContent(inboxTasks);
-    case "Today":
+    case "today":
       return renderTodayContent({ doneTasks, overdueTasks, unplannedTasks });
     default:
       return null;
@@ -145,8 +232,11 @@ function getSidebarContent({
 }
 
 export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
-  const [activeItem, setActiveItem] = useState(navMain[0]);
+  const [activeItem, setActiveItem] = useState<SidebarNavItem | null>(
+    navMain[0]
+  );
   const { setOpen } = useSidebar();
+  const { tagsQuery } = useTags();
   const {
     tasksQuery: { isLoading, error },
     inboxTasks,
@@ -154,7 +244,26 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     unplannedTasks,
     doneTasks,
   } = useTaskSections();
-  const activeView = activeItem?.title ?? "Inbox";
+  const activeTagId =
+    activeItem?.type === "tag" ? (activeItem.tagId ?? null) : null;
+  const {
+    doneTasks: tagDoneTasks,
+    overdueTasks: tagOverdueTasks,
+    todoTasks: tagTodoTasks,
+  } = useTagTaskSections(activeTagId);
+
+  const navItems = useMemo(() => {
+    const tagItems =
+      tagsQuery.data?.map((tag) => ({
+        id: `tag-${tag.id}`,
+        title: tag.name,
+        icon: tagIconMap[tag.icon],
+        type: "tag" as const,
+        tagId: tag.id,
+      })) ?? [];
+
+    return [...navMain, ...tagItems];
+  }, [tagsQuery.data]);
 
   // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
@@ -167,21 +276,27 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const content = useMemo(
     () =>
       getSidebarContent({
-        activeView,
+        activeItem,
         doneTasks,
         error,
         inboxTasks,
         isLoading,
         overdueTasks,
+        tagDoneTasks,
+        tagOverdueTasks,
+        tagTodoTasks,
         unplannedTasks,
       }),
     [
-      activeView,
+      activeItem,
       doneTasks,
       error,
       inboxTasks,
       isLoading,
       overdueTasks,
+      tagDoneTasks,
+      tagOverdueTasks,
+      tagTodoTasks,
       unplannedTasks,
     ]
   );
@@ -203,11 +318,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           <SidebarGroup>
             <SidebarGroupContent className="px-1.5 md:px-0">
               <SidebarMenu>
-                {navMain.map((item) => (
-                  <SidebarMenuItem key={item.title}>
+                {navItems.map((item) => (
+                  <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
                       className="px-2.5 md:px-2"
-                      isActive={activeItem?.title === item.title}
+                      isActive={activeItem?.id === item.id}
                       onClick={() => {
                         setActiveItem(item);
                         setOpen(true);
@@ -243,12 +358,21 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
               <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
                 {activeItem?.title}
               </div>
-              <CreateTaskForm />
+              <CreateTaskForm
+                defaultTagIds={
+                  activeItem?.type === "tag" && activeItem.tagId
+                    ? [activeItem.tagId]
+                    : []
+                }
+              />
             </div>
           </SidebarHeader>
           <SidebarContent className="flex-1">
             <SidebarGroup className="flex-1 px-0">
-              <SidebarGroupContent className="flex-1" key={activeView}>
+              <SidebarGroupContent
+                className="flex-1"
+                key={activeItem?.id ?? "inbox"}
+              >
                 {content}
               </SidebarGroupContent>
             </SidebarGroup>

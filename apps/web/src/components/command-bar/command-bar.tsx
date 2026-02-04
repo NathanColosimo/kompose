@@ -109,6 +109,7 @@ export function CommandBar() {
               onRegisterSubmit={(fn) => {
                 createTaskSubmitRef.current = fn;
               }}
+              onUpdateSearch={setSearch}
               search={search}
             />
           )}

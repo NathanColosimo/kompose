@@ -10,6 +10,7 @@ import {
   plainDateCodec,
   plainTimeCodec,
 } from "../../lib/temporal-codecs";
+import { tagSelectSchemaWithIcon } from "../tag/contract";
 
 // Re-export recurrence types for frontend use
 export type { TaskRecurrence } from "@kompose/db/schema/task";
@@ -26,6 +27,21 @@ export type UpdateScope = z.infer<typeof updateScopeSchema>;
 export const deleteScopeSchema = z.enum(["this", "following"]);
 export type DeleteScope = z.infer<typeof deleteScopeSchema>;
 
+const tagIdsSchema = z.array(z.uuidv7());
+const tagsSchema = z.array(tagSelectSchemaWithIcon);
+
+const taskSelectSchemaWithTags = taskSelectSchema.extend({
+  tags: tagsSchema,
+});
+
+const taskInsertSchemaWithTagIds = taskInsertSchema.extend({
+  tagIds: tagIdsSchema.optional(),
+});
+
+const taskUpdateSchemaWithTagIds = taskUpdateSchema.extend({
+  tagIds: tagIdsSchema.optional(),
+});
+
 // ============================================================================
 // SELECT CODEC (for API responses - decodes strings to Temporal)
 // ============================================================================
@@ -35,7 +51,7 @@ export type DeleteScope = z.infer<typeof deleteScopeSchema>;
  * Used for output contracts - decodes string dates to Temporal objects.
  * Note: recurrence stays as-is (already typed correctly from schema)
  */
-export const taskSelectCodec = taskSelectSchema.extend({
+export const taskSelectCodec = taskSelectSchemaWithTags.extend({
   dueDate: plainDateCodec.nullable(),
   startDate: plainDateCodec.nullable(),
   startTime: plainTimeCodec.nullable(),
@@ -59,7 +75,7 @@ export type TaskSelectDecoded = z.output<typeof taskSelectCodec>;
  * - z.output = Temporal types (for app use)
  * - schema.encode(temporalData) = converts to strings for API
  */
-export const taskUpdateCodec = taskUpdateSchema.extend({
+export const taskUpdateCodec = taskUpdateSchemaWithTagIds.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
   startTime: plainTimeCodec.nullable().optional(),
@@ -81,7 +97,7 @@ export type TaskUpdateDecoded = z.output<typeof taskUpdateCodec>;
  * - z.output = Temporal types (for app use)
  * - schema.encode(temporalData) = converts to strings for API
  */
-export const taskInsertCodec = taskInsertSchema.extend({
+export const taskInsertCodec = taskInsertSchemaWithTagIds.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
   startTime: plainTimeCodec.nullable().optional(),
@@ -106,25 +122,29 @@ export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 // ============================================================================
 
 /** Base client insert schema (strings) for API contract */
-const clientTaskInsertSchema = taskInsertSchema.omit({ userId: true });
+const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
+  userId: true,
+});
 
 /** API returns string types - decode on client with taskSelectCodec */
-export const listTasks = oc.input(z.void()).output(z.array(taskSelectSchema));
+export const listTasks = oc
+  .input(z.void())
+  .output(z.array(taskSelectSchemaWithTags));
 
 export const createTask = oc
   .input(clientTaskInsertSchema)
-  .output(z.array(taskSelectSchema)); // Returns array (single for non-recurring, multiple for recurring)
+  .output(z.array(taskSelectSchemaWithTags)); // Returns array (single for non-recurring, multiple for recurring)
 
 export const updateTask = oc
   .input(
     z.object({
       id: z.uuidv7(),
-      task: taskUpdateSchema,
+      task: taskUpdateSchemaWithTagIds,
       /** Scope for recurring tasks: this (single), all (entire series), following (this + future) */
       scope: updateScopeSchema,
     })
   )
-  .output(z.array(taskSelectSchema)); // Returns array since "all"/"following" can update multiple
+  .output(z.array(taskSelectSchemaWithTags)); // Returns array since "all"/"following" can update multiple
 
 export const deleteTask = oc
   .input(

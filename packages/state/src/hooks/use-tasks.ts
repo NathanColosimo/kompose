@@ -21,6 +21,7 @@ import {
 import { useAtomValue } from "jotai";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
+import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
 import { hasSessionAtom, useStateConfig } from "../config";
 
@@ -33,6 +34,7 @@ export function useTasks() {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
   const hasSession = useAtomValue(hasSessionAtom);
+  const tags = useAtomValue(tagsDataAtom);
 
   // Fetch tasks using useQuery directly (same pattern as useGoogleEvents)
   const tasksQuery = useQuery({
@@ -66,6 +68,11 @@ export function useTasks() {
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
 
       const now = Temporal.Now.instant();
+      const optimisticTags =
+        task.tagIds && task.tagIds.length > 0
+          ? tags.filter((tag) => task.tagIds?.includes(tag.id))
+          : [];
+
       const optimisticTask: TaskSelectDecoded = {
         id: uuidv7(),
         userId: "optimistic",
@@ -81,6 +88,7 @@ export function useTasks() {
         seriesMasterId: null,
         recurrence: null,
         isException: false,
+        tags: optimisticTags,
       };
 
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) => [
@@ -140,16 +148,24 @@ export function useTasks() {
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
 
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
-        old?.map((t) =>
-          t.id === id
-            ? {
-                ...t,
-                ...task,
-                createdAt: t.createdAt,
-                updatedAt: Temporal.Now.instant(),
-              }
-            : t
-        )
+        old?.map((t) => {
+          if (t.id !== id) {
+            return t;
+          }
+
+          const nextTags =
+            task.tagIds !== undefined
+              ? tags.filter((tag) => (task.tagIds ?? []).includes(tag.id))
+              : t.tags;
+
+          return {
+            ...t,
+            ...task,
+            tags: nextTags,
+            createdAt: t.createdAt,
+            updatedAt: Temporal.Now.instant(),
+          };
+        })
       );
 
       return { previousTasks };

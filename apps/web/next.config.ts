@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // Force environment validation at build time
   transpilePackages: ["@t3-oss/env-nextjs", "@t3-oss/env-core"],
   experimental: {
-    turbopackFileSystemCacheForDev: true,
+    turbopackFileSystemCacheForDev: false,
   },
 };
 

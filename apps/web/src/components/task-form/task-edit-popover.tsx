@@ -4,6 +4,7 @@ import type {
   DeleteScope,
   TaskRecurrence,
   TaskSelectDecoded,
+  UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { focusedTaskIdAtom } from "@kompose/state/atoms/command-bar";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
@@ -32,6 +33,8 @@ import {
 } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
+import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
+import { TagPicker } from "@/components/tags/tag-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +69,7 @@ import { RecurrenceEditor } from "./recurrence-editor";
 interface TaskFormValues {
   title: string;
   description: string;
+  tagIds: string[];
   /** Start date - when task appears in inbox or on calendar */
   startDate: Temporal.PlainDate | null;
   /** Start time - time of day for calendar scheduling (independent of startDate) */
@@ -152,6 +156,11 @@ function TaskEditForm({
 }) {
   const { updateTask, deleteTask } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
+  const [tagScope, setTagScope] = useState<UpdateScope>("this");
+  const [pendingUpdate, setPendingUpdate] = useState<TaskFormValues | null>(
+    null
+  );
 
   // Check if this task is part of a recurring series
   const isRecurring = task.seriesMasterId !== null;
@@ -196,6 +205,7 @@ function TaskEditForm({
     () => ({
       title: task.title ?? "",
       description: task.description ?? "",
+      tagIds: task.tags.map((tag) => tag.id),
       startDate: task.startDate ?? null,
       startTime: task.startTime ?? null,
       dueDate: task.dueDate ?? null,
@@ -204,6 +214,7 @@ function TaskEditForm({
     }),
     [
       task.description,
+      task.tags,
       task.dueDate,
       task.durationMinutes,
       task.recurrence,
@@ -211,6 +222,11 @@ function TaskEditForm({
       task.startTime,
       task.title,
     ]
+  );
+
+  const initialTagIds = useMemo(
+    () => [...task.tags.map((tag) => tag.id)].sort(),
+    [task.tags]
   );
 
   const {
@@ -233,35 +249,59 @@ function TaskEditForm({
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
 
-  const submit = useCallback<SubmitHandler<TaskFormValues>>(
-    (values) => {
+  const areTagIdsEqual = useCallback(
+    (next: string[]) => {
+      const normalized = [...next].sort();
+      if (normalized.length !== initialTagIds.length) {
+        return false;
+      }
+      return normalized.every((value, index) => value === initialTagIds[index]);
+    },
+    [initialTagIds]
+  );
+
+  const commitUpdate = useCallback(
+    (values: TaskFormValues, scope: UpdateScope) => {
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
-
-      // Non-recurring tasks or recurring tasks with no recurrence change: scope="this"
-      // Recurrence pattern changes force scope="following"
-      const recurrenceChanged =
-        JSON.stringify(values.recurrence) !==
-        JSON.stringify(task.recurrence ?? null);
 
       updateTask.mutate({
         id: task.id,
         task: {
           title: values.title.trim(),
           description: values.description ?? "",
+          tagIds: values.tagIds,
           startDate: values.startDate,
           startTime: values.startTime,
           dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
           recurrence: values.recurrence,
         },
-        // Use "following" scope if recurrence changed, otherwise "this"
-        scope: recurrenceChanged ? "following" : "this",
+        scope,
       });
     },
-    [task.durationMinutes, task.id, task.recurrence, updateTask]
+    [task.durationMinutes, task.id, updateTask]
+  );
+
+  const submit = useCallback<SubmitHandler<TaskFormValues>>(
+    (values) => {
+      const recurrenceChanged =
+        JSON.stringify(values.recurrence) !==
+        JSON.stringify(task.recurrence ?? null);
+      const tagsChanged = !areTagIdsEqual(values.tagIds);
+
+      if (isRecurring && tagsChanged && !recurrenceChanged) {
+        setPendingUpdate(values);
+        setTagScope("this");
+        setShowTagScopeDialog(true);
+        return;
+      }
+
+      commitUpdate(values, recurrenceChanged ? "following" : "this");
+    },
+    [areTagIdsEqual, commitUpdate, isRecurring, task.recurrence]
   );
 
   // Register submit callback so the popover can trigger save on close.
@@ -512,6 +552,19 @@ function TaskEditForm({
         />
       </div>
 
+      <div className="space-y-2">
+        <Label className="font-medium text-muted-foreground text-xs">
+          Tags
+        </Label>
+        <Controller
+          control={control}
+          name="tagIds"
+          render={({ field }) => (
+            <TagPicker onChange={field.onChange} value={field.value ?? []} />
+          )}
+        />
+      </div>
+
       <Separator />
 
       {/* Delete button with confirmation dialog - shows scope options for recurring tasks */}
@@ -567,6 +620,28 @@ function TaskEditForm({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <RecurrenceScopeDialog
+        confirmLabel="Apply"
+        description="This is a recurring task. Choose how broadly to apply the change."
+        onConfirm={() => {
+          if (!pendingUpdate) {
+            return;
+          }
+          commitUpdate(pendingUpdate, tagScope);
+          setPendingUpdate(null);
+        }}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setPendingUpdate(null);
+          }
+          setShowTagScopeDialog(nextOpen);
+        }}
+        onValueChange={(value) => setTagScope(value as UpdateScope)}
+        open={showTagScopeDialog}
+        title="Apply tag update"
+        value={tagScope}
+      />
     </form>
   );
 }

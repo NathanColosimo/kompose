@@ -50,6 +50,13 @@
       "when": 1766601313098,
       "tag": "0006_add_recurring_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770161568138,
+      "tag": "0007_add_tags",
+      "breakpoints": true
     }
   ]
 }

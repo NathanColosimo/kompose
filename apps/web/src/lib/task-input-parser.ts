@@ -13,12 +13,16 @@ export interface ParsedTaskInput {
   dueDate: Temporal.PlainDate | null;
   /** Start date, parsed from ~date token (e.g., ~friday, ~next week) */
   startDate: Temporal.PlainDate | null;
+  /** Tag names parsed from #tag tokens */
+  tagNames: string[];
   /** Raw duration string for display (e.g., "2h", "30m") */
   durationRaw: string | null;
   /** Raw due date string for display (e.g., "monday", "tomorrow") */
   dueDateRaw: string | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
   startDateRaw: string | null;
+  /** Raw tag strings for display (e.g., "design", "client work") */
+  tagNamesRaw: string[];
 }
 
 /**
@@ -27,8 +31,8 @@ export interface ParsedTaskInput {
  * Each pattern captures the value after the symbol until the next token or end.
  */
 const DURATION_PATTERN = /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/;
-const TOKEN_PATTERN = /([=~>])([^=~>]+)/g;
-const FIRST_TOKEN_PATTERN = /[=~>]/;
+const TOKEN_PATTERN = /([=~>#])([^=~>#]+)/g;
+const FIRST_TOKEN_PATTERN = /[=~>#]/;
 
 /**
  * Parse duration string into minutes.
@@ -110,9 +114,11 @@ export function parseTaskInput(
     durationMinutes: null,
     dueDate: null,
     startDate: null,
+    tagNames: [],
     durationRaw: null,
     dueDateRaw: null,
     startDateRaw: null,
+    tagNamesRaw: [],
   };
 
   // Find the first special token to extract the title
@@ -155,6 +161,12 @@ export function parseTaskInput(
         // Start date token
         result.startDateRaw = trimmedValue;
         result.startDate = parseNaturalDate(trimmedValue, referenceDate);
+        break;
+      case "#":
+        result.tagNamesRaw.push(trimmedValue);
+        if (trimmedValue) {
+          result.tagNames.push(trimmedValue);
+        }
         break;
       default:
         break;

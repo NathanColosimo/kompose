@@ -1,6 +1,7 @@
 import { implement, ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import { tagSelectSchemaWithIcon } from "../tag/contract";
 import {
   type InvalidTaskError,
   type TaskNotFoundError,
@@ -37,12 +38,19 @@ function handleError(error: TaskError): never {
 
 const os = implement(taskContract).use(requireAuth);
 
+const normalizeTaskTags = <T extends { tags: Array<{ icon: string }> }>(
+  task: T
+) => ({
+  ...task,
+  tags: task.tags.map((tag) => tagSelectSchemaWithIcon.parse(tag)),
+});
+
 export const taskRouter = os.router({
   list: os.list.handler(({ context }) => {
     const program = Effect.gen(function* () {
       const service = yield* Tasks;
       const tasks = yield* service.listTasks(context.user.id);
-      return tasks;
+      return tasks.map((task) => normalizeTaskTags(task));
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(
@@ -60,7 +68,7 @@ export const taskRouter = os.router({
         ...input,
         userId: context.user.id,
       });
-      return tasks;
+      return tasks.map((task) => normalizeTaskTags(task));
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(
@@ -80,7 +88,7 @@ export const taskRouter = os.router({
         input.task,
         input.scope
       );
-      return tasks;
+      return tasks.map((task) => normalizeTaskTags(task));
     }).pipe(Effect.provide(TasksLive));
 
     return Effect.runPromise(

@@ -17,6 +17,8 @@ import {
 } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import { Container } from "@/components/container";
+import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -296,6 +298,7 @@ function dateToPlainTime(date: Date, timeZone: string): Temporal.PlainTime {
 interface TaskDraft {
   title: string;
   description: string;
+  tagIds: string[];
   durationMinutes: number;
   dueDate: Temporal.PlainDate | null;
   startDate: Temporal.PlainDate | null;
@@ -358,6 +361,7 @@ function TaskRow({
   item: TaskSelectDecoded;
   onPress: (task: TaskSelectDecoded) => void;
 }) {
+  const selectedTags = item.tags;
   return (
     <Pressable
       className="border-border border-b py-3 active:bg-card"
@@ -378,6 +382,28 @@ function TaskRow({
         <Text className="mt-1 text-muted-foreground text-xs">
           Due {formatPlainDateLong(item.dueDate)}
         </Text>
+      ) : null}
+      {selectedTags.length > 0 ? (
+        <View className="mt-1 flex-row flex-wrap gap-2">
+          {selectedTags.map((tag) => {
+            const IconComponent = tagIconMap[tag.icon];
+            return (
+              <View
+                className="flex-row items-center gap-1 rounded-full border border-border px-2 py-0.5"
+                key={tag.id}
+              >
+                <Icon
+                  as={IconComponent}
+                  className="text-muted-foreground"
+                  size={12}
+                />
+                <Text className="text-muted-foreground text-xs">
+                  {tag.name}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
       ) : null}
     </Pressable>
   );
@@ -483,6 +509,7 @@ function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   return {
     title: task.title,
     description: task.description ?? "",
+    tagIds: task.tags.map((tag) => tag.id),
     durationMinutes: task.durationMinutes,
     dueDate: task.dueDate,
     startDate: task.startDate,
@@ -498,6 +525,7 @@ function buildEmptyDraft(timeZone: string): TaskDraft {
   return {
     title: "",
     description: "",
+    tagIds: [],
     durationMinutes: 30,
     dueDate: tomorrow,
     startDate: today,
@@ -598,6 +626,7 @@ export default function TasksTab() {
           description: draft.description.trim()
             ? draft.description.trim()
             : null,
+          tagIds: draft.tagIds,
           durationMinutes: draft.durationMinutes,
           dueDate: draft.dueDate,
           startDate: draft.startDate,
@@ -608,6 +637,7 @@ export default function TasksTab() {
       createTask.mutate({
         title: draft.title.trim(),
         description: draft.description.trim() ? draft.description.trim() : null,
+        tagIds: draft.tagIds,
         durationMinutes: draft.durationMinutes,
         dueDate: draft.dueDate,
         startDate: draft.startDate,
@@ -728,6 +758,16 @@ export default function TasksTab() {
               placeholder="Description (optional)"
               value={draft.description}
             />
+
+            <View className="mb-3">
+              <Text className="mb-2 font-semibold text-foreground text-sm">
+                Tags
+              </Text>
+              <TagPicker
+                onChange={(next) => setDraft((d) => ({ ...d, tagIds: next }))}
+                value={draft.tagIds}
+              />
+            </View>
 
             {/* Duration row */}
             <View className="mb-3 flex-row items-center gap-2">

@@ -27,6 +27,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import { Container } from "@/components/container";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -135,6 +136,7 @@ interface EventDraft {
 interface TaskDraft {
   title: string;
   description: string;
+  tagIds: string[];
   durationMinutes: number;
   dueDate: Temporal.PlainDate | null;
   startDate: Temporal.PlainDate | null;
@@ -145,6 +147,7 @@ function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   return {
     title: task.title,
     description: task.description ?? "",
+    tagIds: task.tags.map((tag) => tag.id),
     durationMinutes: task.durationMinutes,
     dueDate: task.dueDate,
     startDate: task.startDate,
@@ -504,6 +507,7 @@ export default function CalendarTab() {
         description: taskDraft.description.trim()
           ? taskDraft.description.trim()
           : null,
+        tagIds: taskDraft.tagIds,
         durationMinutes: taskDraft.durationMinutes,
         dueDate: taskDraft.dueDate,
         startDate: taskDraft.startDate,
@@ -1065,6 +1069,18 @@ export default function CalendarTab() {
               placeholder="Title"
               value={taskDraft?.title ?? ""}
             />
+
+            <View className="mb-3">
+              <Text className="mb-2 font-semibold text-foreground text-sm">
+                Tags
+              </Text>
+              <TagPicker
+                onChange={(next) =>
+                  setTaskDraft((d) => (d ? { ...d, tagIds: next } : d))
+                }
+                value={taskDraft?.tagIds ?? []}
+              />
+            </View>
 
             <View className="mb-2.5 flex-row gap-2">
               <Button

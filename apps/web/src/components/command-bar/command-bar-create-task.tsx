@@ -1,6 +1,8 @@
 "use client";
 
+import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
+import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   CalendarIcon,
@@ -9,6 +11,7 @@ import {
   PlayCircleIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
 import {
   CommandEmpty,
@@ -22,12 +25,16 @@ import {
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
 
+const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
+
 interface CommandBarCreateTaskProps {
   search: string;
   /** Callback to register the submit function with the parent */
   onRegisterSubmit: (fn: () => void) => void;
   /** Callback when a task is successfully created (to clear/reset input) */
   onCreated: () => void;
+  /** Callback to update the search input */
+  onUpdateSearch: (next: string) => void;
 }
 
 /**
@@ -45,8 +52,11 @@ export function CommandBarCreateTask({
   search,
   onRegisterSubmit,
   onCreated,
+  onUpdateSearch,
 }: CommandBarCreateTaskProps) {
   const { createTask } = useTasks();
+  const { tagsQuery } = useTags();
+  const tags = tagsQuery.data ?? [];
 
   // Parse the input into structured task data
   const parsed: ParsedTaskInput = useMemo(
@@ -56,6 +66,34 @@ export function CommandBarCreateTask({
 
   // Check if the parsed input is valid for creation
   const isValid = parsed.title.length > 0;
+
+  const tagQuery = useMemo(() => {
+    const match = TAG_QUERY_PATTERN.exec(search);
+    if (!match) {
+      return null;
+    }
+    return match[1].trim();
+  }, [search]);
+
+  const matchingTags = useMemo(() => {
+    if (tagQuery === null) {
+      return [];
+    }
+    if (!tagQuery) {
+      return tags;
+    }
+    const lowered = tagQuery.toLowerCase();
+    return tags.filter((tag) => tag.name.toLowerCase().includes(lowered));
+  }, [tagQuery, tags]);
+
+  const handleTagSelect = (tag: TagSelect) => {
+    const match = TAG_QUERY_PATTERN.exec(search);
+    if (!match) {
+      return;
+    }
+    const prefix = search.slice(0, match.index);
+    onUpdateSearch(`${prefix}#${tag.name} `);
+  };
 
   // Ref to always have the latest create handler without re-registering
   const handleCreateRef = useRef<() => void>(() => {
@@ -68,12 +106,21 @@ export function CommandBarCreateTask({
       return;
     }
 
+    const matchedTagIds = Array.from(
+      new Set(
+        parsed.tagNames
+          .map((name) => tags.find((tag) => tag.name === name)?.id)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
     const taskData: ClientTaskInsertDecoded = {
       title: parsed.title,
       durationMinutes: parsed.durationMinutes ?? 30,
       dueDate: parsed.dueDate ?? undefined,
       startDate: parsed.startDate ?? undefined,
       // No startTime - user can schedule later by dragging to calendar
+      tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
     };
 
     createTask.mutate(taskData, {
@@ -92,7 +139,7 @@ export function CommandBarCreateTask({
   return (
     <>
       {/* Show empty state when no valid title */}
-      {!isValid && (
+      {!isValid && matchingTags.length === 0 && (
         <CommandEmpty>
           <div className="space-y-2">
             <p>Type a task title to create...</p>
@@ -106,9 +153,30 @@ export function CommandBarCreateTask({
               <span>
                 <code className="rounded bg-muted px-1">~</code> start
               </span>
+              <span>
+                <code className="rounded bg-muted px-1">#</code> tag
+              </span>
             </div>
           </div>
         </CommandEmpty>
+      )}
+
+      {matchingTags.length > 0 && (
+        <CommandGroup heading="Tags">
+          {matchingTags.map((tag) => {
+            const Icon = tagIconMap[tag.icon];
+            return (
+              <CommandItem
+                key={tag.id}
+                onSelect={() => handleTagSelect(tag)}
+                value={tag.name}
+              >
+                <Icon className="text-muted-foreground" />
+                <span>{tag.name}</span>
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
       )}
 
       {/* Show selectable create item when valid */}
@@ -176,6 +244,9 @@ export function CommandBarCreateTask({
             </span>
             <span>
               <code className="rounded bg-muted px-1">~</code> start
+            </span>
+            <span>
+              <code className="rounded bg-muted px-1">#</code> tag
             </span>
           </div>
         </>

@@ -3,9 +3,10 @@
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { Temporal } from "temporal-polyfill";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -31,7 +32,22 @@ import {
 } from "@/lib/temporal-utils";
 import { RecurrenceEditor } from "./recurrence-editor";
 
-export function CreateTaskForm() {
+const buildDefaultValues = (tagIds: string[]) => ({
+  title: "",
+  description: "",
+  startDate: todayPlainDate(),
+  startTime: null,
+  durationMinutes: 30,
+  dueDate: todayPlainDate().add({ days: 1 }),
+  recurrence: null,
+  tagIds,
+});
+
+export function CreateTaskForm({
+  defaultTagIds = [],
+}: {
+  defaultTagIds?: string[];
+}) {
   const [open, setOpen] = useState(false);
 
   const { createTask } = useTasks();
@@ -43,32 +59,23 @@ export function CreateTaskForm() {
     reset,
     formState: { isSubmitting },
   } = useForm<ClientTaskInsertDecoded>({
-    defaultValues: {
-      title: "",
-      description: "",
-      startDate: todayPlainDate(),
-      startTime: null,
-      durationMinutes: 30,
-      dueDate: todayPlainDate().add({ days: 1 }),
-      recurrence: null,
-    },
+    defaultValues: buildDefaultValues(defaultTagIds),
   });
 
   // Watch startDate for recurrence editor reference
   const startDate = useWatch({ control, name: "startDate" });
 
+  // Prefill tag context when opening from a tag view.
+  useEffect(() => {
+    if (open) {
+      reset(buildDefaultValues(defaultTagIds));
+    }
+  }, [defaultTagIds, open, reset]);
+
   const onSubmit = async (data: ClientTaskInsertDecoded) => {
     await createTask.mutateAsync(data);
     // Reset form to fresh defaults and close dialog
-    reset({
-      title: "",
-      description: "",
-      startDate: todayPlainDate(),
-      startTime: null,
-      durationMinutes: 30,
-      dueDate: todayPlainDate().add({ days: 1 }),
-      recurrence: null,
-    });
+    reset(buildDefaultValues(defaultTagIds));
     setOpen(false);
   };
 
@@ -105,6 +112,19 @@ export function CreateTaskForm() {
               id="description"
               placeholder="Add details..."
               {...register("description")}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>Tags</Label>
+            <Controller
+              control={control}
+              name="tagIds"
+              render={({ field }) => (
+                <TagPicker
+                  onChange={field.onChange}
+                  value={field.value ?? []}
+                />
+              )}
             />
           </div>
           <div className="grid gap-4">
