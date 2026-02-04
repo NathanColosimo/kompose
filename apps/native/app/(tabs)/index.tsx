@@ -5,7 +5,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
-import { CalendarClock, Inbox, Plus, X } from "lucide-react-native";
+import { CalendarClock, Inbox, Plus, Tag, X } from "lucide-react-native";
 import React from "react";
 import {
   FlatList,
@@ -18,8 +18,10 @@ import {
 import { Temporal } from "temporal-polyfill";
 import { Container } from "@/components/container";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagManagerDialog } from "@/components/tags/tag-manager-dialog";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -357,55 +359,70 @@ function buildTodayItems(sections: TaskSection[]): TaskListItem[] {
 function TaskRow({
   item,
   onPress,
+  onToggleStatus,
 }: {
   item: TaskSelectDecoded;
   onPress: (task: TaskSelectDecoded) => void;
+  onToggleStatus: (task: TaskSelectDecoded) => void;
 }) {
   const selectedTags = item.tags;
+  const isDone = item.status === "done";
+
   return (
-    <Pressable
-      className="border-border border-b py-3 active:bg-card"
-      onPress={() => onPress(item)}
-    >
-      <View className="flex-row items-center justify-between gap-3">
-        <Text
-          className="flex-1 font-semibold text-base text-foreground"
-          numberOfLines={1}
-        >
-          {item.title}
-        </Text>
-        <Text className="text-muted-foreground text-xs">
-          {item.durationMinutes}m
-        </Text>
-      </View>
-      {item.dueDate ? (
-        <Text className="mt-1 text-muted-foreground text-xs">
-          Due {formatPlainDateLong(item.dueDate)}
-        </Text>
-      ) : null}
-      {selectedTags.length > 0 ? (
-        <View className="mt-1 flex-row flex-wrap gap-2">
-          {selectedTags.map((tag) => {
-            const IconComponent = tagIconMap[tag.icon];
-            return (
-              <View
-                className="flex-row items-center gap-1 rounded-full border border-border px-2 py-0.5"
-                key={tag.id}
-              >
-                <Icon
-                  as={IconComponent}
-                  className="text-muted-foreground"
-                  size={12}
-                />
-                <Text className="text-muted-foreground text-xs">
-                  {tag.name}
-                </Text>
-              </View>
-            );
-          })}
+    <View className="flex-row items-start gap-3 border-border border-b py-3">
+      {/* Checkbox to toggle done/todo status */}
+      <Checkbox
+        accessibilityLabel={isDone ? "Mark as todo" : "Mark as done"}
+        checked={isDone}
+        className="mt-0.5"
+        onCheckedChange={() => onToggleStatus(item)}
+      />
+
+      {/* Task content - tappable to open edit modal */}
+      <Pressable
+        className="flex-1 active:opacity-70"
+        onPress={() => onPress(item)}
+      >
+        <View className="flex-row items-center justify-between gap-3">
+          <Text
+            className={`flex-1 font-semibold text-base ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
+            numberOfLines={1}
+          >
+            {item.title}
+          </Text>
+          <Text className="text-muted-foreground text-xs">
+            {item.durationMinutes}m
+          </Text>
         </View>
-      ) : null}
-    </Pressable>
+        {item.dueDate ? (
+          <Text className="mt-1 text-muted-foreground text-xs">
+            Due {formatPlainDateLong(item.dueDate)}
+          </Text>
+        ) : null}
+        {selectedTags.length > 0 ? (
+          <View className="mt-1 flex-row flex-wrap gap-2">
+            {selectedTags.map((tag) => {
+              const IconComponent = tagIconMap[tag.icon];
+              return (
+                <View
+                  className="flex-row items-center gap-1 rounded-full border border-border px-2 py-0.5"
+                  key={tag.id}
+                >
+                  <Icon
+                    as={IconComponent}
+                    className="text-muted-foreground"
+                    size={12}
+                  />
+                  <Text className="text-muted-foreground text-xs">
+                    {tag.name}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+      </Pressable>
+    </View>
   );
 }
 
@@ -414,10 +431,11 @@ interface TaskListProps {
   inboxTasks: TaskSelectDecoded[];
   todaySections: TaskSection[];
   isLoading: boolean;
-  isFetching: boolean;
+  isRefreshing: boolean;
   tintColor: string;
   onRefresh: () => void;
   onPressTask: (task: TaskSelectDecoded) => void;
+  onToggleStatus: (task: TaskSelectDecoded) => void;
 }
 
 // Shared list renderer for Inbox and Today views.
@@ -426,10 +444,11 @@ function TaskList({
   inboxTasks,
   todaySections,
   isLoading,
-  isFetching,
+  isRefreshing,
   tintColor,
   onRefresh,
   onPressTask,
+  onToggleStatus,
 }: TaskListProps) {
   const emptyMessage =
     activeTab === "Inbox" ? "No tasks in inbox." : "Nothing for today.";
@@ -455,11 +474,17 @@ function TaskList({
         refreshControl={
           <RefreshControl
             onRefresh={onRefresh}
-            refreshing={isFetching}
+            refreshing={isRefreshing}
             tintColor={tintColor}
           />
         }
-        renderItem={({ item }) => <TaskRow item={item} onPress={onPressTask} />}
+        renderItem={({ item }) => (
+          <TaskRow
+            item={item}
+            onPress={onPressTask}
+            onToggleStatus={onToggleStatus}
+          />
+        )}
       />
     );
   }
@@ -488,7 +513,7 @@ function TaskList({
       refreshControl={
         <RefreshControl
           onRefresh={onRefresh}
-          refreshing={isFetching}
+          refreshing={isRefreshing}
           tintColor={tintColor}
         />
       }
@@ -498,7 +523,11 @@ function TaskList({
             {item.title}
           </Text>
         ) : (
-          <TaskRow item={item.task} onPress={onPressTask} />
+          <TaskRow
+            item={item.task}
+            onPress={onPressTask}
+            onToggleStatus={onToggleStatus}
+          />
         )
       }
     />
@@ -560,6 +589,8 @@ export default function TasksTab() {
 
   // Modal state (create/edit).
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isTagManagerOpen, setIsTagManagerOpen] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [editingTask, setEditingTask] =
     React.useState<TaskSelectDecoded | null>(null);
   const [draft, setDraft] = React.useState<TaskDraft>(() =>
@@ -672,16 +703,48 @@ export default function TasksTab() {
     closeModal();
   }
 
+  const handleRefresh = React.useCallback(() => {
+    setIsRefreshing(true);
+    tasksQuery.refetch().finally(() => {
+      setIsRefreshing(false);
+    });
+  }, [tasksQuery]);
+
+  // Toggle task status directly from the list (without opening modal)
+  const handleToggleStatus = React.useCallback(
+    (task: TaskSelectDecoded) => {
+      const newStatus = task.status === "done" ? "todo" : "done";
+      updateTask.mutate({
+        id: task.id,
+        task: { status: newStatus },
+        scope: "this",
+      });
+    },
+    [updateTask]
+  );
+
   React.useLayoutEffect(() => {
     // Render task actions in the nav header row.
     navigation.setOptions({
+      headerLeft: () => (
+        <View className="pl-2">
+          <Button
+            accessibilityLabel="Manage tags"
+            onPress={() => setIsTagManagerOpen(true)}
+            size="icon"
+            variant="ghost"
+          >
+            <Icon as={Tag} size={18} />
+          </Button>
+        </View>
+      ),
       headerRight: () => (
         <View className="flex-row items-center gap-2">
           <Button
             accessibilityLabel="Show inbox tasks"
             onPress={() => setActiveTab("Inbox")}
             size="icon"
-            variant={activeTab === "Inbox" ? "secondary" : "outline"}
+            variant={activeTab === "Inbox" ? "outline" : "ghost"}
           >
             <Icon as={Inbox} size={16} />
           </Button>
@@ -689,7 +752,7 @@ export default function TasksTab() {
             accessibilityLabel="Show today tasks"
             onPress={() => setActiveTab("Today")}
             size="icon"
-            variant={activeTab === "Today" ? "secondary" : "outline"}
+            variant={activeTab === "Today" ? "outline" : "ghost"}
           >
             <Icon as={CalendarClock} size={16} />
           </Button>
@@ -712,10 +775,11 @@ export default function TasksTab() {
       <TaskList
         activeTab={activeTab}
         inboxTasks={inboxTasks}
-        isFetching={tasksQuery.isFetching}
         isLoading={tasksQuery.isLoading}
+        isRefreshing={isRefreshing}
         onPressTask={openEdit}
-        onRefresh={() => tasksQuery.refetch()}
+        onRefresh={handleRefresh}
+        onToggleStatus={handleToggleStatus}
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
         todaySections={todaySections}
       />
@@ -884,6 +948,11 @@ export default function TasksTab() {
           </View>
         </View>
       </Modal>
+
+      <TagManagerDialog
+        onOpenChange={setIsTagManagerOpen}
+        open={isTagManagerOpen}
+      />
     </Container>
   );
 }

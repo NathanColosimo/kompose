@@ -33,6 +33,35 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 - **Styling**: NativeWind (Tailwind for React Native) + React Native Reusables components.
 - **Theming**: CSS variables via NativeWind's `vars()` function for dynamic light/dark mode switching.
 
+## UI components
+
+**Always check [React Native Reusables](https://reactnativereusables.com/docs/components) before hand-rolling UI components.**
+
+The project uses React Native Reusables as its component library. These are pre-built, accessible, NativeWind-styled components built on `@rn-primitives`.
+
+### Adding a new component
+
+1. Check if the component exists at https://reactnativereusables.com/docs/components
+2. If available, add it via CLI:
+   ```bash
+   npx @react-native-reusables/cli@latest add <component-name>
+   ```
+3. Or manually install the primitive and create the component in `apps/native/components/ui/`
+
+### Existing UI components
+
+Components live in `apps/native/components/ui/`:
+- `button.tsx` - Primary button with variants
+- `checkbox.tsx` - Circular checkbox using `@rn-primitives/checkbox`
+- `dialog.tsx` - Modal dialog
+- `input.tsx` - Text input
+- `textarea.tsx` - Multi-line text input
+- `text.tsx` - Styled text with context support
+- `icon.tsx` - Icon wrapper for lucide-react-native
+- `separator.tsx` - Visual separator
+- `card.tsx` - Card container
+- `alert.tsx` - Alert/notification component
+
 ## Major changes + where
 
 ### App structure / navigation
