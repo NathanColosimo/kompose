@@ -26,9 +26,7 @@ export const TimeGutter = memo(function TimeGutterInner({
           )}
           key={hour}
         >
-          <span
-            style={{ transform: `translateY(-${labelOffset}px)` }}
-          >
+          <span style={{ transform: `translateY(-${labelOffset}px)` }}>
             {hour === 0 ? "" : formatHourLabel(hour)}
           </span>
         </div>

@@ -99,6 +99,8 @@ export const TaskEvent = memo(function TaskEventInner({
 
   const { top, height } = calculateEventPosition(startZdt, durationMinutes);
   const isDone = task.status === "done";
+  // Center content only for 15-minute tasks.
+  const isShortTask = durationMinutes <= 15;
 
   // Calculate horizontal positioning based on collision layout
   const columnWidth = 100 / totalColumns;
@@ -141,7 +143,12 @@ export const TaskEvent = memo(function TaskEventInner({
           {...endAttributes}
           {...endListeners}
         />
-        <div className="flex h-full items-center gap-1">
+        <div
+          className={cn(
+            "flex h-full gap-1",
+            isShortTask ? "items-center" : "items-start"
+          )}
+        >
           <Checkbox
             checked={isDone}
             className="h-3.5 w-3.5 shrink-0 cursor-pointer"
