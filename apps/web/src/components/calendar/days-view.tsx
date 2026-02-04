@@ -5,7 +5,14 @@ import {
   timezoneAtom,
   visibleDaysAtom,
 } from "@kompose/state/atoms/current-date";
-import type { GoogleEventWithSource } from "@kompose/state/atoms/google-data";
+import {
+  normalizedGoogleColorsAtomFamily,
+  pastelizeColor,
+} from "@kompose/state/atoms/google-colors";
+import {
+  type GoogleEventWithSource,
+  googleCalendarsDataAtom,
+} from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
 import {
   memo,
@@ -21,6 +28,7 @@ import {
   isoStringToZonedDateTime,
   isToday,
   minutesFromMidnight,
+  zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
 import {
   calculateCollisionLayout,
@@ -32,6 +40,7 @@ import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
 import { EventCreationProvider } from "./event-creation/event-creation-provider";
 import { useEventCreation } from "./event-creation/use-event-creation";
+import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
 import { DayColumn } from "./time-grid/day-column";
@@ -40,6 +49,7 @@ import { TimeGutter } from "./time-grid/time-gutter";
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
+const MAX_ALL_DAY_EVENTS = 2;
 
 type PositionedGoogleEvent = GoogleEventWithSource & {
   start: Temporal.ZonedDateTime;
@@ -375,19 +385,24 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
                   return (
                     <div
-                      className="flex min-h-[32px] flex-col items-start gap-1 border-border border-r px-2 pt-1 pb-1 last:border-r-0"
+                      className="flex min-h-[32px] flex-col items-start gap-1 overflow-hidden border-border border-r px-2 pt-1 pb-1 last:border-r-0"
                       key={`${dayKey}-all-day`}
                       style={{ width: dayColumnWidth }}
                     >
-                      {dayAllDay.map((item: AllDayGoogleEvent) => (
-                        <span
-                          className="truncate rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-[11px] text-primary"
-                          key={`${item.calendarId}-${item.event.id}`}
-                          title={item.event.summary ?? "Google event"}
-                        >
-                          {item.event.summary ?? "Google event"}
+                      {dayAllDay
+                        .slice(0, MAX_ALL_DAY_EVENTS)
+                        .map((item: AllDayGoogleEvent) => (
+                          <AllDayEventChip
+                            item={item}
+                            key={`${item.calendarId}-${item.event.id}`}
+                            timeZone={timeZone}
+                          />
+                        ))}
+                      {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
+                        <span className="block w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-medium text-[11px] text-muted-foreground">
+                          …
                         </span>
-                      ))}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -532,3 +547,72 @@ export function calculateEventPosition(
 }
 
 DaysView.displayName = "DaysView";
+
+function AllDayEventChip({
+  item,
+  timeZone,
+}: {
+  item: AllDayGoogleEvent;
+  timeZone: string;
+}) {
+  const normalizedPalette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(item.accountId)
+  );
+  const calendars = useAtomValue(googleCalendarsDataAtom);
+
+  const eventPalette =
+    item.event.colorId && normalizedPalette?.event
+      ? normalizedPalette.event[item.event.colorId]
+      : undefined;
+
+  const calendar = calendars.find(
+    (c) => c.accountId === item.accountId && c.calendar.id === item.calendarId
+  );
+
+  const backgroundColor =
+    eventPalette?.background ??
+    pastelizeColor(calendar?.calendar.backgroundColor) ??
+    undefined;
+  const foregroundColor =
+    eventPalette?.foreground ?? calendar?.calendar.foregroundColor ?? undefined;
+
+  const endDate =
+    item.event.end.date && item.event.end.date !== item.date.toString()
+      ? parseDateOnlyLocal(item.event.end.date)
+      : item.date.add({ days: 1 });
+  const startZdt = item.date.toZonedDateTime({
+    timeZone,
+    plainTime: Temporal.PlainTime.from("00:00"),
+  });
+  const endZdt = endDate.toZonedDateTime({
+    timeZone,
+    plainTime: Temporal.PlainTime.from("00:00"),
+  });
+
+  return (
+    <EventEditPopover
+      accountId={item.accountId}
+      calendarId={item.calendarId}
+      end={zonedDateTimeToDate(endZdt)}
+      event={item.event}
+      start={zonedDateTimeToDate(startZdt)}
+    >
+      <button
+        className={`block w-full max-w-full truncate rounded-sm border border-transparent px-1.5 py-0.5 text-left font-medium text-[11px] ${
+          backgroundColor ? "" : "border-primary/20 bg-primary/10 text-primary"
+        }`}
+        style={{
+          ...(backgroundColor && {
+            backgroundColor,
+            borderColor: backgroundColor,
+          }),
+          ...(foregroundColor && { color: foregroundColor }),
+        }}
+        title={item.event.summary ?? "Google event"}
+        type="button"
+      >
+        {item.event.summary ?? "Google event"}
+      </button>
+    </EventEditPopover>
+  );
+}

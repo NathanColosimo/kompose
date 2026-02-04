@@ -4,3 +4,8 @@ name = "kompose"
 
 [setup]
 script = "bun install"
+
+[[actions]]
+name = "Install + Type Check + Build"
+icon = "test"
+command = "bun install && bun run type-check && bun run build"
