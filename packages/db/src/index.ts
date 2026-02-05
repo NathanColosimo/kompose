@@ -7,7 +7,10 @@ import * as relationsSchema from "./schema/relations";
 import * as tagSchema from "./schema/tag";
 import * as taskSchema from "./schema/task";
 
-const client = new SQL(env.DATABASE_URL);
+const client = new SQL({
+  url: env.DATABASE_URL,
+  prepare: false,
+});
 
 export const db = drizzle(client, {
   schema: { ...authSchema, ...taskSchema, ...tagSchema, ...relationsSchema },
