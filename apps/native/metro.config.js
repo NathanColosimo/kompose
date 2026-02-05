@@ -23,4 +23,6 @@ config.resolver.unstable_enablePackageExports = true;
 module.exports = withNativeWind(config, {
   input: "./global.css",
   inlineRem: 16,
+  // Explicitly point to the TS config so darkMode flags are loaded.
+  configPath: "./tailwind.config.ts",
 });
