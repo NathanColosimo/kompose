@@ -7,6 +7,7 @@
     "build": "expo export --platform ios",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:submit": "eas build -p ios --profile production --submit",
     "prebuild": "expo prebuild",
     "web": "expo start --web",
     "type-check": "tsc --noEmit"
