@@ -1,97 +1,71 @@
 import { getItemAsync, setItemAsync } from "expo-secure-store";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
-import { useColorScheme as useRNColorScheme } from "react-native";
+  colorScheme,
+  useColorScheme as useNativeWindColorScheme,
+} from "nativewind";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const THEME_STORAGE_KEY = "kompose-color-scheme";
 
-type ColorScheme = "light" | "dark" | "system";
-
-interface ColorSchemeContextValue {
-  colorScheme: "light" | "dark";
-  isDarkColorScheme: boolean;
-  userPreference: ColorScheme;
-  isLoaded: boolean;
-  setColorScheme: (scheme: ColorScheme) => void;
-  toggleColorScheme: () => void;
-}
-
-const ColorSchemeContext = createContext<ColorSchemeContextValue | null>(null);
+type ColorSchemePreference = "light" | "dark" | "system";
 
 /**
- * Provider that manages color scheme state at the app root.
- * Must wrap the entire app for theme switching to work.
+ * Set and persist color scheme preference.
+ * Can be called outside of React components.
  */
-export function ColorSchemeProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const rawSystemColorScheme = useRNColorScheme();
-  // Normalize system color scheme to always be "light" or "dark"
-  const systemColorScheme: "light" | "dark" =
-    rawSystemColorScheme === "dark" ? "dark" : "light";
+function persistColorScheme(scheme: ColorSchemePreference) {
+  colorScheme.set(scheme);
+  setItemAsync(THEME_STORAGE_KEY, scheme).catch(console.error);
+}
 
-  const [userPreference, setUserPreference] = useState<ColorScheme>("system");
-  const [isLoaded, setIsLoaded] = useState(false);
+/**
+ * Hook to access color scheme state with persistence.
+ * Uses NativeWind's useColorScheme internally - no provider needed.
+ */
+export function useColorScheme() {
+  const nativewind = useNativeWindColorScheme();
+  const hasRestored = useRef(false);
+  // Track user preference for UI (since NativeWind doesn't expose this)
+  const [userPreference, setUserPreference] =
+    useState<ColorSchemePreference>("system");
 
-  // Load saved preference on mount
+  // Restore saved preference on first mount
   useEffect(() => {
+    if (hasRestored.current) return;
+    hasRestored.current = true;
+
     getItemAsync(THEME_STORAGE_KEY)
       .then((value) => {
         if (value === "light" || value === "dark" || value === "system") {
           setUserPreference(value);
+          colorScheme.set(value);
         }
-        setIsLoaded(true);
       })
       .catch(() => {
-        setIsLoaded(true);
+        // Ignore restore errors
       });
   }, []);
 
-  // Compute effective color scheme (always "light" or "dark")
-  const effectiveColorScheme: "light" | "dark" =
-    userPreference === "system" ? systemColorScheme : userPreference;
-
-  const setColorScheme = useCallback((scheme: ColorScheme) => {
+  const setColorScheme = useCallback((scheme: ColorSchemePreference) => {
     setUserPreference(scheme);
-    setItemAsync(THEME_STORAGE_KEY, scheme).catch(console.error);
+    persistColorScheme(scheme);
   }, []);
 
   const toggleColorScheme = useCallback(() => {
-    const next = effectiveColorScheme === "dark" ? "light" : "dark";
+    const next = nativewind.colorScheme === "dark" ? "light" : "dark";
     setColorScheme(next);
-  }, [effectiveColorScheme, setColorScheme]);
+  }, [nativewind.colorScheme, setColorScheme]);
 
-  const value: ColorSchemeContextValue = {
-    colorScheme: effectiveColorScheme,
-    isDarkColorScheme: effectiveColorScheme === "dark",
+  return {
+    /** Current effective color scheme ("light" or "dark") */
+    colorScheme: nativewind.colorScheme ?? "light",
+    /** Whether dark mode is active */
+    isDarkColorScheme: nativewind.colorScheme === "dark",
+    /** User's preference ("light", "dark", or "system") */
     userPreference,
-    isLoaded,
+    /** Set color scheme with persistence */
     setColorScheme,
+    /** Toggle between light and dark */
     toggleColorScheme,
   };
-
-  return (
-    <ColorSchemeContext.Provider value={value}>
-      {children}
-    </ColorSchemeContext.Provider>
-  );
-}
-
-/**
- * Hook to access color scheme state.
- * Must be used within a ColorSchemeProvider.
- */
-export function useColorScheme(): ColorSchemeContextValue {
-  const context = useContext(ColorSchemeContext);
-  if (!context) {
-    throw new Error("useColorScheme must be used within a ColorSchemeProvider");
-  }
-  return context;
 }

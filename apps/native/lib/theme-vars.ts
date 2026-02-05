@@ -1,10 +1,11 @@
 import { vars } from "nativewind";
 
 /**
- * NativeWind theme variables for light and dark modes.
- *
+ * NativeWind CSS variable definitions for light and dark modes.
  * These must match the CSS variables in global.css.
- * Use these with the `style` prop to dynamically switch themes.
+ *
+ * In React Native, CSS variables don't cascade like web - we need to
+ * explicitly apply these via a style prop on a parent View.
  */
 export const themeVars = {
   light: vars({

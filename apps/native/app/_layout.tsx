@@ -12,10 +12,7 @@ import { SignIn } from "@/components/sign-in";
 import { Text } from "@/components/ui/text";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
 import { authClient } from "@/lib/auth-client";
-import {
-  ColorSchemeProvider,
-  useColorScheme,
-} from "@/lib/color-scheme-context";
+import { useColorScheme } from "@/lib/color-scheme-context";
 import { createSecureStoreAdapter } from "@/lib/state-storage";
 import { NAV_THEME } from "@/lib/theme";
 import { themeVars } from "@/lib/theme-vars";
@@ -26,13 +23,16 @@ export const unstable_settings = {
 };
 
 /**
- * Inner layout that consumes the color scheme context and auth state.
+ * Inner layout that consumes the color scheme and auth state.
  * Shows sign-in screen when not authenticated.
  */
 function RootLayoutContent() {
-  const { colorScheme, isDarkColorScheme, isLoaded } = useColorScheme();
+  const { colorScheme, isDarkColorScheme } = useColorScheme();
   const { data: session, isPending: isSessionLoading } =
     authClient.useSession();
+
+  // CSS variables for Tailwind classes - React Native needs these applied explicitly
+  const cssVars = isDarkColorScheme ? themeVars.dark : themeVars.light;
 
   // Update Android nav bar when color scheme changes
   React.useEffect(() => {
@@ -41,91 +41,76 @@ function RootLayoutContent() {
     }
   }, [colorScheme]);
 
-  // Wait for theme preference and session to load
-  if (!isLoaded || isSessionLoading) {
+  // Theme for React Navigation's native components (headers, tabs)
+  const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
+
+  // Wait for session to load
+  if (isSessionLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        style={cssVars}
+      >
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
-  // Get the current theme for navigation styling
-  const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
-
   // Show sign-in screen when not authenticated
   if (!session?.user) {
     return (
-      <>
+      <View className="flex-1 bg-background" style={cssVars}>
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-        <GestureHandlerRootView
-          className={isDarkColorScheme ? "dark flex-1" : "flex-1"}
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: "center",
+            padding: 24,
+          }}
+          contentInsetAdjustmentBehavior="automatic"
         >
-          <View
-            className="flex-1"
-            style={isDarkColorScheme ? themeVars.dark : themeVars.light}
-          >
-            <ScrollView
-              className="flex-1 bg-background"
-              contentContainerStyle={{
-                flexGrow: 1,
-                justifyContent: "center",
-                padding: 24,
-              }}
-              contentInsetAdjustmentBehavior="automatic"
-            >
-              <View className="gap-6">
-                <View className="items-center gap-2">
-                  <Text className="font-bold text-2xl text-foreground">
-                    Welcome to Kompose
-                  </Text>
-                  <Text className="text-center text-muted-foreground">
-                    Sign in to access your calendar and tasks
-                  </Text>
-                </View>
-                <SignIn />
-              </View>
-            </ScrollView>
+          <View className="gap-6">
+            <View className="items-center gap-2">
+              <Text className="font-bold text-2xl text-foreground">
+                Welcome to Kompose
+              </Text>
+              <Text className="text-center text-muted-foreground">
+                Sign in to access your calendar and tasks
+              </Text>
+            </View>
+            <SignIn />
           </View>
-        </GestureHandlerRootView>
-      </>
+        </ScrollView>
+      </View>
     );
   }
 
   return (
-    <>
+    <View className="flex-1 bg-background" style={cssVars}>
       <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-      <GestureHandlerRootView
-        className={isDarkColorScheme ? "dark flex-1" : "flex-1"}
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: theme.colors.background },
+          headerTintColor: theme.colors.text,
+          contentStyle: { backgroundColor: theme.colors.background },
+        }}
       >
-        {/* Apply NativeWind theme variables for dynamic CSS variable switching */}
-        <View
-          className="flex-1"
-          style={isDarkColorScheme ? themeVars.dark : themeVars.light}
-        >
-          <Stack
-            screenOptions={{
-              headerStyle: { backgroundColor: theme.colors.background },
-              headerTintColor: theme.colors.text,
-              contentStyle: { backgroundColor: theme.colors.background },
-            }}
-          >
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="modal"
-              options={{ title: "Modal", presentation: "modal" }}
-            />
-          </Stack>
-          <PortalHost />
-        </View>
-      </GestureHandlerRootView>
-    </>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="modal"
+          options={{ title: "Modal", presentation: "modal" }}
+        />
+      </Stack>
+      <PortalHost />
+    </View>
   );
 }
 
 /**
  * Root layout with providers.
- * ColorSchemeProvider wraps everything so theme state is shared.
+ * Uses stable wrapper structure - GestureHandlerRootView has a static className.
+ * NativeWind handles dark: variants internally via setColorScheme.
  */
 export default function RootLayout() {
   const storage = React.useMemo(() => createSecureStoreAdapter(), []);
@@ -156,9 +141,10 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <StateProvider config={config} storage={storage}>
-        <ColorSchemeProvider>
+        {/* Stable wrapper - className is static, NativeWind handles dark mode internally */}
+        <GestureHandlerRootView className="flex-1">
           <RootLayoutContent />
-        </ColorSchemeProvider>
+        </GestureHandlerRootView>
       </StateProvider>
     </QueryClientProvider>
   );
