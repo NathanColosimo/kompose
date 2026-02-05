@@ -457,7 +457,7 @@ function TaskList({
   if (activeTab === "Inbox") {
     return (
       <FlatList
-        contentContainerClassName="px-4 pb-6"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         contentInsetAdjustmentBehavior="automatic"
         data={inboxTasks}
         keyExtractor={(t) => t.id}
@@ -494,7 +494,7 @@ function TaskList({
 
   return (
     <FlatList
-      contentContainerClassName="px-4 pb-6"
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
       contentInsetAdjustmentBehavior="automatic"
       data={todayItems}
       keyExtractor={(item) =>
