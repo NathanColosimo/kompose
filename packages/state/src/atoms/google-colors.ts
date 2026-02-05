@@ -51,11 +51,12 @@ export const normalizedGoogleColorsAtomFamily = atomFamily(
         return next;
       };
 
-      return {
+      const normalized: Colors = {
         ...data,
         calendar: normalizeRecord(data.calendar),
         event: normalizeRecord(data.event),
-      } satisfies Colors;
+      };
+      return normalized;
     })
 );
 

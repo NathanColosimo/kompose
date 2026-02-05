@@ -115,6 +115,10 @@ function mergeStartEnd(
   };
 }
 
+function getConferenceDataVersion(event: { conferenceData?: unknown }): number | undefined {
+  return event.conferenceData ? 1 : undefined;
+}
+
 // -- Service Definition --
 
 export type GoogleCalendarService = {
@@ -330,10 +334,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   const createEvent = (calendarId: string, event: CreateEvent) =>
     Effect.gen(function* () {
+      const conferenceDataVersion = getConferenceDataVersion(event);
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.create(calendarId, {
             ...event,
+            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
@@ -360,11 +366,13 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   const updateEventThis = (calendarId: string, eventId: string, event: CreateEvent) =>
     Effect.gen(function* () {
+      const conferenceDataVersion = getConferenceDataVersion(event);
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(eventId, {
             ...event,
             calendarId,
+            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
         catch: (cause) => {
           return new GoogleApiError({ cause });
@@ -398,12 +406,14 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           recurrence: event.recurrence ?? master.recurrence,
         })
       );
+      const conferenceDataVersion = getConferenceDataVersion(payload);
 
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
             ...payload,
             calendarId,
+            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
         catch: (cause) => {
           return new GoogleApiError({ cause });
@@ -453,16 +463,23 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         Boolean(master.start.date)
       );
 
+      const truncatedPayload = stripRecurringLink(
+        sanitizeEventPayload({
+          ...master,
+          recurrence: truncatedRecurrence,
+        })
+      );
+      const truncatedConferenceDataVersion =
+        getConferenceDataVersion(truncatedPayload);
+
       const truncateMasterResponse = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
-            ...stripRecurringLink(
-              sanitizeEventPayload({
-                ...master,
-                recurrence: truncatedRecurrence,
-              })
-            ),
+            ...truncatedPayload,
             calendarId,
+            ...(truncatedConferenceDataVersion
+              ? { conferenceDataVersion: truncatedConferenceDataVersion }
+              : {}),
           }),
         catch: (cause) => {
           return new GoogleApiError({ cause });
@@ -480,17 +497,26 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           recurrence: event.recurrence ?? master.recurrence,
         })
       );
+      const newSeriesConferenceDataVersion =
+        getConferenceDataVersion(newSeriesPayload);
+
+      const restorePayload = stripRecurringLink(
+        sanitizeEventPayload({
+          ...master,
+          recurrence: originalRecurrence,
+        })
+      );
+      const restoreConferenceDataVersion =
+        getConferenceDataVersion(restorePayload);
 
       const restoreMasterRecurrence = Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
-            ...stripRecurringLink(
-              sanitizeEventPayload({
-                ...master,
-                recurrence: originalRecurrence,
-              })
-            ),
+            ...restorePayload,
             calendarId,
+            ...(restoreConferenceDataVersion
+              ? { conferenceDataVersion: restoreConferenceDataVersion }
+              : {}),
           }),
         catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
       }).pipe(
@@ -501,7 +527,13 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       );
 
       const createResponse = yield* Effect.tryPromise({
-        try: () => client.calendars.events.create(calendarId, newSeriesPayload),
+        try: () =>
+          client.calendars.events.create(calendarId, {
+            ...newSeriesPayload,
+            ...(newSeriesConferenceDataVersion
+              ? { conferenceDataVersion: newSeriesConferenceDataVersion }
+              : {}),
+          }),
         catch: (cause) => {
           return new GoogleApiError({ cause });
         },

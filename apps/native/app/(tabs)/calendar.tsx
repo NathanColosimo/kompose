@@ -25,15 +25,28 @@ import {
 } from "@kompose/state/atoms/visible-calendars";
 import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
+import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { getMapsSearchUrl } from "@kompose/state/locations";
+import {
+  buildGoogleMeetConferenceData,
+  extractMeetingLink,
+} from "@kompose/state/meeting";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  MapPin,
+  Video,
+} from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -332,6 +345,8 @@ interface EventDraft {
   endTime: Temporal.PlainTime | null;
   mode: "create" | "edit";
   eventId?: string;
+  conferenceData?: GoogleEvent["conferenceData"] | null;
+  sourceEvent?: GoogleEvent;
 }
 
 interface TaskDraft {
@@ -682,6 +697,47 @@ export default function CalendarTab() {
     | { kind: "endTime"; mode: "time" }
     | null
   >(null);
+  // Tracks whether location suggestions dropdown should be visible (dismissed after selection).
+  const [locationSuggestionsOpen, setLocationSuggestionsOpen] = useState(false);
+  const locationQuery = eventDraft?.location ?? "";
+  const locationSearch = useLocationSearch(locationQuery);
+  const locationSuggestions = locationSearch.data ?? [];
+  const showLocationSuggestions =
+    locationSuggestionsOpen &&
+    Boolean(eventDraft) &&
+    locationQuery.trim().length >= 2 &&
+    locationSuggestions.length > 0;
+
+  const meetingSource = useMemo(() => {
+    if (!eventDraft) {
+      return null;
+    }
+    // Distinguish undefined (not touched) from null (explicitly cleared).
+    // Convert null to undefined for type compatibility with extractMeetingLink.
+    const resolvedConferenceData =
+      eventDraft.conferenceData === undefined
+        ? eventDraft.sourceEvent?.conferenceData
+        : (eventDraft.conferenceData ?? undefined);
+
+    return {
+      ...(eventDraft.sourceEvent ?? {}),
+      location: eventDraft.location,
+      description: eventDraft.description,
+      conferenceData: resolvedConferenceData,
+    };
+  }, [eventDraft]);
+
+  const meetingLink = useMemo(
+    () => extractMeetingLink(meetingSource),
+    [meetingSource]
+  );
+  const mapsUrl =
+    eventDraft && eventDraft.location.trim().length
+      ? getMapsSearchUrl(eventDraft.location)
+      : null;
+  const isConferencePending = Boolean(
+    eventDraft?.conferenceData?.createRequest && !meetingLink
+  );
 
   // Edit scheduled task modal state.
   const [editingTask, setEditingTask] = useState<TaskSelectDecoded | null>(
@@ -763,6 +819,7 @@ export default function CalendarTab() {
         endDate: day,
         startTime,
         endTime,
+        conferenceData: null,
       });
     },
     [defaultCalendar]
@@ -784,6 +841,8 @@ export default function CalendarTab() {
       endDate: item.end.toPlainDate(),
       startTime: item.start.toPlainTime(),
       endTime: item.end.toPlainTime(),
+      conferenceData: item.source.event.conferenceData ?? null,
+      sourceEvent: item.source.event,
     });
   }, []);
 
@@ -809,6 +868,8 @@ export default function CalendarTab() {
       endDate,
       startTime: null,
       endTime: null,
+      conferenceData: item.source.event.conferenceData ?? null,
+      sourceEvent: item.source.event,
     });
   }, []);
 
@@ -855,6 +916,7 @@ export default function CalendarTab() {
       summary: eventDraft.summary.trim(),
       description: eventDraft.description.trim() || undefined,
       location: eventDraft.location.trim() || undefined,
+      conferenceData: eventDraft.conferenceData ?? undefined,
       start: startPayload,
       end: endPayload,
     };
@@ -1313,14 +1375,105 @@ export default function CalendarTab() {
               value={eventDraft?.summary ?? ""}
             />
 
-            <Input
-              className="mb-3"
-              onChangeText={(value) =>
-                setEventDraft((d) => (d ? { ...d, location: value } : d))
-              }
-              placeholder="Location (optional)"
-              value={eventDraft?.location ?? ""}
-            />
+            {/* Location input with overlay suggestions */}
+            <View className="relative z-10 mb-3">
+              <View className="flex-row items-center gap-2">
+                <Input
+                  className="flex-1"
+                  onChangeText={(value) => {
+                    setEventDraft((d) => (d ? { ...d, location: value } : d));
+                    // Re-open suggestions when user types
+                    setLocationSuggestionsOpen(true);
+                  }}
+                  placeholder="Location (optional)"
+                  value={eventDraft?.location ?? ""}
+                />
+                {mapsUrl ? (
+                  <Button
+                    onPress={() => {
+                      Linking.openURL(mapsUrl).catch((err) => {
+                        console.warn("Failed to open maps URL:", err);
+                      });
+                    }}
+                    size="icon"
+                    variant="outline"
+                  >
+                    <Icon as={MapPin} className="text-foreground" size={16} />
+                  </Button>
+                ) : null}
+              </View>
+
+              {/* Suggestions overlay - positioned absolutely to avoid layout shift */}
+              {showLocationSuggestions ? (
+                <View className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-md border border-border bg-background shadow-lg">
+                  {locationSuggestions.map((suggestion, index) => {
+                    const isLast = index === locationSuggestions.length - 1;
+                    return (
+                      <Pressable
+                        className={`px-3 py-2 ${isLast ? "" : "border-border border-b"}`}
+                        key={suggestion.placeId ?? suggestion.description}
+                        onPress={() => {
+                          setEventDraft((d) =>
+                            d ? { ...d, location: suggestion.description } : d
+                          );
+                          // Close suggestions after selection
+                          setLocationSuggestionsOpen(false);
+                        }}
+                      >
+                        <Text className="text-foreground text-sm">
+                          {suggestion.primary}
+                        </Text>
+                        {suggestion.secondary ? (
+                          <Text className="text-muted-foreground text-xs">
+                            {suggestion.secondary}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+
+            <View className="mb-3">
+              <Text className="mb-2 font-semibold text-foreground text-sm">
+                Meeting
+              </Text>
+              {meetingLink ? (
+                <Button
+                  onPress={() => {
+                    Linking.openURL(meetingLink.url).catch((err) => {
+                      console.warn("Failed to open meeting URL:", err);
+                    });
+                  }}
+                  variant="outline"
+                >
+                  <Icon as={Video} className="text-foreground" size={16} />
+                  <Text>Join {meetingLink.label}</Text>
+                </Button>
+              ) : isConferencePending ? (
+                <Text className="text-muted-foreground text-xs">
+                  Google Meet will be created when you save.
+                </Text>
+              ) : (
+                <Button
+                  onPress={() => {
+                    setEventDraft((d) =>
+                      d
+                        ? {
+                            ...d,
+                            conferenceData: buildGoogleMeetConferenceData(),
+                          }
+                        : d
+                    );
+                  }}
+                  variant="outline"
+                >
+                  <Icon as={Video} className="text-foreground" size={16} />
+                  <Text>Add Google Meet</Text>
+                </Button>
+              )}
+            </View>
 
             <Textarea
               className="mb-3"

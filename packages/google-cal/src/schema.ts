@@ -111,6 +111,16 @@ export const EventSchema = z.object({
           iconUri: z.string().optional(),
         })
         .optional(),
+      createRequest: z
+        .object({
+          requestId: z.string().optional(),
+          conferenceSolutionKey: z
+            .object({
+              type: z.string().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
       conferenceId: z.string().optional(),
     })
     .optional(),

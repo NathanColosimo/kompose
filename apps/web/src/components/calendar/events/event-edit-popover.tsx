@@ -14,17 +14,25 @@ import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
+import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
+import { getMapsSearchUrl } from "@kompose/state/locations";
+import {
+  buildGoogleMeetConferenceData,
+  extractMeetingLink,
+} from "@kompose/state/meeting";
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
   Check,
   Clock3,
+  MapPin,
   Palette,
   Repeat,
   Timer,
   Trash2,
+  Video,
 } from "lucide-react";
 import {
   type ReactElement,
@@ -52,6 +60,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -626,6 +642,7 @@ export function EventEditPopover({
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
             }}
+            onRequestClose={() => handleClose()}
             onRequestMove={() => handleClose("move")}
             open={open}
             start={start}
@@ -805,6 +822,7 @@ function EventEditForm({
   mode,
   onRegisterCloseSaveRequest,
   onRequestMove,
+  onRequestClose,
   onDelete,
   open,
 }: {
@@ -816,6 +834,7 @@ function EventEditForm({
   mode: "create" | "edit";
   onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
   onRequestMove: () => void;
+  onRequestClose: () => void;
   onDelete: () => void;
   open: boolean;
 }) {
@@ -910,15 +929,60 @@ function EventEditForm({
   const { control, reset, setValue, getValues } = useForm<EventFormValues>({
     defaultValues: initialValues,
   });
+  const [pendingConference, setPendingConference] = useState<
+    GoogleEvent["conferenceData"] | null
+  >(null);
+  const pendingConferenceRef = useRef<GoogleEvent["conferenceData"] | null>(
+    null
+  );
+  const [locationOpen, setLocationOpen] = useState(false);
 
   // Keep form synced if event changes underneath.
   useEffect(() => {
     // Reset “edited” tracking when the underlying event changes.
     hasUserEditedRef.current = false;
+    pendingConferenceRef.current = null;
+    setPendingConference(null);
     reset(initialValues, { keepDirty: false });
   }, [initialValues, reset]);
 
   const watchedValues = useWatch({ control });
+  const locationQuery = watchedValues.location?.trim() ?? "";
+  const locationSearch = useLocationSearch(locationQuery);
+  const locationSuggestions = locationSearch.data ?? [];
+  const isLocationSearching = locationSearch.isFetching;
+
+  const meetingSource = useMemo(
+    () => ({
+      ...(event ?? {}),
+      location: watchedValues.location,
+      description: watchedValues.description,
+      // Use pendingConference state (not ref) to ensure memo recomputes on changes
+      conferenceData: pendingConference ?? event?.conferenceData,
+    }),
+    [
+      event,
+      pendingConference,
+      watchedValues.description,
+      watchedValues.location,
+    ]
+  );
+  const meetingLink = useMemo(
+    () => extractMeetingLink(meetingSource),
+    [meetingSource]
+  );
+  const isConferencePending = Boolean(
+    (pendingConferenceRef.current ?? pendingConference)?.createRequest
+  );
+  const canCreateMeeting = !(meetingLink || isConferencePending);
+  const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
+  const locationPopoverOpen = locationOpen && locationQuery.length >= 2;
+
+  useEffect(() => {
+    if (locationQuery.length < 2 && locationOpen) {
+      setLocationOpen(false);
+    }
+  }, [locationOpen, locationQuery.length]);
 
   const paletteForAccount = useAtomValue(
     normalizedGoogleColorsAtomFamily(accountId)
@@ -975,11 +1039,62 @@ function EventEditForm({
     );
   };
 
+  const handleLocationInputChange = useCallback(
+    (value: string) => {
+      hasUserEditedRef.current = true;
+      setValue("location", value, { shouldDirty: true });
+      if (value.trim().length >= 2) {
+        setLocationOpen(true);
+      } else {
+        setLocationOpen(false);
+      }
+    },
+    [setValue]
+  );
+
+  const handleLocationValueChange = useCallback(
+    (value: string | null) => {
+      if (!value) {
+        return;
+      }
+      hasUserEditedRef.current = true;
+      setValue("location", value, { shouldDirty: true });
+      setLocationOpen(false);
+    },
+    [setValue]
+  );
+
+  const handleLocationOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setLocationOpen(false);
+        return;
+      }
+      if (locationQuery.length >= 2) {
+        setLocationOpen(true);
+      }
+    },
+    [locationQuery.length]
+  );
+
+  const handleCreateMeeting = useCallback(() => {
+    if (!canCreateMeeting) {
+      return;
+    }
+    hasUserEditedRef.current = true;
+    const nextConference = buildGoogleMeetConferenceData();
+    pendingConferenceRef.current = nextConference;
+    setPendingConference(nextConference);
+    if (!isCreateMode) {
+      onRequestClose();
+    }
+  }, [canCreateMeeting, isCreateMode, onRequestClose, pendingConferenceRef]);
+
   const buildCreateCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
       const trimmedTitle = values.summary.trim();
       if (!trimmedTitle) {
-        return { type: "none" } satisfies CloseSaveRequest;
+        return { type: "none" };
       }
 
       const temporalPayload = buildTemporalPayload(
@@ -987,7 +1102,7 @@ function EventEditForm({
         clampToStartIfNeeded
       );
       if (!temporalPayload) {
-        return { type: "none" } satisfies CloseSaveRequest;
+        return { type: "none" };
       }
 
       return {
@@ -1002,20 +1117,28 @@ function EventEditForm({
             colorId: values.colorId ?? undefined,
             recurrence:
               values.recurrence?.length > 0 ? values.recurrence : undefined,
+            conferenceData:
+              pendingConferenceRef.current ?? pendingConference ?? undefined,
             start: temporalPayload.startPayload,
             end: temporalPayload.endPayload,
           },
         },
       };
     },
-    [accountId, calendarId, clampToStartIfNeeded]
+    [
+      accountId,
+      calendarId,
+      clampToStartIfNeeded,
+      pendingConference,
+      pendingConferenceRef,
+    ]
   );
 
   const buildEditCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
       // Edit mode: If the user never interacted, do not send an update.
       if (!hasUserEditedRef.current) {
-        return { type: "none" } satisfies CloseSaveRequest;
+        return { type: "none" };
       }
 
       const temporalPayload = buildTemporalPayload(
@@ -1023,7 +1146,7 @@ function EventEditForm({
         clampToStartIfNeeded
       );
       if (!temporalPayload) {
-        return { type: "none" } satisfies CloseSaveRequest;
+        return { type: "none" };
       }
 
       const isRecurring = Boolean(
@@ -1034,6 +1157,10 @@ function EventEditForm({
       const defaultScope: RecurrenceScope = event?.recurringEventId
         ? "this"
         : "all";
+      const conferenceData =
+        pendingConferenceRef.current ??
+        pendingConference ??
+        event?.conferenceData;
 
       // Prepare payload for mutation; recurrence scope is chosen after close.
       const variables: UpdateGoogleEventInput = {
@@ -1048,6 +1175,7 @@ function EventEditForm({
           location: values.location ?? "",
           colorId: values.colorId ?? undefined,
           recurrence: values.recurrence ?? event?.recurrence,
+          conferenceData: conferenceData ?? undefined,
           start: {
             ...event?.start,
             ...temporalPayload.startPayload,
@@ -1066,7 +1194,15 @@ function EventEditForm({
         defaultScope,
       };
     },
-    [accountId, calendarId, clampToStartIfNeeded, event, masterQuery.data]
+    [
+      accountId,
+      calendarId,
+      clampToStartIfNeeded,
+      event,
+      masterQuery.data,
+      pendingConference,
+      pendingConferenceRef,
+    ]
   );
 
   const buildCloseSaveRequest = useCallback(
@@ -1189,16 +1325,90 @@ function EventEditForm({
 
       <div className="space-y-2">
         <Label className="font-medium text-muted-foreground text-xs">
+          Meeting
+        </Label>
+        {meetingLink ? (
+          <Button asChild size="sm" type="button" variant="outline">
+            <a href={meetingLink.url} rel="noreferrer" target="_blank">
+              <Video className="h-3 w-3" />
+              Join {meetingLink.label}
+            </a>
+          </Button>
+        ) : isConferencePending ? (
+          <div className="text-muted-foreground text-xs">
+            Google Meet will be created when you save.
+          </div>
+        ) : (
+          <Button
+            onClick={handleCreateMeeting}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Video className="h-3 w-3" />
+            Add Google Meet
+          </Button>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-medium text-muted-foreground text-xs">
           Location
         </Label>
-        <Input
-          onChange={(e) => {
-            hasUserEditedRef.current = true;
-            setValue("location", e.target.value, { shouldDirty: true });
-          }}
-          placeholder="Where?"
-          value={watchedValues.location}
-        />
+        <Combobox
+          inputValue={watchedValues.location}
+          onInputValueChange={handleLocationInputChange}
+          onOpenChange={handleLocationOpenChange}
+          onValueChange={handleLocationValueChange}
+          open={locationPopoverOpen}
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <ComboboxInput
+                className="w-full"
+                onFocus={() => {
+                  if (locationQuery.length >= 2) {
+                    setLocationOpen(true);
+                  }
+                }}
+                placeholder="Where?"
+                showClear={Boolean(watchedValues.location)}
+              />
+            </div>
+            {mapsUrl ? (
+              <Button asChild size="icon" type="button" variant="outline">
+                <a href={mapsUrl} rel="noreferrer" target="_blank">
+                  <MapPin className="h-3 w-3" />
+                  <span className="sr-only">Open in Google Maps</span>
+                </a>
+              </Button>
+            ) : null}
+          </div>
+          <ComboboxContent align="start" sideOffset={6}>
+            <ComboboxList>
+              {locationSuggestions.map((suggestion) => (
+                <ComboboxItem
+                  key={suggestion.placeId ?? suggestion.description}
+                  value={suggestion.description}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium text-foreground">
+                      {suggestion.primary}
+                    </span>
+                    {suggestion.secondary ? (
+                      <span className="text-muted-foreground">
+                        {suggestion.secondary}
+                      </span>
+                    ) : null}
+                  </div>
+                </ComboboxItem>
+              ))}
+              <ComboboxEmpty>
+                {isLocationSearching ? "Searching…" : "No matches found."}
+              </ComboboxEmpty>
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
       </div>
 
       <Separator />

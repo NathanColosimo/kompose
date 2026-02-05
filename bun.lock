@@ -86,6 +86,7 @@
       "name": "web",
       "version": "0.1.0",
       "dependencies": {
+        "@base-ui/react": "^1.1.0",
         "@dnd-kit/core": "^6.3.1",
         "@hookform/resolvers": "^5.2.2",
         "@kompose/api": "workspace:*",
@@ -153,6 +154,7 @@
       "dependencies": {
         "@kompose/auth": "workspace:*",
         "@kompose/db": "workspace:*",
+        "@kompose/env": "workspace:*",
         "@kompose/google-cal": "workspace:*",
         "@orpc/contract": "catalog:",
         "@orpc/server": "catalog:",
@@ -199,6 +201,7 @@
         "dotenv": "catalog:",
         "drizzle-orm": "catalog:",
         "drizzle-zod": "^0.8.3",
+        "postgres": "^3.4.8",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -483,6 +486,10 @@
     "@babel/traverse--for-generate-function-map": ["@babel/traverse@7.28.6", "", { "dependencies": { "@babel/code-frame": "^7.28.6", "@babel/generator": "^7.28.6", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.28.6", "@babel/template": "^7.28.6", "@babel/types": "^7.28.6", "debug": "^4.3.1" } }, "sha512-fgWX62k02qtjqdSNTAGxmKYY/7FSL9WAS1o2Hu5+I5m9T0yxZzr4cnrfXQ/MX0rIifthCSs6FKTlzYbJcPtMNg=="],
 
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
+
+    "@base-ui/react": ["@base-ui/react@1.1.0", "", { "dependencies": { "@babel/runtime": "^7.28.4", "@base-ui/utils": "0.2.4", "@floating-ui/react-dom": "^2.1.6", "@floating-ui/utils": "^0.2.10", "reselect": "^5.1.1", "tabbable": "^6.4.0", "use-sync-external-store": "^1.6.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-ikcJRNj1mOiF2HZ5jQHrXoVoHcNHdBU5ejJljcBl+VTLoYXR6FidjTN86GjO6hyshi6TZFuNvv0dEOgaOFv6Lw=="],
+
+    "@base-ui/utils": ["@base-ui/utils@0.2.4", "", { "dependencies": { "@babel/runtime": "^7.28.4", "@floating-ui/utils": "^0.2.10", "reselect": "^5.1.1", "use-sync-external-store": "^1.6.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-smZwpMhjO29v+jrZusBSc5T+IJ3vBb9cjIiBjtKcvWmRj9Z4DWGVR3efr1eHR56/bqY5a4qyY9ElkOY5ljo3ng=="],
 
     "@better-auth/core": ["@better-auth/core@1.4.18", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "zod": "^4.3.5" }, "peerDependencies": { "@better-auth/utils": "0.3.0", "@better-fetch/fetch": "1.1.21", "better-call": "1.1.8", "jose": "^6.1.0", "kysely": "^0.28.5", "nanostores": "^1.0.1" } }, "sha512-q+awYgC7nkLEBdx2sW0iJjkzgSHlIxGnOpsN1r/O1+a4m7osJNHtfK2mKJSL1I+GfNyIlxJF8WvD/NLuYMpmcg=="],
 
@@ -2000,6 +2007,8 @@
 
     "requireg": ["requireg@0.2.2", "", { "dependencies": { "nested-error-stacks": "~2.0.1", "rc": "~1.2.7", "resolve": "~1.7.1" } }, "sha512-nYzyjnFcPNGR3lx9lwPPPnuQxv6JWEZd2Ci0u9opN7N5zUEPIhY/GbL3vMGOr2UXwEg9WwSyV9X9Y/kLFgPsOg=="],
 
+    "reselect": ["reselect@5.1.1", "", {}, "sha512-K/BG6eIky/SBpzfHZv/dd+9JBFiS4SWV7FIujVyJRux6e45+73RaUHXLmIR1f7WOMaQ0U1km6qwklRQxpJJY0w=="],
+
     "resolve": ["resolve@1.22.11", "", { "dependencies": { "is-core-module": "^2.16.1", "path-parse": "^1.0.7", "supports-preserve-symlinks-flag": "^1.0.0" }, "bin": { "resolve": "bin/resolve" } }, "sha512-RfqAvLnMl313r7c9oclB1HhUEAezcpLjz95wFH4LVuhk9JF/r22qmVP9AMmOU4vMX7Q8pN8jwNg/CSpdFnMjTQ=="],
 
     "resolve-from": ["resolve-from@5.0.0", "", {}, "sha512-qYg9KP24dD5qka9J47d0aVky0N+b4fTU89LN9iDnjB5waksiC49rvMB0PrUJQGoTmH50XPiqOvAjDfaijGxYZw=="],
@@ -2113,6 +2122,8 @@
     "supports-hyperlinks": ["supports-hyperlinks@2.3.0", "", { "dependencies": { "has-flag": "^4.0.0", "supports-color": "^7.0.0" } }, "sha512-RpsAZlpWcDwOPQA22aCH4J0t7L8JmAvsCxfOSEwm7cQs3LshN36QaTkwd70DnBOXDWGssw2eUoc8CaRWT0XunA=="],
 
     "supports-preserve-symlinks-flag": ["supports-preserve-symlinks-flag@1.0.0", "", {}, "sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w=="],
+
+    "tabbable": ["tabbable@6.4.0", "", {}, "sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg=="],
 
     "tagged-tag": ["tagged-tag@1.0.0", "", {}, "sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng=="],
 
