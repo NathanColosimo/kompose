@@ -14,7 +14,8 @@
         "BETTER_AUTH_SECRET",
         "NEXT_PUBLIC_WEB_URL",
         "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET"
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_MAPS_API_KEY"
       ],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**"]
