@@ -1,5 +1,9 @@
 import { db } from "@kompose/db";
-import { type TagInsertRow, tagTable } from "@kompose/db/schema/tag";
+import {
+  type TagInsertRow,
+  type TagUpdate,
+  tagTable,
+} from "@kompose/db/schema/tag";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import { TagRepositoryError } from "./errors";
@@ -25,6 +29,16 @@ export const dbSelectTagByName = (userId: string, name: string) =>
     catch: (cause) => new TagRepositoryError({ cause }),
   });
 
+export const dbSelectTagById = (userId: string, tagId: string) =>
+  Effect.tryPromise({
+    try: () =>
+      db
+        .select()
+        .from(tagTable)
+        .where(and(eq(tagTable.userId, userId), eq(tagTable.id, tagId))),
+    catch: (cause) => new TagRepositoryError({ cause }),
+  });
+
 export const dbSelectTagIdsByIds = (userId: string, tagIds: string[]) =>
   Effect.tryPromise({
     try: () =>
@@ -38,6 +52,17 @@ export const dbSelectTagIdsByIds = (userId: string, tagIds: string[]) =>
 export const dbInsertTag = (values: TagInsertRow[]) =>
   Effect.tryPromise({
     try: () => db.insert(tagTable).values(values).returning(),
+    catch: (cause) => new TagRepositoryError({ cause }),
+  });
+
+export const dbUpdateTag = (userId: string, tagId: string, values: TagUpdate) =>
+  Effect.tryPromise({
+    try: () =>
+      db
+        .update(tagTable)
+        .set(values)
+        .where(and(eq(tagTable.id, tagId), eq(tagTable.userId, userId)))
+        .returning(),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
 

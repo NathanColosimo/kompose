@@ -1,10 +1,11 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import { useNavigation } from "@react-navigation/native";
+import { Stack } from "expo-router/stack";
 import { CalendarClock, Inbox, Plus, Tag, X } from "lucide-react-native";
 import React from "react";
 import {
@@ -18,7 +19,7 @@ import {
 import { Temporal } from "temporal-polyfill";
 import { Container } from "@/components/container";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
-import { TagManagerDialog } from "@/components/tags/tag-manager-dialog";
+import { TagManagerPopover } from "@/components/tags/tag-manager-popover";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -562,8 +563,7 @@ function buildEmptyDraft(timeZone: string): TaskDraft {
   };
 }
 
-export default function TasksTab() {
-  const navigation = useNavigation();
+export default function TasksScreen() {
   const { isDarkColorScheme } = useColorScheme();
   const timeZone = getSystemTimeZone();
 
@@ -577,6 +577,19 @@ export default function TasksTab() {
     unplannedTasks,
     doneTasks,
   } = useTaskSections();
+
+  // Get tags for the filter popover and header display
+  const { tagsQuery } = useTags();
+  const tags = tagsQuery.data ?? [];
+
+  // Currently selected tag for filtering (null = show all)
+  const [selectedTagId, setSelectedTagId] = React.useState<string | null>(null);
+
+  // Find the selected tag object to display its icon and name in the header
+  const selectedTag = React.useMemo(
+    () => tags.find((tag) => tag.id === selectedTagId) ?? null,
+    [tags, selectedTagId]
+  );
 
   // Track the active task view to mirror the web sidebar.
   const [activeTab, setActiveTab] = React.useState<"Inbox" | "Today">("Inbox");
@@ -723,54 +736,76 @@ export default function TasksTab() {
     [updateTask]
   );
 
-  React.useLayoutEffect(() => {
-    // Render task actions in the nav header row.
-    navigation.setOptions({
-      headerLeft: () => (
-        <View className="pl-2">
-          <Button
-            accessibilityLabel="Manage tags"
-            onPress={() => setIsTagManagerOpen(true)}
-            size="icon"
-            variant="ghost"
-          >
-            <Icon as={Tag} size={18} />
-          </Button>
-        </View>
-      ),
-      headerRight: () => (
-        <View className="flex-row items-center gap-2">
-          <Button
-            accessibilityLabel="Show inbox tasks"
-            onPress={() => setActiveTab("Inbox")}
-            size="icon"
-            variant={activeTab === "Inbox" ? "outline" : "ghost"}
-          >
-            <Icon as={Inbox} size={16} />
-          </Button>
-          <Button
-            accessibilityLabel="Show today tasks"
-            onPress={() => setActiveTab("Today")}
-            size="icon"
-            variant={activeTab === "Today" ? "outline" : "ghost"}
-          >
-            <Icon as={CalendarClock} size={16} />
-          </Button>
-          <Button
-            accessibilityLabel="New task"
-            onPress={openCreate}
-            size="icon"
-            variant="ghost"
-          >
-            <Icon as={Plus} size={18} />
-          </Button>
-        </View>
-      ),
-    });
-  }, [activeTab, navigation, openCreate]);
+  // Get the selected tag's icon component (or default Tag icon)
+  const SelectedTagIcon = selectedTag ? tagIconMap[selectedTag.icon] : Tag;
 
   return (
     <Container edges={["left", "right", "bottom"]}>
+      {/* Configure header options via Stack.Screen */}
+      <Stack.Screen
+        options={{
+          title: "Tasks",
+          headerLeft: () => (
+            <Pressable
+              accessibilityLabel="Manage tags"
+              className="flex-row items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-4 active:opacity-70"
+              onPress={() => setIsTagManagerOpen(true)}
+            >
+              <Icon as={SelectedTagIcon} size={18} />
+              {selectedTag ? (
+                <Text className="font-medium text-foreground text-sm">
+                  {selectedTag.name}
+                </Text>
+              ) : null}
+            </Pressable>
+          ),
+          headerRight: () => (
+            <View className="flex-row items-center gap-2 pr-2">
+              <Button
+                accessibilityLabel="Show inbox tasks"
+                onPress={() => setActiveTab("Inbox")}
+                size="icon"
+                variant="ghost"
+              >
+                <Icon
+                  as={Inbox}
+                  className={
+                    activeTab === "Inbox"
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }
+                  size={16}
+                />
+              </Button>
+              <Button
+                accessibilityLabel="Show today tasks"
+                onPress={() => setActiveTab("Today")}
+                size="icon"
+                variant="ghost"
+              >
+                <Icon
+                  as={CalendarClock}
+                  className={
+                    activeTab === "Today"
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }
+                  size={16}
+                />
+              </Button>
+              <Button
+                accessibilityLabel="New task"
+                onPress={openCreate}
+                size="icon"
+                variant="ghost"
+              >
+                <Icon as={Plus} size={18} />
+              </Button>
+            </View>
+          ),
+        }}
+      />
+
       {/* Task list */}
       <TaskList
         activeTab={activeTab}
@@ -949,9 +984,11 @@ export default function TasksTab() {
         </View>
       </Modal>
 
-      <TagManagerDialog
+      <TagManagerPopover
+        onChange={setSelectedTagId}
         onOpenChange={setIsTagManagerOpen}
         open={isTagManagerOpen}
+        value={selectedTagId}
       />
     </Container>
   );

@@ -26,7 +26,7 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
   if (tags.length === 0) {
     return (
       <Text className="text-muted-foreground text-xs">
-        No tags yet. Create one in the web header first.
+        No tags yet. Create one in the tag manager.
       </Text>
     );
   }

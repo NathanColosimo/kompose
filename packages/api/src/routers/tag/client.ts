@@ -2,14 +2,17 @@ import type {
   TagInsert,
   TagInsertRow,
   TagSelect,
+  TagUpdate,
 } from "@kompose/db/schema/tag";
 import { Context, Data, Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
   dbDeleteTag,
   dbInsertTag,
+  dbSelectTagById,
   dbSelectTagByName,
   dbSelectTags,
+  dbUpdateTag,
 } from "./db";
 import type { TagRepositoryError } from "./errors";
 
@@ -36,6 +39,11 @@ export interface TagService {
   readonly createTag: (
     userId: string,
     input: TagInsert
+  ) => Effect.Effect<TagSelect, TagError>;
+  readonly updateTag: (
+    userId: string,
+    tagId: string,
+    input: TagUpdate
   ) => Effect.Effect<TagSelect, TagError>;
   readonly deleteTag: (
     userId: string,
@@ -83,6 +91,58 @@ const createTag = (
     return created;
   });
 
+const updateTag = (
+  userId: string,
+  tagId: string,
+  input: TagUpdate
+): Effect.Effect<TagSelect, TagError> =>
+  Effect.gen(function* () {
+    if (input.name === undefined && input.icon === undefined) {
+      return yield* Effect.fail(
+        new InvalidTagError({ message: "No tag updates provided" })
+      );
+    }
+
+    const [existing] = yield* dbSelectTagById(userId, tagId);
+    if (!existing) {
+      return yield* Effect.fail(new TagNotFoundError({ tagId }));
+    }
+
+    let nextName = existing.name;
+    if (input.name !== undefined) {
+      const trimmed = input.name.trim();
+      if (!trimmed) {
+        return yield* Effect.fail(
+          new InvalidTagError({ message: "Tag name is required" })
+        );
+      }
+
+      if (trimmed !== existing.name) {
+        const conflicting = yield* dbSelectTagByName(userId, trimmed);
+        const hasConflict = conflicting.some((tag) => tag.id !== tagId);
+        if (hasConflict) {
+          return yield* Effect.fail(new TagConflictError({ name: trimmed }));
+        }
+      }
+
+      nextName = trimmed;
+    }
+
+    const nextIcon = input.icon ?? existing.icon;
+
+    const [updated] = yield* dbUpdateTag(userId, tagId, {
+      name: nextName,
+      icon: nextIcon,
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (!updated) {
+      return yield* Effect.fail(new TagNotFoundError({ tagId }));
+    }
+
+    return updated;
+  });
+
 const deleteTag = (
   userId: string,
   tagId: string
@@ -97,6 +157,7 @@ const deleteTag = (
 const tagService: TagService = {
   listTags,
   createTag,
+  updateTag,
   deleteTag,
 };
 

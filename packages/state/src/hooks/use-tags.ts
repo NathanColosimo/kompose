@@ -1,6 +1,7 @@
 import type {
   CreateTagInput,
   TagSelect,
+  UpdateTagInput,
 } from "@kompose/api/routers/tag/contract";
 import { tagSelectSchemaWithIcon } from "@kompose/api/routers/tag/contract";
 import {
@@ -53,5 +54,21 @@ export function useTags() {
     },
   });
 
-  return { tagsQuery, createTag, deleteTag };
+  const updateTag = useMutation({
+    mutationFn: async (input: UpdateTagInput) => {
+      const tag = await orpc.tags.update.call(input);
+      return tagSelectSchemaWithIcon.parse(tag);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) => {
+        const next = (old ?? []).map((tag) =>
+          tag.id === updated.id ? updated : tag
+        );
+        return next.sort((a, b) => a.name.localeCompare(b.name));
+      });
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
+    },
+  });
+
+  return { tagsQuery, createTag, updateTag, deleteTag };
 }

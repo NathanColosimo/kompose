@@ -26,9 +26,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="(tasks)"
         options={{
           title: "Tasks",
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <TabBarIcon color={color} name="check-square-o" />
           ),

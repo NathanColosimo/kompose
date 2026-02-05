@@ -82,6 +82,24 @@ export const tagRouter = os.router({
       })
     );
   }),
+  update: os.update.handler(({ input, context }) => {
+    const program = Effect.gen(function* () {
+      const service = yield* Tags;
+      const tag = yield* service.updateTag(context.user.id, input.id, {
+        name: input.name,
+        icon: input.icon,
+      });
+      const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
+      return parsedTag;
+    }).pipe(Effect.provide(TagsLive));
+
+    return Effect.runPromise(
+      Effect.match(program, {
+        onSuccess: (res) => res,
+        onFailure: (err) => handleError(err),
+      })
+    );
+  }),
   delete: os.delete.handler(({ input, context }) => {
     const program = Effect.gen(function* () {
       const service = yield* Tags;

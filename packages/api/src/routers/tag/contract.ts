@@ -48,6 +48,16 @@ export const createTag = oc
   .input(createTagInputSchema)
   .output(tagSelectSchemaWithIcon);
 
+const updateTagInputSchema = z.object({
+  id: z.uuidv7(),
+  name: z.string().min(1).optional(),
+  icon: tagIconSchema.optional(),
+});
+
+export const updateTag = oc
+  .input(updateTagInputSchema)
+  .output(tagSelectSchemaWithIcon);
+
 const deleteTagInputSchema = z.object({
   id: z.uuidv7(),
 });
@@ -57,8 +67,10 @@ export const deleteTag = oc.input(deleteTagInputSchema).output(z.void());
 export const tagContract = {
   list: listTags,
   create: createTag,
+  update: updateTag,
   delete: deleteTag,
 };
 
 export type CreateTagInput = z.infer<typeof createTagInputSchema>;
+export type UpdateTagInput = z.infer<typeof updateTagInputSchema>;
 export type TagSelect = z.infer<typeof tagSelectSchemaWithIcon>;
