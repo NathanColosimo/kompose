@@ -32,37 +32,32 @@ import {
   buildGoogleMeetConferenceData,
   extractMeetingLink,
 } from "@kompose/state/meeting";
-import DateTimePicker, {
-  type DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue } from "jotai";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  MapPin,
-  Video,
-} from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Linking,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  View,
-} from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
+import type {
+  CalendarOption,
+  CreateEventDraft,
+  EditEventDraft,
+  EventDraft,
+} from "@/components/calendar/calendar-editor-types";
+import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
+import {
+  CreateEventEditorSheet,
+  EditEventEditorSheet,
+} from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
-import { Container } from "@/components/container";
-import { TagPicker } from "@/components/tags/tag-picker";
-import { Button } from "@/components/ui/button";
+import {
+  type TaskDraft,
+  TaskEditorSheet,
+} from "@/components/tasks/task-editor-sheet";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { orpc } from "@/utils/orpc";
 
@@ -74,30 +69,13 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const SWIPE_ACTIVATION_DISTANCE = 16;
 const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
-const EVENT_BLOCK_INSET_PX = 4;
+const EVENT_BLOCK_INSET_PX = 1;
+const EVENT_OUTLINE_WIDTH_PX = 1;
 
 // --- Temporal helpers ---
 
 function todayPlainDate(timeZone: string): Temporal.PlainDate {
   return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
-}
-
-function dateToPlainDate(date: Date, timeZone: string): Temporal.PlainDate {
-  const zdt = Temporal.Instant.from(date.toISOString()).toZonedDateTimeISO(
-    timeZone
-  );
-  return zdt.toPlainDate();
-}
-
-function dateToPlainTime(date: Date, timeZone: string): Temporal.PlainTime {
-  const zdt = Temporal.Instant.from(date.toISOString()).toZonedDateTimeISO(
-    timeZone
-  );
-  return Temporal.PlainTime.from({
-    hour: zdt.hour,
-    minute: zdt.minute,
-    second: 0,
-  });
 }
 
 function combineDateTime(
@@ -333,32 +311,6 @@ interface AllDayGoogleEvent {
   date: Temporal.PlainDate;
 }
 
-interface EventDraft {
-  summary: string;
-  description: string;
-  location: string;
-  calendar: CalendarIdentifier;
-  allDay: boolean;
-  startDate: Temporal.PlainDate;
-  endDate: Temporal.PlainDate;
-  startTime: Temporal.PlainTime | null;
-  endTime: Temporal.PlainTime | null;
-  mode: "create" | "edit";
-  eventId?: string;
-  conferenceData?: GoogleEvent["conferenceData"] | null;
-  sourceEvent?: GoogleEvent;
-}
-
-interface TaskDraft {
-  title: string;
-  description: string;
-  tagIds: string[];
-  durationMinutes: number;
-  dueDate: Temporal.PlainDate | null;
-  startDate: Temporal.PlainDate | null;
-  startTime: Temporal.PlainTime | null;
-}
-
 function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   return {
     title: task.title,
@@ -380,6 +332,10 @@ function AllDayEventChip({
   calendarColors?: { background?: string | null; foreground?: string | null };
   onPress: () => void;
 }) {
+  const { isDarkColorScheme } = useColorScheme();
+  const outlineColor = isDarkColorScheme
+    ? "rgba(255,255,255,0.9)"
+    : "rgba(0,0,0,0.9)";
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
@@ -392,9 +348,14 @@ function AllDayEventChip({
 
   return (
     <Pressable
-      className="rounded border px-1.5 py-1"
+      className="rounded-md px-1.5 py-1"
       onPress={onPress}
-      style={{ backgroundColor: background, borderColor: background }}
+      style={{
+        backgroundColor: background,
+        borderColor: outlineColor,
+        borderRadius: 6,
+        borderWidth: EVENT_OUTLINE_WIDTH_PX,
+      }}
     >
       <Text
         className="text-[11px]"
@@ -428,6 +389,10 @@ function TimedGoogleEventBlock({
   zIndex?: number;
   onPress: () => void;
 }) {
+  const { isDarkColorScheme } = useColorScheme();
+  const outlineColor = isDarkColorScheme
+    ? "rgba(255,255,255,0.9)"
+    : "rgba(0,0,0,0.9)";
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
@@ -444,7 +409,7 @@ function TimedGoogleEventBlock({
 
   return (
     <Pressable
-      className="absolute rounded-md border p-1 shadow-black/5 shadow-sm"
+      className="absolute rounded-md px-1 py-1 shadow-black/5 shadow-sm"
       onPress={(event) => {
         event.stopPropagation();
         onPress();
@@ -454,10 +419,11 @@ function TimedGoogleEventBlock({
         height,
         left: `${leftPercent}%`,
         width: `${columnWidthPercent}%`,
-        paddingHorizontal: 4,
         zIndex,
         backgroundColor: background,
-        borderColor: background,
+        borderColor: outlineColor,
+        borderRadius: 6,
+        borderWidth: EVENT_OUTLINE_WIDTH_PX,
       }}
     >
       <Text
@@ -483,6 +449,9 @@ function TimedGoogleEventBlock({
 
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
+  const eventOutlineColor = isDarkColorScheme
+    ? "rgba(255,255,255,0.9)"
+    : "rgba(0,0,0,0.9)";
   const queryClient = useQueryClient();
 
   // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
@@ -690,13 +659,6 @@ export default function CalendarTab() {
 
   // Create/Edit event modal state.
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
-  const [eventPicker, setEventPicker] = useState<
-    | { kind: "startDate"; mode: "date" }
-    | { kind: "startTime"; mode: "time" }
-    | { kind: "endDate"; mode: "date" }
-    | { kind: "endTime"; mode: "time" }
-    | null
-  >(null);
   // Tracks whether location suggestions dropdown should be visible (dismissed after selection).
   const [locationSuggestionsOpen, setLocationSuggestionsOpen] = useState(false);
   const locationQuery = eventDraft?.location ?? "";
@@ -712,15 +674,18 @@ export default function CalendarTab() {
     if (!eventDraft) {
       return null;
     }
+    const sourceEvent = isEditEventDraft(eventDraft)
+      ? eventDraft.sourceEvent
+      : undefined;
     // Distinguish undefined (not touched) from null (explicitly cleared).
     // Convert null to undefined for type compatibility with extractMeetingLink.
     const resolvedConferenceData =
       eventDraft.conferenceData === undefined
-        ? eventDraft.sourceEvent?.conferenceData
+        ? sourceEvent?.conferenceData
         : (eventDraft.conferenceData ?? undefined);
 
     return {
-      ...(eventDraft.sourceEvent ?? {}),
+      ...(sourceEvent ?? {}),
       location: eventDraft.location,
       description: eventDraft.description,
       conferenceData: resolvedConferenceData,
@@ -744,13 +709,8 @@ export default function CalendarTab() {
     null
   );
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
-  const [taskPicker, setTaskPicker] = useState<
-    | { kind: "startDate"; mode: "date" }
-    | { kind: "startTime"; mode: "time" }
-    | null
-  >(null);
 
-  const calendarOptions = useMemo(() => {
+  const calendarOptions = useMemo<CalendarOption[]>(() => {
     const visible = googleCalendars.filter((c) =>
       isCalendarVisible(effectiveVisibleCalendars, c.accountId, c.calendar.id)
     );
@@ -805,7 +765,7 @@ export default function CalendarTab() {
         second: 0,
       });
       const endTime = startTime.add({ minutes: 30 });
-      setEventDraft({
+      const createDraft: CreateEventDraft = {
         mode: "create",
         summary: "",
         description: "",
@@ -820,13 +780,14 @@ export default function CalendarTab() {
         startTime,
         endTime,
         conferenceData: null,
-      });
+      };
+      setEventDraft(createDraft);
     },
     [defaultCalendar]
   );
 
   const openEditTimedEvent = useCallback((item: PositionedGoogleEvent) => {
-    setEventDraft({
+    const editDraft: EditEventDraft = {
       mode: "edit",
       eventId: item.source.event.id,
       summary: item.source.event.summary ?? "",
@@ -843,17 +804,25 @@ export default function CalendarTab() {
       endTime: item.end.toPlainTime(),
       conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
-    });
+    };
+    setEventDraft(editDraft);
   }, []);
 
   const openEditAllDayEvent = useCallback((item: AllDayGoogleEvent) => {
-    // Google all-day events use exclusive end date, so we need to parse it carefully.
-    const endDateStr = item.source.event.end.date;
-    const endDate = endDateStr
-      ? Temporal.PlainDate.from(endDateStr).subtract({ days: 1 })
+    const startDate = item.source.event.start.date
+      ? Temporal.PlainDate.from(item.source.event.start.date)
       : item.date;
+    // Google all-day events use exclusive end dates.
+    const endDateExclusive = item.source.event.end.date;
+    const rawEndDate = endDateExclusive
+      ? Temporal.PlainDate.from(endDateExclusive).subtract({ days: 1 })
+      : startDate;
+    const endDate =
+      Temporal.PlainDate.compare(rawEndDate, startDate) < 0
+        ? startDate
+        : rawEndDate;
 
-    setEventDraft({
+    const editDraft: EditEventDraft = {
       mode: "edit",
       eventId: item.source.event.id,
       summary: item.source.event.summary ?? "",
@@ -864,18 +833,30 @@ export default function CalendarTab() {
         calendarId: item.source.calendarId,
       },
       allDay: true,
-      startDate: item.date,
+      startDate,
       endDate,
       startTime: null,
       endTime: null,
       conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
-    });
+    };
+    setEventDraft(editDraft);
   }, []);
 
   const closeEventModal = useCallback(() => {
-    setEventPicker(null);
+    setLocationSuggestionsOpen(false);
     setEventDraft(null);
+  }, []);
+
+  const addGoogleMeetToEventDraft = useCallback(() => {
+    setEventDraft((current) =>
+      current
+        ? {
+            ...current,
+            conferenceData: buildGoogleMeetConferenceData(),
+          }
+        : current
+    );
   }, []);
 
   const saveEvent = useCallback(async () => {
@@ -927,7 +908,7 @@ export default function CalendarTab() {
         calendarId: eventDraft.calendar.calendarId,
         event: eventPayload,
       });
-    } else if (eventDraft.mode === "edit" && eventDraft.eventId) {
+    } else {
       await orpc.googleCal.events.update.call({
         accountId: eventDraft.calendar.accountId,
         calendarId: eventDraft.calendar.calendarId,
@@ -944,7 +925,7 @@ export default function CalendarTab() {
   }, [closeEventModal, eventDraft, getEventsQueryKey, queryClient]);
 
   const deleteEvent = useCallback(async () => {
-    if (!(eventDraft && eventDraft.mode === "edit" && eventDraft.eventId)) {
+    if (!(eventDraft && isEditEventDraft(eventDraft))) {
       return;
     }
     await orpc.googleCal.events.delete.call({
@@ -965,7 +946,6 @@ export default function CalendarTab() {
   }, []);
 
   const closeTaskModal = useCallback(() => {
-    setTaskPicker(null);
     setEditingTask(null);
     setTaskDraft(null);
   }, []);
@@ -1000,6 +980,19 @@ export default function CalendarTab() {
     closeTaskModal();
   }, [closeTaskModal, deleteTask, editingTask]);
 
+  const toggleTaskStatusFromCalendar = useCallback(() => {
+    if (!editingTask) {
+      return;
+    }
+    const nextStatus = editingTask.status === "done" ? "todo" : "done";
+    updateTask.mutate({
+      id: editingTask.id,
+      scope: "this",
+      task: { status: nextStatus },
+    });
+    closeTaskModal();
+  }, [closeTaskModal, editingTask, updateTask]);
+
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollView>(null);
 
@@ -1029,65 +1022,72 @@ export default function CalendarTab() {
   }, []);
 
   return (
-    <Container>
-      <GestureDetector gesture={swipeGesture}>
-        <View className="flex-1">
-          {/* Header - pillbox style */}
-          <View className="flex-row items-center justify-between px-3 pt-3 pb-2">
-            {/* Left group: visibility toggle + day count */}
-            <View className="flex-row items-center rounded-lg border border-border bg-card">
+    <View className="flex-1 bg-background">
+      {/* Configure header options via Stack.Screen */}
+      <Stack.Screen
+        options={{
+          title: "Calendar",
+          headerLeft: () => (
+            <View className="flex-row items-center gap-1.5 pl-2">
               <Pressable
                 accessibilityLabel="Select visible calendars"
-                className="items-center justify-center rounded-l-lg px-3 py-2 active:bg-muted"
+                className="rounded-lg px-3 py-1.5 active:opacity-70"
                 onPress={() => setIsPickerOpen(true)}
               >
-                <Icon as={Eye} className="text-foreground" size={16} />
+                <Icon as={Eye} size={18} />
               </Pressable>
-              <View className="h-6 w-px bg-border" />
-              {[1, 2, 3].map((n, idx) => (
+              {[1, 2, 3].map((n) => (
                 <Pressable
-                  className={`items-center justify-center px-3 py-2 active:bg-muted ${n === 3 ? "rounded-r-lg" : ""} ${visibleDaysCount === n ? "bg-muted" : ""}`}
+                  accessibilityLabel={`Show ${n} day${n > 1 ? "s" : ""}`}
+                  className={`h-8 min-w-8 items-center justify-center rounded-full px-2.5 active:opacity-70 ${
+                    visibleDaysCount === n ? "bg-muted" : ""
+                  }`}
                   key={n}
                   onPress={() => setVisibleDaysCount(n)}
                 >
                   <Text
-                    className={`text-sm ${visibleDaysCount === n ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                    className={
+                      visibleDaysCount === n
+                        ? "font-semibold text-foreground"
+                        : "text-muted-foreground"
+                    }
                   >
                     {n}d
                   </Text>
                 </Pressable>
               ))}
             </View>
-
-            {/* Right group: today + navigation */}
-            <View className="flex-row items-center rounded-lg border border-border bg-card">
+          ),
+          headerRight: () => (
+            <View className="flex-row items-center gap-1.5 pr-2">
               <Pressable
                 accessibilityLabel="Go to today"
-                className="items-center justify-center rounded-l-lg px-3 py-2 active:bg-muted"
+                className="rounded-lg px-3 py-1.5 active:opacity-70"
                 onPress={goToToday}
               >
-                <Text className="font-medium text-foreground text-sm">
-                  Today
-                </Text>
+                <Text className="font-medium text-foreground">Today</Text>
               </Pressable>
-              <View className="h-6 w-px bg-border" />
               <Pressable
                 accessibilityLabel="Previous days"
-                className="items-center justify-center px-2.5 py-2 active:bg-muted"
+                className="rounded-lg p-1.5 active:opacity-70"
                 onPress={goToPrevious}
               >
-                <Icon as={ChevronLeft} className="text-foreground" size={18} />
+                <Icon as={ChevronLeft} size={18} />
               </Pressable>
               <Pressable
                 accessibilityLabel="Next days"
-                className="items-center justify-center rounded-r-lg px-2.5 py-2 active:bg-muted"
+                className="rounded-lg p-1.5 active:opacity-70"
                 onPress={goToNext}
               >
-                <Icon as={ChevronRight} className="text-foreground" size={18} />
+                <Icon as={ChevronRight} size={18} />
               </Pressable>
             </View>
-          </View>
+          ),
+        }}
+      />
 
+      <GestureDetector gesture={swipeGesture}>
+        <View className="flex-1">
           {/* Day headers */}
           <View className="flex-row border-border border-t border-b">
             <View className="w-16 border-border border-r" />
@@ -1291,7 +1291,7 @@ export default function CalendarTab() {
 
                         return (
                           <Pressable
-                            className="absolute rounded-md border border-primary/40 bg-primary/90 p-1 shadow-black/5 shadow-sm"
+                            className="absolute rounded-md bg-primary/90 px-1 py-1 shadow-black/5 shadow-sm"
                             key={task.id}
                             onPress={(e) => {
                               e.stopPropagation();
@@ -1302,8 +1302,10 @@ export default function CalendarTab() {
                               height: adjustedHeight,
                               left: `${leftPercent}%`,
                               width: `${columnWidthPercent}%`,
-                              paddingHorizontal: 4,
                               zIndex: zIndexValue,
+                              borderColor: eventOutlineColor,
+                              borderRadius: 6,
+                              borderWidth: EVENT_OUTLINE_WIDTH_PX,
                             }}
                           >
                             <Text
@@ -1347,511 +1349,67 @@ export default function CalendarTab() {
         visibleCalendars={effectiveVisibleCalendars}
       />
 
-      {/* Create/Edit Google event modal */}
-      <Modal
-        animationType="slide"
-        onRequestClose={closeEventModal}
-        transparent
-        visible={eventDraft !== null}
-      >
-        <View className="flex-1 justify-end bg-black/35">
-          <View className="rounded-t-2xl bg-background p-4">
-            {/* Modal header */}
-            <View className="mb-3 flex-row items-center justify-between">
-              <Text className="font-bold text-foreground text-lg">
-                {eventDraft?.mode === "edit" ? "Edit event" : "New event"}
-              </Text>
-              <Button onPress={closeEventModal} size="sm" variant="ghost">
-                <Text>Close</Text>
-              </Button>
-            </View>
+      {eventDraft?.mode === "create" ? (
+        <CreateEventEditorSheet
+          calendarOptions={calendarOptions}
+          draft={eventDraft}
+          isConferencePending={isConferencePending}
+          isVisible
+          locationSuggestions={locationSuggestions}
+          mapsUrl={mapsUrl}
+          meetingLink={meetingLink}
+          onAddGoogleMeet={addGoogleMeetToEventDraft}
+          onClose={closeEventModal}
+          onCreate={saveEvent}
+          onLocationSuggestionsOpenChange={setLocationSuggestionsOpen}
+          setDraft={(updater) =>
+            setEventDraft((current) =>
+              current?.mode === "create" ? updater(current) : current
+            )
+          }
+          showLocationSuggestions={showLocationSuggestions}
+          timeZone={timeZone}
+        />
+      ) : null}
 
-            <Input
-              className="mb-3"
-              onChangeText={(value) =>
-                setEventDraft((d) => (d ? { ...d, summary: value } : d))
-              }
-              placeholder="Title"
-              value={eventDraft?.summary ?? ""}
-            />
+      {eventDraft?.mode === "edit" ? (
+        <EditEventEditorSheet
+          calendarOptions={calendarOptions}
+          draft={eventDraft}
+          isConferencePending={isConferencePending}
+          isVisible
+          locationSuggestions={locationSuggestions}
+          mapsUrl={mapsUrl}
+          meetingLink={meetingLink}
+          onAddGoogleMeet={addGoogleMeetToEventDraft}
+          onClose={closeEventModal}
+          onDelete={deleteEvent}
+          onLocationSuggestionsOpenChange={setLocationSuggestionsOpen}
+          onSave={saveEvent}
+          setDraft={(updater) =>
+            setEventDraft((current) =>
+              current && isEditEventDraft(current) ? updater(current) : current
+            )
+          }
+          showLocationSuggestions={showLocationSuggestions}
+          timeZone={timeZone}
+        />
+      ) : null}
 
-            {/* Location input with overlay suggestions */}
-            <View className="relative z-10 mb-3">
-              <View className="flex-row items-center gap-2">
-                <Input
-                  className="flex-1"
-                  onChangeText={(value) => {
-                    setEventDraft((d) => (d ? { ...d, location: value } : d));
-                    // Re-open suggestions when user types
-                    setLocationSuggestionsOpen(true);
-                  }}
-                  placeholder="Location (optional)"
-                  value={eventDraft?.location ?? ""}
-                />
-                {mapsUrl ? (
-                  <Button
-                    onPress={() => {
-                      Linking.openURL(mapsUrl).catch((err) => {
-                        console.warn("Failed to open maps URL:", err);
-                      });
-                    }}
-                    size="icon"
-                    variant="outline"
-                  >
-                    <Icon as={MapPin} className="text-foreground" size={16} />
-                  </Button>
-                ) : null}
-              </View>
-
-              {/* Suggestions overlay - positioned absolutely to avoid layout shift */}
-              {showLocationSuggestions ? (
-                <View className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-md border border-border bg-background shadow-lg">
-                  {locationSuggestions.map((suggestion, index) => {
-                    const isLast = index === locationSuggestions.length - 1;
-                    return (
-                      <Pressable
-                        className={`px-3 py-2 ${isLast ? "" : "border-border border-b"}`}
-                        key={suggestion.placeId ?? suggestion.description}
-                        onPress={() => {
-                          setEventDraft((d) =>
-                            d ? { ...d, location: suggestion.description } : d
-                          );
-                          // Close suggestions after selection
-                          setLocationSuggestionsOpen(false);
-                        }}
-                      >
-                        <Text className="text-foreground text-sm">
-                          {suggestion.primary}
-                        </Text>
-                        {suggestion.secondary ? (
-                          <Text className="text-muted-foreground text-xs">
-                            {suggestion.secondary}
-                          </Text>
-                        ) : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-            </View>
-
-            <View className="mb-3">
-              <Text className="mb-2 font-semibold text-foreground text-sm">
-                Meeting
-              </Text>
-              {meetingLink ? (
-                <Button
-                  onPress={() => {
-                    Linking.openURL(meetingLink.url).catch((err) => {
-                      console.warn("Failed to open meeting URL:", err);
-                    });
-                  }}
-                  variant="outline"
-                >
-                  <Icon as={Video} className="text-foreground" size={16} />
-                  <Text>Join {meetingLink.label}</Text>
-                </Button>
-              ) : isConferencePending ? (
-                <Text className="text-muted-foreground text-xs">
-                  Google Meet will be created when you save.
-                </Text>
-              ) : (
-                <Button
-                  onPress={() => {
-                    setEventDraft((d) =>
-                      d
-                        ? {
-                            ...d,
-                            conferenceData: buildGoogleMeetConferenceData(),
-                          }
-                        : d
-                    );
-                  }}
-                  variant="outline"
-                >
-                  <Icon as={Video} className="text-foreground" size={16} />
-                  <Text>Add Google Meet</Text>
-                </Button>
-              )}
-            </View>
-
-            <Textarea
-              className="mb-3"
-              onChangeText={(value) =>
-                setEventDraft((d) => (d ? { ...d, description: value } : d))
-              }
-              placeholder="Description (optional)"
-              value={eventDraft?.description ?? ""}
-            />
-
-            {/* Calendar selection */}
-            <Button
-              className="mb-2.5"
-              disabled={calendarOptions.length === 0}
-              onPress={() => {
-                setEventDraft((d) => {
-                  if (!d) {
-                    return d;
-                  }
-                  const idx = calendarOptions.findIndex(
-                    (c) =>
-                      c.accountId === d.calendar.accountId &&
-                      c.calendarId === d.calendar.calendarId
-                  );
-                  const next =
-                    calendarOptions[(idx + 1) % calendarOptions.length];
-                  if (!next) {
-                    return d;
-                  }
-                  return {
-                    ...d,
-                    calendar: {
-                      accountId: next.accountId,
-                      calendarId: next.calendarId,
-                    },
-                  };
-                });
-              }}
-              variant="outline"
-            >
-              <Text>
-                Calendar: {(() => {
-                  const current = eventDraft?.calendar;
-                  const match = calendarOptions.find(
-                    (c) =>
-                      c.accountId === current?.accountId &&
-                      c.calendarId === current?.calendarId
-                  );
-                  return match?.label ?? "Select calendars first";
-                })()}
-              </Text>
-            </Button>
-
-            {/* All-day toggle */}
-            <Pressable
-              className="mb-2.5 flex-row items-center gap-2"
-              onPress={() =>
-                setEventDraft((d) => (d ? { ...d, allDay: !d.allDay } : d))
-              }
-            >
-              <View
-                className={`size-5 items-center justify-center rounded border ${eventDraft?.allDay ? "border-primary bg-primary" : "border-muted-foreground/50"}`}
-              >
-                {eventDraft?.allDay ? (
-                  <Text className="font-bold text-primary-foreground text-xs">
-                    ✓
-                  </Text>
-                ) : null}
-              </View>
-              <Text className="text-foreground text-sm">All day</Text>
-            </Pressable>
-
-            {/* Start date/time pickers */}
-            <View className="mb-2.5 flex-row gap-2">
-              <Button
-                className="flex-1"
-                onPress={() =>
-                  setEventPicker({ kind: "startDate", mode: "date" })
-                }
-                variant="outline"
-              >
-                <Text>Start: {eventDraft?.startDate.toString()}</Text>
-              </Button>
-              {eventDraft?.allDay ? null : (
-                <Button
-                  onPress={() =>
-                    setEventPicker({ kind: "startTime", mode: "time" })
-                  }
-                  variant="outline"
-                >
-                  <Text>
-                    {eventDraft?.startTime?.toString({
-                      smallestUnit: "minute",
-                    }) ?? "09:00"}
-                  </Text>
-                </Button>
-              )}
-            </View>
-
-            {/* End date/time pickers */}
-            <View className="mb-2.5 flex-row gap-2">
-              <Button
-                className="flex-1"
-                onPress={() =>
-                  setEventPicker({ kind: "endDate", mode: "date" })
-                }
-                variant="outline"
-              >
-                <Text>End: {eventDraft?.endDate.toString()}</Text>
-              </Button>
-              {eventDraft?.allDay ? null : (
-                <Button
-                  onPress={() =>
-                    setEventPicker({ kind: "endTime", mode: "time" })
-                  }
-                  variant="outline"
-                >
-                  <Text>
-                    {eventDraft?.endTime?.toString({
-                      smallestUnit: "minute",
-                    }) ?? "10:00"}
-                  </Text>
-                </Button>
-              )}
-            </View>
-
-            {eventPicker && eventDraft ? (
-              <DateTimePicker
-                mode={eventPicker.mode}
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (event.type === "dismissed") {
-                    setEventPicker(null);
-                    return;
-                  }
-                  if (!date) {
-                    setEventPicker(null);
-                    return;
-                  }
-
-                  setEventDraft((d) => {
-                    if (!d) {
-                      return d;
-                    }
-
-                    if (eventPicker.kind === "startDate") {
-                      const nextDate = dateToPlainDate(date, timeZone);
-                      // Keep end date at least equal to start date.
-                      const nextEndDate =
-                        Temporal.PlainDate.compare(nextDate, d.endDate) > 0
-                          ? nextDate
-                          : d.endDate;
-                      return {
-                        ...d,
-                        startDate: nextDate,
-                        endDate: nextEndDate,
-                      };
-                    }
-                    if (eventPicker.kind === "startTime") {
-                      const nextTime = dateToPlainTime(date, timeZone);
-                      // Shift end time to maintain 30-minute duration.
-                      const nextEndTime = nextTime.add({ minutes: 30 });
-                      return {
-                        ...d,
-                        startTime: nextTime,
-                        endTime: nextEndTime,
-                      };
-                    }
-                    if (eventPicker.kind === "endDate") {
-                      const nextDate = dateToPlainDate(date, timeZone);
-                      return { ...d, endDate: nextDate };
-                    }
-                    if (eventPicker.kind === "endTime") {
-                      const nextTime = dateToPlainTime(date, timeZone);
-                      return { ...d, endTime: nextTime };
-                    }
-                    return d;
-                  });
-                  setEventPicker(null);
-                }}
-                value={(() => {
-                  const defaultTime = Temporal.PlainTime.from("09:00");
-                  if (eventPicker.kind === "startDate") {
-                    const zdt = combineDateTime(
-                      eventDraft.startDate,
-                      eventDraft.startTime ?? defaultTime,
-                      timeZone
-                    );
-                    return new Date(zdt.toInstant().toString());
-                  }
-                  if (eventPicker.kind === "startTime") {
-                    const zdt = combineDateTime(
-                      eventDraft.startDate,
-                      eventDraft.startTime ?? defaultTime,
-                      timeZone
-                    );
-                    return new Date(zdt.toInstant().toString());
-                  }
-                  if (eventPicker.kind === "endDate") {
-                    const zdt = combineDateTime(
-                      eventDraft.endDate,
-                      eventDraft.endTime ?? defaultTime,
-                      timeZone
-                    );
-                    return new Date(zdt.toInstant().toString());
-                  }
-                  if (eventPicker.kind === "endTime") {
-                    const zdt = combineDateTime(
-                      eventDraft.endDate,
-                      eventDraft.endTime ?? defaultTime,
-                      timeZone
-                    );
-                    return new Date(zdt.toInstant().toString());
-                  }
-                  return new Date();
-                })()}
-              />
-            ) : null}
-
-            {/* Modal footer */}
-            <View className="mt-2 flex-row items-center justify-end gap-2.5">
-              {eventDraft?.mode === "edit" ? (
-                <Button onPress={deleteEvent} variant="destructive">
-                  <Text>Delete</Text>
-                </Button>
-              ) : null}
-
-              <Button onPress={saveEvent}>
-                <Text>Save</Text>
-              </Button>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Edit scheduled task modal */}
-      <Modal
-        animationType="slide"
-        onRequestClose={closeTaskModal}
-        transparent
-        visible={editingTask !== null && taskDraft !== null}
-      >
-        <View className="flex-1 justify-end bg-black/35">
-          <View className="rounded-t-2xl bg-background p-4">
-            {/* Modal header */}
-            <View className="mb-3 flex-row items-center justify-between">
-              <Text className="font-bold text-foreground text-lg">
-                Edit task
-              </Text>
-              <Button onPress={closeTaskModal} size="sm" variant="ghost">
-                <Text>Close</Text>
-              </Button>
-            </View>
-
-            <Input
-              className="mb-3"
-              onChangeText={(value) =>
-                setTaskDraft((d) => (d ? { ...d, title: value } : d))
-              }
-              placeholder="Title"
-              value={taskDraft?.title ?? ""}
-            />
-
-            <View className="mb-3">
-              <Text className="mb-2 font-semibold text-foreground text-sm">
-                Tags
-              </Text>
-              <TagPicker
-                onChange={(next) =>
-                  setTaskDraft((d) => (d ? { ...d, tagIds: next } : d))
-                }
-                value={taskDraft?.tagIds ?? []}
-              />
-            </View>
-
-            <View className="mb-2.5 flex-row gap-2">
-              <Button
-                onPress={() =>
-                  setTaskPicker({ kind: "startDate", mode: "date" })
-                }
-                variant="outline"
-              >
-                <Text>
-                  Start date:{" "}
-                  {taskDraft?.startDate
-                    ? taskDraft.startDate.toString()
-                    : "none"}
-                </Text>
-              </Button>
-              <Button
-                disabled={!taskDraft?.startDate}
-                onPress={() =>
-                  setTaskPicker({ kind: "startTime", mode: "time" })
-                }
-                variant="outline"
-              >
-                <Text>
-                  Start time:{" "}
-                  {taskDraft?.startTime
-                    ? taskDraft.startTime.toString({ smallestUnit: "minute" })
-                    : "none"}
-                </Text>
-              </Button>
-            </View>
-
-            {taskPicker && taskDraft ? (
-              <DateTimePicker
-                mode={taskPicker.mode}
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (event.type === "dismissed") {
-                    setTaskPicker(null);
-                    return;
-                  }
-                  if (!date) {
-                    setTaskPicker(null);
-                    return;
-                  }
-                  if (taskPicker.kind === "startDate") {
-                    setTaskDraft((d) =>
-                      d
-                        ? {
-                            ...d,
-                            startDate: dateToPlainDate(date, timeZone),
-                          }
-                        : d
-                    );
-                  }
-                  if (taskPicker.kind === "startTime") {
-                    setTaskDraft((d) =>
-                      d
-                        ? {
-                            ...d,
-                            startTime: dateToPlainTime(date, timeZone),
-                          }
-                        : d
-                    );
-                  }
-                  setTaskPicker(null);
-                }}
-                value={(() => {
-                  if (taskPicker.kind === "startDate") {
-                    const date =
-                      taskDraft.startDate ?? todayPlainDate(timeZone);
-                    const time =
-                      taskDraft.startTime ?? Temporal.PlainTime.from("09:00");
-                    return new Date(
-                      combineDateTime(date, time, timeZone)
-                        .toInstant()
-                        .toString()
-                    );
-                  }
-                  if (taskPicker.kind === "startTime") {
-                    const date =
-                      taskDraft.startDate ?? todayPlainDate(timeZone);
-                    const time =
-                      taskDraft.startTime ?? Temporal.PlainTime.from("09:00");
-                    return new Date(
-                      combineDateTime(date, time, timeZone)
-                        .toInstant()
-                        .toString()
-                    );
-                  }
-                  return new Date();
-                })()}
-              />
-            ) : null}
-
-            {/* Modal footer */}
-            <View className="mt-2 flex-row items-center justify-end gap-2.5">
-              <Button onPress={deleteTaskFromCalendar} variant="destructive">
-                <Text>Delete</Text>
-              </Button>
-              <Button onPress={saveTask}>
-                <Text>Save</Text>
-              </Button>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </Container>
+      <TaskEditorSheet
+        draft={taskDraft}
+        isVisible={editingTask !== null && taskDraft !== null}
+        mode="edit"
+        onClose={closeTaskModal}
+        onDelete={deleteTaskFromCalendar}
+        onSave={saveTask}
+        onToggleDone={toggleTaskStatusFromCalendar}
+        setDraft={(updater) =>
+          setTaskDraft((current) => (current ? updater(current) : current))
+        }
+        status={editingTask?.status ?? null}
+        timeZone={timeZone}
+      />
+    </View>
   );
 }

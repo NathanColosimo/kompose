@@ -29,51 +29,76 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 - **Expo SDK 54 (stable)**.
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection.
-- **Date/time inputs**: native pickers via `@react-native-community/datetimepicker`.
-- **Styling**: NativeWind (Tailwind for React Native) + React Native Reusables components.
+- **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
+- **Styling**: NativeWind (Tailwind for React Native) + BNA UI components.
 - **Theming**: CSS variables via NativeWind's `vars()` function for dynamic light/dark mode switching.
+- **Navigation**: NativeTabs from `expo-router/unstable-native-tabs` for native iOS/Android tab bar.
 
 ## UI components
 
-**Always check [React Native Reusables](https://reactnativereusables.com/docs/components) before hand-rolling UI components.**
+**Always check [BNA UI](https://ui.ahmedbna.com/docs/components) before hand-rolling UI components.**
 
-The project uses React Native Reusables as its component library. These are pre-built, accessible, NativeWind-styled components built on `@rn-primitives`.
+The project uses BNA UI as its component library for NativeWind-styled primitives and higher-level components.
 
 ### Adding a new component
 
-1. Check if the component exists at https://reactnativereusables.com/docs/components
+1. Check if the component exists at https://ui.ahmedbna.com/docs/components
 2. If available, add it via CLI:
    ```bash
-   npx @react-native-reusables/cli@latest add <component-name>
+   bunx bna-ui add <component-name> --bun -y
    ```
-3. Or manually install the primitive and create the component in `apps/native/components/ui/`
+3. Adjust generated component APIs to match app conventions (`Icon as={...}`, shared `Text` variants, theme hooks).
 
 ### Existing UI components
 
 Components live in `apps/native/components/ui/`:
-- `button.tsx` - Primary button with variants
-- `checkbox.tsx` - Circular checkbox using `@rn-primitives/checkbox`
-- `dialog.tsx` - Modal dialog
-- `input.tsx` - Text input
-- `textarea.tsx` - Multi-line text input
-- `text.tsx` - Styled text with context support
-- `icon.tsx` - Icon wrapper for lucide-react-native
-- `separator.tsx` - Visual separator
-- `card.tsx` - Card container
-- `alert.tsx` - Alert/notification component
+- `button.tsx` - Primary button + icon/loading variants
+- `checkbox.tsx` - Styled checkbox control
+- `input.tsx` / `textarea.tsx` - Text and multiline inputs
+- `text.tsx` / `icon.tsx` / `view.tsx` - Shared primitives
+- `date-picker.tsx` - Date/time picker for all scheduling flows
+- `bottom-sheet.tsx`, `tabs.tsx`, `switch.tsx`, `alert-dialog.tsx` - Core app interaction patterns
 
 ## Major changes + where
 
 ### App structure / navigation
 
-- **Bottom tabs only** (no drawer):
-  - `apps/native/app/(tabs)/_layout.tsx` - Tab navigator with Tasks, Calendar, Settings
-- Root layout with providers:
-  - `apps/native/app/_layout.tsx` - QueryClient, ColorSchemeProvider, ThemeProvider
+Uses **NativeTabs** for native iOS/Android tab bar experience:
+
+```
+app/
+  _layout.tsx              <- Root layout with Stack + providers
+  (tabs)/
+    _layout.tsx            <- NativeTabs with SF Symbols
+    (tasks)/
+      _layout.tsx          <- Stack (for headers)
+      index.tsx            <- Tasks screen
+    (calendar)/
+      _layout.tsx          <- Stack (for headers)
+      index.tsx            <- Calendar screen
+    (settings)/
+      _layout.tsx          <- Stack (for headers)
+      index.tsx            <- Settings screen
+  modal.tsx
+  +not-found.tsx
+```
+
+Key files:
+- `apps/native/app/(tabs)/_layout.tsx` - NativeTabs with SF Symbol icons
+- `apps/native/app/_layout.tsx` - Root layout with QueryClient, StateProvider, auth
+
+### NativeTabs implementation
+
+Uses `expo-router/unstable-native-tabs` for platform-native tab bars:
+- iOS: Native UITabBar with SF Symbols, liquid glass on iOS 26+
+- Android: Material 3 bottom navigation
+
+Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Screen` with `headerLeft`/`headerRight` options.
 
 ### Tasks implementation
 
-- Screen: `apps/native/app/(tabs)/index.tsx`
+- Layout: `apps/native/app/(tabs)/(tasks)/_layout.tsx`
+- Screen: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Data hook: `packages/state/src/hooks/use-tasks.ts` (imported via `@kompose/state/hooks`)
 
 ### Google calendar visibility picker
@@ -91,12 +116,14 @@ Components live in `apps/native/components/ui/`:
 
 ### Calendar implementation
 
-- Screen: `apps/native/app/(tabs)/calendar.tsx`
+- Layout: `apps/native/app/(tabs)/(calendar)/_layout.tsx`
+- Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
 
 ### Settings + Theming
 
-- Screen: `apps/native/app/(tabs)/settings.tsx`
+- Layout: `apps/native/app/(tabs)/(settings)/_layout.tsx`
+- Screen: `apps/native/app/(tabs)/(settings)/index.tsx`
   - Theme toggle and auth UI
 - Theme toggle component: `apps/native/components/mode-toggle.tsx`
 - Color scheme context (shared state for theme switching):
@@ -114,6 +141,23 @@ Components live in `apps/native/components/ui/`:
 - Added Google social sign-in buttons:
   - `apps/native/components/sign-in.tsx`
   - `apps/native/components/sign-up.tsx`
+
+## Safe area handling
+
+**Do NOT use SafeAreaView.** Instead:
+
+1. **For screens inside a Stack**: Use `ScrollView` or `FlatList` with `contentInsetAdjustmentBehavior="automatic"` - this automatically adjusts for headers, tab bars, and device notches.
+
+2. **For header controls**: Use `Stack.Screen` with `headerLeft`/`headerRight` options instead of custom header Views.
+
+Example:
+```tsx
+<FlatList
+  contentInsetAdjustmentBehavior="automatic"
+  contentContainerStyle={{ paddingHorizontal: 16 }}
+  ...
+/>
+```
 
 ## Theming architecture
 
@@ -212,7 +256,5 @@ bun run ios
 
 ## Notes / limitations (v1)
 
-- Calendar event editing is focused on **timed Google events**; all-day events currently display but aren’t editable yet.
 - Recurrence scope is treated as `"this"` on mobile for now.
 - No offline-first/local DB yet (online-first only).
-

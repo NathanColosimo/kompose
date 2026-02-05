@@ -551,6 +551,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     if (!activeTask && activeGoogleEvent && !isResizing) {
       return (
         <GoogleCalendarEventPreview
+          accountId={activeGoogleEvent.accountId}
+          calendarId={activeGoogleEvent.calendarId}
           event={activeGoogleEvent.event}
           key={`google-overlay-${activeGoogleEvent.event.id}`}
           start={activeGoogleEvent.start}

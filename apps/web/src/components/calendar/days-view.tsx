@@ -594,20 +594,26 @@ function AllDayEventChip({
       start={zonedDateTimeToDate(startZdt)}
     >
       <button
-        className={`block w-full max-w-full truncate rounded-sm border border-transparent px-1.5 py-0.5 text-left font-medium text-[11px] ${
-          backgroundColor ? "" : "border-primary/20 bg-primary/10 text-primary"
-        }`}
+        className="block w-full max-w-full rounded-sm bg-background p-px text-left"
         style={{
-          ...(backgroundColor && {
-            backgroundColor,
-            borderColor: backgroundColor,
-          }),
           ...(foregroundColor && { color: foregroundColor }),
         }}
         title={item.event.summary ?? "Google event"}
         type="button"
       >
-        {item.event.summary ?? "Google event"}
+        <span
+          className={`block w-full max-w-full truncate rounded-[3px] border border-black/20 px-1.5 py-0.5 font-medium text-[11px] dark:border-white/30 ${
+            backgroundColor ? "" : "bg-primary/10 text-primary"
+          }`}
+          style={{
+            ...(backgroundColor && {
+              backgroundColor,
+            }),
+            ...(foregroundColor && { color: foregroundColor }),
+          }}
+        >
+          {item.event.summary ?? "Google event"}
+        </span>
       </button>
     </EventEditPopover>
   );

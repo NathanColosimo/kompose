@@ -159,11 +159,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     left: `calc(${leftPercent}% + 2px)`,
     width: `calc(${columnWidth}% - 4px)`,
     zIndex,
-    ...(backgroundColor && {
-      backgroundColor,
-      borderColor: backgroundColor,
-    }),
-    ...(foregroundColor && { color: foregroundColor }),
+  };
+
+  const fillStyle: React.CSSProperties = {
+    backgroundColor: backgroundColor ?? "hsl(var(--primary))",
+    color: foregroundColor ?? "hsl(var(--primary-foreground))",
   };
 
   return (
@@ -176,10 +176,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     >
       <div
         className={cn(
-          "group pointer-events-auto cursor-grab rounded-md border px-2 py-1 shadow-sm transition-shadow",
-          backgroundColor
-            ? ""
-            : "border-primary/20 bg-primary/90 text-primary-foreground",
+          "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
           "relative",
           "hover:shadow-md",
           isDragging ? "opacity-0" : ""
@@ -189,6 +186,20 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         {...attributes}
         {...listeners}
       >
+        <div
+          className="h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
+          style={fillStyle}
+        >
+          <div className="truncate font-medium text-xs">
+            {event.summary ?? "Google event"}
+          </div>
+          {/* Hide time for short events (<30min) to prevent overflow */}
+          {durationMinutes >= 30 && (
+            <div className="truncate text-[10px] opacity-85">
+              {formatTime(start)} - {formatTime(end)}
+            </div>
+          )}
+        </div>
         <div
           className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
           ref={setStartHandleRef}
@@ -201,15 +212,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           {...endAttributes}
           {...endListeners}
         />
-        <div className="truncate font-medium text-xs">
-          {event.summary ?? "Google event"}
-        </div>
-        {/* Hide time for short events (<30min) to prevent overflow */}
-        {durationMinutes >= 30 && (
-          <div className="truncate text-[10px] opacity-85">
-            {formatTime(start)} - {formatTime(end)}
-          </div>
-        )}
       </div>
     </EventEditPopover>
   );
@@ -219,17 +221,46 @@ export const GoogleCalendarEventPreview = memo(
   function GoogleCalendarEventPreviewInner({
     event,
     start,
+    accountId,
+    calendarId,
   }: {
     event: GoogleEvent;
     start: Temporal.ZonedDateTime;
+    accountId: string;
+    calendarId: string;
   }) {
+    const normalizedPalette = useAtomValue(
+      normalizedGoogleColorsAtomFamily(accountId)
+    );
+    const calendars = useAtomValue(googleCalendarsDataAtom);
+    const calendar = calendars.find(
+      (c) => c.accountId === accountId && c.calendar.id === calendarId
+    );
+    const { background: backgroundColor, foreground: foregroundColor } =
+      resolveGoogleEventColors({
+        colorId: event.colorId,
+        palette: normalizedPalette?.event,
+        calendarBackgroundColor: calendar?.calendar.backgroundColor,
+        calendarForegroundColor: calendar?.calendar.foregroundColor,
+      });
+
+    const fillStyle: React.CSSProperties = {
+      backgroundColor: backgroundColor ?? "hsl(var(--primary))",
+      color: foregroundColor ?? "hsl(var(--primary-foreground))",
+    };
+
     return (
-      <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
-        <div className="truncate font-medium text-xs">
-          {event.summary ?? "Google event"}
-        </div>
-        <div className="truncate text-[10px] opacity-80">
-          {formatTime(start)}
+      <div className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg">
+        <div
+          className="rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
+          style={fillStyle}
+        >
+          <div className="truncate font-medium text-xs">
+            {event.summary ?? "Google event"}
+          </div>
+          <div className="truncate text-[10px] opacity-80">
+            {formatTime(start)}
+          </div>
         </div>
       </div>
     );

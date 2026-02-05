@@ -1,7 +1,6 @@
 import "../global.css";
 
 import { StateProvider } from "@kompose/state/state-provider";
-import { PortalHost } from "@rn-primitives/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -102,7 +101,6 @@ function RootLayoutContent() {
           options={{ title: "Modal", presentation: "modal" }}
         />
       </Stack>
-      <PortalHost />
     </View>
   );
 }

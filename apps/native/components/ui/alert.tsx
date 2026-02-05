@@ -1,86 +1,236 @@
-// biome-ignore-all lint/performance/noNamespaceImport: Imported component
 import type { LucideIcon } from "lucide-react-native";
-import * as React from "react";
-import { View, type ViewProps } from "react-native";
+import type React from "react";
+import { Alert as RNAlert, type TextStyle, type ViewStyle } from "react-native";
 import { Icon } from "@/components/ui/icon";
-import { Text, TextClassContext } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
+import { Text } from "@/components/ui/text";
+import { View } from "@/components/ui/view";
+import { useColor } from "@/hooks/useColor";
+import { BORDER_RADIUS } from "@/theme/globals";
 
-function Alert({
-  className,
-  variant,
+type AlertVariant = "default" | "destructive";
+
+interface AlertProps {
+  children: React.ReactNode;
+  variant?: AlertVariant;
+  icon?: LucideIcon;
+  style?: ViewStyle;
+}
+
+// Visual Alert Component (existing functionality)
+export function Alert({
   children,
+  variant = "default",
   icon,
-  iconClassName,
-  ...props
-}: ViewProps &
-  React.RefAttributes<View> & {
-    icon: LucideIcon;
-    variant?: "default" | "destructive";
-    iconClassName?: string;
-  }) {
+  style,
+}: AlertProps) {
+  const borderColor = useColor("border");
+  const destructiveColor = useColor("destructive");
+  const backgroundColor = useColor("card");
+  const foregroundColor = useColor("foreground");
+
   return (
-    <TextClassContext.Provider
-      value={cn(
-        "text-foreground text-sm",
-        variant === "destructive" && "text-destructive",
-        className
-      )}
+    <View
+      style={[
+        {
+          position: "relative",
+          padding: BORDER_RADIUS,
+          borderRadius: BORDER_RADIUS,
+          backgroundColor,
+          borderWidth: 1,
+          borderColor:
+            variant === "destructive" ? destructiveColor : borderColor,
+        },
+        style,
+      ]}
     >
-      <View
-        className={cn(
-          "relative w-full rounded-lg border border-border bg-card px-4 pt-3.5 pb-2",
-          className
-        )}
-        role="alert"
-        {...props}
-      >
-        <View className="absolute top-3 left-3.5">
+      {icon ? (
+        <View
+          style={{
+            position: "absolute",
+            top: BORDER_RADIUS,
+            left: BORDER_RADIUS,
+          }}
+        >
           <Icon
             as={icon}
-            className={cn(
-              "size-4",
-              variant === "destructive" && "text-destructive",
-              iconClassName
-            )}
+            color={
+              variant === "destructive" ? destructiveColor : foregroundColor
+            }
+            size={16}
           />
         </View>
-        {children}
-      </View>
-    </TextClassContext.Provider>
+      ) : null}
+      {children}
+    </View>
   );
 }
 
-function AlertTitle({
-  className,
-  ...props
-}: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
+interface AlertTitleProps {
+  children: React.ReactNode;
+  style?: TextStyle;
+}
+
+export function AlertTitle({ children, style }: AlertTitleProps) {
+  return (
+    <Text style={[{ paddingLeft: 24 }, style]} variant="title">
+      {children}
+    </Text>
+  );
+}
+
+interface AlertDescriptionProps {
+  children: React.ReactNode;
+  style?: TextStyle;
+}
+
+export function AlertDescription({ children, style }: AlertDescriptionProps) {
   return (
     <Text
-      className={cn(
-        "mb-1 ml-0.5 min-h-4 pl-6 font-medium leading-none tracking-tight",
-        className
-      )}
-      {...props}
-    />
+      style={[
+        {
+          marginTop: 8,
+          paddingLeft: 24,
+        },
+        style,
+      ]}
+      variant="caption"
+    >
+      {children}
+    </Text>
   );
 }
 
-function AlertDescription({
-  className,
-  ...props
-}: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
-  const textClass = React.useContext(TextClassContext);
-  return (
-    <Text
-      className={cn(
-        "ml-0.5 pb-1.5 pl-6 text-muted-foreground text-sm leading-relaxed",
-        textClass?.includes("text-destructive") && "text-destructive/90",
-        className
-      )}
-      {...props}
-    />
-  );
+// Native Alert Functions
+interface AlertButton {
+  text: string;
+  onPress?: () => void;
+  style?: "default" | "cancel" | "destructive";
 }
 
-export { Alert, AlertDescription, AlertTitle };
+interface NativeAlertOptions {
+  title: string;
+  message?: string;
+  buttons?: AlertButton[];
+  cancelable?: boolean;
+}
+
+// Two-button native alert
+export const createTwoButtonAlert = (options: NativeAlertOptions) => {
+  const { title, message, buttons } = options;
+
+  const defaultButtons: AlertButton[] = [
+    {
+      text: "Cancel",
+      onPress: () => console.log("Cancel Pressed"),
+      style: "cancel",
+    },
+    {
+      text: "OK",
+      onPress: () => console.log("OK Pressed"),
+    },
+  ];
+
+  RNAlert.alert(title, message, buttons || defaultButtons);
+};
+
+// Three-button native alert
+export const createThreeButtonAlert = (options: NativeAlertOptions) => {
+  const { title, message, buttons } = options;
+
+  const defaultButtons: AlertButton[] = [
+    {
+      text: "Ask me later",
+      onPress: () => console.log("Ask me later pressed"),
+    },
+    {
+      text: "Cancel",
+      onPress: () => console.log("Cancel Pressed"),
+      style: "cancel",
+    },
+    {
+      text: "OK",
+      onPress: () => console.log("OK Pressed"),
+    },
+  ];
+
+  RNAlert.alert(title, message, buttons || defaultButtons);
+};
+
+// Generic native alert function
+export const showNativeAlert = (options: NativeAlertOptions) => {
+  const { title, message, buttons, cancelable = true } = options;
+
+  if (!buttons || buttons.length === 0) {
+    // Simple alert with just OK button
+    RNAlert.alert(title, message, [
+      {
+        text: "OK",
+        onPress: () => console.log("OK Pressed"),
+      },
+    ]);
+  } else {
+    RNAlert.alert(title, message, buttons, { cancelable });
+  }
+};
+
+// Convenience functions for common alert types
+export const showSuccessAlert = (
+  title: string,
+  message?: string,
+  onOk?: () => void
+) => {
+  showNativeAlert({
+    title,
+    message,
+    buttons: [
+      {
+        text: "OK",
+        onPress: onOk || (() => console.log("Success acknowledged")),
+      },
+    ],
+  });
+};
+
+export const showErrorAlert = (
+  title: string,
+  message?: string,
+  onOk?: () => void
+) => {
+  showNativeAlert({
+    title,
+    message,
+    buttons: [
+      {
+        text: "OK",
+        onPress: onOk || (() => console.log("Error acknowledged")),
+        style: "destructive",
+      },
+    ],
+  });
+};
+
+export const showConfirmAlert = (
+  title: string,
+  message?: string,
+  onConfirm?: () => void,
+  onCancel?: () => void
+) => {
+  showNativeAlert({
+    title,
+    message,
+    buttons: [
+      {
+        text: "Cancel",
+        onPress: onCancel || (() => console.log("Cancelled")),
+        style: "cancel",
+      },
+      {
+        text: "Confirm",
+        onPress: onConfirm || (() => console.log("Confirmed")),
+      },
+    ],
+  });
+};
+
+// Export the React Native Alert for direct use
+export { RNAlert as NativeAlert };

@@ -1,9 +1,9 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { Pressable, View } from "react-native";
+import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
 import { tagIconMap } from "./tag-icon-map";
 
 interface TagPickerProps {
@@ -38,21 +38,27 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
         const isSelected = value.includes(tag.id);
         return (
           <Pressable
-            className={cn(
-              "flex-row items-center gap-1 rounded-full border px-2 py-1",
-              isSelected
-                ? "border-primary bg-primary/10"
-                : "border-border bg-transparent"
-            )}
+            className="rounded-full"
             key={tag.id}
             onPress={() => toggleTag(tag)}
           >
-            <Icon
-              as={IconComponent}
-              className="text-muted-foreground"
-              size={12}
-            />
-            <Text className="text-xs">{tag.name}</Text>
+            <Badge
+              style={{
+                backgroundColor: isSelected
+                  ? "rgba(115, 115, 115, 0.16)"
+                  : "transparent",
+              }}
+              variant="outline"
+            >
+              <View className="flex-row items-center gap-1">
+                <Icon
+                  as={IconComponent}
+                  className="text-muted-foreground"
+                  size={12}
+                />
+                <Text className="text-xs">{tag.name}</Text>
+              </View>
+            </Badge>
           </Pressable>
         );
       })}

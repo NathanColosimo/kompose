@@ -19,10 +19,10 @@ export function TagIconPicker({ value, onChange }: TagIconPickerProps) {
         return (
           <Button
             accessibilityLabel={`Select ${name} icon`}
-            className="h-9 w-9"
             key={name}
             onPress={() => onChange(name)}
             size="icon"
+            style={{ height: 36, width: 36 }}
             variant={isActive ? "secondary" : "outline"}
           >
             <Icon

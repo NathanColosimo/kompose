@@ -2,17 +2,10 @@ import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { Check, Pencil, Tag as TagIcon, X } from "lucide-react-native";
 import React from "react";
-import { Animated, Modal, Pressable, ScrollView, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Pressable, ScrollView, View } from "react-native";
+import { AlertDialog } from "@/components/ui/alert-dialog";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -36,7 +29,6 @@ export function TagManagerPopover({
   value,
 }: TagManagerPopoverProps) {
   const { tagsQuery, createTag, updateTag, deleteTag } = useTags();
-  const insets = useSafeAreaInsets();
   const [isEditMode, setIsEditMode] = React.useState(false);
   const [name, setName] = React.useState("");
   const [icon, setIcon] = React.useState<TagIconName>("Tag");
@@ -47,37 +39,14 @@ export function TagManagerPopover({
   const [editName, setEditName] = React.useState("");
   const [editIcon, setEditIcon] = React.useState<TagIconName>("Tag");
   const [showIconPicker, setShowIconPicker] = React.useState(false);
-  const scale = React.useRef(new Animated.Value(0.92)).current;
-  const opacity = React.useRef(new Animated.Value(0)).current;
 
   const tags = tagsQuery.data ?? [];
 
   React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    if (tags.length === 0) {
+    if (open && tags.length === 0) {
       setIsEditMode(true);
     }
-
-    scale.setValue(0.92);
-    opacity.setValue(0);
-
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scale, {
-        toValue: 1,
-        useNativeDriver: true,
-        damping: 14,
-        stiffness: 180,
-      }),
-    ]).start();
-  }, [open, opacity, scale, tags.length]);
+  }, [open, tags.length]);
 
   React.useEffect(() => {
     if (!open) {
@@ -199,27 +168,27 @@ export function TagManagerPopover({
                   {editing ? (
                     <>
                       <Input
-                        className="flex-1"
+                        containerStyle={{ flex: 1 }}
                         onChangeText={setEditName}
                         value={editName}
                       />
                       <Button
                         accessibilityLabel="Save tag"
-                        className="h-8 w-8"
                         onPress={handleSaveEdit}
                         size="icon"
+                        style={{ height: 32, width: 32 }}
                         variant="secondary"
                       >
                         <Icon as={Check} />
                       </Button>
                       <Button
                         accessibilityLabel="Cancel edit"
-                        className="h-8 w-8"
                         onPress={() => {
                           setEditingTagId(null);
                           setShowIconPicker(false);
                         }}
                         size="icon"
+                        style={{ height: 32, width: 32 }}
                         variant="ghost"
                       >
                         <Icon as={X} />
@@ -235,9 +204,9 @@ export function TagManagerPopover({
                       </Pressable>
                       <Button
                         accessibilityLabel={`Delete ${tag.name}`}
-                        className="h-7 w-7"
                         onPress={() => setDeleteTarget(tag)}
                         size="icon"
+                        style={{ height: 28, width: 28 }}
                         variant="ghost"
                       >
                         <Icon as={X} className="text-muted-foreground" />
@@ -306,118 +275,73 @@ export function TagManagerPopover({
 
   return (
     <>
-      <Modal
-        animationType="none"
-        onRequestClose={() => onOpenChange(false)}
-        transparent
-        visible={open}
+      <BottomSheet
+        isVisible={open}
+        onClose={() => onOpenChange(false)}
+        snapPoints={[0.55, 0.82, 0.95]}
+        title="Tags"
       >
-        <Pressable
-          className="flex-1 bg-black/20"
-          onPress={() => onOpenChange(false)}
-        >
-          <Animated.View
-            className="absolute rounded-2xl border border-border bg-background p-3 shadow-lg"
-            style={{
-              top: insets.top + 48,
-              left: 12,
-              right: 12,
-              opacity,
-              transform: [{ scale }],
+        <View className="flex-row items-center justify-end">
+          <Button
+            accessibilityLabel={isEditMode ? "Exit edit mode" : "Edit tags"}
+            onPress={() => {
+              if (tags.length === 0) {
+                setIsEditMode(true);
+                return;
+              }
+              setIsEditMode((prev) => !prev);
+              setEditingTagId(null);
+              setShowIconPicker(false);
             }}
+            size="icon"
+            variant={isEditMode ? "secondary" : "ghost"}
           >
-            <Pressable onPress={() => {}}>
-              <View className="flex-row items-center justify-between">
-                <Text className="font-semibold text-foreground text-sm">
-                  Tags
-                </Text>
-                <Button
-                  accessibilityLabel={
-                    isEditMode ? "Exit edit mode" : "Edit tags"
-                  }
-                  onPress={() => {
-                    if (tags.length === 0) {
-                      setIsEditMode(true);
-                      return;
-                    }
-                    setIsEditMode((prev) => !prev);
-                    setEditingTagId(null);
-                    setShowIconPicker(false);
-                  }}
-                  size="icon"
-                  variant={isEditMode ? "secondary" : "ghost"}
-                >
-                  <Icon as={Pencil} />
-                </Button>
-              </View>
+            <Icon as={Pencil} />
+          </Button>
+        </View>
 
-              <View className="mt-3 gap-3">
-                {tagListContent}
+        <View className="mt-3 gap-3">
+          {tagListContent}
 
-                {isEditMode ? (
-                  <View className="gap-2 border-border border-t pt-3">
-                    <Text className="text-muted-foreground text-xs uppercase tracking-wide">
-                      Create tag
-                    </Text>
-                    <Input
-                      onChangeText={setName}
-                      placeholder="Tag name"
-                      value={name}
-                    />
-                    <TagIconPicker onChange={setIcon} value={icon} />
-                    <Button
-                      disabled={!name.trim() || createTag.isPending}
-                      onPress={handleCreate}
-                    >
-                      {createTag.isPending ? (
-                        <Text>Creating...</Text>
-                      ) : (
-                        <>
-                          <Icon
-                            as={TagIcon}
-                            className="text-primary-foreground"
-                          />
-                          <Text>Create tag</Text>
-                        </>
-                      )}
-                    </Button>
-                  </View>
-                ) : null}
-              </View>
-            </Pressable>
-          </Animated.View>
-        </Pressable>
-      </Modal>
+          {isEditMode ? (
+            <View className="gap-2 border-border border-t pt-3">
+              <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+                Create tag
+              </Text>
+              <Input
+                onChangeText={setName}
+                placeholder="Tag name"
+                value={name}
+              />
+              <TagIconPicker onChange={setIcon} value={icon} />
+              <Button
+                disabled={!name.trim() || createTag.isPending}
+                onPress={handleCreate}
+              >
+                {createTag.isPending ? (
+                  <Text>Creating...</Text>
+                ) : (
+                  <>
+                    <Icon as={TagIcon} className="text-primary-foreground" />
+                    <Text>Create tag</Text>
+                  </>
+                )}
+              </Button>
+            </View>
+          ) : null}
+        </View>
+      </BottomSheet>
 
-      <Dialog
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            setDeleteTarget(null);
-          }
-        }}
-        open={Boolean(deleteTarget)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete tag?</DialogTitle>
-            <DialogDescription>
-              This will remove the tag from all tasks.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onPress={() => setDeleteTarget(null)} variant="ghost">
-              <Text>Cancel</Text>
-            </Button>
-            <Button
-              disabled={deleteTag.isPending}
-              onPress={handleDelete}
-              variant="destructive"
-            >
-              <Text>Delete</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog
+        cancelText="Cancel"
+        confirmText={deleteTag.isPending ? "Deleting..." : "Delete"}
+        description="This will remove the tag from all tasks."
+        isVisible={Boolean(deleteTarget)}
+        onCancel={() => setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete tag?"
+      />
     </>
   );
 }

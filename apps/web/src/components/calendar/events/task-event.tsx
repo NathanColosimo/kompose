@@ -120,7 +120,7 @@ export const TaskEvent = memo(function TaskEventInner({
     <TaskEditPopover align="start" side="right" task={task}>
       <div
         className={cn(
-          "group pointer-events-auto cursor-grab rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-sm transition-shadow",
+          "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
           "relative",
           "hover:shadow-md",
           isDragging ? "opacity-0" : "",
@@ -131,6 +131,36 @@ export const TaskEvent = memo(function TaskEventInner({
         {...attributes}
         {...listeners}
       >
+        <div className="h-full rounded-[5px] border border-black/20 bg-primary/90 px-2 py-1 text-primary-foreground dark:border-white/30">
+          <div
+            className={cn(
+              "flex h-full gap-1",
+              isShortTask ? "items-center" : "items-start"
+            )}
+          >
+            <Checkbox
+              checked={isDone}
+              className="h-3.5 w-3.5 shrink-0 cursor-pointer"
+              onClick={handleStatusToggle}
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className={cn(
+                  "truncate font-medium text-xs",
+                  isDone ? "line-through opacity-80" : ""
+                )}
+              >
+                {task.title}
+              </div>
+              {/* Hide time for short events (<30min) to prevent overflow */}
+              {durationMinutes >= 30 && (
+                <div className="truncate text-[10px] opacity-80">
+                  {formatTime(startZdt)} - {formatTime(endZdt)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
         <div
           className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
           ref={setStartHandleRef}
@@ -143,34 +173,6 @@ export const TaskEvent = memo(function TaskEventInner({
           {...endAttributes}
           {...endListeners}
         />
-        <div
-          className={cn(
-            "flex h-full gap-1",
-            isShortTask ? "items-center" : "items-start"
-          )}
-        >
-          <Checkbox
-            checked={isDone}
-            className="h-3.5 w-3.5 shrink-0 cursor-pointer"
-            onClick={handleStatusToggle}
-          />
-          <div className="min-w-0 flex-1">
-            <div
-              className={cn(
-                "truncate font-medium text-xs",
-                isDone ? "line-through opacity-80" : ""
-              )}
-            >
-              {task.title}
-            </div>
-            {/* Hide time for short events (<30min) to prevent overflow */}
-            {durationMinutes >= 30 && (
-              <div className="truncate text-[10px] opacity-80">
-                {formatTime(startZdt)} - {formatTime(endZdt)}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </TaskEditPopover>
   );
@@ -186,13 +188,15 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
       : null;
 
   return (
-    <div className="w-48 cursor-grabbing rounded-md border border-primary/20 bg-primary/90 px-2 py-1 text-primary-foreground shadow-lg">
-      <div className="truncate font-medium text-xs">{task.title}</div>
-      {startZdt ? (
-        <div className="truncate text-[10px] opacity-80">
-          {formatTime(startZdt)}
-        </div>
-      ) : null}
+    <div className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg">
+      <div className="rounded-[5px] border border-black/20 bg-primary/90 px-2 py-1 text-primary-foreground dark:border-white/30">
+        <div className="truncate font-medium text-xs">{task.title}</div>
+        {startZdt ? (
+          <div className="truncate text-[10px] opacity-80">
+            {formatTime(startZdt)}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

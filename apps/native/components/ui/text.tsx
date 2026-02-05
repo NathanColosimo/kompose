@@ -16,6 +16,7 @@ const textVariants = cva(
     variants: {
       variant: {
         default: "",
+        body: "",
         h1: cn(
           "text-center font-extrabold text-4xl tracking-tight",
           Platform.select({ web: "scroll-m-20 text-balance" })
@@ -32,6 +33,9 @@ const textVariants = cva(
           "font-semibold text-xl tracking-tight",
           Platform.select({ web: "scroll-m-20" })
         ),
+        heading: "font-extrabold text-4xl tracking-tight",
+        title: "font-semibold text-2xl tracking-tight",
+        subtitle: "font-semibold text-lg tracking-tight",
         p: "mt-3 leading-7 sm:mt-6",
         blockquote: "mt-4 border-l-2 pl-3 italic sm:mt-6 sm:pl-6",
         code: cn(
@@ -40,7 +44,12 @@ const textVariants = cva(
         lead: "text-muted-foreground text-xl",
         large: "font-semibold text-lg",
         small: "font-medium text-sm leading-none",
+        caption: "text-muted-foreground text-sm",
         muted: "text-muted-foreground text-sm",
+        link: cn(
+          "text-primary underline",
+          Platform.select({ web: "underline-offset-4 hover:underline" })
+        ),
       },
     },
     defaultVariants: {
@@ -50,7 +59,6 @@ const textVariants = cva(
 );
 
 type TextVariantProps = VariantProps<typeof textVariants>;
-
 type TextVariant = NonNullable<TextVariantProps["variant"]>;
 
 const ROLE: Partial<Record<TextVariant, Role>> = {
@@ -58,6 +66,7 @@ const ROLE: Partial<Record<TextVariant, Role>> = {
   h2: "heading",
   h3: "heading",
   h4: "heading",
+  heading: "heading",
   blockquote: Platform.select({ web: "blockquote" as Role }),
   code: Platform.select({ web: "code" as Role }),
 };

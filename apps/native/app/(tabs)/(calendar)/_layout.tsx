@@ -2,10 +2,10 @@ import { Stack } from "expo-router/stack";
 import { useColor } from "@/hooks/useColor";
 
 /**
- * Stack layout for the Tasks tab.
+ * Stack layout for the Calendar tab.
  * Native tabs don't render headers, so we need a Stack wrapper.
  */
-export default function TasksLayout() {
+export default function CalendarLayout() {
   const textColor = useColor("text");
 
   return (
@@ -21,7 +21,7 @@ export default function TasksLayout() {
         },
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Tasks" }} />
+      <Stack.Screen name="index" options={{ title: "Calendar" }} />
     </Stack>
   );
 }

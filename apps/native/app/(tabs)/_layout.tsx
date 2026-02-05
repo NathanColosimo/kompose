@@ -1,57 +1,25 @@
-import { Tabs } from "expo-router";
-import { TabBarIcon } from "@/components/tabbar-icon";
-import { useColorScheme } from "@/lib/color-scheme-context";
-import { NAV_THEME } from "@/lib/theme";
+import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 
+/**
+ * Tab layout using NativeTabs for native iOS/Android tab bar experience.
+ * Uses SF Symbols for icons on iOS, with automatic Material 3 styling on Android.
+ * Each tab wraps a Stack navigator for native header support.
+ */
 export default function TabLayout() {
-  const { isDarkColorScheme } = useColorScheme();
-  const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
-
   return (
-    <Tabs
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: theme.colors.background,
-        },
-        headerTitleStyle: {
-          color: theme.colors.text,
-        },
-        headerTintColor: theme.colors.text,
-        tabBarActiveTintColor: theme.colors.text,
-        tabBarInactiveTintColor: theme.colors.primary,
-        tabBarStyle: {
-          backgroundColor: theme.colors.background,
-          borderTopColor: theme.colors.border,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="(tasks)"
-        options={{
-          title: "Tasks",
-          headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon color={color} name="check-square-o" />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="calendar"
-        options={{
-          title: "Calendar",
-          headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon color={color} name="calendar" />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} name="cog" />,
-        }}
-      />
-    </Tabs>
+    <NativeTabs>
+      <NativeTabs.Trigger name="(tasks)">
+        <Label>Tasks</Label>
+        <Icon sf="checkmark.square" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(calendar)">
+        <Label>Calendar</Label>
+        <Icon sf="calendar" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="(settings)">
+        <Label>Settings</Label>
+        <Icon sf="gear" />
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
