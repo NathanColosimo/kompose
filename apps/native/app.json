@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nathancolosimo.kompose"
+      "bundleIdentifier": "com.nathancolosimo.kompose",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -47,6 +50,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": false
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b17e2ef6-be9c-4a74-ae7f-53525505b559"
+      }
+    },
+    "owner": "nathancolosimo"
   }
 }
