@@ -4,7 +4,7 @@ import { useDraggable } from "@dnd-kit/core";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
-  pastelizeColor,
+  resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import { recurringEventMasterQueryOptions } from "@kompose/state/hooks/use-recurring-event-master";
@@ -134,24 +134,18 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   );
   const calendars = useAtomValue(googleCalendarsDataAtom);
 
-  // Look up the event's color from the palette if it has a colorId
-  const eventPalette =
-    event.colorId && normalizedPalette?.event
-      ? normalizedPalette.event[event.colorId]
-      : undefined;
-
   // Find the calendar this event belongs to, for fallback colors
   const calendar = calendars.find(
     (c) => c.accountId === accountId && c.calendar.id === calendarId
   );
 
-  // Use event color if available, otherwise fall back to calendar's color (pastelized for consistency)
-  const backgroundColor =
-    eventPalette?.background ??
-    pastelizeColor(calendar?.calendar.backgroundColor) ??
-    undefined;
-  const foregroundColor =
-    eventPalette?.foreground ?? calendar?.calendar.foregroundColor ?? undefined;
+  const { background: backgroundColor, foreground: foregroundColor } =
+    resolveGoogleEventColors({
+      colorId: event.colorId,
+      palette: normalizedPalette?.event,
+      calendarBackgroundColor: calendar?.calendar.backgroundColor,
+      calendarForegroundColor: calendar?.calendar.foregroundColor,
+    });
 
   // Calculate horizontal positioning based on collision layout
   const columnWidth = 100 / totalColumns;

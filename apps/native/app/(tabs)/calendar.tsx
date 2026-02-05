@@ -1,20 +1,37 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import {
+  currentDateAtom,
+  eventWindowAtom,
+  mobileVisibleDaysAtom,
+  mobileVisibleDaysCountAtom,
+  timezoneAtom,
+} from "@kompose/state/atoms/current-date";
+import {
+  normalizedGoogleColorsAtomFamily,
+  resolveGoogleEventColors,
+} from "@kompose/state/atoms/google-colors";
+import {
+  googleAccountsDataAtom,
+  googleCalendarsDataAtom,
+  resolvedVisibleCalendarIdsAtom,
+} from "@kompose/state/atoms/google-data";
+import { tasksDataAtom } from "@kompose/state/atoms/tasks";
+import {
   type CalendarIdentifier,
   isCalendarVisible,
   type VisibleCalendars,
+  visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
-import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
-import { useGoogleCalendars } from "@kompose/state/hooks/use-google-calendars";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { useVisibleCalendars } from "@kompose/state/hooks/use-visible-calendars";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useAtom, useAtomValue } from "jotai";
+import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
@@ -29,13 +46,14 @@ import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal
 import { Container } from "@/components/container";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { orpc } from "@/utils/orpc";
 
-const PIXELS_PER_HOUR = 80;
+const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
 const DEFAULT_SCROLL_HOUR = 8;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -43,10 +61,9 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const SWIPE_ACTIVATION_DISTANCE = 16;
 const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
+const EVENT_BLOCK_INSET_PX = 4;
 
-function getSystemTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-}
+// --- Temporal helpers ---
 
 function todayPlainDate(timeZone: string): Temporal.PlainDate {
   return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
@@ -82,23 +99,204 @@ function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
   return zdt.hour * 60 + zdt.minute;
 }
 
-function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {
-  const paddingDays = 15;
-  const monthStart = center.with({ day: 1 });
-  const monthEnd = center.with({ day: center.daysInMonth });
+function isToday(date: Temporal.PlainDate): boolean {
+  const today = Temporal.Now.plainDateISO();
+  return Temporal.PlainDate.compare(date, today) === 0;
+}
 
-  const start = monthStart
-    .subtract({ days: paddingDays })
-    .toZonedDateTime({ timeZone, plainTime: Temporal.PlainTime.from("00:00") });
+function formatDayHeader(date: Temporal.PlainDate): {
+  weekday: string;
+  dayNumber: number;
+} {
+  const weekday = date.toLocaleString(undefined, { weekday: "short" });
+  return { weekday, dayNumber: date.day };
+}
 
-  const endExclusive = monthEnd
-    .add({ days: paddingDays + 1 })
-    .toZonedDateTime({ timeZone, plainTime: Temporal.PlainTime.from("00:00") });
+function calculateTimePosition(): number {
+  const now = Temporal.Now.zonedDateTimeISO();
+  return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
+}
 
-  return {
-    timeMin: start.toInstant().toString(),
-    timeMax: endExclusive.toInstant().toString(),
-  };
+function CurrentTimeIndicator() {
+  const [topPosition, setTopPosition] = useState(() => calculateTimePosition());
+
+  useEffect(() => {
+    // Update position immediately, then every minute.
+    setTopPosition(calculateTimePosition());
+    const interval = setInterval(() => {
+      setTopPosition(calculateTimePosition());
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <View
+      className="pointer-events-none absolute right-0 left-0 z-20 flex-row items-center"
+      style={{ top: topPosition, transform: [{ translateY: -4 }] }}
+    >
+      <View className="size-2 rounded-full bg-red-500" />
+      <View className="h-0.5 flex-1 bg-red-500" />
+    </View>
+  );
+}
+
+// --- Collision detection utilities ---
+
+const SIDE_BY_SIDE_THRESHOLD_MINUTES = 45;
+const MAX_COLUMNS = 2;
+
+interface PositionedItem {
+  id: string;
+  type: "task" | "google-event";
+  startMinutes: number;
+  endMinutes: number;
+}
+
+interface ItemLayout {
+  columnIndex: number;
+  totalColumns: number;
+  zIndex: number;
+}
+
+function itemsOverlap(a: PositionedItem, b: PositionedItem): boolean {
+  return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes;
+}
+
+function findCollisionCluster(
+  item: PositionedItem,
+  allItems: PositionedItem[],
+  visited: Set<string>
+): PositionedItem[] {
+  const cluster: PositionedItem[] = [item];
+  visited.add(item.id);
+
+  for (const other of allItems) {
+    if (visited.has(other.id)) {
+      continue;
+    }
+    const overlapsCluster = cluster.some((clusterItem) =>
+      itemsOverlap(clusterItem, other)
+    );
+    if (overlapsCluster) {
+      visited.add(other.id);
+      const subCluster = findCollisionCluster(other, allItems, visited);
+      cluster.push(...subCluster.filter((i) => i.id !== other.id));
+      cluster.push(other);
+    }
+  }
+
+  return cluster;
+}
+
+function assignColumnsToCluster(
+  cluster: PositionedItem[]
+): Map<string, { columnIndex: number; zIndex: number }> {
+  const sorted = [...cluster].sort((a, b) => a.startMinutes - b.startMinutes);
+  const result = new Map<string, { columnIndex: number; zIndex: number }>();
+  const columnEndTimes: number[] = [];
+
+  const earliestStart = sorted[0].startMinutes;
+  const latestStart = sorted.at(-1)?.startMinutes ?? earliestStart;
+  const useSideBySide =
+    latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const item = sorted[i];
+    let assignedColumn = 0;
+
+    if (useSideBySide) {
+      for (let col = 0; col < columnEndTimes.length; col++) {
+        if (item.startMinutes >= columnEndTimes[col]) {
+          assignedColumn = col;
+          break;
+        }
+        assignedColumn = col + 1;
+      }
+      if (assignedColumn >= MAX_COLUMNS) {
+        assignedColumn = MAX_COLUMNS - 1;
+      }
+    }
+
+    if (assignedColumn >= columnEndTimes.length) {
+      columnEndTimes.push(item.endMinutes);
+    } else {
+      columnEndTimes[assignedColumn] = Math.max(
+        columnEndTimes[assignedColumn],
+        item.endMinutes
+      );
+    }
+
+    result.set(item.id, { columnIndex: assignedColumn, zIndex: i + 1 });
+  }
+
+  return result;
+}
+
+function calculateCollisionLayout(
+  items: PositionedItem[]
+): Map<string, ItemLayout> {
+  if (items.length === 0) {
+    return new Map();
+  }
+
+  const sortedItems = [...items].sort(
+    (a, b) => a.startMinutes - b.startMinutes
+  );
+
+  const result = new Map<string, ItemLayout>();
+  const visited = new Set<string>();
+
+  for (const item of sortedItems) {
+    if (visited.has(item.id)) {
+      continue;
+    }
+
+    const cluster = findCollisionCluster(item, sortedItems, visited);
+
+    if (cluster.length === 1) {
+      result.set(item.id, { columnIndex: 0, totalColumns: 1, zIndex: 1 });
+      continue;
+    }
+
+    const clusterSorted = [...cluster].sort(
+      (a, b) => a.startMinutes - b.startMinutes
+    );
+    const earliestStart = clusterSorted[0].startMinutes;
+    const latestStart = clusterSorted.at(-1)?.startMinutes ?? earliestStart;
+    const useSideBySide =
+      latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
+
+    const columnAssignments = assignColumnsToCluster(cluster);
+
+    let maxColumn = 0;
+    for (const { columnIndex } of columnAssignments.values()) {
+      maxColumn = Math.max(maxColumn, columnIndex);
+    }
+    const totalColumns = useSideBySide ? maxColumn + 1 : 1;
+
+    for (const clusterItem of cluster) {
+      const assignment = columnAssignments.get(clusterItem.id);
+      if (assignment) {
+        result.set(clusterItem.id, {
+          columnIndex: useSideBySide ? assignment.columnIndex : 0,
+          totalColumns,
+          zIndex: assignment.zIndex,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+function formatTimeShort(zdt: Temporal.ZonedDateTime): string {
+  const hour = zdt.hour;
+  const minute = zdt.minute;
+  const ampm = hour >= 12 ? "pm" : "am";
+  const displayHour = hour % 12 || 12;
+  return minute === 0
+    ? `${displayHour}${ampm}`
+    : `${displayHour}:${minute.toString().padStart(2, "0")}${ampm}`;
 }
 
 function snapMinutes(mins: number): number {
@@ -127,8 +325,11 @@ interface EventDraft {
   description: string;
   location: string;
   calendar: CalendarIdentifier;
-  start: Temporal.ZonedDateTime;
-  end: Temporal.ZonedDateTime;
+  allDay: boolean;
+  startDate: Temporal.PlainDate;
+  endDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime | null;
+  endTime: Temporal.PlainTime | null;
   mode: "create" | "edit";
   eventId?: string;
 }
@@ -155,29 +356,128 @@ function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   };
 }
 
+function AllDayEventChip({
+  item,
+  calendarColors,
+  onPress,
+}: {
+  item: AllDayGoogleEvent;
+  calendarColors?: { background?: string | null; foreground?: string | null };
+  onPress: () => void;
+}) {
+  const palette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(item.source.accountId)
+  );
+  const { background, foreground } = resolveGoogleEventColors({
+    colorId: item.source.event.colorId,
+    palette: palette?.event,
+    calendarBackgroundColor: calendarColors?.background,
+    calendarForegroundColor: calendarColors?.foreground,
+  });
+
+  return (
+    <Pressable
+      className="rounded border px-1.5 py-1"
+      onPress={onPress}
+      style={{ backgroundColor: background, borderColor: background }}
+    >
+      <Text
+        className="text-[11px]"
+        numberOfLines={1}
+        style={{ color: foreground }}
+      >
+        {item.source.event.summary ?? "All-day"}
+      </Text>
+    </Pressable>
+  );
+}
+
+function TimedGoogleEventBlock({
+  item,
+  calendarColors,
+  top,
+  height,
+  durationMinutes,
+  columnIndex = 0,
+  totalColumns = 1,
+  zIndex = 1,
+  onPress,
+}: {
+  item: PositionedGoogleEvent;
+  calendarColors?: { background?: string | null; foreground?: string | null };
+  top: number;
+  height: number;
+  durationMinutes: number;
+  columnIndex?: number;
+  totalColumns?: number;
+  zIndex?: number;
+  onPress: () => void;
+}) {
+  const palette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(item.source.accountId)
+  );
+  const { background, foreground } = resolveGoogleEventColors({
+    colorId: item.source.event.colorId,
+    palette: palette?.event,
+    calendarBackgroundColor: calendarColors?.background,
+    calendarForegroundColor: calendarColors?.foreground,
+  });
+
+  // Calculate horizontal positioning based on collision layout.
+  const columnWidthPercent = 100 / totalColumns;
+  const leftPercent = columnIndex * columnWidthPercent;
+
+  return (
+    <Pressable
+      className="absolute rounded-md border p-1 shadow-black/5 shadow-sm"
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+      style={{
+        top,
+        height,
+        left: `${leftPercent}%`,
+        width: `${columnWidthPercent}%`,
+        paddingHorizontal: 4,
+        zIndex,
+        backgroundColor: background,
+        borderColor: background,
+      }}
+    >
+      <Text
+        className="font-semibold text-[10px]"
+        numberOfLines={1}
+        style={{ color: foreground }}
+      >
+        {item.source.event.summary ?? "Event"}
+      </Text>
+      {/* Show time for events 30 minutes or longer */}
+      {durationMinutes >= 30 ? (
+        <Text
+          className="text-[9px] opacity-80"
+          numberOfLines={1}
+          style={{ color: foreground }}
+        >
+          {formatTimeShort(item.start)} - {formatTimeShort(item.end)}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
-  const timeZone = getSystemTimeZone();
   const queryClient = useQueryClient();
 
-  // 1-3 day view control.
-  const [visibleDaysCount, setVisibleDaysCount] = useState<1 | 2 | 3>(3);
-  const [currentDate, setCurrentDate] = useState<Temporal.PlainDate>(() =>
-    todayPlainDate(timeZone)
+  // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
+  const timeZone = useAtomValue(timezoneAtom);
+  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const [visibleDaysCount, setVisibleDaysCount] = useAtom(
+    mobileVisibleDaysCountAtom
   );
-
-  const visibleDays = useMemo(
-    () =>
-      Array.from({ length: visibleDaysCount }, (_, i) =>
-        currentDate.add({ days: i })
-      ),
-    [currentDate, visibleDaysCount]
-  );
-
-  const window = useMemo(
-    () => buildEventWindow(currentDate, timeZone),
-    [currentDate, timeZone]
-  );
+  const visibleDays = useAtomValue(mobileVisibleDaysAtom);
+  const window = useAtomValue(eventWindowAtom);
 
   const getEventsQueryKey = useCallback(
     (calendar: CalendarIdentifier) =>
@@ -192,9 +492,9 @@ export default function CalendarTab() {
     [window.timeMax, window.timeMin]
   );
 
-  // Tasks (for scheduled task blocks).
+  // Tasks: use atom for data, hook only for mutations.
+  const tasks = useAtomValue(tasksDataAtom);
   const { tasksQuery, updateTask, deleteTask } = useTasks();
-  const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
     () => tasks.filter((t) => t.startDate !== null && t.startTime !== null),
@@ -202,16 +502,28 @@ export default function CalendarTab() {
   );
 
   // Google accounts/calendars/events.
-  const googleAccountsQuery = useGoogleAccounts();
-  const googleAccounts = googleAccountsQuery.data ?? [];
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const accountIds = useMemo(
     () => googleAccounts.map((a) => a.id),
     [googleAccounts]
   );
 
-  const { calendars: googleCalendars } = useGoogleCalendars(accountIds);
+  const googleCalendars = useAtomValue(googleCalendarsDataAtom);
+  const calendarColorLookup = useMemo(() => {
+    const lookup = new Map<
+      string,
+      { background?: string | null; foreground?: string | null }
+    >();
+    for (const calendar of googleCalendars) {
+      lookup.set(`${calendar.accountId}:${calendar.calendar.id}`, {
+        background: calendar.calendar.backgroundColor ?? null,
+        foreground: calendar.calendar.foregroundColor ?? null,
+      });
+    }
+    return lookup;
+  }, [googleCalendars]);
 
-  const { visibleCalendars, setVisibleCalendars } = useVisibleCalendars();
+  const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
   const effectiveVisibleCalendars: VisibleCalendars = visibleCalendars ?? null;
 
   const allCalendarIds = useMemo<CalendarIdentifier[]>(
@@ -225,21 +537,19 @@ export default function CalendarTab() {
 
   useEnsureVisibleCalendars(allCalendarIds);
 
-  const visibleCalendarIds = useMemo<CalendarIdentifier[]>(() => {
-    if (googleCalendars.length === 0) {
-      return [];
-    }
-    if (effectiveVisibleCalendars === null) {
-      return allCalendarIds;
-    }
-    return effectiveVisibleCalendars;
-  }, [allCalendarIds, effectiveVisibleCalendars, googleCalendars.length]);
+  const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({
       visibleCalendars: visibleCalendarIds,
       window,
     });
+  const isFetchingAccounts = useIsFetching({
+    queryKey: ["google-accounts"],
+  });
+  const isFetchingCalendars = useIsFetching({
+    queryKey: ["google-calendars"],
+  });
 
   // Calendar picker modal.
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -316,6 +626,53 @@ export default function CalendarTab() {
     [allDayEventsByDay]
   );
 
+  // Calculate collision layouts for all visible days (tasks + google events combined).
+  const collisionLayoutsByDay = useMemo(() => {
+    const layoutsByDay = new Map<string, Map<string, ItemLayout>>();
+
+    for (const day of visibleDays) {
+      const dayKey = day.toString();
+      const dayTasks = tasksByDay.get(dayKey) ?? [];
+      const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
+
+      // Convert tasks to PositionedItems.
+      const taskItems: PositionedItem[] = dayTasks
+        .filter((task) => task.startDate !== null && task.startTime !== null)
+        .map((task) => {
+          const start = task.startDate!.toZonedDateTime({
+            timeZone,
+            plainTime: task.startTime!,
+          });
+          const startMinutes = minutesFromMidnight(start);
+          const endMinutes = startMinutes + (task.durationMinutes || 30);
+          return {
+            id: task.id,
+            type: "task" as const,
+            startMinutes,
+            endMinutes,
+          };
+        });
+
+      // Convert google events to PositionedItems.
+      const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
+        const startMinutes = minutesFromMidnight(ge.start);
+        const endMinutes = minutesFromMidnight(ge.end);
+        return {
+          id: `${ge.source.calendarId}-${ge.source.event.id}`,
+          type: "google-event" as const,
+          startMinutes,
+          endMinutes,
+        };
+      });
+
+      const allItems = [...taskItems, ...googleItems];
+      const layout = calculateCollisionLayout(allItems);
+      layoutsByDay.set(dayKey, layout);
+    }
+
+    return layoutsByDay;
+  }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
+
   // Create/Edit event modal state.
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const [eventPicker, setEventPicker] = useState<
@@ -352,15 +709,15 @@ export default function CalendarTab() {
 
   const goToPrevious = useCallback(() => {
     setCurrentDate((d) => d.subtract({ days: visibleDaysCount }));
-  }, [visibleDaysCount]);
+  }, [setCurrentDate, visibleDaysCount]);
 
   const goToNext = useCallback(() => {
     setCurrentDate((d) => d.add({ days: visibleDaysCount }));
-  }, [visibleDaysCount]);
+  }, [setCurrentDate, visibleDaysCount]);
 
   const goToToday = useCallback(() => {
     setCurrentDate(todayPlainDate(timeZone));
-  }, [timeZone]);
+  }, [setCurrentDate, timeZone]);
 
   // Horizontal swipe gesture for navigating between day sets.
   // .runOnJS(true) runs handlers on JS thread for state updates.
@@ -391,8 +748,7 @@ export default function CalendarTab() {
         minute: snapped % 60,
         second: 0,
       });
-      const start = combineDateTime(day, startTime, timeZone);
-      const end = start.add({ minutes: 30 });
+      const endTime = startTime.add({ minutes: 30 });
       setEventDraft({
         mode: "create",
         summary: "",
@@ -402,14 +758,17 @@ export default function CalendarTab() {
           accountId: defaultCalendar.accountId,
           calendarId: defaultCalendar.calendarId,
         },
-        start,
-        end,
+        allDay: false,
+        startDate: day,
+        endDate: day,
+        startTime,
+        endTime,
       });
     },
-    [defaultCalendar, timeZone]
+    [defaultCalendar]
   );
 
-  const openEditEvent = useCallback((item: PositionedGoogleEvent) => {
+  const openEditTimedEvent = useCallback((item: PositionedGoogleEvent) => {
     setEventDraft({
       mode: "edit",
       eventId: item.source.event.id,
@@ -420,8 +779,36 @@ export default function CalendarTab() {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
-      start: item.start,
-      end: item.end,
+      allDay: false,
+      startDate: item.start.toPlainDate(),
+      endDate: item.end.toPlainDate(),
+      startTime: item.start.toPlainTime(),
+      endTime: item.end.toPlainTime(),
+    });
+  }, []);
+
+  const openEditAllDayEvent = useCallback((item: AllDayGoogleEvent) => {
+    // Google all-day events use exclusive end date, so we need to parse it carefully.
+    const endDateStr = item.source.event.end.date;
+    const endDate = endDateStr
+      ? Temporal.PlainDate.from(endDateStr).subtract({ days: 1 })
+      : item.date;
+
+    setEventDraft({
+      mode: "edit",
+      eventId: item.source.event.id,
+      summary: item.source.event.summary ?? "",
+      description: item.source.event.description ?? "",
+      location: item.source.event.location ?? "",
+      calendar: {
+        accountId: item.source.accountId,
+        calendarId: item.source.calendarId,
+      },
+      allDay: true,
+      startDate: item.date,
+      endDate,
+      startTime: null,
+      endTime: null,
     });
   }, []);
 
@@ -438,12 +825,38 @@ export default function CalendarTab() {
       return;
     }
 
+    // Build start/end payloads based on whether it's an all-day event.
+    let startPayload: { date?: string; dateTime?: string };
+    let endPayload: { date?: string; dateTime?: string };
+
+    if (eventDraft.allDay) {
+      // All-day events use date strings; Google uses exclusive end date.
+      startPayload = { date: eventDraft.startDate.toString() };
+      endPayload = {
+        date: eventDraft.endDate.add({ days: 1 }).toString(),
+      };
+    } else {
+      // Timed events use dateTime ISO strings.
+      const startZdt = combineDateTime(
+        eventDraft.startDate,
+        eventDraft.startTime ?? Temporal.PlainTime.from("09:00"),
+        timeZone
+      );
+      const endZdt = combineDateTime(
+        eventDraft.endDate,
+        eventDraft.endTime ?? Temporal.PlainTime.from("10:00"),
+        timeZone
+      );
+      startPayload = { dateTime: startZdt.toInstant().toString() };
+      endPayload = { dateTime: endZdt.toInstant().toString() };
+    }
+
     const eventPayload = {
       summary: eventDraft.summary.trim(),
       description: eventDraft.description.trim() || undefined,
       location: eventDraft.location.trim() || undefined,
-      start: { dateTime: eventDraft.start.toInstant().toString() },
-      end: { dateTime: eventDraft.end.toInstant().toString() },
+      start: startPayload,
+      end: endPayload,
     };
 
     if (eventDraft.mode === "create") {
@@ -530,27 +943,20 @@ export default function CalendarTab() {
 
   const refreshCalendarData = useCallback(() => {
     tasksQuery.refetch();
-    googleAccountsQuery.refetch();
+    queryClient.invalidateQueries({
+      queryKey: ["google-accounts"],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["google-calendars"],
+    });
 
     // Only refresh visible calendars and the active window to avoid broad invalidation.
-    for (const accountId of accountIds) {
-      queryClient.invalidateQueries({
-        queryKey: ["google-calendars", accountId],
-      });
-    }
     for (const calendar of visibleCalendarIds) {
       queryClient.invalidateQueries({
         queryKey: getEventsQueryKey(calendar),
       });
     }
-  }, [
-    accountIds,
-    getEventsQueryKey,
-    googleAccountsQuery,
-    queryClient,
-    tasksQuery,
-    visibleCalendarIds,
-  ]);
+  }, [getEventsQueryKey, queryClient, tasksQuery, visibleCalendarIds]);
 
   // Scroll to 8am on first mount.
   useEffect(() => {
@@ -564,41 +970,59 @@ export default function CalendarTab() {
     <Container>
       <GestureDetector gesture={swipeGesture}>
         <View className="flex-1">
-          {/* Header */}
-          <View className="flex-row items-center justify-between gap-3 px-4 pt-3 pb-2">
-            <View className="flex-row items-center gap-2">
-              <Button onPress={goToPrevious} size="sm" variant="outline">
-                <Text>{"<"}</Text>
-              </Button>
-              <Button onPress={goToNext} size="sm" variant="outline">
-                <Text>{">"}</Text>
-              </Button>
-              <Button onPress={goToToday} size="sm" variant="outline">
-                <Text>Today</Text>
-              </Button>
+          {/* Header - pillbox style */}
+          <View className="flex-row items-center justify-between px-3 pt-3 pb-2">
+            {/* Left group: visibility toggle + day count */}
+            <View className="flex-row items-center rounded-lg border border-border bg-card">
+              <Pressable
+                accessibilityLabel="Select visible calendars"
+                className="items-center justify-center rounded-l-lg px-3 py-2 active:bg-muted"
+                onPress={() => setIsPickerOpen(true)}
+              >
+                <Icon as={Eye} className="text-foreground" size={16} />
+              </Pressable>
+              <View className="h-6 w-px bg-border" />
+              {[1, 2, 3].map((n, idx) => (
+                <Pressable
+                  className={`items-center justify-center px-3 py-2 active:bg-muted ${n === 3 ? "rounded-r-lg" : ""} ${visibleDaysCount === n ? "bg-muted" : ""}`}
+                  key={n}
+                  onPress={() => setVisibleDaysCount(n)}
+                >
+                  <Text
+                    className={`text-sm ${visibleDaysCount === n ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  >
+                    {n}d
+                  </Text>
+                </Pressable>
+              ))}
             </View>
 
-            <View className="flex-row items-center gap-2">
-              <View className="flex-row">
-                {[1, 2, 3].map((n) => (
-                  <Button
-                    className={visibleDaysCount === n ? "bg-card" : undefined}
-                    key={n}
-                    onPress={() => setVisibleDaysCount(n as 1 | 2 | 3)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Text>{n}d</Text>
-                  </Button>
-                ))}
-              </View>
-              <Button
-                onPress={() => setIsPickerOpen(true)}
-                size="sm"
-                variant="outline"
+            {/* Right group: today + navigation */}
+            <View className="flex-row items-center rounded-lg border border-border bg-card">
+              <Pressable
+                accessibilityLabel="Go to today"
+                className="items-center justify-center rounded-l-lg px-3 py-2 active:bg-muted"
+                onPress={goToToday}
               >
-                <Text>Calendars</Text>
-              </Button>
+                <Text className="font-medium text-foreground text-sm">
+                  Today
+                </Text>
+              </Pressable>
+              <View className="h-6 w-px bg-border" />
+              <Pressable
+                accessibilityLabel="Previous days"
+                className="items-center justify-center px-2.5 py-2 active:bg-muted"
+                onPress={goToPrevious}
+              >
+                <Icon as={ChevronLeft} className="text-foreground" size={18} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Next days"
+                className="items-center justify-center rounded-r-lg px-2.5 py-2 active:bg-muted"
+                onPress={goToNext}
+              >
+                <Icon as={ChevronRight} className="text-foreground" size={18} />
+              </Pressable>
             </View>
           </View>
 
@@ -606,16 +1030,30 @@ export default function CalendarTab() {
           <View className="flex-row border-border border-t border-b">
             <View className="w-16 border-border border-r" />
             <View className="flex-1 flex-row">
-              {visibleDays.map((day) => (
-                <View
-                  className="flex-1 border-border border-r px-2 py-2"
-                  key={day.toString()}
-                >
-                  <Text className="font-bold text-foreground text-xs">
-                    {day.toString()}
-                  </Text>
-                </View>
-              ))}
+              {visibleDays.map((day) => {
+                const isTodayHighlight = isToday(day);
+                const { weekday, dayNumber } = formatDayHeader(day);
+
+                return (
+                  <View
+                    className={`flex-1 flex-row items-center justify-center gap-1.5 border-border border-r py-2 ${isTodayHighlight ? "bg-primary/5" : ""}`}
+                    key={day.toString()}
+                  >
+                    <Text className="font-medium text-muted-foreground text-xs uppercase">
+                      {weekday}
+                    </Text>
+                    <View
+                      className={`size-6 items-center justify-center rounded-full ${isTodayHighlight ? "bg-primary" : ""}`}
+                    >
+                      <Text
+                        className={`font-semibold text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                      >
+                        {dayNumber}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -631,15 +1069,20 @@ export default function CalendarTab() {
                       className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
                       key={`${day.toString()}-allday`}
                     >
-                      {items.slice(0, 3).map((e) => (
-                        <Text
-                          className="bg-card px-1.5 py-1 text-[11px] text-foreground"
-                          key={`${e.source.calendarId}-${e.source.event.id}`}
-                          numberOfLines={1}
-                        >
-                          {e.source.event.summary ?? "All-day"}
-                        </Text>
-                      ))}
+                      {items.slice(0, 3).map((e) => {
+                        const calendarColors = calendarColorLookup.get(
+                          `${e.source.accountId}:${e.source.calendarId}`
+                        );
+
+                        return (
+                          <AllDayEventChip
+                            calendarColors={calendarColors}
+                            item={e}
+                            key={`${e.source.calendarId}-${e.source.event.id}`}
+                            onPress={() => openEditAllDayEvent(e)}
+                          />
+                        );
+                      })}
                     </View>
                   );
                 })}
@@ -657,7 +1100,8 @@ export default function CalendarTab() {
                 refreshing={
                   tasksQuery.isFetching ||
                   isFetchingGoogleEvents ||
-                  googleAccountsQuery.isFetching
+                  isFetchingAccounts > 0 ||
+                  isFetchingCalendars > 0
                 }
                 tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
               />
@@ -685,6 +1129,8 @@ export default function CalendarTab() {
                   const dayKey = day.toString();
                   const dayEvents = timedEventsByDay.get(dayKey) ?? [];
                   const dayTasks = tasksByDay.get(dayKey) ?? [];
+                  const isTodayColumn = isToday(day);
+                  const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
                   return (
                     <Pressable
@@ -708,6 +1154,8 @@ export default function CalendarTab() {
 
                       {/* Google events */}
                       {dayEvents.map((evt) => {
+                        const eventId = `${evt.source.calendarId}-${evt.source.event.id}`;
+                        const layout = dayLayouts?.get(eventId);
                         const startMinutes = minutesFromMidnight(evt.start);
                         const durationMinutes = Math.max(
                           MINUTES_STEP,
@@ -720,24 +1168,28 @@ export default function CalendarTab() {
                           (durationMinutes / 60) * PIXELS_PER_HOUR,
                           24
                         );
+                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                        const adjustedHeight = Math.max(
+                          height - EVENT_BLOCK_INSET_PX,
+                          20
+                        );
+                        const calendarColors = calendarColorLookup.get(
+                          `${evt.source.accountId}:${evt.source.calendarId}`
+                        );
 
                         return (
-                          <Pressable
-                            className="absolute right-1.5 left-1.5 border border-primary bg-primary p-1.5"
-                            key={`${evt.source.calendarId}-${evt.source.event.id}-${evt.start.toString()}`}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              openEditEvent(evt);
-                            }}
-                            style={{ top, height }}
-                          >
-                            <Text
-                              className="font-bold text-primary-foreground text-xs"
-                              numberOfLines={2}
-                            >
-                              {evt.source.event.summary ?? "Event"}
-                            </Text>
-                          </Pressable>
+                          <TimedGoogleEventBlock
+                            calendarColors={calendarColors}
+                            columnIndex={layout?.columnIndex}
+                            durationMinutes={durationMinutes}
+                            height={adjustedHeight}
+                            item={evt}
+                            key={`${eventId}-${evt.start.toString()}`}
+                            onPress={() => openEditTimedEvent(evt)}
+                            top={adjustedTop}
+                            totalColumns={layout?.totalColumns}
+                            zIndex={layout?.zIndex}
+                          />
                         );
                       })}
 
@@ -746,6 +1198,7 @@ export default function CalendarTab() {
                         if (!(task.startDate && task.startTime)) {
                           return null;
                         }
+                        const layout = dayLayouts?.get(task.id);
                         const start = task.startDate.toZonedDateTime({
                           timeZone,
                           plainTime: task.startTime,
@@ -760,26 +1213,59 @@ export default function CalendarTab() {
                           (durationMinutes / 60) * PIXELS_PER_HOUR,
                           24
                         );
+                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                        const adjustedHeight = Math.max(
+                          height - EVENT_BLOCK_INSET_PX,
+                          20
+                        );
+
+                        // Calculate horizontal positioning based on collision layout.
+                        const columnIndex = layout?.columnIndex ?? 0;
+                        const totalColumns = layout?.totalColumns ?? 1;
+                        const zIndexValue = layout?.zIndex ?? 1;
+                        const columnWidthPercent = 100 / totalColumns;
+                        const leftPercent = columnIndex * columnWidthPercent;
+                        const end = start.add({ minutes: durationMinutes });
 
                         return (
                           <Pressable
-                            className="absolute right-1.5 left-1.5 border border-border bg-card p-1.5"
+                            className="absolute rounded-md border border-primary/40 bg-primary/90 p-1 shadow-black/5 shadow-sm"
                             key={task.id}
                             onPress={(e) => {
                               e.stopPropagation();
                               openEditTask(task);
                             }}
-                            style={{ top, height }}
+                            style={{
+                              top: adjustedTop,
+                              height: adjustedHeight,
+                              left: `${leftPercent}%`,
+                              width: `${columnWidthPercent}%`,
+                              paddingHorizontal: 4,
+                              zIndex: zIndexValue,
+                            }}
                           >
                             <Text
-                              className="font-bold text-foreground text-xs"
-                              numberOfLines={2}
+                              className="font-semibold text-[10px] text-primary-foreground"
+                              numberOfLines={1}
                             >
                               {task.title}
                             </Text>
+                            {/* Show time for tasks 30 minutes or longer */}
+                            {durationMinutes >= 30 ? (
+                              <Text
+                                className="text-[9px] text-primary-foreground/80"
+                                numberOfLines={1}
+                              >
+                                {formatTimeShort(start)} -{" "}
+                                {formatTimeShort(end)}
+                              </Text>
+                            ) : null}
                           </Pressable>
                         );
                       })}
+
+                      {/* Current time indicator (today only) */}
+                      {isTodayColumn ? <CurrentTimeIndicator /> : null}
                     </Pressable>
                   );
                 })}
@@ -888,57 +1374,77 @@ export default function CalendarTab() {
               </Text>
             </Button>
 
-            {/* Start/end pickers */}
+            {/* All-day toggle */}
+            <Pressable
+              className="mb-2.5 flex-row items-center gap-2"
+              onPress={() =>
+                setEventDraft((d) => (d ? { ...d, allDay: !d.allDay } : d))
+              }
+            >
+              <View
+                className={`size-5 items-center justify-center rounded border ${eventDraft?.allDay ? "border-primary bg-primary" : "border-muted-foreground/50"}`}
+              >
+                {eventDraft?.allDay ? (
+                  <Text className="font-bold text-primary-foreground text-xs">
+                    ✓
+                  </Text>
+                ) : null}
+              </View>
+              <Text className="text-foreground text-sm">All day</Text>
+            </Pressable>
+
+            {/* Start date/time pickers */}
             <View className="mb-2.5 flex-row gap-2">
               <Button
+                className="flex-1"
                 onPress={() =>
                   setEventPicker({ kind: "startDate", mode: "date" })
                 }
                 variant="outline"
               >
-                <Text>
-                  Start date: {eventDraft?.start.toPlainDate().toString()}
-                </Text>
+                <Text>Start: {eventDraft?.startDate.toString()}</Text>
               </Button>
-              <Button
-                onPress={() =>
-                  setEventPicker({ kind: "startTime", mode: "time" })
-                }
-                variant="outline"
-              >
-                <Text>
-                  Start time:{" "}
-                  {eventDraft?.start
-                    .toPlainTime()
-                    .toString({ smallestUnit: "minute" })}
-                </Text>
-              </Button>
+              {eventDraft?.allDay ? null : (
+                <Button
+                  onPress={() =>
+                    setEventPicker({ kind: "startTime", mode: "time" })
+                  }
+                  variant="outline"
+                >
+                  <Text>
+                    {eventDraft?.startTime?.toString({
+                      smallestUnit: "minute",
+                    }) ?? "09:00"}
+                  </Text>
+                </Button>
+              )}
             </View>
 
+            {/* End date/time pickers */}
             <View className="mb-2.5 flex-row gap-2">
               <Button
+                className="flex-1"
                 onPress={() =>
                   setEventPicker({ kind: "endDate", mode: "date" })
                 }
                 variant="outline"
               >
-                <Text>
-                  End date: {eventDraft?.end.toPlainDate().toString()}
-                </Text>
+                <Text>End: {eventDraft?.endDate.toString()}</Text>
               </Button>
-              <Button
-                onPress={() =>
-                  setEventPicker({ kind: "endTime", mode: "time" })
-                }
-                variant="outline"
-              >
-                <Text>
-                  End time:{" "}
-                  {eventDraft?.end
-                    .toPlainTime()
-                    .toString({ smallestUnit: "minute" })}
-                </Text>
-              </Button>
+              {eventDraft?.allDay ? null : (
+                <Button
+                  onPress={() =>
+                    setEventPicker({ kind: "endTime", mode: "time" })
+                  }
+                  variant="outline"
+                >
+                  <Text>
+                    {eventDraft?.endTime?.toString({
+                      smallestUnit: "minute",
+                    }) ?? "10:00"}
+                  </Text>
+                </Button>
+              )}
             </View>
 
             {eventPicker && eventDraft ? (
@@ -958,70 +1464,77 @@ export default function CalendarTab() {
                     if (!d) {
                       return d;
                     }
-                    const startDate = d.start.toPlainDate();
-                    const startTime = d.start.toPlainTime();
-                    const endDate = d.end.toPlainDate();
-                    const endTime = d.end.toPlainTime();
-                    const durationMinutes = Math.max(
-                      MINUTES_STEP,
-                      Math.round(
-                        d.end.since(d.start).total({ unit: "minutes" })
-                      )
-                    );
 
                     if (eventPicker.kind === "startDate") {
                       const nextDate = dateToPlainDate(date, timeZone);
-                      const nextStart = combineDateTime(
-                        nextDate,
-                        startTime,
-                        timeZone
-                      );
-                      const nextEnd = nextStart.add({
-                        minutes: durationMinutes,
-                      });
-                      return { ...d, start: nextStart, end: nextEnd };
+                      // Keep end date at least equal to start date.
+                      const nextEndDate =
+                        Temporal.PlainDate.compare(nextDate, d.endDate) > 0
+                          ? nextDate
+                          : d.endDate;
+                      return {
+                        ...d,
+                        startDate: nextDate,
+                        endDate: nextEndDate,
+                      };
                     }
                     if (eventPicker.kind === "startTime") {
                       const nextTime = dateToPlainTime(date, timeZone);
-                      const nextStart = combineDateTime(
-                        startDate,
-                        nextTime,
-                        timeZone
-                      );
-                      const nextEnd = nextStart.add({
-                        minutes: durationMinutes,
-                      });
-                      return { ...d, start: nextStart, end: nextEnd };
+                      // Shift end time to maintain 30-minute duration.
+                      const nextEndTime = nextTime.add({ minutes: 30 });
+                      return {
+                        ...d,
+                        startTime: nextTime,
+                        endTime: nextEndTime,
+                      };
                     }
                     if (eventPicker.kind === "endDate") {
                       const nextDate = dateToPlainDate(date, timeZone);
-                      const nextEnd = combineDateTime(
-                        nextDate,
-                        endTime,
-                        timeZone
-                      );
-                      return { ...d, end: nextEnd };
+                      return { ...d, endDate: nextDate };
                     }
                     if (eventPicker.kind === "endTime") {
                       const nextTime = dateToPlainTime(date, timeZone);
-                      const nextEnd = combineDateTime(
-                        endDate,
-                        nextTime,
-                        timeZone
-                      );
-                      return { ...d, end: nextEnd };
+                      return { ...d, endTime: nextTime };
                     }
                     return d;
                   });
                   setEventPicker(null);
                 }}
                 value={(() => {
-                  const value =
-                    eventPicker.kind === "endDate" ||
-                    eventPicker.kind === "endTime"
-                      ? eventDraft.end
-                      : eventDraft.start;
-                  return new Date(value.toInstant().toString());
+                  const defaultTime = Temporal.PlainTime.from("09:00");
+                  if (eventPicker.kind === "startDate") {
+                    const zdt = combineDateTime(
+                      eventDraft.startDate,
+                      eventDraft.startTime ?? defaultTime,
+                      timeZone
+                    );
+                    return new Date(zdt.toInstant().toString());
+                  }
+                  if (eventPicker.kind === "startTime") {
+                    const zdt = combineDateTime(
+                      eventDraft.startDate,
+                      eventDraft.startTime ?? defaultTime,
+                      timeZone
+                    );
+                    return new Date(zdt.toInstant().toString());
+                  }
+                  if (eventPicker.kind === "endDate") {
+                    const zdt = combineDateTime(
+                      eventDraft.endDate,
+                      eventDraft.endTime ?? defaultTime,
+                      timeZone
+                    );
+                    return new Date(zdt.toInstant().toString());
+                  }
+                  if (eventPicker.kind === "endTime") {
+                    const zdt = combineDateTime(
+                      eventDraft.endDate,
+                      eventDraft.endTime ?? defaultTime,
+                      timeZone
+                    );
+                    return new Date(zdt.toInstant().toString());
+                  }
+                  return new Date();
                 })()}
               />
             ) : null}

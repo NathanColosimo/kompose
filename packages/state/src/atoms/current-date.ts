@@ -47,6 +47,24 @@ export const visibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   return Array.from({ length: count }, (_, i) => start.add({ days: i }));
 });
 
+/**
+ * Mobile-specific visible days count, clamped to 1-3.
+ * Derives from the shared atom but enforces mobile screen constraints.
+ */
+export const mobileVisibleDaysCountAtom = atom(
+  (get) => Math.min(3, Math.max(1, get(visibleDaysCountAtom))) as 1 | 2 | 3,
+  (_get, set, newValue: number) => set(visibleDaysCountAtom, newValue)
+);
+
+/**
+ * Mobile-specific visible days array, limited to 1-3 days.
+ */
+export const mobileVisibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
+  const start = get(currentDateAtom);
+  const count = get(mobileVisibleDaysCountAtom);
+  return Array.from({ length: count }, (_, i) => start.add({ days: i }));
+});
+
 const EVENTS_WINDOW_PADDING_DAYS = 15;
 
 function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {

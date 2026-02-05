@@ -59,6 +59,28 @@ export const normalizedGoogleColorsAtomFamily = atomFamily(
     })
 );
 
+export function resolveGoogleEventColors({
+  colorId,
+  palette,
+  calendarBackgroundColor,
+  calendarForegroundColor,
+}: {
+  colorId?: string | null;
+  palette?: Record<string, { background?: string; foreground?: string }>;
+  calendarBackgroundColor?: string | null;
+  calendarForegroundColor?: string | null;
+}): { background?: string; foreground?: string } {
+  const eventPalette = colorId && palette ? palette[colorId] : undefined;
+  const background =
+    eventPalette?.background ??
+    pastelizeColor(calendarBackgroundColor) ??
+    undefined;
+  const foreground =
+    eventPalette?.foreground ?? calendarForegroundColor ?? undefined;
+
+  return { background, foreground };
+}
+
 // --- Pastel normalization helpers ---
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {

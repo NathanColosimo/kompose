@@ -7,7 +7,7 @@ import {
 } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
-  pastelizeColor,
+  resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import {
   type GoogleEventWithSource,
@@ -560,21 +560,17 @@ function AllDayEventChip({
   );
   const calendars = useAtomValue(googleCalendarsDataAtom);
 
-  const eventPalette =
-    item.event.colorId && normalizedPalette?.event
-      ? normalizedPalette.event[item.event.colorId]
-      : undefined;
-
   const calendar = calendars.find(
     (c) => c.accountId === item.accountId && c.calendar.id === item.calendarId
   );
 
-  const backgroundColor =
-    eventPalette?.background ??
-    pastelizeColor(calendar?.calendar.backgroundColor) ??
-    undefined;
-  const foregroundColor =
-    eventPalette?.foreground ?? calendar?.calendar.foregroundColor ?? undefined;
+  const { background: backgroundColor, foreground: foregroundColor } =
+    resolveGoogleEventColors({
+      colorId: item.event.colorId,
+      palette: normalizedPalette?.event,
+      calendarBackgroundColor: calendar?.calendar.backgroundColor,
+      calendarForegroundColor: calendar?.calendar.foregroundColor,
+    });
 
   const endDate =
     item.event.end.date && item.event.end.date !== item.date.toString()
