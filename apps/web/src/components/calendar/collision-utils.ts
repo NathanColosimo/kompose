@@ -1,9 +1,9 @@
 /**
- * Collision detection utilities for calendar events.
+ * Collision detection utilities for calendar items.
  *
- * Calculates horizontal positioning for overlapping events:
- * - Events starting within 45 minutes of each other → side-by-side (max 3 columns)
- * - Events starting 45+ minutes apart → stack vertically (later on top)
+ * Calculates horizontal positioning for overlapping items:
+ * - Overlapping items starting within 45 minutes of each other -> side-by-side
+ * - Overlapping items starting 45+ minutes apart -> stack vertically (later on top)
  */
 
 /** Threshold in minutes: events starting closer than this are displayed side-by-side */
@@ -88,47 +88,32 @@ function assignColumnsToCluster(
   // Sort cluster by start time
   const sorted = [...cluster].sort((a, b) => a.startMinutes - b.startMinutes);
   const result = new Map<string, { columnIndex: number; zIndex: number }>();
-
-  // Track when each column becomes available (end time of last item in column)
-  const columnEndTimes: number[] = [];
-
-  // Check if the cluster should use side-by-side layout
-  // Compare earliest start to latest start in the cluster
-  const earliestStart = sorted[0].startMinutes;
-  const latestStart = sorted.at(-1)?.startMinutes ?? earliestStart;
-  const useSideBySide =
-    latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
+  const columnItems: PositionedItem[][] = [];
 
   for (let i = 0; i < sorted.length; i++) {
     const item = sorted[i];
-    let assignedColumn = 0;
-
-    if (useSideBySide) {
-      // Find the first available column (where the item doesn't overlap)
-      for (let col = 0; col < columnEndTimes.length; col++) {
-        if (item.startMinutes >= columnEndTimes[col]) {
-          assignedColumn = col;
-          break;
+    let assignedColumn = columnItems.findIndex((itemsInColumn) =>
+      itemsInColumn.every((existing) => {
+        if (!itemsOverlap(item, existing)) {
+          return true;
         }
-        assignedColumn = col + 1;
-      }
 
-      // Cap at MAX_COLUMNS - 1 (items beyond stack in last column)
-      if (assignedColumn >= MAX_COLUMNS) {
-        assignedColumn = MAX_COLUMNS - 1;
-      }
-    }
-    // If not side-by-side, all items get column 0 (they stack)
+        const startDelta = item.startMinutes - existing.startMinutes;
+        return startDelta >= SIDE_BY_SIDE_THRESHOLD_MINUTES;
+      })
+    );
 
-    // Update column end time
-    if (assignedColumn >= columnEndTimes.length) {
-      columnEndTimes.push(item.endMinutes);
-    } else {
-      columnEndTimes[assignedColumn] = Math.max(
-        columnEndTimes[assignedColumn],
-        item.endMinutes
-      );
+    if (assignedColumn === -1) {
+      assignedColumn = columnItems.length;
     }
+
+    // Cap at MAX_COLUMNS - 1 (items beyond stack in last column)
+    if (assignedColumn >= MAX_COLUMNS) {
+      assignedColumn = MAX_COLUMNS - 1;
+    }
+
+    columnItems[assignedColumn] ??= [];
+    columnItems[assignedColumn].push(item);
 
     // zIndex based on processing order (later start = higher zIndex)
     result.set(item.id, {
@@ -179,15 +164,6 @@ export function calculateCollisionLayout(
       continue;
     }
 
-    // Check if cluster uses side-by-side layout
-    const clusterSorted = [...cluster].sort(
-      (a, b) => a.startMinutes - b.startMinutes
-    );
-    const earliestStart = clusterSorted[0].startMinutes;
-    const latestStart = clusterSorted.at(-1)?.startMinutes ?? earliestStart;
-    const useSideBySide =
-      latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
-
     // Assign columns within the cluster
     const columnAssignments = assignColumnsToCluster(cluster);
 
@@ -196,14 +172,14 @@ export function calculateCollisionLayout(
     for (const { columnIndex } of columnAssignments.values()) {
       maxColumn = Math.max(maxColumn, columnIndex);
     }
-    const totalColumns = useSideBySide ? maxColumn + 1 : 1;
+    const totalColumns = maxColumn + 1;
 
     // Write final layout for each item in cluster
     for (const clusterItem of cluster) {
       const assignment = columnAssignments.get(clusterItem.id);
       if (assignment) {
         result.set(clusterItem.id, {
-          columnIndex: useSideBySide ? assignment.columnIndex : 0,
+          columnIndex: assignment.columnIndex,
           totalColumns,
           zIndex: assignment.zIndex,
         });
