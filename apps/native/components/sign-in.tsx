@@ -62,7 +62,9 @@ function SignIn() {
         }
       );
     } catch {
-      setError(`Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`);
+      setError(
+        `Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`
+      );
       setIsLoading(false);
     }
   }

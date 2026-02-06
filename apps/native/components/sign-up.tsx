@@ -62,7 +62,9 @@ function SignUp() {
         }
       );
     } catch {
-      setError(`Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`);
+      setError(
+        `Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`
+      );
       setIsSocialLoading(false);
     }
   }
@@ -95,8 +97,11 @@ function SignUp() {
         }
       );
     } catch {
-      const serverURL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://localhost:3000";
-      setError(`Couldn't reach ${serverURL}. Make sure your API server is running.`);
+      const serverURL =
+        process.env.EXPO_PUBLIC_SERVER_URL ?? "http://localhost:3000";
+      setError(
+        `Couldn't reach ${serverURL}. Make sure your API server is running.`
+      );
       setIsLoading(false);
     }
   }

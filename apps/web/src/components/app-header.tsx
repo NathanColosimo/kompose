@@ -9,6 +9,7 @@ import {
   Check,
   LogOut,
   Pencil,
+  RotateCw,
   Search,
   Settings,
   Tag as TagIcon,
@@ -25,6 +26,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPicker } from "./tags/tag-icon-picker";
+import { useTauriUpdater } from "./tauri-updater";
 
 /**
  * App-wide header bar with:
@@ -82,6 +85,7 @@ export function AppHeader() {
         className="flex shrink-0 items-center justify-end gap-2 pr-1"
         data-tauri-drag-region
       >
+        <UpdatePromptButton />
         {user && <TagsMenu />}
         {user && <UserMenu user={user} />}
       </div>
@@ -450,5 +454,53 @@ function TagsMenu() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+function UpdatePromptButton() {
+  const { isReadyToInstall, isInstalling, installUpdate } = useTauriUpdater();
+  const [open, setOpen] = useState(false);
+
+  // Only show the restart affordance once an update is downloaded.
+  if (!isReadyToInstall) {
+    return null;
+  }
+
+  return (
+    <AlertDialog onOpenChange={setOpen} open={open}>
+      <AlertDialogTrigger asChild>
+        <Button
+          aria-label="Restart to apply update"
+          className="relative"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <RotateCw className="h-4 w-4" />
+          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Update ready</AlertDialogTitle>
+          <AlertDialogDescription>
+            A new version has been downloaded. Restart Kompose to apply the
+            update now.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isInstalling}>Later</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isInstalling}
+            onClick={async () => {
+              setOpen(false);
+              await installUpdate();
+            }}
+          >
+            Restart now
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

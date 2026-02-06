@@ -71,6 +71,7 @@ const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
 const EVENT_OUTLINE_WIDTH_PX = 1;
+const EVENT_OUTLINE_COLOR = "rgba(0,0,0,0.35)";
 
 // --- Temporal helpers ---
 
@@ -332,10 +333,6 @@ function AllDayEventChip({
   calendarColors?: { background?: string | null; foreground?: string | null };
   onPress: () => void;
 }) {
-  const { isDarkColorScheme } = useColorScheme();
-  const outlineColor = isDarkColorScheme
-    ? "rgba(255,255,255,0.9)"
-    : "rgba(0,0,0,0.9)";
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
@@ -352,7 +349,7 @@ function AllDayEventChip({
       onPress={onPress}
       style={{
         backgroundColor: background,
-        borderColor: outlineColor,
+        borderColor: EVENT_OUTLINE_COLOR,
         borderRadius: 6,
         borderWidth: EVENT_OUTLINE_WIDTH_PX,
       }}
@@ -389,10 +386,6 @@ function TimedGoogleEventBlock({
   zIndex?: number;
   onPress: () => void;
 }) {
-  const { isDarkColorScheme } = useColorScheme();
-  const outlineColor = isDarkColorScheme
-    ? "rgba(255,255,255,0.9)"
-    : "rgba(0,0,0,0.9)";
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
@@ -421,7 +414,7 @@ function TimedGoogleEventBlock({
         width: `${columnWidthPercent}%`,
         zIndex,
         backgroundColor: background,
-        borderColor: outlineColor,
+        borderColor: EVENT_OUTLINE_COLOR,
         borderRadius: 6,
         borderWidth: EVENT_OUTLINE_WIDTH_PX,
       }}
@@ -449,9 +442,6 @@ function TimedGoogleEventBlock({
 
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
-  const eventOutlineColor = isDarkColorScheme
-    ? "rgba(255,255,255,0.9)"
-    : "rgba(0,0,0,0.9)";
   const queryClient = useQueryClient();
 
   // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
@@ -1303,7 +1293,7 @@ export default function CalendarTab() {
                               left: `${leftPercent}%`,
                               width: `${columnWidthPercent}%`,
                               zIndex: zIndexValue,
-                              borderColor: eventOutlineColor,
+                              borderColor: EVENT_OUTLINE_COLOR,
                               borderRadius: 6,
                               borderWidth: EVENT_OUTLINE_WIDTH_PX,
                             }}

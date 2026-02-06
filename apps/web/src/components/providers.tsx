@@ -8,6 +8,7 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { orpc, queryClient } from "@/utils/orpc";
+import { TauriUpdaterProvider } from "./tauri-updater";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
@@ -54,12 +55,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
       enableSystem
     >
-      <QueryClientProvider client={queryClient}>
-        <StateProvider config={config} storage={storage}>
-          {children}
-        </StateProvider>
-        {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
-      </QueryClientProvider>
+      <TauriUpdaterProvider>
+        <QueryClientProvider client={queryClient}>
+          <StateProvider config={config} storage={storage}>
+            {children}
+          </StateProvider>
+          {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
+        </QueryClientProvider>
+      </TauriUpdaterProvider>
       <Toaster richColors />
     </ThemeProvider>
   );

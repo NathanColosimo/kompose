@@ -5,11 +5,15 @@
   "scripts": {
     "dev": "bun --bun next dev",
     "build": "bun --bun next build",
+    "build:desktop": "rm -rf .next && bun --bun next build",
     "start": "bun --bun next start",
     "type-check": "tsc --noEmit",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build --bundles dmg",
+    "desktop:build:signed": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target aarch64-apple-darwin",
+    "desktop:build:signed:universal": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target universal-apple-darwin",
+    "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key $APPLE_API_KEY_PATH --key-id $APPLE_API_KEY --issuer $APPLE_API_ISSUER"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
@@ -40,7 +44,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "catalog:",
-    "@tauri-apps/plugin-updater": "^2.10.0",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "better-auth": "catalog:",
     "chrono-node": "^2.9.0",
