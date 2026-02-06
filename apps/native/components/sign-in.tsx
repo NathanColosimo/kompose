@@ -41,25 +41,30 @@ function SignIn() {
     console.log("[SignIn] Callback URL:", callbackURL);
     console.log("[SignIn] Error Callback URL:", errorCallbackURL);
 
-    await authClient.signIn.social(
-      {
-        provider: "google",
-        callbackURL,
-        errorCallbackURL,
-      },
-      {
-        onError(err) {
-          setError(err.error?.message || "Failed to sign in with Google");
-          setIsLoading(false);
+    try {
+      await authClient.signIn.social(
+        {
+          provider: "google",
+          callbackURL,
+          errorCallbackURL,
         },
-        onSuccess() {
-          invalidateSessionQueries();
-        },
-        onFinished() {
-          setIsLoading(false);
-        },
-      }
-    );
+        {
+          onError(err) {
+            setError(err.error?.message || "Failed to sign in with Google");
+            setIsLoading(false);
+          },
+          onSuccess() {
+            invalidateSessionQueries();
+          },
+          onFinished() {
+            setIsLoading(false);
+          },
+        }
+      );
+    } catch {
+      setError(`Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`);
+      setIsLoading(false);
+    }
   }
 
   return (

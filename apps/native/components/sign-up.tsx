@@ -36,57 +36,69 @@ function SignUp() {
     setIsSocialLoading(true);
     setError(null);
 
-    const callbackURL = createURL("/(tabs)");
-    const errorCallbackURL = createURL("/(tabs)/settings");
+    // Route groups like "(tabs)" are not part of the URL path.
+    const callbackURL = createURL("");
+    const errorCallbackURL = createURL("settings");
 
-    await authClient.signIn.social(
-      {
-        provider: "google",
-        callbackURL,
-        newUserCallbackURL: callbackURL,
-        errorCallbackURL,
-      },
-      {
-        onError(err) {
-          setError(err.error?.message || "Failed to sign up with Google");
-          setIsSocialLoading(false);
+    try {
+      await authClient.signIn.social(
+        {
+          provider: "google",
+          callbackURL,
+          newUserCallbackURL: callbackURL,
+          errorCallbackURL,
         },
-        onSuccess() {
-          invalidateSessionQueries();
-        },
-        onFinished() {
-          setIsSocialLoading(false);
-        },
-      }
-    );
+        {
+          onError(err) {
+            setError(err.error?.message || "Failed to sign up with Google");
+            setIsSocialLoading(false);
+          },
+          onSuccess() {
+            invalidateSessionQueries();
+          },
+          onFinished() {
+            setIsSocialLoading(false);
+          },
+        }
+      );
+    } catch {
+      setError(`Couldn't reach ${process.env.EXPO_PUBLIC_SERVER_URL}. Make sure your API server is running.`);
+      setIsSocialLoading(false);
+    }
   }
 
   async function handleSignUp() {
     setIsLoading(true);
     setError(null);
 
-    await authClient.signUp.email(
-      {
-        name,
-        email,
-        password,
-      },
-      {
-        onError(err) {
-          setError(err.error?.message || "Failed to sign up");
-          setIsLoading(false);
+    try {
+      await authClient.signUp.email(
+        {
+          name,
+          email,
+          password,
         },
-        onSuccess() {
-          setName("");
-          setEmail("");
-          setPassword("");
-          invalidateSessionQueries();
-        },
-        onFinished() {
-          setIsLoading(false);
-        },
-      }
-    );
+        {
+          onError(err) {
+            setError(err.error?.message || "Failed to sign up");
+            setIsLoading(false);
+          },
+          onSuccess() {
+            setName("");
+            setEmail("");
+            setPassword("");
+            invalidateSessionQueries();
+          },
+          onFinished() {
+            setIsLoading(false);
+          },
+        }
+      );
+    } catch {
+      const serverURL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://localhost:3000";
+      setError(`Couldn't reach ${serverURL}. Make sure your API server is running.`);
+      setIsLoading(false);
+    }
   }
 
   return (

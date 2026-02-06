@@ -196,11 +196,21 @@ export const Button = forwardRef<View, ButtonProps>(
       }
     };
 
-    // Trigger haptic feedback
+    // Trigger haptic feedback without crashing when the native module isn't available.
     const triggerHapticFeedback = () => {
-      if (haptic && !disabled && !loading && process.env.EXPO_OS === "ios") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (!(haptic && !disabled && !loading && process.env.EXPO_OS === "ios")) {
+        return;
       }
+
+      if (typeof Haptics.impactAsync !== "function") {
+        return;
+      }
+
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+        (error: unknown) => {
+          console.warn("[Button] Haptics unavailable", error);
+        }
+      );
     };
 
     // Improved animation handlers for liquid glass effect
