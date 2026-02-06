@@ -72,6 +72,8 @@ const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
 const EVENT_OUTLINE_WIDTH_PX = 1;
 const EVENT_OUTLINE_COLOR = "rgba(0,0,0,0.35)";
+const TIME_GUTTER_WIDTH_PX = 56;
+const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
 
@@ -91,8 +93,8 @@ function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
   return zdt.hour * 60 + zdt.minute;
 }
 
-function isToday(date: Temporal.PlainDate): boolean {
-  const today = Temporal.Now.plainDateISO();
+function isToday(date: Temporal.PlainDate, timeZone: string): boolean {
+  const today = Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
   return Temporal.PlainDate.compare(date, today) === 0;
 }
 
@@ -104,22 +106,24 @@ function formatDayHeader(date: Temporal.PlainDate): {
   return { weekday, dayNumber: date.day };
 }
 
-function calculateTimePosition(): number {
-  const now = Temporal.Now.zonedDateTimeISO();
+function calculateTimePosition(timeZone: string): number {
+  const now = Temporal.Now.zonedDateTimeISO(timeZone);
   return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }
 
-function CurrentTimeIndicator() {
-  const [topPosition, setTopPosition] = useState(() => calculateTimePosition());
+function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
+  const [topPosition, setTopPosition] = useState(() =>
+    calculateTimePosition(timeZone)
+  );
 
   useEffect(() => {
     // Update position immediately, then every minute.
-    setTopPosition(calculateTimePosition());
+    setTopPosition(calculateTimePosition(timeZone));
     const interval = setInterval(() => {
-      setTopPosition(calculateTimePosition());
+      setTopPosition(calculateTimePosition(timeZone));
     }, 60_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [timeZone]);
 
   return (
     <View
@@ -289,6 +293,11 @@ function formatTimeShort(zdt: Temporal.ZonedDateTime): string {
   return minute === 0
     ? `${displayHour}${ampm}`
     : `${displayHour}:${minute.toString().padStart(2, "0")}${ampm}`;
+}
+
+function formatHourLabel(hour: number): string {
+  const time = new Temporal.PlainTime(hour, 0);
+  return time.toLocaleString(undefined, { hour: "numeric" });
 }
 
 function snapMinutes(mins: number): number {
@@ -1080,10 +1089,13 @@ export default function CalendarTab() {
         <View className="flex-1">
           {/* Day headers */}
           <View className="flex-row border-border border-t border-b">
-            <View className="w-16 border-border border-r" />
+            <View
+              className="border-border border-r"
+              style={{ width: TIME_GUTTER_WIDTH_PX }}
+            />
             <View className="flex-1 flex-row">
               {visibleDays.map((day) => {
-                const isTodayHighlight = isToday(day);
+                const isTodayHighlight = isToday(day, timeZone);
                 const { weekday, dayNumber } = formatDayHeader(day);
 
                 return (
@@ -1112,7 +1124,10 @@ export default function CalendarTab() {
           {/* All-day events row */}
           {hasAllDayEvents ? (
             <View className="flex-row border-border border-b">
-              <View className="w-16 border-border border-r" />
+              <View
+                className="border-border border-r"
+                style={{ width: TIME_GUTTER_WIDTH_PX }}
+              />
               <View className="flex-1 flex-row">
                 {visibleDays.map((day) => {
                   const items = allDayEventsByDay.get(day.toString()) ?? [];
@@ -1161,16 +1176,28 @@ export default function CalendarTab() {
           >
             <View className="flex-row">
               {/* Time gutter */}
-              <View className="w-16 border-border border-r">
+              <View
+                className="border-border border-r"
+                style={{ width: TIME_GUTTER_WIDTH_PX }}
+              >
                 {HOURS.map((hour) => (
                   <View
-                    className="justify-start px-1.5 pt-0.5"
+                    className="justify-center pr-1"
                     key={`gutter-${hour}`}
                     style={{ height: PIXELS_PER_HOUR }}
                   >
-                    <Text className="text-[10px] text-muted-foreground">
-                      {hour.toString().padStart(2, "0")}:00
-                    </Text>
+                    {hour === 0 ? null : (
+                      <Text
+                        className="text-right text-[10px] text-muted-foreground"
+                        style={{
+                          transform: [
+                            { translateY: -TIME_GUTTER_LABEL_OFFSET_PX },
+                          ],
+                        }}
+                      >
+                        {formatHourLabel(hour)}
+                      </Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -1181,7 +1208,7 @@ export default function CalendarTab() {
                   const dayKey = day.toString();
                   const dayEvents = timedEventsByDay.get(dayKey) ?? [];
                   const dayTasks = tasksByDay.get(dayKey) ?? [];
-                  const isTodayColumn = isToday(day);
+                  const isTodayColumn = isToday(day, timeZone);
                   const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
                   return (
@@ -1319,7 +1346,9 @@ export default function CalendarTab() {
                       })}
 
                       {/* Current time indicator (today only) */}
-                      {isTodayColumn ? <CurrentTimeIndicator /> : null}
+                      {isTodayColumn ? (
+                        <CurrentTimeIndicator timeZone={timeZone} />
+                      ) : null}
                     </Pressable>
                   );
                 })}

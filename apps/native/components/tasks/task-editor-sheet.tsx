@@ -42,7 +42,7 @@ const DURATION_HOUR_OPTIONS = Array.from({ length: 6 }, (_, index) => index);
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];
 
 function plainDateToDate(plainDate: Temporal.PlainDate): Date {
-  return new Date(`${plainDate.toString()}T00:00:00`);
+  return new Date(plainDate.year, plainDate.month - 1, plainDate.day);
 }
 
 function plainTimeToDate(plainTime: Temporal.PlainTime): Date {
@@ -51,22 +51,37 @@ function plainTimeToDate(plainTime: Temporal.PlainTime): Date {
   return date;
 }
 
-function dateToPlainDate(date: Date, timeZone: string): Temporal.PlainDate {
-  const zdt = Temporal.Instant.from(date.toISOString()).toZonedDateTimeISO(
-    timeZone
-  );
-  return zdt.toPlainDate();
+function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
+  return Temporal.PlainDate.from({
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  });
 }
 
-function dateToPlainTime(date: Date, timeZone: string): Temporal.PlainTime {
-  const zdt = Temporal.Instant.from(date.toISOString()).toZonedDateTimeISO(
-    timeZone
-  );
+function dateToPlainTime(date: Date, _timeZone: string): Temporal.PlainTime {
   return Temporal.PlainTime.from({
-    hour: zdt.hour,
-    minute: zdt.minute,
+    hour: date.getHours(),
+    minute: date.getMinutes(),
     second: 0,
   });
+}
+
+function formatPlainDateShort(date: Temporal.PlainDate | null): string {
+  if (!date) {
+    return "Not set";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(plainDateToDate(date));
+}
+
+function formatPlainTime24(time: Temporal.PlainTime | null): string {
+  if (!time) {
+    return "--:--";
+  }
+  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
 }
 
 function formatDurationMinutes(minutes: number): string {
@@ -96,11 +111,12 @@ export function TaskEditorSheet({
   status,
   timeZone,
   title,
-  snapPoints = [0.7, 0.92, 0.98],
+  snapPoints = [0.84, 0.95, 0.99],
 }: TaskEditorSheetProps) {
   const { isDarkColorScheme } = useColorScheme();
   const pickerTextColor = isDarkColorScheme ? "#fafafa" : "#0a0a0a";
   const [isDurationPickerOpen, setIsDurationPickerOpen] = React.useState(false);
+  const canSave = draft ? draft.title.trim().length > 0 : false;
 
   if (!draft) {
     return null;
@@ -120,6 +136,11 @@ export function TaskEditorSheet({
   return (
     <>
       <BottomSheet
+        headerRight={
+          <Button disabled={!canSave} onPress={onSave}>
+            <Text>Save</Text>
+          </Button>
+        }
         isVisible={isVisible}
         onClose={handleClose}
         snapPoints={snapPoints}
@@ -131,6 +152,7 @@ export function TaskEditorSheet({
             setDraft((current) => ({ ...current, title: value }))
           }
           placeholder="Title"
+          variant="outline"
           value={draft.title}
         />
 
@@ -139,7 +161,8 @@ export function TaskEditorSheet({
           onChangeText={(value) =>
             setDraft((current) => ({ ...current, description: value }))
           }
-          placeholder="Description (optional)"
+          placeholder="Description"
+          variant="outline"
           value={draft.description}
         />
 
@@ -160,14 +183,21 @@ export function TaskEditorSheet({
             <Text className="font-semibold text-foreground text-sm">
               Duration
             </Text>
-            <Button
-              onPress={() => setIsDurationPickerOpen(true)}
-              variant="outline"
-            >
+            <Button onPress={() => setIsDurationPickerOpen(true)} variant="outline">
               <Text>{formatDurationMinutes(draft.durationMinutes)}</Text>
             </Button>
           </View>
         </React.Fragment>
+
+        <View className="mb-2 rounded-md border border-border px-3 py-2.5">
+          <Text className="text-muted-foreground text-xs">Dates & Time</Text>
+          <Text className="mt-1 text-foreground text-sm">
+            Due {formatPlainDateShort(draft.dueDate)}
+          </Text>
+          <Text className="mt-0.5 text-foreground text-sm">
+            Start {formatPlainDateShort(draft.startDate)} {formatPlainTime24(draft.startTime)}
+          </Text>
+        </View>
 
         <View className="mb-2.5">
           <Text className="text-muted-foreground text-xs">Due date</Text>
@@ -181,7 +211,7 @@ export function TaskEditorSheet({
                     dueDate: date ? dateToPlainDate(date, timeZone) : null,
                   }))
                 }
-                placeholder="Select"
+                placeholder="Due date"
                 value={
                   draft.dueDate ? plainDateToDate(draft.dueDate) : undefined
                 }
@@ -216,7 +246,7 @@ export function TaskEditorSheet({
                     startTime: date ? current.startTime : null,
                   }))
                 }
-                placeholder="Select"
+                placeholder="Start date"
                 value={
                   draft.startDate ? plainDateToDate(draft.startDate) : undefined
                 }
@@ -255,7 +285,8 @@ export function TaskEditorSheet({
                     startTime: date ? dateToPlainTime(date, timeZone) : null,
                   }))
                 }
-                placeholder="Select"
+                placeholder="Start time"
+                timeFormat="24"
                 value={
                   draft.startTime ? plainTimeToDate(draft.startTime) : undefined
                 }
@@ -277,7 +308,7 @@ export function TaskEditorSheet({
           </View>
         </View>
 
-        <View className="mt-2 flex-row items-center justify-end gap-2.5">
+        <View className="mt-2 mb-6 flex-row items-center justify-end gap-2.5">
           {mode === "edit" && onToggleDone && status ? (
             <Button onPress={onToggleDone} variant="outline">
               <Text>{status === "done" ? "Mark todo" : "Mark done"}</Text>
@@ -289,10 +320,6 @@ export function TaskEditorSheet({
               <Text>Delete</Text>
             </Button>
           ) : null}
-
-          <Button onPress={onSave}>
-            <Text>Save</Text>
-          </Button>
         </View>
       </BottomSheet>
 

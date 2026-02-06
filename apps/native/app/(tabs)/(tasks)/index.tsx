@@ -1,4 +1,5 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { Stack } from "expo-router/stack";
@@ -40,6 +41,9 @@ interface TaskSection {
   data: TaskSelectDecoded[];
 }
 
+type BaseTaskTab = "Inbox" | "Today";
+type TaskListMode = BaseTaskTab | "Tag";
+
 type TaskListItem =
   | { type: "header"; title: string }
   | { type: "task"; task: TaskSelectDecoded };
@@ -56,6 +60,24 @@ function buildTodaySections(
   }
   if (unplannedTasks.length > 0) {
     sections.push({ title: "Unplanned", data: unplannedTasks });
+  }
+  if (doneTasks.length > 0) {
+    sections.push({ title: "Done", data: doneTasks });
+  }
+  return sections;
+}
+
+function buildTagSections(
+  overdueTasks: TaskSelectDecoded[],
+  todoTasks: TaskSelectDecoded[],
+  doneTasks: TaskSelectDecoded[]
+): TaskSection[] {
+  const sections: TaskSection[] = [];
+  if (overdueTasks.length > 0) {
+    sections.push({ title: "Overdue", data: overdueTasks });
+  }
+  if (todoTasks.length > 0) {
+    sections.push({ title: "Todo", data: todoTasks });
   }
   if (doneTasks.length > 0) {
     sections.push({ title: "Done", data: doneTasks });
@@ -148,9 +170,11 @@ function TaskRow({
 }
 
 interface TaskListProps {
-  activeTab: "Inbox" | "Today";
+  mode: TaskListMode;
   inboxTasks: TaskSelectDecoded[];
   todaySections: TaskSection[];
+  tagSections: TaskSection[];
+  tagName: string | null;
   isLoading: boolean;
   isRefreshing: boolean;
   tintColor: string;
@@ -161,9 +185,11 @@ interface TaskListProps {
 
 // Shared list renderer for Inbox and Today views.
 function TaskList({
-  activeTab,
+  mode,
   inboxTasks,
   todaySections,
+  tagSections,
+  tagName,
   isLoading,
   isRefreshing,
   tintColor,
@@ -171,10 +197,7 @@ function TaskList({
   onPressTask,
   onToggleStatus,
 }: TaskListProps) {
-  const emptyMessage =
-    activeTab === "Inbox" ? "No tasks in inbox." : "Nothing for today.";
-
-  if (activeTab === "Inbox") {
+  if (mode === "Inbox") {
     return (
       <FlatList
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
@@ -188,7 +211,7 @@ function TaskList({
             </Text>
           ) : (
             <Text className="pt-8 text-center text-muted-foreground">
-              {emptyMessage}
+              No tasks in inbox.
             </Text>
           )
         }
@@ -210,13 +233,21 @@ function TaskList({
     );
   }
 
-  const todayItems = buildTodayItems(todaySections);
+  const sectionItems = buildTodayItems(
+    mode === "Today" ? todaySections : tagSections
+  );
+  const emptyMessage =
+    mode === "Today"
+      ? "Nothing for today."
+      : tagName
+        ? `No tasks for tag ${tagName}.`
+        : "No tasks for this tag.";
 
   return (
     <FlatList
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
       contentInsetAdjustmentBehavior="automatic"
-      data={todayItems}
+      data={sectionItems}
       keyExtractor={(item) =>
         item.type === "header" ? `header-${item.title}` : item.task.id
       }
@@ -305,6 +336,12 @@ export default function TasksScreen() {
   // Currently selected tag for filtering (null = show all)
   const [selectedTagId, setSelectedTagId] = React.useState<string | null>(null);
 
+  const {
+    overdueTasks: tagOverdueTasks,
+    todoTasks: tagTodoTasks,
+    doneTasks: tagDoneTasks,
+  } = useTagTaskSections(selectedTagId);
+
   // Find the selected tag object to display its icon and name in the header
   const selectedTag = React.useMemo(
     () => tags.find((tag) => tag.id === selectedTagId) ?? null,
@@ -312,12 +349,16 @@ export default function TasksScreen() {
   );
 
   // Track the active task view to mirror the web sidebar.
-  const [activeTab, setActiveTab] = React.useState<"Inbox" | "Today">("Inbox");
+  const [activeTab, setActiveTab] = React.useState<BaseTaskTab>("Inbox");
 
   // Build the Today sections so the list can render headers.
   const todaySections = React.useMemo(
     () => buildTodaySections(overdueTasks, unplannedTasks, doneTasks),
     [doneTasks, overdueTasks, unplannedTasks]
+  );
+  const tagSections = React.useMemo(
+    () => buildTagSections(tagOverdueTasks, tagTodoTasks, tagDoneTasks),
+    [tagDoneTasks, tagOverdueTasks, tagTodoTasks]
   );
 
   // Modal state (create/edit).
@@ -432,8 +473,15 @@ export default function TasksScreen() {
     [updateTask]
   );
 
+  const selectBaseTab = React.useCallback((tab: BaseTaskTab) => {
+    setSelectedTagId(null);
+    setActiveTab(tab);
+  }, []);
+
   // Get the selected tag's icon component (or default Tag icon)
   const SelectedTagIcon = selectedTag ? tagIconMap[selectedTag.icon] : Tag;
+  const isTagView = selectedTagId !== null;
+  const taskListMode: TaskListMode = isTagView ? "Tag" : activeTab;
 
   return (
     <View className="flex-1 bg-background">
@@ -459,14 +507,14 @@ export default function TasksScreen() {
             <View className="flex-row items-center gap-1.5 pr-2">
               <Pressable
                 accessibilityLabel="Show inbox tasks"
-                className={`rounded-lg px-2.5 py-1.5 active:opacity-70 ${
-                  activeTab === "Inbox" ? "bg-muted" : ""
+                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
+                  !isTagView && activeTab === "Inbox" ? "bg-muted" : ""
                 }`}
-                onPress={() => setActiveTab("Inbox")}
+                onPress={() => selectBaseTab("Inbox")}
               >
                 <Text
                   className={
-                    activeTab === "Inbox"
+                    !isTagView && activeTab === "Inbox"
                       ? "font-semibold text-foreground"
                       : "text-muted-foreground"
                   }
@@ -476,14 +524,14 @@ export default function TasksScreen() {
               </Pressable>
               <Pressable
                 accessibilityLabel="Show today tasks"
-                className={`rounded-lg px-2.5 py-1.5 active:opacity-70 ${
-                  activeTab === "Today" ? "bg-muted" : ""
+                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
+                  !isTagView && activeTab === "Today" ? "bg-muted" : ""
                 }`}
-                onPress={() => setActiveTab("Today")}
+                onPress={() => selectBaseTab("Today")}
               >
                 <Text
                   className={
-                    activeTab === "Today"
+                    !isTagView && activeTab === "Today"
                       ? "font-semibold text-foreground"
                       : "text-muted-foreground"
                   }
@@ -505,13 +553,15 @@ export default function TasksScreen() {
 
       {/* Task list */}
       <TaskList
-        activeTab={activeTab}
+        mode={taskListMode}
         inboxTasks={inboxTasks}
         isLoading={tasksQuery.isLoading}
         isRefreshing={isRefreshing}
         onPressTask={openEdit}
         onRefresh={handleRefresh}
         onToggleStatus={handleToggleStatus}
+        tagName={selectedTag?.name ?? null}
+        tagSections={tagSections}
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
         todaySections={todaySections}
       />
@@ -525,7 +575,6 @@ export default function TasksScreen() {
         onSave={handleSave}
         onToggleDone={editingTask ? handleToggleDone : undefined}
         setDraft={setDraft}
-        snapPoints={[0.7, 0.92, 0.98]}
         status={editingTask?.status ?? null}
         timeZone={timeZone}
       />

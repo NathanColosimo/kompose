@@ -2,14 +2,15 @@ import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { Check, Pencil, Tag as TagIcon, X } from "lucide-react-native";
 import React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { RadioButton } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
+import { useColor } from "@/hooks/useColor";
 import { type TagIconName, tagIconMap } from "./tag-icon-map";
 import { TagIconPicker } from "./tag-icon-picker";
 
@@ -35,10 +36,15 @@ export function TagManagerPopover({
   const [deleteTarget, setDeleteTarget] = React.useState<TagSelect | null>(
     null
   );
-  const [editingTagId, setEditingTagId] = React.useState<string | null>(null);
-  const [editName, setEditName] = React.useState("");
-  const [editIcon, setEditIcon] = React.useState<TagIconName>("Tag");
-  const [showIconPicker, setShowIconPicker] = React.useState(false);
+  const [tagDrafts, setTagDrafts] = React.useState<
+    Record<string, { icon: TagIconName; name: string }>
+  >({});
+  const [iconPickerTagId, setIconPickerTagId] = React.useState<string | null>(
+    null
+  );
+  const borderColor = useColor("border");
+  const textColor = useColor("text");
+  const mutedColor = useColor("textMuted");
 
   const tags = tagsQuery.data ?? [];
 
@@ -50,10 +56,27 @@ export function TagManagerPopover({
 
   React.useEffect(() => {
     if (!open) {
-      setEditingTagId(null);
-      setShowIconPicker(false);
+      setIconPickerTagId(null);
     }
   }, [open]);
+
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setTagDrafts((previous) => {
+      const next: Record<string, { icon: TagIconName; name: string }> = {};
+      for (const tag of tags) {
+        const draft = previous[tag.id];
+        next[tag.id] = {
+          icon: draft?.icon ?? tag.icon,
+          name: draft?.name ?? tag.name,
+        };
+      }
+      return next;
+    });
+  }, [open, tags]);
 
   const handleCreate = () => {
     const trimmed = name.trim();
@@ -98,33 +121,37 @@ export function TagManagerPopover({
     });
   };
 
-  const startEditing = (tag: TagSelect, openIconPicker = false) => {
-    setEditingTagId(tag.id);
-    setEditName(tag.name);
-    setEditIcon(tag.icon);
-    setShowIconPicker(openIconPicker);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingTagId || updateTag.isPending) {
+  const handleSaveEdit = (tag: TagSelect) => {
+    if (updateTag.isPending) {
       return;
     }
-    const trimmed = editName.trim();
+    const draft = tagDrafts[tag.id];
+    const trimmed = (draft?.name ?? tag.name).trim();
+    const nextIcon = draft?.icon ?? tag.icon;
     if (!trimmed) {
       return;
     }
     updateTag.mutate(
-      { id: editingTagId, name: trimmed, icon: editIcon },
+      { id: tag.id, name: trimmed, icon: nextIcon },
       {
         onSuccess: () => {
-          setEditingTagId(null);
-          setShowIconPicker(false);
+          setTagDrafts((previous) => ({
+            ...previous,
+            [tag.id]: { icon: nextIcon, name: trimmed },
+          }));
         },
       }
     );
   };
 
-  const isEditing = (tagId: string) => editingTagId === tagId;
+  const toggleEditMode = React.useCallback(() => {
+    if (tags.length === 0) {
+      setIsEditMode(true);
+      return;
+    }
+    setIsEditMode((prev) => !prev);
+    setIconPickerTagId(null);
+  }, [tags.length]);
 
   let tagListContent: React.ReactNode = null;
   if (tagsQuery.isLoading) {
@@ -138,169 +165,170 @@ export function TagManagerPopover({
   } else if (isEditMode) {
     // Edit mode: show editable tag list
     tagListContent = (
-      <ScrollView
-        className="max-h-64"
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        style={{ maxHeight: 256 }}
-      >
-        <View className="gap-2">
-          {tags.map((tag) => {
-            const IconComponent = tagIconMap[tag.icon];
-            const editing = isEditing(tag.id);
-            return (
-              <View
-                className="gap-2 rounded-md border border-border px-2 py-2"
-                key={tag.id}
-              >
-                <View className="flex-row items-center gap-2">
-                  <Pressable
-                    className="rounded-full"
-                    onPress={() => startEditing(tag, true)}
-                  >
-                    <Icon
-                      as={IconComponent}
-                      className="text-muted-foreground"
-                      size={16}
-                    />
-                  </Pressable>
-
-                  {editing ? (
-                    <>
-                      <Input
-                        containerStyle={{ flex: 1 }}
-                        onChangeText={setEditName}
-                        value={editName}
-                      />
-                      <Button
-                        accessibilityLabel="Save tag"
-                        onPress={handleSaveEdit}
-                        size="icon"
-                        style={{ height: 32, width: 32 }}
-                        variant="secondary"
-                      >
-                        <Icon as={Check} />
-                      </Button>
-                      <Button
-                        accessibilityLabel="Cancel edit"
-                        onPress={() => {
-                          setEditingTagId(null);
-                          setShowIconPicker(false);
-                        }}
-                        size="icon"
-                        style={{ height: 32, width: 32 }}
-                        variant="ghost"
-                      >
-                        <Icon as={X} />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Pressable
-                        className="flex-1"
-                        onPress={() => startEditing(tag, false)}
-                      >
-                        <Text className="text-xs">{tag.name}</Text>
-                      </Pressable>
-                      <Button
-                        accessibilityLabel={`Delete ${tag.name}`}
-                        onPress={() => setDeleteTarget(tag)}
-                        size="icon"
-                        style={{ height: 28, width: 28 }}
-                        variant="ghost"
-                      >
-                        <Icon as={X} className="text-muted-foreground" />
-                      </Button>
-                    </>
-                  )}
+      <View className="gap-2">
+        {tags.map((tag) => {
+          const IconComponent = tagIconMap[tag.icon];
+          const draft = tagDrafts[tag.id];
+          const draftName = draft?.name ?? tag.name;
+          const draftIcon = draft?.icon ?? tag.icon;
+          const hasChanges =
+            draftName.trim() !== tag.name || draftIcon !== tag.icon;
+          return (
+            <View
+              className="gap-1.5 rounded-md border border-border"
+              style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+              key={tag.id}
+            >
+              <View className="flex-row items-center gap-2" style={{ minHeight: 40 }}>
+                <Pressable
+                  className="h-7 w-7 items-center justify-center rounded-full"
+                  onPress={() =>
+                    setIconPickerTagId((current) =>
+                      current === tag.id ? null : tag.id
+                    )
+                  }
+                >
+                  <Icon
+                    as={IconComponent}
+                    className="text-muted-foreground"
+                    size={15}
+                  />
+                </Pressable>
+                <View
+                  style={{
+                    alignItems: "center",
+                    borderColor,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    flex: 1,
+                    flexDirection: "row",
+                    height: 34,
+                    paddingHorizontal: 10,
+                  }}
+                >
+                  <TextInput
+                    onChangeText={(nextName) =>
+                      setTagDrafts((previous) => ({
+                        ...previous,
+                        [tag.id]: {
+                          icon: previous[tag.id]?.icon ?? tag.icon,
+                          name: nextName,
+                        },
+                      }))
+                    }
+                    onSubmitEditing={() => handleSaveEdit(tag)}
+                    placeholder="Tag name"
+                    placeholderTextColor={mutedColor}
+                    style={{
+                      color: textColor,
+                      flex: 1,
+                      fontSize: 14,
+                      paddingVertical: 0,
+                    }}
+                    value={draftName}
+                  />
                 </View>
-
-                {editing && showIconPicker ? (
-                  <TagIconPicker onChange={setEditIcon} value={editIcon} />
-                ) : null}
+                <Button
+                  accessibilityLabel="Save tag"
+                  disabled={!hasChanges || !draftName.trim() || updateTag.isPending}
+                  onPress={() => handleSaveEdit(tag)}
+                  size="icon"
+                  style={{ height: 28, width: 28 }}
+                  variant="secondary"
+                >
+                  <Icon as={Check} />
+                </Button>
+                <Button
+                  accessibilityLabel={`Delete ${tag.name}`}
+                  onPress={() => setDeleteTarget(tag)}
+                  size="icon"
+                  style={{ height: 28, width: 28 }}
+                  variant="ghost"
+                >
+                  <Icon as={X} className="text-muted-foreground" />
+                </Button>
               </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+
+              {iconPickerTagId === tag.id ? (
+                <TagIconPicker
+                  onChange={(nextIcon) =>
+                    setTagDrafts((previous) => ({
+                      ...previous,
+                      [tag.id]: {
+                        icon: nextIcon,
+                        name: previous[tag.id]?.name ?? tag.name,
+                      },
+                    }))
+                  }
+                  value={draftIcon}
+                />
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
     );
   } else {
     // Selection mode: show selectable tag list with "Show all" option
     tagListContent = (
-      <ScrollView
-        className="max-h-64"
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        style={{ maxHeight: 256 }}
-      >
-        <View className="gap-2">
-          {/* "Show all" option at top */}
-          <Pressable
-            className={cn(
-              "flex-row items-center gap-2 rounded-md border px-2 py-1.5",
-              value === null ? "border-primary bg-primary/10" : "border-border"
-            )}
-            onPress={handleShowAll}
-          >
-            <Icon as={TagIcon} className="text-muted-foreground" size={14} />
-            <Text className="flex-1 text-xs">All tasks</Text>
-          </Pressable>
+      <View className="gap-2">
+        {/* "Show all" option at top */}
+        <Pressable
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === null }}
+          className="flex-row items-center gap-2 rounded-md border border-border px-2 py-1.5"
+          onPress={handleShowAll}
+        >
+          <Icon as={TagIcon} className="text-muted-foreground" size={14} />
+          <Text className="flex-1 text-xs">All tasks</Text>
+          <SelectionRadio selected={value === null} />
+        </Pressable>
 
-          {/* Individual tag options */}
-          {tags.map((tag) => {
-            const IconComponent = tagIconMap[tag.icon];
-            const isSelected = value === tag.id;
-            return (
-              <Pressable
-                className={cn(
-                  "flex-row items-center gap-2 rounded-md border px-2 py-1.5",
-                  isSelected ? "border-primary bg-primary/10" : "border-border"
-                )}
-                key={tag.id}
-                onPress={() => handleSelectTag(tag)}
-              >
-                <Icon
-                  as={IconComponent}
-                  className="text-muted-foreground"
-                  size={14}
-                />
-                <Text className="flex-1 text-xs">{tag.name}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+        {/* Individual tag options */}
+        {tags.map((tag) => {
+          const IconComponent = tagIconMap[tag.icon];
+          const isSelected = value === tag.id;
+          return (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+              className="flex-row items-center gap-2 rounded-md border border-border px-2 py-1.5"
+              key={tag.id}
+              onPress={() => handleSelectTag(tag)}
+            >
+              <Icon
+                as={IconComponent}
+                className="text-muted-foreground"
+                size={14}
+              />
+              <Text className="flex-1 text-xs">{tag.name}</Text>
+              <SelectionRadio selected={isSelected} />
+            </Pressable>
+          );
+        })}
+      </View>
     );
   }
 
   return (
     <>
       <BottomSheet
-        isVisible={open}
-        onClose={() => onOpenChange(false)}
-        snapPoints={[0.55, 0.82, 0.95]}
-        title="Tags"
-      >
-        <View className="flex-row items-center justify-end">
+        headerRight={
           <Button
             accessibilityLabel={isEditMode ? "Exit edit mode" : "Edit tags"}
-            onPress={() => {
-              if (tags.length === 0) {
-                setIsEditMode(true);
-                return;
-              }
-              setIsEditMode((prev) => !prev);
-              setEditingTagId(null);
-              setShowIconPicker(false);
-            }}
+            onPress={toggleEditMode}
             size="icon"
             variant={isEditMode ? "secondary" : "ghost"}
           >
             <Icon as={Pencil} />
           </Button>
-        </View>
-
-        <View className="mt-3 gap-3">
+        }
+        isVisible={open}
+        onClose={() => onOpenChange(false)}
+        snapPoints={[0.55, 0.82, 0.95]}
+        title="Tags"
+      >
+        <View className="gap-3">
           {tagListContent}
 
           {isEditMode ? (
@@ -343,5 +371,19 @@ export function TagManagerPopover({
         title="Delete tag?"
       />
     </>
+  );
+}
+
+function SelectionRadio({ selected }: { selected: boolean }) {
+  return (
+    <View pointerEvents="none">
+      <RadioButton
+        labelStyle={{ fontSize: 0, lineHeight: 0, width: 0 }}
+        onPress={() => undefined}
+        option={{ label: "", value: "selected" }}
+        selected={selected}
+        style={{ paddingHorizontal: 0, paddingVertical: 0 }}
+      />
+    </View>
   );
 }

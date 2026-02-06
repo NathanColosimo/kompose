@@ -31,6 +31,7 @@ const SPRING_CONFIG = { damping: 50, stiffness: 400 };
 type BottomSheetContentProps = {
   children: React.ReactNode;
   title?: string;
+  headerRight?: React.ReactNode;
   style?: ViewStyle;
   rBottomSheetStyle: any;
   cardColor: string;
@@ -43,6 +44,7 @@ type BottomSheetContentProps = {
 const BottomSheetContent = ({
   children,
   title,
+  headerRight,
   style,
   rBottomSheetStyle,
   cardColor,
@@ -85,27 +87,36 @@ const BottomSheetContent = ({
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Title */}
-      {title && (
+      {/* Title row */}
+      {(title || headerRight) && (
         <View
           style={{
             marginHorizontal: 16,
             marginTop: 16,
             paddingBottom: 8,
+            flexDirection: "row",
+            alignItems: "center",
+            minHeight: 44,
           }}
         >
-          <Text
-            className="font-semibold text-lg"
-            style={{ textAlign: "center" }}
-          >
-            {title}
-          </Text>
+          {title ? (
+            <Text
+              className="font-semibold text-lg"
+              style={{ flex: 1, textAlign: headerRight ? "left" : "center" }}
+            >
+              {title}
+            </Text>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+
+          {headerRight ? <View style={{ marginLeft: 12 }}>{headerRight}</View> : null}
         </View>
       )}
 
       {/* Content now wrapped in a ScrollView */}
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 88 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={{ flex: 1 }}
@@ -123,6 +134,7 @@ type BottomSheetProps = {
   snapPoints?: number[];
   enableBackdropDismiss?: boolean;
   title?: string;
+  headerRight?: React.ReactNode;
   style?: ViewStyle;
   disablePanGesture?: boolean;
 };
@@ -134,6 +146,7 @@ export function BottomSheet({
   snapPoints = [0.3, 0.6, 0.9],
   enableBackdropDismiss = true,
   title,
+  headerRight,
   style,
   disablePanGesture = false,
 }: BottomSheetProps) {
@@ -320,6 +333,7 @@ export function BottomSheet({
             <BottomSheetContent
               cardColor={cardColor}
               children={children}
+              headerRight={headerRight}
               mutedColor={mutedColor}
               onHandlePress={handlePress}
               rBottomSheetStyle={rBottomSheetStyle}
@@ -331,6 +345,7 @@ export function BottomSheet({
               <BottomSheetContent
                 cardColor={cardColor}
                 children={children}
+                headerRight={headerRight}
                 mutedColor={mutedColor}
                 onHandlePress={handlePress}
                 rBottomSheetStyle={rBottomSheetStyle}

@@ -36,9 +36,13 @@ export function useColorScheme() {
   useEffect(() => {
     if (hasRestored.current) return;
     hasRestored.current = true;
+    let isCancelled = false;
 
     getItemAsync(THEME_STORAGE_KEY)
       .then((value) => {
+        if (isCancelled) {
+          return;
+        }
         if (value === "light" || value === "dark" || value === "system") {
           setUserPreference(value);
           applyColorScheme(value);
@@ -47,6 +51,10 @@ export function useColorScheme() {
       .catch(() => {
         // Ignore restore errors
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [applyColorScheme]);
 
   const setColorScheme = useCallback(

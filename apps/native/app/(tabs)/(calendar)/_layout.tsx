@@ -7,15 +7,18 @@ import { useColor } from "@/hooks/useColor";
  */
 export default function CalendarLayout() {
   const textColor = useColor("text");
+  const backgroundColor = useColor("background");
 
   return (
     <Stack
       screenOptions={{
-        headerTransparent: true,
-        headerBlurEffect: "systemMaterial",
+        headerTransparent: false,
         headerShadowVisible: false,
         headerBackButtonDisplayMode: "minimal",
         headerTintColor: textColor,
+        headerStyle: {
+          backgroundColor,
+        },
         headerTitleStyle: {
           color: textColor,
         },

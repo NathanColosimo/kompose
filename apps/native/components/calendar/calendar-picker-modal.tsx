@@ -1,10 +1,13 @@
+import { normalizedGoogleColorsAtomFamily } from "@kompose/state/atoms/google-colors";
 import {
   isCalendarVisible,
   toggleCalendarSelection,
   type VisibleCalendars,
 } from "@kompose/state/atoms/visible-calendars";
 import type { CalendarWithSource } from "@kompose/state/hooks/use-google-calendars";
-import type { Account } from "better-auth";
+import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
+import { useAtomValue } from "jotai";
+import type { Account, OAuth2UserInfo } from "better-auth";
 import { Check } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -23,6 +26,11 @@ interface CalendarPickerModalProps {
     next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
   ) => void;
 }
+
+type CalendarId = {
+  accountId: string;
+  calendarId: string;
+};
 
 /**
  * Calendar visibility picker for mobile.
@@ -43,6 +51,7 @@ export function CalendarPickerModal({
   const primaryColor = useColor("primary");
   const primaryForegroundColor = useColor("primaryForeground");
   const borderColor = useColor("border");
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
 
   const calendarsByAccount = useMemo(() => {
     const map = new Map<string, CalendarWithSource[]>();
@@ -58,7 +67,7 @@ export function CalendarPickerModal({
     return map;
   }, [googleAccounts, googleCalendars]);
 
-  const allCalendarIds = useMemo(
+  const allCalendarIds = useMemo<CalendarId[]>(
     () =>
       googleCalendars.map((calendar) => ({
         accountId: calendar.accountId,
@@ -66,6 +75,20 @@ export function CalendarPickerModal({
       })),
     [googleCalendars]
   );
+
+  const accountProfilesById = useMemo(() => {
+    const map = new Map<
+      string,
+      { profile: OAuth2UserInfo | null; isLoading: boolean }
+    >();
+    for (const accountProfile of googleAccountProfiles) {
+      map.set(accountProfile.account.id, {
+        profile: accountProfile.profile,
+        isLoading: accountProfile.isLoading,
+      });
+    }
+    return map;
+  }, [googleAccountProfiles]);
 
   return (
     <BottomSheet
@@ -93,68 +116,148 @@ export function CalendarPickerModal({
         ) : (
           googleAccounts.map((account) => {
             const accountCalendars = calendarsByAccount.get(account.id) ?? [];
+            const accountProfile = accountProfilesById.get(account.id);
+
             return (
-              <View className="mb-4" key={account.id}>
-                <Text className="mb-2 font-bold text-foreground">
-                  {account.accountId || "Account"}
-                </Text>
-                {accountCalendars.length === 0 ? (
-                  <Text className="py-2 text-muted-foreground">
-                    No calendars found for this account.
-                  </Text>
-                ) : (
-                  accountCalendars.map(({ calendar }) => {
-                    const checked = isCalendarVisible(
-                      visibleCalendars,
-                      account.id,
-                      calendar.id
-                    );
-                    return (
-                      <Pressable
-                        className="mb-2 flex-row items-center gap-2.5 rounded-md border border-border px-3 py-2.5 active:bg-card"
-                        key={`${account.id}-${calendar.id}`}
-                        onPress={() =>
-                          setVisibleCalendars((prev) => {
-                            const base = prev ?? allCalendarIds;
-                            return toggleCalendarSelection(base, {
-                              accountId: account.id,
-                              calendarId: calendar.id,
-                            });
-                          })
-                        }
-                      >
-                        <View
-                          className="h-5 w-5 items-center justify-center rounded border"
-                          style={{
-                            borderColor: checked ? primaryColor : borderColor,
-                            backgroundColor: checked
-                              ? primaryColor
-                              : "transparent",
-                          }}
-                        >
-                          {checked ? (
-                            <Check
-                              color={primaryForegroundColor}
-                              size={14}
-                              strokeWidth={2.5}
-                            />
-                          ) : null}
-                        </View>
-                        <Text
-                          className="flex-1 font-semibold text-foreground"
-                          numberOfLines={1}
-                        >
-                          {calendar.summary ?? "Calendar"}
-                        </Text>
-                      </Pressable>
-                    );
-                  })
-                )}
-              </View>
+              <CalendarAccountSection
+                account={account}
+                accountCalendars={accountCalendars}
+                allCalendarIds={allCalendarIds}
+                borderColor={borderColor}
+                isProfileLoading={accountProfile?.isLoading ?? false}
+                key={account.id}
+                primaryColor={primaryColor}
+                primaryForegroundColor={primaryForegroundColor}
+                profile={accountProfile?.profile}
+                setVisibleCalendars={setVisibleCalendars}
+                visibleCalendars={visibleCalendars}
+              />
             );
           })
         )}
       </ScrollView>
     </BottomSheet>
+  );
+}
+
+interface CalendarAccountSectionProps {
+  account: Account;
+  accountCalendars: CalendarWithSource[];
+  allCalendarIds: CalendarId[];
+  visibleCalendars: VisibleCalendars;
+  setVisibleCalendars: (
+    next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
+  ) => void;
+  primaryColor: string;
+  primaryForegroundColor: string;
+  borderColor: string;
+  profile?: OAuth2UserInfo | null;
+  isProfileLoading: boolean;
+}
+
+function CalendarAccountSection({
+  account,
+  accountCalendars,
+  allCalendarIds,
+  visibleCalendars,
+  setVisibleCalendars,
+  primaryColor,
+  primaryForegroundColor,
+  borderColor,
+  profile,
+  isProfileLoading,
+}: CalendarAccountSectionProps) {
+  const normalizedPalette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(account.id)
+  );
+
+  const accountTitle = isProfileLoading
+    ? "Loading Google account..."
+    : (profile?.email ?? profile?.name ?? account.accountId ?? "Google account");
+
+  const accountSubtitle = isProfileLoading
+    ? null
+    : (profile?.name && profile.name !== profile.email
+        ? profile.name
+        : account.accountId);
+
+  return (
+    <View className="mb-4">
+      <View className="mb-2 gap-0.5">
+        <Text className="font-bold text-foreground" numberOfLines={1}>
+          {accountTitle}
+        </Text>
+        {accountSubtitle ? (
+          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+            {accountSubtitle}
+          </Text>
+        ) : null}
+      </View>
+      {accountCalendars.length === 0 ? (
+        <Text className="py-2 text-muted-foreground">
+          No calendars found for this account.
+        </Text>
+      ) : (
+        accountCalendars.map(({ calendar }) => {
+          const checked = isCalendarVisible(
+            visibleCalendars,
+            account.id,
+            calendar.id
+          );
+          const paletteColor =
+            calendar.colorId && normalizedPalette?.calendar
+              ? normalizedPalette.calendar[calendar.colorId]
+              : undefined;
+          const calendarColor =
+            calendar.backgroundColor ?? paletteColor?.background ?? undefined;
+
+          return (
+            <Pressable
+              className="mb-2 flex-row items-center gap-2.5 rounded-md border border-border px-3 py-2.5 active:bg-card"
+              key={`${account.id}-${calendar.id}`}
+              onPress={() =>
+                setVisibleCalendars((prev) => {
+                  const base = prev ?? allCalendarIds;
+                  return toggleCalendarSelection(base, {
+                    accountId: account.id,
+                    calendarId: calendar.id,
+                  });
+                })
+              }
+            >
+              <View
+                className="h-5 w-5 items-center justify-center rounded border"
+                style={{
+                  borderColor: checked ? primaryColor : borderColor,
+                  backgroundColor: checked ? primaryColor : "transparent",
+                }}
+              >
+                {checked ? (
+                  <Check
+                    color={primaryForegroundColor}
+                    size={14}
+                    strokeWidth={2.5}
+                  />
+                ) : null}
+              </View>
+              <View
+                className="h-2.5 w-2.5 rounded-full border"
+                style={{
+                  borderColor: calendarColor ?? borderColor,
+                  backgroundColor: calendarColor ?? "transparent",
+                }}
+              />
+              <Text
+                className="flex-1 font-semibold text-foreground"
+                numberOfLines={1}
+                style={calendarColor ? { color: calendarColor } : undefined}
+              >
+                {calendar.summary ?? "Calendar"}
+              </Text>
+            </Pressable>
+          );
+        })
+      )}
+    </View>
   );
 }
