@@ -13,7 +13,7 @@
     "desktop:build": "tauri build --bundles dmg",
     "desktop:build:signed": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target aarch64-apple-darwin",
     "desktop:build:signed:universal": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target universal-apple-darwin",
-    "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key $APPLE_API_KEY_PATH --key-id $APPLE_API_KEY --issuer $APPLE_API_ISSUER"
+    "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key \"$APPLE_API_KEY_PATH\" --key-id \"$APPLE_API_KEY\" --issuer \"$APPLE_API_ISSUER\""
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",

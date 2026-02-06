@@ -128,8 +128,18 @@ Per-arch (Apple Silicon):
 ## Current blocker
 
 - Compile and DMG bundling blocker is resolved for Apple Silicon target.
-- Remaining risk is notarization being skipped when Apple env vars are not
-  present in the shell (`APPLE_*`).
+- Remaining risk is Apple notary queue latency (`In Progress` for long periods).
+- Notarization can also be skipped when Apple env vars are not present in the
+  shell (`APPLE_*`).
+
+## Notarization queue notes
+
+- As of `2026-02-06`, a submission remained in `In Progress` for ~5 hours:
+  `36f5374a-6595-4f7e-8c84-98872df2b5e6`.
+- A second manual submission was created:
+  `fccfbf92-0d7a-438a-931b-36ff04c3cc7c` (also initially `In Progress`).
+- Apple developer status feed reported no active event for
+  `Developer ID Notary Service` at that time.
 
 ## Notes
 
