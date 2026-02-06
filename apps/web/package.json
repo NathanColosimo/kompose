@@ -44,7 +44,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "catalog:",
-    "@tauri-apps/plugin-updater": "^2.10.1",
+    "@tauri-apps/plugin-updater": "^2.10.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "better-auth": "catalog:",
     "chrono-node": "^2.9.0",
