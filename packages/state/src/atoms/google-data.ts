@@ -11,6 +11,10 @@ import { getStateConfig, hasSessionAtom } from "../config";
 import type { CalendarIdentifier } from "./visible-calendars";
 import { visibleCalendarsAtom } from "./visible-calendars";
 
+function toCalendarKey(calendar: CalendarIdentifier) {
+  return `${calendar.accountId}:${calendar.calendarId}`;
+}
+
 // --- Accounts ---
 
 const googleAccountsAtom = atomWithQuery<Account[]>((get) => {
@@ -75,15 +79,33 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
 
 export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
-    const stored = get(visibleCalendarsAtom);
-    if (stored !== null) {
-      return stored;
-    }
     const calendars = get(googleCalendarsDataAtom);
-    return calendars.map((calendar) => ({
+    const allCalendarIds = calendars.map((calendar) => ({
       accountId: calendar.accountId,
       calendarId: calendar.calendar.id,
     }));
+
+    const stored = get(visibleCalendarsAtom);
+    if (stored === null) {
+      return allCalendarIds;
+    }
+
+    if (stored.length === 0) {
+      return [];
+    }
+
+    const validKeys = new Set(allCalendarIds.map(toCalendarKey));
+    const filtered = stored.filter((calendar) =>
+      validKeys.has(toCalendarKey(calendar))
+    );
+
+    // Stale persisted selections (e.g. after DB reset/re-link) should not block
+    // events from loading; fall back to all currently available calendars.
+    if (filtered.length === 0 && allCalendarIds.length > 0) {
+      return allCalendarIds;
+    }
+
+    return filtered;
   }
 );
 

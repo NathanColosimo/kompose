@@ -2,6 +2,7 @@
 
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
+import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import type { User } from "better-auth";
 import { useSetAtom } from "jotai";
@@ -16,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,6 +66,26 @@ import { useTauriUpdater } from "./tauri-updater";
 export function AppHeader() {
   const { data: session } = authClient.useSession();
   const user = session?.user;
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  const fallbackGoogleAvatar = useMemo(() => {
+    if (!user) {
+      return "";
+    }
+
+    const email = user.email?.toLowerCase();
+    if (!email) {
+      return googleAccountProfiles[0]?.profile?.image || "";
+    }
+
+    const matchedProfile = googleAccountProfiles.find(
+      (entry) => entry.profile?.email?.toLowerCase() === email
+    )?.profile;
+
+    return (
+      matchedProfile?.image || googleAccountProfiles[0]?.profile?.image || ""
+    );
+  }, [googleAccountProfiles, user]);
+  const avatarSrc = user?.image || fallbackGoogleAvatar || "";
 
   return (
     <header
@@ -87,7 +108,7 @@ export function AppHeader() {
       >
         <UpdatePromptButton />
         {user && <TagsMenu />}
-        {user && <UserMenu user={user} />}
+        {user && <UserMenu avatarSrc={avatarSrc} user={user} />}
       </div>
     </header>
   );
@@ -119,7 +140,7 @@ function SearchButton() {
 /**
  * User avatar dropdown with account options and logout.
  */
-function UserMenu({ user }: { user: User }) {
+function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -146,7 +167,7 @@ function UserMenu({ user }: { user: User }) {
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
         <Avatar className="size-7 cursor-pointer">
-          <AvatarImage alt={user.name} src={user.image || ""} />
+          <AvatarImage alt={user.name} src={avatarSrc} />
           <AvatarFallback className="text-xs">{initials}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
@@ -154,7 +175,7 @@ function UserMenu({ user }: { user: User }) {
         <DropdownMenuLabel className="p-0 font-normal">
           <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
             <Avatar className="size-8">
-              <AvatarImage alt={user.name} src={user.image || ""} />
+              <AvatarImage alt={user.name} src={avatarSrc} />
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">

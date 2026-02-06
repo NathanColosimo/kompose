@@ -17,9 +17,21 @@ export const auth = betterAuth<BetterAuthOptions>({
     provider: "pg",
     schema,
   }),
-  trustedOrigins: [env.NEXT_PUBLIC_WEB_URL, "kompose://", "exp://"],
+  trustedOrigins: [
+    env.NEXT_PUBLIC_WEB_URL,
+    "kompose://",
+    "exp://",
+    "https://appleid.apple.com",
+  ],
   emailAndPassword: {
     enabled: false,
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      // Support linking additional Google accounts that may use different emails.
+      allowDifferentEmails: true,
+    },
   },
   socialProviders: {
     google: {
@@ -28,6 +40,11 @@ export const auth = betterAuth<BetterAuthOptions>({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       scope: ["https://www.googleapis.com/auth/calendar"],
+    },
+    apple: {
+      clientId: env.APPLE_CLIENT_ID,
+      clientSecret: env.APPLE_CLIENT_SECRET,
+      appBundleIdentifier: env.APPLE_APP_BUNDLE_IDENTIFIER,
     },
   },
   plugins: [nextCookies(), expo()],

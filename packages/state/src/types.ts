@@ -1,6 +1,10 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import type { createTanstackQueryUtils } from "@orpc/tanstack-query";
-import type { Account } from "better-auth";
+import type { Account, OAuth2UserInfo } from "better-auth";
+
+export interface UnlinkAccountInput {
+  accountId: string;
+}
 
 /**
  * Minimal auth client shape used by shared state.
@@ -8,6 +12,8 @@ import type { Account } from "better-auth";
 export interface AuthClient {
   useSession: () => { data?: { user?: unknown } | null };
   listAccounts: () => Promise<{ data?: Account[] } | null>;
+  accountInfo: (accountId: string) => Promise<OAuth2UserInfo | null>;
+  unlinkAccount: (input: UnlinkAccountInput) => Promise<void>;
 }
 
 /**

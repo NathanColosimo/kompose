@@ -57,6 +57,19 @@ export function useEnsureVisibleCalendars(allCalendars: CalendarIdentifier[]) {
       return;
     }
 
+    const validCalendarKeys = new Set(allCalendars.map(toCalendarKey));
+    const sanitizedVisible = visibleCalendars.filter((calendar) =>
+      validCalendarKeys.has(toCalendarKey(calendar))
+    );
+
+    if (sanitizedVisible.length !== visibleCalendars.length) {
+      previousAllRef.current = allCalendars;
+      setVisibleCalendars(
+        sanitizedVisible.length > 0 ? sanitizedVisible : allCalendars
+      );
+      return;
+    }
+
     const previousAll = previousAllRef.current;
     if (
       previousAll.length > 0 &&

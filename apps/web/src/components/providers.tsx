@@ -32,6 +32,54 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         }
         return { data: result.data };
       },
+      accountInfo: async (accountId: string) => {
+        const result = await authClient.accountInfo({
+          query: { accountId },
+        });
+        return result?.data?.user ?? null;
+      },
+      unlinkAccount: async ({ accountId }: { accountId: string }) => {
+        const accountsResult = await authClient.listAccounts();
+        const accounts = accountsResult?.data ?? [];
+        const account = accounts.find(
+          (linkedAccount) => linkedAccount.accountId === accountId
+        );
+
+        if (!account) {
+          throw new Error("Account not found.");
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          authClient
+            .unlinkAccount(
+              {
+                providerId: account.providerId,
+                accountId,
+              },
+              {
+                onSuccess: () => {
+                  resolve();
+                },
+                onError: (error) => {
+                  reject(
+                    new Error(
+                      error.error.message ||
+                        error.error.statusText ||
+                        "Failed to unlink account."
+                    )
+                  );
+                },
+              }
+            )
+            .catch((error: unknown) => {
+              reject(
+                error instanceof Error
+                  ? error
+                  : new Error("Failed to unlink account.")
+              );
+            });
+        });
+      },
     }),
     []
   );

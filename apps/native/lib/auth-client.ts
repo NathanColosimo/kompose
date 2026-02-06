@@ -1,4 +1,6 @@
 import { expoClient } from "@better-auth/expo/client";
+import type { auth } from "@kompose/auth";
+import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import Constants from "expo-constants";
 // biome-ignore lint/performance/noNamespaceImport: SecureStore is a namespace object
@@ -12,5 +14,6 @@ export const authClient = createAuthClient({
       storagePrefix: Constants.expoConfig?.scheme as string,
       storage: SecureStore,
     }),
+    inferAdditionalFields<typeof auth>(),
   ],
 });

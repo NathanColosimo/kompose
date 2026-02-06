@@ -47,6 +47,7 @@ export default function DashboardLayout({
           "--header-height": "2.5rem",
         } as React.CSSProperties
       }
+      suppressHydrationWarning
     >
       {/* App-wide header with search bar and user menu */}
       <AppHeader />

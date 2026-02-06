@@ -1,41 +1,9 @@
-import { useState } from "react";
-import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import Loader from "../loader";
-import { Button } from "../ui/button";
+import { SocialAccountButtons } from "./social-account-buttons";
 
 export default function SignUpForm() {
   const { isPending } = authClient.useSession();
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-
-  // Same Google entry point handles both sign in + sign up flows.
-  const handleGoogleSignUp = async () => {
-    if (isAuthenticating) {
-      return;
-    }
-    setIsAuthenticating(true);
-    try {
-      const baseUrl = window.location.origin;
-      await authClient.signIn.social(
-        {
-          provider: "google",
-          callbackURL: `${baseUrl}/dashboard`,
-          newUserCallbackURL: `${baseUrl}/dashboard`,
-          errorCallbackURL: `${baseUrl}/login`,
-        },
-        {
-          onSuccess: () => {
-            toast.success("You're in! Redirecting to your timeline.");
-          },
-          onError: (error) => {
-            toast.error(error.error.message || error.error.statusText);
-          },
-        }
-      );
-    } finally {
-      setIsAuthenticating(false);
-    }
-  };
 
   if (isPending) {
     return <Loader />;
@@ -49,23 +17,14 @@ export default function SignUpForm() {
         </p>
         <h2 className="font-serif text-3xl">Create your Kompose workspace</h2>
         <p className="text-muted-foreground text-sm">
-          Connect Google to get calendar sync, tasks, and AI orchestration in
-          minutes.
+          Connect Google or Apple to get calendar sync, tasks, and AI
+          orchestration in minutes.
         </p>
       </div>
-      <Button
-        className="w-full"
-        disabled={isAuthenticating}
-        onClick={handleGoogleSignUp}
-        size="lg"
-        type="button"
-        variant="outline"
-      >
-        {isAuthenticating ? "Contacting Google..." : "Create with Google"}
-      </Button>
+      <SocialAccountButtons mode="sign-up" />
       <p className="text-center text-muted-foreground text-xs">
-        No passwords to manage. You can revoke access anytime from your Google
-        security dashboard.
+        No passwords to manage. You can revoke access anytime from your linked
+        provider settings.
       </p>
     </section>
   );
