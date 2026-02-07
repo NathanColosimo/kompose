@@ -4,7 +4,7 @@
     "slug": "kompose",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/kompose-icon.png",
     "scheme": "kompose",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,14 +13,18 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "icon": {
+        "dark": "./assets/images/kompose-icon.png",
+        "light": "./assets/images/kompose-icon-light.png"
       }
     },
     "android": {
+      "icon": "./assets/images/kompose-icon.png",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/kompose-icon.png",
+        "monochromeImage": "./assets/images/kompose-icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -28,18 +32,19 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/kompose-icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/kompose-icon-light.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#fefefe",
           "dark": {
+            "image": "./assets/images/kompose-icon.png",
             "backgroundColor": "#000000"
           }
         }
