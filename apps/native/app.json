@@ -58,6 +58,12 @@
         "projectId": "b17e2ef6-be9c-4a74-ae7f-53525505b559"
       }
     },
-    "owner": "nathancolosimo"
+    "owner": "nathancolosimo",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b17e2ef6-be9c-4a74-ae7f-53525505b559"
+    }
   }
 }

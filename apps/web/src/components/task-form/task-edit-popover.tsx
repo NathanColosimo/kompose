@@ -8,6 +8,11 @@ import type {
 } from "@kompose/api/routers/task/contract";
 import { focusedTaskIdAtom } from "@kompose/state/atoms/command-bar";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import {
+  getTaskUpdateScopeDecision,
+  haveTaskCoreFieldsChanged,
+} from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
   CalendarCheck,
@@ -25,12 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Controller,
-  type SubmitHandler,
-  useForm,
-  useWatch,
-} from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
@@ -98,7 +98,7 @@ export function TaskEditPopover({
   align = "start",
 }: TaskEditPopoverProps) {
   const [open, setOpen] = useState(false);
-  const submitRef = useRef<(() => void) | null>(null);
+  const submitRef = useRef<(() => boolean) | null>(null);
   const [focusedTaskId, setFocusedTaskId] = useAtom(focusedTaskIdAtom);
 
   // Open popover when this task is focused via command bar search
@@ -112,7 +112,10 @@ export function TaskEditPopover({
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && submitRef.current) {
-      submitRef.current();
+      const shouldClose = submitRef.current();
+      if (!shouldClose) {
+        return;
+      }
     }
     setOpen(nextOpen);
   };
@@ -150,11 +153,11 @@ function TaskEditForm({
   open,
 }: {
   task: TaskSelectDecoded;
-  onRegisterSubmit: (fn: () => void) => void;
+  onRegisterSubmit: (fn: () => boolean) => void;
   onClose: () => void;
   open: boolean;
 }) {
-  const { updateTask, deleteTask } = useTasks();
+  const { updateTask, deleteTask, tasksQuery } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
@@ -164,6 +167,16 @@ function TaskEditForm({
 
   // Check if this task is part of a recurring series
   const isRecurring = task.seriesMasterId !== null;
+  const resolvedRecurrence = useMemo(() => {
+    if (task.recurrence || !task.seriesMasterId) {
+      return task.recurrence ?? null;
+    }
+
+    const masterTask = (tasksQuery.data ?? []).find(
+      (candidate) => candidate.id === task.seriesMasterId
+    );
+    return masterTask?.recurrence ?? null;
+  }, [task.recurrence, task.seriesMasterId, tasksQuery.data]);
 
   // Opens confirmation dialog
   const handleDeleteClick = useCallback(() => {
@@ -210,23 +223,18 @@ function TaskEditForm({
       startTime: task.startTime ?? null,
       dueDate: task.dueDate ?? null,
       durationMinutes: task.durationMinutes ?? 30,
-      recurrence: task.recurrence ?? null,
+      recurrence: resolvedRecurrence,
     }),
     [
       task.description,
       task.tags,
       task.dueDate,
       task.durationMinutes,
-      task.recurrence,
+      resolvedRecurrence,
       task.startDate,
       task.startTime,
       task.title,
     ]
-  );
-
-  const initialTagIds = useMemo(
-    () => [...task.tags.map((tag) => tag.id)].sort(),
-    [task.tags]
   );
 
   const {
@@ -248,17 +256,6 @@ function TaskEditForm({
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
-
-  const areTagIdsEqual = useCallback(
-    (next: string[]) => {
-      const normalized = [...next].sort();
-      if (normalized.length !== initialTagIds.length) {
-        return false;
-      }
-      return normalized.every((value, index) => value === initialTagIds[index]);
-    },
-    [initialTagIds]
-  );
 
   const commitUpdate = useCallback(
     (values: TaskFormValues, scope: UpdateScope) => {
@@ -285,32 +282,56 @@ function TaskEditForm({
     [task.durationMinutes, task.id, updateTask]
   );
 
-  const submit = useCallback<SubmitHandler<TaskFormValues>>(
-    (values) => {
-      const recurrenceChanged =
-        JSON.stringify(values.recurrence) !==
-        JSON.stringify(task.recurrence ?? null);
-      const tagsChanged = !areTagIdsEqual(values.tagIds);
+  const submit = useCallback(
+    (values: TaskFormValues) => {
+      const decision = getTaskUpdateScopeDecision({
+        isRecurring,
+        isSeriesMaster: task.seriesMasterId === task.id,
+        hasCoreFieldChanges: haveTaskCoreFieldsChanged({
+          previous: {
+            title: task.title,
+            description: task.description,
+            durationMinutes: task.durationMinutes,
+            dueDate: task.dueDate,
+            startDate: task.startDate,
+            startTime: task.startTime,
+          },
+          next: {
+            title: values.title,
+            description: values.description,
+            durationMinutes: values.durationMinutes,
+            dueDate: values.dueDate,
+            startDate: values.startDate,
+            startTime: values.startTime,
+          },
+        }),
+        previousRecurrence: resolvedRecurrence,
+        nextRecurrence: values.recurrence,
+        previousTagIds: task.tags.map((tag) => tag.id),
+        nextTagIds: values.tagIds,
+      });
 
-      if (isRecurring && tagsChanged && !recurrenceChanged) {
+      if (decision.action === "prompt") {
         setPendingUpdate(values);
-        setTagScope("this");
+        setTagScope(decision.defaultScope);
         setShowTagScopeDialog(true);
-        return;
+        return false;
       }
 
-      commitUpdate(values, recurrenceChanged ? "following" : "this");
+      commitUpdate(values, decision.scope);
+      return true;
     },
-    [areTagIdsEqual, commitUpdate, isRecurring, task.recurrence]
+    [commitUpdate, isRecurring, resolvedRecurrence, task]
   );
 
   // Register submit callback so the popover can trigger save on close.
   // Only submit if the form has been modified.
   useEffect(() => {
     onRegisterSubmit(() => {
-      if (isDirty) {
-        submit(getValues());
+      if (!isDirty) {
+        return true;
       }
+      return submit(getValues());
     });
   }, [getValues, isDirty, onRegisterSubmit, submit]);
 
@@ -630,6 +651,7 @@ function TaskEditForm({
           }
           commitUpdate(pendingUpdate, tagScope);
           setPendingUpdate(null);
+          onClose();
         }}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
@@ -639,7 +661,8 @@ function TaskEditForm({
         }}
         onValueChange={(value) => setTagScope(value as UpdateScope)}
         open={showTagScopeDialog}
-        title="Apply tag update"
+        options={TASK_UPDATE_SCOPE_OPTIONS}
+        title="Apply task update"
         value={tagScope}
       />
     </form>

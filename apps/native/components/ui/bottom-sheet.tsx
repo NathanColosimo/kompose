@@ -110,7 +110,9 @@ const BottomSheetContent = ({
             <View style={{ flex: 1 }} />
           )}
 
-          {headerRight ? <View style={{ marginLeft: 12 }}>{headerRight}</View> : null}
+          {headerRight ? (
+            <View style={{ marginLeft: 12 }}>{headerRight}</View>
+          ) : null}
         </View>
       )}
 

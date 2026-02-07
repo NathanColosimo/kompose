@@ -31,6 +31,8 @@ export const auth = betterAuth<BetterAuthOptions>({
       enabled: true,
       // Support linking additional Google accounts that may use different emails.
       allowDifferentEmails: true,
+      trustedProviders: ["google", "apple"],
+      
     },
   },
   socialProviders: {

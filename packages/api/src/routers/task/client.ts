@@ -20,11 +20,9 @@ import {
   dbSelect,
   dbSelectById,
   dbSelectByIdsWithTags,
-  dbSelectBySeries,
   dbSelectBySeriesFrom,
   dbSelectTagIdsForUser,
   dbUpdate,
-  dbUpdateBySeries,
   type TaskInsertRow,
   type TaskWithTagsRow,
 } from "./db";
@@ -144,6 +142,45 @@ function isSameRecurrence(
 ): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
+
+/**
+ * Occurrence rows in a recurring series may store recurrence as null while the
+ * master stores the actual pattern. When an occurrence edit submits null
+ * recurrence unchanged, treat it as "no recurrence update" instead of a
+ * destructive recurrence-change request.
+ */
+function shouldCompareFollowingRecurrenceChange(
+  task: TaskSelect,
+  input: TaskUpdateInput
+): boolean {
+  if (input.recurrence === undefined) {
+    return false;
+  }
+
+  if (
+    task.seriesMasterId &&
+    task.recurrence === null &&
+    input.recurrence === null
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/** Resolve recurrence for comparison (occurrences may store null while master stores pattern). */
+const resolveComparableRecurrence = (
+  userId: string,
+  task: TaskSelect
+): Effect.Effect<TaskRecurrence | null, TaskError> =>
+  Effect.gen(function* () {
+    if (task.recurrence || !task.seriesMasterId) {
+      return task.recurrence ?? null;
+    }
+
+    const masterTasks = yield* dbSelectById(userId, task.seriesMasterId);
+    return masterTasks[0]?.recurrence ?? null;
+  });
 
 /** Remove per-occurrence fields when updating a series in bulk. */
 function buildSeriesUpdateBase(input: TaskUpdateInput): TaskUpdate {
@@ -397,18 +434,6 @@ function buildSeriesOccurrenceUpdate(
   return update;
 }
 
-/** Decide if a series update needs date/time scaling. */
-function shouldScaleSeriesDates(task: TaskSelect, input: TaskUpdate): boolean {
-  const startDateChanged =
-    input.startDate !== undefined && input.startDate !== task.startDate;
-  const dueDateChanged =
-    input.dueDate !== undefined && input.dueDate !== task.dueDate;
-  const startTimeChanged =
-    input.startTime !== undefined && input.startTime !== task.startTime;
-
-  return startDateChanged || dueDateChanged || startTimeChanged;
-}
-
 /** Build task rows for a recurring series */
 function buildRecurringTaskRows(
   userId: string,
@@ -524,25 +549,23 @@ const regenerateOccurrences = (
 const updateSeriesWithScaledDates = (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdate,
-  scope: "all" | "following"
+  input: TaskUpdate
 ): Effect.Effect<TaskSelect[], TaskError> =>
   Effect.gen(function* () {
     if (!task.seriesMasterId) {
       return yield* dbUpdate(userId, task.id, input);
     }
 
-    // Pull the target occurrences for the requested scope.
-    let seriesTasks: TaskSelect[];
-    if (scope === "following" && task.startDate) {
-      seriesTasks = yield* dbSelectBySeriesFrom(
-        userId,
-        task.seriesMasterId,
-        task.startDate
-      );
-    } else {
-      seriesTasks = yield* dbSelectBySeries(userId, task.seriesMasterId);
+    if (!task.startDate) {
+      return yield* dbUpdate(userId, task.id, { ...input, isException: true });
     }
+
+    // Scope is following-only for recurring task updates.
+    const seriesTasks = yield* dbSelectBySeriesFrom(
+      userId,
+      task.seriesMasterId,
+      task.startDate
+    );
 
     // Build a base update object (exclude per-occurrence date/time fields).
     const baseUpdate = buildSeriesUpdateBase(input);
@@ -728,7 +751,8 @@ const convertToRecurring = (
 const updateFollowing = (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdateInput
+  input: TaskUpdateInput,
+  recurrenceChanged: boolean
 ): Effect.Effect<TaskSelect[], TaskError> =>
   Effect.gen(function* () {
     // Guard: need both startDate and seriesMasterId for series update
@@ -740,47 +764,12 @@ const updateFollowing = (
     }
 
     // If recurrence pattern is changing, regenerate future occurrences
-    const recurrenceChanged =
-      input.recurrence !== undefined &&
-      !isSameRecurrence(input.recurrence, task.recurrence);
     if (recurrenceChanged) {
       return yield* regenerateOccurrences(userId, task, input);
     }
 
     // No recurrence change: update this and following with scaled date/time offsets.
-    return yield* updateSeriesWithScaledDates(userId, task, input, "following");
-  });
-
-/** Handle scope=all update for recurring task */
-const updateAll = (
-  userId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput
-): Effect.Effect<TaskSelect[], TaskError> =>
-  Effect.gen(function* () {
-    if (!task.seriesMasterId) {
-      return yield* dbUpdate(userId, task.id, { ...input, isException: true });
-    }
-
-    const seriesMasterId = task.seriesMasterId;
-
-    const recurrenceChanged =
-      input.recurrence !== undefined &&
-      !isSameRecurrence(input.recurrence, task.recurrence);
-    if (recurrenceChanged) {
-      return yield* dbUpdateBySeries(userId, seriesMasterId, input);
-    }
-
-    if (shouldScaleSeriesDates(task, input)) {
-      return yield* updateSeriesWithScaledDates(userId, task, input, "all");
-    }
-
-    const baseUpdate = buildSeriesUpdateBase(input);
-    if (Object.keys(baseUpdate).length === 0) {
-      return yield* dbSelectBySeries(userId, seriesMasterId);
-    }
-
-    return yield* dbUpdateBySeries(userId, seriesMasterId, baseUpdate);
+    return yield* updateSeriesWithScaledDates(userId, task, input);
   });
 
 const updateSingleTask = (
@@ -814,21 +803,16 @@ const resolveUpdatedTasks = (
   task: TaskSelect,
   input: TaskUpdateInput,
   hasDbUpdates: boolean,
-  scope: UpdateScope
+  scope: UpdateScope,
+  recurrenceChanged: boolean
 ): Effect.Effect<TaskSelect[], TaskError> => {
   if (!task.seriesMasterId) {
     return updateNonRecurringTask(userId, taskId, task, input, hasDbUpdates);
   }
 
-  if (scope === "all") {
-    return updateAll(userId, task, input);
-  }
-
-  if (scope === "following") {
-    return updateFollowing(userId, task, input);
-  }
-
-  return updateSingleTask(userId, taskId, task, input, hasDbUpdates);
+  return scope === "following"
+    ? updateFollowing(userId, task, input, recurrenceChanged)
+    : updateSingleTask(userId, taskId, task, input, hasDbUpdates);
 };
 
 const updateTask = (
@@ -852,13 +836,25 @@ const updateTask = (
       tagIds !== undefined
         ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
         : undefined;
-    const recurrenceChanged =
+    let recurrenceChanged = false;
+    if (
       scope === "following" &&
-      dbInput.recurrence !== undefined &&
-      !isSameRecurrence(dbInput.recurrence, task.recurrence);
+      shouldCompareFollowingRecurrenceChange(task, dbInput)
+    ) {
+      const comparableRecurrence = yield* resolveComparableRecurrence(
+        userId,
+        task
+      );
+      recurrenceChanged = !isSameRecurrence(
+        dbInput.recurrence,
+        comparableRecurrence
+      );
+    }
 
     const fallbackTagIds =
-      normalizedTagIds === undefined && recurrenceChanged
+      normalizedTagIds === undefined &&
+      scope === "following" &&
+      recurrenceChanged
         ? ((yield* selectTasksWithTagsByIds(userId, [taskId]))[0]?.tags.map(
             (tag) => tag.id
           ) ?? [])
@@ -870,7 +866,8 @@ const updateTask = (
       task,
       dbInput,
       hasDbUpdates,
-      scope
+      scope,
+      recurrenceChanged
     );
 
     if (normalizedTagIds !== undefined) {

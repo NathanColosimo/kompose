@@ -1,9 +1,20 @@
 "use client";
 
 import type { TaskRecurrence } from "@kompose/api/routers/task/contract";
+import {
+  buildTaskRecurrence,
+  getTaskRecurrenceDisplayText,
+  getTaskRecurrenceEditorState,
+  getTaskRecurrenceIntervalLabel,
+  TASK_RECURRENCE_DAYS,
+  type TaskRecurrenceDayCode,
+  type TaskRecurrenceEndType,
+  type TaskRecurrenceFrequency,
+  toggleTaskRecurrenceDay,
+} from "@kompose/state/task-recurrence";
 import { CalendarIcon, Repeat, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -19,20 +30,6 @@ import {
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
-
-/** Days of the week for weekly recurrence */
-const DAYS = [
-  { value: "MO", label: "M" },
-  { value: "TU", label: "T" },
-  { value: "WE", label: "W" },
-  { value: "TH", label: "T" },
-  { value: "FR", label: "F" },
-  { value: "SA", label: "S" },
-  { value: "SU", label: "S" },
-] as const;
-
-type DayCode = (typeof DAYS)[number]["value"];
-type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
 interface RecurrenceEditorProps {
   /** Current recurrence value (null = no recurrence) */
@@ -54,8 +51,7 @@ export function RecurrenceEditor({
 }: RecurrenceEditorProps) {
   const [open, setOpen] = useState(false);
 
-  // Get display text for the current recurrence
-  const displayText = getRecurrenceDisplayText(value);
+  const displayText = getTaskRecurrenceDisplayText(value);
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -84,7 +80,6 @@ export function RecurrenceEditor({
   );
 }
 
-/** Internal form for editing recurrence details */
 function RecurrenceForm({
   value,
   onChange,
@@ -93,24 +88,17 @@ function RecurrenceForm({
   referenceDate,
 }: RecurrenceEditorProps & { onClose: () => void; open: boolean }) {
   const initialState = useMemo(
-    () => ({
-      freq: (value?.freq ?? "WEEKLY") as Frequency,
-      interval: getInterval(value),
-      byDay: getByDay(value, referenceDate),
-      byMonthDay: getByMonthDay(value, referenceDate),
-      endType: getEndType(value),
-      until: getUntilDate(value),
-      count: value?.count ?? 10,
-    }),
+    () => getTaskRecurrenceEditorState(value, referenceDate),
     [referenceDate, value]
   );
 
-  // Local state for building the recurrence
-  const [freq, setFreq] = useState<Frequency>(initialState.freq);
+  const [freq, setFreq] = useState<TaskRecurrenceFrequency>(initialState.freq);
   const [interval, setInterval] = useState(initialState.interval);
-  const [byDay, setByDay] = useState<DayCode[]>(initialState.byDay);
+  const [byDay, setByDay] = useState<TaskRecurrenceDayCode[]>(
+    initialState.byDay
+  );
   const [byMonthDay, setByMonthDay] = useState(initialState.byMonthDay);
-  const [endType, setEndType] = useState<"never" | "until" | "count">(
+  const [endType, setEndType] = useState<TaskRecurrenceEndType>(
     initialState.endType
   );
   const [until, setUntil] = useState<Temporal.PlainDate | null>(
@@ -131,32 +119,22 @@ function RecurrenceForm({
     setCount(initialState.count);
   }, [initialState, open]);
 
-  // Toggle a day in the byDay array
-  const toggleDay = useCallback((day: DayCode) => {
-    setByDay((prev) => {
-      if (prev.includes(day)) {
-        // Don't allow removing the last day
-        if (prev.length === 1) {
-          return prev;
-        }
-        return prev.filter((d) => d !== day);
-      }
-      return [...prev, day];
-    });
+  const toggleDay = useCallback((day: TaskRecurrenceDayCode) => {
+    setByDay((prev) => toggleTaskRecurrenceDay(prev, day));
   }, []);
 
-  // Build and apply the recurrence
   const handleApply = useCallback(() => {
-    const baseRecurrence = buildRecurrence(
-      freq,
-      interval,
-      byDay,
-      byMonthDay,
-      endType,
-      until,
-      count
+    onChange(
+      buildTaskRecurrence({
+        freq,
+        interval,
+        byDay,
+        byMonthDay,
+        endType,
+        until,
+        count,
+      })
     );
-    onChange(baseRecurrence);
     onClose();
   }, [
     freq,
@@ -170,7 +148,6 @@ function RecurrenceForm({
     onClose,
   ]);
 
-  // Clear recurrence
   const handleClear = useCallback(() => {
     onChange(null);
     onClose();
@@ -178,28 +155,26 @@ function RecurrenceForm({
 
   return (
     <div className="space-y-4">
-      {/* Frequency selection */}
       <div className="space-y-2">
         <span className="text-muted-foreground text-xs">Repeat</span>
         <div className="flex flex-wrap gap-2">
-          {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const).map((f) => (
+          {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const).map((next) => (
             <Button
               className={cn(
                 "h-auto px-3 py-1.5 text-sm",
-                freq === f && "border-primary bg-primary/10"
+                freq === next && "border-primary bg-primary/10"
               )}
-              key={f}
-              onClick={() => setFreq(f)}
+              key={next}
+              onClick={() => setFreq(next)}
               type="button"
               variant="outline"
             >
-              {f.charAt(0) + f.slice(1).toLowerCase()}
+              {next.charAt(0) + next.slice(1).toLowerCase()}
             </Button>
           ))}
         </div>
       </div>
 
-      {/* Interval */}
       <div className="flex items-center gap-2">
         <Label
           className="text-muted-foreground text-xs"
@@ -211,23 +186,22 @@ function RecurrenceForm({
           className="w-16"
           id="recurrence-interval"
           min={1}
-          onChange={(e) =>
-            setInterval(Number.parseInt(e.target.value, 10) || 1)
+          onChange={(event) =>
+            setInterval(Number.parseInt(event.target.value, 10) || 1)
           }
           type="number"
           value={interval}
         />
         <span className="text-muted-foreground text-sm">
-          {getIntervalLabel(freq, interval)}
+          {getTaskRecurrenceIntervalLabel(freq, interval)}
         </span>
       </div>
 
-      {/* Weekly: day selection */}
       {freq === "WEEKLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
           <div className="flex gap-1">
-            {DAYS.map((day) => (
+            {TASK_RECURRENCE_DAYS.map((day) => (
               <button
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full border text-sm transition-colors",
@@ -239,14 +213,13 @@ function RecurrenceForm({
                 onClick={() => toggleDay(day.value)}
                 type="button"
               >
-                {day.label}
+                {day.shortLabel}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Monthly: day of month */}
       {freq === "MONTHLY" && (
         <div className="flex items-center gap-2">
           <Label
@@ -260,8 +233,8 @@ function RecurrenceForm({
             id="recurrence-monthday"
             max={31}
             min={1}
-            onChange={(e) =>
-              setByMonthDay(Number.parseInt(e.target.value, 10) || 1)
+            onChange={(event) =>
+              setByMonthDay(Number.parseInt(event.target.value, 10) || 1)
             }
             type="number"
             value={byMonthDay}
@@ -270,7 +243,6 @@ function RecurrenceForm({
         </div>
       )}
 
-      {/* End options */}
       <div className="space-y-2">
         <span className="text-muted-foreground text-xs">Ends</span>
         <div className="space-y-2">
@@ -339,8 +311,8 @@ function RecurrenceForm({
                 <Input
                   className="h-7 w-14 px-2"
                   min={1}
-                  onChange={(e) =>
-                    setCount(Number.parseInt(e.target.value, 10) || 1)
+                  onChange={(event) =>
+                    setCount(Number.parseInt(event.target.value, 10) || 1)
                   }
                   type="number"
                   value={count}
@@ -352,7 +324,6 @@ function RecurrenceForm({
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex justify-between pt-2">
         <Button
           className="gap-1 text-destructive"
@@ -369,120 +340,4 @@ function RecurrenceForm({
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-function getRecurrenceDisplayText(value: TaskRecurrence | null): string {
-  if (!value) {
-    return "Repeat";
-  }
-
-  const interval = getInterval(value);
-  const prefix = interval > 1 ? `Every ${interval} ` : "";
-
-  switch (value.freq) {
-    case "DAILY":
-      return interval > 1 ? `${prefix}days` : "Daily";
-    case "WEEKLY": {
-      const days = value.byDay.join(", ");
-      return interval > 1 ? `${prefix}weeks on ${days}` : `Weekly on ${days}`;
-    }
-    case "MONTHLY":
-      return interval > 1 ? `${prefix}months` : "Monthly";
-    case "YEARLY":
-      return interval > 1 ? `${prefix}years` : "Yearly";
-    default:
-      return "Repeat";
-  }
-}
-
-function getInterval(value: TaskRecurrence | null): number {
-  return value?.interval ?? 1;
-}
-
-function getByDay(
-  value: TaskRecurrence | null,
-  referenceDate?: Temporal.PlainDate | null
-): DayCode[] {
-  if (value?.freq === "WEEKLY") {
-    return value.byDay as DayCode[];
-  }
-  // Default to the reference date's day of week, or Monday
-  if (referenceDate) {
-    const dayIndex = referenceDate.dayOfWeek; // 1=Monday, 7=Sunday
-    return [DAYS[dayIndex - 1].value];
-  }
-  return ["MO"];
-}
-
-function getByMonthDay(
-  value: TaskRecurrence | null,
-  referenceDate?: Temporal.PlainDate | null
-): number {
-  if (value?.freq === "MONTHLY") {
-    return value.byMonthDay;
-  }
-  return referenceDate?.day ?? 1;
-}
-
-function getEndType(value: TaskRecurrence | null): "never" | "until" | "count" {
-  if (value?.until) {
-    return "until";
-  }
-  if (value?.count) {
-    return "count";
-  }
-  return "never";
-}
-
-function getUntilDate(value: TaskRecurrence | null): Temporal.PlainDate | null {
-  if (value?.until) {
-    return Temporal.PlainDate.from(value.until);
-  }
-  return null;
-}
-
-function getIntervalLabel(freq: Frequency, interval: number): string {
-  const labels: Record<Frequency, [string, string]> = {
-    DAILY: ["day", "days"],
-    WEEKLY: ["week", "weeks"],
-    MONTHLY: ["month", "months"],
-    YEARLY: ["year", "years"],
-  };
-  return interval === 1 ? labels[freq][0] : labels[freq][1];
-}
-
-function buildRecurrence(
-  freq: Frequency,
-  interval: number,
-  byDay: DayCode[],
-  byMonthDay: number,
-  endType: "never" | "until" | "count",
-  until: Temporal.PlainDate | null,
-  count: number
-): TaskRecurrence {
-  // Build end options
-  const endOptions: { until?: string; count?: number } = {};
-  if (endType === "until" && until) {
-    endOptions.until = until.toString();
-  } else if (endType === "count") {
-    endOptions.count = count;
-  }
-
-  // Build frequency-specific recurrence
-  switch (freq) {
-    case "DAILY":
-      return { freq: "DAILY", interval, ...endOptions };
-    case "WEEKLY":
-      return { freq: "WEEKLY", interval, byDay, ...endOptions };
-    case "MONTHLY":
-      return { freq: "MONTHLY", interval, byMonthDay, ...endOptions };
-    case "YEARLY":
-      return { freq: "YEARLY", interval, ...endOptions };
-    default:
-      return { freq: "DAILY", interval, ...endOptions };
-  }
 }

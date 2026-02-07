@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  RECURRENCE_SCOPE_OPTIONS,
+  type RecurrenceScopeOption,
+  type RecurrenceScopeValue,
+} from "@kompose/state/recurrence-scope-options";
 import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,18 +19,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
-export type RecurrenceScopeValue = "this" | "all" | "following";
-
-interface RecurrenceScopeOption {
-  value: RecurrenceScopeValue;
-  label: string;
-}
-
-export const RECURRENCE_SCOPE_OPTIONS: RecurrenceScopeOption[] = [
-  { value: "this", label: "Only this occurrence" },
-  { value: "all", label: "Entire series" },
-  { value: "following", label: "This and following" },
-];
+export { RECURRENCE_SCOPE_OPTIONS };
 
 export function RecurrenceScopeDialog({
   open,
@@ -39,6 +33,7 @@ export function RecurrenceScopeDialog({
   onCancel,
   onConfirm,
   disabledScopes,
+  options = RECURRENCE_SCOPE_OPTIONS,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,6 +46,7 @@ export function RecurrenceScopeDialog({
   onCancel?: () => void;
   onConfirm: () => void | Promise<void>;
   disabledScopes?: Partial<Record<RecurrenceScopeValue, boolean>>;
+  options?: readonly RecurrenceScopeOption<RecurrenceScopeValue>[];
 }) {
   const idBase = useId();
 
@@ -68,7 +64,7 @@ export function RecurrenceScopeDialog({
           onValueChange={(next) => onValueChange(next as RecurrenceScopeValue)}
           value={value}
         >
-          {RECURRENCE_SCOPE_OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const id = `${idBase}-${opt.value}`;
             const isDisabled = Boolean(disabledScopes?.[opt.value]);
             return (

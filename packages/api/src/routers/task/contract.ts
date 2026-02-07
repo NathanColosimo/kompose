@@ -20,7 +20,7 @@ export type { TaskRecurrence } from "@kompose/db/schema/task";
 // ============================================================================
 
 /** Scope for updating recurring tasks */
-export const updateScopeSchema = z.enum(["this", "all", "following"]);
+export const updateScopeSchema = z.enum(["this", "following"]);
 export type UpdateScope = z.infer<typeof updateScopeSchema>;
 
 /** Scope for deleting recurring tasks */
@@ -140,11 +140,11 @@ export const updateTask = oc
     z.object({
       id: z.uuidv7(),
       task: taskUpdateSchemaWithTagIds,
-      /** Scope for recurring tasks: this (single), all (entire series), following (this + future) */
+      /** Scope for recurring tasks: this (single), following (this + future) */
       scope: updateScopeSchema,
     })
   )
-  .output(z.array(taskSelectSchemaWithTags)); // Returns array since "all"/"following" can update multiple
+  .output(z.array(taskSelectSchemaWithTags)); // Returns array since "following" can update multiple
 
 export const deleteTask = oc
   .input(

@@ -176,10 +176,13 @@ export function TagManagerPopover({
           return (
             <View
               className="gap-1.5 rounded-md border border-border"
-              style={{ paddingHorizontal: 10, paddingVertical: 6 }}
               key={tag.id}
+              style={{ paddingHorizontal: 10, paddingVertical: 6 }}
             >
-              <View className="flex-row items-center gap-2" style={{ minHeight: 40 }}>
+              <View
+                className="flex-row items-center gap-2"
+                style={{ minHeight: 40 }}
+              >
                 <Pressable
                   className="h-7 w-7 items-center justify-center rounded-full"
                   onPress={() =>
@@ -230,7 +233,9 @@ export function TagManagerPopover({
                 </View>
                 <Button
                   accessibilityLabel="Save tag"
-                  disabled={!hasChanges || !draftName.trim() || updateTag.isPending}
+                  disabled={
+                    !(hasChanges && draftName.trim()) || updateTag.isPending
+                  }
                   onPress={() => handleSaveEdit(tag)}
                   size="icon"
                   style={{ height: 28, width: 28 }}

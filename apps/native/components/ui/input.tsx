@@ -26,6 +26,7 @@ export interface InputProps extends Omit<TextInputProps, "style"> {
   disabled?: boolean;
   type?: "input" | "textarea";
   placeholder?: string;
+  pill?: boolean;
   rows?: number; // Only used when type="textarea"
 }
 
@@ -43,6 +44,7 @@ export const Input = forwardRef<TextInput, InputProps>(
       variant = "filled",
       disabled = false,
       type = "input",
+      pill = false,
       rows = 4,
       onFocus,
       onBlur,
@@ -74,7 +76,7 @@ export const Input = forwardRef<TextInput, InputProps>(
     // Variant styles
     const getVariantStyle = (): ViewStyle => {
       const baseStyle: ViewStyle = {
-        borderRadius: isTextarea ? BORDER_RADIUS : CORNERS,
+        borderRadius: pill ? CORNERS : isTextarea ? BORDER_RADIUS : CORNERS,
         flexDirection: isTextarea ? "column" : "row",
         alignItems: isTextarea ? "stretch" : "center",
         minHeight: getHeight(),

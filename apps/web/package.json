@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build --bundles dmg",
+    "desktop:build:unsigned": "bunx tauri build --bundles dmg --target aarch64-apple-darwin",
     "desktop:build:signed": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target aarch64-apple-darwin",
     "desktop:build:signed:universal": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target universal-apple-darwin",
     "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key \"$APPLE_API_KEY_PATH\" --key-id \"$APPLE_API_KEY\" --issuer \"$APPLE_API_ISSUER\""
@@ -60,7 +61,7 @@
     "react": "catalog:",
     "react-day-picker": "^9.13.0",
     "react-dom": "catalog:",
-    "react-hook-form": "^7.71.1",
+    "react-hook-form": "catalog:",
     "react-hotkeys-hook": "^5.2.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",

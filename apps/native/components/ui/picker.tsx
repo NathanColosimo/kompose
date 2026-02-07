@@ -20,6 +20,7 @@ export interface PickerOption {
   label: string;
   value: string;
   description?: string;
+  color?: string | null;
   disabled?: boolean;
 }
 
@@ -54,6 +55,7 @@ interface PickerProps {
   modalTitle?: string;
   searchable?: boolean;
   searchPlaceholder?: string;
+  showChevron?: boolean;
 }
 
 export function Picker({
@@ -78,6 +80,7 @@ export function Picker({
   modalTitle,
   searchable = false,
   searchPlaceholder = "Search options...",
+  showChevron = true,
 }: PickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -123,6 +126,7 @@ export function Picker({
   };
 
   const selectedOptions = getSelectedOptions();
+  const hasTrailingAdornment = Boolean(rightComponent) || showChevron;
 
   const handleSelect = (optionValue: string) => {
     if (multiple) {
@@ -148,6 +152,7 @@ export function Picker({
 
     return selectedOptions[0]?.label || placeholder;
   };
+  const selectedColor = multiple ? null : (selectedOptions[0]?.color ?? null);
 
   const triggerStyle: ViewStyle = {
     width: "100%",
@@ -189,26 +194,46 @@ export function Picker({
         <View
           style={{
             width: "100%",
-            alignItems: "center",
+            alignItems: option.color ? "flex-start" : "center",
           }}
         >
-          <Text
+          <View
             style={{
-              color: isSelected ? primaryForeground : text,
-              fontWeight: isSelected ? "600" : "400",
-              fontSize: FONT_SIZE,
-              textAlign: "center",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            {option.label}
-          </Text>
+            {option.color ? (
+              <View
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: CORNERS,
+                  borderWidth: 1,
+                  borderColor: option.color,
+                  backgroundColor: option.color,
+                }}
+              />
+            ) : null}
+            <Text
+              style={{
+                color: isSelected ? primaryForeground : text,
+                fontWeight: isSelected ? "600" : "400",
+                fontSize: FONT_SIZE,
+                textAlign: option.color ? "left" : "center",
+              }}
+            >
+              {option.label}
+            </Text>
+          </View>
           {option.description && (
             <Text
               style={{
                 marginTop: 4,
                 fontSize: 12,
                 color: isSelected ? primaryForeground : textMutedColor,
-                textAlign: "center",
+                textAlign: option.color ? "left" : "center",
               }}
             >
               {option.description}
@@ -260,29 +285,54 @@ export function Picker({
             flex: 1,
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: hasTrailingAdornment ? "space-between" : "center",
+            gap: 8,
           }}
         >
-          <Text
-            ellipsizeMode="tail"
-            numberOfLines={1}
-            style={[
-              {
-                fontSize: FONT_SIZE,
-                color:
-                  selectedOptions.length > 0
-                    ? text
-                    : disabled
-                      ? muted
-                      : error
-                        ? danger
-                        : muted,
-              },
-              inputStyle,
-            ]}
+          <View
+            style={{
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: hasTrailingAdornment ? "flex-start" : "center",
+              gap: 8,
+            }}
           >
-            {getDisplayText()}
-          </Text>
+            {selectedColor ? (
+              <View
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: CORNERS,
+                  borderWidth: 1,
+                  borderColor: selectedColor,
+                  backgroundColor: selectedColor,
+                }}
+              />
+            ) : null}
+            <Text
+              ellipsizeMode="tail"
+              numberOfLines={1}
+              style={[
+                {
+                  flex: 1,
+                  fontSize: FONT_SIZE,
+                  textAlign: hasTrailingAdornment ? "left" : "center",
+                  color:
+                    selectedOptions.length > 0
+                      ? text
+                      : disabled
+                        ? muted
+                        : error
+                          ? danger
+                          : muted,
+                },
+                inputStyle,
+              ]}
+            >
+              {getDisplayText()}
+            </Text>
+          </View>
 
           {rightComponent ? (
             typeof rightComponent === "function" ? (
@@ -290,7 +340,7 @@ export function Picker({
             ) : (
               rightComponent
             )
-          ) : (
+          ) : showChevron ? (
             <ChevronDown
               color={error ? danger : muted}
               size={16}
@@ -298,7 +348,7 @@ export function Picker({
                 transform: [{ rotate: isOpen ? "180deg" : "0deg" }],
               }}
             />
-          )}
+          ) : null}
         </View>
       </TouchableOpacity>
 

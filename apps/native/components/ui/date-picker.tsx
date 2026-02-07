@@ -8,7 +8,7 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type TextStyle, TouchableOpacity, type ViewStyle } from "react-native";
 import { BottomSheet, useBottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,8 @@ interface BaseDatePickerProps {
   label?: string;
   error?: string;
   placeholder?: string;
+  displayValue?: string;
+  showIcon?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
   minimumDate?: Date;
@@ -36,6 +38,7 @@ interface BaseDatePickerProps {
   timeFormat?: "12" | "24";
   variant?: "filled" | "outline" | "group";
   labelStyle?: TextStyle;
+  valueTextStyle?: TextStyle;
   errorStyle?: TextStyle;
 }
 
@@ -69,6 +72,12 @@ const MONTHS = [
 ];
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const LIST_VERTICAL_PADDING = 20;
+const TIME_ITEM_HEIGHT = 44;
+const YEAR_ITEM_HEIGHT = 48;
+const LIST_ITEM_MARGIN_VERTICAL = 2;
+const TIME_ITEM_EXTENT = TIME_ITEM_HEIGHT + LIST_ITEM_MARGIN_VERTICAL * 2;
+const YEAR_ITEM_EXTENT = YEAR_ITEM_HEIGHT + LIST_ITEM_MARGIN_VERTICAL * 2;
 
 // Generate year range (current year ± 50 years)
 const currentYear = new Date().getFullYear();
@@ -92,6 +101,8 @@ export function DatePicker(props: DatePickerProps) {
     label,
     error,
     placeholder = "Select date",
+    displayValue,
+    showIcon = true,
     disabled = false,
     style,
     minimumDate,
@@ -99,6 +110,7 @@ export function DatePicker(props: DatePickerProps) {
     timeFormat = "24",
     variant = "filled",
     labelStyle,
+    valueTextStyle,
     errorStyle,
   } = props;
 
@@ -125,6 +137,9 @@ export function DatePicker(props: DatePickerProps) {
   );
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
+  const hoursScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const minutesScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const yearScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   // Range selection state for temporary storage during selection
   const [tempRange, setTempRange] = useState<DateRange>(() =>
@@ -306,6 +321,100 @@ export function DatePicker(props: DatePickerProps) {
 
     return { weeks, year, month, daysInMonth };
   }, [currentDate]);
+
+  const hourOptions = useMemo(
+    () =>
+      Array.from({ length: timeFormat === "12" ? 12 : 24 }, (_, i) =>
+        timeFormat === "12" ? (i === 0 ? 12 : i) : i
+      ),
+    [timeFormat]
+  );
+  const minuteOptions = useMemo(
+    () => Array.from({ length: 12 }, (_, i) => i * 5),
+    []
+  );
+  const selectedHours = currentDate.getHours();
+  const selectedMinutes = currentDate.getMinutes();
+  const selectedHourIndex = useMemo(() => {
+    if (timeFormat === "12") {
+      const displayHour = selectedHours % 12 === 0 ? 12 : selectedHours % 12;
+      return displayHour === 12 ? 0 : displayHour;
+    }
+
+    return selectedHours;
+  }, [selectedHours, timeFormat]);
+  const selectedMinuteIndex = useMemo(() => {
+    let closestIndex = 0;
+    let smallestDistance = Number.POSITIVE_INFINITY;
+
+    minuteOptions.forEach((option, index) => {
+      const distance = Math.abs(option - selectedMinutes);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    return closestIndex;
+  }, [minuteOptions, selectedMinutes]);
+  const selectedYearIndex = useMemo(
+    () => YEARS.findIndex((year) => year === currentDate.getFullYear()),
+    [currentDate]
+  );
+  const isTimePickerVisible =
+    isVisible &&
+    (mode === "time" || (mode === "datetime" && viewMode === "time"));
+
+  const scrollToIndex = useCallback(
+    (
+      ref: React.RefObject<React.ComponentRef<typeof ScrollView> | null>,
+      index: number,
+      itemExtent: number
+    ) => {
+      if (index < 0) {
+        return;
+      }
+
+      const nextOffset = Math.max(
+        0,
+        LIST_VERTICAL_PADDING + index * itemExtent
+      );
+      requestAnimationFrame(() => {
+        ref.current?.scrollTo({ y: nextOffset, animated: false });
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isTimePickerVisible) {
+      return;
+    }
+
+    scrollToIndex(hoursScrollRef, selectedHourIndex, TIME_ITEM_EXTENT);
+    scrollToIndex(minutesScrollRef, selectedMinuteIndex, TIME_ITEM_EXTENT);
+  }, [
+    hoursScrollRef,
+    isTimePickerVisible,
+    minutesScrollRef,
+    scrollToIndex,
+    selectedHourIndex,
+    selectedMinuteIndex,
+  ]);
+
+  useEffect(() => {
+    if (!(isVisible && showYearPicker)) {
+      return;
+    }
+
+    scrollToIndex(yearScrollRef, selectedYearIndex, YEAR_ITEM_EXTENT);
+  }, [
+    isVisible,
+    scrollToIndex,
+    selectedYearIndex,
+    showYearPicker,
+    yearScrollRef,
+  ]);
 
   const handleRangeSelect = (day: number) => {
     const selectedDate = new Date(
@@ -706,9 +815,6 @@ export function DatePicker(props: DatePickerProps) {
   );
 
   const renderTimePicker = () => {
-    const selectedHours = currentDate.getHours();
-    const selectedMinutes = currentDate.getMinutes();
-
     const isPM = selectedHours >= 12;
 
     return (
@@ -730,13 +836,12 @@ export function DatePicker(props: DatePickerProps) {
             </Text>
             <ScrollView
               contentContainerStyle={{
-                paddingVertical: 20,
+                paddingVertical: LIST_VERTICAL_PADDING,
               }}
+              ref={hoursScrollRef}
               showsVerticalScrollIndicator={false}
             >
-              {Array.from({ length: timeFormat === "12" ? 12 : 24 }, (_, i) =>
-                timeFormat === "12" ? (i === 0 ? 12 : i) : i
-              ).map((hour) => {
+              {hourOptions.map((hour) => {
                 const actualHour =
                   timeFormat === "12"
                     ? hour === 12
@@ -757,13 +862,14 @@ export function DatePicker(props: DatePickerProps) {
                       handleTimeChange(actualHour, selectedMinutes)
                     }
                     style={{
-                      paddingVertical: 12,
+                      height: TIME_ITEM_HEIGHT,
                       paddingHorizontal: 16,
                       borderRadius: CORNERS,
                       backgroundColor: isSelected
                         ? primaryColor
                         : "transparent",
-                      marginVertical: 2,
+                      marginVertical: LIST_ITEM_MARGIN_VERTICAL,
+                      justifyContent: "center",
                       alignItems: "center",
                     }}
                   >
@@ -792,21 +898,23 @@ export function DatePicker(props: DatePickerProps) {
             </Text>
             <ScrollView
               contentContainerStyle={{
-                paddingVertical: 20,
+                paddingVertical: LIST_VERTICAL_PADDING,
               }}
+              ref={minutesScrollRef}
               showsVerticalScrollIndicator={false}
             >
-              {Array.from({ length: 12 }, (_, i) => i * 5).map((minute) => (
+              {minuteOptions.map((minute) => (
                 <TouchableOpacity
                   key={minute}
                   onPress={() => handleTimeChange(selectedHours, minute)}
                   style={{
-                    paddingVertical: 12,
+                    height: TIME_ITEM_HEIGHT,
                     paddingHorizontal: 16,
                     borderRadius: CORNERS,
                     backgroundColor:
                       minute === selectedMinutes ? primaryColor : "transparent",
-                    marginVertical: 2,
+                    marginVertical: LIST_ITEM_MARGIN_VERTICAL,
+                    justifyContent: "center",
                     alignItems: "center",
                   }}
                 >
@@ -895,7 +1003,7 @@ export function DatePicker(props: DatePickerProps) {
     <View style={{ height: 300 }}>
       <ScrollView
         contentContainerStyle={{
-          paddingVertical: 20,
+          paddingVertical: LIST_VERTICAL_PADDING,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -935,8 +1043,9 @@ export function DatePicker(props: DatePickerProps) {
     <View style={{ height: 300 }}>
       <ScrollView
         contentContainerStyle={{
-          paddingVertical: 20,
+          paddingVertical: LIST_VERTICAL_PADDING,
         }}
+        ref={yearScrollRef}
         showsVerticalScrollIndicator={false}
       >
         {YEARS.map((year) => (
@@ -944,12 +1053,13 @@ export function DatePicker(props: DatePickerProps) {
             key={year}
             onPress={() => handleYearSelect(year)}
             style={{
-              paddingVertical: 16,
+              height: YEAR_ITEM_HEIGHT,
               paddingHorizontal: 20,
               borderRadius: CORNERS,
               backgroundColor:
                 year === calendarData.year ? primaryColor : "transparent",
-              marginVertical: 2,
+              marginVertical: LIST_ITEM_MARGIN_VERTICAL,
+              justifyContent: "center",
               alignItems: "center",
             }}
           >
@@ -1025,6 +1135,15 @@ export function DatePicker(props: DatePickerProps) {
     minHeight: variant === "group" ? "auto" : HEIGHT,
   };
 
+  const resolvedDisplayValue = displayValue ?? formatDisplayValue();
+  const hasValue =
+    displayValue !== undefined
+      ? displayValue.trim().length > 0
+      : mode === "range"
+        ? isDateRange(value) &&
+          (value.startDate !== null || value.endDate !== null)
+        : Boolean(value);
+
   return (
     <>
       <TouchableOpacity
@@ -1048,15 +1167,17 @@ export function DatePicker(props: DatePickerProps) {
               gap: 8,
             }}
           >
-            {mode === "time" ? (
-              <Icon as={Clock} size={20} strokeWidth={1} />
-            ) : mode === "datetime" ? (
-              <Icon as={CalendarClock} size={20} strokeWidth={1} />
-            ) : mode === "range" ? (
-              <Icon as={CalendarRange} size={20} strokeWidth={1} />
-            ) : (
-              <Icon as={Calendar} size={20} strokeWidth={1} />
-            )}
+            {showIcon ? (
+              mode === "time" ? (
+                <Icon as={Clock} size={20} strokeWidth={1} />
+              ) : mode === "datetime" ? (
+                <Icon as={CalendarClock} size={20} strokeWidth={1} />
+              ) : mode === "range" ? (
+                <Icon as={CalendarRange} size={20} strokeWidth={1} />
+              ) : (
+                <Icon as={Calendar} size={20} strokeWidth={1} />
+              )
+            ) : null}
 
             {/* Label takes 1/3 of available width when present */}
             {label && (
@@ -1083,12 +1204,15 @@ export function DatePicker(props: DatePickerProps) {
             <Text
               ellipsizeMode="tail"
               numberOfLines={1}
-              style={{
-                color: value ? textColor : textMutedColor,
-                fontSize: FONT_SIZE,
-              }}
+              style={[
+                {
+                  color: hasValue ? textColor : textMutedColor,
+                  fontSize: FONT_SIZE,
+                },
+                valueTextStyle,
+              ]}
             >
-              {formatDisplayValue()}
+              {resolvedDisplayValue}
             </Text>
           </View>
         </View>

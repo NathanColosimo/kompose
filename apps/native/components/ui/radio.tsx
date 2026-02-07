@@ -1,8 +1,12 @@
-import { Text } from '@/components/ui/text';
-import { useColor } from '@/hooks/useColor';
-import { BORDER_RADIUS, CORNERS, FONT_SIZE } from '@/theme/globals';
-import React from 'react';
-import { TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
+import {
+  type TextStyle,
+  TouchableOpacity,
+  View,
+  type ViewStyle,
+} from "react-native";
+import { Text } from "@/components/ui/text";
+import { useColor } from "@/hooks/useColor";
+import { BORDER_RADIUS, CORNERS, FONT_SIZE } from "@/theme/globals";
 
 export interface RadioOption {
   label: string;
@@ -15,7 +19,7 @@ interface RadioGroupProps {
   value?: string;
   onValueChange?: (value: string) => void;
   disabled?: boolean;
-  orientation?: 'vertical' | 'horizontal';
+  orientation?: "vertical" | "horizontal";
   style?: ViewStyle;
   optionStyle?: ViewStyle;
   labelStyle?: TextStyle;
@@ -38,10 +42,10 @@ export function RadioButton({
   style,
   labelStyle,
 }: RadioButtonProps) {
-  const primaryColor = useColor('primary');
-  const borderColor = useColor('border');
-  const textColor = useColor('text');
-  const mutedColor = useColor('textMuted');
+  const primaryColor = useColor("primary");
+  const borderColor = useColor("border");
+  const textColor = useColor("text");
+  const mutedColor = useColor("textMuted");
 
   const isDisabled = disabled || option.disabled;
 
@@ -51,9 +55,9 @@ export function RadioButton({
     borderRadius: CORNERS,
     borderWidth: 1.5,
     borderColor: selected ? primaryColor : borderColor,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   };
 
@@ -61,12 +65,12 @@ export function RadioButton({
     width: 16,
     height: 16,
     borderRadius: CORNERS,
-    backgroundColor: selected ? primaryColor : 'transparent',
+    backgroundColor: selected ? primaryColor : "transparent",
   };
 
   const containerStyle: ViewStyle = {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 4,
     paddingHorizontal: 4,
     opacity: isDisabled ? 0.5 : 1,
@@ -75,16 +79,16 @@ export function RadioButton({
   const textStyle: TextStyle = {
     color: isDisabled ? mutedColor : textColor,
     fontSize: FONT_SIZE,
-    fontWeight: '400',
+    fontWeight: "400",
     lineHeight: 24,
   };
 
   return (
     <TouchableOpacity
-      style={[containerStyle, style]}
-      onPress={onPress}
-      disabled={isDisabled}
       activeOpacity={0.7}
+      disabled={isDisabled}
+      onPress={onPress}
+      style={[containerStyle, style]}
     >
       <View style={radioButtonStyle}>
         <View style={innerCircleStyle} />
@@ -99,14 +103,14 @@ export function RadioGroup({
   value,
   onValueChange,
   disabled = false,
-  orientation = 'vertical',
+  orientation = "vertical",
   style,
   optionStyle,
   labelStyle,
 }: RadioGroupProps) {
   const containerStyle: ViewStyle = {
-    flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-    gap: orientation === 'horizontal' ? 16 : 4,
+    flexDirection: orientation === "horizontal" ? "row" : "column",
+    gap: orientation === "horizontal" ? 16 : 4,
   };
 
   const handlePress = (optionValue: string) => {
@@ -119,13 +123,13 @@ export function RadioGroup({
     <View style={[containerStyle, style]}>
       {options.map((option) => (
         <RadioButton
+          disabled={disabled}
           key={option.value}
+          labelStyle={labelStyle}
+          onPress={() => handlePress(option.value)}
           option={option}
           selected={value === option.value}
-          onPress={() => handlePress(option.value)}
-          disabled={disabled}
           style={optionStyle}
-          labelStyle={labelStyle}
         />
       ))}
     </View>

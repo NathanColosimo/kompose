@@ -1,5 +1,12 @@
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import type {
+  DeleteScope,
+  TaskSelectDecoded,
+  UpdateScope,
+} from "@kompose/api/routers/task/contract";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
 import {
   currentDateAtom,
   eventWindowAtom,
@@ -16,22 +23,32 @@ import {
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import { tasksDataAtom } from "@kompose/state/atoms/tasks";
 import {
   type CalendarIdentifier,
   isCalendarVisible,
   type VisibleCalendars,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
-import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
-import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
-import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
-import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { getMapsSearchUrl } from "@kompose/state/locations";
 import {
-  buildGoogleMeetConferenceData,
-  extractMeetingLink,
-} from "@kompose/state/meeting";
+  getDefaultRecurrenceScopeForEvent,
+  isRecurringGoogleEvent,
+} from "@kompose/state/google-event-recurrence";
+import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
+import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
+import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
+import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
+import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
+import {
+  RECURRENCE_SCOPE_OPTIONS,
+  TASK_DELETE_SCOPE_OPTIONS,
+  TASK_UPDATE_SCOPE_OPTIONS,
+} from "@kompose/state/recurrence-scope-options";
+import {
+  getTaskUpdateScopeDecision,
+  haveTaskCoreFieldsChanged,
+  resolveTaskRecurrenceForEditor,
+} from "@kompose/state/task-recurrence";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue } from "jotai";
@@ -56,7 +73,9 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Icon } from "@/components/ui/icon";
+import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { orpc } from "@/utils/orpc";
@@ -310,46 +329,73 @@ function isoStringToZonedDateTime(str: string, timeZone: string) {
   return instant.toZonedDateTimeISO(timeZone);
 }
 
+function calendarLookupKey(accountId: string, calendarId: string): string {
+  return `${accountId}:${calendarId}`;
+}
+
 interface PositionedGoogleEvent {
-  source: { accountId: string; calendarId: string; event: GoogleEvent };
+  source: {
+    accountId: string;
+    calendarId: string;
+    event: GoogleEvent;
+    calendarColorId: string | null;
+    calendarBackgroundColor: string | null;
+    calendarForegroundColor: string | null;
+  };
   start: Temporal.ZonedDateTime;
   end: Temporal.ZonedDateTime;
 }
 
 interface AllDayGoogleEvent {
-  source: { accountId: string; calendarId: string; event: GoogleEvent };
+  source: {
+    accountId: string;
+    calendarId: string;
+    event: GoogleEvent;
+    calendarColorId: string | null;
+    calendarBackgroundColor: string | null;
+    calendarForegroundColor: string | null;
+  };
   date: Temporal.PlainDate;
 }
 
-function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
+function buildDraftFromTask(
+  task: TaskSelectDecoded,
+  recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
+): TaskDraft {
   return {
     title: task.title,
     description: task.description ?? "",
     tagIds: task.tags.map((tag) => tag.id),
     durationMinutes: task.durationMinutes,
+    status: task.status,
     dueDate: task.dueDate,
     startDate: task.startDate,
     startTime: task.startTime,
+    recurrence: recurrence ?? null,
   };
 }
 
 function AllDayEventChip({
   item,
-  calendarColors,
   onPress,
 }: {
   item: AllDayGoogleEvent;
-  calendarColors?: { background?: string | null; foreground?: string | null };
   onPress: () => void;
 }) {
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
+  const calendarPaletteColor =
+    item.source.calendarColorId && palette?.calendar
+      ? palette.calendar[item.source.calendarColorId]
+      : undefined;
   const { background, foreground } = resolveGoogleEventColors({
     colorId: item.source.event.colorId,
     palette: palette?.event,
-    calendarBackgroundColor: calendarColors?.background,
-    calendarForegroundColor: calendarColors?.foreground,
+    calendarBackgroundColor:
+      item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
+    calendarForegroundColor:
+      item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
   });
 
   return (
@@ -376,7 +422,6 @@ function AllDayEventChip({
 
 function TimedGoogleEventBlock({
   item,
-  calendarColors,
   top,
   height,
   durationMinutes,
@@ -386,7 +431,6 @@ function TimedGoogleEventBlock({
   onPress,
 }: {
   item: PositionedGoogleEvent;
-  calendarColors?: { background?: string | null; foreground?: string | null };
   top: number;
   height: number;
   durationMinutes: number;
@@ -398,11 +442,17 @@ function TimedGoogleEventBlock({
   const palette = useAtomValue(
     normalizedGoogleColorsAtomFamily(item.source.accountId)
   );
+  const calendarPaletteColor =
+    item.source.calendarColorId && palette?.calendar
+      ? palette.calendar[item.source.calendarColorId]
+      : undefined;
   const { background, foreground } = resolveGoogleEventColors({
     colorId: item.source.event.colorId,
     palette: palette?.event,
-    calendarBackgroundColor: calendarColors?.background,
-    calendarForegroundColor: calendarColors?.foreground,
+    calendarBackgroundColor:
+      item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
+    calendarForegroundColor:
+      item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
   });
 
   // Calculate horizontal positioning based on collision layout.
@@ -452,6 +502,8 @@ function TimedGoogleEventBlock({
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
+  const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
+  const moveEvent = useMoveGoogleEventMutation();
 
   // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
   const timeZone = useAtomValue(timezoneAtom);
@@ -475,9 +527,9 @@ export default function CalendarTab() {
     [window.timeMax, window.timeMin]
   );
 
-  // Tasks: use atom for data, hook only for mutations.
-  const tasks = useAtomValue(tasksDataAtom);
+  // Tasks: use the same query source as mutations to avoid stale editor state.
   const { tasksQuery, updateTask, deleteTask } = useTasks();
+  const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
     () => tasks.filter((t) => t.startDate !== null && t.startTime !== null),
@@ -486,24 +538,27 @@ export default function CalendarTab() {
 
   // Google accounts/calendars/events.
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
-  const accountIds = useMemo(
-    () => googleAccounts.map((a) => a.id),
-    [googleAccounts]
-  );
 
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
-  const calendarColorLookup = useMemo(() => {
-    const lookup = new Map<
+  const calendarMetadataByKey = useMemo(() => {
+    const metadata = new Map<
       string,
-      { background?: string | null; foreground?: string | null }
+      {
+        colorId: string | null;
+        backgroundColor: string | null;
+        foregroundColor: string | null;
+      }
     >();
-    for (const calendar of googleCalendars) {
-      lookup.set(`${calendar.accountId}:${calendar.calendar.id}`, {
-        background: calendar.calendar.backgroundColor ?? null,
-        foreground: calendar.calendar.foregroundColor ?? null,
+
+    for (const entry of googleCalendars) {
+      metadata.set(calendarLookupKey(entry.accountId, entry.calendar.id), {
+        colorId: entry.calendar.colorId ?? null,
+        backgroundColor: entry.calendar.backgroundColor ?? null,
+        foregroundColor: entry.calendar.foregroundColor ?? null,
       });
     }
-    return lookup;
+
+    return metadata;
   }, [googleCalendars]);
 
   const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
@@ -549,6 +604,17 @@ export default function CalendarTab() {
     }
 
     for (const item of googleEvents) {
+      const calendarMetadata = calendarMetadataByKey.get(
+        calendarLookupKey(item.accountId, item.calendarId)
+      );
+      const source = {
+        accountId: item.accountId,
+        calendarId: item.calendarId,
+        event: item.event,
+        calendarColorId: calendarMetadata?.colorId ?? null,
+        calendarBackgroundColor: calendarMetadata?.backgroundColor ?? null,
+        calendarForegroundColor: calendarMetadata?.foregroundColor ?? null,
+      };
       const startDate = item.event.start.date;
       const startDateTime = item.event.start.dateTime;
       const endDateTime = item.event.end.dateTime;
@@ -557,7 +623,7 @@ export default function CalendarTab() {
         const date = Temporal.PlainDate.from(startDate);
         const bucket = allDay.get(date.toString());
         if (bucket) {
-          bucket.push({ source: item, date });
+          bucket.push({ source, date });
         }
         continue;
       }
@@ -577,7 +643,7 @@ export default function CalendarTab() {
         const dayKey = start.toPlainDate().toString();
         const bucket = timed.get(dayKey);
         if (bucket) {
-          bucket.push({ source: item, start, end });
+          bucket.push({ source, start, end });
         }
       } catch {
         // Skip unparseable events.
@@ -585,7 +651,7 @@ export default function CalendarTab() {
     }
 
     return { timedEventsByDay: timed, allDayEventsByDay: allDay };
-  }, [googleEvents, timeZone, visibleDays]);
+  }, [calendarMetadataByKey, googleEvents, timeZone, visibleDays]);
 
   const tasksByDay = useMemo(() => {
     const map = new Map<string, TaskSelectDecoded[]>();
@@ -658,70 +724,111 @@ export default function CalendarTab() {
 
   // Create/Edit event modal state.
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
-  // Tracks whether location suggestions dropdown should be visible (dismissed after selection).
-  const [locationSuggestionsOpen, setLocationSuggestionsOpen] = useState(false);
-  const locationQuery = eventDraft?.location ?? "";
-  const locationSearch = useLocationSearch(locationQuery);
-  const locationSuggestions = locationSearch.data ?? [];
-  const showLocationSuggestions =
-    locationSuggestionsOpen &&
-    Boolean(eventDraft) &&
-    locationQuery.trim().length >= 2 &&
-    locationSuggestions.length > 0;
+  const editingEventDraft =
+    eventDraft && isEditEventDraft(eventDraft) ? eventDraft : null;
+  const recurringMasterEvent = useRecurringEventMaster({
+    accountId: editingEventDraft?.sourceCalendar.accountId ?? "",
+    calendarId: editingEventDraft?.sourceCalendar.calendarId ?? "",
+    event: editingEventDraft?.sourceEvent ?? null,
+    enabled: Boolean(editingEventDraft),
+  });
+  const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
+  const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
+  const [isEventSaveScopeDialogVisible, setIsEventSaveScopeDialogVisible] =
+    useState(false);
+  const [eventDeleteScope, setEventDeleteScope] =
+    useState<RecurrenceScope>("this");
+  const [isEventDeleteScopeDialogVisible, setIsEventDeleteScopeDialogVisible] =
+    useState(false);
+  const [
+    isSimpleEventDeleteDialogVisible,
+    setIsSimpleEventDeleteDialogVisible,
+  ] = useState(false);
+  const [pendingEventSaveDraft, setPendingEventSaveDraft] =
+    useState<EditEventDraft | null>(null);
+  const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
+    useState<EditEventDraft | null>(null);
 
-  const meetingSource = useMemo(() => {
-    if (!eventDraft) {
-      return null;
+  const openEventDialog = useCallback(
+    (dialog: "save" | "delete" | "simple-delete") => {
+      setIsEventSaveScopeDialogVisible(dialog === "save");
+      setIsEventDeleteScopeDialogVisible(dialog === "delete");
+      setIsSimpleEventDeleteDialogVisible(dialog === "simple-delete");
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (
+      !(
+        editingEventDraft &&
+        editingEventDraft.recurrence.length === 0 &&
+        masterRecurrence.length > 0
+      )
+    ) {
+      return;
     }
-    const sourceEvent = isEditEventDraft(eventDraft)
-      ? eventDraft.sourceEvent
-      : undefined;
-    // Distinguish undefined (not touched) from null (explicitly cleared).
-    // Convert null to undefined for type compatibility with extractMeetingLink.
-    const resolvedConferenceData =
-      eventDraft.conferenceData === undefined
-        ? sourceEvent?.conferenceData
-        : (eventDraft.conferenceData ?? undefined);
 
-    return {
-      ...(sourceEvent ?? {}),
-      location: eventDraft.location,
-      description: eventDraft.description,
-      conferenceData: resolvedConferenceData,
-    };
-  }, [eventDraft]);
-
-  const meetingLink = useMemo(
-    () => extractMeetingLink(meetingSource),
-    [meetingSource]
-  );
-  const mapsUrl =
-    eventDraft && eventDraft.location.trim().length
-      ? getMapsSearchUrl(eventDraft.location)
-      : null;
-  const isConferencePending = Boolean(
-    eventDraft?.conferenceData?.createRequest && !meetingLink
-  );
+    setEventDraft((current) =>
+      current &&
+      isEditEventDraft(current) &&
+      current.eventId === editingEventDraft.eventId
+        ? { ...current, recurrence: masterRecurrence }
+        : current
+    );
+  }, [editingEventDraft, masterRecurrence]);
 
   // Edit scheduled task modal state.
   const [editingTask, setEditingTask] = useState<TaskSelectDecoded | null>(
     null
   );
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+  const [pendingTaskSaveDraft, setPendingTaskSaveDraft] =
+    useState<TaskDraft | null>(null);
+  const [taskSaveScope, setTaskSaveScope] = useState<UpdateScope>("this");
+  const [isTaskSaveScopeDialogVisible, setIsTaskSaveScopeDialogVisible] =
+    useState(false);
+  const [taskDeleteScope, setTaskDeleteScope] = useState<DeleteScope>("this");
+  const [isTaskDeleteScopeDialogVisible, setIsTaskDeleteScopeDialogVisible] =
+    useState(false);
 
-  const calendarOptions = useMemo<CalendarOption[]>(() => {
+  const allCalendarOptions = useMemo<CalendarOption[]>(
+    () =>
+      googleCalendars.map((calendar) => ({
+        accountId: calendar.accountId,
+        calendarId: calendar.calendar.id,
+        color:
+          calendarMetadataByKey.get(
+            calendarLookupKey(calendar.accountId, calendar.calendar.id)
+          )?.backgroundColor ?? null,
+        label: calendar.calendar.summary ?? "Calendar",
+      })),
+    [calendarMetadataByKey, googleCalendars]
+  );
+  const visibleCalendarOptions = useMemo<CalendarOption[]>(() => {
     const visible = googleCalendars.filter((c) =>
       isCalendarVisible(effectiveVisibleCalendars, c.accountId, c.calendar.id)
     );
     return visible.map((c) => ({
       accountId: c.accountId,
       calendarId: c.calendar.id,
+      color:
+        calendarMetadataByKey.get(calendarLookupKey(c.accountId, c.calendar.id))
+          ?.backgroundColor ?? null,
       label: c.calendar.summary ?? "Calendar",
     }));
-  }, [effectiveVisibleCalendars, googleCalendars]);
+  }, [calendarMetadataByKey, effectiveVisibleCalendars, googleCalendars]);
 
-  const defaultCalendar = calendarOptions[0];
-
+  const defaultCalendar = visibleCalendarOptions[0] ?? allCalendarOptions[0];
+  const editCalendarOptions = useMemo(() => {
+    if (!editingEventDraft) {
+      return [];
+    }
+    return allCalendarOptions.filter(
+      (option) =>
+        option.accountId === editingEventDraft.sourceCalendar.accountId
+    );
+  }, [allCalendarOptions, editingEventDraft]);
   const goToPrevious = useCallback(() => {
     setCurrentDate((d) => d.subtract({ days: visibleDaysCount }));
   }, [setCurrentDate, visibleDaysCount]);
@@ -769,6 +876,7 @@ export default function CalendarTab() {
         summary: "",
         description: "",
         location: "",
+        colorId: null,
         calendar: {
           accountId: defaultCalendar.accountId,
           calendarId: defaultCalendar.calendarId,
@@ -778,8 +886,14 @@ export default function CalendarTab() {
         endDate: day,
         startTime,
         endTime,
+        recurrence: [],
         conferenceData: null,
       };
+      setIsEventSaveScopeDialogVisible(false);
+      setIsEventDeleteScopeDialogVisible(false);
+      setIsSimpleEventDeleteDialogVisible(false);
+      setPendingEventSaveDraft(null);
+      setPendingEventDeleteDraft(null);
       setEventDraft(createDraft);
     },
     [defaultCalendar]
@@ -792,7 +906,12 @@ export default function CalendarTab() {
       summary: item.source.event.summary ?? "",
       description: item.source.event.description ?? "",
       location: item.source.event.location ?? "",
+      colorId: item.source.event.colorId ?? null,
       calendar: {
+        accountId: item.source.accountId,
+        calendarId: item.source.calendarId,
+      },
+      sourceCalendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
@@ -801,9 +920,15 @@ export default function CalendarTab() {
       endDate: item.end.toPlainDate(),
       startTime: item.start.toPlainTime(),
       endTime: item.end.toPlainTime(),
+      recurrence: item.source.event.recurrence ?? [],
       conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
     };
+    setIsEventSaveScopeDialogVisible(false);
+    setIsEventDeleteScopeDialogVisible(false);
+    setIsSimpleEventDeleteDialogVisible(false);
+    setPendingEventSaveDraft(null);
+    setPendingEventDeleteDraft(null);
     setEventDraft(editDraft);
   }, []);
 
@@ -827,7 +952,12 @@ export default function CalendarTab() {
       summary: item.source.event.summary ?? "",
       description: item.source.event.description ?? "",
       location: item.source.event.location ?? "",
+      colorId: item.source.event.colorId ?? null,
       calendar: {
+        accountId: item.source.accountId,
+        calendarId: item.source.calendarId,
+      },
+      sourceCalendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
@@ -836,161 +966,418 @@ export default function CalendarTab() {
       endDate,
       startTime: null,
       endTime: null,
+      recurrence: item.source.event.recurrence ?? [],
       conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
     };
+    setIsEventSaveScopeDialogVisible(false);
+    setIsEventDeleteScopeDialogVisible(false);
+    setIsSimpleEventDeleteDialogVisible(false);
+    setPendingEventSaveDraft(null);
+    setPendingEventDeleteDraft(null);
     setEventDraft(editDraft);
   }, []);
 
   const closeEventModal = useCallback(() => {
-    setLocationSuggestionsOpen(false);
+    setIsEventSaveScopeDialogVisible(false);
+    setIsEventDeleteScopeDialogVisible(false);
+    setIsSimpleEventDeleteDialogVisible(false);
+    setPendingEventSaveDraft(null);
+    setPendingEventDeleteDraft(null);
     setEventDraft(null);
   }, []);
 
-  const addGoogleMeetToEventDraft = useCallback(() => {
-    setEventDraft((current) =>
-      current
-        ? {
-            ...current,
-            conferenceData: buildGoogleMeetConferenceData(),
-          }
-        : current
-    );
-  }, []);
+  const buildEventPayload = useCallback(
+    (currentDraft: EventDraft) => {
+      let startPayload: { date?: string; dateTime?: string; timeZone?: string };
+      let endPayload: { date?: string; dateTime?: string; timeZone?: string };
 
-  const saveEvent = useCallback(async () => {
-    if (!eventDraft) {
-      return;
-    }
-    if (!eventDraft.summary.trim()) {
-      return;
-    }
+      if (currentDraft.allDay) {
+        startPayload = { date: currentDraft.startDate.toString() };
+        endPayload = { date: currentDraft.endDate.add({ days: 1 }).toString() };
+      } else {
+        const startZdt = combineDateTime(
+          currentDraft.startDate,
+          currentDraft.startTime ?? Temporal.PlainTime.from("09:00"),
+          timeZone
+        );
+        const endZdt = combineDateTime(
+          currentDraft.endDate,
+          currentDraft.endTime ?? Temporal.PlainTime.from("10:00"),
+          timeZone
+        );
+        startPayload = {
+          dateTime: startZdt.toInstant().toString(),
+          timeZone,
+        };
+        endPayload = {
+          dateTime: endZdt.toInstant().toString(),
+          timeZone,
+        };
+      }
 
-    // Build start/end payloads based on whether it's an all-day event.
-    let startPayload: { date?: string; dateTime?: string };
-    let endPayload: { date?: string; dateTime?: string };
-
-    if (eventDraft.allDay) {
-      // All-day events use date strings; Google uses exclusive end date.
-      startPayload = { date: eventDraft.startDate.toString() };
-      endPayload = {
-        date: eventDraft.endDate.add({ days: 1 }).toString(),
+      return {
+        summary: currentDraft.summary.trim(),
+        description: currentDraft.description.trim() || undefined,
+        location: currentDraft.location.trim() || undefined,
+        colorId: currentDraft.colorId ?? undefined,
+        conferenceData: currentDraft.conferenceData ?? undefined,
+        recurrence:
+          currentDraft.recurrence.length > 0
+            ? currentDraft.recurrence
+            : undefined,
+        start: startPayload,
+        end: endPayload,
       };
-    } else {
-      // Timed events use dateTime ISO strings.
-      const startZdt = combineDateTime(
-        eventDraft.startDate,
-        eventDraft.startTime ?? Temporal.PlainTime.from("09:00"),
-        timeZone
-      );
-      const endZdt = combineDateTime(
-        eventDraft.endDate,
-        eventDraft.endTime ?? Temporal.PlainTime.from("10:00"),
-        timeZone
-      );
-      startPayload = { dateTime: startZdt.toInstant().toString() };
-      endPayload = { dateTime: endZdt.toInstant().toString() };
-    }
+    },
+    [timeZone]
+  );
 
-    const eventPayload = {
-      summary: eventDraft.summary.trim(),
-      description: eventDraft.description.trim() || undefined,
-      location: eventDraft.location.trim() || undefined,
-      conferenceData: eventDraft.conferenceData ?? undefined,
-      start: startPayload,
-      end: endPayload,
-    };
-
-    if (eventDraft.mode === "create") {
-      await orpc.googleCal.events.create.call({
-        accountId: eventDraft.calendar.accountId,
-        calendarId: eventDraft.calendar.calendarId,
-        event: eventPayload,
+  const commitRecurringEventSave = useCallback(
+    async (
+      draft: EditEventDraft,
+      scope: RecurrenceScope,
+      closeAfter = true
+    ) => {
+      const sourceCalendar = draft.sourceCalendar;
+      const destinationCalendarId =
+        draft.calendar.calendarId !== sourceCalendar.calendarId
+          ? draft.calendar.calendarId
+          : null;
+      const eventPayload = buildEventPayload(draft);
+      await updateEvent.mutateAsync({
+        accountId: sourceCalendar.accountId,
+        calendarId: sourceCalendar.calendarId,
+        eventId: draft.eventId,
+        recurrenceScope: scope,
+        event: {
+          ...draft.sourceEvent,
+          ...eventPayload,
+          start: {
+            ...draft.sourceEvent.start,
+            ...eventPayload.start,
+          },
+          end: {
+            ...draft.sourceEvent.end,
+            ...eventPayload.end,
+          },
+        },
       });
-    } else {
-      await orpc.googleCal.events.update.call({
-        accountId: eventDraft.calendar.accountId,
-        calendarId: eventDraft.calendar.calendarId,
-        eventId: eventDraft.eventId,
-        scope: "this",
-        event: eventPayload,
+
+      if (destinationCalendarId) {
+        await moveEvent.mutateAsync({
+          accountId: sourceCalendar.accountId,
+          calendarId: sourceCalendar.calendarId,
+          eventId: draft.eventId,
+          destinationCalendarId,
+          scope,
+        });
+      }
+
+      if (closeAfter) {
+        closeEventModal();
+      }
+    },
+    [buildEventPayload, closeEventModal, moveEvent, updateEvent]
+  );
+
+  const saveEvent = useCallback(
+    async (draft: EventDraft) => {
+      if (!draft.summary.trim()) {
+        return;
+      }
+
+      const eventPayload = buildEventPayload(draft);
+
+      if (draft.mode === "create") {
+        await createEvent.mutateAsync({
+          accountId: draft.calendar.accountId,
+          calendarId: draft.calendar.calendarId,
+          event: eventPayload,
+        });
+        closeEventModal();
+        return;
+      }
+
+      const sourceCalendar = draft.sourceCalendar;
+      const destinationCalendarId =
+        draft.calendar.calendarId !== sourceCalendar.calendarId
+          ? draft.calendar.calendarId
+          : null;
+      const masterSeriesRecurrence =
+        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const recurring =
+        isRecurringGoogleEvent({
+          event: draft.sourceEvent,
+          masterRecurrence: masterSeriesRecurrence,
+        }) || Boolean(draft.sourceEvent.originalStartTime);
+
+      if (recurring) {
+        setPendingEventSaveDraft(draft);
+        setEventSaveScope(
+          getDefaultRecurrenceScopeForEvent({
+            event: draft.sourceEvent,
+            masterRecurrence: masterSeriesRecurrence,
+          })
+        );
+        setEventDraft(null);
+        openEventDialog("save");
+        return;
+      }
+
+      await updateEvent.mutateAsync({
+        accountId: sourceCalendar.accountId,
+        calendarId: sourceCalendar.calendarId,
+        eventId: draft.eventId,
+        recurrenceScope: "this",
+        event: {
+          ...draft.sourceEvent,
+          ...eventPayload,
+          start: {
+            ...draft.sourceEvent.start,
+            ...eventPayload.start,
+          },
+          end: {
+            ...draft.sourceEvent.end,
+            ...eventPayload.end,
+          },
+        },
       });
-    }
 
-    queryClient.invalidateQueries({
-      queryKey: getEventsQueryKey(eventDraft.calendar),
-    });
-    closeEventModal();
-  }, [closeEventModal, eventDraft, getEventsQueryKey, queryClient]);
+      if (destinationCalendarId) {
+        await moveEvent.mutateAsync({
+          accountId: sourceCalendar.accountId,
+          calendarId: sourceCalendar.calendarId,
+          eventId: draft.eventId,
+          destinationCalendarId,
+          scope: "this",
+        });
+      }
 
-  const deleteEvent = useCallback(async () => {
-    if (!(eventDraft && isEditEventDraft(eventDraft))) {
+      closeEventModal();
+    },
+    [
+      buildEventPayload,
+      closeEventModal,
+      createEvent,
+      masterRecurrence,
+      moveEvent,
+      openEventDialog,
+      updateEvent,
+    ]
+  );
+
+  const confirmScopedEventSave = useCallback(async () => {
+    if (!pendingEventSaveDraft) {
       return;
     }
-    await orpc.googleCal.events.delete.call({
-      accountId: eventDraft.calendar.accountId,
-      calendarId: eventDraft.calendar.calendarId,
-      eventId: eventDraft.eventId,
+    await commitRecurringEventSave(pendingEventSaveDraft, eventSaveScope);
+    setPendingEventSaveDraft(null);
+    setIsEventSaveScopeDialogVisible(false);
+  }, [commitRecurringEventSave, eventSaveScope, pendingEventSaveDraft]);
+
+  const requestDeleteEvent = useCallback(
+    (draft: EditEventDraft) => {
+      const recurringMasterRecurrence =
+        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const recurring =
+        isRecurringGoogleEvent({
+          event: draft.sourceEvent,
+          masterRecurrence: recurringMasterRecurrence,
+        }) || Boolean(draft.sourceEvent.originalStartTime);
+
+      setPendingEventDeleteDraft(draft);
+      setEventDraft(null);
+
+      if (recurring) {
+        setEventDeleteScope(
+          getDefaultRecurrenceScopeForEvent({
+            event: draft.sourceEvent,
+            masterRecurrence: recurringMasterRecurrence,
+          })
+        );
+        openEventDialog("delete");
+        return;
+      }
+
+      openEventDialog("simple-delete");
+    },
+    [masterRecurrence, openEventDialog]
+  );
+
+  const confirmSimpleEventDelete = useCallback(async () => {
+    if (!pendingEventDeleteDraft) {
+      return;
+    }
+
+    await deleteEvent.mutateAsync({
+      accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
+      calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
+      eventId: pendingEventDeleteDraft.eventId,
       scope: "this",
     });
-    queryClient.invalidateQueries({
-      queryKey: getEventsQueryKey(eventDraft.calendar),
+    closeEventModal();
+  }, [closeEventModal, deleteEvent, pendingEventDeleteDraft]);
+
+  const confirmScopedEventDelete = useCallback(async () => {
+    if (!pendingEventDeleteDraft) {
+      return;
+    }
+
+    await deleteEvent.mutateAsync({
+      accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
+      calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
+      eventId: pendingEventDeleteDraft.eventId,
+      scope: eventDeleteScope,
     });
     closeEventModal();
-  }, [closeEventModal, eventDraft, getEventsQueryKey, queryClient]);
+  }, [closeEventModal, deleteEvent, eventDeleteScope, pendingEventDeleteDraft]);
 
-  const openEditTask = useCallback((task: TaskSelectDecoded) => {
-    setEditingTask(task);
-    setTaskDraft(buildDraftFromTask(task));
-  }, []);
+  const openEditTask = useCallback(
+    (task: TaskSelectDecoded) => {
+      const resolvedRecurrence = resolveTaskRecurrenceForEditor(task, tasks);
+      const nextEditingTask: TaskSelectDecoded = {
+        ...task,
+        recurrence: resolvedRecurrence,
+      };
+      setEditingTask(nextEditingTask);
+      setTaskDraft(buildDraftFromTask(nextEditingTask, resolvedRecurrence));
+    },
+    [tasks]
+  );
 
   const closeTaskModal = useCallback(() => {
     setEditingTask(null);
     setTaskDraft(null);
+    setPendingTaskSaveDraft(null);
+    setIsTaskSaveScopeDialogVisible(false);
+    setIsTaskDeleteScopeDialogVisible(false);
   }, []);
+
+  const commitTaskUpdate = useCallback(
+    (nextDraft: TaskDraft, scope: UpdateScope) => {
+      if (!editingTask) {
+        return;
+      }
+
+      updateTask.mutate({
+        id: editingTask.id,
+        scope,
+        task: {
+          title: nextDraft.title.trim(),
+          description: nextDraft.description.trim()
+            ? nextDraft.description.trim()
+            : null,
+          tagIds: nextDraft.tagIds,
+          durationMinutes: nextDraft.durationMinutes,
+          dueDate: nextDraft.dueDate,
+          startDate: nextDraft.startDate,
+          startTime: nextDraft.startTime,
+          recurrence: nextDraft.recurrence,
+        },
+      });
+    },
+    [editingTask, updateTask]
+  );
 
   const saveTask = useCallback(() => {
     if (!(editingTask && taskDraft)) {
       return;
     }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: {
-        title: taskDraft.title.trim(),
-        description: taskDraft.description.trim()
-          ? taskDraft.description.trim()
-          : null,
-        tagIds: taskDraft.tagIds,
+    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
+      previous: {
+        title: editingTask.title,
+        description: editingTask.description,
+        durationMinutes: editingTask.durationMinutes,
+        dueDate: editingTask.dueDate,
+        startDate: editingTask.startDate,
+        startTime: editingTask.startTime,
+      },
+      next: {
+        title: taskDraft.title,
+        description: taskDraft.description,
         durationMinutes: taskDraft.durationMinutes,
         dueDate: taskDraft.dueDate,
         startDate: taskDraft.startDate,
         startTime: taskDraft.startTime,
       },
     });
+
+    const decision = getTaskUpdateScopeDecision({
+      isRecurring: editingTask.seriesMasterId !== null,
+      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
+      hasCoreFieldChanges,
+      previousRecurrence: editingTask.recurrence,
+      nextRecurrence: taskDraft.recurrence,
+      previousTagIds: editingTask.tags.map((tag) => tag.id),
+      nextTagIds: taskDraft.tagIds,
+    });
+
+    if (decision.action === "prompt") {
+      setPendingTaskSaveDraft(taskDraft);
+      setTaskSaveScope(decision.defaultScope);
+      setTaskDraft(null);
+      setIsTaskSaveScopeDialogVisible(true);
+      return;
+    }
+
+    commitTaskUpdate(taskDraft, decision.scope);
     closeTaskModal();
-  }, [closeTaskModal, editingTask, taskDraft, updateTask]);
+  }, [closeTaskModal, commitTaskUpdate, editingTask, taskDraft]);
+
+  const confirmScopedTaskSave = useCallback(() => {
+    if (!(editingTask && pendingTaskSaveDraft)) {
+      return;
+    }
+    commitTaskUpdate(pendingTaskSaveDraft, taskSaveScope);
+    closeTaskModal();
+  }, [
+    closeTaskModal,
+    commitTaskUpdate,
+    editingTask,
+    pendingTaskSaveDraft,
+    taskSaveScope,
+  ]);
 
   const deleteTaskFromCalendar = useCallback(() => {
     if (!editingTask) {
       return;
     }
+
+    if (editingTask.seriesMasterId) {
+      setTaskDeleteScope("this");
+      setTaskDraft(null);
+      setIsTaskDeleteScopeDialogVisible(true);
+      return;
+    }
+
     deleteTask.mutate({ id: editingTask.id, scope: "this" });
     closeTaskModal();
   }, [closeTaskModal, deleteTask, editingTask]);
 
-  const toggleTaskStatusFromCalendar = useCallback(() => {
+  const confirmScopedTaskDelete = useCallback(() => {
     if (!editingTask) {
       return;
     }
-    const nextStatus = editingTask.status === "done" ? "todo" : "done";
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: nextStatus },
-    });
+
+    deleteTask.mutate({ id: editingTask.id, scope: taskDeleteScope });
     closeTaskModal();
-  }, [closeTaskModal, editingTask, updateTask]);
+  }, [closeTaskModal, deleteTask, editingTask, taskDeleteScope]);
+
+  const toggleTaskStatusFromCalendar = useCallback(
+    (nextStatus: TaskDraft["status"]) => {
+      if (!editingTask) {
+        return;
+      }
+      updateTask.mutate({
+        id: editingTask.id,
+        scope: "this",
+        task: { status: nextStatus },
+      });
+      closeTaskModal();
+    },
+    [closeTaskModal, editingTask, updateTask]
+  );
 
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollView>(null);
@@ -1136,20 +1523,13 @@ export default function CalendarTab() {
                       className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
                       key={`${day.toString()}-allday`}
                     >
-                      {items.slice(0, 3).map((e) => {
-                        const calendarColors = calendarColorLookup.get(
-                          `${e.source.accountId}:${e.source.calendarId}`
-                        );
-
-                        return (
-                          <AllDayEventChip
-                            calendarColors={calendarColors}
-                            item={e}
-                            key={`${e.source.calendarId}-${e.source.event.id}`}
-                            onPress={() => openEditAllDayEvent(e)}
-                          />
-                        );
-                      })}
+                      {items.slice(0, 3).map((e) => (
+                        <AllDayEventChip
+                          item={e}
+                          key={`${e.source.calendarId}-${e.source.event.id}`}
+                          onPress={() => openEditAllDayEvent(e)}
+                        />
+                      ))}
                     </View>
                   );
                 })}
@@ -1252,13 +1632,9 @@ export default function CalendarTab() {
                           height - EVENT_BLOCK_INSET_PX,
                           20
                         );
-                        const calendarColors = calendarColorLookup.get(
-                          `${evt.source.accountId}:${evt.source.calendarId}`
-                        );
 
                         return (
                           <TimedGoogleEventBlock
-                            calendarColors={calendarColors}
                             columnIndex={layout?.columnIndex}
                             durationMinutes={durationMinutes}
                             height={adjustedHeight}
@@ -1370,47 +1746,29 @@ export default function CalendarTab() {
 
       {eventDraft?.mode === "create" ? (
         <CreateEventEditorSheet
-          calendarOptions={calendarOptions}
+          calendarOptions={allCalendarOptions}
           draft={eventDraft}
-          isConferencePending={isConferencePending}
           isVisible
-          locationSuggestions={locationSuggestions}
-          mapsUrl={mapsUrl}
-          meetingLink={meetingLink}
-          onAddGoogleMeet={addGoogleMeetToEventDraft}
           onClose={closeEventModal}
-          onCreate={saveEvent}
-          onLocationSuggestionsOpenChange={setLocationSuggestionsOpen}
-          setDraft={(updater) =>
-            setEventDraft((current) =>
-              current?.mode === "create" ? updater(current) : current
-            )
-          }
-          showLocationSuggestions={showLocationSuggestions}
+          onCreate={(draft) => {
+            saveEvent(draft).catch(() => null);
+          }}
           timeZone={timeZone}
         />
       ) : null}
 
       {eventDraft?.mode === "edit" ? (
         <EditEventEditorSheet
-          calendarOptions={calendarOptions}
+          calendarOptions={editCalendarOptions}
           draft={eventDraft}
-          isConferencePending={isConferencePending}
           isVisible
-          locationSuggestions={locationSuggestions}
-          mapsUrl={mapsUrl}
-          meetingLink={meetingLink}
-          onAddGoogleMeet={addGoogleMeetToEventDraft}
           onClose={closeEventModal}
-          onDelete={deleteEvent}
-          onLocationSuggestionsOpenChange={setLocationSuggestionsOpen}
-          onSave={saveEvent}
-          setDraft={(updater) =>
-            setEventDraft((current) =>
-              current && isEditEventDraft(current) ? updater(current) : current
-            )
-          }
-          showLocationSuggestions={showLocationSuggestions}
+          onDelete={(draft) => {
+            requestDeleteEvent(draft);
+          }}
+          onSave={(draft) => {
+            saveEvent(draft).catch(() => null);
+          }}
           timeZone={timeZone}
         />
       ) : null}
@@ -1426,9 +1784,121 @@ export default function CalendarTab() {
         setDraft={(updater) =>
           setTaskDraft((current) => (current ? updater(current) : current))
         }
-        status={editingTask?.status ?? null}
         timeZone={timeZone}
       />
+
+      <AlertDialog
+        confirmText="Apply"
+        description="This is a recurring event. Choose how broadly to apply these changes."
+        isVisible={isEventSaveScopeDialogVisible}
+        onCancel={() => {
+          setIsEventSaveScopeDialogVisible(false);
+          setPendingEventSaveDraft(null);
+        }}
+        onClose={() => {
+          setIsEventSaveScopeDialogVisible(false);
+          setPendingEventSaveDraft(null);
+        }}
+        onConfirm={() => {
+          confirmScopedEventSave().catch(() => null);
+        }}
+        title="Save recurring event"
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) =>
+              setEventSaveScope(value as RecurrenceScope)
+            }
+            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            value={eventSaveScope}
+          />
+        </View>
+      </AlertDialog>
+
+      <AlertDialog
+        confirmText="Delete"
+        description="This is a recurring event. Choose what to delete."
+        isVisible={isEventDeleteScopeDialogVisible}
+        onClose={() => {
+          setIsEventDeleteScopeDialogVisible(false);
+          setPendingEventDeleteDraft(null);
+        }}
+        onConfirm={() => {
+          confirmScopedEventDelete().catch(() => null);
+        }}
+        title="Delete recurring event"
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) =>
+              setEventDeleteScope(value as RecurrenceScope)
+            }
+            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            value={eventDeleteScope}
+          />
+        </View>
+      </AlertDialog>
+
+      <AlertDialog
+        confirmText="Delete"
+        description="This action cannot be undone."
+        isVisible={isSimpleEventDeleteDialogVisible}
+        onClose={() => {
+          setIsSimpleEventDeleteDialogVisible(false);
+          setPendingEventDeleteDraft(null);
+        }}
+        onConfirm={() => {
+          confirmSimpleEventDelete().catch(() => null);
+        }}
+        title="Delete event"
+      />
+
+      <AlertDialog
+        confirmText="Apply"
+        description="This is a recurring task. Choose how broadly to apply these updates."
+        isVisible={isTaskSaveScopeDialogVisible}
+        onCancel={closeTaskModal}
+        onClose={closeTaskModal}
+        onConfirm={confirmScopedTaskSave}
+        title="Apply task update"
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
+            options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            value={taskSaveScope}
+          />
+        </View>
+      </AlertDialog>
+
+      <AlertDialog
+        confirmText="Delete"
+        description="This is a recurring task. Choose what to delete."
+        isVisible={isTaskDeleteScopeDialogVisible}
+        onClose={closeTaskModal}
+        onConfirm={confirmScopedTaskDelete}
+        title="Delete recurring task"
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
+            options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            value={taskDeleteScope}
+          />
+        </View>
+      </AlertDialog>
     </View>
   );
 }

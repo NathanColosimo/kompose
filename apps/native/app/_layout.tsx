@@ -62,6 +62,7 @@ function RootLayoutContent() {
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <ScrollView
           className="flex-1"
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             flexGrow: 1,
             justifyContent: "center",
