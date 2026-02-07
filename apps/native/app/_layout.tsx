@@ -62,13 +62,13 @@ function RootLayoutContent() {
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <ScrollView
           className="flex-1"
-          showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             flexGrow: 1,
             justifyContent: "center",
             padding: 24,
           }}
           contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
         >
           <View className="gap-6">
             <View className="items-center gap-2">
