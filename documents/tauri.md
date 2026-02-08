@@ -147,3 +147,26 @@ Per-arch (Apple Silicon):
   and prompts for a restart when ready.
 - Universal builds can use a single updater bundle in `latest.json`
   for both `darwin-aarch64` and `darwin-x86_64`.
+
+## Manual no-notary flow (Apple Silicon)
+
+This flow keeps code signing enabled but skips notarization so you can
+produce a DMG for yourself and a few friends.
+
+1) Build (signed, no notarization):
+
+- `bun run desktop:build:signed:no-notary`
+
+2) Release to GitHub (manual upload):
+
+- `bun run desktop:release`
+
+Artifacts uploaded:
+
+- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg`
+- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz`
+- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig`
+- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/latest.json`
+
+Intel users will need an `x86_64-apple-darwin` build or a universal build
+if they need to run the app.

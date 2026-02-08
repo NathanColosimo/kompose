@@ -1,6 +1,13 @@
-// biome-ignore lint/correctness/noUnusedImports: validate at build
-import { env } from "@kompose/env";
 import type { NextConfig } from "next";
+
+// When building for Tauri, use static export (no server routes).
+const isTauriBuild = process.env.TAURI_BUILD === "1";
+
+// Validate env at build time for web deploys only (Tauri builds
+// don't have server env vars like DATABASE_URL).
+if (!isTauriBuild) {
+  import("@kompose/env");
+}
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
@@ -10,6 +17,12 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },
+  // Tauri requires static export; the Next.js Image component needs
+  // unoptimized mode because there is no server to optimize images.
+  ...(isTauriBuild && {
+    output: "export" as const,
+    images: { unoptimized: true },
+  }),
 };
 
 export default nextConfig;

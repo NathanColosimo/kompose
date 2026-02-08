@@ -21,6 +21,7 @@ export const auth = betterAuth<BetterAuthOptions>({
     env.NEXT_PUBLIC_WEB_URL,
     "kompose://",
     "exp://",
+    "tauri://localhost",
     "https://appleid.apple.com",
   ],
   emailAndPassword: {
