@@ -16,7 +16,7 @@ export const tagsQueryAtom = atomWithQuery<TagSelect[]>((get) => {
     queryKey: TAGS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const tags = await orpc.tags.list.call();
+      const tags = await orpc.tags.list();
       return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));
     },
     staleTime: 1000 * 60 * 5,

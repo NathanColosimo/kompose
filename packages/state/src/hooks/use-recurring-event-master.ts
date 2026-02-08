@@ -39,7 +39,7 @@ export function recurringEventMasterQueryOptions(params: {
   return {
     queryKey: recurringEventMasterQueryKey(params),
     queryFn: () =>
-      orpc.googleCal.events.get.call({
+      orpc.googleCal.events.get({
         accountId: params.accountId,
         calendarId: params.calendarId,
         eventId: params.recurringEventId,
@@ -91,7 +91,7 @@ export function useRecurringEventMaster(params: {
       if (!recurringEventId) {
         throw new Error("Recurring master query is disabled");
       }
-      return orpc.googleCal.events.get.call({
+      return orpc.googleCal.events.get({
         accountId: params.accountId,
         calendarId: params.calendarId,
         eventId: recurringEventId,

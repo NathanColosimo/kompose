@@ -12,6 +12,7 @@ import {
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
+import { getGoogleEventsQueryKey } from "@kompose/state/google-calendar-query-keys";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -53,14 +54,16 @@ export default function Page() {
   const eventsQueryOptions = useMemo(
     () =>
       visibleGoogleCalendars.map((calendar) => {
-        const options = orpc.googleCal.events.list.queryOptions({
-          input: {
-            accountId: calendar.accountId,
-            calendarId: calendar.calendarId,
-            timeMin: window.timeMin,
-            timeMax: window.timeMax,
-          },
-        });
+        const options = {
+          queryFn: async () =>
+            orpc.googleCal.events.list({
+              accountId: calendar.accountId,
+              calendarId: calendar.calendarId,
+              timeMin: window.timeMin,
+              timeMax: window.timeMax,
+            }),
+          queryKey: getGoogleEventsQueryKey(calendar, window),
+        };
 
         return {
           ...options,
@@ -68,7 +71,7 @@ export default function Page() {
           placeholderData: keepPreviousData,
         };
       }),
-    [visibleGoogleCalendars, window.timeMin, window.timeMax]
+    [visibleGoogleCalendars, window]
   );
 
   // Fetch events for each visible calendar within the current window

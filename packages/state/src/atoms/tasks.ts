@@ -20,7 +20,7 @@ export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
     queryKey: TASKS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const tasks = await orpc.tasks.list.call();
+      const tasks = await orpc.tasks.list();
       return tasks.map((task) => taskSelectCodec.parse(task));
     },
     staleTime: 1000 * 60 * 5,

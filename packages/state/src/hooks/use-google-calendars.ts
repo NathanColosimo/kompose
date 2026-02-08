@@ -4,6 +4,7 @@ import type { Calendar } from "@kompose/google-cal/schema";
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useStateConfig } from "../config";
+import { getGoogleCalendarsQueryKey } from "../google-calendar-query-keys";
 
 export interface CalendarWithSource {
   accountId: string;
@@ -18,10 +19,8 @@ export function useGoogleCalendars(accountIds: string[]) {
 
   const queries = useQueries({
     queries: accountIds.map((accountId) => ({
-      ...orpc.googleCal.calendars.list.queryOptions({
-        input: { accountId },
-      }),
-      queryKey: ["google-calendars", accountId],
+      queryKey: getGoogleCalendarsQueryKey(accountId),
+      queryFn: async () => await orpc.googleCal.calendars.list({ accountId }),
       placeholderData: keepPreviousData,
       staleTime: 5 * 60 * 1000,
     })),

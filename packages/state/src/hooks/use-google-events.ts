@@ -2,17 +2,14 @@
 
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
+import type { CalendarIdentifier } from "../atoms/visible-calendars";
 import { useStateConfig } from "../config";
+import { getGoogleEventsQueryKey } from "../google-calendar-query-keys";
 
 export interface GoogleEventWithSource {
   accountId: string;
   calendarId: string;
   event: GoogleEvent;
-}
-
-export interface CalendarIdentifier {
-  accountId: string;
-  calendarId: string;
 }
 
 /**
@@ -29,14 +26,14 @@ export function useGoogleEvents({
 
   const queries = useQueries({
     queries: visibleCalendars.map((calendar) => ({
-      ...orpc.googleCal.events.list.queryOptions({
-        input: {
+      queryKey: getGoogleEventsQueryKey(calendar, window),
+      queryFn: async () =>
+        await orpc.googleCal.events.list({
           accountId: calendar.accountId,
           calendarId: calendar.calendarId,
           timeMin: window.timeMin,
           timeMax: window.timeMax,
-        },
-      }),
+        }),
       placeholderData: keepPreviousData,
       staleTime: 60_000,
     })),

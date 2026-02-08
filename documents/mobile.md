@@ -222,6 +222,20 @@ We confirmed runtime resolution was correct, and the fix was to fully restart Me
 Fix:
 - Installed `expo-network` into `apps/native`.
 
+### 4) iOS simulator Google OAuth "Something went wrong" (local only)
+
+Symptoms:
+- Google sign-in works in TestFlight/real device but fails in iOS Simulator with a Google "Something went wrong" / unknown error page.
+- Server logs show auth start/proxy requests, but local simulator flow can still fail unexpectedly.
+
+Most reliable local reset:
+- Run `bun run ios:reset-simulator` from `apps/native`.
+- This shuts down + erases all simulators, clears Xcode DerivedData, then reinstalls the iOS dev client.
+
+Notes:
+- Keep host usage consistent during a test run (`localhost` only, or ngrok only).
+- This issue appears simulator-state related; production/TestFlight auth can remain healthy.
+
 ## Environment variables
 
 - `apps/native/.env`

@@ -8,6 +8,10 @@ import { atom } from "jotai";
 import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig, hasSessionAtom } from "../config";
+import {
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+  getGoogleCalendarsQueryKey,
+} from "../google-calendar-query-keys";
 import type { CalendarIdentifier } from "./visible-calendars";
 import { visibleCalendarsAtom } from "./visible-calendars";
 
@@ -22,7 +26,7 @@ const googleAccountsAtom = atomWithQuery<Account[]>((get) => {
   const hasSession = get(hasSessionAtom);
 
   return {
-    queryKey: ["google-accounts"],
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
       const result = await authClient.listAccounts();
@@ -51,10 +55,10 @@ const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
     const hasSession = get(hasSessionAtom);
 
     return {
-      queryKey: ["google-calendars", accountId],
+      queryKey: getGoogleCalendarsQueryKey(accountId),
       enabled: hasSession,
       queryFn: async () => {
-        const calendars = await orpc.googleCal.calendars.list.call({
+        const calendars = await orpc.googleCal.calendars.list({
           accountId,
         });
 

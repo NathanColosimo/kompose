@@ -10,6 +10,7 @@ export const authClient = createAuthClient({
   baseURL: process.env.EXPO_PUBLIC_SERVER_URL,
   plugins: [
     expoClient({
+      cookiePrefix: Constants.expoConfig?.scheme as string,
       scheme: Constants.expoConfig?.scheme as string,
       storagePrefix: Constants.expoConfig?.scheme as string,
       storage: SecureStore,

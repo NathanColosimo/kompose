@@ -26,7 +26,6 @@
   "dependencies": {
     "@kompose/api": "workspace:*",
     "@kompose/google-cal": "workspace:*",
-    "@orpc/tanstack-query": "catalog:",
     "@tanstack/react-query": "catalog:",
     "better-auth": "catalog:",
     "jotai": "catalog:",

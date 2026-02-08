@@ -4,6 +4,7 @@ import type { DeleteEventInput } from "@kompose/api/routers/google-cal/contract"
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
+import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
 
 /**
  * Input for creating a new Google Calendar event.
@@ -44,7 +45,7 @@ export function useGoogleEventMutations() {
 
   const createEvent = useMutation({
     mutationFn: async (variables: CreateGoogleEventInput) =>
-      orpc.googleCal.events.create.call({
+      orpc.googleCal.events.create({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
         event: variables.event,
@@ -52,14 +53,22 @@ export function useGoogleEventMutations() {
     onError: (err) => {
       notifyError?.(err);
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
+    onSettled: (_data, _error, variables) => {
+      if (!variables) {
+        return;
+      }
+      queryClient.invalidateQueries({
+        queryKey: getGoogleEventsByCalendarQueryKey({
+          accountId: variables.accountId,
+          calendarId: variables.calendarId,
+        }),
+      });
     },
   });
 
   const updateEvent = useMutation({
     mutationFn: async (variables: UpdateGoogleEventInput) =>
-      orpc.googleCal.events.update.call({
+      orpc.googleCal.events.update({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
         eventId: variables.eventId,
@@ -68,13 +77,17 @@ export function useGoogleEventMutations() {
       }),
     onMutate: async (variables) => {
       const scope = variables.recurrenceScope ?? "this";
+      const queryKey = getGoogleEventsByCalendarQueryKey({
+        accountId: variables.accountId,
+        calendarId: variables.calendarId,
+      });
 
       await queryClient.cancelQueries({
-        queryKey: orpc.googleCal.events.key(),
+        queryKey,
       });
 
       const previousQueries = queryClient.getQueriesData<Event[]>({
-        queryKey: orpc.googleCal.events.key(),
+        queryKey,
       });
 
       if (scope === "this") {
@@ -101,26 +114,39 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
+    onSettled: (_data, _error, variables) => {
+      if (!variables) {
+        return;
+      }
+      queryClient.invalidateQueries({
+        queryKey: getGoogleEventsByCalendarQueryKey({
+          accountId: variables.accountId,
+          calendarId: variables.calendarId,
+        }),
+      });
     },
   });
 
   const deleteEvent = useMutation({
     mutationFn: async (variables: DeleteEventInput) =>
-      orpc.googleCal.events.delete.call({
+      orpc.googleCal.events.delete({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
         eventId: variables.eventId,
         scope: variables.scope,
       }),
     onMutate: async (variables) => {
+      const queryKey = getGoogleEventsByCalendarQueryKey({
+        accountId: variables.accountId,
+        calendarId: variables.calendarId,
+      });
+
       await queryClient.cancelQueries({
-        queryKey: orpc.googleCal.events.key(),
+        queryKey,
       });
 
       const previousQueries = queryClient.getQueriesData<Event[]>({
-        queryKey: orpc.googleCal.events.key(),
+        queryKey,
       });
 
       for (const [queryKey, data] of previousQueries) {
@@ -143,8 +169,16 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: orpc.googleCal.events.key() });
+    onSettled: (_data, _error, variables) => {
+      if (!variables) {
+        return;
+      }
+      queryClient.invalidateQueries({
+        queryKey: getGoogleEventsByCalendarQueryKey({
+          accountId: variables.accountId,
+          calendarId: variables.calendarId,
+        }),
+      });
     },
   });
 

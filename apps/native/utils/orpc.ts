@@ -1,8 +1,12 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { TASKS_QUERY_KEY } from "@kompose/state/atoms/tasks";
+import {
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+  GOOGLE_CALENDARS_QUERY_KEY,
+  GOOGLE_EVENTS_QUERY_KEY,
+} from "@kompose/state/google-calendar-query-keys";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { authClient } from "@/lib/auth-client";
 
@@ -14,11 +18,10 @@ export const queryClient = new QueryClient({
   }),
   defaultOptions: {
     queries: {
-      // Prevent aggressive refetching that causes constant UI refreshes
-      staleTime: 1000 * 60, // Consider data fresh for 1 minute
-      refetchOnWindowFocus: true, // Don't refetch when app comes to foreground
-      refetchOnMount: true, // Don't refetch on component mount if data exists
-      retry: 1, // Only retry failed queries once
+      staleTime: 1000 * 60,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      retry: 1,
     },
   },
 });
@@ -41,13 +44,7 @@ export const link = new RPCLink({
   },
 });
 
-export const client: AppRouterClient = createORPCClient(link);
-
-export const orpc = createTanstackQueryUtils(client);
-
-const GOOGLE_ACCOUNTS_QUERY_KEY = ["google-accounts"] as const;
-const GOOGLE_CALENDARS_QUERY_KEY = ["google-calendars"] as const;
-const GOOGLE_EVENTS_QUERY_KEY = orpc.googleCal.events.key();
+export const orpc: AppRouterClient = createORPCClient(link);
 
 export function invalidateSessionQueries() {
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });

@@ -24,7 +24,7 @@ export function useTags() {
     queryKey: TAGS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const tags = await orpc.tags.list.call();
+      const tags = await orpc.tags.list();
       return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));
     },
     staleTime: 1000 * 60 * 5,
@@ -33,7 +33,7 @@ export function useTags() {
 
   const createTag = useMutation({
     mutationFn: async (input: CreateTagInput) => {
-      const tag = await orpc.tags.create.call(input);
+      const tag = await orpc.tags.create(input);
       return tagSelectSchemaWithIcon.parse(tag);
     },
     onSuccess: (created) => {
@@ -45,7 +45,7 @@ export function useTags() {
   });
 
   const deleteTag = useMutation({
-    mutationFn: async (id: string) => await orpc.tags.delete.call({ id }),
+    mutationFn: async (id: string) => await orpc.tags.delete({ id }),
     onSuccess: (_res, id) => {
       queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) =>
         (old ?? []).filter((tag) => tag.id !== id)
@@ -56,7 +56,7 @@ export function useTags() {
 
   const updateTag = useMutation({
     mutationFn: async (input: UpdateTagInput) => {
-      const tag = await orpc.tags.update.call(input);
+      const tag = await orpc.tags.update(input);
       return tagSelectSchemaWithIcon.parse(tag);
     },
     onSuccess: (updated) => {

@@ -20,7 +20,8 @@
       "!**/.svelte-kit",
       "!**/wrangler.jsonc",
       "!**/.source",
-      "!packages/google-cal/src"
+      "!packages/google-cal/src",
+      "!**/components/ui"
     ]
   },
   "extends": ["ultracite/core", "ultracite/next", "ultracite/react"],

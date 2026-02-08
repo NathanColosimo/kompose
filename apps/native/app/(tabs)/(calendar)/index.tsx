@@ -30,6 +30,11 @@ import {
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import {
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+  GOOGLE_CALENDARS_QUERY_KEY,
+  getGoogleEventsQueryKey,
+} from "@kompose/state/google-calendar-query-keys";
+import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
@@ -78,7 +83,6 @@ import { Icon } from "@/components/ui/icon";
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import { useColorScheme } from "@/lib/color-scheme-context";
-import { orpc } from "@/utils/orpc";
 
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
@@ -507,25 +511,12 @@ export default function CalendarTab() {
 
   // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
   const timeZone = useAtomValue(timezoneAtom);
-  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const [, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(
     mobileVisibleDaysCountAtom
   );
   const visibleDays = useAtomValue(mobileVisibleDaysAtom);
   const window = useAtomValue(eventWindowAtom);
-
-  const getEventsQueryKey = useCallback(
-    (calendar: CalendarIdentifier) =>
-      orpc.googleCal.events.list.queryOptions({
-        input: {
-          accountId: calendar.accountId,
-          calendarId: calendar.calendarId,
-          timeMin: window.timeMin,
-          timeMax: window.timeMax,
-        },
-      }).queryKey,
-    [window.timeMax, window.timeMin]
-  );
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
   const { tasksQuery, updateTask, deleteTask } = useTasks();
@@ -583,10 +574,10 @@ export default function CalendarTab() {
       window,
     });
   const isFetchingAccounts = useIsFetching({
-    queryKey: ["google-accounts"],
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
   });
   const isFetchingCalendars = useIsFetching({
-    queryKey: ["google-calendars"],
+    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
   });
 
   // Calendar picker modal.
@@ -688,11 +679,13 @@ export default function CalendarTab() {
       const taskItems: PositionedItem[] = dayTasks
         .filter((task) => task.startDate !== null && task.startTime !== null)
         .map((task) => {
-          const start = task.startDate!.toZonedDateTime({
+          const start = task.startDate?.toZonedDateTime({
             timeZone,
-            plainTime: task.startTime!,
+            plainTime:
+              task.startTime ??
+              Temporal.PlainTime.from({ hour: 0, minute: 0, second: 0 }),
           });
-          const startMinutes = minutesFromMidnight(start);
+          const startMinutes = start ? minutesFromMidnight(start) : 0;
           const endMinutes = startMinutes + (task.durationMinutes || 30);
           return {
             id: task.id,
@@ -1385,19 +1378,19 @@ export default function CalendarTab() {
   const refreshCalendarData = useCallback(() => {
     tasksQuery.refetch();
     queryClient.invalidateQueries({
-      queryKey: ["google-accounts"],
+      queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
     });
     queryClient.invalidateQueries({
-      queryKey: ["google-calendars"],
+      queryKey: GOOGLE_CALENDARS_QUERY_KEY,
     });
 
     // Only refresh visible calendars and the active window to avoid broad invalidation.
     for (const calendar of visibleCalendarIds) {
       queryClient.invalidateQueries({
-        queryKey: getEventsQueryKey(calendar),
+        queryKey: getGoogleEventsQueryKey(calendar, window),
       });
     }
-  }, [getEventsQueryKey, queryClient, tasksQuery, visibleCalendarIds]);
+  }, [queryClient, tasksQuery, visibleCalendarIds, window]);
 
   // Scroll to 8am on first mount.
   useEffect(() => {

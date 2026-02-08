@@ -2,7 +2,6 @@ import type { AppRouterClient } from "@kompose/api/routers/index";
 import { env } from "@kompose/env";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -41,5 +40,4 @@ const link = new RPCLink({
   },
 });
 
-const client: AppRouterClient = createORPCClient(link);
-export const orpc = createTanstackQueryUtils(client);
+export const orpc: AppRouterClient = createORPCClient(link);

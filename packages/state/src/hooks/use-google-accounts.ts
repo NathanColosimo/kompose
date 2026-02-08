@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { useAtomValue } from "jotai";
 import { hasSessionAtom, useStateConfig } from "../config";
+import { GOOGLE_ACCOUNTS_QUERY_KEY } from "../google-calendar-query-keys";
 
 /**
  * Returns linked Better Auth accounts filtered to Google provider.
@@ -13,7 +14,7 @@ export function useGoogleAccounts() {
   const hasSession = useAtomValue(hasSessionAtom);
 
   return useQuery({
-    queryKey: ["google-accounts"],
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async (): Promise<Account[]> => {
       const result = await authClient.listAccounts();

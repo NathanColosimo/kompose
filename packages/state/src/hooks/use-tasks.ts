@@ -41,7 +41,7 @@ export function useTasks() {
     queryKey: TASKS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const tasks = await orpc.tasks.list.call();
+      const tasks = await orpc.tasks.list();
       return tasks.map((task) => taskSelectCodec.parse(task));
     },
     staleTime: 1000 * 60 * 5,
@@ -54,7 +54,7 @@ export function useTasks() {
   const createTask = useMutation({
     mutationFn: async (task: ClientTaskInsertDecoded) => {
       const encoded = clientTaskInsertCodec.encode(task);
-      const results = await orpc.tasks.create.call(encoded);
+      const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
     onMutate: async (task: ClientTaskInsertDecoded) => {
@@ -122,7 +122,7 @@ export function useTasks() {
       scope: UpdateScope;
     }) => {
       const encoded = taskUpdateCodec.encode(task);
-      const results = await orpc.tasks.update.call({
+      const results = await orpc.tasks.update({
         id,
         task: encoded,
         scope,
@@ -185,7 +185,7 @@ export function useTasks() {
    */
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
-      await orpc.tasks.delete.call({ id, scope }),
+      await orpc.tasks.delete({ id, scope }),
     onMutate: async ({ id, scope }: { id: string; scope: DeleteScope }) => {
       // Only optimistic update for scope="this" (single task)
       if (scope !== "this") {

@@ -3,6 +3,7 @@ import { atom } from "jotai";
 import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig } from "../config";
+import { getGoogleColorsQueryKey } from "../google-calendar-query-keys";
 
 const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 
@@ -16,12 +17,12 @@ const googleColorsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<Colors>((get) => {
     const { orpc } = getStateConfig(get);
 
-    const options = orpc.googleCal.colors.list.queryOptions({
-      input: { accountId },
-    });
-
     return {
-      ...options,
+      queryKey: getGoogleColorsQueryKey(accountId),
+      queryFn: async () =>
+        await orpc.googleCal.colors.list({
+          accountId,
+        }),
       staleTime: TWENTY_MINUTES_MS,
     };
   })
