@@ -23,6 +23,33 @@ const nextConfig: NextConfig = {
     output: "export" as const,
     images: { unoptimized: true },
   }),
+  // Allow the Tauri desktop webview (origin: tauri://localhost) to
+  // make credentialed cross-origin requests to /api routes.
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          {
+            key: "Access-Control-Allow-Origin",
+            value: "tauri://localhost",
+          },
+          {
+            key: "Access-Control-Allow-Methods",
+            value: "GET, POST, PUT, DELETE, OPTIONS",
+          },
+          {
+            key: "Access-Control-Allow-Headers",
+            value: "Content-Type, Authorization, X-Requested-With",
+          },
+          {
+            key: "Access-Control-Allow-Credentials",
+            value: "true",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
