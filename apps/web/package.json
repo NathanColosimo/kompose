@@ -55,6 +55,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "effect": "catalog:",
     "jotai": "catalog:",
     "lucide-react": "^0.563.0",
     "next": "catalog:",
