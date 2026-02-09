@@ -15,12 +15,11 @@ const config: KnipConfig = {
     },
     // Expo native app - uses built-in Expo preset
     "apps/native": {
-      entry: [
-        "app/**/*.{ts,tsx}",
-        "app/**/_layout.{ts,tsx}",
-        "metro.config.{ts,js}",
-      ],
+      entry: ["app/**/*.{ts,tsx}", "app/**/_layout.{ts,tsx}"],
       project: ["**/*.{ts,tsx,js,jsx}"],
+      // Disable Metro plugin - it tries to require() metro.config.js which triggers
+      // tailwindcss to resolve a config from the workspace root (cwd), not apps/native.
+      metro: false,
     },
     // API package
     "packages/api": {
