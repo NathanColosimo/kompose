@@ -1,8 +1,209 @@
-# Webhook Services
+# Services
 
-## Architecture
+## Architecture Overview
 
-Three Effect services handle all webhook operations:
+All backend services live in `packages/api/src/`. Routers are aggregated in `packages/api/src/routers/index.ts`:
+
+```
+appRouter
+├── googleCal   → Google Calendar CRUD
+├── maps        → Google Places autocomplete
+├── sync        → SSE realtime event stream
+├── tags        → Tag CRUD
+└── tasks       → Task CRUD (with recurrence)
+```
+
+Supporting systems sit alongside routers:
+
+```
+packages/api/src/
+├── routers/          — oRPC router implementations
+├── webhooks/         — Google Calendar push notification services
+├── realtime/         — Redis pub/sub + SSE event iterator
+├── ratelimit.ts      — Redis-backed rate limiters
+├── telemetry.ts      — OpenTelemetry + Effect tracing setup
+├── context.ts        — oRPC context (session/user from Better Auth)
+└── index.ts          — base middleware (requireAuth)
+```
+
+---
+
+## Task Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/task/client.ts` | `TaskService` (Effect.Service) — business logic + recurrence |
+| `routers/task/db.ts` | Database operations wrapped in `Effect.tryPromise` |
+| `routers/task/errors.ts` | `Schema.TaggedError` error types |
+| `routers/task/contract.ts` | oRPC contract with Temporal date/time codecs |
+| `routers/task/router.ts` | oRPC handler implementations |
+
+### TaskService
+
+Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.fn("TaskService.method")` for automatic tracing spans.
+
+| Method | Purpose |
+|--------|---------|
+| `listTasks` | Fetch all tasks for a user (with tags) |
+| `createTask` | Create a task, optionally with recurrence pattern |
+| `updateTask` | Update a task — supports `"this"` and `"following"` scopes for recurring tasks |
+| `deleteTask` | Delete a task — supports `"this"` and `"following"` scopes for recurring tasks |
+
+### Errors (`Schema.TaggedError`)
+
+| Error | Meaning |
+|-------|---------|
+| `TaskRepositoryError` | DB query failed |
+| `TaskNotFoundError` | Task not found by ID |
+| `InvalidTaskError` | Invalid input (e.g. bad recurrence rule) |
+
+### Router pattern
+
+Handlers call the service directly (no `Effect.gen` wrapper), provide a merged layer (`TaskService.Default` + `TelemetryLive`), and map errors to `ORPCError` via `Effect.match`. Mutating operations publish a realtime `tasks` event via `publishToUserBestEffort`.
+
+```ts
+TaskService.listTasks(userId).pipe(
+  Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+  Effect.provide(TaskLive),
+  Effect.match({
+    onSuccess: (value) => value,
+    onFailure: handleError,
+  }),
+)
+```
+
+---
+
+## Tag Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/tag/client.ts` | `TagService` (Effect.Service) |
+| `routers/tag/db.ts` | Database operations |
+| `routers/tag/errors.ts` | `Schema.TaggedError` error types |
+| `routers/tag/contract.ts` | oRPC contract with icon schema |
+| `routers/tag/router.ts` | oRPC handler implementations |
+
+### TagService
+
+Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods wrapped in `Effect.fn`.
+
+| Method | Purpose |
+|--------|---------|
+| `listTags` | List all tags for a user |
+| `createTag` | Create a tag (name + icon) |
+| `updateTag` | Update tag name/icon |
+| `deleteTag` | Delete a tag |
+
+### Errors (`Schema.TaggedError`)
+
+| Error | Meaning |
+|-------|---------|
+| `TagRepositoryError` | DB query failed |
+| `TagConflictError` | Tag name already exists |
+| `TagNotFoundError` | Tag not found by ID |
+| `InvalidTagError` | Invalid input |
+
+---
+
+## Google Calendar Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/google-cal/contract.ts` | oRPC contract (calendars, events, colors) |
+| `routers/google-cal/router.ts` | oRPC handler implementations |
+
+The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/client.ts` — the router resolves an OAuth access token per-request and provides `GoogleCalendarLive(accessToken)`.
+
+### Router operations
+
+**Calendars:** `list`, `get`, `create`, `update`, `delete`
+**Events:** `list`, `get`, `create`, `update`, `move`, `delete`
+**Colors:** `list`
+
+### Pattern
+
+Each handler checks the account is linked (fetches access token via Better Auth), then calls the `GoogleCalendar` service method. Mutating operations publish a realtime `google-calendar` event.
+
+```ts
+const program = Effect.gen(function* () {
+  const accessToken = yield* checkGoogleAccountIsLinked(userId, accountId);
+  const service = yield* GoogleCalendar;
+  return yield* service.listCalendars();
+}).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+```
+
+### Errors
+
+| Error | Source | Meaning |
+|-------|--------|---------|
+| `AccountNotLinkedError` | Router | OAuth token retrieval failed |
+| `GoogleApiError` | `@kompose/google-cal` | Google API returned an error |
+| `GoogleCalendarZodError` | `@kompose/google-cal` | Response failed Zod parse |
+
+---
+
+## Maps Service
+
+**File:** `routers/maps/router.ts`
+
+Single `search` endpoint — Google Places autocomplete. No Effect services; uses plain `fetch` against the Places API v1.
+
+- Returns structured suggestions with `description`, `placeId`, `primary`, `secondary`
+- Minimum query length: 2 characters
+- Rate limited: 20 req/60s (maps-specific) on top of the 200 req/60s global limit
+- Structured error logging on API failures
+
+---
+
+## Sync / SSE Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/sync/contract.ts` | oRPC contract (SSE event stream) |
+| `routers/sync/router.ts` | SSE endpoint handler |
+| `realtime/events.ts` | Zod schemas for sync event types |
+| `realtime/sync.ts` | Redis pub/sub, async event iterator |
+
+### Sync event types
+
+| Type | Payload | Meaning |
+|------|---------|---------|
+| `google-calendar` | `{ accountId, calendarId }` | Calendar data changed |
+| `tasks` | `{}` | Task data changed |
+| `reconnect` | `{}` | Server requests client to reconnect |
+
+### How it works
+
+1. Client opens SSE connection via `sync.events` endpoint
+2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
+3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive
+4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
+5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+
+### Redis pub/sub functions
+
+| Function | Purpose |
+|----------|---------|
+| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel |
+| `publishToUserBestEffort` | Fire-and-forget version — logs errors, never throws |
+| `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
+
+---
+
+## Webhook Services
+
+### Architecture
+
+Three Effect services handle Google Calendar push notifications:
 
 ```
 WebhookService (orchestrator)
@@ -12,11 +213,9 @@ WebhookService (orchestrator)
 
 Dependencies are declared via `dependencies: [...]` in each service definition, so layers are wired automatically at the root.
 
-## Services
-
 ### WebhookRepositoryService
 
-**File:** `packages/api/src/webhooks/webhook-repository-service.ts`
+**File:** `webhooks/webhook-repository-service.ts`
 
 Provider-agnostic database layer. No mention of Google or any specific provider.
 
@@ -31,7 +230,7 @@ Provider-agnostic database layer. No mention of Google or any specific provider.
 
 ### GoogleCalendarWebhookService
 
-**File:** `packages/api/src/webhooks/google-cal/webhook-service.ts`
+**File:** `webhooks/google-cal/webhook-service.ts`
 
 Google-specific watch management. Depends on `WebhookRepositoryService`.
 
@@ -46,7 +245,7 @@ Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does
 
 ### WebhookService
 
-**File:** `packages/api/src/webhooks/webhook-service.ts`
+**File:** `webhooks/webhook-service.ts`
 
 Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRepositoryService`.
 
@@ -59,18 +258,72 @@ Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRe
 
 `handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
 
-## Errors
+### Webhook route handler
 
-**File:** `packages/api/src/webhooks/errors.ts`
+**File:** `apps/web/src/app/api/webhooks/google-calendar/route.ts`
 
-All errors use `Schema.TaggedError` for type-safe, serializable error handling.
+A plain Next.js `POST` handler (not an oRPC route). It:
+
+1. Runs `WebhookService.handleGoogleNotification` with the incoming request headers
+2. Maps `WebhookValidationError` → 400, `WebhookRepositoryError` → 202 via `Effect.catchTags`
+3. On success, if `result.followUpRefresh` is set, fire-and-forgets a `WebhookService.refreshAll`
+4. Returns 200 OK
+
+### Errors (`Schema.TaggedError`)
 
 | Error | Used by | Meaning |
 |-------|---------|---------|
 | `WebhookRepositoryError` | Repository service | DB query failed or record not found |
 | `WebhookProviderError` | Google cal service | Google API call failed |
-| `WebhookAuthError` | Orchestrator | OAuth token retrieval failed or no token available |
+| `WebhookAuthError` | Orchestrator | OAuth token retrieval failed |
 | `WebhookValidationError` | Google cal service, orchestrator | Invalid input (bad URL, missing headers, invalid token) |
+
+---
+
+## Rate Limiting
+
+**File:** `ratelimit.ts`
+
+Redis-backed rate limiters using `@orpc/experimental-ratelimit`.
+
+| Limiter | Limit | Applied to |
+|---------|-------|------------|
+| `globalRateLimit` | 200 req / 60s per user | All authenticated endpoints |
+| `mapsRateLimit` | 20 req / 60s per user | Maps search only (stacks on top of global) |
+
+---
+
+## Telemetry
+
+**File:** `telemetry.ts`
+
+Two systems initialized at startup:
+
+1. **`@orpc/otel` ORPCInstrumentation** — auto-creates spans for oRPC handlers/middleware and reads incoming `traceparent` headers for frontend-to-backend correlation. Registered via `NodeSDK` at module load.
+2. **`@effect/opentelemetry` NodeSdk layer** — bridges `Effect.fn` spans and `Effect.log` events to the same OTel trace provider. Exported as `TelemetryLive` layer.
+
+Both export to Axiom via OTLP HTTP. When `AXIOM_API_TOKEN` / `AXIOM_DATASET` env vars are absent, everything no-ops gracefully.
+
+### Trace hierarchy for Effect-based routers (tasks, tags)
+
+```
+oRPC handler span (from ORPCInstrumentation)
+└── TaskService.listTasks (from Effect.fn)
+    └── db query spans (from Effect.tryPromise in db.ts)
+```
+
+The `TelemetryLive` layer is merged with the service layer at the router level:
+
+```ts
+const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
+```
+
+### Frontend tracing
+
+- **Web** (`apps/web/src/utils/telemetry.ts`): `WebTracerProvider` + `FetchInstrumentation` auto-injects `traceparent` headers on `fetch()` calls to `/api/rpc`. Uses `@orpc/otel` `ORPCInstrumentation` for client-side oRPC spans. Exports to Axiom via OTLP HTTP.
+- **Native** (`apps/native/utils/orpc.ts`): Lightweight `traceparent` header injection using `uuidv7` — gives backend trace correlation without a full OTel SDK on React Native.
+
+---
 
 ## Effect Patterns
 
@@ -119,17 +372,27 @@ Effect.catchTags({
 
 ### Layer composition
 
-At the route/router level, provide `WebhookService.Default` — all transitive dependencies are resolved automatically via `dependencies`.
+At the route/router level, provide the service layer — all transitive dependencies are resolved automatically via `dependencies`.
 
 ```ts
+// Webhook services (auto-wired via dependencies)
 WebhookService.refreshAll({ userId }).pipe(
   Effect.provide(WebhookService.Default)
 )
+
+// Task/Tag services (merged with TelemetryLive at router level)
+const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
+TaskService.listTasks(userId).pipe(
+  Effect.provide(TaskLive),
+)
 ```
+
+---
 
 ## Runtime Entry Points
 
 | Entry point | File | Behavior |
 |-------------|------|----------|
-| SSE connect | `packages/api/src/routers/sync/router.ts` | Fire-and-forget `refreshAll` then return Redis iterator |
+| oRPC handler | `apps/web/src/app/api/rpc/[[...rest]]/route.ts` | All oRPC routes — tasks, tags, google-cal, maps, sync |
+| SSE connect | `routers/sync/router.ts` | Fire-and-forget `refreshAll` then return Redis iterator |
 | Google webhook | `apps/web/src/app/api/webhooks/google-calendar/route.ts` | `handleGoogleNotification` → map errors to HTTP → optional follow-up `refreshAll` |

@@ -1,11 +1,11 @@
-import type { TagSelect, TaskTagInsert } from "@kompose/db/schema/tag";
+import type { TaskTagInsert } from "@kompose/db/schema/tag";
 import type {
   TaskInsert,
   TaskRecurrence,
   TaskSelect,
   TaskUpdate,
 } from "@kompose/db/schema/task";
-import { Context, Data, Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
@@ -26,28 +26,10 @@ import {
   type TaskInsertRow,
   type TaskWithTagsRow,
 } from "./db";
-
-// Error types
-export class TaskRepositoryError extends Data.TaggedError(
-  "TaskRepositoryError"
-)<{
-  cause: unknown;
-  message?: string;
-}> {}
-
-export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
-  taskId: string;
-}> {}
-
-export class InvalidTaskError extends Data.TaggedError("InvalidTaskError")<{
-  message: string;
-}> {}
-
-type TaskError = TaskRepositoryError | TaskNotFoundError | InvalidTaskError;
+import { InvalidTaskError, type TaskError, TaskNotFoundError } from "./errors";
 
 type TaskInsertInput = TaskInsert & { tagIds?: string[] };
 type TaskUpdateInput = TaskUpdate & { tagIds?: string[] };
-type TaskWithTags = TaskSelect & { tags: TagSelect[] };
 
 function normalizeTagIds(tagIds: string[]): string[] {
   return Array.from(new Set(tagIds.filter(Boolean)));
@@ -598,90 +580,6 @@ const updateSeriesWithScaledDates = (
     return updatedTasks;
   });
 
-// ============================================================================
-// Service Definition
-// ============================================================================
-
-export interface TaskService {
-  readonly listTasks: (
-    userId: string
-  ) => Effect.Effect<TaskWithTags[], TaskError>;
-  readonly createTask: (
-    userId: string,
-    input: TaskInsertInput
-  ) => Effect.Effect<TaskWithTags[], TaskError>;
-  readonly updateTask: (
-    userId: string,
-    taskId: string,
-    input: TaskUpdateInput,
-    scope: UpdateScope
-  ) => Effect.Effect<TaskWithTags[], TaskError>;
-  readonly deleteTask: (
-    userId: string,
-    taskId: string,
-    scope: DeleteScope
-  ) => Effect.Effect<void, TaskError>;
-}
-
-export class Tasks extends Context.Tag("Tasks")<Tasks, TaskService>() {}
-
-// ============================================================================
-// Service Implementation
-// ============================================================================
-
-const listTasks = (userId: string): Effect.Effect<TaskWithTags[], TaskError> =>
-  dbSelect(userId);
-
-const createTask = (
-  userId: string,
-  input: TaskInsertInput
-): Effect.Effect<TaskWithTags[], TaskError> =>
-  Effect.gen(function* () {
-    const { tagIds, ...taskInput } = input;
-    const normalizedTagIds =
-      tagIds !== undefined
-        ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
-        : undefined;
-
-    // Non-recurring task: simple insert
-    if (!taskInput.recurrence) {
-      const masterId = uuidv7();
-      const tasks = yield* dbInsert([{ ...taskInput, id: masterId, userId }]);
-      if (normalizedTagIds) {
-        yield* insertTaskTagsForTasks([masterId], normalizedTagIds);
-      }
-      return yield* selectTasksWithTagsByIds(
-        userId,
-        tasks.map((task) => task.id)
-      );
-    }
-
-    // Recurring task: validate and generate occurrences
-    if (!taskInput.startDate) {
-      return yield* Effect.fail(
-        new InvalidTaskError({ message: "Recurring tasks require a startDate" })
-      );
-    }
-
-    const taskRows = buildRecurringTaskRows(
-      userId,
-      taskInput,
-      taskInput.recurrence,
-      taskInput.startDate
-    );
-    const tasks = yield* dbInsert(taskRows);
-    if (normalizedTagIds) {
-      yield* insertTaskTagsForTasks(
-        tasks.map((task) => task.id),
-        normalizedTagIds
-      );
-    }
-    return yield* selectTasksWithTagsByIds(
-      userId,
-      tasks.map((task) => task.id)
-    );
-  });
-
 /** Convert a non-recurring task to a recurring series */
 const convertToRecurring = (
   userId: string,
@@ -692,12 +590,16 @@ const convertToRecurring = (
     const startDate = input.startDate ?? task.startDate;
     if (!startDate) {
       return yield* Effect.fail(
-        new InvalidTaskError({ message: "Task must have startDate to convert" })
+        new InvalidTaskError({
+          message: "Task must have startDate to convert",
+        })
       );
     }
     if (!input.recurrence) {
       return yield* Effect.fail(
-        new InvalidTaskError({ message: "Recurrence is required to convert" })
+        new InvalidTaskError({
+          message: "Recurrence is required to convert",
+        })
       );
     }
 
@@ -815,116 +717,181 @@ const resolveUpdatedTasks = (
     : updateSingleTask(userId, taskId, task, input, hasDbUpdates);
 };
 
-const updateTask = (
-  userId: string,
-  taskId: string,
-  input: TaskUpdateInput,
-  scope: UpdateScope
-): Effect.Effect<TaskWithTags[], TaskError> =>
-  Effect.gen(function* () {
-    // Get the task to check if it's recurring
-    const tasks = yield* dbSelectById(userId, taskId);
-    const task = tasks[0];
+// ============================================================================
+// Service Definition (Effect.Service + Effect.fn pattern)
+// ============================================================================
 
-    if (!task) {
-      return yield* Effect.fail(new TaskNotFoundError({ taskId }));
-    }
-
-    const { tagIds, ...dbInput } = input;
-    const hasDbUpdates = Object.keys(dbInput).length > 0;
-    const normalizedTagIds =
-      tagIds !== undefined
-        ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
-        : undefined;
-    let recurrenceChanged = false;
-    if (
-      scope === "following" &&
-      shouldCompareFollowingRecurrenceChange(task, dbInput)
+export class TaskService extends Effect.Service<TaskService>()("TaskService", {
+  accessors: true,
+  effect: Effect.gen(function* () {
+    const listTasks = Effect.fn("TaskService.listTasks")(function* (
+      userId: string
     ) {
-      const comparableRecurrence = yield* resolveComparableRecurrence(
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      return yield* dbSelect(userId);
+    });
+
+    const createTask = Effect.fn("TaskService.createTask")(function* (
+      userId: string,
+      input: TaskInsertInput
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      const { tagIds, ...taskInput } = input;
+      const normalizedTagIds =
+        tagIds !== undefined
+          ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
+          : undefined;
+
+      // Non-recurring task: simple insert
+      if (!taskInput.recurrence) {
+        const masterId = uuidv7();
+        const tasks = yield* dbInsert([{ ...taskInput, id: masterId, userId }]);
+        if (normalizedTagIds) {
+          yield* insertTaskTagsForTasks([masterId], normalizedTagIds);
+        }
+        return yield* selectTasksWithTagsByIds(
+          userId,
+          tasks.map((task) => task.id)
+        );
+      }
+
+      // Recurring task: validate and generate occurrences
+      if (!taskInput.startDate) {
+        return yield* Effect.fail(
+          new InvalidTaskError({
+            message: "Recurring tasks require a startDate",
+          })
+        );
+      }
+
+      const taskRows = buildRecurringTaskRows(
         userId,
-        task
+        taskInput,
+        taskInput.recurrence,
+        taskInput.startDate
       );
-      recurrenceChanged = !isSameRecurrence(
-        dbInput.recurrence,
-        comparableRecurrence
+      const tasks = yield* dbInsert(taskRows);
+      if (normalizedTagIds) {
+        yield* insertTaskTagsForTasks(
+          tasks.map((task) => task.id),
+          normalizedTagIds
+        );
+      }
+      return yield* selectTasksWithTagsByIds(
+        userId,
+        tasks.map((task) => task.id)
       );
-    }
+    });
 
-    const fallbackTagIds =
-      normalizedTagIds === undefined &&
-      scope === "following" &&
-      recurrenceChanged
-        ? ((yield* selectTasksWithTagsByIds(userId, [taskId]))[0]?.tags.map(
-            (tag) => tag.id
-          ) ?? [])
-        : [];
+    const updateTask = Effect.fn("TaskService.updateTask")(function* (
+      userId: string,
+      taskId: string,
+      input: TaskUpdateInput,
+      scope: UpdateScope
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      yield* Effect.annotateCurrentSpan("taskId", taskId);
+      yield* Effect.annotateCurrentSpan("scope", scope);
+      // Get the task to check if it's recurring
+      const tasks = yield* dbSelectById(userId, taskId);
+      const task = tasks[0];
 
-    const updatedTasks = yield* resolveUpdatedTasks(
-      userId,
-      taskId,
-      task,
-      dbInput,
-      hasDbUpdates,
-      scope,
-      recurrenceChanged
-    );
+      if (!task) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
 
-    if (normalizedTagIds !== undefined) {
-      yield* replaceTaskTagsForTasks(
-        updatedTasks.map((updated) => updated.id),
-        normalizedTagIds
+      const { tagIds, ...dbInput } = input;
+      const hasDbUpdates = Object.keys(dbInput).length > 0;
+      const normalizedTagIds =
+        tagIds !== undefined
+          ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
+          : undefined;
+      let recurrenceChanged = false;
+      if (
+        scope === "following" &&
+        shouldCompareFollowingRecurrenceChange(task, dbInput)
+      ) {
+        const comparableRecurrence = yield* resolveComparableRecurrence(
+          userId,
+          task
+        );
+        recurrenceChanged = !isSameRecurrence(
+          dbInput.recurrence,
+          comparableRecurrence
+        );
+      }
+
+      const fallbackTagIds =
+        normalizedTagIds === undefined &&
+        scope === "following" &&
+        recurrenceChanged
+          ? ((yield* selectTasksWithTagsByIds(userId, [taskId]))[0]?.tags.map(
+              (tag) => tag.id
+            ) ?? [])
+          : [];
+
+      const updatedTasks = yield* resolveUpdatedTasks(
+        userId,
+        taskId,
+        task,
+        dbInput,
+        hasDbUpdates,
+        scope,
+        recurrenceChanged
       );
-    } else if (recurrenceChanged && fallbackTagIds.length > 0) {
-      yield* replaceTaskTagsForTasks(
-        updatedTasks.map((updated) => updated.id),
-        fallbackTagIds
+
+      if (normalizedTagIds !== undefined) {
+        yield* replaceTaskTagsForTasks(
+          updatedTasks.map((updated) => updated.id),
+          normalizedTagIds
+        );
+      } else if (recurrenceChanged && fallbackTagIds.length > 0) {
+        yield* replaceTaskTagsForTasks(
+          updatedTasks.map((updated) => updated.id),
+          fallbackTagIds
+        );
+      }
+
+      return yield* selectTasksWithTagsByIds(
+        userId,
+        updatedTasks.map((task) => task.id)
       );
-    }
+    });
 
-    return yield* selectTasksWithTagsByIds(
-      userId,
-      updatedTasks.map((task) => task.id)
-    );
-  });
+    const deleteTask = Effect.fn("TaskService.deleteTask")(function* (
+      userId: string,
+      taskId: string,
+      scope: DeleteScope
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      yield* Effect.annotateCurrentSpan("taskId", taskId);
+      yield* Effect.annotateCurrentSpan("scope", scope);
+      // Get the task to check if it's recurring
+      const tasks = yield* dbSelectById(userId, taskId);
+      const task = tasks[0];
 
-const deleteTask = (
-  userId: string,
-  taskId: string,
-  scope: DeleteScope
-): Effect.Effect<void, TaskError> =>
-  Effect.gen(function* () {
-    // Get the task to check if it's recurring
-    const tasks = yield* dbSelectById(userId, taskId);
-    const task = tasks[0];
+      // Task already deleted or doesn't exist
+      if (!task) {
+        return;
+      }
 
-    // Task already deleted or doesn't exist
-    if (!task) {
-      return;
-    }
+      // Non-recurring or scope=this: delete single task
+      if (!task.seriesMasterId || scope === "this") {
+        yield* dbDelete(userId, taskId);
+        return;
+      }
 
-    // Non-recurring or scope=this: delete single task
-    if (!task.seriesMasterId || scope === "this") {
-      yield* dbDelete(userId, taskId);
-      return;
-    }
+      // scope=following: delete this task and all future tasks in series
+      if (scope === "following" && task.startDate) {
+        yield* dbDeleteBySeriesFrom(
+          userId,
+          task.seriesMasterId,
+          task.startDate
+        );
+        return;
+      }
+    });
 
-    // scope=following: delete this task and all future tasks in series
-    if (scope === "following" && task.startDate) {
-      yield* dbDeleteBySeriesFrom(userId, task.seriesMasterId, task.startDate);
-      return;
-    }
-  });
-
-// ============================================================================
-// Service Layer
-// ============================================================================
-
-const taskService: TaskService = {
-  listTasks,
-  createTask,
-  updateTask,
-  deleteTask,
-};
-
-export const TasksLive = Layer.succeed(Tasks, taskService);
+    return { listTasks, createTask, updateTask, deleteTask };
+  }),
+}) {}

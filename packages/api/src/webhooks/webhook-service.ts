@@ -98,6 +98,8 @@ export class WebhookService extends Effect.Service<WebhookService>()(
        */
       const createGoogleClient = Effect.fn("WebhookService.createGoogleClient")(
         function* (params: { accountId: string; userId: string }) {
+          yield* Effect.annotateCurrentSpan("accountId", params.accountId);
+          yield* Effect.annotateCurrentSpan("userId", params.userId);
           const result = yield* Effect.tryPromise({
             try: () =>
               auth.api.getAccessToken({
@@ -135,6 +137,8 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         existingSubscriptions: WebhookSubscriptionSelect[];
         userId: string;
       }) {
+        yield* Effect.annotateCurrentSpan("accountId", params.account.id);
+        yield* Effect.annotateCurrentSpan("userId", params.userId);
         const client = yield* createGoogleClient({
           accountId: params.account.id,
           userId: params.userId,
@@ -217,6 +221,10 @@ export class WebhookService extends Effect.Service<WebhookService>()(
       const refreshAll = Effect.fn("WebhookService.refreshAll")(function* (
         params: RefreshAllWebhooksInput
       ) {
+        yield* Effect.annotateCurrentSpan("userId", params.userId);
+        if (params.accountId) {
+          yield* Effect.annotateCurrentSpan("accountId", params.accountId);
+        }
         const accounts = yield* repository.getAccountsByProvider({
           accountId: params.accountId,
           providerId: GOOGLE_PROVIDER,
@@ -268,6 +276,17 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         const resourceId = params.headers.get("x-goog-resource-id");
         const resourceState = params.headers.get("x-goog-resource-state");
 
+        // Annotate span with extracted webhook header values
+        if (channelId) {
+          yield* Effect.annotateCurrentSpan("channelId", channelId);
+        }
+        if (resourceId) {
+          yield* Effect.annotateCurrentSpan("resourceId", resourceId);
+        }
+        if (resourceState) {
+          yield* Effect.annotateCurrentSpan("resourceState", resourceState);
+        }
+
         if (!(channelId && resourceId)) {
           return yield* new WebhookValidationError({
             message: "Missing required Google channel headers",
@@ -286,6 +305,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
 
         // Stale notification for an old resource — acknowledge but nothing to do
         if (subscription.config.resourceId !== resourceId) {
+          yield* Effect.log("WEBHOOK_STALE_RESOURCE_SKIPPED");
           return {};
         }
 
@@ -296,11 +316,13 @@ export class WebhookService extends Effect.Service<WebhookService>()(
 
         // Google sends an initial "sync" notification when a watch is first created
         if (!(resourceState && resourceState !== "sync")) {
+          yield* Effect.log("WEBHOOK_SYNC_NOTIFICATION_ACKNOWLEDGED");
           return {};
         }
 
         // Publish realtime event to the user's SSE channel
         if (isGoogleCalendarListSubscription(subscription)) {
+          yield* Effect.log("WEBHOOK_CALENDAR_LIST_CHANGED");
           publishToUserBestEffort(subscription.userId, {
             type: "google-calendar",
             payload: {
@@ -318,6 +340,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         }
 
         if (isGoogleCalendarEventsSubscription(subscription)) {
+          yield* Effect.log("WEBHOOK_CALENDAR_EVENTS_CHANGED");
           publishToUserBestEffort(subscription.userId, {
             type: "google-calendar",
             payload: {

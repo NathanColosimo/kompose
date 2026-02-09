@@ -10,7 +10,21 @@ import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { fetch as expoFetch } from "expo/fetch";
+import { uuidv7 } from "uuidv7";
 import { authClient } from "@/lib/auth-client";
+
+/**
+ * Generate a W3C traceparent header for distributed tracing.
+ * Uses uuidv7 for time-ordered trace IDs, making it easier to
+ * correlate traces with request timing in Axiom.
+ * Lightweight alternative to a full OTel SDK on React Native --
+ * gives trace correlation on the backend without client-side spans.
+ */
+function generateTraceparent(): string {
+  const traceId = uuidv7().replace(/-/g, "");
+  const parentId = uuidv7().replace(/-/g, "").slice(0, 16);
+  return `00-${traceId}-${parentId}-01`;
+}
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -43,6 +57,8 @@ export const link = new RPCLink({
     if (cookies) {
       headers.set("Cookie", cookies);
     }
+    // Inject traceparent for distributed tracing correlation
+    headers.set("traceparent", generateTraceparent());
     return Object.fromEntries(headers);
   },
   // React Native's built-in fetch does not support SSE / ReadableStream.

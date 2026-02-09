@@ -104,6 +104,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           operation: string;
           resourceId: string;
         }) {
+          yield* Effect.annotateCurrentSpan("subscriptionId", params.id);
+          yield* Effect.annotateCurrentSpan("operation", params.operation);
+          yield* Effect.annotateCurrentSpan("resourceId", params.resourceId);
           const client = yield* GoogleCalendar;
 
           yield* client
@@ -133,6 +136,8 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         existingSubscription?: GoogleCalendarListSubscription;
         userId: string;
       }) {
+        yield* Effect.annotateCurrentSpan("accountId", params.account.id);
+        yield* Effect.annotateCurrentSpan("userId", params.userId);
         if (
           params.existingSubscription &&
           isSubscriptionActiveAndFresh(params.existingSubscription)
@@ -206,6 +211,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         existingSubscription?: GoogleCalendarEventsSubscription;
         userId: string;
       }) {
+        yield* Effect.annotateCurrentSpan("accountId", params.account.id);
+        yield* Effect.annotateCurrentSpan("calendarId", params.calendarId);
+        yield* Effect.annotateCurrentSpan("userId", params.userId);
         if (!isGoogleCalendarEventsWatchSupported(params.calendarId)) {
           return;
         }
@@ -296,6 +304,14 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
       const deactivateEventsWatch = Effect.fn(
         "GoogleCalendarWebhookService.deactivateEventsWatch"
       )(function* (params: { subscription: GoogleCalendarEventsSubscription }) {
+        yield* Effect.annotateCurrentSpan(
+          "subscriptionId",
+          params.subscription.id
+        );
+        yield* Effect.annotateCurrentSpan(
+          "calendarId",
+          params.subscription.config.calendarId
+        );
         yield* stopWatch({
           id: params.subscription.id,
           operation: "google-calendar-events-stop-watch",

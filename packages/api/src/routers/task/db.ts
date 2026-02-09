@@ -4,7 +4,7 @@ import { tagTable, taskTagTable } from "@kompose/db/schema/tag";
 import { type TaskUpdate, taskTable } from "@kompose/db/schema/task";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { Effect } from "effect";
-import { TaskRepositoryError } from "./client";
+import { TaskRepositoryError } from "./errors";
 
 type TaskSelectRow = typeof taskTable.$inferSelect;
 type TaskWithTagRelations = TaskSelectRow & {

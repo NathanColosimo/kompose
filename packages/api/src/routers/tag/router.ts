@@ -1,23 +1,14 @@
 import { implement, ORPCError } from "@orpc/server";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
-import {
-  type InvalidTagError,
-  type TagConflictError,
-  type TagNotFoundError,
-  Tags,
-  TagsLive,
-} from "./client";
+import { TelemetryLive } from "../../telemetry";
+import { TagService } from "./client";
 import type { TagSelect } from "./contract";
 import { tagContract, tagSelectSchemaWithIcon } from "./contract";
-import type { TagRepositoryError } from "./errors";
+import type { TagError } from "./errors";
 
-type TagError =
-  | TagRepositoryError
-  | TagConflictError
-  | TagNotFoundError
-  | InvalidTagError;
+const TagLive = Layer.merge(TagService.Default, TelemetryLive);
 
 function handleError(error: TagError): never {
   switch (error._tag) {
@@ -49,69 +40,70 @@ const os = implement(tagContract).use(requireAuth).use(globalRateLimit);
 
 export const tagRouter = os.router({
   list: os.list.handler(({ context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tags;
-      const tags = yield* service.listTags(context.user.id);
-      const parsedTags: TagSelect[] = tagSelectSchemaWithIcon
-        .array()
-        .parse(tags);
-      return parsedTags;
-    }).pipe(Effect.provide(TagsLive));
-
     return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => res,
-        onFailure: (err) => handleError(err),
-      })
+      TagService.listTags(context.user.id).pipe(
+        Effect.map((tags) => {
+          const parsedTags: TagSelect[] = tagSelectSchemaWithIcon
+            .array()
+            .parse(tags);
+          return parsedTags;
+        }),
+        Effect.provide(TagLive),
+        Effect.match({
+          onSuccess: (value) => value,
+          onFailure: handleError,
+        })
+      )
     );
   }),
+
   create: os.create.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tags;
-      const tag = yield* service.createTag(context.user.id, {
+    return Effect.runPromise(
+      TagService.createTag(context.user.id, {
         ...input,
         userId: context.user.id,
-      });
-      const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
-      return parsedTag;
-    }).pipe(Effect.provide(TagsLive));
-
-    return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => res,
-        onFailure: (err) => handleError(err),
-      })
+      }).pipe(
+        Effect.map((tag) => {
+          const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
+          return parsedTag;
+        }),
+        Effect.provide(TagLive),
+        Effect.match({
+          onSuccess: (value) => value,
+          onFailure: handleError,
+        })
+      )
     );
   }),
+
   update: os.update.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tags;
-      const tag = yield* service.updateTag(context.user.id, input.id, {
+    return Effect.runPromise(
+      TagService.updateTag(context.user.id, input.id, {
         name: input.name,
         icon: input.icon,
-      });
-      const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
-      return parsedTag;
-    }).pipe(Effect.provide(TagsLive));
-
-    return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => res,
-        onFailure: (err) => handleError(err),
-      })
+      }).pipe(
+        Effect.map((tag) => {
+          const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
+          return parsedTag;
+        }),
+        Effect.provide(TagLive),
+        Effect.match({
+          onSuccess: (value) => value,
+          onFailure: handleError,
+        })
+      )
     );
   }),
-  delete: os.delete.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tags;
-      return yield* service.deleteTag(context.user.id, input.id);
-    }).pipe(Effect.provide(TagsLive));
 
+  delete: os.delete.handler(({ input, context }) => {
     return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => res,
-        onFailure: (err) => handleError(err),
-      })
+      TagService.deleteTag(context.user.id, input.id).pipe(
+        Effect.provide(TagLive),
+        Effect.match({
+          onSuccess: (value) => value,
+          onFailure: handleError,
+        })
+      )
     );
   }),
 });

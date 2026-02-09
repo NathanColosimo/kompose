@@ -59,5 +59,8 @@ export const auth = betterAuth<BetterAuthOptions>({
       appBundleIdentifier: env.APPLE_APP_BUNDLE_IDENTIFIER,
     },
   },
+  logger: {
+    level: "warn",
+  },
   plugins: [nextCookies(), expo()],
 });

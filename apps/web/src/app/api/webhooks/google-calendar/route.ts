@@ -1,6 +1,9 @@
 /** biome-ignore-all lint/correctness/noNestedComponentDefinitions: route handler */
+import { TelemetryLive } from "@kompose/api/telemetry";
 import { WebhookService } from "@kompose/api/webhooks/webhook-service";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
+
+const WebhookLive = Layer.merge(WebhookService.Default, TelemetryLive);
 
 export async function POST(request: Request): Promise<Response> {
   const result = await Effect.runPromise(
@@ -13,7 +16,7 @@ export async function POST(request: Request): Promise<Response> {
         WebhookRepositoryError: (error) =>
           Effect.succeed(new Response(error.message, { status: 202 })),
       }),
-      Effect.provide(WebhookService.Default)
+      Effect.provide(WebhookLive)
     )
   );
 
@@ -38,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
         Effect.catchTags({
           WebhookRepositoryError: () => Effect.void,
         }),
-        Effect.provide(WebhookService.Default)
+        Effect.provide(WebhookLive)
       )
     ).catch(() => undefined);
   }

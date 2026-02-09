@@ -6,32 +6,19 @@ import {
   type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Data, Effect } from "effect";
+import { Effect } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUserBestEffort } from "../../realtime/sync";
+import { TelemetryLive } from "../../telemetry";
 import { googleCalContract } from "./contract";
-
-export class AccountNotLinkedError extends Data.TaggedError(
-  "AccountNotLinkedError"
-)<{
-  cause: unknown;
-}> {}
+import { AccountNotLinkedError } from "./errors";
 
 export function handleError(
   error: AccountNotLinkedError | GoogleApiError | GoogleCalendarZodError,
   accountId: string,
   userId: string
 ): never {
-  // Log error details for debugging
-  /* console.error("Google Calendar Router Error:", {
-    errorType: error._tag,
-    message: error.message || "Unknown error",
-    cause: error.cause,
-    accountId,
-    userId,
-  }); */
-
   switch (error._tag) {
     case "AccountNotLinkedError":
       throw new ORPCError("ACCOUNT_NOT_LINKED", {
@@ -91,12 +78,8 @@ export const os = implement(googleCalContract)
 function publishGoogleCalendarEvent(
   userId: string,
   accountId: string,
-  calendarId: string | null | undefined
+  calendarId: string
 ) {
-  if (!calendarId) {
-    return;
-  }
-
   publishToUserBestEffort(userId, {
     type: "google-calendar",
     payload: {
@@ -127,11 +110,14 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (calendars) => calendars,
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (calendars) => calendars,
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -154,11 +140,14 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (calendar) => calendar,
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (calendar) => calendar,
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -181,18 +170,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (calendar) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              calendar.id
-            );
-            return calendar;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (calendar) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                calendar.id
+              );
+              return calendar;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -218,18 +210,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (calendar) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            return calendar;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (calendar) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              return calendar;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -251,18 +246,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (result) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            return result;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (result) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              return result;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
   },
@@ -287,11 +285,14 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (colors) => colors,
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (colors) => colors,
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
   },
@@ -320,11 +321,14 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (events) => events,
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (events) => events,
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -350,11 +354,14 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (event) => event,
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (event) => event,
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -380,18 +387,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (event) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            return event;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (event) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              return event;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -419,18 +429,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (event) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            return event;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (event) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              return event;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -458,23 +471,26 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (event) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.destinationCalendarId
-            );
-            return event;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (event) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.destinationCalendarId
+              );
+              return event;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
 
@@ -500,18 +516,21 @@ export const googleCalRouter = os.router({
       });
 
       return Effect.runPromise(
-        Effect.match(program, {
-          onSuccess: (result) => {
-            publishGoogleCalendarEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId
-            );
-            return result;
-          },
-          onFailure: (error) =>
-            handleError(error, input.accountId, context.user.id),
-        })
+        program.pipe(
+          Effect.provide(TelemetryLive),
+          Effect.match({
+            onSuccess: (result) => {
+              publishGoogleCalendarEvent(
+                context.user.id,
+                input.accountId,
+                input.calendarId
+              );
+              return result;
+            },
+            onFailure: (error) =>
+              handleError(error, input.accountId, context.user.id),
+          })
+        )
       );
     }),
   },

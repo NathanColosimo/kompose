@@ -1,19 +1,15 @@
 import { implement, ORPCError } from "@orpc/server";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUserBestEffort } from "../../realtime/sync";
+import { TelemetryLive } from "../../telemetry";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
-import {
-  type InvalidTaskError,
-  type TaskNotFoundError,
-  type TaskRepositoryError,
-  Tasks,
-  TasksLive,
-} from "./client";
+import { TaskService } from "./client";
 import { taskContract } from "./contract";
+import type { TaskError } from "./errors";
 
-type TaskError = TaskRepositoryError | TaskNotFoundError | InvalidTaskError;
+const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
 
 function handleError(error: TaskError): never {
   switch (error._tag) {
@@ -31,7 +27,6 @@ function handleError(error: TaskError): never {
         message: error.message,
       });
     default:
-      // Exhaustive check - TypeScript ensures all cases are handled
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
         message: "An unexpected error occurred",
       });
@@ -56,78 +51,70 @@ function publishTasksEvent(userId: string) {
 
 export const taskRouter = os.router({
   list: os.list.handler(({ context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tasks;
-      const tasks = yield* service.listTasks(context.user.id);
-      return tasks.map((task) => normalizeTaskTags(task));
-    }).pipe(Effect.provide(TasksLive));
-
     return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => res,
-        onFailure: (err) => handleError(err),
-      })
+      TaskService.listTasks(context.user.id).pipe(
+        Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+        Effect.provide(TaskLive),
+        Effect.match({
+          onSuccess: (value) => value,
+          onFailure: handleError,
+        })
+      )
     );
   }),
 
   create: os.create.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tasks;
-      const tasks = yield* service.createTask(context.user.id, {
+    return Effect.runPromise(
+      TaskService.createTask(context.user.id, {
         ...input,
         userId: context.user.id,
-      });
-      return tasks.map((task) => normalizeTaskTags(task));
-    }).pipe(Effect.provide(TasksLive));
-
-    return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => {
-          publishTasksEvent(context.user.id);
-          return res;
-        },
-        onFailure: (err) => handleError(err),
-      })
+      }).pipe(
+        Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+        Effect.provide(TaskLive),
+        Effect.match({
+          onSuccess: (value) => {
+            publishTasksEvent(context.user.id);
+            return value;
+          },
+          onFailure: handleError,
+        })
+      )
     );
   }),
 
   update: os.update.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tasks;
-      const tasks = yield* service.updateTask(
+    return Effect.runPromise(
+      TaskService.updateTask(
         context.user.id,
         input.id,
         input.task,
         input.scope
-      );
-      return tasks.map((task) => normalizeTaskTags(task));
-    }).pipe(Effect.provide(TasksLive));
-
-    return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => {
-          publishTasksEvent(context.user.id);
-          return res;
-        },
-        onFailure: (err) => handleError(err),
-      })
+      ).pipe(
+        Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+        Effect.provide(TaskLive),
+        Effect.match({
+          onSuccess: (value) => {
+            publishTasksEvent(context.user.id);
+            return value;
+          },
+          onFailure: handleError,
+        })
+      )
     );
   }),
 
   delete: os.delete.handler(({ input, context }) => {
-    const program = Effect.gen(function* () {
-      const service = yield* Tasks;
-      return yield* service.deleteTask(context.user.id, input.id, input.scope);
-    }).pipe(Effect.provide(TasksLive));
-
     return Effect.runPromise(
-      Effect.match(program, {
-        onSuccess: (res) => {
-          publishTasksEvent(context.user.id);
-          return res;
-        },
-        onFailure: (err) => handleError(err),
-      })
+      TaskService.deleteTask(context.user.id, input.id, input.scope).pipe(
+        Effect.provide(TaskLive),
+        Effect.match({
+          onSuccess: (value) => {
+            publishTasksEvent(context.user.id);
+            return value;
+          },
+          onFailure: handleError,
+        })
+      )
     );
   }),
 });

@@ -1,9 +1,12 @@
 import { env } from "@kompose/env";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { RedisClient } from "bun";
 import { type SyncEvent, syncEventSchema } from "./events";
 
 const USER_CHANNEL_PREFIX = "user";
 const RECONNECT_EVENT_AFTER_MS = 11 * 60 * 1000;
+
+const tracer = trace.getTracer("sync");
 
 interface AsyncQueue<T> {
   close: () => void;
@@ -59,39 +62,66 @@ export function getUserSyncChannel(userId: string): string {
   return `${USER_CHANNEL_PREFIX}:${userId}`;
 }
 
+/**
+ * Publish a sync event to a user's Redis channel.
+ * Creates an OTel span for each publish, inheriting the caller's trace context.
+ */
 export async function publishToUser(
   userId: string,
   event: SyncEvent
 ): Promise<void> {
-  const payload = syncEventSchema.parse(event);
+  const span = tracer.startSpan("sync.publish");
+  span.setAttribute("userId", userId);
+  span.setAttribute("eventType", event.type);
 
-  await redisPublisher.publish(
-    getUserSyncChannel(userId),
-    JSON.stringify(payload)
-  );
+  try {
+    const payload = syncEventSchema.parse(event);
+    await redisPublisher.publish(
+      getUserSyncChannel(userId),
+      JSON.stringify(payload)
+    );
+  } catch (error) {
+    span.recordException(
+      error instanceof Error ? error : new Error(String(error))
+    );
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    throw error;
+  } finally {
+    span.end();
+  }
 }
 
+/**
+ * Fire-and-forget publish. Errors are recorded on the OTel span
+ * created by publishToUser rather than logged to console.
+ */
 export function publishToUserBestEffort(
   userId: string,
   event: SyncEvent
 ): void {
-  publishToUser(userId, event).catch((error) => {
-    console.error("Failed to publish realtime event.", {
-      error,
-      userId,
-      type: event.type,
-    });
+  publishToUser(userId, event).catch(() => {
+    // Error already recorded on the sync.publish span
   });
 }
 
+/**
+ * Long-lived async generator for SSE connections.
+ * Creates an OTel span for the connection lifetime, with span events
+ * for each message received and exceptions for parse failures.
+ */
 export async function* createUserSyncEventIterator(
   userId: string
 ): AsyncGenerator<SyncEvent, void, unknown> {
   const channel = getUserSyncChannel(userId);
+  const connectionSpan = tracer.startSpan("sync.connection");
+  connectionSpan.setAttribute("userId", userId);
+  connectionSpan.setAttribute("channel", channel);
+
   const queue = createAsyncQueue<SyncEvent>();
   const subscriber = await redisPublisher.duplicate();
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let queueClosed = false;
+  let messagesReceived = 0;
 
   const closeQueue = () => {
     if (queueClosed) {
@@ -107,12 +137,16 @@ export async function* createUserSyncEventIterator(
       if (!parsed.success) {
         return;
       }
+      messagesReceived++;
+      connectionSpan.addEvent("sync.message_received", {
+        eventType: parsed.data.type,
+        messageNumber: messagesReceived,
+      });
       queue.push(parsed.data);
     } catch (error) {
-      console.error("Failed to parse realtime Redis message.", {
-        channel,
-        error,
-      });
+      connectionSpan.recordException(
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   };
 
@@ -122,6 +156,7 @@ export async function* createUserSyncEventIterator(
 
   try {
     await subscriber.subscribe(channel, listener);
+    connectionSpan.addEvent("sync.subscribed");
 
     reconnectTimer = setTimeout(() => {
       queue.push({
@@ -140,6 +175,7 @@ export async function* createUserSyncEventIterator(
       yield next.value;
 
       if (next.value.type === "reconnect") {
+        connectionSpan.addEvent("sync.reconnect_triggered");
         return;
       }
     }
@@ -148,6 +184,10 @@ export async function* createUserSyncEventIterator(
       clearTimeout(reconnectTimer);
     }
     closeQueue();
+
+    // Record total messages on the span before ending
+    connectionSpan.setAttribute("messagesReceived", messagesReceived);
+
     try {
       await subscriber.unsubscribe(channel, listener);
     } catch {
@@ -158,5 +198,6 @@ export async function* createUserSyncEventIterator(
       }
     }
     subscriber.close();
+    connectionSpan.end();
   }
 }

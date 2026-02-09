@@ -1,10 +1,9 @@
 import type {
   TagInsert,
   TagInsertRow,
-  TagSelect,
   TagUpdate,
 } from "@kompose/db/schema/tag";
-import { Context, Data, Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
   dbDeleteTag,
@@ -14,151 +13,122 @@ import {
   dbSelectTags,
   dbUpdateTag,
 } from "./db";
-import type { TagRepositoryError } from "./errors";
+import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
 
-export class TagConflictError extends Data.TaggedError("TagConflictError")<{
-  name: string;
-}> {}
+// ============================================================================
+// Service Definition (Effect.Service + Effect.fn pattern)
+// ============================================================================
 
-export class TagNotFoundError extends Data.TaggedError("TagNotFoundError")<{
-  tagId: string;
-}> {}
+export class TagService extends Effect.Service<TagService>()("TagService", {
+  accessors: true,
+  effect: Effect.gen(function* () {
+    const listTags = Effect.fn("TagService.listTags")(function* (
+      userId: string
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      return yield* dbSelectTags(userId);
+    });
 
-export class InvalidTagError extends Data.TaggedError("InvalidTagError")<{
-  message: string;
-}> {}
-
-type TagError =
-  | TagRepositoryError
-  | TagConflictError
-  | TagNotFoundError
-  | InvalidTagError;
-
-export interface TagService {
-  readonly listTags: (userId: string) => Effect.Effect<TagSelect[], TagError>;
-  readonly createTag: (
-    userId: string,
-    input: TagInsert
-  ) => Effect.Effect<TagSelect, TagError>;
-  readonly updateTag: (
-    userId: string,
-    tagId: string,
-    input: TagUpdate
-  ) => Effect.Effect<TagSelect, TagError>;
-  readonly deleteTag: (
-    userId: string,
-    tagId: string
-  ) => Effect.Effect<void, TagError>;
-}
-
-export class Tags extends Context.Tag("Tags")<Tags, TagService>() {}
-
-const listTags = (userId: string): Effect.Effect<TagSelect[], TagError> =>
-  dbSelectTags(userId);
-
-const createTag = (
-  userId: string,
-  input: TagInsert
-): Effect.Effect<TagSelect, TagError> =>
-  Effect.gen(function* () {
-    const name = input.name.trim();
-    if (!name) {
-      return yield* Effect.fail(
-        new InvalidTagError({ message: "Tag name is required" })
-      );
-    }
-
-    const existing = yield* dbSelectTagByName(userId, name);
-    if (existing.length > 0) {
-      return yield* Effect.fail(new TagConflictError({ name }));
-    }
-
-    const insertRow: TagInsertRow = {
-      id: uuidv7(),
-      userId,
-      name,
-      icon: input.icon,
-    };
-
-    const [created] = yield* dbInsertTag([insertRow]);
-
-    if (!created) {
-      return yield* Effect.fail(
-        new InvalidTagError({ message: "Failed to create tag" })
-      );
-    }
-
-    return created;
-  });
-
-const updateTag = (
-  userId: string,
-  tagId: string,
-  input: TagUpdate
-): Effect.Effect<TagSelect, TagError> =>
-  Effect.gen(function* () {
-    if (input.name === undefined && input.icon === undefined) {
-      return yield* Effect.fail(
-        new InvalidTagError({ message: "No tag updates provided" })
-      );
-    }
-
-    const [existing] = yield* dbSelectTagById(userId, tagId);
-    if (!existing) {
-      return yield* Effect.fail(new TagNotFoundError({ tagId }));
-    }
-
-    let nextName = existing.name;
-    if (input.name !== undefined) {
-      const trimmed = input.name.trim();
-      if (!trimmed) {
+    const createTag = Effect.fn("TagService.createTag")(function* (
+      userId: string,
+      input: TagInsert
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      const name = input.name.trim();
+      if (!name) {
         return yield* Effect.fail(
           new InvalidTagError({ message: "Tag name is required" })
         );
       }
 
-      if (trimmed !== existing.name) {
-        const conflicting = yield* dbSelectTagByName(userId, trimmed);
-        const hasConflict = conflicting.some((tag) => tag.id !== tagId);
-        if (hasConflict) {
-          return yield* Effect.fail(new TagConflictError({ name: trimmed }));
-        }
+      const existing = yield* dbSelectTagByName(userId, name);
+      if (existing.length > 0) {
+        return yield* Effect.fail(new TagConflictError({ name }));
       }
 
-      nextName = trimmed;
-    }
+      const insertRow: TagInsertRow = {
+        id: uuidv7(),
+        userId,
+        name,
+        icon: input.icon,
+      };
 
-    const nextIcon = input.icon ?? existing.icon;
+      const [created] = yield* dbInsertTag([insertRow]);
 
-    const [updated] = yield* dbUpdateTag(userId, tagId, {
-      name: nextName,
-      icon: nextIcon,
-      updatedAt: new Date().toISOString(),
+      if (!created) {
+        return yield* Effect.fail(
+          new InvalidTagError({ message: "Failed to create tag" })
+        );
+      }
+
+      return created;
     });
 
-    if (!updated) {
-      return yield* Effect.fail(new TagNotFoundError({ tagId }));
-    }
+    const updateTag = Effect.fn("TagService.updateTag")(function* (
+      userId: string,
+      tagId: string,
+      input: TagUpdate
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      yield* Effect.annotateCurrentSpan("tagId", tagId);
+      if (input.name === undefined && input.icon === undefined) {
+        return yield* Effect.fail(
+          new InvalidTagError({ message: "No tag updates provided" })
+        );
+      }
 
-    return updated;
-  });
+      const [existing] = yield* dbSelectTagById(userId, tagId);
+      if (!existing) {
+        return yield* Effect.fail(new TagNotFoundError({ tagId }));
+      }
 
-const deleteTag = (
-  userId: string,
-  tagId: string
-): Effect.Effect<void, TagError> =>
-  Effect.gen(function* () {
-    const deleted = yield* dbDeleteTag(userId, tagId);
-    if (deleted.length === 0) {
-      return yield* Effect.fail(new TagNotFoundError({ tagId }));
-    }
-  });
+      let nextName = existing.name;
+      if (input.name !== undefined) {
+        const trimmed = input.name.trim();
+        if (!trimmed) {
+          return yield* Effect.fail(
+            new InvalidTagError({ message: "Tag name is required" })
+          );
+        }
 
-const tagService: TagService = {
-  listTags,
-  createTag,
-  updateTag,
-  deleteTag,
-};
+        if (trimmed !== existing.name) {
+          const conflicting = yield* dbSelectTagByName(userId, trimmed);
+          const hasConflict = conflicting.some((tag) => tag.id !== tagId);
+          if (hasConflict) {
+            return yield* Effect.fail(new TagConflictError({ name: trimmed }));
+          }
+        }
 
-export const TagsLive = Layer.succeed(Tags, tagService);
+        nextName = trimmed;
+      }
+
+      const nextIcon = input.icon ?? existing.icon;
+
+      const [updated] = yield* dbUpdateTag(userId, tagId, {
+        name: nextName,
+        icon: nextIcon,
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (!updated) {
+        return yield* Effect.fail(new TagNotFoundError({ tagId }));
+      }
+
+      return updated;
+    });
+
+    const deleteTag = Effect.fn("TagService.deleteTag")(function* (
+      userId: string,
+      tagId: string
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      yield* Effect.annotateCurrentSpan("tagId", tagId);
+      const deleted = yield* dbDeleteTag(userId, tagId);
+      if (deleted.length === 0) {
+        return yield* Effect.fail(new TagNotFoundError({ tagId }));
+      }
+    });
+
+    return { listTags, createTag, updateTag, deleteTag };
+  }),
+}) {}

@@ -64,9 +64,8 @@ export const mapsRouter = os.router({
       } catch {
         // Response body not JSON, ignore
       }
-      throw new ORPCError("GOOGLE_MAPS_ERROR", {
-        message: `Places API error (${response.status})${errorDetails ? `: ${errorDetails}` : ""}`,
-      });
+      const message = `Places API error (${response.status})${errorDetails ? `: ${errorDetails}` : ""}`;
+      throw new ORPCError("GOOGLE_MAPS_ERROR", { message });
     }
 
     const data = (await response.json()) as PlacesAutocompleteResponse;

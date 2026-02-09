@@ -23,6 +23,7 @@
     "@kompose/api": "workspace:*",
     "@kompose/google-cal": "workspace:*",
     "@kompose/state": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
     "@orpc/client": "^1.13.4",
     "@react-native-picker/picker": "2.11.1",
     "@react-navigation/bottom-tabs": "^7.4.0",
@@ -71,7 +72,8 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "3",
     "tailwindcss-animate": "^1.0.7",
-    "temporal-polyfill": "^0.3.0"
+    "temporal-polyfill": "^0.3.0",
+    "uuidv7": "^1.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
