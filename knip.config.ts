@@ -20,6 +20,7 @@ const config: KnipConfig = {
       // Disable Metro plugin - it tries to require() metro.config.js which triggers
       // tailwindcss to resolve a config from the workspace root (cwd), not apps/native.
       metro: false,
+      ignore: ["components/ui/**"],
     },
     // API package
     "packages/api": {
@@ -64,6 +65,8 @@ const config: KnipConfig = {
     "**/.expo/**",
     "**/build/**",
     "**/coverage/**",
+    ".agents/**",
+    ".cursor/**",
     "**/src-tauri/**", // Tauri Rust code
     "**/migrations/**", // Database migrations
     "**/*.sql", // SQL files
