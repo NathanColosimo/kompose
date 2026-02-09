@@ -30,6 +30,11 @@ import {
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import {
+  calculateCollisionLayout,
+  type ItemLayout,
+  type PositionedItem,
+} from "@kompose/state/collision-utils";
+import {
   GOOGLE_ACCOUNTS_QUERY_KEY,
   GOOGLE_CALENDARS_QUERY_KEY,
   getGoogleEventsQueryKey,
@@ -166,155 +171,6 @@ function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
   );
 }
 
-// --- Collision detection utilities ---
-
-const SIDE_BY_SIDE_THRESHOLD_MINUTES = 45;
-const MAX_COLUMNS = 2;
-
-interface PositionedItem {
-  id: string;
-  type: "task" | "google-event";
-  startMinutes: number;
-  endMinutes: number;
-}
-
-interface ItemLayout {
-  columnIndex: number;
-  totalColumns: number;
-  zIndex: number;
-}
-
-function itemsOverlap(a: PositionedItem, b: PositionedItem): boolean {
-  return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes;
-}
-
-function findCollisionCluster(
-  item: PositionedItem,
-  allItems: PositionedItem[],
-  visited: Set<string>
-): PositionedItem[] {
-  const cluster: PositionedItem[] = [item];
-  visited.add(item.id);
-
-  for (const other of allItems) {
-    if (visited.has(other.id)) {
-      continue;
-    }
-    const overlapsCluster = cluster.some((clusterItem) =>
-      itemsOverlap(clusterItem, other)
-    );
-    if (overlapsCluster) {
-      visited.add(other.id);
-      const subCluster = findCollisionCluster(other, allItems, visited);
-      cluster.push(...subCluster.filter((i) => i.id !== other.id));
-      cluster.push(other);
-    }
-  }
-
-  return cluster;
-}
-
-function assignColumnsToCluster(
-  cluster: PositionedItem[]
-): Map<string, { columnIndex: number; zIndex: number }> {
-  const sorted = [...cluster].sort((a, b) => a.startMinutes - b.startMinutes);
-  const result = new Map<string, { columnIndex: number; zIndex: number }>();
-  const columnEndTimes: number[] = [];
-
-  const earliestStart = sorted[0].startMinutes;
-  const latestStart = sorted.at(-1)?.startMinutes ?? earliestStart;
-  const useSideBySide =
-    latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
-
-  for (let i = 0; i < sorted.length; i++) {
-    const item = sorted[i];
-    let assignedColumn = 0;
-
-    if (useSideBySide) {
-      for (let col = 0; col < columnEndTimes.length; col++) {
-        if (item.startMinutes >= columnEndTimes[col]) {
-          assignedColumn = col;
-          break;
-        }
-        assignedColumn = col + 1;
-      }
-      if (assignedColumn >= MAX_COLUMNS) {
-        assignedColumn = MAX_COLUMNS - 1;
-      }
-    }
-
-    if (assignedColumn >= columnEndTimes.length) {
-      columnEndTimes.push(item.endMinutes);
-    } else {
-      columnEndTimes[assignedColumn] = Math.max(
-        columnEndTimes[assignedColumn],
-        item.endMinutes
-      );
-    }
-
-    result.set(item.id, { columnIndex: assignedColumn, zIndex: i + 1 });
-  }
-
-  return result;
-}
-
-function calculateCollisionLayout(
-  items: PositionedItem[]
-): Map<string, ItemLayout> {
-  if (items.length === 0) {
-    return new Map();
-  }
-
-  const sortedItems = [...items].sort(
-    (a, b) => a.startMinutes - b.startMinutes
-  );
-
-  const result = new Map<string, ItemLayout>();
-  const visited = new Set<string>();
-
-  for (const item of sortedItems) {
-    if (visited.has(item.id)) {
-      continue;
-    }
-
-    const cluster = findCollisionCluster(item, sortedItems, visited);
-
-    if (cluster.length === 1) {
-      result.set(item.id, { columnIndex: 0, totalColumns: 1, zIndex: 1 });
-      continue;
-    }
-
-    const clusterSorted = [...cluster].sort(
-      (a, b) => a.startMinutes - b.startMinutes
-    );
-    const earliestStart = clusterSorted[0].startMinutes;
-    const latestStart = clusterSorted.at(-1)?.startMinutes ?? earliestStart;
-    const useSideBySide =
-      latestStart - earliestStart < SIDE_BY_SIDE_THRESHOLD_MINUTES;
-
-    const columnAssignments = assignColumnsToCluster(cluster);
-
-    let maxColumn = 0;
-    for (const { columnIndex } of columnAssignments.values()) {
-      maxColumn = Math.max(maxColumn, columnIndex);
-    }
-    const totalColumns = useSideBySide ? maxColumn + 1 : 1;
-
-    for (const clusterItem of cluster) {
-      const assignment = columnAssignments.get(clusterItem.id);
-      if (assignment) {
-        result.set(clusterItem.id, {
-          columnIndex: useSideBySide ? assignment.columnIndex : 0,
-          totalColumns,
-          zIndex: assignment.zIndex,
-        });
-      }
-    }
-  }
-
-  return result;
-}
-
 function formatTimeShort(zdt: Temporal.ZonedDateTime): string {
   const hour = zdt.hour;
   const minute = zdt.minute;
@@ -438,6 +294,7 @@ function TimedGoogleEventBlock({
   durationMinutes,
   columnIndex = 0,
   totalColumns = 1,
+  columnSpan = 1,
   zIndex = 1,
   onPress,
 }: {
@@ -447,6 +304,7 @@ function TimedGoogleEventBlock({
   durationMinutes: number;
   columnIndex?: number;
   totalColumns?: number;
+  columnSpan?: number;
   zIndex?: number;
   onPress: () => void;
 }) {
@@ -467,8 +325,10 @@ function TimedGoogleEventBlock({
   });
 
   // Calculate horizontal positioning based on collision layout.
-  const columnWidthPercent = 100 / totalColumns;
-  const leftPercent = columnIndex * columnWidthPercent;
+  // columnSpan lets items expand into adjacent empty columns.
+  const singleColumnWidth = 100 / totalColumns;
+  const columnWidthPercent = singleColumnWidth * columnSpan;
+  const leftPercent = columnIndex * singleColumnWidth;
 
   return (
     <Pressable
@@ -707,7 +567,7 @@ export default function CalendarTab() {
         const startMinutes = minutesFromMidnight(ge.start);
         const endMinutes = minutesFromMidnight(ge.end);
         return {
-          id: `${ge.source.calendarId}-${ge.source.event.id}`,
+          id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
           type: "google-event" as const,
           startMinutes,
           endMinutes,
@@ -1564,7 +1424,7 @@ export default function CalendarTab() {
                       {items.slice(0, 3).map((e) => (
                         <AllDayEventChip
                           item={e}
-                          key={`${e.source.calendarId}-${e.source.event.id}`}
+                          key={`${e.source.accountId}-${e.source.calendarId}-${e.source.event.id}`}
                           onPress={() => openEditAllDayEvent(e)}
                         />
                       ))}
@@ -1648,7 +1508,7 @@ export default function CalendarTab() {
 
                       {/* Google events */}
                       {dayEvents.map((evt) => {
-                        const eventId = `${evt.source.calendarId}-${evt.source.event.id}`;
+                        const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
                         const layout = dayLayouts?.get(eventId);
                         const startMinutes = minutesFromMidnight(evt.start);
                         const durationMinutes = Math.max(
@@ -1671,6 +1531,7 @@ export default function CalendarTab() {
                         return (
                           <TimedGoogleEventBlock
                             columnIndex={layout?.columnIndex}
+                            columnSpan={layout?.columnSpan}
                             durationMinutes={durationMinutes}
                             height={adjustedHeight}
                             item={evt}
@@ -1710,11 +1571,15 @@ export default function CalendarTab() {
                         );
 
                         // Calculate horizontal positioning based on collision layout.
+                        // columnSpan lets items expand into adjacent empty columns.
                         const columnIndex = layout?.columnIndex ?? 0;
                         const totalColumns = layout?.totalColumns ?? 1;
+                        const columnSpan = layout?.columnSpan ?? 1;
                         const zIndexValue = layout?.zIndex ?? 1;
-                        const columnWidthPercent = 100 / totalColumns;
-                        const leftPercent = columnIndex * columnWidthPercent;
+                        const singleColumnWidth = 100 / totalColumns;
+                        const columnWidthPercent =
+                          singleColumnWidth * columnSpan;
+                        const leftPercent = columnIndex * singleColumnWidth;
                         const end = start.add({ minutes: durationMinutes });
 
                         return (

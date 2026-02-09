@@ -18,6 +18,8 @@ interface TaskEventProps {
   columnIndex?: number;
   /** Total columns in this item's collision group */
   totalColumns?: number;
+  /** How many consecutive columns this item spans */
+  columnSpan?: number;
   /** Z-index for stacking order */
   zIndex?: number;
 }
@@ -26,6 +28,7 @@ export const TaskEvent = memo(function TaskEventInner({
   task,
   columnIndex = 0,
   totalColumns = 1,
+  columnSpan = 1,
   zIndex = 1,
 }: TaskEventProps) {
   const timeZone = useAtomValue(timezoneAtom);
@@ -103,8 +106,10 @@ export const TaskEvent = memo(function TaskEventInner({
   const isShortTask = durationMinutes <= 15;
 
   // Calculate horizontal positioning based on collision layout
-  const columnWidth = 100 / totalColumns;
-  const leftPercent = columnIndex * columnWidth;
+  // columnSpan lets items expand into adjacent empty columns
+  const singleColumnWidth = 100 / totalColumns;
+  const columnWidth = singleColumnWidth * columnSpan;
+  const leftPercent = columnIndex * singleColumnWidth;
 
   const style: React.CSSProperties = {
     position: "absolute",

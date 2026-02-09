@@ -13,6 +13,11 @@ import {
   type GoogleEventWithSource,
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
+import {
+  calculateCollisionLayout,
+  type ItemLayout,
+  type PositionedItem,
+} from "@kompose/state/collision-utils";
 import { useAtomValue } from "jotai";
 import {
   memo,
@@ -30,11 +35,6 @@ import {
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
-import {
-  calculateCollisionLayout,
-  type ItemLayout,
-  type PositionedItem,
-} from "./collision-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
@@ -323,7 +323,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         const startMinutes = minutesFromMidnight(ge.start);
         const endMinutes = minutesFromMidnight(ge.end);
         return {
-          id: `google-${ge.calendarId}-${ge.event.id}`,
+          id: `google-${ge.accountId}-${ge.calendarId}-${ge.event.id}`,
           type: "google-event" as const,
           startMinutes,
           // Handle events that might cross midnight or have same start/end
@@ -394,7 +394,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                         .map((item: AllDayGoogleEvent) => (
                           <AllDayEventChip
                             item={item}
-                            key={`${item.calendarId}-${item.event.id}`}
+                            key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
                             timeZone={timeZone}
                           />
                         ))}
@@ -446,16 +446,17 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                           calendarId,
                           accountId,
                         }: PositionedGoogleEvent) => {
-                          const layoutKey = `google-${calendarId}-${event.id}`;
+                          const layoutKey = `google-${accountId}-${calendarId}-${event.id}`;
                           const layout = dayLayouts?.get(layoutKey);
                           return (
                             <GoogleCalendarEvent
                               accountId={accountId}
                               calendarId={calendarId}
                               columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
                               end={end}
                               event={event}
-                              key={`${calendarId}-${event.id}-${start.toString()}`}
+                              key={`${accountId}-${calendarId}-${event.id}-${start.toString()}`}
                               start={start}
                               totalColumns={layout?.totalColumns}
                               zIndex={layout?.zIndex}
@@ -470,6 +471,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                     return (
                       <TaskEvent
                         columnIndex={layout?.columnIndex}
+                        columnSpan={layout?.columnSpan}
                         key={task.id}
                         task={task}
                         totalColumns={layout?.totalColumns}

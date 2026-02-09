@@ -8,6 +8,7 @@
 
 ## `packages/state` contents
 
+- `collision-utils.ts`: Shared collision detection for calendar events (web + native). Calculates column positions, column spans, and z-index for overlapping items. Uses a 30-min side-by-side threshold, max 3 columns, and threshold-aware span expansion so events use full width when adjacent columns are stackable.
 - `atoms/command-bar.ts`: Command bar open state and focused task id atoms.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, and event window atoms.
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.

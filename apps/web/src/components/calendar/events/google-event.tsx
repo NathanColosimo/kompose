@@ -27,6 +27,8 @@ interface GoogleCalendarEventProps {
   columnIndex?: number;
   /** Total columns in this item's collision group */
   totalColumns?: number;
+  /** How many consecutive columns this item spans */
+  columnSpan?: number;
   /** Z-index for stacking order */
   zIndex?: number;
 }
@@ -39,6 +41,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   calendarId,
   columnIndex = 0,
   totalColumns = 1,
+  columnSpan = 1,
   zIndex = 1,
 }: GoogleCalendarEventProps) {
   const queryClient = useQueryClient();
@@ -138,8 +141,10 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     });
 
   // Calculate horizontal positioning based on collision layout
-  const columnWidth = 100 / totalColumns;
-  const leftPercent = columnIndex * columnWidth;
+  // columnSpan lets items expand into adjacent empty columns
+  const singleColumnWidth = 100 / totalColumns;
+  const columnWidth = singleColumnWidth * columnSpan;
+  const leftPercent = columnIndex * singleColumnWidth;
 
   const style: React.CSSProperties = {
     position: "absolute",
