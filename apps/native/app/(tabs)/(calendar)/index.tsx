@@ -976,13 +976,18 @@ export default function CalendarTab() {
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
       if (recurring) {
+        // Google API doesn't allow moving individual recurring instances,
+        // so force scope to "all" when a calendar move is pending.
+        const hasCalendarChange =
+          draft.calendar.calendarId !== sourceCalendar.calendarId;
+        const defaultScope = hasCalendarChange
+          ? "all"
+          : getDefaultRecurrenceScopeForEvent({
+              event: draft.sourceEvent,
+              masterRecurrence: masterSeriesRecurrence,
+            });
         setPendingEventSaveDraft(draft);
-        setEventSaveScope(
-          getDefaultRecurrenceScopeForEvent({
-            event: draft.sourceEvent,
-            masterRecurrence: masterSeriesRecurrence,
-          })
-        );
+        setEventSaveScope(defaultScope);
         setEventDraft(null);
         openEventDialog("save");
         return;
@@ -1692,7 +1697,13 @@ export default function CalendarTab() {
 
       <AlertDialog
         confirmText="Apply"
-        description="This is a recurring event. Choose how broadly to apply these changes."
+        description={
+          pendingEventSaveDraft &&
+          pendingEventSaveDraft.calendar.calendarId !==
+            pendingEventSaveDraft.sourceCalendar.calendarId
+            ? "Moving to a different calendar applies to all events in the series."
+            : "This is a recurring event. Choose how broadly to apply these changes."
+        }
         isVisible={isEventSaveScopeDialogVisible}
         onCancel={() => {
           setIsEventSaveScopeDialogVisible(false);
@@ -1712,10 +1723,22 @@ export default function CalendarTab() {
             onValueChange={(value) =>
               setEventSaveScope(value as RecurrenceScope)
             }
-            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
+            options={RECURRENCE_SCOPE_OPTIONS.map((option) => {
+              // Google API only supports moving the entire series,
+              // so disable "this" and "following" when calendar changed.
+              const isMoving =
+                pendingEventSaveDraft != null &&
+                pendingEventSaveDraft.calendar.calendarId !==
+                  pendingEventSaveDraft.sourceCalendar.calendarId;
+              const disabled =
+                isMoving &&
+                (option.value === "this" || option.value === "following");
+              return {
+                value: option.value,
+                label: option.label,
+                disabled,
+              };
+            })}
             value={eventSaveScope}
           />
         </View>

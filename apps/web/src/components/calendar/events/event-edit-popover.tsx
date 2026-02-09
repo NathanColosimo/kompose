@@ -44,10 +44,7 @@ import {
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import {
-  RECURRENCE_SCOPE_OPTIONS,
-  RecurrenceScopeDialog,
-} from "@/components/recurrence-scope-dialog";
+import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,14 +65,6 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -83,6 +72,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -131,12 +127,10 @@ interface EventFormValues {
   startTime: string;
   endTime: string;
   recurrence: string[];
-}
-
-interface CalendarOption {
-  accountId: string;
-  calendarId: string;
-  label: string;
+  /** Selected calendar for create mode (accountId) */
+  selectedAccountId: string;
+  /** Selected calendar for create mode (calendarId) */
+  selectedCalendarId: string;
 }
 
 type CloseSaveRequest =
@@ -152,6 +146,10 @@ type CloseSaveRequest =
       isRecurring: boolean;
       /** Which scope should be preselected in the post-close scope dialog. */
       defaultScope: RecurrenceScope;
+      /** Whether event data (non-calendar fields) were actually edited. */
+      hasDataEdits: boolean;
+      /** If the user changed the calendar, include the destination for a move. */
+      calendarChanged?: { destinationCalendarId: string };
     }
   | {
       type: "create";
@@ -438,7 +436,6 @@ export function EventEditPopover({
 
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
-  const calendars = useAtomValue(googleCalendarsDataAtom);
 
   // Delete state for recurring events (scope dialog)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -458,63 +455,43 @@ export function EventEditPopover({
   const [pendingSave, setPendingSave] = useState<{
     variables: UpdateGoogleEventInput;
     defaultScope: RecurrenceScope;
+    hasDataEdits: boolean;
+    calendarChanged?: { destinationCalendarId: string };
   } | null>(null);
   const [selectedScope, setSelectedScope] = useState<RecurrenceScope>("this");
-
-  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
-  const [moveScope, setMoveScope] = useState<RecurrenceScope>("this");
-  const [moveScopeDialogOpen, setMoveScopeDialogOpen] = useState(false);
-  const [moveDestinationCalendarId, setMoveDestinationCalendarId] = useState<
-    string | null
-  >(null);
-  const postSaveIntentRef = useRef<"move" | null>(null);
-
-  const calendarOptions = useMemo<CalendarOption[]>(
-    () =>
-      calendars
-        // Moving across Google accounts is not supported by this flow.
-        .filter((c) => c.accountId === accountId)
-        .map((c) => ({
-          accountId: c.accountId,
-          calendarId: c.calendar.id,
-          label: c.calendar.summary ?? "Calendar",
-        })),
-    [accountId, calendars]
-  );
-
-  const openMoveDialog = useCallback(() => {
-    // Move is only available in edit mode
-    if (!event) {
-      return;
-    }
-    const isRecurring = Boolean(
-      event.recurringEventId || event.recurrence?.length
-    );
-    let defaultScope: RecurrenceScope = "this";
-    if (isRecurring && !event.recurringEventId) {
-      defaultScope = "all";
-    }
-    setMoveScope(defaultScope);
-
-    // Default destination = first calendar that is not the current one (if any).
-    const firstOther =
-      calendarOptions.find((c) => c.calendarId !== calendarId)?.calendarId ??
-      null;
-    setMoveDestinationCalendarId(firstOther);
-    setMoveDialogOpen(true);
-  }, [calendarId, calendarOptions, event]);
 
   const commitPendingSave = useCallback(async () => {
     if (!pendingSave) {
       return;
     }
-    const { variables } = pendingSave;
-    await updateEvent.mutateAsync({
-      ...variables,
-      recurrenceScope: selectedScope,
-    });
+    const { variables, hasDataEdits, calendarChanged } = pendingSave;
+    // Save event data if there are actual field edits
+    if (hasDataEdits) {
+      await updateEvent.mutateAsync({
+        ...variables,
+        recurrenceScope: selectedScope,
+      });
+    }
+    // Move to the new calendar if the user changed it
+    if (calendarChanged && event) {
+      await moveEvent.mutateAsync({
+        accountId,
+        calendarId,
+        eventId: event.id,
+        destinationCalendarId: calendarChanged.destinationCalendarId,
+        scope: selectedScope,
+      });
+    }
     setPendingSave(null);
-  }, [pendingSave, selectedScope, updateEvent]);
+  }, [
+    accountId,
+    calendarId,
+    event,
+    moveEvent,
+    pendingSave,
+    selectedScope,
+    updateEvent,
+  ]);
 
   // Handle delete - opens appropriate confirmation dialog (edit mode only)
   const handleDelete = useCallback(() => {
@@ -560,58 +537,68 @@ export function EventEditPopover({
     });
   }, [accountId, calendarId, deleteEvent, deleteScope, event]);
 
-  const handleClose = useCallback(
-    (intent?: "move") => {
-      const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
-      setOpen(false);
+  const handleClose = useCallback(() => {
+    const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
+    setOpen(false);
 
-      if (request.type === "none") {
-        if (intent === "move") {
-          openMoveDialog();
-        }
-        return;
-      }
+    if (request.type === "none") {
+      return;
+    }
 
-      // Handle create mode
-      if (request.type === "create") {
-        createEvent.mutate(request.payload);
-        return;
-      }
+    // Handle create mode
+    if (request.type === "create") {
+      createEvent.mutate(request.payload);
+      return;
+    }
 
-      if (request.type === "save") {
-        if (request.isRecurring) {
-          setPendingSave({
-            variables: request.variables,
-            defaultScope: request.defaultScope,
-          });
-          setSelectedScope(request.defaultScope);
-          postSaveIntentRef.current = intent ?? null;
-          setScopeDialogOpen(true);
-          return;
-        }
-
-        if (intent === "move") {
-          // Ensure edits are saved before moving.
-          updateEvent
-            .mutateAsync({
-              ...request.variables,
-              recurrenceScope: "this",
-            })
-            .then(() => {
-              openMoveDialog();
-            })
-            .catch(() => null);
-          return;
-        }
-
-        updateEvent.mutate({
-          ...request.variables,
-          recurrenceScope: "this",
+    if (request.type === "save") {
+      // Recurring events: show scope dialog (applies to both save and move)
+      if (request.isRecurring) {
+        // Google API doesn't allow moving individual recurring instances,
+        // so force scope to "all" when a calendar move is pending.
+        const forceAll = Boolean(request.calendarChanged);
+        const scope = forceAll ? "all" : request.defaultScope;
+        setPendingSave({
+          variables: request.variables,
+          defaultScope: scope,
+          hasDataEdits: request.hasDataEdits,
+          calendarChanged: request.calendarChanged,
         });
+        setSelectedScope(scope);
+        setScopeDialogOpen(true);
+        return;
       }
-    },
-    [createEvent, openMoveDialog, setOpen, updateEvent]
-  );
+
+      // Non-recurring: save directly, then move if calendar changed
+      const saveAndMove = async () => {
+        if (request.hasDataEdits) {
+          await updateEvent.mutateAsync({
+            ...request.variables,
+            recurrenceScope: "this",
+          });
+        }
+        if (request.calendarChanged && event) {
+          await moveEvent.mutateAsync({
+            accountId,
+            calendarId,
+            eventId: event.id,
+            destinationCalendarId:
+              request.calendarChanged.destinationCalendarId,
+            scope: "this",
+          });
+        }
+      };
+      saveAndMove().catch(() => null);
+    }
+  }, [
+    accountId,
+    calendarId,
+    createEvent,
+    event,
+    moveEvent,
+    setOpen,
+    updateEvent,
+  ]);
 
   return (
     <>
@@ -643,137 +630,33 @@ export function EventEditPopover({
               buildCloseSaveRequestRef.current = fn;
             }}
             onRequestClose={() => handleClose()}
-            onRequestMove={() => handleClose("move")}
             open={open}
             start={start}
           />
         </PopoverContent>
       </Popover>
 
-      {/* Post-close recurrence scope prompt. Only shown when the user actually edited. */}
+      {/* Post-close recurrence scope prompt (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description="Choose how broadly to apply your changes."
+        description={
+          pendingSave?.calendarChanged
+            ? "Moving to a different calendar applies to all events in the series."
+            : "Choose how broadly to apply your changes."
+        }
+        disabledScopes={
+          pendingSave?.calendarChanged
+            ? { this: true, following: true }
+            : undefined
+        }
         onCancel={() => {
-          // Cancelling the scope dialog discards the edits (no save).
           setPendingSave(null);
-          postSaveIntentRef.current = null;
         }}
-        onConfirm={async () => {
-          await commitPendingSave();
-          if (postSaveIntentRef.current === "move") {
-            postSaveIntentRef.current = null;
-            openMoveDialog();
-          }
-        }}
+        onConfirm={commitPendingSave}
         onOpenChange={setScopeDialogOpen}
         onValueChange={setSelectedScope}
         open={scopeDialogOpen}
         title="Save recurring event changes"
         value={selectedScope}
-      />
-
-      {/* Separate “Move to calendar…” flow. */}
-      <Dialog onOpenChange={setMoveDialogOpen} open={moveDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Move event</DialogTitle>
-            <DialogDescription>
-              Choose a destination calendar and how broadly to apply the move.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label className="text-xs">Destination calendar</Label>
-              <div className="grid gap-2">
-                {calendarOptions
-                  .filter((c) => c.calendarId !== calendarId)
-                  .map((c) => {
-                    const selected = moveDestinationCalendarId === c.calendarId;
-                    return (
-                      <Button
-                        className={cn(
-                          "justify-start",
-                          selected ? "bg-muted" : ""
-                        )}
-                        key={c.calendarId}
-                        onClick={() =>
-                          setMoveDestinationCalendarId(c.calendarId)
-                        }
-                        type="button"
-                        variant={selected ? "secondary" : "outline"}
-                      >
-                        {c.label}
-                      </Button>
-                    );
-                  })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Scope</Label>
-              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div className="text-sm">
-                  {RECURRENCE_SCOPE_OPTIONS.find((o) => o.value === moveScope)
-                    ?.label ?? "Scope"}
-                </div>
-                <Button
-                  onClick={() => setMoveScopeDialogOpen(true)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Change…
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              onClick={() => setMoveDialogOpen(false)}
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={!moveDestinationCalendarId || moveEvent.isPending}
-              onClick={async () => {
-                if (!moveDestinationCalendarId) {
-                  return;
-                }
-                if (!event) {
-                  return;
-                }
-                await moveEvent.mutateAsync({
-                  accountId,
-                  calendarId,
-                  eventId: event.id,
-                  destinationCalendarId: moveDestinationCalendarId,
-                  scope: moveScope,
-                });
-                setMoveDialogOpen(false);
-              }}
-              type="button"
-            >
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <RecurrenceScopeDialog
-        confirmLabel="Done"
-        description="Choose how broadly to apply the move."
-        onConfirm={() => {
-          return;
-        }}
-        onOpenChange={setMoveScopeDialogOpen}
-        onValueChange={setMoveScope}
-        open={moveScopeDialogOpen}
-        title="Move scope"
-        value={moveScope}
       />
 
       {/* Delete scope dialog for recurring events */}
@@ -821,7 +704,6 @@ function EventEditForm({
   end,
   mode,
   onRegisterCloseSaveRequest,
-  onRequestMove,
   onRequestClose,
   onDelete,
   open,
@@ -833,7 +715,6 @@ function EventEditForm({
   end: Date;
   mode: "create" | "edit";
   onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
-  onRequestMove: () => void;
   onRequestClose: () => void;
   onDelete: () => void;
   open: boolean;
@@ -913,8 +794,12 @@ function EventEditForm({
         : formatTimeString(initialStartDate ?? new Date()),
       endTime: isAllDay ? "" : formatTimeString(initialEndDate ?? new Date()),
       recurrence: recurrenceSource,
+      selectedAccountId: accountId,
+      selectedCalendarId: calendarId,
     }),
     [
+      accountId,
+      calendarId,
       event?.colorId,
       event?.description,
       event?.location,
@@ -984,14 +869,39 @@ function EventEditForm({
     }
   }, [locationOpen, locationQuery.length]);
 
+  // Use the form's selected calendar (falls back to props on initial render)
+  const effectiveAccountId = watchedValues.selectedAccountId ?? accountId;
+  const effectiveCalendarId = watchedValues.selectedCalendarId ?? calendarId;
+
   const paletteForAccount = useAtomValue(
-    normalizedGoogleColorsAtomFamily(accountId)
+    normalizedGoogleColorsAtomFamily(effectiveAccountId)
   );
   const calendars = useAtomValue(googleCalendarsDataAtom);
 
-  // Find the calendar this event belongs to, for fallback color display
+  // Writable calendar options for the calendar picker (both modes).
+  // In edit mode, only same-account calendars (cross-account moves not supported).
+  const calendarPickerOptions = useMemo(
+    () =>
+      calendars
+        .filter(
+          (c) =>
+            c.calendar.accessRole === "writer" ||
+            c.calendar.accessRole === "owner"
+        )
+        .filter((c) => isCreateMode || c.accountId === accountId)
+        .map((c) => ({
+          accountId: c.accountId,
+          calendarId: c.calendar.id,
+          label: c.calendar.summary ?? "Calendar",
+        })),
+    [accountId, calendars, isCreateMode]
+  );
+
+  // Find the active calendar for fallback color display
   const calendar = calendars.find(
-    (c) => c.accountId === accountId && c.calendar.id === calendarId
+    (c) =>
+      c.accountId === effectiveAccountId &&
+      c.calendar.id === effectiveCalendarId
   );
   // Pastelise the calendar's background color for consistency with event colors
   const calendarFallbackColor = pastelizeColor(
@@ -1088,7 +998,7 @@ function EventEditForm({
     if (!isCreateMode) {
       onRequestClose();
     }
-  }, [canCreateMeeting, isCreateMode, onRequestClose, pendingConferenceRef]);
+  }, [canCreateMeeting, isCreateMode, onRequestClose]);
 
   const buildCreateCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
@@ -1108,8 +1018,8 @@ function EventEditForm({
       return {
         type: "create",
         payload: {
-          accountId,
-          calendarId,
+          accountId: values.selectedAccountId,
+          calendarId: values.selectedCalendarId,
           event: {
             summary: trimmedTitle,
             description: values.description?.trim() || undefined,
@@ -1125,19 +1035,17 @@ function EventEditForm({
         },
       };
     },
-    [
-      accountId,
-      calendarId,
-      clampToStartIfNeeded,
-      pendingConference,
-      pendingConferenceRef,
-    ]
+    [clampToStartIfNeeded, pendingConference]
   );
 
   const buildEditCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      // Edit mode: If the user never interacted, do not send an update.
-      if (!hasUserEditedRef.current) {
+      // Detect if the user moved the event to a different calendar
+      const calendarChanged = values.selectedCalendarId !== calendarId;
+      const hasEdits = hasUserEditedRef.current;
+
+      // Nothing to do if no data edits and calendar didn't change
+      if (!(hasEdits || calendarChanged)) {
         return { type: "none" };
       }
 
@@ -1192,6 +1100,10 @@ function EventEditForm({
         variables,
         isRecurring,
         defaultScope,
+        hasDataEdits: hasEdits,
+        calendarChanged: calendarChanged
+          ? { destinationCalendarId: values.selectedCalendarId }
+          : undefined,
       };
     },
     [
@@ -1201,7 +1113,6 @@ function EventEditForm({
       event,
       masterQuery.data,
       pendingConference,
-      pendingConferenceRef,
     ]
   );
 
@@ -1439,17 +1350,6 @@ function EventEditForm({
           All day
         </Button>
         <div className="flex items-center gap-2">
-          {/* Move button - only in edit mode for recurring events */}
-          {!isCreateMode && canEditRecurrence ? (
-            <Button
-              onClick={onRequestMove}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Move…
-            </Button>
-          ) : null}
           {/* Recurrence editor - available in create mode and for recurring events in edit mode */}
           {canEditRecurrence ? (
             <Popover>
@@ -1617,6 +1517,43 @@ function EventEditForm({
           </Popover>
         </div>
       )}
+
+      {/* Calendar picker (both modes) — replaces the Move dialog in edit mode */}
+      <div className="space-y-2">
+        <Label className="font-medium text-muted-foreground text-xs">
+          Calendar
+        </Label>
+        <Select
+          onValueChange={(val) => {
+            const opt = calendarPickerOptions.find(
+              (c) => `${c.accountId}::${c.calendarId}` === val
+            );
+            if (opt) {
+              setValue("selectedAccountId", opt.accountId, {
+                shouldDirty: true,
+              });
+              setValue("selectedCalendarId", opt.calendarId, {
+                shouldDirty: true,
+              });
+            }
+          }}
+          value={`${effectiveAccountId}::${effectiveCalendarId}`}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select calendar" />
+          </SelectTrigger>
+          <SelectContent>
+            {calendarPickerOptions.map((c) => (
+              <SelectItem
+                key={`${c.accountId}::${c.calendarId}`}
+                value={`${c.accountId}::${c.calendarId}`}
+              >
+                {c.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Delete button - only in edit mode */}
       {isCreateMode ? null : (
