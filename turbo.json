@@ -43,6 +43,10 @@
       "cache": false,
       "persistent": true
     },
+    "redis:studio": {
+      "cache": false,
+      "persistent": true
+    },
     "db:migrate": {
       "cache": false,
       "env": ["DATABASE_URL"]

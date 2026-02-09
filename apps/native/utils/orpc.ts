@@ -7,6 +7,7 @@ import {
 } from "@kompose/state/google-calendar-query-keys";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { RetryAfterPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { fetch as expoFetch } from "expo/fetch";
 import { authClient } from "@/lib/auth-client";
@@ -35,6 +36,7 @@ export const link = new RPCLink({
    * when `.env` isn't configured yet.
    */
   url: `${process.env.EXPO_PUBLIC_SERVER_URL ?? "http://localhost:3001"}/api/rpc`,
+  plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
   headers() {
     const headers = new Map<string, string>();
     const cookies = authClient.getCookie();

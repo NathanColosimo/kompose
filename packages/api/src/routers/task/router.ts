@@ -1,6 +1,7 @@
 import { implement, ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import { globalRateLimit } from "../../ratelimit";
 import { publishToUserBestEffort } from "../../realtime/sync";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
 import {
@@ -37,7 +38,7 @@ function handleError(error: TaskError): never {
   }
 }
 
-const os = implement(taskContract).use(requireAuth);
+const os = implement(taskContract).use(requireAuth).use(globalRateLimit);
 
 const normalizeTaskTags = <T extends { tags: Array<{ icon: string }> }>(
   task: T

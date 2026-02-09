@@ -15,6 +15,6 @@ export async function createContext(req: NextRequest): Promise<Context> {
 }
 
 export interface Context {
-  session?: Session;
+  session?: Omit<Session, "id">;
   user?: User;
 }

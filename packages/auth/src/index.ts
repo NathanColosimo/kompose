@@ -6,6 +6,7 @@ import { env } from "@kompose/env";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { redisSecondaryStorage } from "./redis-storage";
 
 export const auth = betterAuth<BetterAuthOptions>({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
@@ -17,6 +18,15 @@ export const auth = betterAuth<BetterAuthOptions>({
     provider: "pg",
     schema,
   }),
+  /** Redis-backed storage for sessions and rate limit counters. */
+  secondaryStorage: redisSecondaryStorage,
+  /** Rate limiting for auth endpoints (sign-in, token refresh, etc.). */
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 100,
+    storage: "secondary-storage",
+  },
   trustedOrigins: [
     env.NEXT_PUBLIC_WEB_URL,
     "kompose://",

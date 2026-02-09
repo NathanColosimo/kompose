@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "redis:studio": "open -a 'Redis Insight'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:start": "docker compose up -d",

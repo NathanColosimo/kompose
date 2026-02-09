@@ -96,6 +96,7 @@
         "@kompose/state": "workspace:*",
         "@orpc/client": "catalog:",
         "@orpc/contract": "catalog:",
+        "@orpc/experimental-ratelimit": "catalog:",
         "@orpc/openapi": "catalog:",
         "@orpc/server": "catalog:",
         "@orpc/zod": "catalog:",
@@ -122,6 +123,7 @@
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
         "date-fns": "^4.1.0",
+        "effect": "catalog:",
         "jotai": "catalog:",
         "lucide-react": "^0.563.0",
         "next": "catalog:",
@@ -158,6 +160,7 @@
         "@kompose/env": "workspace:*",
         "@kompose/google-cal": "workspace:*",
         "@orpc/contract": "catalog:",
+        "@orpc/experimental-ratelimit": "catalog:",
         "@orpc/server": "catalog:",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
@@ -269,6 +272,7 @@
     "@better-auth/expo": "^1.4.18",
     "@orpc/client": "^1.13.4",
     "@orpc/contract": "^1.13.4",
+    "@orpc/experimental-ratelimit": "^1.13.4",
     "@orpc/openapi": "^1.13.4",
     "@orpc/server": "^1.13.4",
     "@orpc/zod": "^1.13.4",
@@ -794,6 +798,8 @@
     "@orpc/client": ["@orpc/client@1.13.4", "", { "dependencies": { "@orpc/shared": "1.13.4", "@orpc/standard-server": "1.13.4", "@orpc/standard-server-fetch": "1.13.4", "@orpc/standard-server-peer": "1.13.4" } }, "sha512-s13GPMeoooJc5Th2EaYT5HMFtWG8S03DUVytYfJv8pIhP87RYKl94w52A36denH6r/B4LaAgBeC9nTAOslK+Og=="],
 
     "@orpc/contract": ["@orpc/contract@1.13.4", "", { "dependencies": { "@orpc/client": "1.13.4", "@orpc/shared": "1.13.4", "@standard-schema/spec": "^1.1.0", "openapi-types": "^12.1.3" } }, "sha512-TIxyaF67uOlihCRcasjHZxguZpbqfNK7aMrDLnhoufmQBE4OKvguNzmrOFHgsuM0OXoopX0Nuhun1ccaxKP10A=="],
+
+    "@orpc/experimental-ratelimit": ["@orpc/experimental-ratelimit@1.13.4", "", { "dependencies": { "@orpc/client": "1.13.4", "@orpc/server": "1.13.4", "@orpc/shared": "1.13.4", "@orpc/standard-server": "1.13.4" }, "peerDependencies": { "@upstash/ratelimit": ">=2.0.7" }, "optionalPeers": ["@upstash/ratelimit"] }, "sha512-v2fjLz2hHDnHaK7WJv3+ngD7mIp8R394cor+n3Tlh6n/j4hesQBXH3iSLryUeFu3xkfUjid3oAiJ2vbRU0Y9dQ=="],
 
     "@orpc/interop": ["@orpc/interop@1.13.4", "", {}, "sha512-h8HWMSTSUYTtfN9ytGJD/MLMgWaUJOg8Z1Bq7fycnj74DVib0NLGIItoCquJkSzgZ7Otc+s1l0/2NPOViTyl9Q=="],
 

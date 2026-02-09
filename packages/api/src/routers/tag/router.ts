@@ -1,6 +1,7 @@
 import { implement, ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import { globalRateLimit } from "../../ratelimit";
 import {
   type InvalidTagError,
   type TagConflictError,
@@ -44,7 +45,7 @@ function handleError(error: TagError): never {
   }
 }
 
-const os = implement(tagContract).use(requireAuth);
+const os = implement(tagContract).use(requireAuth).use(globalRateLimit);
 
 export const tagRouter = os.router({
   list: os.list.handler(({ context }) => {

@@ -1,12 +1,13 @@
 import { env } from "@kompose/env";
 import { implement, ORPCError } from "@orpc/server";
 import { requireAuth } from "../..";
+import { globalRateLimit, mapsRateLimit } from "../../ratelimit";
 import { mapsContract } from "./contract";
 
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const MIN_QUERY_LENGTH = 2;
 
-type PlacesAutocompleteResponse = {
+interface PlacesAutocompleteResponse {
   suggestions?: Array<{
     placePrediction?: {
       placeId?: string;
@@ -20,9 +21,12 @@ type PlacesAutocompleteResponse = {
   }>;
   error?: { message?: string };
   message?: string;
-};
+}
 
-export const os = implement(mapsContract).use(requireAuth);
+export const os = implement(mapsContract)
+  .use(requireAuth)
+  .use(globalRateLimit)
+  .use(mapsRateLimit);
 
 export const mapsRouter = os.router({
   search: os.search.handler(async ({ input }) => {

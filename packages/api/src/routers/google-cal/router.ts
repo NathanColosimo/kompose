@@ -8,6 +8,7 @@ import {
 import { implement, ORPCError } from "@orpc/server";
 import { Data, Effect } from "effect";
 import { requireAuth } from "../..";
+import { globalRateLimit } from "../../ratelimit";
 import { publishToUserBestEffort } from "../../realtime/sync";
 import { googleCalContract } from "./contract";
 
@@ -83,7 +84,9 @@ const checkGoogleAccountIsLinked = (userId: string, accountId: string) =>
     return accessToken.accessToken;
   });
 
-export const os = implement(googleCalContract).use(requireAuth);
+export const os = implement(googleCalContract)
+  .use(requireAuth)
+  .use(globalRateLimit);
 
 function publishGoogleCalendarEvent(
   userId: string,

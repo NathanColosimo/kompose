@@ -26,6 +26,7 @@
     "@kompose/google-cal": "workspace:*",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
+    "@orpc/experimental-ratelimit": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

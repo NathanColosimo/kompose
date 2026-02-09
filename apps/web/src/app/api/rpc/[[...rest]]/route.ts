@@ -1,5 +1,6 @@
 import { createContext } from "@kompose/api/context";
 import { appRouter } from "@kompose/api/routers/index";
+import { RatelimitHandlerPlugin } from "@orpc/experimental-ratelimit";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { onError } from "@orpc/server";
@@ -8,6 +9,7 @@ import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import type { NextRequest } from "next/server";
 
 const rpcHandler = new RPCHandler(appRouter, {
+  plugins: [new RatelimitHandlerPlugin()],
   interceptors: [
     onError((error) => {
       console.error(error);

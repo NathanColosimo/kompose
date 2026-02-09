@@ -1,11 +1,12 @@
 import { implement } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import { globalRateLimit } from "../../ratelimit";
 import { createUserSyncEventIterator } from "../../realtime/sync";
 import { WebhookService } from "../../webhooks/webhook-service";
 import { syncContract } from "./contract";
 
-const os = implement(syncContract).use(requireAuth);
+const os = implement(syncContract).use(requireAuth).use(globalRateLimit);
 
 export const syncRouter = os.router({
   events: os.events.handler(({ context }) => {
