@@ -1,5 +1,6 @@
 import { auth } from "@kompose/auth";
 import type { WebhookSubscriptionSelect } from "@kompose/db/schema/webhook-subscription";
+import { env } from "@kompose/env";
 import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
 import { Effect } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
@@ -18,7 +19,6 @@ import type {
 import { GoogleCalendarWebhookService } from "./google-cal/webhook-service";
 import type { LinkedAccount } from "./webhook-repository-service";
 import { WebhookRepositoryService } from "./webhook-repository-service";
-import { env } from "@kompose/env";
 
 // ── Public interfaces ────────────────────────────────────────────────
 

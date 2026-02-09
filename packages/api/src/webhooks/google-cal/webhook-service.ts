@@ -3,6 +3,7 @@ import type {
   GoogleCalendarListWebhookConfig,
   WebhookSubscriptionSelect,
 } from "@kompose/db/schema/webhook-subscription";
+import { env } from "@kompose/env";
 import { GoogleCalendar } from "@kompose/google-cal/client";
 import { Effect } from "effect";
 import { uuidv7 } from "uuidv7";
@@ -20,7 +21,6 @@ import {
   GOOGLE_WEBHOOK_CALLBACK_URL,
   isGoogleCalendarEventsWatchSupported,
 } from "./constants";
-import { env } from "@kompose/env";
 
 // ── Subscription type narrowing ──────────────────────────────────────
 

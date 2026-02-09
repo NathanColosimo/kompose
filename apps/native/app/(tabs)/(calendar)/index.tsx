@@ -59,7 +59,14 @@ import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
 import type {
@@ -1375,7 +1382,23 @@ export default function CalendarTab() {
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollView>(null);
 
+  // Track scroll position so we can restore it after a pull-to-refresh.
+  const scrollOffsetRef = useRef(DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR);
+  const isRefreshingRef = useRef(false);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+    },
+    []
+  );
+
+  // True only during an explicit pull-to-refresh, so background fetches
+  // (e.g. task mutations, realtime sync) don't trigger the RefreshControl spinner.
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const refreshCalendarData = useCallback(() => {
+    setIsPullRefreshing(true);
     tasksQuery.refetch();
     queryClient.invalidateQueries({
       queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
@@ -1392,11 +1415,33 @@ export default function CalendarTab() {
     }
   }, [queryClient, tasksQuery, visibleCalendarIds, window]);
 
-  // Scroll to 8am on first mount.
+  const isRefreshing =
+    tasksQuery.isFetching ||
+    isFetchingGoogleEvents ||
+    isFetchingAccounts > 0 ||
+    isFetchingCalendars > 0;
+
+  // Clear the pull-to-refresh indicator and restore scroll position once
+  // all fetches settle.
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      y: DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR,
-      animated: false,
+    if (isRefreshingRef.current && !isRefreshing) {
+      setIsPullRefreshing(false);
+      scrollRef.current?.scrollTo({
+        y: scrollOffsetRef.current,
+        animated: false,
+      });
+    }
+    isRefreshingRef.current = isRefreshing;
+  }, [isRefreshing]);
+
+  // Scroll to the last known position on mount (defaults to 8 AM).
+  // Deferred to the next frame so the ScrollView content has finished layout.
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: scrollOffsetRef.current,
+        animated: false,
+      });
     });
   }, []);
 
@@ -1533,19 +1578,16 @@ export default function CalendarTab() {
           {/* Scrollable time grid */}
           <ScrollView
             className="flex-1"
+            onScroll={handleScroll}
             ref={scrollRef}
             refreshControl={
               <RefreshControl
                 onRefresh={refreshCalendarData}
-                refreshing={
-                  tasksQuery.isFetching ||
-                  isFetchingGoogleEvents ||
-                  isFetchingAccounts > 0 ||
-                  isFetchingCalendars > 0
-                }
+                refreshing={isPullRefreshing}
                 tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
               />
             }
+            scrollEventThrottle={16}
           >
             <View className="flex-row">
               {/* Time gutter */}
