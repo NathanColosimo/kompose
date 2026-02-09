@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+---
+# Modern CLI Tools
+
+Always prefer these faster, modern alternatives when running shell commands:
+
+| Instead of | Use | Example |
+|------------|-----|---------|
+| `grep` | `rg` (ripgrep) | `rg "pattern" .` |
+| `find` | `fd` | `fd "*.py"` |
+| `cat` | `bat` | `bat file.py` |
+| `sed` | `sd` | `sd 'old' 'new' file.txt` |
+| `ls` | `eza` | `eza -la --git` |
+| `diff` | `delta` | `git diff \| delta` |
+| `jq` | `jaq` | `jaq '.key' file.json` |
+| `ps` | `procs` | `procs` |
+
+## Quick Examples
+
+```bash
+# ❌ BAD
+grep -r "TODO" .
+find . -name "*.ts"
+cat src/main.py
+
+# ✅ GOOD
+rg "TODO"
+fd -e ts
+bat src/main.py
+```
