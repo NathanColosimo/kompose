@@ -431,7 +431,16 @@ export default function CalendarTab() {
     [googleCalendars]
   );
 
-  useEnsureVisibleCalendars(allCalendarIds);
+  // Check data readiness before sanitising the visible calendars selection.
+  const isFetchingAccounts = useIsFetching({
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+  });
+  const isFetchingCalendars = useIsFetching({
+    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
+  });
+  const dataReady = isFetchingAccounts === 0 && isFetchingCalendars === 0;
+
+  useEnsureVisibleCalendars(allCalendarIds, dataReady);
 
   const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
@@ -440,12 +449,6 @@ export default function CalendarTab() {
       visibleCalendars: visibleCalendarIds,
       window,
     });
-  const isFetchingAccounts = useIsFetching({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
-  });
-  const isFetchingCalendars = useIsFetching({
-    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
-  });
 
   // Calendar picker modal.
   const [isPickerOpen, setIsPickerOpen] = useState(false);

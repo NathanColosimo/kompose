@@ -11,8 +11,12 @@ import {
   toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
+import {
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+  GOOGLE_CALENDARS_QUERY_KEY,
+} from "@kompose/state/google-calendar-query-keys";
 import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
-import { useQueries } from "@tanstack/react-query";
+import { useIsFetching, useQueries } from "@tanstack/react-query";
 import type { OAuth2UserInfo } from "better-auth";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
@@ -60,7 +64,16 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  useEnsureVisibleCalendars(allCalendarIds);
+  // Only run sanitization once all account + calendar queries have settled.
+  const isFetchingAccounts = useIsFetching({
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+  });
+  const isFetchingCalendars = useIsFetching({
+    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
+  });
+  const dataReady = isFetchingAccounts === 0 && isFetchingCalendars === 0;
+
+  useEnsureVisibleCalendars(allCalendarIds, dataReady);
 
   // Fetch account info for each Google account to get their email
   const accountInfoQueries = useQueries({

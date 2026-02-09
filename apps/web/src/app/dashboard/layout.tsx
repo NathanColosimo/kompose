@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
@@ -21,6 +21,12 @@ export default function DashboardLayout({
   const { data: session, isPending } = authClient.useSession();
   const isMobile = useIsMobile();
 
+  // Ensure the initial client render matches the server render (both return
+  // null) to avoid a hydration mismatch caused by the session being available
+  // on the client but not during SSR.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Redirect visitors without an active session back to the homepage.
   useEffect(() => {
     if (!(isPending || session)) {
@@ -28,8 +34,8 @@ export default function DashboardLayout({
     }
   }, [isPending, router, session]);
 
-  // Avoid rendering dashboard UI while we validate or redirect.
-  if (isPending || !session) {
+  // Avoid rendering dashboard UI until hydrated and session validated.
+  if (!mounted || isPending || !session) {
     return null;
   }
 
