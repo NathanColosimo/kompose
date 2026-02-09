@@ -18,6 +18,19 @@ import {
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
 
+interface GoogleWatchChannelInput {
+  address: string;
+  expiration: string;
+  id: string;
+  token: string;
+}
+
+interface GoogleWatchChannelResult {
+  channelId: string;
+  expiration?: string;
+  resourceId: string;
+}
+
 function pickTimeZone(
   edited?: { timeZone?: string },
   master?: { timeZone?: string }
@@ -140,6 +153,10 @@ export type GoogleCalendarService = {
   readonly deleteCalendar: (
     calendarId: string
   ) => Effect.Effect<void, GoogleApiError>;
+  readonly listCalendarIds: () => Effect.Effect<
+    string[],
+    GoogleApiError | GoogleCalendarZodError
+  >;
 
   // Event Operations
   readonly listEvents: (
@@ -200,6 +217,23 @@ export type GoogleCalendarService = {
     Colors,
     GoogleApiError | GoogleCalendarZodError
   >;
+  readonly watchCalendarList: (
+    channel: GoogleWatchChannelInput
+  ) => Effect.Effect<
+    GoogleWatchChannelResult,
+    GoogleApiError | GoogleCalendarZodError
+  >;
+  readonly watchCalendarEvents: (
+    calendarId: string,
+    channel: GoogleWatchChannelInput
+  ) => Effect.Effect<
+    GoogleWatchChannelResult,
+    GoogleApiError | GoogleCalendarZodError
+  >;
+  readonly stopWatch: (params: {
+    channelId: string;
+    resourceId: string;
+  }) => Effect.Effect<void, GoogleApiError>;
 };
 
 export class GoogleCalendar extends Context.Tag("GoogleCalendar")<
@@ -238,6 +272,19 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
       return z.array(CalendarSchema).parse(response.items);
     });
+
+  const listCalendarIds = () =>
+    listCalendars().pipe(
+      Effect.map((calendars) =>
+        Array.from(
+          new Set(
+            calendars
+              .map((calendar) => calendar.id)
+              .filter((id): id is string => Boolean(id))
+          )
+        )
+      )
+    );
 
   const getCalendar = (calendarId: string) =>
     Effect.gen(function* () {
@@ -287,6 +334,76 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
   const deleteCalendar = (calendarId: string) =>
     Effect.tryPromise({
       try: () => client.users.me.calendarList.delete(calendarId),
+      catch: (cause) => new GoogleApiError({ cause }),
+    }).pipe(Effect.asVoid);
+
+  const parseWatchChannelResponse = (response: unknown) =>
+    Effect.gen(function* () {
+      const parsed = z
+        .object({
+          expiration: z.string().optional(),
+          id: z.string().min(1),
+          resourceId: z.string().min(1),
+        })
+        .safeParse(response);
+
+      if (!parsed.success) {
+        return yield* Effect.fail(
+          new GoogleCalendarZodError({ cause: parsed.error })
+        );
+      }
+
+      return {
+        channelId: parsed.data.id,
+        expiration: parsed.data.expiration,
+        resourceId: parsed.data.resourceId,
+      } satisfies GoogleWatchChannelResult;
+    });
+
+  const watchCalendarList = (channel: GoogleWatchChannelInput) =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          client.users.me.calendarList.watch({
+            address: channel.address,
+            expiration: channel.expiration,
+            id: channel.id,
+            token: channel.token,
+            type: "web_hook",
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+
+      return yield* parseWatchChannelResponse(response);
+    });
+
+  const watchCalendarEvents = (
+    calendarId: string,
+    channel: GoogleWatchChannelInput
+  ) =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.watch(calendarId, {
+            address: channel.address,
+            expiration: channel.expiration,
+            id: channel.id,
+            token: channel.token,
+            type: "web_hook",
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+
+      return yield* parseWatchChannelResponse(response);
+    });
+
+  const stopWatch = (params: { channelId: string; resourceId: string }) =>
+    Effect.tryPromise({
+      try: () =>
+        client.stopWatching.stopWatching({
+          id: params.channelId,
+          resourceId: params.resourceId,
+        }),
       catch: (cause) => new GoogleApiError({ cause }),
     }).pipe(Effect.asVoid);
 
@@ -952,6 +1069,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   return {
     listCalendars,
+    listCalendarIds,
     getCalendar,
     createCalendar,
     updateCalendar,
@@ -963,6 +1081,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
     moveEvent,
     deleteEvent,
     listColors,
+    watchCalendarList,
+    watchCalendarEvents,
+    stopWatch,
     getMasterRecurrence,
   };
 };

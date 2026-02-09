@@ -6,6 +6,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import { orpc, queryClient } from "@/utils/orpc";
 import { TauriUpdaterProvider } from "./tauri-updater";
@@ -19,6 +20,11 @@ const ReactQueryDevtools = dynamic(
     ),
   { ssr: false }
 );
+
+function RealtimeSyncBootstrap() {
+  useWebRealtimeSync();
+  return null;
+}
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const storage = useMemo(() => createWebStorageAdapter(), []);
@@ -106,6 +112,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <TauriUpdaterProvider>
         <QueryClientProvider client={queryClient}>
           <StateProvider config={config} storage={storage}>
+            <RealtimeSyncBootstrap />
             {children}
           </StateProvider>
           {showReactQueryDevtools ? <ReactQueryDevtools /> : null}

@@ -6,9 +6,16 @@ import * as authSchema from "./schema/auth";
 import * as relationsSchema from "./schema/relations";
 import * as tagSchema from "./schema/tag";
 import * as taskSchema from "./schema/task";
+import * as webhookSubscriptionSchema from "./schema/webhook-subscription";
 
 const client = postgres(env.DATABASE_URL, { prepare: false });
 
 export const db = drizzle(client, {
-  schema: { ...authSchema, ...taskSchema, ...tagSchema, ...relationsSchema },
+  schema: {
+    ...authSchema,
+    ...taskSchema,
+    ...tagSchema,
+    ...relationsSchema,
+    ...webhookSubscriptionSchema,
+  },
 });

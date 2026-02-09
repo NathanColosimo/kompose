@@ -9,6 +9,7 @@ import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SignIn } from "@/components/sign-in";
 import { Text } from "@/components/ui/text";
+import { useNativeRealtimeSync } from "@/hooks/use-realtime-sync";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
 import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
@@ -29,6 +30,7 @@ function RootLayoutContent() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
   const { data: session, isPending: isSessionLoading } =
     authClient.useSession();
+  useNativeRealtimeSync(session?.user?.id);
 
   // CSS variables for Tailwind classes - React Native needs these applied explicitly
   const cssVars = isDarkColorScheme ? themeVars.dark : themeVars.light;

@@ -57,6 +57,13 @@
       "when": 1770161568138,
       "tag": "0007_add_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1770515894512,
+      "tag": "0008_add_webhook_subscriptions",
+      "breakpoints": true
     }
   ]
 }

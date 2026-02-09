@@ -1,6 +1,7 @@
 import { implement, ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import { publishToUserBestEffort } from "../../realtime/sync";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
 import {
   type InvalidTaskError,
@@ -45,6 +46,13 @@ const normalizeTaskTags = <T extends { tags: Array<{ icon: string }> }>(
   tags: task.tags.map((tag) => tagSelectSchemaWithIcon.parse(tag)),
 });
 
+function publishTasksEvent(userId: string) {
+  publishToUserBestEffort(userId, {
+    type: "tasks",
+    payload: {},
+  });
+}
+
 export const taskRouter = os.router({
   list: os.list.handler(({ context }) => {
     const program = Effect.gen(function* () {
@@ -73,7 +81,10 @@ export const taskRouter = os.router({
 
     return Effect.runPromise(
       Effect.match(program, {
-        onSuccess: (res) => res,
+        onSuccess: (res) => {
+          publishTasksEvent(context.user.id);
+          return res;
+        },
         onFailure: (err) => handleError(err),
       })
     );
@@ -93,7 +104,10 @@ export const taskRouter = os.router({
 
     return Effect.runPromise(
       Effect.match(program, {
-        onSuccess: (res) => res,
+        onSuccess: (res) => {
+          publishTasksEvent(context.user.id);
+          return res;
+        },
         onFailure: (err) => handleError(err),
       })
     );
@@ -107,7 +121,10 @@ export const taskRouter = os.router({
 
     return Effect.runPromise(
       Effect.match(program, {
-        onSuccess: (res) => res,
+        onSuccess: (res) => {
+          publishTasksEvent(context.user.id);
+          return res;
+        },
         onFailure: (err) => handleError(err),
       })
     );

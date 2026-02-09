@@ -8,6 +8,7 @@ import {
 import { implement, ORPCError } from "@orpc/server";
 import { Data, Effect } from "effect";
 import { requireAuth } from "../..";
+import { publishToUserBestEffort } from "../../realtime/sync";
 import { googleCalContract } from "./contract";
 
 export class AccountNotLinkedError extends Data.TaggedError(
@@ -83,6 +84,24 @@ const checkGoogleAccountIsLinked = (userId: string, accountId: string) =>
   });
 
 export const os = implement(googleCalContract).use(requireAuth);
+
+function publishGoogleCalendarEvent(
+  userId: string,
+  accountId: string,
+  calendarId: string | null | undefined
+) {
+  if (!calendarId) {
+    return;
+  }
+
+  publishToUserBestEffort(userId, {
+    type: "google-calendar",
+    payload: {
+      accountId,
+      calendarId,
+    },
+  });
+}
 
 export const googleCalRouter = os.router({
   calendars: {
@@ -160,7 +179,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (calendar) => calendar,
+          onSuccess: (calendar) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              calendar.id
+            );
+            return calendar;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -190,7 +216,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (calendar) => calendar,
+          onSuccess: (calendar) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            return calendar;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -216,7 +249,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (result) => result,
+          onSuccess: (result) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            return result;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -338,7 +378,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (event) => event,
+          onSuccess: (event) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            return event;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -370,7 +417,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (event) => event,
+          onSuccess: (event) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            return event;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -402,7 +456,19 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (event) => event,
+          onSuccess: (event) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.destinationCalendarId
+            );
+            return event;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })
@@ -432,7 +498,14 @@ export const googleCalRouter = os.router({
 
       return Effect.runPromise(
         Effect.match(program, {
-          onSuccess: (result) => result,
+          onSuccess: (result) => {
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            );
+            return result;
+          },
           onFailure: (error) =>
             handleError(error, input.accountId, context.user.id),
         })

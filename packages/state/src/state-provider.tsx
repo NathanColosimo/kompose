@@ -1,7 +1,9 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
+import { queryClientAtom } from "jotai-tanstack-query";
 import React from "react";
 import { hasSessionAtom, type StateConfig, stateConfigAtom } from "./config";
 import { type StorageAdapter, setStorageAdapter } from "./storage";
@@ -40,8 +42,14 @@ function StateHydrator({
   // Ensure storage is available before any atom reads.
   setStorageAdapter(storage);
 
-  // Hydrate config into the Jotai store.
-  useHydrateAtoms([[stateConfigAtom, config]]);
+  // Share the same QueryClient between React Query and Jotai atoms.
+  // Without this, atomWithQuery creates its own QueryClient and
+  // queryClient.invalidateQueries / refetchQueries won't reach the atoms.
+  const queryClient = useQueryClient();
+  useHydrateAtoms([
+    [stateConfigAtom, config],
+    [queryClientAtom, queryClient],
+  ]);
 
   // Track session presence for query gating.
   const setHasSession = useSetAtom(hasSessionAtom);

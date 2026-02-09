@@ -8,6 +8,7 @@ import {
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
+import { fetch as expoFetch } from "expo/fetch";
 import { authClient } from "@/lib/auth-client";
 
 export const queryClient = new QueryClient({
@@ -41,6 +42,17 @@ export const link = new RPCLink({
       headers.set("Cookie", cookies);
     }
     return Object.fromEntries(headers);
+  },
+  // React Native's built-in fetch does not support SSE / ReadableStream.
+  // expo/fetch provides streaming support required for oRPC eventIterator.
+  async fetch(request, init) {
+    return expoFetch(request.url, {
+      body: await request.blob(),
+      headers: request.headers,
+      method: request.method,
+      signal: request.signal,
+      ...init,
+    });
   },
 });
 
