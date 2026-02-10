@@ -20,6 +20,8 @@
         "GOOGLE_MAPS_API_KEY",
         "APPLE_CLIENT_ID",
         "APPLE_CLIENT_SECRET",
+        "AXIOM_API_TOKEN",
+        "AXIOM_DATASET",
         "APPLE_APP_BUNDLE_IDENTIFIER"
       ],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
