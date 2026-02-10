@@ -34,7 +34,8 @@ const link = new RPCLink({
   },
   headers: async () => {
     if (typeof window !== "undefined") {
-      return {};
+      // Client timestamp for network latency measurement on the server
+      return { "x-request-start": Date.now().toString() };
     }
 
     const { headers } = await import("next/headers");

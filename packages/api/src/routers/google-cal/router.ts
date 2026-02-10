@@ -6,13 +6,24 @@ import {
   type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
 import { implement, ORPCError } from "@orpc/server";
-import { Effect } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUserBestEffort } from "../../realtime/sync";
 import { TelemetryLive } from "../../telemetry";
+import {
+  GoogleCalendarCacheService,
+  logAndSwallowCacheError,
+  logCacheErrorAndMiss,
+} from "./cache";
 import { googleCalContract } from "./contract";
 import { AccountNotLinkedError } from "./errors";
+
+/** Merged layer providing both cache service and telemetry. */
+const GoogleCalLive = Layer.merge(
+  GoogleCalendarCacheService.Default,
+  TelemetryLive
+);
 
 export function handleError(
   error: AccountNotLinkedError | GoogleApiError | GoogleCalendarZodError,
@@ -23,33 +34,22 @@ export function handleError(
     case "AccountNotLinkedError":
       throw new ORPCError("ACCOUNT_NOT_LINKED", {
         message: JSON.stringify(error.cause),
-        data: {
-          accountId,
-          userId,
-        },
+        data: { accountId, userId },
       });
     case "GoogleApiError":
       throw new ORPCError("GOOGLE_API_ERROR", {
         message: JSON.stringify(error.cause),
-        data: {
-          accountId,
-          userId,
-        },
+        data: { accountId, userId },
       });
     case "GoogleCalendarZodError":
       throw new ORPCError("PARSE_ERROR", {
         message: error.message,
-        data: {
-          cause: error.cause,
-        },
+        data: { cause: error.cause },
       });
     default:
       throw new ORPCError("UNKNOWN_ERROR", {
         message: JSON.stringify(error),
-        data: {
-          accountId,
-          userId,
-        },
+        data: { accountId, userId },
       });
   }
 }
@@ -68,7 +68,11 @@ const checkGoogleAccountIsLinked = Effect.fn("checkGoogleAccountIsLinked")(
             providerId: "google",
           },
         }),
-      catch: (cause) => new AccountNotLinkedError({ cause }),
+      catch: (cause) =>
+        new AccountNotLinkedError({
+          message: "Google account not linked or token unavailable",
+          cause,
+        }),
     });
 
     return accessToken.accessToken;
@@ -86,36 +90,48 @@ function publishGoogleCalendarEvent(
 ) {
   publishToUserBestEffort(userId, {
     type: "google-calendar",
-    payload: {
-      accountId,
-      calendarId,
-    },
+    payload: { accountId, calendarId },
   });
 }
+
+// ── Router ──────────────────────────────────────────────────────────
 
 export const googleCalRouter = os.router({
   calendars: {
     list: os.calendars.list.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
+
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
-          const service = yield* GoogleCalendar;
-          const calendars = yield* service.listCalendars();
-          return calendars;
-        });
+        // Check cache — log errors, fall through to API on failure
+        const cached = yield* cache
+          .getCachedCalendars(input.accountId)
+          .pipe(logCacheErrorAndMiss);
+        if (Option.isSome(cached)) {
+          return cached.value;
+        }
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
-        );
+        // Cache miss — fetch from Google API
+        const calendars = yield* Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.listCalendars();
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+        // Populate cache (best effort)
+        yield* cache
+          .setCachedCalendars(input.accountId, calendars)
+          .pipe(logAndSwallowCacheError);
+
+        return calendars;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
             onSuccess: (calendars) => calendars,
             onFailure: (error) =>
@@ -127,25 +143,38 @@ export const googleCalRouter = os.router({
 
     get: os.calendars.get.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
+
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
-          const service = yield* GoogleCalendar;
-          const calendar = yield* service.getCalendar(input.calendarId);
-          return calendar;
-        });
+        // Check cache — log errors, fall through to API on failure
+        const cached = yield* cache
+          .getCachedCalendar(input.accountId, input.calendarId)
+          .pipe(logCacheErrorAndMiss);
+        if (Option.isSome(cached)) {
+          return cached.value;
+        }
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
-        );
+        // Cache miss — fetch from Google API
+        const calendar = yield* Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.getCalendar(input.calendarId);
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+        // Populate cache (best effort)
+        yield* cache
+          .setCachedCalendar(input.accountId, input.calendarId, calendar)
+          .pipe(logAndSwallowCacheError);
+
+        return calendar;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
             onSuccess: (calendar) => calendar,
             onFailure: (error) =>
@@ -157,34 +186,36 @@ export const googleCalRouter = os.router({
 
     create: os.calendars.create.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const calendar = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const calendar = yield* service.createCalendar(input.calendar);
-          return calendar;
-        });
+          return yield* service.createCalendar(input.calendar);
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // Invalidate calendar list cache (best effort)
+        yield* cache
+          .invalidateCalendars(input.accountId)
+          .pipe(logAndSwallowCacheError);
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          calendar.id
         );
+
+        return calendar;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (calendar) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                calendar.id
-              );
-              return calendar;
-            },
+            onSuccess: (calendar) => calendar,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -194,37 +225,39 @@ export const googleCalRouter = os.router({
 
     update: os.calendars.update.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const calendar = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const calendar = yield* service.updateCalendar(
+          return yield* service.updateCalendar(
             input.calendarId,
             input.calendar
           );
-          return calendar;
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // invalidateCalendars covers both the list key and all single-calendar keys
+        yield* cache
+          .invalidateCalendars(input.accountId)
+          .pipe(logAndSwallowCacheError);
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
         );
+
+        return calendar;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (calendar) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              return calendar;
-            },
+            onSuccess: (calendar) => calendar,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -234,33 +267,44 @@ export const googleCalRouter = os.router({
 
     delete: os.calendars.delete.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const result = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           return yield* service.deleteCalendar(input.calendarId);
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // Deleting whole calendar — invalidateCalendars covers list + all single-cal keys
+        yield* Effect.all(
+          [
+            cache
+              .invalidateCalendars(input.accountId)
+              .pipe(logAndSwallowCacheError),
+            cache
+              .invalidateAllEvents(input.accountId, input.calendarId)
+              .pipe(logAndSwallowCacheError),
+          ],
+          { concurrency: "unbounded", discard: true }
         );
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
+        );
+
+        return result;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (result) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              return result;
-            },
+            onSuccess: (result) => result,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -272,25 +316,35 @@ export const googleCalRouter = os.router({
   colors: {
     list: os.colors.list.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
+
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
-          const service = yield* GoogleCalendar;
-          const colors = yield* service.listColors();
-          return colors;
-        });
+        const cached = yield* cache
+          .getCachedColors(input.accountId)
+          .pipe(logCacheErrorAndMiss);
+        if (Option.isSome(cached)) {
+          return cached.value;
+        }
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
-        );
+        const colors = yield* Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.listColors();
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+        yield* cache
+          .setCachedColors(input.accountId, colors)
+          .pipe(logAndSwallowCacheError);
+
+        return colors;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
             onSuccess: (colors) => colors,
             onFailure: (error) =>
@@ -304,29 +358,50 @@ export const googleCalRouter = os.router({
   events: {
     list: os.events.list.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
+
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const cached = yield* cache
+          .getCachedEvents(
+            input.accountId,
+            input.calendarId,
+            input.timeMin,
+            input.timeMax
+          )
+          .pipe(logCacheErrorAndMiss);
+        if (Option.isSome(cached)) {
+          return cached.value;
+        }
+
+        const events = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const events = yield* service.listEvents(
+          return yield* service.listEvents(
             input.calendarId,
             input.timeMin,
             input.timeMax
           );
-          return events;
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
-        );
+        yield* cache
+          .setCachedEvents(
+            input.accountId,
+            input.calendarId,
+            input.timeMin,
+            input.timeMax,
+            events
+          )
+          .pipe(logAndSwallowCacheError);
+
+        return events;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
             onSuccess: (events) => events,
             onFailure: (error) =>
@@ -338,28 +413,40 @@ export const googleCalRouter = os.router({
 
     get: os.events.get.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
+
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
-          const service = yield* GoogleCalendar;
-          const event = yield* service.getEvent(
-            input.calendarId,
-            input.eventId
-          );
-          return event;
-        });
+        const cached = yield* cache
+          .getCachedEvent(input.accountId, input.calendarId, input.eventId)
+          .pipe(logCacheErrorAndMiss);
+        if (Option.isSome(cached)) {
+          return cached.value;
+        }
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
-        );
+        const event = yield* Effect.gen(function* () {
+          const service = yield* GoogleCalendar;
+          return yield* service.getEvent(input.calendarId, input.eventId);
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+        yield* cache
+          .setCachedEvent(
+            input.accountId,
+            input.calendarId,
+            input.eventId,
+            event
+          )
+          .pipe(logAndSwallowCacheError);
+
+        return event;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
             onSuccess: (event) => event,
             onFailure: (error) =>
@@ -371,37 +458,36 @@ export const googleCalRouter = os.router({
 
     create: os.events.create.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const event = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const event = yield* service.createEvent(
-            input.calendarId,
-            input.event
-          );
-          return event;
-        });
+          return yield* service.createEvent(input.calendarId, input.event);
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // New event — only list cache is stale
+        yield* cache
+          .invalidateEventLists(input.accountId, input.calendarId)
+          .pipe(logAndSwallowCacheError);
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
         );
+
+        return event;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (event) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              return event;
-            },
+            onSuccess: (event) => event,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -411,39 +497,49 @@ export const googleCalRouter = os.router({
 
     update: os.events.update.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const event = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const event = yield* service.updateEvent(
+          return yield* service.updateEvent(
             input.calendarId,
             input.eventId,
             input.event,
             input.scope
           );
-          return event;
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // Invalidate event lists + the specific edited event concurrently
+        yield* Effect.all(
+          [
+            cache
+              .invalidateEventLists(input.accountId, input.calendarId)
+              .pipe(logAndSwallowCacheError),
+            cache
+              .invalidateEvent(input.accountId, input.calendarId, input.eventId)
+              .pipe(logAndSwallowCacheError),
+          ],
+          { concurrency: "unbounded", discard: true }
         );
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
+        );
+
+        return event;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (event) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              return event;
-            },
+            onSuccess: (event) => event,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -453,44 +549,60 @@ export const googleCalRouter = os.router({
 
     move: os.events.move.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const event = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
-          const event = yield* service.moveEvent(
+          return yield* service.moveEvent(
             input.calendarId,
             input.eventId,
             input.destinationCalendarId,
             input.scope
           );
-          return event;
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        // Lists on both calendars + the moved event's source key
+        yield* Effect.all(
+          [
+            cache
+              .invalidateEventLists(input.accountId, input.calendarId)
+              .pipe(logAndSwallowCacheError),
+            cache
+              .invalidateEventLists(
+                input.accountId,
+                input.destinationCalendarId
+              )
+              .pipe(logAndSwallowCacheError),
+            cache
+              .invalidateEvent(input.accountId, input.calendarId, input.eventId)
+              .pipe(logAndSwallowCacheError),
+          ],
+          { concurrency: "unbounded", discard: true }
         );
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
+        );
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.destinationCalendarId
+        );
+
+        return event;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (event) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.destinationCalendarId
-              );
-              return event;
-            },
+            onSuccess: (event) => event,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })
@@ -500,37 +612,47 @@ export const googleCalRouter = os.router({
 
     delete: os.events.delete.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
+        const cache = yield* GoogleCalendarCacheService;
         const accessToken = yield* checkGoogleAccountIsLinked(
           context.user.id,
           input.accountId
         );
 
-        const serviceEffect = Effect.gen(function* () {
+        const result = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           return yield* service.deleteEvent(
             input.calendarId,
             input.eventId,
             input.scope
           );
-        });
+        }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-        return yield* serviceEffect.pipe(
-          Effect.provide(GoogleCalendarLive(accessToken))
+        yield* Effect.all(
+          [
+            cache
+              .invalidateEventLists(input.accountId, input.calendarId)
+              .pipe(logAndSwallowCacheError),
+            cache
+              .invalidateEvent(input.accountId, input.calendarId, input.eventId)
+              .pipe(logAndSwallowCacheError),
+          ],
+          { concurrency: "unbounded", discard: true }
         );
+
+        publishGoogleCalendarEvent(
+          context.user.id,
+          input.accountId,
+          input.calendarId
+        );
+
+        return result;
       });
 
       return Effect.runPromise(
         program.pipe(
-          Effect.provide(TelemetryLive),
+          Effect.provide(GoogleCalLive),
           Effect.match({
-            onSuccess: (result) => {
-              publishGoogleCalendarEvent(
-                context.user.id,
-                input.accountId,
-                input.calendarId
-              );
-              return result;
-            },
+            onSuccess: (result) => result,
             onFailure: (error) =>
               handleError(error, input.accountId, context.user.id),
           })

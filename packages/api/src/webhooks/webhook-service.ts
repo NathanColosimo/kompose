@@ -5,6 +5,10 @@ import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
 import { Effect } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
 import { publishToUserBestEffort } from "../realtime/sync";
+import {
+  GoogleCalendarCacheService,
+  logAndSwallowCacheError,
+} from "../routers/google-cal/cache";
 import type { WebhookProviderError, WebhookRepositoryError } from "./errors";
 import {
   formatUnknownCause,
@@ -84,10 +88,12 @@ export class WebhookService extends Effect.Service<WebhookService>()(
   {
     accessors: true,
     dependencies: [
+      GoogleCalendarCacheService.Default,
       GoogleCalendarWebhookService.Default,
       WebhookRepositoryService.Default,
     ],
     effect: Effect.gen(function* () {
+      const cache = yield* GoogleCalendarCacheService;
       const googleCalWebhooks = yield* GoogleCalendarWebhookService;
       const repository = yield* WebhookRepositoryService;
 
@@ -305,7 +311,12 @@ export class WebhookService extends Effect.Service<WebhookService>()(
 
         // Stale notification for an old resource — acknowledge but nothing to do
         if (subscription.config.resourceId !== resourceId) {
-          yield* Effect.log("WEBHOOK_STALE_RESOURCE_SKIPPED");
+          yield* Effect.log("WEBHOOK_STALE_RESOURCE_SKIPPED", {
+            accountId: subscription.accountId,
+            userId: subscription.userId,
+            expectedResourceId: subscription.config.resourceId,
+            actualResourceId: resourceId,
+          });
           return {};
         }
 
@@ -316,13 +327,25 @@ export class WebhookService extends Effect.Service<WebhookService>()(
 
         // Google sends an initial "sync" notification when a watch is first created
         if (!(resourceState && resourceState !== "sync")) {
-          yield* Effect.log("WEBHOOK_SYNC_NOTIFICATION_ACKNOWLEDGED");
+          yield* Effect.log("WEBHOOK_SYNC_NOTIFICATION_ACKNOWLEDGED", {
+            accountId: subscription.accountId,
+            userId: subscription.userId,
+          });
           return {};
         }
 
         // Publish realtime event to the user's SSE channel
         if (isGoogleCalendarListSubscription(subscription)) {
-          yield* Effect.log("WEBHOOK_CALENDAR_LIST_CHANGED");
+          yield* Effect.log("WEBHOOK_CALENDAR_LIST_CHANGED", {
+            accountId: subscription.accountId,
+            userId: subscription.userId,
+          });
+
+          // Invalidate cached calendar list (best effort)
+          yield* cache
+            .invalidateCalendars(subscription.accountId)
+            .pipe(logAndSwallowCacheError);
+
           publishToUserBestEffort(subscription.userId, {
             type: "google-calendar",
             payload: {
@@ -340,7 +363,21 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         }
 
         if (isGoogleCalendarEventsSubscription(subscription)) {
-          yield* Effect.log("WEBHOOK_CALENDAR_EVENTS_CHANGED");
+          yield* Effect.log("WEBHOOK_CALENDAR_EVENTS_CHANGED", {
+            accountId: subscription.accountId,
+            userId: subscription.userId,
+            calendarId: subscription.config.calendarId,
+          });
+
+          // Invalidate all cached events for this calendar (best effort).
+          // Webhooks don't tell us which event changed, so we clear everything.
+          yield* cache
+            .invalidateAllEvents(
+              subscription.accountId,
+              subscription.config.calendarId
+            )
+            .pipe(logAndSwallowCacheError);
+
           publishToUserBestEffort(subscription.userId, {
             type: "google-calendar",
             payload: {

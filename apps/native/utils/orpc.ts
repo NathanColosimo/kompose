@@ -59,6 +59,8 @@ export const link = new RPCLink({
     }
     // Inject traceparent for distributed tracing correlation
     headers.set("traceparent", generateTraceparent());
+    // Client timestamp for network latency measurement on the server
+    headers.set("x-request-start", Date.now().toString());
     return Object.fromEntries(headers);
   },
   // React Native's built-in fetch does not support SSE / ReadableStream.

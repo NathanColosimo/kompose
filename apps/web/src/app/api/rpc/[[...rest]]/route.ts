@@ -22,6 +22,22 @@ const apiHandler = new OpenAPIHandler(appRouter, {
 });
 
 async function handleRequest(req: NextRequest) {
+  // Record client-reported request timestamp for network latency visibility.
+  // The client sends Date.now() in x-request-start; the delta is one-way latency
+  // (subject to clock skew, but useful for spotting outliers).
+  const requestStart = req.headers.get("x-request-start");
+  if (requestStart) {
+    const clientMs = Number.parseInt(requestStart, 10);
+    const activeSpan = trace.getActiveSpan();
+    if (activeSpan && !Number.isNaN(clientMs)) {
+      activeSpan.setAttribute(
+        "client.request_start",
+        new Date(clientMs).toISOString()
+      );
+      activeSpan.setAttribute("network.latency_ms", Date.now() - clientMs);
+    }
+  }
+
   // Trace session resolution so auth cost is visible in spans
   const context = await tracer.startActiveSpan(
     "createContext",

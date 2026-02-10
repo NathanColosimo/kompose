@@ -16,20 +16,18 @@ export const env = createEnv({
     // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
     // Takes priority over Axiom when set
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+    // Optional -- tracing disabled when not set (server-only)
+    AXIOM_API_TOKEN: z.string().min(1).optional(),
+    AXIOM_DATASET: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_WEB_URL: z
       .string()
       .min(1)
       .regex(/^https?:\/\//),
-    // Optional -- tracing disabled when not set (used by both client and server)
-    NEXT_PUBLIC_AXIOM_API_TOKEN: z.string().min(1).optional(),
-    NEXT_PUBLIC_AXIOM_DATASET: z.string().min(1).optional(),
   },
 
   experimental__runtimeEnv: {
     NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
-    NEXT_PUBLIC_AXIOM_API_TOKEN: process.env.NEXT_PUBLIC_AXIOM_API_TOKEN,
-    NEXT_PUBLIC_AXIOM_DATASET: process.env.NEXT_PUBLIC_AXIOM_DATASET,
   },
 });
