@@ -63,15 +63,19 @@ type TaskListItem =
   | { type: "header"; title: string }
   | { type: "task"; task: TaskSelectDecoded };
 
-// Build the Today view sections (Overdue and Unplanned).
+// Build the Today view sections (Overdue, Planned, Unplanned, Done).
 function buildTodaySections(
   overdueTasks: TaskSelectDecoded[],
+  plannedTasks: TaskSelectDecoded[],
   unplannedTasks: TaskSelectDecoded[],
   doneTasks: TaskSelectDecoded[]
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
     sections.push({ title: "Overdue", data: overdueTasks });
+  }
+  if (plannedTasks.length > 0) {
+    sections.push({ title: "Planned", data: plannedTasks });
   }
   if (unplannedTasks.length > 0) {
     sections.push({ title: "Unplanned", data: unplannedTasks });
@@ -347,6 +351,7 @@ export default function TasksScreen() {
     deleteTask,
     inboxTasks,
     overdueTasks,
+    plannedTasks,
     unplannedTasks,
     doneTasks,
   } = useTaskSections();
@@ -375,8 +380,9 @@ export default function TasksScreen() {
 
   // Build the Today sections so the list can render headers.
   const todaySections = React.useMemo(
-    () => buildTodaySections(overdueTasks, unplannedTasks, doneTasks),
-    [doneTasks, overdueTasks, unplannedTasks]
+    () =>
+      buildTodaySections(overdueTasks, plannedTasks, unplannedTasks, doneTasks),
+    [doneTasks, overdueTasks, plannedTasks, unplannedTasks]
   );
   const tagSections = React.useMemo(
     () => buildTagSections(tagOverdueTasks, tagTodoTasks, tagDoneTasks),

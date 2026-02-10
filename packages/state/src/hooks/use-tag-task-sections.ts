@@ -4,36 +4,11 @@ import { useMemo } from "react";
 import { Temporal } from "temporal-polyfill";
 import { timezoneAtom } from "../atoms/current-date";
 import { todayPlainDate } from "../temporal-utils";
+import { isNonRecurring, isOverdue } from "./use-task-sections";
 import { useTasks } from "./use-tasks";
-
-const isNonRecurring = (task: TaskSelectDecoded): boolean =>
-  task.seriesMasterId === null;
 
 const isTagged = (task: TaskSelectDecoded, tagId: string): boolean =>
   task.tags.some((tag) => tag.id === tagId);
-
-const isOverdue = (
-  task: TaskSelectDecoded,
-  today: Temporal.PlainDate,
-  nowZdt: Temporal.ZonedDateTime,
-  timeZone: string
-): boolean => {
-  const hasPastDueDate =
-    task.dueDate !== null &&
-    Temporal.PlainDate.compare(task.dueDate, today) < 0;
-  const hasPastStartTime =
-    task.startDate !== null &&
-    task.startTime !== null &&
-    Temporal.ZonedDateTime.compare(
-      task.startDate.toZonedDateTime({
-        timeZone,
-        plainTime: task.startTime,
-      }),
-      nowZdt
-    ) < 0;
-
-  return task.status !== "done" && (hasPastDueDate || hasPastStartTime);
-};
 
 const getOverdueAt = (
   task: TaskSelectDecoded,

@@ -65,18 +65,21 @@ function renderInboxContent(inboxTasks: TaskSelectDecoded[]) {
 
 function renderTodayContent({
   overdueTasks,
+  plannedTasks,
   doneTasks,
   unplannedTasks,
 }: {
   overdueTasks: TaskSelectDecoded[];
+  plannedTasks: TaskSelectDecoded[];
   doneTasks: TaskSelectDecoded[];
   unplannedTasks: TaskSelectDecoded[];
 }) {
   const hasOverdue = overdueTasks.length > 0;
+  const hasPlanned = plannedTasks.length > 0;
   const hasUnplanned = unplannedTasks.length > 0;
   const hasDone = doneTasks.length > 0;
 
-  if (!(hasOverdue || hasUnplanned || hasDone)) {
+  if (!(hasOverdue || hasPlanned || hasUnplanned || hasDone)) {
     return renderEmptyMessage("Nothing for today.");
   }
 
@@ -89,6 +92,18 @@ function renderTodayContent({
             Overdue
           </div>
           {overdueTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {/* Planned section — scheduled on today's calendar, not yet overdue */}
+      {hasPlanned && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Planned
+          </div>
+          {plannedTasks.map((task) => (
             <TaskItem key={task.id} task={task} />
           ))}
         </div>
@@ -183,6 +198,7 @@ function getSidebarContent({
   inboxTasks,
   isLoading,
   overdueTasks,
+  plannedTasks,
   tagDoneTasks,
   tagOverdueTasks,
   tagTodoTasks,
@@ -194,6 +210,7 @@ function getSidebarContent({
   inboxTasks: TaskSelectDecoded[];
   isLoading: boolean;
   overdueTasks: TaskSelectDecoded[];
+  plannedTasks: TaskSelectDecoded[];
   tagDoneTasks: TaskSelectDecoded[];
   tagOverdueTasks: TaskSelectDecoded[];
   tagTodoTasks: TaskSelectDecoded[];
@@ -225,7 +242,12 @@ function getSidebarContent({
     case "inbox":
       return renderInboxContent(inboxTasks);
     case "today":
-      return renderTodayContent({ doneTasks, overdueTasks, unplannedTasks });
+      return renderTodayContent({
+        doneTasks,
+        overdueTasks,
+        plannedTasks,
+        unplannedTasks,
+      });
     default:
       return null;
   }
@@ -241,6 +263,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     tasksQuery: { isLoading, error },
     inboxTasks,
     overdueTasks,
+    plannedTasks,
     unplannedTasks,
     doneTasks,
   } = useTaskSections();
@@ -282,6 +305,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         inboxTasks,
         isLoading,
         overdueTasks,
+        plannedTasks,
         tagDoneTasks,
         tagOverdueTasks,
         tagTodoTasks,
@@ -294,6 +318,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       inboxTasks,
       isLoading,
       overdueTasks,
+      plannedTasks,
       tagDoneTasks,
       tagOverdueTasks,
       tagTodoTasks,
