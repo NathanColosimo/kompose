@@ -10,7 +10,7 @@ import {
   ClockIcon,
   PlayCircleIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,8 +29,6 @@ const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
 
 interface CommandBarCreateTaskProps {
   search: string;
-  /** Callback to register the submit function with the parent */
-  onRegisterSubmit: (fn: () => void) => void;
   /** Callback when a task is successfully created (to clear/reset input) */
   onCreated: () => void;
   /** Callback to update the search input */
@@ -50,7 +48,6 @@ interface CommandBarCreateTaskProps {
  */
 export function CommandBarCreateTask({
   search,
-  onRegisterSubmit,
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
@@ -72,7 +69,12 @@ export function CommandBarCreateTask({
     if (!match) {
       return null;
     }
-    return match[1].trim();
+    const raw = match[1];
+    // Trailing space means the tag was confirmed/selected — close dropdown
+    if (raw.endsWith(" ")) {
+      return null;
+    }
+    return raw.trim();
   }, [search]);
 
   const matchingTags = useMemo(() => {
@@ -130,11 +132,6 @@ export function CommandBarCreateTask({
       },
     });
   };
-
-  // Register a stable wrapper once on mount
-  useEffect(() => {
-    onRegisterSubmit(() => handleCreateRef.current());
-  }, [onRegisterSubmit]);
 
   return (
     <>
@@ -229,6 +226,25 @@ export function CommandBarCreateTask({
                       })}
                     </Badge>
                   )}
+
+                  {/* Tag badges */}
+                  {parsed.tagNames.map((name) => {
+                    const tag = tags.find((t) => t.name === name);
+                    if (!tag) {
+                      return null;
+                    }
+                    const Icon = tagIconMap[tag.icon];
+                    return (
+                      <Badge
+                        className="h-6 gap-1.5 px-2 text-[11px]"
+                        key={tag.id}
+                        variant="secondary"
+                      >
+                        <Icon className="size-3.5" />
+                        {tag.name}
+                      </Badge>
+                    );
+                  })}
                 </div>
               </div>
             </CommandItem>

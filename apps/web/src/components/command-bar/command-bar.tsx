@@ -2,7 +2,7 @@
 
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useAtom } from "jotai";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Command,
   CommandDialog,
@@ -35,9 +35,6 @@ export function CommandBar() {
   const [view, setView] = useState<CommandBarView>("root");
   const [search, setSearch] = useState("");
 
-  // Ref to store the create task submit function
-  const createTaskSubmitRef = useRef<(() => void) | null>(null);
-
   // Reset state when dialog closes
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -60,11 +57,19 @@ export function CommandBar() {
         setSearch("");
         // If in root view, let the dialog handle closing
       }
+      // Enter in create-task view is handled by cmdk's native CommandItem
+      // onSelect — no manual interception needed. This allows tag items and
+      // the "Create Task" item to each respond to Enter correctly.
 
-      // Handle Enter in create-task view
-      if (e.key === "Enter" && view === "create-task") {
-        e.preventDefault();
-        createTaskSubmitRef.current?.();
+      // Tab auto-completes the currently highlighted item (e.g., tag selection)
+      if (e.key === "Tab" && view === "create-task") {
+        const selected = document.querySelector<HTMLElement>(
+          '[cmdk-item][data-selected="true"]'
+        );
+        if (selected) {
+          e.preventDefault();
+          selected.click();
+        }
       }
     },
     [view]
@@ -106,9 +111,6 @@ export function CommandBar() {
           {view === "create-task" && (
             <CommandBarCreateTask
               onCreated={() => setSearch("")}
-              onRegisterSubmit={(fn) => {
-                createTaskSubmitRef.current = fn;
-              }}
               onUpdateSearch={setSearch}
               search={search}
             />
