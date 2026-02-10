@@ -118,6 +118,8 @@ Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods
 |------|---------|
 | `routers/google-cal/contract.ts` | oRPC contract (calendars, events, colors) |
 | `routers/google-cal/router.ts` | oRPC handler implementations |
+| `routers/google-cal/cache.ts` | `GoogleCalendarCacheService` — Redis caching layer |
+| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`AccountNotLinkedError`, `CacheError`) |
 
 The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/client.ts` — the router resolves an OAuth access token per-request and provides `GoogleCalendarLive(accessToken)`.
 
@@ -129,15 +131,32 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Each handler checks the account is linked (fetches access token via Better Auth), then calls the `GoogleCalendar` service method. Mutating operations publish a realtime `google-calendar` event.
+Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. All handlers use a single `Effect.runPromise` call.
 
 ```ts
 const program = Effect.gen(function* () {
+  const cache = yield* GoogleCalendarCacheService;
   const accessToken = yield* checkGoogleAccountIsLinked(userId, accountId);
-  const service = yield* GoogleCalendar;
-  return yield* service.listCalendars();
-}).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+  // Cache-first read
+  const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
+  if (Option.isSome(cached)) return cached.value;
+
+  // API fallback
+  const data = yield* service.listCalendars();
+  yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
+  return data;
+});
+
+return Effect.runPromise(
+  program.pipe(
+    Effect.provide(GoogleCalLive),
+    Effect.match({ onSuccess: (v) => v, onFailure: handleError })
+  )
+);
 ```
+
+Cache layer details are documented in [`caching.md`](./caching.md).
 
 ### Errors
 
@@ -146,6 +165,7 @@ const program = Effect.gen(function* () {
 | `AccountNotLinkedError` | Router | OAuth token retrieval failed |
 | `GoogleApiError` | `@kompose/google-cal` | Google API returned an error |
 | `GoogleCalendarZodError` | `@kompose/google-cal` | Response failed Zod parse |
+| `CacheError` | Cache service | Redis operation failed (always caught and logged, never surfaces to client) |
 
 ---
 
@@ -297,31 +317,14 @@ Redis-backed rate limiters using `@orpc/experimental-ratelimit`.
 
 **File:** `telemetry.ts`
 
-Two systems initialized at startup:
+Full details in [`otel.md`](./otel.md). Summary:
 
-1. **`@orpc/otel` ORPCInstrumentation** — auto-creates spans for oRPC handlers/middleware and reads incoming `traceparent` headers for frontend-to-backend correlation. Registered via `NodeSDK` at module load.
-2. **`@effect/opentelemetry` NodeSdk layer** — bridges `Effect.fn` spans and `Effect.log` events to the same OTel trace provider. Exported as `TelemetryLive` layer.
+1. **`NodeSDK`** — single global `TracerProvider` with `ORPCInstrumentation` for automatic oRPC handler/middleware spans. Exports to Axiom (or local Jaeger) via OTLP HTTP.
+2. **`Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same provider. Exported as `TelemetryLive` layer, merged with service layers at the router level.
+3. **`SpanAttributeFilter`** — strips noisy Next.js internal attributes before export.
+4. **`instrumentation.ts`** — Next.js hook ensuring early `NodeSDK.start()` to prevent orphaned root spans.
 
-Both export to Axiom via OTLP HTTP. When `AXIOM_API_TOKEN` / `AXIOM_DATASET` env vars are absent, everything no-ops gracefully.
-
-### Trace hierarchy for Effect-based routers (tasks, tags)
-
-```
-oRPC handler span (from ORPCInstrumentation)
-└── TaskService.listTasks (from Effect.fn)
-    └── db query spans (from Effect.tryPromise in db.ts)
-```
-
-The `TelemetryLive` layer is merged with the service layer at the router level:
-
-```ts
-const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
-```
-
-### Frontend tracing
-
-- **Web** (`apps/web/src/utils/telemetry.ts`): `WebTracerProvider` + `FetchInstrumentation` auto-injects `traceparent` headers on `fetch()` calls to `/api/rpc`. Uses `@orpc/otel` `ORPCInstrumentation` for client-side oRPC spans. Exports to Axiom via OTLP HTTP.
-- **Native** (`apps/native/utils/orpc.ts`): Lightweight `traceparent` header injection using `uuidv7` — gives backend trace correlation without a full OTel SDK on React Native.
+No client-side OTel SDK. Network latency is measured via `x-request-start` headers from both web and native clients.
 
 ---
 
