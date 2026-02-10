@@ -12,11 +12,6 @@ Kompose is a **calendar + task orchestration app** with:
   - Events
   - Tasks
   - Integration data (Notion pages, Linear issues, etc.)
-- **Offline-first** on:
-  - **Mobile (Expo)**
-  - **Desktop (Tauri)**  
-  with **online-only** (for now) on the web.
-
 Name: **Kompose**  
 Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
@@ -31,15 +26,11 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
    - "Make time for X", "Reschedule that", "Show me my deep work tasks this week".
    - AI acts as a *personal ops assistant* over your schedule & tasks.
 
-3. **Local-first experience where it matters**
-   - Mobile & desktop should feel instant and usable on a plane.
-   - Sync is automatic and resilient, not something the user worries about.
-
-4. **Composable integrations**
+3. **Composable integrations**
    - Integrations are first-class, not one-off hacks.
    - Same internal model for "task" whether it comes from Kompose, Notion, Linear, etc.
 
-5. **Command palette everything**
+4. **Command palette everything**
    - Fuzzy search + actions: open things, run actions, trigger AI, navigate views.
 
 ---
@@ -48,30 +39,18 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ### Clients
 
-- **Web app**: Next.js (static pages + client-side data)
-- **Desktop app**: Tauri bundling the built Next.js app
+- **Web app**: Next.js (App Router, static pages + client-side data)
 - **Mobile app**: Expo (React Native)
 
 ### Backend
 
-- **HTTP API + RPC**: Next.js API routes (or App Router route handlers) exposing oRPC endpoints.
+- **HTTP API + RPC**: Next.js API routes (App Router route handlers) exposing oRPC endpoints.
 - **App DB**: Postgres with Drizzle ORM.
 - **Auth**: Better Auth + Drizzle (Postgres only).
-- **Background jobs**: worker(s) for sync, integrations, and AI tasks.
-- **Search index**: server-side search engine (e.g., Meilisearch/Typesense or Postgres FTS).
-
-### Local Persistence (offline)
-
-- **Mobile (Expo)**: SQLite (via `expo-sqlite`)
-- **Desktop (Tauri)**: SQLite in Rust via `sqlx`/`rusqlite`, exposed through Tauri commands
-- **Web**: initially online-only, optional IndexedDB later.
-
-### Sync
-
-- "Local-first, cloud-synced" model for events & tasks:
-  - Local DB as source of truth on mobile/desktop.
-  - Periodic and event-based sync with server via oRPC.
-  - Simple **LWW (last-write-wins)** for v1, with change sets and cursors.
+- **Redis**: Caching (Google Calendar data), rate limiting, pub/sub (SSE realtime events).
+- **Observability**: OpenTelemetry (server-side only) → Axiom / Jaeger. See [`otel.md`](./otel.md).
+- **Background jobs**: worker(s) for sync, integrations, and AI tasks (planned).
+- **Search index**: server-side search engine (e.g., Meilisearch/Typesense or Postgres FTS) (planned).
 
 ---
 
@@ -108,65 +87,50 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - Tab-based sign-in / sign-up UI on `/login`.
   - Redirect to `/dashboard` post-auth via Better Auth callback URLs.
 
-### 4.2 Frontend – Desktop (Tauri + Next.js bundle)
-
-- **Tauri**:
-  - Rust backend + WebView.
-  - Loads built Next.js static output (e.g., from `next export` or custom static build).
-- **Assets**:
-  - HTML/JS/CSS for `/app` and other pages are bundled locally for instant load.
-- **Navigation**:
-  - Pure client-side SPA experience once the shell is loaded.
-- **Data**:
-  1. Local SQLite via Tauri commands for offline events/tasks.
-  2. RPC to cloud backend when online for sync and integrations.
-- **Tauri Commands**:
-  - `getEvents`, `saveEvents`, `getTasks`, `saveTasks`, `getPendingChanges`, `applyRemoteChanges`, etc.
-  - Return typed data matching the shared domain models.
-
-### 4.3 Frontend – Mobile (Expo)
+### 4.2 Frontend – Mobile (Expo)
 
 - **Framework**: Expo (React Native, TypeScript)
-- **Navigation**: React Navigation
+- **Navigation**: Expo Router (file-based)
 - **Data Layer**:
   - TanStack Query (React Query) for query/mutation APIs.
-  - Local SQLite via `expo-sqlite` as primary store for events/tasks.
-  - Sync engine runs on:
-    - app focus
-    - manual pull-to-refresh
-    - periodic background (where feasible)
+  - oRPC client with `RPCLink` for typed RPC calls.
+  - Shared state via `packages/state/` (same Jotai atoms and hooks as web).
 - **Auth**:
-  - Better Auth flows through HTTP API:
-    - In-app browser or deep linking for OAuth.
-  - Store tokens securely (SecureStore/Keychain).
-  - Save `currentUserId` and tokens; local tables use `userId` field, no auth tables.
-- **AI & Commands**:
-  - Command palette UI (e.g., modal) with fuzzy search and action execution.
+  - Better Auth flows through HTTP API.
+  - Tokens stored securely via `expo-secure-store`.
+- **AI & Commands** (planned):
+  - Command palette UI with fuzzy search and action execution.
   - "Ask Kompose AI" text input that calls backend AI endpoint.
 
 ---
 
-### 4.4 Backend – API & RPC
+### 4.3 Backend – API & RPC
 
-- **Runtime**: Next.js (Node) route handlers / API routes.
+- **Runtime**: Bun + Next.js (App Router) route handlers.
 - **RPC**:
-  - Use **oRPC** as a TS-first RPC layer.
-  - Define a shared `AppRouter`:
-    - `calendar.list`, `calendar.get`, `calendar.create`, `calendar.update`, `calendar.delete`
-    - `event.list`, `event.get`, `event.create`, `event.update`, `event.delete`
-    - `task.list`, `task.create`, `task.update`, `task.delete`
-    - `sync.pushChanges`, `sync.pullChanges`
-    - `integration.linear.sync`, `integration.notion.sync`
-    - `ai.command` (for AI-driven actions)
+  - **oRPC** as a TS-first RPC layer (contract-first with `oc` builder).
+  - `AppRouter` (aggregated in `packages/api/src/routers/index.ts`):
+    - `googleCal.calendars.{list,get,create,update,delete}`
+    - `googleCal.events.{list,get,create,update,move,delete}`
+    - `googleCal.colors.list`
+    - `maps.search`
+    - `tasks.{list,create,update,delete}`
+    - `tags.{list,create,update,delete}`
+    - `sync.events` (SSE stream)
 - **API Routes**:
-  - Next route handlers under `/api/orpc` to host the oRPC router.
-  - `/api/auth/*` routes for Better Auth auth flows.
-- **Integration Webhooks**:
-  - `/api/integrations/linear/webhook`
-  - `/api/integrations/notion/webhook`
-  - etc.
+  - `/api/rpc/[[...rest]]` — oRPC catch-all handler (`RPCHandler` + `OpenAPIHandler`).
+  - `/api/auth/*` — Better Auth auth flows.
+  - `/api/webhooks/google-calendar` — Google Calendar push notification receiver.
+- **Middleware**:
+  - `requireAuth` — session validation via Better Auth.
+  - `globalRateLimit` — 200 req/60s per user (Redis-backed).
+  - `mapsRateLimit` — 20 req/60s per user (stacked on global for maps search).
+- **Effect-TS Services**:
+  - Business logic uses `Effect.Service` with `accessors: true`, `Effect.fn` for tracing, `Schema.TaggedError` for typed errors.
+  - Services: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
+  - See [`services.md`](./services.md) for details.
 
-### 4.5 Backend – Database & ORM
+### 4.4 Backend – Database & ORM
 
 - **Primary DB**: Postgres
 - **ORM**: Drizzle ORM
@@ -183,36 +147,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - `task_sourcesPG` (e.g., "kompose", "notion", "linear")
     - `integration_accountsPG` (per-user OAuth tokens & metadata)
     - `ai_sessionsPG` / `ai_logsPG` (optional)
-- **SQLite Schemas** (for mobile/desktop):
-  - `eventsSQLite`
-  - `tasksSQLite`
-  - `calendarsSQLite`
-  - `local_sync_stateSQLite` (sync cursors, last sync times, etc.)
-  - Possibly `local_userSQLite` for cached profile info
-
-### 4.6 Sync Layer
-
-- **Core model**:
-  - Every syncable row has:
-    - `id`
-    - `userId`
-    - `updatedAt` (timestamp / integer)
-    - `deletedAt` or `isDeleted`
-    - `source` (e.g., "kompose", "linear", "notion")
-- **Client → Server**
-  - `sync.pushChanges(changeSet)`:
-    - changeSet contains created/updated/deleted events & tasks from local DB.
-- **Server → Client**
-  - `sync.pullChanges({ sinceCursor })`:
-    - returns all rows changed after `sinceCursor`.
-    - includes both events & tasks (possibly in separate collections).
-- **Conflict Strategy (v1)**:
-  - LWW by `updatedAt`.
-  - In future, add smarter merges & conflict surfaced to the user.
-
----
-
-### 4.7 Auth & Security
+### 4.5 Auth & Security
 
 - **Auth provider**: Better Auth
   - Handles sign-in, OAuth providers, sessions, tokens.
@@ -222,15 +157,11 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - `userId` extracted from auth context and injected into repository layer.
 - **Client-side**:
   - Web: Next.js + Better Auth client helpers.
-  - Mobile: tokens stored via secure storage.
-  - Desktop: tokens stored in OS keychain via Tauri-plugin-auth/secure-store.
-- **Local DB**:
-  - `userId` is stored on each row; no auth FK locally.
-  - On logout, local DB for that user can be wiped or archived.
+  - Mobile: tokens stored via `expo-secure-store`.
 
 ---
 
-### 4.8 AI Integration
+### 4.6 AI Integration (planned)
 
 - **AI Provider**: (e.g., OpenAI API or similar, via backend only)
 - **Pattern**:
@@ -256,7 +187,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ---
 
-### 4.9 Integrations (Notion, Linear, etc.)
+### 4.7 Integrations (Notion, Linear, etc.) (planned)
 
 - **Integration Accounts**:
   - `integration_accountsPG` with:
@@ -278,7 +209,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ---
 
-### 4.10 Fuzzy Search & Command Palette
+### 4.8 Fuzzy Search & Command Palette (planned)
 
 - **Search Index**:
   - Server:
@@ -289,11 +220,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
       - Integration items (Notion pages, Linear issues)
       - Possibly AI summaries of projects.
   - Clients:
-    - Web:
-      - Input → call search RPC → results with typed objects + types.
-    - Mobile/desktop:
-      - v1: same server search.
-      - v2: local search over SQLite (FTS5) for offline queries.
+    - Input → call search RPC → results with typed objects + types.
 - **Command Palette**:
   - Unified UI in all clients:
     - quick open item
@@ -305,21 +232,24 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ## 5. Project Structure Overview
 
-Proposed monorepo structure (`bun` workspaces, Turborepo):
+Monorepo structure (`bun` workspaces, Turborepo):
 
 ```txt
 apps/
-  web/          # Next.js app (static pages + client data)
-  mobile/       # Expo app (React Native)
-  desktop/      # Tauri app (Rust + bundled Next.js UI)
+  web/          # Next.js app (App Router, static pages + client-side data)
+  native/       # Expo app (React Native)
 
 packages/
-  api/       # oRPC API definitions, shared types, Zod schemas, domain logic
-  auth/ # Better Auth configuration and schema
-  config/         # Configuration for the project
-  db/  # Database schema and queries
-  google-cal/ # Google Calendar client & schema (Effect-based)
+  api/          # oRPC routers, Effect services, webhooks, realtime, telemetry, caching
+  auth/         # Better Auth configuration and schema
+  config/       # Shared Tailwind/TS config
+  db/           # Drizzle schema and migrations (Postgres)
+  env/          # t3-env schema for validated environment variables
+  google-cal/   # Google Calendar API client (Effect-based, Zod schemas)
+  state/        # Shared Jotai atoms, TanStack Query hooks, storage adapters (web + native)
 ```
+
+Note: Desktop (Tauri) app is planned but not yet implemented.
 
 ---
 
@@ -406,10 +336,11 @@ packages/
   - Drizzle schema updated to not auto-generate UUIDs.
   - API contracts validate with `z.uuidv7()`.
 
-### 6.6 Calendar Event Fetch Window & Caching
+### 6.6 Calendar Event Fetch Window & Client-Side Caching
 - **Month-anchored fetch window**: Google events fetched in a month-anchored window (start of month ±15 days) to avoid refetching when moving between days in the same month.
 - **Stable query keys**: TanStack Query keys include the month anchor so intra-month navigation reuses cache; crossing into a new month triggers a single refresh.
 - **Simplified layout**: Horizontal buffering/snap removed; week view uses a stable 7-day slice derived from `currentDate`.
+- Note: This is the *client-side* TanStack Query cache. For the *server-side* Redis cache, see section 6.10.
 
 ### 6.7 Data & Color Updates (Google Calendar)
 - **Jotai data layer**: Accounts, calendars, and events now load via atoms (`googleAccountsAtom`, per-account `googleCalendarsAtomFamily`, per-window `googleCalendarEventsForWindowAtom`, and a flattening selector) instead of inline `useQuery/useQueries`.
@@ -434,3 +365,59 @@ packages/
   - DnD context: Unschedule clears both fields; preview resize combines both for ZonedDateTime
 - **Optimistic Updates**: Updated TanStack Query mutations to use `onSuccess` that directly updates cache with server response instead of `onSettled` → `invalidateQueries`, eliminating flicker on drop.
 - **Drizzle Gotcha**: `time()` column type does not accept `mode` option (unlike `timestamp` and `date`); defaults to string representation.
+
+### 6.9 Effect-TS Service Architecture
+- **Pattern**: All backend services use `Effect.Service` with `accessors: true` and `Effect.fn("Service.method")` for automatic OTel tracing spans.
+- **Errors**: Each domain uses `Schema.TaggedError` for typed, compile-time-checked error channels. Callers handle errors with `Effect.catchTags`.
+- **Layer composition**: Services declare `dependencies: [...]` for automatic wiring. At the router level, service layers are merged with `TelemetryLive` (e.g. `Layer.merge(TaskService.Default, TelemetryLive)`).
+- **Services implemented**: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
+- See [`services.md`](./services.md) for full method/error tables.
+
+### 6.10 Redis Caching Layer (Google Calendar)
+- **Service**: `GoogleCalendarCacheService` — an `Effect.Service` in `packages/api/src/routers/google-cal/cache.ts`.
+- **Cached resources**: Calendar list, single calendar, colors (24h TTL), event lists, single events (1h TTL).
+- **Invalidation**: Dual strategy — Google webhooks trigger broad invalidation (unknown which resource changed); local mutations use targeted invalidation (specific keys only).
+- **Error handling**: Cache errors are always caught, logged as `CACHE_ERROR` (visible in OTel), and swallowed. Cache failures degrade to API fetches, never fail requests.
+- **Auth-first**: Cache lookups happen *after* `checkGoogleAccountIsLinked` to prevent serving cached data to unauthorized users.
+- See [`caching.md`](./caching.md) for full details.
+
+### 6.11 Google Calendar Webhooks
+- **Architecture**: Three Effect services handle push notifications:
+  - `WebhookService` (orchestrator) → `GoogleCalendarWebhookService` (Google-specific watch logic) → `WebhookRepositoryService` (database layer).
+- **Watch types**: Calendar list watch (detects added/removed calendars) and per-calendar event watches (detects event changes).
+- **Notification flow**: Google POST → `/api/webhooks/google-calendar` route → `WebhookService.handleGoogleNotification` → validate headers/token → find subscription → invalidate cache → publish SSE event to user.
+- **Refresh**: `WebhookService.refreshAll` discovers linked accounts and ensures all watches are active. Called on SSE connect and as a follow-up after calendar-list webhook notifications.
+- See [`services.md`](./services.md) § Webhook Services for full details.
+
+### 6.12 SSE Realtime Sync
+- **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
+- **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
+- **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect).
+- **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
+- **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
+
+### 6.13 Rate Limiting
+- **Implementation**: Redis-backed via `@orpc/experimental-ratelimit` with Lua script evaluation (`EVAL`).
+- **Limiters**:
+  - Global: 200 req/60s per user — applied to all authenticated endpoints.
+  - Maps: 20 req/60s per user — stacked on top of global for Google Places search (per-request cost).
+
+### 6.14 Tag System
+- **Service**: `TagService` — same `Effect.Service` pattern as `TaskService`.
+- **Operations**: `list`, `create`, `update`, `delete`.
+- **Schema**: Tags have `name` + `icon` (emoji). Unique constraint on `(userId, name)` — `TagConflictError` on duplicates.
+- **Integration**: Tasks reference tags via a many-to-many join. Task queries include tags.
+
+### 6.15 Shared State Package
+- **Package**: `packages/state/` — shared Jotai atoms, TanStack Query hooks, and storage adapters used by both web and native apps.
+- **Contents**: Google account/calendar/event atoms, task/tag query hooks, optimistic mutation hooks, visible calendar selection, collision detection utils, Temporal date helpers.
+- **Storage adapters**: `createPersistedAtom` with platform-specific adapters (web `localStorage`, native `SecureStore`).
+- **Provider**: `StateProvider` gates on authenticated session and hydrates shared state.
+- See [`state.md`](./state.md) for full contents.
+
+### 6.16 OpenTelemetry
+- **Server-side only**: No client-side OTel SDK in web or native. Network latency is measured via `x-request-start` header (injected by both clients, read on server).
+- **Stack**: `NodeSDK` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `BatchSpanProcessor` → `SpanAttributeFilter` → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
+- **Key config**: `autoDetectResources: false` (strips noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
+- **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures `NodeSDK.start()` runs before Next.js creates root request spans.
+- See [`otel.md`](./otel.md) for full details.
