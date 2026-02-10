@@ -32,6 +32,13 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: kompose-jaeger
+    ports:
+      - "16686:16686" # Web UI
+      - "4318:4318"   # OTLP HTTP
+    restart: unless-stopped
 
 volumes:
   kompose_postgres_data:

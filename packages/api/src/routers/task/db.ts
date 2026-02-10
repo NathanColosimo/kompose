@@ -24,8 +24,8 @@ const mapTaskWithTags = (task: TaskWithTagRelations): TaskWithTagsRow => {
 const mapTasksWithTags = (tasks: TaskWithTagRelations[]): TaskWithTagsRow[] =>
   tasks.map((task) => mapTaskWithTags(task));
 
-export const dbSelect = (userId: string) =>
-  Effect.tryPromise({
+export const dbSelect = Effect.fn("TaskDB.select")(function* (userId: string) {
+  return yield* Effect.tryPromise({
     try: async () => {
       const tasks = await db.query.taskTable.findMany({
         where: (task, { eq }) => eq(task.userId, userId),
@@ -42,9 +42,13 @@ export const dbSelect = (userId: string) =>
     },
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbSelectById = (userId: string, taskId: string) =>
-  Effect.tryPromise({
+export const dbSelectById = Effect.fn("TaskDB.selectById")(function* (
+  userId: string,
+  taskId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .select()
@@ -52,9 +56,13 @@ export const dbSelectById = (userId: string, taskId: string) =>
         .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId))),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbSelectBySeries = (userId: string, seriesMasterId: string) =>
-  Effect.tryPromise({
+export const dbSelectBySeries = Effect.fn("TaskDB.selectBySeries")(function* (
+  userId: string,
+  seriesMasterId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .select()
@@ -68,66 +76,72 @@ export const dbSelectBySeries = (userId: string, seriesMasterId: string) =>
         .orderBy(asc(taskTable.startDate)),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbSelectBySeriesFrom = (
-  userId: string,
-  seriesMasterId: string,
-  fromDate: string
-) =>
-  Effect.tryPromise({
-    try: () =>
-      db
-        .select()
-        .from(taskTable)
-        .where(
-          and(
-            eq(taskTable.seriesMasterId, seriesMasterId),
-            eq(taskTable.userId, userId),
-            gte(taskTable.startDate, fromDate)
+export const dbSelectBySeriesFrom = Effect.fn("TaskDB.selectBySeriesFrom")(
+  function* (userId: string, seriesMasterId: string, fromDate: string) {
+    return yield* Effect.tryPromise({
+      try: () =>
+        db
+          .select()
+          .from(taskTable)
+          .where(
+            and(
+              eq(taskTable.seriesMasterId, seriesMasterId),
+              eq(taskTable.userId, userId),
+              gte(taskTable.startDate, fromDate)
+            )
           )
-        )
-        .orderBy(asc(taskTable.startDate)),
-    catch: (cause) => new TaskRepositoryError({ cause }),
-  });
+          .orderBy(asc(taskTable.startDate)),
+      catch: (cause) => new TaskRepositoryError({ cause }),
+    });
+  }
+);
 
-export const dbSelectByIdsWithTags = (userId: string, taskIds: string[]) =>
-  Effect.tryPromise({
-    try: async () => {
-      if (taskIds.length === 0) {
-        return [];
-      }
+export const dbSelectByIdsWithTags = Effect.fn("TaskDB.selectByIdsWithTags")(
+  function* (userId: string, taskIds: string[]) {
+    return yield* Effect.tryPromise({
+      try: async () => {
+        if (taskIds.length === 0) {
+          return [];
+        }
 
-      const tasks = await db.query.taskTable.findMany({
-        where: (task, { and, eq }) =>
-          and(eq(task.userId, userId), inArray(task.id, taskIds)),
-        with: {
-          taskTags: {
-            with: {
-              tag: true,
+        const tasks = await db.query.taskTable.findMany({
+          where: (task, { and, eq }) =>
+            and(eq(task.userId, userId), inArray(task.id, taskIds)),
+          with: {
+            taskTags: {
+              with: {
+                tag: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      return mapTasksWithTags(tasks);
-    },
-    catch: (cause) => new TaskRepositoryError({ cause }),
-  });
+        return mapTasksWithTags(tasks);
+      },
+      catch: (cause) => new TaskRepositoryError({ cause }),
+    });
+  }
+);
 
 export type TaskInsertRow = typeof taskTable.$inferInsert;
 
-export const dbInsert = (values: TaskInsertRow[]) =>
-  Effect.tryPromise({
+export const dbInsert = Effect.fn("TaskDB.insert")(function* (
+  values: TaskInsertRow[]
+) {
+  return yield* Effect.tryPromise({
     try: () => db.insert(taskTable).values(values).returning(),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbUpdate = (
+export const dbUpdate = Effect.fn("TaskDB.update")(function* (
   userId: string,
   taskId: string,
   input: TaskUpdate & { isException?: boolean }
-) =>
-  Effect.tryPromise({
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .update(taskTable)
@@ -136,13 +150,14 @@ export const dbUpdate = (
         .returning(),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbUpdateBySeries = (
+export const dbUpdateBySeries = Effect.fn("TaskDB.updateBySeries")(function* (
   userId: string,
   seriesMasterId: string,
   input: TaskUpdate
-) =>
-  Effect.tryPromise({
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .update(taskTable)
@@ -156,63 +171,68 @@ export const dbUpdateBySeries = (
         .returning(),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbUpdateBySeriesFrom = (
-  userId: string,
-  seriesMasterId: string,
-  fromDate: string,
-  input: TaskUpdate
-) =>
-  Effect.tryPromise({
-    try: () =>
-      db
-        .update(taskTable)
-        .set(input)
-        .where(
-          and(
-            eq(taskTable.seriesMasterId, seriesMasterId),
-            eq(taskTable.userId, userId),
-            gte(taskTable.startDate, fromDate)
+export const dbUpdateBySeriesFrom = Effect.fn("TaskDB.updateBySeriesFrom")(
+  function* (
+    userId: string,
+    seriesMasterId: string,
+    fromDate: string,
+    input: TaskUpdate
+  ) {
+    return yield* Effect.tryPromise({
+      try: () =>
+        db
+          .update(taskTable)
+          .set(input)
+          .where(
+            and(
+              eq(taskTable.seriesMasterId, seriesMasterId),
+              eq(taskTable.userId, userId),
+              gte(taskTable.startDate, fromDate)
+            )
           )
-        )
-        .returning(),
-    catch: (cause) => new TaskRepositoryError({ cause }),
-  });
+          .returning(),
+      catch: (cause) => new TaskRepositoryError({ cause }),
+    });
+  }
+);
 
-export const dbDelete = (userId: string, taskId: string) =>
-  Effect.tryPromise({
+export const dbDelete = Effect.fn("TaskDB.delete")(function* (
+  userId: string,
+  taskId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .delete(taskTable)
         .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId))),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbDeleteBySeriesFrom = (
-  userId: string,
-  seriesMasterId: string,
-  fromDate: string
-) =>
-  Effect.tryPromise({
-    try: () =>
-      db
-        .delete(taskTable)
-        .where(
-          and(
-            eq(taskTable.seriesMasterId, seriesMasterId),
-            eq(taskTable.userId, userId),
-            gte(taskTable.startDate, fromDate)
-          )
-        ),
-    catch: (cause) => new TaskRepositoryError({ cause }),
-  });
+export const dbDeleteBySeriesFrom = Effect.fn("TaskDB.deleteBySeriesFrom")(
+  function* (userId: string, seriesMasterId: string, fromDate: string) {
+    return yield* Effect.tryPromise({
+      try: () =>
+        db
+          .delete(taskTable)
+          .where(
+            and(
+              eq(taskTable.seriesMasterId, seriesMasterId),
+              eq(taskTable.userId, userId),
+              gte(taskTable.startDate, fromDate)
+            )
+          ),
+      catch: (cause) => new TaskRepositoryError({ cause }),
+    });
+  }
+);
 
-export const dbDeleteNonExceptionsBySeriesFrom = (
-  userId: string,
-  seriesMasterId: string,
-  fromDate: string
-) =>
-  Effect.tryPromise({
+export const dbDeleteNonExceptionsBySeriesFrom = Effect.fn(
+  "TaskDB.deleteNonExceptionsBySeriesFrom"
+)(function* (userId: string, seriesMasterId: string, fromDate: string) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .delete(taskTable)
@@ -226,28 +246,38 @@ export const dbDeleteNonExceptionsBySeriesFrom = (
         ),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbInsertTaskTags = (
+export const dbInsertTaskTags = Effect.fn("TaskDB.insertTaskTags")(function* (
   values: (typeof taskTagTable.$inferInsert)[]
-) =>
-  Effect.tryPromise({
+) {
+  return yield* Effect.tryPromise({
     try: () => db.insert(taskTagTable).values(values).returning(),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbDeleteTaskTagsForTasks = (taskIds: string[]) =>
-  Effect.tryPromise({
+export const dbDeleteTaskTagsForTasks = Effect.fn(
+  "TaskDB.deleteTaskTagsForTasks"
+)(function* (taskIds: string[]) {
+  return yield* Effect.tryPromise({
     try: () =>
       db.delete(taskTagTable).where(inArray(taskTagTable.taskId, taskIds)),
     catch: (cause) => new TaskRepositoryError({ cause }),
   });
+});
 
-export const dbSelectTagIdsForUser = (userId: string, tagIds: string[]) =>
-  Effect.tryPromise({
-    try: () =>
-      db
-        .select({ id: tagTable.id })
-        .from(tagTable)
-        .where(and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds))),
-    catch: (cause) => new TaskRepositoryError({ cause }),
-  });
+export const dbSelectTagIdsForUser = Effect.fn("TaskDB.selectTagIdsForUser")(
+  function* (userId: string, tagIds: string[]) {
+    return yield* Effect.tryPromise({
+      try: () =>
+        db
+          .select({ id: tagTable.id })
+          .from(tagTable)
+          .where(
+            and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds))
+          ),
+      catch: (cause) => new TaskRepositoryError({ cause }),
+    });
+  }
+);

@@ -8,8 +8,10 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import { TagRepositoryError } from "./errors";
 
-export const dbSelectTags = (userId: string) =>
-  Effect.tryPromise({
+export const dbSelectTags = Effect.fn("TagDB.selectTags")(function* (
+  userId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .select()
@@ -18,9 +20,13 @@ export const dbSelectTags = (userId: string) =>
         .orderBy(asc(tagTable.name)),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});
 
-export const dbSelectTagByName = (userId: string, name: string) =>
-  Effect.tryPromise({
+export const dbSelectTagByName = Effect.fn("TagDB.selectTagByName")(function* (
+  userId: string,
+  name: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .select()
@@ -28,9 +34,13 @@ export const dbSelectTagByName = (userId: string, name: string) =>
         .where(and(eq(tagTable.userId, userId), eq(tagTable.name, name))),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});
 
-export const dbSelectTagById = (userId: string, tagId: string) =>
-  Effect.tryPromise({
+export const dbSelectTagById = Effect.fn("TagDB.selectTagById")(function* (
+  userId: string,
+  tagId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .select()
@@ -38,25 +48,38 @@ export const dbSelectTagById = (userId: string, tagId: string) =>
         .where(and(eq(tagTable.userId, userId), eq(tagTable.id, tagId))),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});
 
-export const dbSelectTagIdsByIds = (userId: string, tagIds: string[]) =>
-  Effect.tryPromise({
-    try: () =>
-      db
-        .select({ id: tagTable.id })
-        .from(tagTable)
-        .where(and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds))),
-    catch: (cause) => new TagRepositoryError({ cause }),
-  });
+export const dbSelectTagIdsByIds = Effect.fn("TagDB.selectTagIdsByIds")(
+  function* (userId: string, tagIds: string[]) {
+    return yield* Effect.tryPromise({
+      try: () =>
+        db
+          .select({ id: tagTable.id })
+          .from(tagTable)
+          .where(
+            and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds))
+          ),
+      catch: (cause) => new TagRepositoryError({ cause }),
+    });
+  }
+);
 
-export const dbInsertTag = (values: TagInsertRow[]) =>
-  Effect.tryPromise({
+export const dbInsertTag = Effect.fn("TagDB.insertTag")(function* (
+  values: TagInsertRow[]
+) {
+  return yield* Effect.tryPromise({
     try: () => db.insert(tagTable).values(values).returning(),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});
 
-export const dbUpdateTag = (userId: string, tagId: string, values: TagUpdate) =>
-  Effect.tryPromise({
+export const dbUpdateTag = Effect.fn("TagDB.updateTag")(function* (
+  userId: string,
+  tagId: string,
+  values: TagUpdate
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .update(tagTable)
@@ -65,9 +88,13 @@ export const dbUpdateTag = (userId: string, tagId: string, values: TagUpdate) =>
         .returning(),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});
 
-export const dbDeleteTag = (userId: string, tagId: string) =>
-  Effect.tryPromise({
+export const dbDeleteTag = Effect.fn("TagDB.deleteTag")(function* (
+  userId: string,
+  tagId: string
+) {
+  return yield* Effect.tryPromise({
     try: () =>
       db
         .delete(tagTable)
@@ -75,3 +102,4 @@ export const dbDeleteTag = (userId: string, tagId: string) =>
         .returning({ id: tagTable.id }),
     catch: (cause) => new TagRepositoryError({ cause }),
   });
+});

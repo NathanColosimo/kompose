@@ -54,8 +54,11 @@ export function handleError(
   }
 }
 
-const checkGoogleAccountIsLinked = (userId: string, accountId: string) =>
-  Effect.gen(function* () {
+const checkGoogleAccountIsLinked = Effect.fn("checkGoogleAccountIsLinked")(
+  function* (userId: string, accountId: string) {
+    yield* Effect.annotateCurrentSpan("userId", userId);
+    yield* Effect.annotateCurrentSpan("accountId", accountId);
+
     const accessToken = yield* Effect.tryPromise({
       try: () =>
         auth.api.getAccessToken({
@@ -69,7 +72,8 @@ const checkGoogleAccountIsLinked = (userId: string, accountId: string) =>
     });
 
     return accessToken.accessToken;
-  });
+  }
+);
 
 export const os = implement(googleCalContract)
   .use(requireAuth)

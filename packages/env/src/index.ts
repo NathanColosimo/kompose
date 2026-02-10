@@ -13,16 +13,16 @@ export const env = createEnv({
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
     GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
     GOOGLE_MAPS_API_KEY: z.string().min(1),
-    // Optional -- tracing disabled when not set
-    AXIOM_API_TOKEN: z.string().min(1).optional(),
-    AXIOM_DATASET: z.string().min(1).optional(),
+    // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
+    // Takes priority over Axiom when set
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   },
   client: {
     NEXT_PUBLIC_WEB_URL: z
       .string()
       .min(1)
       .regex(/^https?:\/\//),
-    // Optional -- client-side tracing disabled when not set
+    // Optional -- tracing disabled when not set (used by both client and server)
     NEXT_PUBLIC_AXIOM_API_TOKEN: z.string().min(1).optional(),
     NEXT_PUBLIC_AXIOM_DATASET: z.string().min(1).optional(),
   },

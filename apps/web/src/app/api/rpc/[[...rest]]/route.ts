@@ -1,11 +1,14 @@
 import { createContext } from "@kompose/api/context";
 import { appRouter } from "@kompose/api/routers/index";
+import { trace } from "@opentelemetry/api";
 import { RatelimitHandlerPlugin } from "@orpc/experimental-ratelimit";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { RPCHandler } from "@orpc/server/fetch";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import type { NextRequest } from "next/server";
+
+const tracer = trace.getTracer("kompose-api");
 
 const rpcHandler = new RPCHandler(appRouter, {
   plugins: [new RatelimitHandlerPlugin()],
@@ -19,9 +22,21 @@ const apiHandler = new OpenAPIHandler(appRouter, {
 });
 
 async function handleRequest(req: NextRequest) {
+  // Trace session resolution so auth cost is visible in spans
+  const context = await tracer.startActiveSpan(
+    "createContext",
+    async (span) => {
+      try {
+        return await createContext(req);
+      } finally {
+        span.end();
+      }
+    }
+  );
+
   const rpcResult = await rpcHandler.handle(req, {
     prefix: "/api/rpc",
-    context: await createContext(req),
+    context,
   });
   if (rpcResult.response) {
     return rpcResult.response;
@@ -29,7 +44,7 @@ async function handleRequest(req: NextRequest) {
 
   const apiResult = await apiHandler.handle(req, {
     prefix: "/api/rpc/api-reference",
-    context: await createContext(req),
+    context,
   });
   if (apiResult.response) {
     return apiResult.response;
