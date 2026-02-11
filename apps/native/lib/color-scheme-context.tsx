@@ -34,7 +34,9 @@ export function useColorScheme() {
 
   // Restore saved preference on first mount
   useEffect(() => {
-    if (hasRestored.current) return;
+    if (hasRestored.current) {
+      return;
+    }
     hasRestored.current = true;
     let isCancelled = false;
 

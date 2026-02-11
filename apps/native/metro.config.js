@@ -3,10 +3,10 @@ const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 const path = require("node:path");
 
-const config = getDefaultConfig(__dirname);
-const appNodeModules = path.resolve(__dirname, "node_modules");
+const config = getDefaultConfig(import.meta.dirname);
+const appNodeModules = path.resolve(import.meta.dirname, "node_modules");
 const workspaceNodeModules = path.resolve(
-  __dirname,
+  import.meta.dirname,
   "..",
   "..",
   "node_modules"
