@@ -1,3 +1,4 @@
+import { createMDX } from "fumadocs-mdx/next";
 import type { NextConfig } from "next";
 
 // When building for Tauri, use static export (no server routes).
@@ -52,4 +53,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with fumadocs-mdx to enable MDX content compilation.
+const withMDX = createMDX();
+export default withMDX(nextConfig);

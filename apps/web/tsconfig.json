@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "fumadocs-mdx:collections/*": ["./.source/*"]
     },
     "strictNullChecks": true
   },
@@ -29,7 +30,8 @@
     "./**/*.tsx",
     "./.next/types/**/*.ts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "next.config.mts"
   ],
   "exclude": ["./node_modules", "./src-tauri/target", "./src-tauri/target/**"]
 }
