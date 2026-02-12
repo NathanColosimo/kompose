@@ -17,6 +17,7 @@ export type ResumeSessionStreamInput = ReconnectAiStreamInput & {
   signal?: AbortSignal;
 };
 
+export const AI_CHAT_QUERY_ROOT = ["ai"] as const;
 export const AI_CHAT_SESSIONS_QUERY_KEY = ["ai", "sessions"] as const;
 
 export function getAiChatMessagesQueryKey(sessionId: string | null) {

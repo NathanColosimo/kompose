@@ -5,7 +5,10 @@ import {
   GOOGLE_CALENDARS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
-import { AI_CHAT_SESSIONS_QUERY_KEY } from "@kompose/state/hooks/use-ai-chat";
+import {
+  AI_CHAT_QUERY_ROOT,
+  AI_CHAT_SESSIONS_QUERY_KEY,
+} from "@kompose/state/hooks/use-ai-chat";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
@@ -78,8 +81,6 @@ export const link = new RPCLink({
 });
 
 export const orpc: AppRouterClient = createORPCClient(link);
-
-const AI_CHAT_QUERY_ROOT = ["ai"] as const;
 
 export function invalidateSessionQueries() {
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });

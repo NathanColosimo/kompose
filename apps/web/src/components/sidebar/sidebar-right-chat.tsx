@@ -101,6 +101,8 @@ const CHAT_MODELS: { id: ChatModelId; label: string }[] = [
   { id: "gpt-5", label: "GPT-5" },
   { id: "gpt-5-mini", label: "GPT-5 Mini" },
 ];
+const MAX_STREAM_RESUME_ATTEMPTS = 4;
+const STREAM_RESUME_RETRY_INTERVAL_MS = 750;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -300,6 +302,10 @@ export function SidebarRightChat() {
   const [selectedModel, setSelectedModel] = useState<ChatModelId>("gpt-5-mini");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const autoCreateAttemptedRef = useRef(false);
+  const streamResumeStateRef = useRef<{
+    attempts: number;
+    streamId: string | null;
+  }>({ attempts: 0, streamId: null });
   const queryClient = useQueryClient();
   const {
     sessionsQuery,
@@ -460,8 +466,17 @@ export function SidebarRightChat() {
     ]
   );
 
-  const { error, messages, sendMessage, setMessages, status, stop } = useChat({
+  const {
+    error,
+    messages,
+    resumeStream,
+    sendMessage,
+    setMessages,
+    status,
+    stop,
+  } = useChat({
     id: activeSessionId ?? "pending-chat",
+    experimental_throttle: 50,
     messages: persistedMessages,
     resume: shouldResumeStream,
     transport,
@@ -477,6 +492,56 @@ export function SidebarRightChat() {
       ]);
     },
   });
+
+  // Retry resume a few times for active-session cross-device streams to avoid
+  // missing the stream when reconnect races initial stream setup.
+  useEffect(() => {
+    const activeStreamId = activeSession?.activeStreamId ?? null;
+    if (!activeStreamId) {
+      streamResumeStateRef.current = { attempts: 0, streamId: null };
+      return;
+    }
+
+    if (status === "submitted" || status === "streaming") {
+      return;
+    }
+
+    if (streamResumeStateRef.current.streamId !== activeStreamId) {
+      streamResumeStateRef.current = { attempts: 0, streamId: activeStreamId };
+    }
+
+    const tryResume = () => {
+      if (streamResumeStateRef.current.streamId !== activeStreamId) {
+        return;
+      }
+      if (streamResumeStateRef.current.attempts >= MAX_STREAM_RESUME_ATTEMPTS) {
+        return;
+      }
+      streamResumeStateRef.current.attempts += 1;
+      resumeStream();
+    };
+
+    tryResume();
+
+    const timer = setInterval(() => {
+      if (streamResumeStateRef.current.streamId !== activeStreamId) {
+        clearInterval(timer);
+        return;
+      }
+      if (
+        status !== "ready" ||
+        streamResumeStateRef.current.attempts >= MAX_STREAM_RESUME_ATTEMPTS
+      ) {
+        clearInterval(timer);
+        return;
+      }
+      tryResume();
+    }, STREAM_RESUME_RETRY_INTERVAL_MS);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [activeSession?.activeStreamId, resumeStream, status]);
 
   // Rehydrate local stream state from persisted session messages before paint
   // to avoid visible top-to-bottom jumps during session switches.

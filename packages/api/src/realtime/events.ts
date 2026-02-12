@@ -5,6 +5,7 @@ export const GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID = "__calendar_list__";
 export const syncEventTypeSchema = z.enum([
   "google-calendar",
   "tasks",
+  "ai-chat",
   "reconnect",
 ]);
 
@@ -23,6 +24,15 @@ export const tasksSyncEventSchema = z.object({
   payload: z.object({}).strict(),
 });
 
+export const aiChatSyncEventSchema = z.object({
+  type: z.literal("ai-chat"),
+  payload: z
+    .object({
+      sessionId: z.uuidv7(),
+    })
+    .strict(),
+});
+
 export const reconnectSyncEventSchema = z.object({
   type: z.literal("reconnect"),
   payload: z.object({}).strict(),
@@ -31,6 +41,7 @@ export const reconnectSyncEventSchema = z.object({
 export const syncEventSchema = z.discriminatedUnion("type", [
   googleCalendarSyncEventSchema,
   tasksSyncEventSchema,
+  aiChatSyncEventSchema,
   reconnectSyncEventSchema,
 ]);
 
@@ -40,4 +51,5 @@ export type GoogleCalendarSyncEvent = z.infer<
   typeof googleCalendarSyncEventSchema
 >;
 export type TasksSyncEvent = z.infer<typeof tasksSyncEventSchema>;
+export type AiChatSyncEvent = z.infer<typeof aiChatSyncEventSchema>;
 export type ReconnectSyncEvent = z.infer<typeof reconnectSyncEventSchema>;

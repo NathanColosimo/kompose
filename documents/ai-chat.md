@@ -272,3 +272,30 @@ Notes:
 - This keeps mobile and web aligned on the same backend contracts and stream
   semantics.
 
+---
+
+## 14) Realtime AI invalidation + active-session stream checks
+
+Added AI chat invalidation to the existing `sync.events` endpoint (same channel
+used for tasks/calendars):
+
+- New realtime event type: `ai-chat` with payload `{ sessionId }`
+- Published from AI router when session/stream lifecycle changes:
+  - session create/delete
+  - stream start (active stream set)
+  - stream finish (assistant persisted, active stream cleared)
+- Reconnect misses no longer clear `activeStreamId` immediately; client retries
+  are allowed and normal `onFinish` cleanup clears the pointer.
+- Shared realtime hook (`packages/state/src/hooks/use-realtime-sync.ts`) now:
+  - invalidates `AI_CHAT_SESSIONS_QUERY_KEY`
+  - invalidates `getAiChatMessagesQueryKey(sessionId)` for targeted refetch
+  - includes AI query invalidation in reconnect fallback
+- Web + native chat screens run a deduped `resumeStream()` check when the
+  currently open session receives a newly visible `activeStreamId` after
+  realtime refetch.
+- Resume checks now retry in a short capped loop (`4` attempts, `750ms`
+  interval) to handle transient reconnect races when another device starts the
+  stream.
+- `useChat` UI updates are throttled (`experimental_throttle: 50`) to reduce
+  render backlog during high-frequency chunk streams (especially on native).
+

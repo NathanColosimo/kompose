@@ -393,6 +393,7 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 - **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
 - **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
 - **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect).
+- **AI chat events**: `ai-chat` events carry `{ sessionId }` and are emitted for AI session create/delete and stream lifecycle updates so clients can invalidate targeted session/message caches.
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
 - **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
 

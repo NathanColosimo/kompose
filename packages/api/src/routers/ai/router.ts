@@ -5,6 +5,7 @@ import { Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
+import { publishToUserBestEffort } from "../../realtime/sync";
 import { TelemetryLive } from "../../telemetry";
 import { aiContract } from "./contract";
 import { chatResumableStreamContext } from "./resumable-stream";
@@ -14,6 +15,13 @@ import {
 } from "./stream-protocol";
 
 const AiChatLive = Layer.merge(AiChatService.Default, TelemetryLive);
+
+function publishAiChatEvent(userId: string, sessionId: string) {
+  publishToUserBestEffort(userId, {
+    type: "ai-chat",
+    payload: { sessionId },
+  });
+}
 
 function emptyUiMessageChunkIterator() {
   return streamToEventIterator(
@@ -65,7 +73,10 @@ export const aiRouter = os.router({
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
+            onSuccess: (value) => {
+              publishAiChatEvent(context.user.id, value.id);
+              return value;
+            },
             onFailure: handleError,
           })
         )
@@ -82,7 +93,10 @@ export const aiRouter = os.router({
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
+            onSuccess: (value) => {
+              publishAiChatEvent(context.user.id, input.sessionId);
+              return value;
+            },
             onFailure: handleError,
           })
         )
@@ -131,6 +145,8 @@ export const aiRouter = os.router({
                 messages,
               }).pipe(Effect.provide(AiChatLive))
             );
+
+            publishAiChatEvent(context.user.id, input.sessionId);
           },
         });
 
@@ -163,6 +179,7 @@ export const aiRouter = os.router({
           sessionId: input.sessionId,
           streamId,
         });
+        publishAiChatEvent(context.user.id, input.sessionId);
 
         return streamToEventIterator(
           sseStringStreamToUiMessageChunkStream(resumableSseStream)
@@ -206,13 +223,9 @@ export const aiRouter = os.router({
         );
 
         if (!resumedSseStream) {
-          yield* AiChatService.markActiveStream({
-            userId: context.user.id,
-            sessionId: input.sessionId,
-            streamId: null,
-          });
-
-          // Stale stream pointer: clear it and return an empty iterator.
+          // Don't clear activeStreamId on reconnect misses. During cross-device
+          // handoff, reconnect can race stream registration/transient delivery.
+          // onFinish still clears the pointer when the stream actually completes.
           return emptyUiMessageChunkIterator();
         }
 

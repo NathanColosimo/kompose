@@ -38,6 +38,10 @@ Native chat uses the same shared hook and backend stream contracts as web:
   - `sendMessages` -> shared `streamSessionMessage`
   - `reconnectToStream` -> shared `resumeSessionStream`
 - Stream conversion via `eventIteratorToUnproxiedDataStream`
+- Realtime sync integration via shared `useRealtimeSync`:
+  - handles `ai-chat` events from the same `sync.events` endpoint used by tasks/calendars
+  - invalidates targeted AI caches (`sessions` + `messages` by `sessionId`)
+  - includes AI invalidation in reconnect fallback
 
 Cache/session hygiene updates:
 
@@ -196,6 +200,11 @@ Mobile chat now includes:
 - Dark mode support across key chat surfaces
 - Streaming auto-follow behavior
 - Growing composer input with contraction support
+- Active-session `resumeStream()` checks triggered after realtime refetch when a
+  new `activeStreamId` appears (now with short capped retries to avoid
+  cross-device reconnect races)
+- `useChat` uses `experimental_throttle: 50` to reduce streaming render backlog
+  on React Native during high-frequency chunk output
 
 ## 17) Potential follow-ups
 

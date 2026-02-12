@@ -11,6 +11,11 @@ import {
   GOOGLE_EVENTS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
 } from "../google-calendar-query-keys";
+import {
+  AI_CHAT_QUERY_ROOT,
+  AI_CHAT_SESSIONS_QUERY_KEY,
+  getAiChatMessagesQueryKey,
+} from "./use-ai-chat";
 
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -60,12 +65,27 @@ export function useRealtimeSync({
     [queryClient]
   );
 
+  const invalidateAiChatQueries = React.useCallback(
+    (event: Extract<SyncEvent, { type: "ai-chat" }>) => {
+      return Promise.all([
+        // Force immediate session refetch so activeStreamId updates quickly.
+        queryClient.refetchQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY }),
+        // Refetch the affected message thread for faster cross-device updates.
+        queryClient.refetchQueries({
+          queryKey: getAiChatMessagesQueryKey(event.payload.sessionId),
+        }),
+      ]);
+    },
+    [queryClient]
+  );
+
   const invalidateCriticalQueries = React.useCallback(() => {
     return Promise.all([
       invalidateTaskQueries(),
       // Calendars use atomWithQuery — need refetch, not just invalidate
       queryClient.refetchQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: AI_CHAT_QUERY_ROOT }),
     ]);
   }, [invalidateTaskQueries, queryClient]);
 
@@ -80,6 +100,10 @@ export function useRealtimeSync({
           invalidateTaskQueries();
           return;
         }
+        case "ai-chat": {
+          invalidateAiChatQueries(event);
+          return;
+        }
         case "reconnect": {
           invalidateCriticalQueries();
           return;
@@ -91,6 +115,7 @@ export function useRealtimeSync({
     },
     [
       invalidateCriticalQueries,
+      invalidateAiChatQueries,
       invalidateGoogleCalendarQueries,
       invalidateTaskQueries,
     ]
@@ -157,6 +182,26 @@ export function useRealtimeSync({
       }
     };
 
+    const consumeIterator = async (iterator: AsyncIterator<SyncEvent>) => {
+      let reconnectRequested = false;
+
+      while (!cancelled) {
+        const next = await iterator.next();
+        if (next.done) {
+          break;
+        }
+
+        handleSyncEvent(next.value);
+
+        if (next.value.type === "reconnect") {
+          reconnectRequested = true;
+          break;
+        }
+      }
+
+      return reconnectRequested;
+    };
+
     const connect = async () => {
       if (cancelled) {
         return;
@@ -173,22 +218,7 @@ export function useRealtimeSync({
 
         reconnectAttempts = 0;
         await invalidateCriticalQueries();
-
-        let reconnectRequested = false;
-
-        while (!cancelled) {
-          const next = await iterator.next();
-          if (next.done) {
-            break;
-          }
-
-          handleSyncEvent(next.value);
-
-          if (next.value.type === "reconnect") {
-            reconnectRequested = true;
-            break;
-          }
-        }
+        const reconnectRequested = await consumeIterator(iterator);
 
         await closeActiveIterator();
 

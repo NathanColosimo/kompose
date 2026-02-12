@@ -6,6 +6,7 @@ All backend services live in `packages/api/src/`. Routers are aggregated in `pac
 
 ```
 appRouter
+├── ai          → AI chat sessions/messages/streaming
 ├── googleCal   → Google Calendar CRUD
 ├── maps        → Google Places autocomplete
 ├── sync        → SSE realtime event stream
@@ -199,6 +200,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 |------|---------|---------|
 | `google-calendar` | `{ accountId, calendarId }` | Calendar data changed |
 | `tasks` | `{}` | Task data changed |
+| `ai-chat` | `{ sessionId }` | AI chat session/message/stream state changed |
 | `reconnect` | `{}` | Server requests client to reconnect |
 
 ### How it works
@@ -207,7 +209,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
-5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+5. Mutations across other routers (task create/update/delete, calendar CRUD, AI session + stream lifecycle updates) call `publishToUserBestEffort` to push events to the channel
 
 ### Redis pub/sub functions
 
