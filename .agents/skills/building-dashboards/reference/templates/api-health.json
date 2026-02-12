@@ -114,18 +114,18 @@
     }
   ],
   "layout": [
-    {"i": "total-requests", "x": 0, "y": 0, "w": 3, "h": 2},
-    {"i": "error-rate", "x": 3, "y": 0, "w": 3, "h": 2},
-    {"i": "p50-latency", "x": 6, "y": 0, "w": 3, "h": 2},
-    {"i": "p99-latency", "x": 9, "y": 0, "w": 3, "h": 2},
-    {"i": "traffic-ts", "x": 0, "y": 2, "w": 6, "h": 4},
-    {"i": "error-rate-ts", "x": 6, "y": 2, "w": 6, "h": 4},
-    {"i": "latency-percentiles-ts", "x": 0, "y": 6, "w": 6, "h": 4},
-    {"i": "status-distribution", "x": 6, "y": 6, "w": 3, "h": 4},
-    {"i": "traffic-by-status-ts", "x": 9, "y": 6, "w": 3, "h": 4},
-    {"i": "top-routes-by-traffic", "x": 0, "y": 10, "w": 4, "h": 4},
-    {"i": "top-routes-by-errors", "x": 4, "y": 10, "w": 4, "h": 4},
-    {"i": "slowest-routes", "x": 8, "y": 10, "w": 4, "h": 4},
-    {"i": "recent-errors", "x": 0, "y": 14, "w": 12, "h": 6}
+    { "i": "total-requests", "x": 0, "y": 0, "w": 3, "h": 2 },
+    { "i": "error-rate", "x": 3, "y": 0, "w": 3, "h": 2 },
+    { "i": "p50-latency", "x": 6, "y": 0, "w": 3, "h": 2 },
+    { "i": "p99-latency", "x": 9, "y": 0, "w": 3, "h": 2 },
+    { "i": "traffic-ts", "x": 0, "y": 2, "w": 6, "h": 4 },
+    { "i": "error-rate-ts", "x": 6, "y": 2, "w": 6, "h": 4 },
+    { "i": "latency-percentiles-ts", "x": 0, "y": 6, "w": 6, "h": 4 },
+    { "i": "status-distribution", "x": 6, "y": 6, "w": 3, "h": 4 },
+    { "i": "traffic-by-status-ts", "x": 9, "y": 6, "w": 3, "h": 4 },
+    { "i": "top-routes-by-traffic", "x": 0, "y": 10, "w": 4, "h": 4 },
+    { "i": "top-routes-by-errors", "x": 4, "y": 10, "w": 4, "h": 4 },
+    { "i": "slowest-routes", "x": 8, "y": 10, "w": 4, "h": 4 },
+    { "i": "recent-errors", "x": 0, "y": 14, "w": 12, "h": 6 }
   ]
 }

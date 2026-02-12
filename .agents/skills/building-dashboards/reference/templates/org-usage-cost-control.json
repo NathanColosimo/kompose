@@ -190,9 +190,9 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "Dataset", "width": 200},
-          {"name": "Ingest GB", "width": 100},
-          {"name": "Query GB·ms", "width": 120}
+          { "name": "Dataset", "width": 200 },
+          { "name": "Ingest GB", "width": 100 },
+          { "name": "Query GB·ms", "width": 120 }
         ]
       },
       "type": "Table"
@@ -205,10 +205,10 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "Dataset", "width": 200},
-          {"name": "Ingest GB", "width": 100},
-          {"name": "Query GB·ms", "width": 120},
-          {"name": "Work/GB", "width": 90}
+          { "name": "Dataset", "width": 200 },
+          { "name": "Ingest GB", "width": 100 },
+          { "name": "Query GB·ms", "width": 120 },
+          { "name": "Work/GB", "width": 90 }
         ]
       },
       "type": "Table"
@@ -221,10 +221,10 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "Org", "width": 180},
-          {"name": "Ingest GB", "width": 100},
-          {"name": "Query GB·ms", "width": 120},
-          {"name": "Datasets", "width": 80}
+          { "name": "Org", "width": 180 },
+          { "name": "Ingest GB", "width": 100 },
+          { "name": "Query GB·ms", "width": 120 },
+          { "name": "Datasets", "width": 80 }
         ]
       },
       "type": "Table"
@@ -255,11 +255,11 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "Dataset", "width": 180},
-          {"name": "This Week GB", "width": 110},
-          {"name": "Last Week GB", "width": 110},
-          {"name": "Delta GB", "width": 90},
-          {"name": "Delta %", "width": 80}
+          { "name": "Dataset", "width": 180 },
+          { "name": "This Week GB", "width": 110 },
+          { "name": "Last Week GB", "width": 110 },
+          { "name": "Delta GB", "width": 90 },
+          { "name": "Delta %", "width": 80 }
         ]
       },
       "type": "Table"
@@ -272,9 +272,9 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "User", "width": 250},
-          {"name": "Cost GB·ms", "width": 120},
-          {"name": "Queries", "width": 80}
+          { "name": "User", "width": 250 },
+          { "name": "Cost GB·ms", "width": 120 },
+          { "name": "Queries", "width": 80 }
         ]
       },
       "type": "Table"
@@ -287,9 +287,9 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "User", "width": 180},
-          {"name": "Cost GB·ms", "width": 100},
-          {"name": "Query", "width": 300}
+          { "name": "User", "width": 180 },
+          { "name": "Cost GB·ms", "width": 100 },
+          { "name": "Query", "width": 300 }
         ]
       },
       "type": "Table"
@@ -338,19 +338,16 @@
       },
       "tableSettings": {
         "columns": [
-          {"name": "Dataset", "width": 140},
-          {"name": "Field", "width": 180},
-          {"name": "Op", "width": 70},
-          {"name": "Value", "width": 150},
-          {"name": "Queries", "width": 80}
+          { "name": "Dataset", "width": 140 },
+          { "name": "Field", "width": 180 },
+          { "name": "Op", "width": 70 },
+          { "name": "Value", "width": 150 },
+          { "name": "Queries", "width": 80 }
         ]
       }
     }
   ],
-  "datasets": [
-    "axiom-audit",
-    "axiom-history"
-  ],
+  "datasets": ["axiom-audit", "axiom-history"],
   "description": "Usage monitoring dashboard for tracking ingest volume, query costs, burn rate projections, and waste identification. Filter by org to scope analysis.",
   "layout": [
     { "i": "filters", "x": 0, "y": 0, "w": 12, "h": 1 },

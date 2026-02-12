@@ -12,7 +12,7 @@
       "id": "filters",
       "name": "Filters",
       "type": "SmartFilter",
-      "query": {"apl": ""},
+      "query": { "apl": "" },
       "filters": [
         {
           "id": "route_filter",
@@ -22,11 +22,9 @@
           "active": true,
           "apl": {
             "apl": "['{{dataset}}'] | where service == '{{service}}' | distinct route | project key=route, value=route | sort by key asc",
-            "queryOptions": {"quickRange": "1h"}
+            "queryOptions": { "quickRange": "1h" }
           },
-          "options": [
-            {"key": "All", "value": "", "default": true}
-          ]
+          "options": [{ "key": "All", "value": "", "default": true }]
         },
         {
           "id": "status_filter",
@@ -35,11 +33,11 @@
           "selectType": "list",
           "active": true,
           "options": [
-            {"key": "All", "value": "", "default": true},
-            {"key": "2xx", "value": "2"},
-            {"key": "3xx", "value": "3"},
-            {"key": "4xx", "value": "4"},
-            {"key": "5xx", "value": "5"}
+            { "key": "All", "value": "", "default": true },
+            { "key": "2xx", "value": "2" },
+            { "key": "3xx", "value": "3" },
+            { "key": "4xx", "value": "4" },
+            { "key": "5xx", "value": "5" }
           ]
         }
       ]
@@ -118,15 +116,15 @@
     }
   ],
   "layout": [
-    {"i": "filters", "x": 0, "y": 0, "w": 12, "h": 1},
-    {"i": "error-rate", "x": 0, "y": 1, "w": 3, "h": 2},
-    {"i": "p95-latency", "x": 3, "y": 1, "w": 3, "h": 2},
-    {"i": "traffic-rps", "x": 6, "y": 1, "w": 3, "h": 2},
-    {"i": "error-count", "x": 9, "y": 1, "w": 3, "h": 2},
-    {"i": "request-rate-ts", "x": 0, "y": 3, "w": 6, "h": 3},
-    {"i": "error-rate-ts", "x": 6, "y": 3, "w": 6, "h": 3},
-    {"i": "latency-heatmap", "x": 0, "y": 6, "w": 12, "h": 3},
-    {"i": "top-routes", "x": 0, "y": 9, "w": 6, "h": 4},
-    {"i": "recent-errors", "x": 6, "y": 9, "w": 6, "h": 4}
+    { "i": "filters", "x": 0, "y": 0, "w": 12, "h": 1 },
+    { "i": "error-rate", "x": 0, "y": 1, "w": 3, "h": 2 },
+    { "i": "p95-latency", "x": 3, "y": 1, "w": 3, "h": 2 },
+    { "i": "traffic-rps", "x": 6, "y": 1, "w": 3, "h": 2 },
+    { "i": "error-count", "x": 9, "y": 1, "w": 3, "h": 2 },
+    { "i": "request-rate-ts", "x": 0, "y": 3, "w": 6, "h": 3 },
+    { "i": "error-rate-ts", "x": 6, "y": 3, "w": 6, "h": 3 },
+    { "i": "latency-heatmap", "x": 0, "y": 6, "w": 12, "h": 3 },
+    { "i": "top-routes", "x": 0, "y": 9, "w": 6, "h": 4 },
+    { "i": "recent-errors", "x": 6, "y": 9, "w": 6, "h": 4 }
   ]
 }
