@@ -26,7 +26,6 @@
         "foregroundImage": "./assets/images/kompose-icon.png",
         "monochromeImage": "./assets/images/kompose-icon.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.nathancolosimo.kompose"
     },
@@ -55,7 +54,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": false
+      "reactCompiler": true
     },
     "extra": {
       "router": {},

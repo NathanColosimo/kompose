@@ -26,19 +26,21 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 
 ## Key architecture decisions (current)
 
-- **Expo SDK 54 (stable)**.
+- **Expo SDK 55 (preview)** with React Native 0.83.x.
+- **New Architecture always on** in SDK 55 (no legacy toggle).
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
-- **Styling**: NativeWind (Tailwind for React Native) + BNA UI components.
-- **Theming**: CSS variables via NativeWind's `vars()` function for dynamic light/dark mode switching.
+- **Styling**: Uniwind + Tailwind CSS v4 + BNA UI components.
+- **Theming**: Uniwind CSS theme variables in `global.css` + runtime `Uniwind.setTheme()` for light/dark/system switching.
+- **Sizing scale**: Uniwind default `rem` base (16px), with no NativeWind compatibility polyfill.
 - **Navigation**: NativeTabs from `expo-router/unstable-native-tabs` for native iOS/Android tab bar.
 
 ## UI components
 
 **Always check [BNA UI](https://ui.ahmedbna.com/docs/components) before hand-rolling UI components.**
 
-The project uses BNA UI as its component library for NativeWind-styled primitives and higher-level components.
+The project uses BNA UI as its component library for utility-class-styled primitives and higher-level components.
 
 ### Adding a new component
 
@@ -93,6 +95,8 @@ Uses `expo-router/unstable-native-tabs` for platform-native tab bars:
 - iOS: Native UITabBar with SF Symbols, liquid glass on iOS 26+
 - Android: Material 3 bottom navigation
 
+On SDK 55, tab labels/icons should use `NativeTabs.Trigger.Label` and `NativeTabs.Trigger.Icon`.
+
 Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Screen` with `headerLeft`/`headerRight` options.
 
 ### Tasks implementation
@@ -126,10 +130,8 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(settings)/index.tsx`
   - Theme toggle and auth UI
 - Theme toggle component: `apps/native/components/mode-toggle.tsx`
-- Color scheme context (shared state for theme switching):
+- Color scheme hook (shared state for theme switching + persistence):
   - `apps/native/lib/color-scheme-context.tsx`
-- NativeWind theme variables (dynamic CSS vars):
-  - `apps/native/lib/theme-vars.ts`
 - React Navigation theme tokens:
   - `apps/native/lib/theme.ts`
 
@@ -163,38 +165,36 @@ Example:
 
 ### How dark mode works
 
-NativeWind uses CSS variables for theming. To dynamically switch themes at runtime:
+Uniwind uses theme variants and CSS variables defined in `global.css`. To dynamically switch themes at runtime:
 
-1. **ColorSchemeProvider** (`lib/color-scheme-context.tsx`)
-   - Wraps the entire app at the root level
+1. **Color scheme hook** (`lib/color-scheme-context.tsx`)
+   - Hook-level state with SecureStore persistence
    - Stores user preference in SecureStore (light/dark/system)
-   - Provides `useColorScheme()` hook for all components to access shared theme state
+   - Calls `Uniwind.setTheme()` to apply theme at runtime
 
-2. **Theme variables** (`lib/theme-vars.ts`)
-   - Uses NativeWind's `vars()` function to define CSS variable values for light and dark modes
-   - Applied via `style` prop on a root View wrapper
+2. **Theme variables** (`global.css`)
+   - Uses `@layer theme` with `@variant light` and `@variant dark`
+   - Exposes semantic tokens like `--color-background`, `--color-foreground`, etc.
 
 3. **Root layout** (`app/_layout.tsx`)
-   - Applies theme vars: `style={isDarkColorScheme ? themeVars.dark : themeVars.light}`
-   - Also applies `dark` class for Tailwind's dark mode utilities
+   - Imports `global.css` once at the app root
+   - Reads effective scheme from `useColorScheme()`
    - Provides React Navigation theme via ThemeProvider
-
-4. **CSS variables** (`global.css`)
-   - Defines default variable values in `:root` and `.dark` selectors
-   - Used by Tailwind config to map semantic colors (e.g., `bg-background`)
 
 ### Adding new theme colors
 
-1. Add the CSS variable to both `:root` and `.dark` in `global.css`
-2. Add the variable to both `light` and `dark` objects in `lib/theme-vars.ts`
-3. Add the Tailwind color mapping in `tailwind.config.ts`
+1. Add the color variable to both `@variant light` and `@variant dark` in `global.css`
+2. Keep variable names consistent across themes (same keys in both variants)
+3. Use semantic classes in components (for example, `bg-background`, `text-foreground`)
 
-## Expo SDK 54 baseline
+## Expo SDK 55 baseline
 
 Current versions in `apps/native/package.json`:
-- `expo@~54.0.33`
-- `react-native@0.81.5`
-- SDK54-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
+- `expo@55.0.0-preview.10`
+- `react-native@0.83.1`
+- SDK55-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
+- `tailwindcss@^4`
+- `uniwind@^1.3.0`
 
 ## Build + bundling issues we hit (and fixes)
 
@@ -235,6 +235,19 @@ Most reliable local reset:
 Notes:
 - Keep host usage consistent during a test run (`localhost` only, or ngrok only).
 - This issue appears simulator-state related; production/TestFlight auth can remain healthy.
+
+### 5) iOS pod warning: deployment target set to 9.0
+
+Symptom:
+- Xcode warning from pod targets (for example `SDWebImage`) saying `IPHONEOS_DEPLOYMENT_TARGET` is `9.0`.
+
+Fix:
+- Added a custom Expo config plugin at `apps/native/plugins/with-ios-pod-deployment-target.js`.
+- Wired it in `apps/native/app.json` plugins list.
+- The plugin injects a `post_install` step into Podfile generation to align all pod targets with the app deployment target.
+
+Why this matters:
+- `expo prebuild --clean` can regenerate `ios/Podfile`. The plugin ensures this fix is re-applied on every prebuild, not just once manually.
 
 ## Environment variables
 

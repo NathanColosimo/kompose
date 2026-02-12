@@ -15,7 +15,6 @@ import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { createSecureStoreAdapter } from "@/lib/state-storage";
 import { NAV_THEME } from "@/lib/theme";
-import { themeVars } from "@/lib/theme-vars";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export const unstable_settings = {
@@ -32,9 +31,6 @@ function RootLayoutContent() {
     authClient.useSession();
   useNativeRealtimeSync(session?.user?.id);
 
-  // CSS variables for Tailwind classes - React Native needs these applied explicitly
-  const cssVars = isDarkColorScheme ? themeVars.dark : themeVars.light;
-
   // Update Android nav bar when color scheme changes
   React.useEffect(() => {
     if (Platform.OS === "android") {
@@ -48,10 +44,7 @@ function RootLayoutContent() {
   // Wait for session to load
   if (isSessionLoading) {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background"
-        style={cssVars}
-      >
+      <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
       </View>
     );
@@ -60,7 +53,7 @@ function RootLayoutContent() {
   // Show sign-in screen when not authenticated
   if (!session?.user) {
     return (
-      <View className="flex-1 bg-background" style={cssVars}>
+      <View className="flex-1 bg-background">
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <ScrollView
           className="flex-1"
@@ -89,7 +82,7 @@ function RootLayoutContent() {
   }
 
   return (
-    <View className="flex-1 bg-background" style={cssVars}>
+    <View className="flex-1 bg-background">
       <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
       <Stack
         screenOptions={{
@@ -111,7 +104,7 @@ function RootLayoutContent() {
 /**
  * Root layout with providers.
  * Uses stable wrapper structure - GestureHandlerRootView has a static className.
- * NativeWind handles dark: variants internally via setColorScheme.
+ * Uniwind handles theme variants internally via setTheme.
  */
 export default function RootLayout() {
   const storage = React.useMemo(() => createSecureStoreAdapter(), []);
@@ -196,7 +189,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <StateProvider config={config} storage={storage}>
-        {/* Stable wrapper - className is static, NativeWind handles dark mode internally */}
+        {/* Stable wrapper - className is static, theme changes are handled globally */}
         <GestureHandlerRootView className="flex-1">
           <RootLayoutContent />
         </GestureHandlerRootView>

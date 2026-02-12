@@ -117,7 +117,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "tailwindcss": "^4.1.18",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:"
   }
 }

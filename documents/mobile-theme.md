@@ -5,12 +5,12 @@ How dark mode and theming works in the native app.
 ## Architecture Overview
 
 ```
-NativeWind (colorScheme.set)  ←  User toggles theme
+Uniwind (setTheme)            ←  User toggles theme
          ↓
   useColorScheme() hook       ←  Components subscribe
          ↓
   ┌──────────────────────────────────────────┐
-  │  themeVars (CSS variables)               │  → Tailwind classes (bg-background, text-foreground)
+  │  global.css theme variables              │  → Tailwind classes (bg-background, text-foreground)
   │  NAV_THEME (color objects)               │  → React Navigation (headers, tabs)
   └──────────────────────────────────────────┘
 ```
@@ -19,22 +19,17 @@ NativeWind (colorScheme.set)  ←  User toggles theme
 
 | Aspect | Web | React Native |
 |--------|-----|--------------|
-| CSS Variables | Cascade via `:root` and `.dark` in CSS | Must be applied via `style` prop using `vars()` |
-| Dark class | Add `.dark` to parent element | NativeWind handles internally via `setColorScheme()` |
+| CSS Variables | Cascade via `:root` and `.dark` in CSS | Uniwind resolves `@layer theme` + `@variant light/dark` |
+| Theme switching | CSS class / app state | Uniwind runtime via `setTheme("light" \| "dark" \| "system")` |
 | Navigation styling | CSS classes | Native props require explicit color values |
 
 ## Files
 
 ### `lib/color-scheme-context.tsx`
-- Wraps NativeWind's `useColorScheme()` hook
-- Adds persistence to SecureStore
+- Wraps Uniwind theme state (`useUniwind` + `Uniwind.setTheme`)
+- Persists preference in SecureStore
 - Tracks `userPreference` for toggle UI ("light", "dark", "system")
-- **No provider needed** - uses NativeWind's internal state
-
-### `lib/theme-vars.ts`
-- CSS variable definitions using NativeWind's `vars()` function
-- Light and dark variants matching `global.css`
-- **Required for React Native** - no DOM cascade
+- Resolves effective `colorScheme` for UI logic (`"light"` / `"dark"`)
 
 ### `lib/theme.ts` (NAV_THEME)
 - Color objects for React Navigation's native components
@@ -42,9 +37,9 @@ NativeWind (colorScheme.set)  ←  User toggles theme
 - Must pass explicit color values
 
 ### `global.css`
-- Tailwind CSS variable definitions (`:root` and `.dark`)
-- Used by NativeWind to generate styles
-- Variables must also be in `theme-vars.ts` for React Native
+- Tailwind v4 + Uniwind entry (`@import "tailwindcss"; @import "uniwind";`)
+- Theme variables are defined in `@layer theme` using `@variant light` and `@variant dark`
+- Semantic tokens (`--color-background`, `--color-foreground`, etc.) drive class names
 
 ## Usage
 
@@ -54,21 +49,7 @@ NativeWind (colorScheme.set)  ←  User toggles theme
   <Text className="text-foreground">Hello</Text>
 </View>
 ```
-Works automatically - NativeWind resolves CSS variables.
-
-### In root layout
-```tsx
-function RootLayoutContent() {
-  const { isDarkColorScheme } = useColorScheme();
-  const cssVars = isDarkColorScheme ? themeVars.dark : themeVars.light;
-  
-  return (
-    <View style={cssVars}>  {/* Apply CSS variables to subtree */}
-      {children}
-    </View>
-  );
-}
-```
+Works automatically - Uniwind resolves semantic tokens from `global.css`.
 
 ### Theme toggle
 ```tsx
@@ -79,20 +60,16 @@ const { userPreference, setColorScheme } = useColorScheme();
 </Pressable>
 ```
 
-## Why No Provider?
-
-NativeWind's `colorScheme.set()` updates internal state outside React's render cycle. Components using `useColorScheme()` subscribe to this state independently - no context cascade needed.
-
-The `userPreference` state in the hook is local to each component instance, but they all read from the same persisted SecureStore value on mount.
-
 ## Keeping Things in Sync
 
 When adding new CSS variables:
-1. Add to `global.css` under both `:root` and `.dark`
-2. Add to `lib/theme-vars.ts` in both `light` and `dark` objects
-3. Add to `tailwind.config.ts` theme extension if using in classes
+1. Add to `global.css` under both `@variant light` and `@variant dark`
+2. Keep variable keys identical between variants
+3. Continue mapping React Navigation colors in `lib/theme.ts` when needed
 
 ## References
 
-- [NativeWind Dark Mode Docs](https://www.nativewind.dev/docs/core-concepts/dark-mode)
+- [Uniwind Theming Basics](https://docs.uniwind.dev/theming/basics)
+- [Uniwind Global CSS](https://docs.uniwind.dev/theming/global-css)
+- [Uniwind Style Based on Themes](https://docs.uniwind.dev/theming/style-based-on-themes)
 - [Expo Color Themes](https://docs.expo.dev/develop/user-interface/color-themes/)
