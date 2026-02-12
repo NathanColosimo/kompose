@@ -13,6 +13,7 @@ export const env = createEnv({
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
     GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
     GOOGLE_MAPS_API_KEY: z.string().min(1),
+    OPENAI_API_KEY: z.string().min(1).optional(),
     // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
     // Takes priority over Axiom when set
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),

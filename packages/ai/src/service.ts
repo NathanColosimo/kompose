@@ -1,0 +1,302 @@
+import type {
+  AiMessageSelect,
+  CreateAiSessionInput,
+} from "@kompose/db/schema/ai";
+import {
+  convertToModelMessages,
+  streamText,
+  TypeValidationError,
+  type UIMessage,
+  type UIMessageChunk,
+  validateUIMessages,
+} from "ai";
+import { Effect } from "effect";
+import { AiChatError } from "./errors";
+import { resolveChatModel } from "./model";
+import { BASE_CHAT_SYSTEM_PROMPT } from "./prompt";
+import { AiChatRepository } from "./repository";
+
+function extractTextParts(parts: UIMessage["parts"]): string {
+  return parts
+    .filter((part): part is Extract<typeof part, { type: "text" }> => {
+      return part.type === "text" && typeof part.text === "string";
+    })
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+function getPersistedContent(
+  parts: UIMessage["parts"],
+  fallback: string
+): string {
+  const text = extractTextParts(parts);
+  return text.length > 0 ? text : fallback;
+}
+
+function toUiMessage(message: AiMessageSelect): UIMessage {
+  const parsedParts =
+    Array.isArray(message.parts) && message.parts.length > 0
+      ? (message.parts as UIMessage["parts"])
+      : null;
+  const parts = parsedParts
+    ? parsedParts
+    : [
+        {
+          type: "text" as const,
+          text: message.content,
+        },
+      ];
+
+  return {
+    id: message.id,
+    role: message.role === "tool" ? "assistant" : message.role,
+    parts,
+  };
+}
+
+function getSessionTitleFromText(text: string): string | null {
+  const title = text.trim();
+  if (title.length === 0) {
+    return null;
+  }
+  return title.slice(0, 80);
+}
+
+interface UiStreamResultLike {
+  toUIMessageStream: (options?: {
+    originalMessages?: UIMessage[];
+    generateMessageId?: () => string;
+    onFinish?: (input: { messages: UIMessage[] }) => void | Promise<void>;
+  }) => ReadableStream<UIMessageChunk>;
+  toUIMessageStreamResponse: (options: {
+    originalMessages: UIMessage[];
+    generateMessageId?: () => string;
+    onFinish?: (input: { messages: UIMessage[] }) => void | Promise<void>;
+    consumeSseStream?: (input: {
+      stream: ReadableStream<string>;
+    }) => void | Promise<void>;
+  }) => Response;
+}
+
+/**
+ * Chat service that centralizes persistence + model orchestration.
+ * Route handlers should remain thin wrappers around this service.
+ */
+export class AiChatService extends Effect.Service<AiChatService>()(
+  "AiChatService",
+  {
+    accessors: true,
+    dependencies: [AiChatRepository.Default],
+    effect: Effect.gen(function* () {
+      const repository = yield* AiChatRepository;
+
+      const listSessions = Effect.fn("AiChatService.listSessions")(function* (
+        userId: string
+      ) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
+        return yield* repository.listSessions(userId);
+      });
+
+      const createSession = Effect.fn("AiChatService.createSession")(function* (
+        userId: string,
+        input: CreateAiSessionInput
+      ) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
+        return yield* repository.createSession(userId, input);
+      });
+
+      const deleteSession = Effect.fn("AiChatService.deleteSession")(function* (
+        userId: string,
+        sessionId: string
+      ) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
+        yield* Effect.annotateCurrentSpan("sessionId", sessionId);
+        yield* repository.deleteSession(userId, sessionId);
+      });
+
+      const listMessages = Effect.fn("AiChatService.listMessages")(function* (
+        userId: string,
+        sessionId: string
+      ) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
+        yield* Effect.annotateCurrentSpan("sessionId", sessionId);
+        yield* repository.getSession(userId, sessionId);
+        return yield* repository.listMessages(sessionId);
+      });
+
+      const getActiveStreamId = Effect.fn("AiChatService.getActiveStreamId")(
+        function* (userId: string, sessionId: string) {
+          yield* Effect.annotateCurrentSpan("userId", userId);
+          yield* Effect.annotateCurrentSpan("sessionId", sessionId);
+          const session = yield* repository.getSession(userId, sessionId);
+          return session.activeStreamId;
+        }
+      );
+
+      const markActiveStream = Effect.fn("AiChatService.markActiveStream")(
+        function* (input: {
+          userId: string;
+          sessionId: string;
+          streamId: string | null;
+        }) {
+          yield* repository.updateSessionActivity({
+            userId: input.userId,
+            sessionId: input.sessionId,
+            activeStreamId: input.streamId,
+          });
+        }
+      );
+
+      const persistAssistantFromUiMessages = Effect.fn(
+        "AiChatService.persistAssistantFromUiMessages"
+      )(function* (input: {
+        userId: string;
+        sessionId: string;
+        messages: UIMessage[];
+      }) {
+        const lastAssistantMessage = [...input.messages]
+          .reverse()
+          .find((message) => message.role === "assistant");
+
+        if (lastAssistantMessage && lastAssistantMessage.parts.length > 0) {
+          yield* repository.createMessage({
+            sessionId: input.sessionId,
+            role: "assistant",
+            content: getPersistedContent(
+              lastAssistantMessage.parts,
+              "[non-text assistant message]"
+            ),
+            parts: lastAssistantMessage.parts,
+          });
+        }
+
+        // Always clear active stream metadata when a stream finishes/aborts.
+        yield* repository.updateSessionActivity({
+          userId: input.userId,
+          sessionId: input.sessionId,
+          activeStreamId: null,
+        });
+      });
+
+      const startStream: (input: {
+        userId: string;
+        sessionId: string;
+        message: UIMessage;
+        abortSignal?: AbortSignal;
+      }) => Effect.Effect<
+        { originalMessages: UIMessage[]; streamResult: UiStreamResultLike },
+        AiChatError
+      > = Effect.fn("AiChatService.startStream")(function* (input: {
+        userId: string;
+        sessionId: string;
+        message: UIMessage;
+        abortSignal?: AbortSignal;
+      }) {
+        yield* Effect.annotateCurrentSpan("userId", input.userId);
+        yield* Effect.annotateCurrentSpan("sessionId", input.sessionId);
+
+        const session = yield* repository.getSession(
+          input.userId,
+          input.sessionId
+        );
+        if (input.message.role !== "user") {
+          return yield* Effect.fail(
+            new AiChatError({
+              message: "Only user messages can start a chat stream.",
+              code: "BAD_REQUEST",
+            })
+          );
+        }
+
+        const userText = extractTextParts(input.message.parts);
+        if (input.message.parts.length === 0) {
+          return yield* Effect.fail(
+            new AiChatError({
+              message: "Message content is required.",
+              code: "BAD_REQUEST",
+            })
+          );
+        }
+
+        yield* repository.createMessage({
+          sessionId: input.sessionId,
+          role: "user",
+          // Keep a textual summary for quick list/search while full structured
+          // message payload lives in `parts`.
+          content: getPersistedContent(
+            input.message.parts,
+            "[non-text user message]"
+          ),
+          parts: input.message.parts,
+        });
+
+        const nextTitle = session.title ?? getSessionTitleFromText(userText);
+        yield* repository.updateSessionActivity({
+          userId: input.userId,
+          sessionId: input.sessionId,
+          title: nextTitle,
+        });
+
+        const history = yield* repository.listMessages(input.sessionId);
+        const originalMessages = history.map(toUiMessage);
+
+        const validatedMessages = yield* Effect.tryPromise({
+          try: () => validateUIMessages({ messages: originalMessages }),
+          catch: (error) => {
+            if (error instanceof TypeValidationError) {
+              return new AiChatError({
+                message: "Stored chat messages failed validation.",
+                code: "BAD_REQUEST",
+              });
+            }
+            return new AiChatError({
+              message: "Failed to validate chat messages.",
+              code: "INTERNAL",
+            });
+          },
+        });
+
+        const model = resolveChatModel(session.model ?? undefined);
+        yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
+        const modelMessages = yield* Effect.tryPromise({
+          try: () => convertToModelMessages(validatedMessages),
+          catch: () =>
+            new AiChatError({
+              message: "Failed to convert chat messages for model.",
+              code: "INTERNAL",
+            }),
+        });
+
+        // streamText performs the provider network call. We keep this inside
+        // an Effect.fn span so latency is visible in tracing.
+        const streamResult = streamText({
+          model,
+          system: BASE_CHAT_SYSTEM_PROMPT,
+          messages: modelMessages,
+          abortSignal: input.abortSignal,
+          providerOptions: {
+            // Request readable reasoning summaries when supported.
+            openai: { reasoningSummary: "auto" },
+          },
+        });
+
+        return {
+          originalMessages: validatedMessages,
+          streamResult: streamResult as UiStreamResultLike,
+        };
+      });
+
+      return {
+        listSessions,
+        createSession,
+        deleteSession,
+        listMessages,
+        getActiveStreamId,
+        markActiveStream,
+        persistAssistantFromUiMessages,
+        startStream,
+      };
+    }),
+  }
+) {}

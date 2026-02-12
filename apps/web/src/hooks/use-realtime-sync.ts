@@ -1,14 +1,16 @@
 "use client";
 
+import { hasSessionAtom } from "@kompose/state/config";
 import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
-import { authClient } from "@/lib/auth-client";
+import { useAtomValue } from "jotai";
 
 export function useWebRealtimeSync() {
-  const { data: session } = authClient.useSession();
-  const userId = session?.user?.id;
+  // Reuse shared session presence state to avoid another get-session subscriber.
+  const hasSession = useAtomValue(hasSessionAtom);
 
   useRealtimeSync({
-    enabled: Boolean(userId),
-    userId,
+    enabled: hasSession,
+    // Realtime hook only needs a truthy identifier gate for web.
+    userId: hasSession ? "active-session" : undefined,
   });
 }

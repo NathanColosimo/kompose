@@ -11,6 +11,7 @@ import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { useIsMobile } from "@/lib/use-mobile";
+import { SIDEBAR_LEFT_WIDTH } from "@/state/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -56,14 +57,15 @@ export default function DashboardLayout({
       suppressHydrationWarning
     >
       {/* App-wide header with search bar and user menu */}
-      <AppHeader />
+      <AppHeader user={session.user} />
 
       {/* Main content area below header */}
       <SidebarProvider
         className="min-h-0 flex-1"
         style={
           {
-            "--sidebar-width": "350px",
+            // The base sidebar width token is used by the left/sidebar-day area.
+            "--sidebar-width": SIDEBAR_LEFT_WIDTH,
           } as React.CSSProperties
         }
       >

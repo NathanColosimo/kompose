@@ -1,0 +1,232 @@
+# AI Chat Implementation Log
+
+This document captures the AI chat work completed so far across schema, backend services, API routes, shared state, and web UI.
+
+## 1) Scope and intent
+
+Phase 1 scope implemented:
+
+- AI chat foundation across web + shared app layer
+- Session persistence + message persistence
+- Streaming responses with resumable stream support
+- Attachment support via `UIMessage.parts` (no separate attachment table)
+- Clear seam for future tool-calling and richer AI workflows
+
+Out of scope for this pass:
+
+- Native AI tab UI
+- Tool execution logic (Phase 2+)
+- Memory/automation features (`mem0`, plugin subscriptions, generative UI)
+
+---
+
+## 2) Database and schema decisions
+
+Implemented in `packages/db/src/schema/ai.ts` and related schema files:
+
+- Added AI chat tables:
+  - `ai_session`
+  - `ai_message`
+- Removed separate `ai_attachment` table (attachments live in message parts).
+- Removed `userId` from `ai_message` (ownership comes from `sessionId -> ai_session`).
+- IDs use `uuidv7()` in repository/service layer for session + message creation.
+- Kept normalized message columns with flexible JSON:
+  - `role`, `content` (queryable core)
+  - `parts` as `jsonb` for rich UI payloads
+- Collocated DB-derived chat types directly in schema file:
+  - `AiSessionSelect`, `AiMessageSelect`, `AiChatRole`
+  - `CreateAiSessionInput`, `CreateAiMessageInput`
+  - insert/select/update row aliases
+
+Related updates:
+
+- `packages/db/src/schema/relations.ts` updated to remove attachment relations and keep AI relations consistent.
+
+---
+
+## 3) Type system cleanup
+
+Type strategy was simplified to avoid duplication and drift:
+
+- Removed manual `packages/ai/src/types.ts`.
+- Re-exported DB-derived chat types from `packages/ai/src/index.ts`.
+- Removed inline `import("...").Type` style usage in shared state types.
+- Removed redundant manual stream input/result aliases that were unnecessary.
+
+Result: chat types are now sourced from DB schema and AI SDK types where appropriate.
+
+---
+
+## 4) `packages/ai` refactor (Effect + OTel)
+
+Refactored both repository and service into `Effect.Service` pattern.
+
+### Repository (`packages/ai/src/repository.ts`)
+
+- Converted to `AiChatRepository extends Effect.Service`.
+- Methods wrapped with `Effect.fn(...)` and `Effect.tryPromise(...)`.
+- Added span annotations (user/session context) for traceability.
+- Removed mapper indirection where unnecessary.
+- Handles:
+  - list/create/get/delete sessions
+  - list/create messages
+  - update session activity (`activeStreamId`, `title`, `lastMessageAt`)
+
+### Service (`packages/ai/src/service.ts`)
+
+- Converted to `AiChatService extends Effect.Service` with repository dependency.
+- Added chat orchestration methods:
+  - `listSessions`, `createSession`, `deleteSession`, `listMessages`
+  - `startStream`
+  - `markActiveStream`, `getActiveStreamId`
+  - `persistAssistantFromUiMessages`
+- Runtime message validation uses AI SDK `validateUIMessages`.
+- AI provider call stays in traced service flow.
+- Persists assistant text fallback for non-text outputs while storing full `parts`.
+
+---
+
+## 5) API migration to oRPC
+
+Chat APIs are now implemented in `packages/api/src/routers/ai`:
+
+- `contract.ts`
+- `router.ts`
+- `resumable-stream.ts`
+- `stream-protocol.ts`
+
+Key changes:
+
+- Router implementation now follows the same Effect/orpc format as other routers:
+  - `const program = ...`
+  - `Effect.runPromise(program.pipe(...))`
+  - centralized `handleError(...)` mapping `AiChatError -> ORPCError`
+- Provides `AiChatService.Default` + `TelemetryLive` via merged layer.
+- Uses oRPC `requireAuth` middleware + typed ORPC errors
+- Stream procedures:
+  - `ai.stream.send` for primary stream
+  - `ai.stream.reconnect` for resumable reconnect
+  - still uses Redis-backed `resumable-stream` under the hood
+  - tracks/clears `activeStreamId` on the session
+
+---
+
+## 6) Shared state + app clients
+
+Shared chat access is now centralized again in state and backed by oRPC:
+
+- Added `packages/state/src/hooks/use-ai-chat.ts` with:
+  - `sessionsQuery`
+  - `messagesQuery`
+  - `createSession` / `deleteSession`
+  - `streamSessionMessage` / `resumeSessionStream`
+  - shared query-key helpers for session/message caches
+- Removed legacy REST chat clients:
+  - `apps/web/src/utils/chat-client.ts`
+  - `apps/native/utils/chat-client.ts`
+- Removed `chatClient` from shared state config/types
+- `apps/web/src/components/sidebar/sidebar-right-chat.tsx` now consumes the shared `useAiChat` hook and uses `useChat` transport backed by:
+  - `orpc.ai.stream.send` (through `streamSessionMessage`)
+  - `orpc.ai.stream.reconnect` (through `resumeSessionStream`)
+
+---
+
+## 7) Web sidebar chat UI (AI Elements)
+
+Added chat UI to right sidebar:
+
+- `apps/web/src/components/sidebar/sidebar-right-chat.tsx`
+- `apps/web/src/components/sidebar/sidebar-right.tsx` now mounts this chat surface
+
+Features implemented:
+
+- Session list + create/delete
+- Message list rendering using AI Elements conversation/message primitives
+- Prompt composer with file attachments
+- Model picker (currently `gpt-5`, `gpt-5-mini`)
+- Reasoning and chain-of-thought display blocks
+- Context usage indicator block
+- Streaming + resume wired through AI SDK `useChat`
+
+---
+
+## 8) AI Elements cleanup
+
+Removed non-chat AI Elements components from `apps/web/src/components/ai-elements` to keep surface area focused.
+
+Kept chat-relevant components:
+
+- `attachments.tsx`
+- `chain-of-thought.tsx`
+- `context.tsx`
+- `conversation.tsx`
+- `message.tsx`
+- `model-selector.tsx`
+- `prompt-input.tsx`
+- `reasoning.tsx`
+- `shimmer.tsx` (used by reasoning)
+
+---
+
+## 9) Resumable streams with Bun Redis
+
+Implemented custom Redis-backed resumable stream context:
+
+- Added `packages/api/src/routers/ai/resumable-stream.ts`
+- Uses `resumable-stream/generic` with Bun `RedisClient` adapters:
+  - `Publisher`: `connect/get/set/incr/publish`
+  - `Subscriber`: `connect/subscribe/unsubscribe`
+- Uses `env.REDIS_URL`
+- Added key prefix: `kompose:chat:stream`
+- Added `packages/api/src/routers/ai/stream-protocol.ts` to bridge:
+  - `UIMessageChunk` streams <-> SSE string streams
+- AI router procedures use shared singleton context for:
+  - `createNewResumableStream`
+  - `resumeExistingStream`
+
+---
+
+## 10) UI fixes after integration
+
+Follow-up UX fixes:
+
+- Prompt input height issue:
+  - Re-structured `PromptInputHeader`, `PromptInputBody`, `PromptInputFooter` as direct children of `PromptInput` per AI Elements composition expectations.
+  - Added `rows={3}` for better default textarea height.
+- Footer overlap issue (model picker and attachment plus icon):
+  - Enabled wrapping in tools row
+  - Gave model button explicit text-button sizing/spacing
+  - Prevented context trigger shrinking
+
+---
+
+## 11) Validation summary
+
+During this work:
+
+- `@kompose/ai` type-check passed after backend refactors
+- `@kompose/api` type-check passed after router + stream protocol changes
+- `@kompose/state` and `web` type-check passed after restoring shared chat hook
+- Lints for changed chat files were kept clean
+
+---
+
+## 12) Current status and remaining steps
+
+Completed:
+
+- Backend AI chat foundations
+- DB schema + type derivation model
+- Effect-based repository/service with tracing
+- oRPC AI router with resumable streaming
+- Redis-backed resumable streams (Bun Redis adapter)
+- Shared `useAiChat` hook in `packages/state` backed by oRPC
+- Web right-sidebar chat UI with AI Elements
+- Key UX fixes on composer layout
+
+Still pending:
+
+- Generate DB migration artifacts (`db:generate`) on user command
+- Native AI tab UI integration
+- Phase 2+ capabilities (tools, memory, automations, generative UI)
+

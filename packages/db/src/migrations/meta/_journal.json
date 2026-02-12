@@ -64,6 +64,13 @@
       "when": 1770515894512,
       "tag": "0008_add_webhook_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1770845327134,
+      "tag": "0009_add_ai_tables",
+      "breakpoints": true
     }
   ]
 }

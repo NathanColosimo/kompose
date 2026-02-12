@@ -8,4 +8,8 @@ import { createAuthClient } from "better-auth/react";
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   plugins: [inferAdditionalFields<typeof auth>()],
+  sessionOptions: {
+    // Avoid repetitive get-session calls while the dashboard is active.
+    refetchOnWindowFocus: false,
+  },
 });

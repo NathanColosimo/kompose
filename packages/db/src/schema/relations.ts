@@ -1,4 +1,5 @@
 import { relations } from "drizzle-orm";
+import { aiMessageTable, aiSessionTable } from "./ai";
 import { tagTable, taskTagTable } from "./tag";
 import { taskTable } from "./task";
 
@@ -18,5 +19,16 @@ export const taskTagRelations = relations(taskTagTable, ({ one }) => ({
   tag: one(tagTable, {
     fields: [taskTagTable.tagId],
     references: [tagTable.id],
+  }),
+}));
+
+export const aiSessionRelations = relations(aiSessionTable, ({ many }) => ({
+  messages: many(aiMessageTable),
+}));
+
+export const aiMessageRelations = relations(aiMessageTable, ({ one }) => ({
+  session: one(aiSessionTable, {
+    fields: [aiMessageTable.sessionId],
+    references: [aiSessionTable.id],
   }),
 }));

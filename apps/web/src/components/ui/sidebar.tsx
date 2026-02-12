@@ -226,6 +226,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   className,
+  style,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
@@ -254,6 +255,7 @@ function Sidebar({
           className
         )}
         data-slot="sidebar"
+        style={style}
         {...props}
       >
         {wrappedChildren}
@@ -294,6 +296,7 @@ function Sidebar({
       data-slot="sidebar"
       data-state={state}
       data-variant={variant}
+      style={style}
     >
       {/* This is what handles the sidebar gap on desktop */}
       <div
@@ -320,6 +323,7 @@ function Sidebar({
           className
         )}
         data-slot="sidebar-container"
+        style={style}
         {...props}
       >
         <div

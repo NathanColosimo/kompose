@@ -12,7 +12,7 @@
   "scripts": {
     "type-check": "tsc --noEmit",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
+    "db:studio": "drizzle-kit studio --verbose",
     "redis:studio": "open -a 'Redis Insight'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

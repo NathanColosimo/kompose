@@ -4,6 +4,7 @@
 - Implemented a storage adapter layer with `createPersistedAtom` and platform adapters (web localStorage, native SecureStore) so persisted atoms stay in sync.
 - Wired both apps to the shared state package: web `Providers` now wraps `StateProvider`, native root layout now wraps it too.
 - Migrated web and native imports to use shared atoms/hooks; removed legacy web atoms/hooks and added web-only replacements at `apps/web/src/state/sidebar.ts` and `apps/web/src/lib/use-mobile.ts`.
+- Added a shared AI chat hook at `packages/state/src/hooks/use-ai-chat.ts` that uses oRPC chat procedures (`orpc.ai.*`) for sessions, messages, and stream/reconnect helpers.
 - Updated dependencies to include `@kompose/state` and adjusted TypeScript config/types for the new package; verified `@kompose/state` type-check passes.
 
 ## `packages/state` contents
@@ -21,11 +22,11 @@
 - `hooks/use-google-events.ts`: Query hook for events per calendar/time window.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
+- `hooks/use-ai-chat.ts`: Shared AI chat sessions/messages queries, session mutations, and streaming/reconnect wrappers over `orpc.ai`.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using timezone-aware filters.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
-- `index.ts`: Public exports for shared atoms/hooks/types.
 - `state-provider.tsx`: State hydrator/provider wiring and session gating.
 - `storage.ts`: Storage adapter interface + persisted atom helper + web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
-- `types.ts`: Shared types for auth client and ORPC utils.
+- `types.ts`: Shared types for auth client and ORPC utils (no REST chat client interface).

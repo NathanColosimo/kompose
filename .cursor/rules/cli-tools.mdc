@@ -15,6 +15,7 @@ Always prefer these faster, modern alternatives when running shell commands:
 | `diff` | `delta` | `git diff \| delta` |
 | `jq` | `jaq` | `jaq '.key' file.json` |
 | `ps` | `procs` | `procs` |
+| 'node:*' | 'bun' | `bun run index.ts` |
 
 ## Quick Examples
 

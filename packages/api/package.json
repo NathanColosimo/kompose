@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@effect/opentelemetry": "catalog:",
+    "@kompose/ai": "workspace:*",
     "@kompose/auth": "workspace:*",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
@@ -35,10 +36,12 @@
     "@orpc/experimental-ratelimit": "catalog:",
     "@orpc/otel": "catalog:",
     "@orpc/server": "catalog:",
+    "ai": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "next": "catalog:",
+    "resumable-stream": "catalog:",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:",
     "zod": "catalog:"

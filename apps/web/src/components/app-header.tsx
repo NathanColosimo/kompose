@@ -63,15 +63,9 @@ import { useTauriUpdater } from "./tauri-updater";
  * The header is draggable in Tauri for window movement.
  * On web, looks identical but without drag functionality.
  */
-export function AppHeader() {
-  const { data: session } = authClient.useSession();
-  const user = session?.user;
+export function AppHeader({ user }: { user: User }) {
   const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
   const fallbackGoogleAvatar = useMemo(() => {
-    if (!user) {
-      return "";
-    }
-
     const email = user.email?.toLowerCase();
     if (!email) {
       return googleAccountProfiles[0]?.profile?.image || "";
@@ -107,8 +101,8 @@ export function AppHeader() {
         data-tauri-drag-region
       >
         <UpdatePromptButton />
-        {user && <TagsMenu />}
-        {user && <UserMenu avatarSrc={avatarSrc} user={user} />}
+        <TagsMenu />
+        <UserMenu avatarSrc={avatarSrc} user={user} />
       </div>
     </header>
   );
