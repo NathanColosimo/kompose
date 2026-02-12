@@ -41,14 +41,17 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
-      const baseUrl = window.location.origin;
+      // Normalize origin and use explicit trailing slashes so Tauri static
+      // route resolution lands on the expected exported page paths.
+      const origin = window.location.origin;
+      const baseUrl = origin.endsWith("/") ? origin.slice(0, -1) : origin;
       await authClient.signIn.social(
         {
           provider,
-          callbackURL: `${baseUrl}/dashboard`,
-          errorCallbackURL: `${baseUrl}/login`,
+          callbackURL: `${baseUrl}/dashboard/`,
+          errorCallbackURL: `${baseUrl}/login/`,
           ...(mode === "sign-up"
-            ? { newUserCallbackURL: `${baseUrl}/dashboard` }
+            ? { newUserCallbackURL: `${baseUrl}/dashboard/` }
             : {}),
         },
         {

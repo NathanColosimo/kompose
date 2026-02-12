@@ -23,6 +23,12 @@ export default function LoginPage() {
 
   return (
     <main className="bg-background text-foreground">
+      {/* Keep login/signup screens draggable in the Tauri desktop window. */}
+      <div
+        aria-hidden
+        className="fixed inset-x-0 top-0 z-50 h-8 select-none"
+        data-tauri-drag-region
+      />
       <div className="grid min-h-svh gap-12 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="relative hidden flex-col justify-between overflow-hidden border-border/50 bg-linear-to-br from-primary/15 via-background to-background p-10 text-left lg:flex">
           <div className="space-y-6">

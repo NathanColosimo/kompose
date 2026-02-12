@@ -88,28 +88,28 @@ export function AppHeader({ user }: { user: User }) {
   const avatarSrc = user?.image || fallbackGoogleAvatar || "";
 
   return (
-    <header
-      className="flex h-10 shrink-0 items-center border-b bg-background px-2"
-      // Tauri v2 uses data-tauri-drag-region for window dragging (no effect on web)
-      data-tauri-drag-region
-    >
-      {/* Left: Traffic light safe area (~76px for macOS traffic lights) */}
-      <div className="w-[76px] shrink-0" data-tauri-drag-region />
-
-      {/* Center: Search bar - container is draggable, button is not */}
-      <div className="flex flex-1 justify-center" data-tauri-drag-region>
-        <SearchButton />
-      </div>
-
-      {/* Right: User menu - container is draggable, dropdown is not */}
+    <header className="relative flex h-10 shrink-0 items-center border-b bg-background px-2">
+      {/* Dedicated drag layer keeps empty header space draggable in Tauri. */}
       <div
-        className="flex shrink-0 items-center justify-end gap-2 pr-1"
+        aria-hidden
+        className="absolute inset-0 select-none"
         data-tauri-drag-region
-      >
-        <ChatToggleButton />
-        <UpdatePromptButton />
-        <TagsMenu />
-        <UserMenu avatarSrc={avatarSrc} user={user} />
+      />
+
+      <div className="relative z-10 flex w-full items-center">
+        {/* Left: Traffic light safe area (~76px for macOS traffic lights) */}
+        <div className="w-[76px] shrink-0" />
+
+        <div className="flex flex-1 justify-center">
+          <SearchButton />
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 pr-1">
+          <ChatToggleButton />
+          <UpdatePromptButton />
+          <TagsMenu />
+          <UserMenu avatarSrc={avatarSrc} user={user} />
+        </div>
       </div>
     </header>
   );

@@ -1,4 +1,3 @@
-import { createMDX } from "fumadocs-mdx/next";
 import type { NextConfig } from "next";
 
 // When building for Tauri, use static export (no server routes).
@@ -15,7 +14,7 @@ const nextConfig: NextConfig = {
   // Debug: disable Strict Mode to rule out dev double-mount behavior.
   reactStrictMode: false,
   reactCompiler: true,
-  // Force environment validation at build time
+  // Force environment validation at build time.
   transpilePackages: ["@t3-oss/env-nextjs", "@t3-oss/env-core"],
   experimental: {
     turbopackFileSystemCacheForDev: true,
@@ -55,6 +54,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Wrap with fumadocs-mdx to enable MDX content compilation.
-const withMDX = createMDX();
+// Load Fumadocs MDX only for web builds. Desktop builds exclude docs routes.
+const withMDX = isTauriBuild
+  ? (config: NextConfig) => config
+  : (await import("fumadocs-mdx/next")).createMDX();
+
 export default withMDX(nextConfig);

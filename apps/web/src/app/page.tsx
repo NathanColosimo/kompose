@@ -26,6 +26,12 @@ const highlights = [
 export default function Home() {
   return (
     <main className="bg-background text-foreground">
+      {/* Provide a drag handle on desktop (Tauri) without affecting web behavior. */}
+      <div
+        aria-hidden
+        className="fixed inset-x-0 top-0 z-50 h-8 select-none"
+        data-tauri-drag-region
+      />
       <section className="container mx-auto flex min-h-[calc(100svh-4rem)] flex-col gap-12 px-6 py-20 lg:flex-row lg:items-center">
         <div className="space-y-8 text-center lg:text-left">
           <p className="font-semibold text-muted-foreground text-sm uppercase tracking-[0.2em]">

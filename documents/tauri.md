@@ -11,6 +11,11 @@ auto-updates.
 - Tauri updater plugin is wired (Rust + JS), and a silent download +
   restart prompt is shown in the header once an update is ready.
 - Update checks run on app launch and every 6 hours.
+- Desktop window now launches maximized by default (not macOS fullscreen).
+- Drag regions are explicitly defined for dashboard header plus
+  landing/auth pages so window dragging remains reliable.
+- Desktop builds now exclude the `/docs` route and skip loading the
+  Fumadocs MDX plugin.
 - Updater config points to GitHub Releases `latest.json`.
 - A `.tauri.env` workflow exists for local signing/notarization builds.
 - Apple Silicon DMG build now succeeds with the standard Cargo defaults.
@@ -49,6 +54,13 @@ auto-updates.
 
 - `apps/web/src/components/app-header.tsx`
   - Added restart button with red dot when update is ready.
+  - Updated drag handling to use a dedicated non-interactive drag layer.
+
+- `apps/web/src/app/page.tsx`
+  - Added top drag strip so landing page can drag the Tauri window.
+
+- `apps/web/src/app/login/page.tsx`
+  - Added top drag strip so sign-in/sign-up page can drag the Tauri window.
 
 - `apps/web/tsconfig.json`
   - Excluded `src-tauri/target/**` to avoid TS parsing generated files.
@@ -62,7 +74,11 @@ auto-updates.
 - `apps/web/package.json`
   - Added script: `desktop:build:signed`.
   - Added script: `desktop:build:signed:universal`.
-  - Added script: `build:desktop` (uses `rm -rf .next`, then runs production build).
+  - Added script: `build:desktop` (uses `rm -rf .next`, excludes `src/app/api` + `src/app/docs`, then runs production build).
+
+- `apps/web/next.config.mts`
+  - Fumadocs MDX plugin is loaded only for non-Tauri builds.
+  - `transpilePackages` no longer includes Shiki packages.
 
 - `apps/web/src-tauri/tauri.conf.json`
   - `build.beforeBuildCommand`: `bun run build:desktop`

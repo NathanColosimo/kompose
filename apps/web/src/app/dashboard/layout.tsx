@@ -57,10 +57,10 @@ export default function DashboardLayout({
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
 
-  // Redirect visitors without an active session back to the homepage.
+  // Redirect visitors without an active session to the auth screen.
   useEffect(() => {
     if (sessionResolved && !hasSession) {
-      router.replace("/");
+      router.replace("/login");
     }
   }, [hasSession, router, sessionResolved]);
 
