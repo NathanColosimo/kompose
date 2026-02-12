@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --bun next dev",
     "build": "bun --bun next build",
-    "build:desktop": "rm -rf .next out && rm -rf src/app/api src/app/docs && TAURI_BUILD=1 bun --bun next build; git checkout -- src/app/api src/app/docs",
+    "build:desktop": "bash ./scripts/build-desktop.sh",
     "start": "bun --bun next start",
     "type-check": "tsc --noEmit",
     "tauri": "tauri",
