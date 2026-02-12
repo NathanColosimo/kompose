@@ -21,7 +21,6 @@ import Animated, {
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
 import { useColor } from "@/hooks/useColor";
-import { useKeyboardHeight } from "@/hooks/useKeyboardHeight"; // Make sure this path is correct
 import { BORDER_RADIUS } from "@/theme/globals";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -116,8 +115,9 @@ const BottomSheetContent = ({
         </View>
       )}
 
-      {/* Content now wrapped in a ScrollView */}
+      {/* Content wrapped in a ScrollView with native keyboard inset adjustment */}
       <ScrollView
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={{ padding: 16, paddingBottom: 88 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -154,14 +154,11 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const cardColor = useColor("card");
   const mutedColor = useColor("muted");
-  const { keyboardHeight, isKeyboardVisible } = useKeyboardHeight();
 
   const translateY = useSharedValue(0);
   const context = useSharedValue({ y: 0 });
   const opacity = useSharedValue(0);
   const currentSnapIndex = useSharedValue(0);
-  // Shared value to hold keyboard height for use in worklets
-  const keyboardHeightSV = useSharedValue(0);
 
   const snapPointsHeights = snapPoints.map((point) => -SCREEN_HEIGHT * point);
   const defaultHeight = snapPointsHeights[0];
@@ -196,40 +193,15 @@ export function BottomSheet({
     translateY.value = withSpring(destination, SPRING_CONFIG);
   };
 
-  // --- START: NEW KEYBOARD HANDLING LOGIC ---
-  useEffect(() => {
-    // Update the shared value whenever keyboardHeight changes
-    keyboardHeightSV.value = keyboardHeight;
-
-    // Only adjust position if the sheet is currently visible
-    if (isVisible) {
-      const currentSnapHeight = snapPointsHeights[currentSnapIndex.value];
-      let destination: number;
-
-      if (isKeyboardVisible) {
-        // Keyboard is open, move sheet up by keyboard height
-        destination = currentSnapHeight - keyboardHeight;
-      } else {
-        // Keyboard is closed, return to original snap point
-        destination = currentSnapHeight;
-      }
-      snapTo(destination);
-    }
-  }, [keyboardHeight, isKeyboardVisible, isVisible]);
-  // --- END: NEW KEYBOARD HANDLING LOGIC ---
-
   const findClosestSnapPoint = (currentY: number) => {
     "worklet";
-    // Adjust the currentY by the keyboard height to find the original snap point
-    const adjustedY = currentY + keyboardHeightSV.value;
-
     let closest = snapPointsHeights[0];
-    let minDistance = Math.abs(adjustedY - closest);
+    let minDistance = Math.abs(currentY - closest);
     let closestIndex = 0;
 
     for (let i = 0; i < snapPointsHeights.length; i++) {
       const snapPoint = snapPointsHeights[i];
-      const distance = Math.abs(adjustedY - snapPoint);
+      const distance = Math.abs(currentY - snapPoint);
       if (distance < minDistance) {
         minDistance = distance;
         closest = snapPoint;
@@ -243,8 +215,7 @@ export function BottomSheet({
   const handlePress = () => {
     const nextIndex = (currentSnapIndex.value + 1) % snapPointsHeights.length;
     currentSnapIndex.value = nextIndex;
-    const destination = snapPointsHeights[nextIndex] - keyboardHeightSV.value;
-    snapTo(destination);
+    snapTo(snapPointsHeights[nextIndex]);
   };
 
   // Close animation from JS contexts (backdrop, Android hardware back).
@@ -287,11 +258,8 @@ export function BottomSheet({
         return;
       }
 
-      // Find the closest original snap point
       const closestSnapPoint = findClosestSnapPoint(currentY);
-      // Calculate the final destination, accounting for the keyboard height
-      const finalDestination = closestSnapPoint - keyboardHeightSV.value;
-      snapToWorklet(finalDestination);
+      snapToWorklet(closestSnapPoint);
     });
 
   const rBottomSheetStyle = useAnimatedStyle(() => {
