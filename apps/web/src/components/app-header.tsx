@@ -56,6 +56,7 @@ import {
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
+import { queryClient } from "@/utils/orpc";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPicker } from "./tags/tag-icon-picker";
 import { useTauriUpdater } from "./tauri-updater";
@@ -180,13 +181,15 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          router.push("/");
-        },
-      },
-    });
+    // Wait for sign-out response first.
+    await authClient.signOut();
+    // Force a fresh server-backed session read (bypass Better Auth cookie cache)
+    // so route guards use authoritative signed-out state before redirect.
+    await authClient
+      .getSession({ query: { disableCookieCache: true } })
+      .catch(() => null);
+    queryClient.clear();
+    router.replace("/login");
   };
 
   // Get initials for avatar fallback

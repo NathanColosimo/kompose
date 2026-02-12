@@ -36,6 +36,8 @@ export const sessionQueryAtom = atomWithQuery<unknown | null>((get) => {
     },
     // We only need current session truthiness; retries add noise.
     retry: false,
+    // Always revalidate on mount so stale cached auth never drives routing.
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
   };
 });
@@ -51,13 +53,6 @@ export const sessionUserAtom = atom(
  * Tracks whether a user session is present.
  */
 export const hasSessionAtom = atom((get) => Boolean(get(sessionUserAtom)));
-
-/**
- * Tracks when the current session query has resolved at least once.
- */
-export const sessionResolvedAtom = atom(
-  (get) => !get(sessionQueryAtom).isPending
-);
 
 /**
  * Helper for atoms that need access to config via `get`.

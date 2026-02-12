@@ -16,6 +16,10 @@ auto-updates.
   landing/auth pages so window dragging remains reliable.
 - Desktop builds now exclude the `/docs` route and skip loading the
   Fumadocs MDX plugin.
+- Auth redirects now use slashless desktop callback paths.
+- Logout now clears in-memory query cache and auth route guards wait for
+  settled session revalidation before redirecting.
+- Logout now routes directly to `/login` after sign-out and cache clear.
 - Updater config points to GitHub Releases `latest.json`.
 - A `.tauri.env` workflow exists for local signing/notarization builds.
 - Apple Silicon DMG build now succeeds with the standard Cargo defaults.
@@ -38,6 +42,10 @@ auto-updates.
 
 - `apps/web/src-tauri/src/lib.rs`
   - Added: `tauri_plugin_updater::Builder::new().build()`.
+  - Added release startup maximize fallback using `window.maximize()`.
+
+- `apps/web/src/components/auth/social-account-buttons.tsx`
+  - Social auth callback URLs now use slashless paths (`/dashboard`, `/login`) for more consistent desktop route resolution.
 
 - `apps/web/src-tauri/Cargo.toml`
   - Added: `tauri-plugin-updater = "2"`.
@@ -51,16 +59,25 @@ auto-updates.
 
 - `apps/web/src/components/providers.tsx`
   - Wraps app in `TauriUpdaterProvider`.
+  - `getSession` now uses `authClient.getSession({ query: { disableCookieCache: true } })` to force server session checks without Better Auth cookie-cache reads.
 
 - `apps/web/src/components/app-header.tsx`
   - Added restart button with red dot when update is ready.
   - Updated drag handling to use a dedicated non-interactive drag layer.
+  - Logout now waits for sign-out, forces `getSession({ disableCookieCache: true })`, clears client query cache, then redirects to `/login`.
 
 - `apps/web/src/app/page.tsx`
   - Added top drag strip so landing page can drag the Tauri window.
 
 - `apps/web/src/app/login/page.tsx`
   - Added top drag strip so sign-in/sign-up page can drag the Tauri window.
+  - Login route guard now uses direct `authClient.getSession({ disableCookieCache: true })` before deciding redirect.
+
+- `apps/web/src/app/dashboard/layout.tsx`
+  - Dashboard auth guard now uses direct `authClient.getSession({ disableCookieCache: true })` before deciding to render or redirect.
+
+- `packages/state/src/config.ts`
+  - Shared session query keeps `refetchOnMount: "always"` for fresh session truth when state hooks consume auth atoms.
 
 - `apps/web/tsconfig.json`
   - Excluded `src-tauri/target/**` to avoid TS parsing generated files.

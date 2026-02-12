@@ -31,7 +31,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const stateAuthClient = useMemo(
     () => ({
       getSession: async () => {
-        const result = await authClient.getSession();
+        const result = await authClient.getSession({
+          query: {
+            // Route guards rely on server truth during auth transitions.
+            disableCookieCache: true,
+          },
+        });
         if (!(result && "data" in result)) {
           return null;
         }

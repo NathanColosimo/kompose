@@ -41,17 +41,17 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
-      // Normalize origin and use explicit trailing slashes so Tauri static
-      // route resolution lands on the expected exported page paths.
+      // Normalize origin and keep callback paths slashless. In desktop exports,
+      // trailing-slash callback paths can fall back to home on some runtimes.
       const origin = window.location.origin;
       const baseUrl = origin.endsWith("/") ? origin.slice(0, -1) : origin;
       await authClient.signIn.social(
         {
           provider,
-          callbackURL: `${baseUrl}/dashboard/`,
-          errorCallbackURL: `${baseUrl}/login/`,
+          callbackURL: `${baseUrl}/dashboard`,
+          errorCallbackURL: `${baseUrl}/login`,
           ...(mode === "sign-up"
-            ? { newUserCallbackURL: `${baseUrl}/dashboard/` }
+            ? { newUserCallbackURL: `${baseUrl}/dashboard` }
             : {}),
         },
         {

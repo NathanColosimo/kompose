@@ -1,25 +1,50 @@
 "use client";
 
-import { hasSessionAtom, sessionResolvedAtom } from "@kompose/state/config";
-import { useAtomValue } from "jotai";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const hasSession = useAtomValue(hasSessionAtom);
-  const sessionResolved = useAtomValue(sessionResolvedAtom);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
 
   useEffect(() => {
-    // Redirect authenticated users away from the login screen.
-    if (sessionResolved && hasSession) {
-      router.replace("/dashboard");
-    }
-  }, [hasSession, router, sessionResolved]);
+    let cancelled = false;
+
+    const finishCheck = (user: unknown | null) => {
+      if (cancelled) {
+        return;
+      }
+      const hasSession = Boolean(user);
+      setHasActiveSession(hasSession);
+      setSessionChecked(true);
+      if (hasSession) {
+        router.replace("/dashboard");
+      }
+    };
+
+    authClient
+      .getSession({ query: { disableCookieCache: true } })
+      .then((result) => finishCheck(result?.data?.user ?? null))
+      .catch(() => finishCheck(null));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  if (!sessionChecked) {
+    return null;
+  }
+
+  if (hasActiveSession) {
+    return null;
+  }
 
   return (
     <main className="bg-background text-foreground">
