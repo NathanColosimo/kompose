@@ -1,15 +1,14 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { queryClientAtom } from "jotai-tanstack-query";
-import React from "react";
-import { hasSessionAtom, type StateConfig, stateConfigAtom } from "./config";
+import type { ReactNode } from "react";
+import { type StateConfig, stateConfigAtom } from "./config";
 import { type StorageAdapter, setStorageAdapter } from "./storage";
 
 interface StateProviderProps {
-  children: React.ReactNode;
+  children: ReactNode;
   config: StateConfig;
   storage: StorageAdapter;
 }
@@ -35,7 +34,7 @@ function StateHydrator({
   config,
   storage,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   config: StateConfig;
   storage: StorageAdapter;
 }) {
@@ -50,14 +49,6 @@ function StateHydrator({
     [stateConfigAtom, config],
     [queryClientAtom, queryClient],
   ]);
-
-  // Track session presence for query gating.
-  const setHasSession = useSetAtom(hasSessionAtom);
-  const session = config.authClient.useSession();
-
-  React.useEffect(() => {
-    setHasSession(Boolean(session?.data?.user));
-  }, [session?.data, setHasSession]);
 
   return <>{children}</>;
 }

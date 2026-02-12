@@ -30,7 +30,13 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
     () => ({
-      useSession: authClient.useSession,
+      getSession: async () => {
+        const result = await authClient.getSession();
+        if (!(result && "data" in result)) {
+          return null;
+        }
+        return { data: result.data };
+      },
       listAccounts: async () => {
         const result = await authClient.listAccounts();
         if (!(result && "data" in result) || result.data == null) {

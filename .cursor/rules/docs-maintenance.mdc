@@ -1,0 +1,17 @@
+---
+description: Keep docs updated and remove stale info after changes
+alwaysApply: true
+---
+
+# Documentation Maintenance
+
+- After finishing implementation changes, update all relevant documentation in the same task.
+- Include docs in `documents/` plus any related README or architecture notes affected by the change.
+- Remove or rewrite outdated statements so docs reflect current behavior only.
+- Prefer targeted edits over broad rewrites; keep docs concise and accurate.
+- If no documentation updates are needed, explicitly state that in the final handoff message.
+
+## Example
+
+- ❌ Add mobile chat behavior but leave an old "web-only" note unchanged.
+- ✅ Update the mobile chat docs and prune obsolete "web-only" statements in the same change.

@@ -227,6 +227,48 @@ Completed:
 Still pending:
 
 - Generate DB migration artifacts (`db:generate`) on user command
-- Native AI tab UI integration
 - Phase 2+ capabilities (tools, memory, automations, generative UI)
+
+---
+
+## 13) Native AI chat tab (full parity pass)
+
+Implemented mobile AI chat in `apps/native` with the same transport/session model
+as web:
+
+- Added native chat tab routing:
+  - `apps/native/app/(tabs)/(chat)/_layout.tsx`
+  - `apps/native/app/(tabs)/(chat)/index.tsx`
+  - registered in `apps/native/app/(tabs)/_layout.tsx`
+- Added RN chat UI primitives in `apps/native/components/ai-chat/`:
+  - `conversation.tsx`
+  - `message.tsx`
+  - `attachments.tsx`
+  - `chain-of-thought.tsx`
+  - `context.tsx`
+  - `model-selector.tsx`
+  - `prompt-input.tsx`
+- Wired mobile chat screen to shared state + streaming:
+  - uses `useAiChat(activeSessionId)` from `@kompose/state`
+  - uses AI SDK `useChat` with custom `ChatTransport`
+  - `sendMessages` -> `orpc.ai.stream.send` (via `streamSessionMessage`)
+  - `reconnectToStream` -> `orpc.ai.stream.reconnect` (via `resumeSessionStream`)
+  - stream adapter remains `eventIteratorToUnproxiedDataStream`
+- Added native parity features:
+  - session list + create/delete
+  - model picker (`gpt-5`, `gpt-5-mini`)
+  - reasoning rendering (`reasoning` parts)
+  - attachment rendering (`file`, `source-document` parts)
+  - context usage panel
+  - attachment picking from device (image + document)
+- Added AI query cache hygiene in native auth/session helpers:
+  - `apps/native/utils/orpc.ts` now invalidates/removes AI session/message cache
+    alongside tasks/calendar caches.
+
+Notes:
+
+- Native attachments are normalized to `FileUIPart` and converted to data URLs
+  when possible so server-side model calls can consume the payload.
+- This keeps mobile and web aligned on the same backend contracts and stream
+  semantics.
 

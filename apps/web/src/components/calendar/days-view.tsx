@@ -143,6 +143,8 @@ interface DaysViewProps {
   tasks: TaskSelectDecoded[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
+  /** Optional externally clamped day slice for responsive layouts */
+  visibleDays?: Temporal.PlainDate[];
 }
 
 /**
@@ -152,10 +154,15 @@ interface DaysViewProps {
 export const DaysView = memo(function DaysViewComponent({
   tasks,
   googleEvents = [],
+  visibleDays,
 }: DaysViewProps) {
   return (
     <EventCreationProvider>
-      <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+      <DaysViewInner
+        googleEvents={googleEvents}
+        tasks={tasks}
+        visibleDays={visibleDays}
+      />
     </EventCreationProvider>
   );
 });
@@ -166,8 +173,10 @@ export const DaysView = memo(function DaysViewComponent({
 const DaysViewInner = memo(function DaysViewInnerComponent({
   tasks,
   googleEvents = [],
+  visibleDays: visibleDaysProp,
 }: DaysViewProps) {
-  const visibleDays = useAtomValue(visibleDaysAtom);
+  const atomVisibleDays = useAtomValue(visibleDaysAtom);
+  const visibleDays = visibleDaysProp ?? atomVisibleDays;
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerContainerRef = useRef<HTMLDivElement>(null);

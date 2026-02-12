@@ -1,23 +1,25 @@
 "use client";
 
+import { hasSessionAtom, sessionResolvedAtom } from "@kompose/state/config";
+import { useAtomValue } from "jotai";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
-  const { data: session } = authClient.useSession();
-  const isSignedIn = !!session;
   const router = useRouter();
+  const hasSession = useAtomValue(hasSessionAtom);
+  const sessionResolved = useAtomValue(sessionResolvedAtom);
 
   useEffect(() => {
-    if (isSignedIn) {
-      router.push("/dashboard");
+    // Redirect authenticated users away from the login screen.
+    if (sessionResolved && hasSession) {
+      router.replace("/dashboard");
     }
-  }, [isSignedIn, router]);
+  }, [hasSession, router, sessionResolved]);
 
   return (
     <main className="bg-background text-foreground">

@@ -34,12 +34,15 @@ import {
   plainDateToDate,
   todayPlainDate,
 } from "@/lib/temporal-utils";
+import { dashboardResponsiveLayoutAtom } from "@/state/sidebar";
 import { orpc } from "@/utils/orpc";
 
 export default function Page() {
   const setCurrentDate = useSetAtom(currentDateAtom);
+  const currentDate = useAtomValue(currentDateAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
+  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const window = useAtomValue(eventWindowAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
@@ -96,18 +99,51 @@ export default function Page() {
     [eventsQueries, visibleGoogleCalendars]
   );
 
+  const effectiveVisibleDaysCount = useMemo(() => {
+    if (!responsiveLayout.canShowCalendar) {
+      return 0;
+    }
+
+    const maxDaysForLayout = Math.max(
+      1,
+      Math.min(7, responsiveLayout.maxDaysForCurrentLayout)
+    );
+
+    return Math.max(1, Math.min(visibleDaysCount, maxDaysForLayout));
+  }, [
+    responsiveLayout.canShowCalendar,
+    responsiveLayout.maxDaysForCurrentLayout,
+    visibleDaysCount,
+  ]);
+
+  const effectiveVisibleDays = useMemo(
+    () =>
+      Array.from({ length: effectiveVisibleDaysCount }, (_, index) =>
+        currentDate.add({ days: index })
+      ),
+    [currentDate, effectiveVisibleDaysCount]
+  );
+
+  const navigationStep =
+    effectiveVisibleDaysCount > 0 ? effectiveVisibleDaysCount : 1;
+
   // Navigate by visible days count (using functional updates for callback stability)
   const goToPreviousPeriod = useCallback(() => {
-    setCurrentDate((prev) => prev.subtract({ days: visibleDaysCount }));
-  }, [setCurrentDate, visibleDaysCount]);
+    setCurrentDate((prev) => prev.subtract({ days: navigationStep }));
+  }, [navigationStep, setCurrentDate]);
 
   const goToNextPeriod = useCallback(() => {
-    setCurrentDate((prev) => prev.add({ days: visibleDaysCount }));
-  }, [setCurrentDate, visibleDaysCount]);
+    setCurrentDate((prev) => prev.add({ days: navigationStep }));
+  }, [navigationStep, setCurrentDate]);
 
   const goToToday = useCallback(() => {
     setCurrentDate(todayPlainDate(timeZone));
   }, [setCurrentDate, timeZone]);
+
+  if (effectiveVisibleDaysCount === 0) {
+    // In the tightest widths we intentionally keep only the app header + left sidebar.
+    return <div className="h-full" />;
+  }
 
   return (
     <div className="relative h-full">
@@ -149,7 +185,11 @@ export default function Page() {
             Loading calendar...
           </div>
         ) : (
-          <DaysView googleEvents={googleEvents} tasks={tasks} />
+          <DaysView
+            googleEvents={googleEvents}
+            tasks={tasks}
+            visibleDays={effectiveVisibleDays}
+          />
         )}
       </main>
     </div>

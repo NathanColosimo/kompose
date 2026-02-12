@@ -5,10 +5,11 @@ import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import type { User } from "better-auth";
-import { useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   Check,
   LogOut,
+  MessageSquareIcon,
   Pencil,
   RotateCw,
   Search,
@@ -50,6 +51,11 @@ import {
 } from "@/components/ui/popover";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import {
+  dashboardResponsiveLayoutAtom,
+  sidebarRightOpenAtom,
+  sidebarRightOverlayOpenAtom,
+} from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPicker } from "./tags/tag-icon-picker";
 import { useTauriUpdater } from "./tauri-updater";
@@ -100,11 +106,47 @@ export function AppHeader({ user }: { user: User }) {
         className="flex shrink-0 items-center justify-end gap-2 pr-1"
         data-tauri-drag-region
       >
+        <ChatToggleButton />
         <UpdatePromptButton />
         <TagsMenu />
         <UserMenu avatarSrc={avatarSrc} user={user} />
       </div>
     </header>
+  );
+}
+
+function ChatToggleButton() {
+  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
+  const [rightOverlayOpen, setRightOverlayOpen] = useAtom(
+    sidebarRightOverlayOpenAtom
+  );
+
+  const isOpen = responsiveLayout.canDockRightSidebar
+    ? rightSidebarOpen
+    : rightOverlayOpen;
+
+  return (
+    <Button
+      className="h-7 w-7"
+      onClick={() => {
+        if (responsiveLayout.canDockRightSidebar) {
+          setRightSidebarOpen((prev) => !prev);
+          return;
+        }
+        setRightOverlayOpen((prev) => !prev);
+      }}
+      size="icon"
+      type="button"
+      variant={isOpen ? "secondary" : "outline"}
+    >
+      {isOpen ? (
+        <X className="size-3.5" />
+      ) : (
+        <MessageSquareIcon className="size-3.5" />
+      )}
+      <span className="sr-only">{isOpen ? "Close chat" : "Open chat"}</span>
+    </Button>
   );
 }
 

@@ -9,7 +9,12 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
 import { todayPlainDate } from "@/lib/temporal-utils";
-import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/state/sidebar";
+import {
+  dashboardResponsiveLayoutAtom,
+  sidebarLeftOpenAtom,
+  sidebarRightOpenAtom,
+  sidebarRightOverlayOpenAtom,
+} from "@/state/sidebar";
 
 // Shared options to prevent hotkeys from firing in input fields
 const hotkeyOptions = { enableOnFormTags: false } as const;
@@ -34,7 +39,9 @@ export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
+  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setSidebarRightOpen = useSetAtom(sidebarRightOpenAtom);
+  const setSidebarRightOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const timeZone = useAtomValue(timezoneAtom);
 
@@ -75,9 +82,22 @@ export function CalendarHotkeys() {
   ]);
 
   // "r" to toggle right sidebar
-  useHotkeys("r", () => setSidebarRightOpen((prev) => !prev), hotkeyOptions, [
-    setSidebarRightOpen,
-  ]);
+  useHotkeys(
+    "r",
+    () => {
+      if (responsiveLayout.canDockRightSidebar) {
+        setSidebarRightOpen((prev) => !prev);
+        return;
+      }
+      setSidebarRightOverlayOpen(true);
+    },
+    hotkeyOptions,
+    [
+      responsiveLayout.canDockRightSidebar,
+      setSidebarRightOpen,
+      setSidebarRightOverlayOpen,
+    ]
+  );
 
   // "s" to toggle both sidebars (synced - toggle left and set right to match)
   useHotkeys(
@@ -85,10 +105,20 @@ export function CalendarHotkeys() {
     () => {
       const newState = !sidebarLeftOpen;
       setSidebarLeftOpen(newState);
-      setSidebarRightOpen(newState);
+      if (responsiveLayout.canDockRightSidebar) {
+        setSidebarRightOpen(newState);
+        return;
+      }
+      setSidebarRightOverlayOpen(newState);
     },
     hotkeyOptions,
-    [sidebarLeftOpen, setSidebarLeftOpen, setSidebarRightOpen]
+    [
+      responsiveLayout.canDockRightSidebar,
+      setSidebarLeftOpen,
+      setSidebarRightOpen,
+      setSidebarRightOverlayOpen,
+      sidebarLeftOpen,
+    ]
   );
 
   // Arrow keys to navigate by visible days count

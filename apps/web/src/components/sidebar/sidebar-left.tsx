@@ -330,6 +330,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     <Sidebar
       className="overflow-hidden *:data-[sidebar=sidebar]:flex-row"
       collapsible="icon"
+      mobile="inline"
       {...props}
     >
       {/* This is the first sidebar */}
@@ -338,15 +339,16 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       <Sidebar
         className="w-[calc(var(--sidebar-width-icon)+1px)]! border-r"
         collapsible="none"
+        mobile="inline"
       >
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupContent className="px-1.5 md:px-0">
+            <SidebarGroupContent className="px-0">
               <SidebarMenu>
                 {navItems.map((item) => (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      className="px-2.5 md:px-2"
+                      className="justify-center gap-0 px-0"
                       isActive={activeItem?.id === item.id}
                       onClick={() => {
                         setActiveItem(item);
@@ -358,7 +360,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                       }}
                     >
                       <item.icon />
-                      <span>{item.title}</span>
+                      <span className="sr-only">{item.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -370,7 +372,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
 
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
-      <Sidebar className="hidden min-w-0 flex-1 md:flex" collapsible="none">
+      <Sidebar className="min-w-0 flex-1" collapsible="none" mobile="inline">
         <div
           className={cn(
             "flex h-full min-h-[200px] w-full flex-1 flex-col transition-colors",

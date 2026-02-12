@@ -225,6 +225,7 @@ function Sidebar({
   side = "left",
   variant = "sidebar",
   collapsible = "offcanvas",
+  mobile = "sheet",
   className,
   style,
   children,
@@ -233,6 +234,7 @@ function Sidebar({
   side?: "left" | "right";
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  mobile?: "sheet" | "inline";
 }) {
   const { isMobile, leftState, rightState, openMobile, setOpenMobile } =
     useSidebar();
@@ -263,7 +265,7 @@ function Sidebar({
     );
   }
 
-  if (isMobile) {
+  if (isMobile && mobile === "sheet") {
     return (
       <Sheet onOpenChange={setOpenMobile} open={openMobile} {...props}>
         <SheetContent
@@ -290,7 +292,10 @@ function Sidebar({
 
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      className={cn(
+        "group peer text-sidebar-foreground",
+        isMobile && mobile === "inline" ? "block" : "hidden md:block"
+      )}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-side={side}
       data-slot="sidebar"
@@ -312,7 +317,8 @@ function Sidebar({
       />
       <div
         className={cn(
-          "fixed top-(--header-height,0) bottom-0 z-10 hidden h-[calc(100svh-var(--header-height,0px))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed top-(--header-height,0) bottom-0 z-10 h-[calc(100svh-var(--header-height,0px))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear",
+          isMobile && mobile === "inline" ? "flex" : "hidden md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",

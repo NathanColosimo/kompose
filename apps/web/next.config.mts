@@ -12,6 +12,8 @@ if (!isTauriBuild) {
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  // Debug: disable Strict Mode to rule out dev double-mount behavior.
+  reactStrictMode: false,
   reactCompiler: true,
   // Force environment validation at build time
   transpilePackages: ["@t3-oss/env-nextjs", "@t3-oss/env-core"],

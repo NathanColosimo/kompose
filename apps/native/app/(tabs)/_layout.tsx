@@ -8,6 +8,10 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 export default function TabLayout() {
   return (
     <NativeTabs>
+      <NativeTabs.Trigger name="(chat)">
+        <Label>Chat</Label>
+        <Icon sf="bubble.left.and.bubble.right" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(tasks)">
         <Label>Tasks</Label>
         <Icon sf="checkmark.square" />

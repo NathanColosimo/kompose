@@ -1,14 +1,6 @@
-import { authClient } from "@/lib/auth-client";
-import Loader from "../loader";
 import { SocialAccountButtons } from "./social-account-buttons";
 
 export default function SignUpForm() {
-  const { isPending } = authClient.useSession();
-
-  if (isPending) {
-    return <Loader />;
-  }
-
   return (
     <section className="space-y-6 rounded-3xl border border-border/60 bg-card/60 p-8 shadow-md">
       <div className="space-y-2 text-center">

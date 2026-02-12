@@ -28,6 +28,7 @@ export interface InputProps extends Omit<TextInputProps, "style"> {
   placeholder?: string;
   pill?: boolean;
   rows?: number; // Only used when type="textarea"
+  compact?: boolean;
 }
 
 export const Input = forwardRef<TextInput, InputProps>(
@@ -46,6 +47,7 @@ export const Input = forwardRef<TextInput, InputProps>(
       type = "input",
       pill = false,
       rows = 4,
+      compact = false,
       onFocus,
       onBlur,
       placeholder,
@@ -68,7 +70,8 @@ export const Input = forwardRef<TextInput, InputProps>(
     // Calculate height based on type
     const getHeight = () => {
       if (isTextarea) {
-        return rows * 20 + 32; // Approximate line height + padding
+        // Compact mode is used by chat composer to better match action buttons.
+        return rows * 18 + (compact ? 24 : 32);
       }
       return HEIGHT;
     };
@@ -81,7 +84,7 @@ export const Input = forwardRef<TextInput, InputProps>(
         alignItems: isTextarea ? "stretch" : "center",
         minHeight: getHeight(),
         paddingHorizontal: 16,
-        paddingVertical: isTextarea ? 12 : 0,
+        paddingVertical: isTextarea ? (compact ? 9 : 12) : 0,
       };
 
       switch (variant) {
@@ -106,7 +109,7 @@ export const Input = forwardRef<TextInput, InputProps>(
     const getInputStyle = (): TextStyle => ({
       flex: 1,
       fontSize: FONT_SIZE,
-      lineHeight: isTextarea ? 20 : undefined,
+      lineHeight: isTextarea ? (compact ? 18 : 20) : undefined,
       color: disabled ? muted : error ? danger : textColor,
       paddingVertical: 0, // Remove default padding
       textAlignVertical: isTextarea ? "top" : "center",

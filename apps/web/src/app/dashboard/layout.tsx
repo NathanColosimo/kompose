@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  hasSessionAtom,
+  sessionResolvedAtom,
+  sessionUserAtom,
+} from "@kompose/state/config";
+import type { User } from "better-auth";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -9,9 +16,14 @@ import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { authClient } from "@/lib/auth-client";
-import { useIsMobile } from "@/lib/use-mobile";
-import { SIDEBAR_LEFT_WIDTH } from "@/state/sidebar";
+import {
+  dashboardResponsiveLayoutAtom,
+  dashboardViewportWidthAtom,
+  SIDEBAR_LEFT_WIDTH,
+  sidebarLeftOpenAtom,
+  sidebarRightOpenAtom,
+  sidebarRightOverlayOpenAtom,
+} from "@/state/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -19,8 +31,14 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
-  const isMobile = useIsMobile();
+  const hasSession = useAtomValue(hasSessionAtom);
+  const sessionResolved = useAtomValue(sessionResolvedAtom);
+  const sessionUser = useAtomValue(sessionUserAtom) as User | null;
+  const [leftSidebarOpen, setLeftSidebarOpen] = useAtom(sidebarLeftOpenAtom);
+  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
+  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
+  const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
 
   // Ensure the initial client render matches the server render (both return
   // null) to avoid a hydration mismatch caused by the session being available
@@ -28,21 +46,74 @@ export default function DashboardLayout({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Keep a live viewport width so day/sidebar capacity can be derived centrally.
+  useEffect(() => {
+    const updateWidth = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, [setViewportWidth]);
+
   // Redirect visitors without an active session back to the homepage.
   useEffect(() => {
-    if (!(isPending || session)) {
+    if (sessionResolved && !hasSession) {
       router.replace("/");
     }
-  }, [isPending, router, session]);
+  }, [hasSession, router, sessionResolved]);
+
+  // Constrained widths use overlay mode for right chat, so docked open must reset.
+  useEffect(() => {
+    if (responsiveLayout.canDockRightSidebar || !rightSidebarOpen) {
+      return;
+    }
+    setRightSidebarOpen(false);
+  }, [
+    responsiveLayout.canDockRightSidebar,
+    rightSidebarOpen,
+    setRightSidebarOpen,
+  ]);
+
+  // Smallest supported mode should keep the left task panel visible.
+  useEffect(() => {
+    if (responsiveLayout.canShowCalendar || leftSidebarOpen) {
+      return;
+    }
+    setLeftSidebarOpen(true);
+  }, [leftSidebarOpen, responsiveLayout.canShowCalendar, setLeftSidebarOpen]);
+
+  // When dock mode becomes available again, close overlay-only right chat.
+  useEffect(() => {
+    if (
+      !responsiveLayout.canDockRightSidebar &&
+      responsiveLayout.canShowCalendar
+    ) {
+      return;
+    }
+    setRightSidebarOverlayOpen(false);
+  }, [
+    responsiveLayout.canDockRightSidebar,
+    responsiveLayout.canShowCalendar,
+    setRightSidebarOverlayOpen,
+  ]);
 
   // Avoid rendering dashboard UI until hydrated and session validated.
-  if (!mounted || isPending || !session) {
+  if (!mounted) {
     return null;
   }
 
-  // For mobile visitors we skip the heavy dashboard and show a simple placeholder.
-  if (isMobile) {
-    return <MobileComingSoon />;
+  if (!sessionResolved) {
+    return null;
+  }
+
+  if (!hasSession) {
+    return null;
+  }
+
+  if (!sessionUser) {
+    return null;
   }
 
   return (
@@ -57,15 +128,17 @@ export default function DashboardLayout({
       suppressHydrationWarning
     >
       {/* App-wide header with search bar and user menu */}
-      <AppHeader user={session.user} />
+      <AppHeader user={sessionUser} />
 
       {/* Main content area below header */}
       <SidebarProvider
         className="min-h-0 flex-1"
         style={
           {
-            // The base sidebar width token is used by the left/sidebar-day area.
-            "--sidebar-width": SIDEBAR_LEFT_WIDTH,
+            // When calendar cannot fit, expand left sidebar to fill the main area.
+            "--sidebar-width": responsiveLayout.canShowCalendar
+              ? SIDEBAR_LEFT_WIDTH
+              : "100vw",
           } as React.CSSProperties
         }
       >
@@ -74,25 +147,12 @@ export default function DashboardLayout({
           <CalendarHotkeys />
           <CommandBar />
           <SidebarLeft />
-          <SidebarInset>{children}</SidebarInset>
+          {responsiveLayout.canShowCalendar ? (
+            <SidebarInset>{children}</SidebarInset>
+          ) : null}
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>
-    </div>
-  );
-}
-
-function MobileComingSoon() {
-  return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-muted px-6 text-center">
-      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-        Kompose dashboard
-      </p>
-      <h1 className="font-semibold text-2xl">Mobile coming soon</h1>
-      <p className="max-w-sm text-muted-foreground text-sm">
-        We are focusing on the desktop experience right now. Please open the
-        dashboard on a larger screen to keep working.
-      </p>
     </div>
   );
 }

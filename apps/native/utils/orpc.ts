@@ -5,6 +5,7 @@ import {
   GOOGLE_CALENDARS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
+import { AI_CHAT_SESSIONS_QUERY_KEY } from "@kompose/state/hooks/use-ai-chat";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
@@ -78,11 +79,16 @@ export const link = new RPCLink({
 
 export const orpc: AppRouterClient = createORPCClient(link);
 
+const AI_CHAT_QUERY_ROOT = ["ai"] as const;
+
 export function invalidateSessionQueries() {
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNTS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
+  // Invalidate all AI chat queries to prevent stale sessions/messages after auth changes.
+  queryClient.invalidateQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY });
+  queryClient.invalidateQueries({ queryKey: AI_CHAT_QUERY_ROOT });
 }
 
 export function clearSessionQueries() {
@@ -90,4 +96,7 @@ export function clearSessionQueries() {
   queryClient.removeQueries({ queryKey: GOOGLE_ACCOUNTS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
+  // Remove all AI chat cache entries on sign-out.
+  queryClient.removeQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY });
+  queryClient.removeQueries({ queryKey: AI_CHAT_QUERY_ROOT });
 }

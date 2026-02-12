@@ -11,7 +11,8 @@ export const View = forwardRef<RNView, Props>(
       <RNView
         className={className}
         ref={ref}
-        style={[{ backgroundColor: "transparent" }, style]}
+        // Let Tailwind/theme classes control background colors.
+        style={style}
         {...otherProps}
       />
     );

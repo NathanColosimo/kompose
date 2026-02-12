@@ -117,7 +117,13 @@ export default function RootLayout() {
   const storage = React.useMemo(() => createSecureStoreAdapter(), []);
   const stateAuthClient = React.useMemo(
     () => ({
-      useSession: authClient.useSession,
+      getSession: async () => {
+        const result = await authClient.getSession();
+        if (!(result && "data" in result)) {
+          return null;
+        }
+        return { data: result.data };
+      },
       listAccounts: async () => {
         const result = await authClient.listAccounts();
         if (!(result && "data" in result) || result.data == null) {

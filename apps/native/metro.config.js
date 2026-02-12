@@ -1,7 +1,11 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
+
+import { createRequire } from "node:module";
+import path from "node:path";
+
+const require = createRequire(import.meta.url);
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
-const path = require("node:path");
 
 const config = getDefaultConfig(import.meta.dirname);
 const appNodeModules = path.resolve(import.meta.dirname, "node_modules");
@@ -38,7 +42,7 @@ config.resolver.extraNodeModules = {
 // `@better-auth/expo/client`, so we keep this enabled.
 config.resolver.unstable_enablePackageExports = true;
 
-module.exports = withNativeWind(config, {
+export default withNativeWind(config, {
   input: "./global.css",
   inlineRem: 16,
   // Explicitly point to the TS config so darkMode flags are loaded.
