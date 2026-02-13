@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
+import { extractAuthErrorMessage } from "@/lib/tauri-desktop";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -43,28 +44,27 @@ export default function SettingsPage() {
     setIsLinking(true);
     try {
       const baseUrl = window.location.origin;
-      await authClient.linkSocial(
-        {
-          provider: "google",
-          callbackURL: `${baseUrl}/dashboard/settings`,
-        },
-        {
-          onSuccess: () => {
-            toast.success("Google account linked.");
-            queryClient.invalidateQueries({
-              queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
-            });
-            queryClient.invalidateQueries({
-              queryKey: ["google-account-info"],
-            });
-          },
-          onError: (error) => {
-            toast.error(
-              error.error.message || "Failed to link Google account."
-            );
-          },
-        }
-      );
+      const callbackURL = `${baseUrl}/dashboard/settings`;
+      const errorCallbackURL = `${baseUrl}/dashboard/settings`;
+      const result = await authClient.linkSocial({
+        provider: "google",
+        callbackURL,
+        errorCallbackURL,
+      });
+
+      const authError = extractAuthErrorMessage(result);
+      if (authError) {
+        toast.error(authError);
+        return;
+      }
+
+      toast.success("Google account linked.");
+      queryClient.invalidateQueries({
+        queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["google-account-info"],
+      });
     } finally {
       setIsLinking(false);
     }

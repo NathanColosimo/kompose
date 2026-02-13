@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { extractAuthErrorMessage } from "@/lib/tauri-desktop";
 import { Button } from "../ui/button";
 
 type SocialProvider = "google" | "apple";
@@ -28,6 +29,16 @@ const copyByMode = {
   },
 } as const;
 
+function buildSocialAuthUrls() {
+  const origin = window.location.origin;
+  const baseUrl = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  return {
+    callbackURL: `${baseUrl}/dashboard`,
+    errorCallbackURL: `${baseUrl}/login`,
+    newUserCallbackURL: `${baseUrl}/dashboard`,
+  };
+}
+
 export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
   const [activeProvider, setActiveProvider] = useState<SocialProvider | null>(
     null
@@ -41,28 +52,25 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
-      // Normalize origin and keep callback paths slashless. In desktop exports,
-      // trailing-slash callback paths can fall back to home on some runtimes.
-      const origin = window.location.origin;
-      const baseUrl = origin.endsWith("/") ? origin.slice(0, -1) : origin;
-      await authClient.signIn.social(
-        {
-          provider,
-          callbackURL: `${baseUrl}/dashboard`,
-          errorCallbackURL: `${baseUrl}/login`,
-          ...(mode === "sign-up"
-            ? { newUserCallbackURL: `${baseUrl}/dashboard` }
-            : {}),
-        },
-        {
-          onSuccess: () => {
-            toast.success(copyByMode[mode].successMessage);
-          },
-          onError: (error) => {
-            toast.error(error.error.message || error.error.statusText);
-          },
-        }
-      );
+      const { callbackURL, errorCallbackURL, newUserCallbackURL } =
+        buildSocialAuthUrls();
+
+      const result = await authClient.signIn.social({
+        provider,
+        callbackURL,
+        errorCallbackURL,
+        ...(mode === "sign-up" ? { newUserCallbackURL } : {}),
+      });
+
+      const authError = extractAuthErrorMessage(result);
+      if (authError) {
+        toast.error(authError);
+        return;
+      }
+
+      toast.success(copyByMode[mode].successMessage);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign-in failed.");
     } finally {
       setActiveProvider(null);
     }

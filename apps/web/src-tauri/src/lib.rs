@@ -3,6 +3,8 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    // Allow opening external URLs/files in the system handlers.
+    .plugin(tauri_plugin_opener::init())
     // Enable auto-update support for desktop builds.
     .plugin(tauri_plugin_updater::Builder::new().build())
     .setup(|app| {
@@ -12,14 +14,6 @@ pub fn run() {
             .level(log::LevelFilter::Info)
             .build(),
         )?;
-      }
-
-      // Ensure release desktop builds open in a maximized window state.
-      // Some environments ignore the static "maximized" config at first launch.
-      if !cfg!(debug_assertions) {
-        if let Some(window) = app.get_webview_window("main") {
-          let _ = window.maximize();
-        }
       }
 
       Ok(())

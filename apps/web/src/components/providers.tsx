@@ -4,10 +4,15 @@ import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
+import {
+  getExternalHttpUrl,
+  isTauriRuntime,
+  openUrlInDesktopBrowser,
+} from "@/lib/tauri-desktop";
 import { orpc, queryClient } from "@/utils/orpc";
 import { TauriUpdaterProvider } from "./tauri-updater";
 import { ThemeProvider } from "./theme-provider";
@@ -23,6 +28,59 @@ const ReactQueryDevtools = dynamic(
 
 function RealtimeSyncBootstrap() {
   useWebRealtimeSync();
+  return null;
+}
+
+function TauriDesktopBridgeBootstrap() {
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    // Delegate external-link clicks globally so meeting/maps/etc. all work in desktop.
+    const handleDocumentClickCapture = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      const anchor = event.target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+
+      const href = anchor.getAttribute("href");
+      if (!href) {
+        return;
+      }
+
+      const externalUrl = getExternalHttpUrl(href, window.location.origin);
+      if (!externalUrl) {
+        return;
+      }
+
+      event.preventDefault();
+      openUrlInDesktopBrowser(externalUrl).catch((error) => {
+        console.warn("Failed to open external URL via desktop browser.", error);
+      });
+    };
+
+    document.addEventListener("click", handleDocumentClickCapture, true);
+
+    return () => {
+      document.removeEventListener("click", handleDocumentClickCapture, true);
+    };
+  }, []);
+
   return null;
 }
 
@@ -124,6 +182,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <StateProvider config={config} storage={storage}>
             <RealtimeSyncBootstrap />
+            <TauriDesktopBridgeBootstrap />
             {children}
           </StateProvider>
           {showReactQueryDevtools ? <ReactQueryDevtools /> : null}

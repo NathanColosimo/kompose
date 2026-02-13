@@ -62,5 +62,5 @@ export const auth = betterAuth<BetterAuthOptions>({
   logger: {
     level: "warn",
   },
-  plugins: [nextCookies(), expo()],
+  plugins: [expo(), nextCookies()],
 });

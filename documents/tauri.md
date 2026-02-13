@@ -11,12 +11,14 @@ auto-updates.
 - Tauri updater plugin is wired (Rust + JS), and a silent download +
   restart prompt is shown in the header once an update is ready.
 - Update checks run on app launch and every 6 hours.
-- Desktop window now launches maximized by default (not macOS fullscreen).
+- Desktop window now launches non-maximized by default so drag-to-move
+  behavior stays consistent with dev.
 - Drag regions are explicitly defined for dashboard header plus
   landing/auth pages so window dragging remains reliable.
 - Desktop builds now exclude the `/docs` route and skip loading the
   Fumadocs MDX plugin.
-- Auth redirects now use slashless desktop callback paths.
+- External HTTP(S) links clicked inside the desktop app are now opened in
+  the system browser (meeting links, maps links, and other third-party URLs).
 - Logout now clears in-memory query cache and auth route guards wait for
   settled session revalidation before redirecting.
 - Logout now routes directly to `/login` after sign-out and cache clear.
@@ -42,16 +44,25 @@ auto-updates.
 
 - `apps/web/src-tauri/src/lib.rs`
   - Added: `tauri_plugin_updater::Builder::new().build()`.
-  - Added release startup maximize fallback using `window.maximize()`.
+  - Added: `tauri_plugin_opener::init()` for system browser/file opens.
+  - Removed release startup maximize fallback to avoid drag no-op issues
+    when the window opens maximized.
 
 - `apps/web/src/components/auth/social-account-buttons.tsx`
-  - Social auth callback URLs now use slashless paths (`/dashboard`, `/login`) for more consistent desktop route resolution.
+  - Social auth runs in-app across desktop and web.
 
 - `apps/web/src-tauri/Cargo.toml`
   - Added: `tauri-plugin-updater = "2"`.
+  - Added: `tauri-plugin-opener = "2"`.
 
 - `apps/web/src-tauri/capabilities/default.json`
   - Added: `updater:default` permission.
+  - Added: `opener:default` permission.
+  - Removed `$schema` binding to avoid stale generated-schema validation
+    false positives for plugin permissions.
+
+- `apps/web/src/lib/tauri-desktop.ts`
+  - Desktop runtime helper for Tauri detection and external URL opening.
 
 - `apps/web/src/components/tauri-updater.tsx`
   - New provider: checks updates on launch + every 6 hours, downloads
@@ -60,10 +71,19 @@ auto-updates.
 - `apps/web/src/components/providers.tsx`
   - Wraps app in `TauriUpdaterProvider`.
   - `getSession` now uses `authClient.getSession({ query: { disableCookieCache: true } })` to force server session checks without Better Auth cookie-cache reads.
+  - Added desktop bridge bootstrap:
+    - intercepts external link clicks and opens them in system browser
+
+- `apps/web/src/app/dashboard/settings/page.tsx`
+  - Google account linking runs in-app across desktop and web.
+
+- `apps/web/package.json`
+  - Added: `@tauri-apps/plugin-opener`.
 
 - `apps/web/src/components/app-header.tsx`
   - Added restart button with red dot when update is ready.
-  - Updated drag handling to use a dedicated non-interactive drag layer.
+  - Updated drag handling to use a full-header `data-tauri-drag-region` layer
+    behind controls, with pointer-events isolation so controls remain interactive.
   - Logout now waits for sign-out, forces `getSession({ disableCookieCache: true })`, clears client query cache, then redirects to `/login`.
 
 - `apps/web/src/app/page.tsx`

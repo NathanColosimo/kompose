@@ -11,36 +11,33 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 // Check every 6 hours to keep background updates lightweight.
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-type TauriUpdaterContextValue = {
+interface TauriUpdaterContextValue {
   isReadyToInstall: boolean;
   isDownloading: boolean;
   isChecking: boolean;
   isInstalling: boolean;
   installUpdate: () => Promise<void>;
-};
+}
 
 const TauriUpdaterContext = createContext<TauriUpdaterContextValue | null>(
   null
 );
-
-// Detect whether we're running inside the Tauri WebView.
-function isTauriRuntime() {
-  return (
-    typeof window !== "undefined" &&
-    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
-  );
-}
 
 export function TauriUpdaterProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const isDevBuild = process.env.NODE_ENV !== "production";
   const updateRef = useRef<Update | null>(null);
+  const isCheckingRef = useRef(false);
+  const isDownloadingRef = useRef(false);
+  const isReadyToInstallRef = useRef(false);
   const [isReadyToInstall, setIsReadyToInstall] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
@@ -51,10 +48,15 @@ export function TauriUpdaterProvider({
       return;
     }
 
-    if (isChecking || isDownloading || isReadyToInstall) {
+    if (
+      isCheckingRef.current ||
+      isDownloadingRef.current ||
+      isReadyToInstallRef.current
+    ) {
       return;
     }
 
+    isCheckingRef.current = true;
     setIsChecking(true);
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
@@ -67,16 +69,20 @@ export function TauriUpdaterProvider({
       updateRef.current = update;
 
       // Download silently so we can prompt for restart once ready.
+      isDownloadingRef.current = true;
       setIsDownloading(true);
       await update.download();
+      isReadyToInstallRef.current = true;
       setIsReadyToInstall(true);
     } catch (error) {
       console.warn("Tauri updater check failed.", error);
     } finally {
+      isCheckingRef.current = false;
+      isDownloadingRef.current = false;
       setIsChecking(false);
       setIsDownloading(false);
     }
-  }, [isChecking, isDownloading, isReadyToInstall]);
+  }, []);
 
   const installUpdate = useCallback(async () => {
     if (!updateRef.current) {
@@ -95,18 +101,21 @@ export function TauriUpdaterProvider({
   }, []);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isTauriRuntime() || isDevBuild) {
       return;
     }
 
-    // Run once on launch, then on a fixed cadence.
-    void checkForUpdates();
+    // Skip updater checks in dev builds to avoid noisy network error logs.
+    // Run once on launch in production, then on a fixed cadence.
+    checkForUpdates().catch((error) => {
+      console.warn("Failed to check for updates.", error);
+    });
     const intervalId = setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, isDevBuild]);
 
   const value = useMemo(
     () => ({
@@ -135,7 +144,10 @@ export function useTauriUpdater() {
       isDownloading: false,
       isChecking: false,
       isInstalling: false,
-      installUpdate: async () => {},
+      installUpdate: () => {
+        console.warn("Not running in Tauri runtime.");
+        return Promise.resolve();
+      },
     };
   }
 
