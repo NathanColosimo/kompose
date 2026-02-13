@@ -1,5 +1,6 @@
 "use client";
 
+import { env } from "@kompose/env";
 import { GOOGLE_ACCOUNTS_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
@@ -24,7 +25,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
-import { extractAuthErrorMessage } from "@/lib/tauri-desktop";
+import {
+  extractAuthErrorMessage,
+  isTauriRuntime,
+  openDesktopOAuth,
+} from "@/lib/tauri-desktop";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -43,6 +48,15 @@ export default function SettingsPage() {
 
     setIsLinking(true);
     try {
+      // On Tauri desktop, open the system browser for account linking.
+      // The deep link handler will navigate back once the flow completes.
+      if (isTauriRuntime()) {
+        await openDesktopOAuth("google", "link", env.NEXT_PUBLIC_WEB_URL);
+        // Don't reset isLinking — the deep link handler handles completion.
+        return;
+      }
+
+      // Web flow: runs account linking inside the browser tab.
       const baseUrl = window.location.origin;
       const callbackURL = `${baseUrl}/dashboard/settings`;
       const errorCallbackURL = `${baseUrl}/dashboard/settings`;

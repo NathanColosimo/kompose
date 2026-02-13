@@ -1,9 +1,14 @@
 "use client";
 
+import { env } from "@kompose/env";
 import { useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
-import { extractAuthErrorMessage } from "@/lib/tauri-desktop";
+import {
+  extractAuthErrorMessage,
+  isTauriRuntime,
+  openDesktopOAuth,
+} from "@/lib/tauri-desktop";
 import { Button } from "../ui/button";
 
 type SocialProvider = "google" | "apple";
@@ -19,6 +24,7 @@ const copyByMode = {
     appleLabel: "Continue with Apple",
     googlePendingLabel: "Connecting to Google...",
     applePendingLabel: "Connecting to Apple...",
+    desktopPendingLabel: "Opening browser...",
   },
   "sign-up": {
     successMessage: "You're in! Redirecting to your timeline.",
@@ -26,6 +32,7 @@ const copyByMode = {
     appleLabel: "Create with Apple",
     googlePendingLabel: "Contacting Google...",
     applePendingLabel: "Contacting Apple...",
+    desktopPendingLabel: "Opening browser...",
   },
 } as const;
 
@@ -52,6 +59,17 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
+      // On Tauri desktop, open the system browser for OAuth instead of
+      // running the flow inside the webview. The DeepLinkHandler component
+      // handles the kompose:// callback and completes the session exchange.
+      if (isTauriRuntime()) {
+        await openDesktopOAuth(provider, "sign-in", env.NEXT_PUBLIC_WEB_URL);
+        // Don't clear activeProvider yet — the deep link handler will
+        // navigate away once the callback arrives.
+        return;
+      }
+
+      // Web flow: runs OAuth inside the browser tab via Better Auth client.
       const { callbackURL, errorCallbackURL, newUserCallbackURL } =
         buildSocialAuthUrls();
 

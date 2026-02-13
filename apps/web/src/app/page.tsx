@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { authClient } from "@/lib/auth-client";
+import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 // Marketing bullets used to keep the hero punchy without extra copy.
 const highlights = [
@@ -24,6 +28,32 @@ const highlights = [
 ];
 
 export default function Home() {
+  const router = useRouter();
+  const [ready, setReady] = useState(!isTauriRuntime());
+
+  // On Tauri desktop, skip the marketing page and go straight to dashboard
+  // if the user already has a session.
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    authClient
+      .getSession({ query: { disableCookieCache: true } })
+      .then((result) => {
+        if (result?.data?.user) {
+          router.replace("/dashboard");
+        } else {
+          setReady(true);
+        }
+      })
+      .catch(() => setReady(true));
+  }, [router]);
+
+  if (!ready) {
+    return null;
+  }
+
   return (
     <main className="bg-background text-foreground">
       {/* Provide a drag handle on desktop (Tauri) without affecting web behavior. */}

@@ -25,6 +25,8 @@ auto-updates.
 - Updater config points to GitHub Releases `latest.json`.
 - A `.tauri.env` workflow exists for local signing/notarization builds.
 - Apple Silicon DMG build now succeeds with the standard Cargo defaults.
+- OAuth sign-in and account linking now open in the system browser and
+  redirect back to the desktop app via `kompose://` deep link.
 - Root cause identified: `frontendDist` pointed at `../.next` while stale
   `../.next/dev/cache/turbopack/*` files were present from dev runs.
   Tauri tried to embed those volatile cache files, causing:
@@ -45,17 +47,23 @@ auto-updates.
 - `apps/web/src-tauri/src/lib.rs`
   - Added: `tauri_plugin_updater::Builder::new().build()`.
   - Added: `tauri_plugin_opener::init()` for system browser/file opens.
+  - Added: `tauri_plugin_deep_link::init()` for `kompose://` deep link handling.
+  - Deep link URLs are logged on startup and at runtime via `on_open_url`.
   - Removed release startup maximize fallback to avoid drag no-op issues
     when the window opens maximized.
 
 - `apps/web/src/components/auth/social-account-buttons.tsx`
-  - Social auth runs in-app across desktop and web.
+  - On Tauri desktop, sign-in opens the system browser via `openDesktopOAuth`
+    instead of running the OAuth flow inside the webview.
+  - Web flow is unchanged.
 
 - `apps/web/src-tauri/Cargo.toml`
+  - Added: `tauri-plugin-deep-link = "2"`.
   - Added: `tauri-plugin-updater = "2"`.
   - Added: `tauri-plugin-opener = "2"`.
 
 - `apps/web/src-tauri/capabilities/default.json`
+  - Added: `deep-link:default` permission.
   - Added: `updater:default` permission.
   - Added: `opener:default` permission.
   - Removed `$schema` binding to avoid stale generated-schema validation
@@ -63,6 +71,8 @@ auto-updates.
 
 - `apps/web/src/lib/tauri-desktop.ts`
   - Desktop runtime helper for Tauri detection and external URL opening.
+  - Added: `openDesktopOAuth(provider, mode, baseUrl)` helper that opens
+    the system browser to the desktop-sign-in endpoint for OAuth.
 
 - `apps/web/src/components/tauri-updater.tsx`
   - New provider: checks updates on launch + every 6 hours, downloads
@@ -73,12 +83,32 @@ auto-updates.
   - `getSession` now uses `authClient.getSession({ query: { disableCookieCache: true } })` to force server session checks without Better Auth cookie-cache reads.
   - Added desktop bridge bootstrap:
     - intercepts external link clicks and opens them in system browser
+  - Added `DeepLinkHandler` component for `kompose://` deep link processing.
+
+- `apps/web/src/components/deep-link-handler.tsx`
+  - Listens for `kompose://auth/callback?token=TOKEN` deep links via
+    `@tauri-apps/plugin-deep-link` JS API.
+  - On receiving a token, verifies it via `authClient.oneTimeToken.verify()`
+    (which sets the signed session cookie), then navigates to `/dashboard`.
 
 - `apps/web/src/app/dashboard/settings/page.tsx`
-  - Google account linking runs in-app across desktop and web.
+  - On Tauri desktop, account linking opens the system browser via
+    `openDesktopOAuth` with `mode: "link"` instead of running in-webview.
+  - Web flow is unchanged.
+
+- `apps/web/src/app/api/auth/desktop-sign-in/route.ts`
+  - GET endpoint that initiates OAuth in the system browser.
+  - Proxies to Better Auth sign-in or link-social endpoint internally.
+  - Forwards state cookies and returns a 302 redirect to the OAuth provider.
+
+- `apps/web/src/app/api/auth/desktop-callback/route.ts`
+  - GET endpoint called after OAuth completes in the browser.
+  - Generates a one-time token via Better Auth's `oneTimeToken` plugin
+    and redirects to `kompose://auth/callback?token=TOKEN`.
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.
+  - Added: `@tauri-apps/plugin-deep-link`.
 
 - `apps/web/src/components/app-header.tsx`
   - Added restart button with red dot when update is ready.
@@ -123,6 +153,7 @@ auto-updates.
   - `transpilePackages` no longer includes Shiki packages.
 
 - `apps/web/src-tauri/tauri.conf.json`
+  - `plugins.deep-link.desktop.schemes`: `["kompose"]`
   - `build.beforeBuildCommand`: `bun run build:desktop`
   - `build.removeUnusedCommands`: `true`
 
@@ -198,6 +229,73 @@ Per-arch (Apple Silicon):
   `fccfbf92-0d7a-438a-931b-36ff04c3cc7c` (also initially `In Progress`).
 - Apple developer status feed reported no active event for
   `Developer ID Notary Service` at that time.
+
+## Deep link OAuth flow
+
+OAuth sign-in and account linking on Tauri desktop open in the system
+browser instead of running inside the webview. The flow uses a one-time
+token exchange to bridge the browser session to the Tauri webview.
+
+### Sign-in flow
+
+1. User clicks "Sign in with Google" in the Tauri app.
+2. App opens the system browser to
+   `GET /api/auth/desktop-sign-in?provider=google`.
+3. Server proxies to Better Auth's sign-in social endpoint, gets the
+   Google auth URL, forwards state cookies, and returns a 302 redirect.
+4. Browser follows the Google OAuth flow.
+5. Google redirects back to Better Auth callback; Better Auth creates a
+   session and sets the session cookie in the browser.
+6. Better Auth redirects to `/api/auth/desktop-callback`.
+7. Desktop callback generates a one-time token via the `oneTimeToken`
+   plugin (stored in the `verification` table, 3-minute TTL) and
+   redirects to `kompose://auth/callback?token=TOKEN`.
+8. macOS opens/focuses the Tauri app with the deep link.
+9. `DeepLinkHandler` component captures the URL, extracts the token, and
+   calls `authClient.oneTimeToken.verify({ token })` which hits Better
+   Auth's built-in verify endpoint and sets the signed session cookie.
+10. Session is refreshed and the app navigates to `/dashboard`.
+
+### Account linking flow
+
+Same as sign-in but with an extra step: the Tauri app first generates a
+one-time token via `authClient.oneTimeToken.generate()` (using its
+existing session cookie), then opens the browser to
+`GET /api/auth/desktop-sign-in?provider=google&mode=link&link_token=TOKEN`.
+The server verifies the token via the `oneTimeToken` plugin and proxies
+to Better Auth's link-social endpoint with the recovered session.
+
+### Plugins
+
+- `tauri-plugin-deep-link` (Rust + JS) registers the `kompose://`
+  custom URL scheme. Configured in `tauri.conf.json` under
+  `plugins.deep-link.desktop.schemes`.
+
+### Security
+
+- One-time tokens are managed by Better Auth's `oneTimeToken` plugin,
+  stored in the `verification` table with a 3-minute TTL and consumed
+  (deleted) after a single use.
+- Link tokens require an authenticated session to create.
+- Session cookies are set by Better Auth's built-in verify endpoint with
+  proper signing. WKWebView (Tauri's macOS webview) accepts `SameSite=Lax`
+  cookies for cross-origin requests from `tauri://localhost`.
+
+### macOS testing caveat
+
+Deep links on macOS only work with the bundled `.app` installed in
+`/Applications`. They cannot be tested in `tauri dev` mode. For
+development, the fallback in-webview flow still works (the desktop
+detection only triggers `openDesktopOAuth` when `isTauriRuntime()` is
+true in a bundled build).
+
+### Future: Linux/Windows
+
+On Linux and Windows, deep links are delivered as command-line arguments
+to a new app process. The `tauri-plugin-single-instance` plugin should
+be added to forward deep links to the existing instance instead of
+launching a second one. This is not needed on macOS where the OS handles
+single-instance natively for deep links.
 
 ## Notes
 

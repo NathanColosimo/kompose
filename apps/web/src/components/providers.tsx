@@ -14,6 +14,7 @@ import {
   openUrlInDesktopBrowser,
 } from "@/lib/tauri-desktop";
 import { orpc, queryClient } from "@/utils/orpc";
+import { DeepLinkHandler } from "./deep-link-handler";
 import { TauriUpdaterProvider } from "./tauri-updater";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
@@ -183,6 +184,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           <StateProvider config={config} storage={storage}>
             <RealtimeSyncBootstrap />
             <TauriDesktopBridgeBootstrap />
+            <DeepLinkHandler />
             {children}
           </StateProvider>
           {showReactQueryDevtools ? <ReactQueryDevtools /> : null}

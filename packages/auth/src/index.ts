@@ -3,12 +3,13 @@ import { db } from "@kompose/db";
 // biome-ignore lint/performance/noNamespaceImport: Auth Schema
 import * as schema from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";
-import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { redisSecondaryStorage } from "./redis-storage";
 
-export const auth = betterAuth<BetterAuthOptions>({
+export const auth = betterAuth({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   advanced: {
     // Prefix Better Auth cookies for Kompose.
@@ -62,5 +63,15 @@ export const auth = betterAuth<BetterAuthOptions>({
   logger: {
     level: "warn",
   },
-  plugins: [expo(), nextCookies()],
+  plugins: [
+    expo(),
+    nextCookies(),
+    // One-time tokens for cross-context auth (Tauri deep-link OAuth flow).
+    // Cookie setting is enabled so auth.handler produces proper Set-Cookie
+    // headers. The exchange route forwards these headers with modified
+    // SameSite/Secure attributes for the Tauri cross-origin case.
+    oneTimeToken({
+      storeToken: "hashed",
+    }),
+  ],
 });

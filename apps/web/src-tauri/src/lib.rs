@@ -1,8 +1,11 @@
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    // Register kompose:// deep link handler for OAuth callbacks.
+    .plugin(tauri_plugin_deep_link::init())
     // Allow opening external URLs/files in the system handlers.
     .plugin(tauri_plugin_opener::init())
     // Enable auto-update support for desktop builds.
@@ -15,6 +18,17 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // Log deep link URLs received on startup (e.g. kompose://auth/callback?token=...).
+      // The frontend DeepLinkHandler component listens via the JS API for runtime events.
+      if let Some(urls) = app.deep_link().get_current()? {
+        log::info!("App opened via deep link: {:?}", urls);
+      }
+
+      // Listen for deep link events while the app is running.
+      app.deep_link().on_open_url(|event| {
+        log::info!("Deep link received: {:?}", event.urls());
+      });
 
       Ok(())
     })
