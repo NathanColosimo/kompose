@@ -503,6 +503,7 @@ export default function ChatScreen() {
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const autoCreateAttemptedRef = useRef(false);
+  const localSubmitPendingRef = useRef(false);
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
@@ -737,6 +738,12 @@ export default function ChatScreen() {
 
   // Rehydrate local chat state when switching sessions.
   useEffect(() => {
+    // A local send can briefly remain "ready" before useChat marks it
+    // submitted/streaming. Avoid rehydrating during that gap to prevent
+    // the optimistic first user message from disappearing.
+    if (localSubmitPendingRef.current) {
+      return;
+    }
     if (status === "streaming" || status === "submitted") {
       return;
     }
@@ -787,10 +794,15 @@ export default function ChatScreen() {
         return;
       }
       // Fire-and-forget keeps the composer responsive while useChat streams.
+      localSubmitPendingRef.current = true;
       sendMessage({
         text,
         files: input.files,
-      }).catch(() => undefined);
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          localSubmitPendingRef.current = false;
+        });
     },
     [activeSessionId, sendMessage]
   );

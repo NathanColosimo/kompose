@@ -304,6 +304,37 @@ single-instance natively for deep links.
 - Universal builds can use a single updater bundle in `latest.json`
   for both `darwin-aarch64` and `darwin-x86_64`.
 
+## Root production flow
+
+The monorepo now has root production orchestration commands:
+
+- `bun run build:prod`
+- `bun run submit:prod`
+
+These commands run Turborepo tasks for both app workspaces:
+
+- `web`
+- `native`
+
+Desktop behavior in this flow:
+
+- `build:prod` runs in two web phases:
+  - `web#build:prod`
+  - `web#build:prod:desktop`
+- `web#build:prod` executes:
+  - `bun run --cwd ../.. vercel:build:prod` (runs Vercel CLI from repo root)
+- `web#build:prod:desktop` executes:
+  - `bun run desktop:build:signed`
+- `desktop:build:signed` is the full signed + notarized path (it reads
+  `apps/web/.tauri.env` and uses `APPLE_*` notarization env vars).
+- `submit:prod` runs `web#submit:prod`, which executes:
+  - `bun run --cwd ../.. vercel:submit:prod` (runs Vercel CLI from repo root)
+  - `bun run desktop:release`
+
+`desktop:release` remains upload-only and now fails fast when expected
+artifacts are missing or ambiguous (for example stale duplicate
+`.dmg`/`.app.tar.gz` files).
+
 ## Manual no-notary flow (Apple Silicon)
 
 This flow keeps code signing enabled but skips notarization so you can

@@ -34,6 +34,15 @@
     "type-check": {
       "dependsOn": ["^type-check"]
     },
+    "build:prod": {
+      "cache": true
+    },
+    "build:prod:desktop": {
+      "cache": true
+    },
+    "submit:prod": {
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

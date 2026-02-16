@@ -422,3 +422,26 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 - **Key config**: `autoDetectResources: false` (strips noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
 - **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures `NodeSDK.start()` runs before Next.js creates root request spans.
 - See [`otel.md`](./otel.md) for full details.
+
+### 6.17 Production Build/Submit Orchestration
+- **Root commands**:
+  - `bun run build:prod`
+  - `bun run submit:prod`
+- **Execution model**:
+  - Uses direct Turborepo app task fan-out:
+    `--filter=web --filter=native`.
+  - Both app production task chains run on each invocation.
+- **Build flow**:
+  - Native (`apps/native`): `build:prod` runs local iOS production IPA
+    build.
+  - Web (`apps/web`): `build:prod` runs two sequential web tasks:
+    - `web#build:prod` runs root script `vercel:build:prod`
+      (`vercel pull --environment=production` + `vercel build --prod`
+      from repo root)
+    - `web#build:prod:desktop` runs signed/notarized Tauri desktop build.
+- **Submit flow**:
+  - Web (`apps/web`): `submit:prod` deploys via Vercel CLI
+    (`vercel deploy --prebuilt --prod` from repo root) and publishes
+    desktop artifacts (`desktop:release`).
+  - Native (`apps/native`): `submit:prod` submits local iOS IPA to
+    App Store Connect.

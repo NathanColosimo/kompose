@@ -80,9 +80,12 @@ Refactored both repository and service into `Effect.Service` pattern.
   - `startStream`
   - `markActiveStream`, `getActiveStreamId`
   - `persistAssistantFromUiMessages`
+  - `generateSessionTitleFromFirstMessage`
 - Runtime message validation uses AI SDK `validateUIMessages`.
 - AI provider call stays in traced service flow.
 - Persists assistant text fallback for non-text outputs while storing full `parts`.
+- Session title generation now runs asynchronously with `gpt-5-nano` and is
+  derived from the first user message only. It does not block stream startup.
 
 ---
 
@@ -284,11 +287,15 @@ used for tasks/calendars):
   - session create/delete
   - stream start (active stream set)
   - stream finish (assistant persisted, active stream cleared)
+  - async first-message title generation success
 - Reconnect misses no longer clear `activeStreamId` immediately; client retries
   are allowed and normal `onFinish` cleanup clears the pointer.
 - Shared realtime hook (`packages/state/src/hooks/use-realtime-sync.ts`) now:
   - invalidates `AI_CHAT_SESSIONS_QUERY_KEY`
-  - invalidates `getAiChatMessagesQueryKey(sessionId)` for targeted refetch
+  - only refetches `getAiChatMessagesQueryKey(sessionId)` when that session
+    still exists after the sessions refresh
+  - removes deleted-session message query keys to avoid post-delete message
+    refetches
   - includes AI query invalidation in reconnect fallback
 - Web + native chat screens run a deduped `resumeStream()` check when the
   currently open session receives a newly visible `activeStreamId` after
@@ -298,4 +305,7 @@ used for tasks/calendars):
   stream.
 - `useChat` UI updates are throttled (`experimental_throttle: 50`) to reduce
   render backlog during high-frequency chunk streams (especially on native).
+- AI router error mapping now preserves HTTP semantics for configured domain
+  errors, including `MODEL_NOT_CONFIGURED -> SERVICE_UNAVAILABLE`, instead of
+  collapsing known AI config failures into generic 500 responses.
 

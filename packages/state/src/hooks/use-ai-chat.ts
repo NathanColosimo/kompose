@@ -74,14 +74,18 @@ export function useAiChat(activeSessionId: string | null) {
     mutationFn: async ({ sessionId }: { sessionId: string }) =>
       await orpc.ai.sessions.delete({ sessionId }),
     onSuccess: async (_value, variables) => {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
-        }),
-        queryClient.invalidateQueries({
-          queryKey: getAiChatMessagesQueryKey(variables.sessionId),
-        }),
-      ]);
+      const deletedSessionMessagesQueryKey = getAiChatMessagesQueryKey(
+        variables.sessionId
+      );
+      await queryClient.invalidateQueries({
+        queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
+      });
+      await queryClient.cancelQueries({
+        queryKey: deletedSessionMessagesQueryKey,
+      });
+      queryClient.removeQueries({
+        queryKey: deletedSessionMessagesQueryKey,
+      });
     },
   });
 

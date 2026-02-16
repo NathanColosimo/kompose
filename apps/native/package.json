@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "expo start --clear",
     "build": "expo export --platform ios",
+    "build:prod": "mkdir -p dist && eas build -p ios --profile production --local --non-interactive --output ./dist/kompose.ipa",
+    "submit:prod": "eas submit -p ios --profile production --non-interactive --path ./dist/kompose.ipa --wait",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "ios:reset-simulator": "xcrun simctl shutdown all && xcrun simctl erase all && rm -rf ~/Library/Developer/Xcode/DerivedData && expo run:ios",
-    "submit:ios:local": "mkdir -p dist && eas build -p ios --profile production --local --output ./dist/kompose.ipa && eas submit -p ios --profile production --path ./dist/kompose.ipa --wait",
-    "submit:ios": "eas build -p ios --profile production --submit",
     "update:preview": "eas update --channel preview --environment preview --platform ios --auto",
     "update:prod": "eas update --channel production --environment production --platform ios --auto",
     "prebuild": "expo prebuild",

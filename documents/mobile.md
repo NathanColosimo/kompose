@@ -281,6 +281,31 @@ From `apps/native`:
 bun run ios
 ```
 
+## Production release flow (iOS)
+
+Native production scripts are:
+
+- `bun run --cwd apps/native build:prod`
+  - Creates `apps/native/dist/kompose.ipa` using the EAS `production`
+    profile.
+  - Runs with `--non-interactive` so EAS does not prompt in terminal
+    automation.
+- `bun run --cwd apps/native submit:prod`
+  - Submits the existing IPA to App Store Connect and waits for status.
+  - Runs with `--non-interactive` to avoid interactive prompts.
+
+Root orchestration now uses direct Turborepo app task fan-out:
+
+- `bun run build:prod`
+  - Runs `turbo run build:prod --filter=web --filter=native`.
+  - Then runs `turbo run build:prod:desktop --filter=web` for desktop.
+  - Native path (`native#build:prod`) runs
+    `build:prod`.
+- `bun run submit:prod`
+  - Runs `turbo run submit:prod --filter=web --filter=native`.
+  - Native path (`native#submit:prod`) runs
+    `submit:prod`.
+
 ## Notes / limitations (v1)
 
 - Recurrence scope is treated as `"this"` on mobile for now.

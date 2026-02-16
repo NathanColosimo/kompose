@@ -34,17 +34,34 @@ function emptyUiMessageChunkIterator() {
 }
 
 function handleError(error: AiChatError): never {
+  const errorData = { aiErrorCode: error.code };
+
   switch (error.code) {
     case "UNAUTHORIZED":
-      throw new ORPCError("UNAUTHORIZED", { message: error.message });
+      throw new ORPCError("UNAUTHORIZED", {
+        message: error.message,
+        data: errorData,
+      });
     case "NOT_FOUND":
-      throw new ORPCError("NOT_FOUND", { message: error.message });
+      throw new ORPCError("NOT_FOUND", {
+        message: error.message,
+        data: errorData,
+      });
     case "BAD_REQUEST":
-      throw new ORPCError("BAD_REQUEST", { message: error.message });
+      throw new ORPCError("BAD_REQUEST", {
+        message: error.message,
+        data: errorData,
+      });
     case "MODEL_NOT_CONFIGURED":
-      throw new ORPCError("INTERNAL_SERVER_ERROR", { message: error.message });
+      throw new ORPCError("SERVICE_UNAVAILABLE", {
+        message: error.message,
+        data: errorData,
+      });
     default:
-      throw new ORPCError("INTERNAL_SERVER_ERROR", { message: error.message });
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: error.message,
+        data: errorData,
+      });
   }
 }
 
@@ -126,13 +143,36 @@ export const aiRouter = os.router({
   stream: {
     send: os.stream.send.handler(({ input, context, signal }) => {
       const program = Effect.gen(function* () {
-        const { originalMessages, streamResult } =
+        const { originalMessages, streamResult, firstMessageText } =
           yield* AiChatService.startStream({
             userId: context.user.id,
             sessionId: input.sessionId,
             message: input.message,
             abortSignal: signal,
           });
+
+        if (firstMessageText) {
+          // Title generation is intentionally detached from stream startup.
+          // Any failure here should never impact assistant response delivery.
+          const titleGenerationProgram =
+            AiChatService.generateSessionTitleFromFirstMessage({
+              userId: context.user.id,
+              sessionId: input.sessionId,
+              firstMessageText,
+            }).pipe(
+              Effect.provide(AiChatLive),
+              Effect.match({
+                onSuccess: (didUpdate) => {
+                  if (didUpdate) {
+                    publishAiChatEvent(context.user.id, input.sessionId);
+                  }
+                },
+                onFailure: () => undefined,
+              })
+            );
+
+          yield* Effect.forkDaemon(titleGenerationProgram);
+        }
 
         const uiChunkStream = streamResult.toUIMessageStream({
           originalMessages,

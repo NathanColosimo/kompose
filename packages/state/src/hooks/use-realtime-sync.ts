@@ -66,15 +66,37 @@ export function useRealtimeSync({
   );
 
   const invalidateAiChatQueries = React.useCallback(
-    (event: Extract<SyncEvent, { type: "ai-chat" }>) => {
-      return Promise.all([
-        // Force immediate session refetch so activeStreamId updates quickly.
-        queryClient.refetchQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY }),
+    async (event: Extract<SyncEvent, { type: "ai-chat" }>) => {
+      // Force immediate session refetch so activeStreamId updates quickly.
+      await queryClient.refetchQueries({
+        queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
+      });
+
+      const targetMessagesQueryKey = getAiChatMessagesQueryKey(
+        event.payload.sessionId
+      );
+      const sessions =
+        queryClient.getQueryData<Array<{ id: string }>>(
+          AI_CHAT_SESSIONS_QUERY_KEY
+        ) ?? [];
+      const sessionStillExists = sessions.some(
+        (session) => session.id === event.payload.sessionId
+      );
+
+      if (sessionStillExists) {
         // Refetch the affected message thread for faster cross-device updates.
-        queryClient.refetchQueries({
-          queryKey: getAiChatMessagesQueryKey(event.payload.sessionId),
-        }),
-      ]);
+        await queryClient.refetchQueries({
+          queryKey: targetMessagesQueryKey,
+        });
+        return;
+      }
+
+      await queryClient.cancelQueries({
+        queryKey: targetMessagesQueryKey,
+      });
+      queryClient.removeQueries({
+        queryKey: targetMessagesQueryKey,
+      });
     },
     [queryClient]
   );

@@ -4,6 +4,7 @@ import type {
 } from "@kompose/db/schema/ai";
 import {
   convertToModelMessages,
+  generateText,
   streamText,
   TypeValidationError,
   type UIMessage,
@@ -55,12 +56,23 @@ function toUiMessage(message: AiMessageSelect): UIMessage {
   };
 }
 
-function getSessionTitleFromText(text: string): string | null {
-  const title = text.trim();
-  if (title.length === 0) {
+const MAX_SESSION_TITLE_LENGTH = 80;
+const SESSION_TITLE_MODEL = "gpt-5-nano";
+
+function normalizeGeneratedSessionTitle(text: string): string | null {
+  // Providers occasionally return quoted or multi-line content. Normalize to
+  // a compact single-line title for stable sidebar rendering.
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length === 0) {
     return null;
   }
-  return title.slice(0, 80);
+
+  const withoutOuterQuotes = singleLine.replace(/^["'`]+|["'`]+$/g, "").trim();
+  if (withoutOuterQuotes.length === 0) {
+    return null;
+  }
+
+  return withoutOuterQuotes.slice(0, MAX_SESSION_TITLE_LENGTH);
 }
 
 interface UiStreamResultLike {
@@ -179,13 +191,76 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         });
       });
 
+      const generateSessionTitleFromFirstMessage = Effect.fn(
+        "AiChatService.generateSessionTitleFromFirstMessage"
+      )(function* (input: {
+        userId: string;
+        sessionId: string;
+        firstMessageText: string;
+      }) {
+        yield* Effect.annotateCurrentSpan("userId", input.userId);
+        yield* Effect.annotateCurrentSpan("sessionId", input.sessionId);
+
+        const firstMessageText = input.firstMessageText.trim();
+        if (firstMessageText.length === 0) {
+          return false;
+        }
+
+        // Re-check persisted session state to avoid overwriting a manual title
+        // or racing with another title-generation attempt.
+        const session = yield* repository.getSession(
+          input.userId,
+          input.sessionId
+        );
+        if ((session.title ?? "").trim().length > 0) {
+          return false;
+        }
+
+        const titleResult = yield* Effect.tryPromise({
+          try: () =>
+            generateText({
+              model: resolveChatModel(SESSION_TITLE_MODEL),
+              system: [
+                "Generate a concise chat title from the first user message.",
+                "Requirements:",
+                "- Return title text only.",
+                "- Keep it under 8 words.",
+                "- Do not use quotes, prefixes, or trailing punctuation.",
+              ].join("\n"),
+              prompt: `First user message: ${firstMessageText}`,
+            }),
+          catch: () =>
+            new AiChatError({
+              message: "Failed to generate chat session title.",
+              code: "INTERNAL",
+            }),
+        });
+
+        const title = normalizeGeneratedSessionTitle(titleResult.text);
+        if (!title) {
+          return false;
+        }
+
+        yield* repository.updateSessionActivity({
+          userId: input.userId,
+          sessionId: input.sessionId,
+          title,
+        });
+
+        return true;
+      });
+
       const startStream: (input: {
         userId: string;
         sessionId: string;
         message: UIMessage;
         abortSignal?: AbortSignal;
       }) => Effect.Effect<
-        { originalMessages: UIMessage[]; streamResult: UiStreamResultLike },
+        {
+          originalMessages: UIMessage[];
+          streamResult: UiStreamResultLike;
+          firstMessageText: string | null;
+        },
         AiChatError
       > = Effect.fn("AiChatService.startStream")(function* (input: {
         userId: string;
@@ -231,15 +306,13 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           parts: input.message.parts,
         });
 
-        const nextTitle = session.title ?? getSessionTitleFromText(userText);
-        yield* repository.updateSessionActivity({
-          userId: input.userId,
-          sessionId: input.sessionId,
-          title: nextTitle,
-        });
-
         const history = yield* repository.listMessages(input.sessionId);
         const originalMessages = history.map(toUiMessage);
+        const shouldGenerateTitle =
+          (session.title ?? "").trim().length === 0 &&
+          history.length === 1 &&
+          history[0]?.role === "user" &&
+          userText.trim().length > 0;
 
         const validatedMessages = yield* Effect.tryPromise({
           try: () => validateUIMessages({ messages: originalMessages }),
@@ -284,6 +357,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         return {
           originalMessages: validatedMessages,
           streamResult: streamResult as UiStreamResultLike,
+          firstMessageText: shouldGenerateTitle ? userText : null,
         };
       });
 
@@ -295,6 +369,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         getActiveStreamId,
         markActiveStream,
         persistAssistantFromUiMessages,
+        generateSessionTitleFromFirstMessage,
         startStream,
       };
     }),

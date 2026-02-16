@@ -29,6 +29,35 @@ packages/api/src/
 
 ---
 
+## AI Chat Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/ai/router.ts` | oRPC handlers for sessions, messages, stream send/reconnect |
+| `routers/ai/contract.ts` | Typed input/output contract for AI chat procedures |
+| `packages/ai/src/service.ts` | `AiChatService` orchestration (stream start, persistence, title generation) |
+| `packages/ai/src/repository.ts` | `AiChatRepository` DB operations for sessions/messages |
+
+### Title generation behavior
+
+- `stream.send` starts assistant streaming immediately after persisting the user message.
+- If the session is untitled and this is the first persisted user message, the router fires a detached `AiChatService.generateSessionTitleFromFirstMessage` call.
+- Title generation uses `gpt-5-nano`, stores the result via `updateSessionActivity`, and publishes an `ai-chat` realtime event on success.
+- Title generation failures are swallowed so the primary assistant stream is never blocked or failed by title logic.
+
+### Error mapping behavior
+
+- AI router `handleError` maps existing `AiChatError` codes to standard oRPC
+  codes and includes stable `data.aiErrorCode` metadata for easier client-side
+  debugging.
+- `MODEL_NOT_CONFIGURED` is explicitly mapped to
+  `ORPCError("SERVICE_UNAVAILABLE")` so missing AI configuration is surfaced as
+  `503` rather than generic `500`.
+
+---
+
 ## Task Service
 
 ### Files

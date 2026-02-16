@@ -302,6 +302,7 @@ export function SidebarRightChat() {
   const [selectedModel, setSelectedModel] = useState<ChatModelId>("gpt-5-mini");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const autoCreateAttemptedRef = useRef(false);
+  const localSubmitPendingRef = useRef(false);
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
@@ -546,6 +547,12 @@ export function SidebarRightChat() {
   // Rehydrate local stream state from persisted session messages before paint
   // to avoid visible top-to-bottom jumps during session switches.
   useLayoutEffect(() => {
+    // A local send can briefly remain "ready" before useChat marks it
+    // submitted/streaming. Avoid rehydrating during that gap to prevent
+    // the optimistic first user message from disappearing.
+    if (localSubmitPendingRef.current) {
+      return;
+    }
     if (status === "streaming" || status === "submitted") {
       return;
     }
@@ -586,10 +593,15 @@ export function SidebarRightChat() {
 
       // Fire-and-forget so PromptInput can clear immediately after submit.
       // useChat will still manage streaming state and expose errors.
+      localSubmitPendingRef.current = true;
       sendMessage({
         text,
         files: input.files,
-      }).catch((_error) => undefined);
+      })
+        .catch((_error) => undefined)
+        .finally(() => {
+          localSubmitPendingRef.current = false;
+        });
     },
     [activeSessionId, sendMessage]
   );

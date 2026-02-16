@@ -8,6 +8,28 @@ TAURI_CONFIG="$ROOT_DIR/src-tauri/tauri.conf.json"
 DMG_DIR="$ROOT_DIR/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
 MACOS_DIR="$ROOT_DIR/src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
 
+require_single_artifact() {
+  local label="$1"
+  local pattern="$2"
+  shopt -s nullglob
+  local matches=($pattern)
+  shopt -u nullglob
+
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    echo "Error: Missing $label artifact ($pattern). Run the desktop build first."
+    exit 1
+  fi
+
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    echo "Error: Expected one $label artifact, found ${#matches[@]} for pattern:"
+    echo "  $pattern"
+    echo "Remove stale artifacts and retry."
+    exit 1
+  fi
+
+  printf "%s\n" "${matches[0]}"
+}
+
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI (gh) is required. Install and authenticate first."
   exit 1
@@ -19,7 +41,7 @@ if [[ ! -f "$TAURI_CONFIG" ]]; then
 fi
 
 VERSION="$(
-  node -e "const fs=require('fs');const path=require('path');const config=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(config.version);" \
+  bun -e "const fs=require('fs');const config=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(config.version);" \
     "$TAURI_CONFIG"
 )"
 
@@ -31,17 +53,17 @@ fi
 TAG="v$VERSION"
 PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-DMG_FILE="$(ls "$DMG_DIR"/*.dmg | head -n 1)"
-TAR_FILE="$(ls "$MACOS_DIR"/*.app.tar.gz | head -n 1)"
-TAR_SIG_FILE="$(ls "$MACOS_DIR"/*.app.tar.gz.sig | head -n 1)"
-
-if [[ ! -f "$DMG_FILE" || ! -f "$TAR_FILE" || ! -f "$TAR_SIG_FILE" ]]; then
-  echo "Error: Missing build artifacts. Run the build before releasing."
+if [[ ! -d "$DMG_DIR" || ! -d "$MACOS_DIR" ]]; then
+  echo "Error: Build artifact directories are missing. Run the desktop build first."
   exit 1
 fi
 
+DMG_FILE="$(require_single_artifact "DMG" "$DMG_DIR/*.dmg")"
+TAR_FILE="$(require_single_artifact "macOS updater archive" "$MACOS_DIR/*.app.tar.gz")"
+TAR_SIG_FILE="$(require_single_artifact "macOS updater signature" "$MACOS_DIR/*.app.tar.gz.sig")"
+
 TAR_FILENAME="$(basename "$TAR_FILE")"
-TAR_SIG_CONTENTS="$(cat "$TAR_SIG_FILE")"
+TAR_SIG_CONTENTS="$(<"$TAR_SIG_FILE")"
 LATEST_JSON_PATH="$MACOS_DIR/latest.json"
 TAR_URL="https://github.com/nathancolosimo/kompose/releases/download/$TAG/$TAR_FILENAME"
 
