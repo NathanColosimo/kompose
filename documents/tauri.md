@@ -318,17 +318,21 @@ These commands run Turborepo tasks for both app workspaces:
 
 Desktop behavior in this flow:
 
-- `build:prod` runs in two web phases:
-  - `web#build:prod`
+- `build:prod` runs web phases in this order:
   - `web#build:prod:desktop`
-- `web#build:prod` executes:
-  - `bun run --cwd ../.. vercel:build:prod` (runs Vercel CLI from repo root)
+  - `web#build:prod`
+
 - `web#build:prod:desktop` executes:
   - `bun run desktop:build:signed`
+- `web#build:prod` executes:
+  - `bun run --cwd ../.. vercel:build:prod:raw` (runs Vercel CLI from repo root)
 - `desktop:build:signed` is the full signed + notarized path (it reads
   `apps/web/.tauri.env` and uses `APPLE_*` notarization env vars).
 - `submit:prod` runs `web#submit:prod`, which executes:
   - `bun run --cwd ../.. vercel:submit:prod` (runs Vercel CLI from repo root)
+    - `vercel:submit:prod` first runs `vercel:build:prod`
+      (`turbo run build:prod --filter=web`) so web prebuild can be reused
+      from Turbo cache, then runs `vercel deploy --prebuilt --prod`.
   - `bun run desktop:release`
 
 `desktop:release` remains upload-only and now fails fast when expected

@@ -434,14 +434,17 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 - **Build flow**:
   - Native (`apps/native`): `build:prod` runs local iOS production IPA
     build.
-  - Web (`apps/web`): `build:prod` runs two sequential web tasks:
-    - `web#build:prod` runs root script `vercel:build:prod`
-      (`vercel pull --environment=production` + `vercel build --prod`
-      from repo root)
+  - Web (`apps/web`): `build:prod` runs two sequential web tasks, with
+    desktop first:
     - `web#build:prod:desktop` runs signed/notarized Tauri desktop build.
+    - `web#build:prod` runs root script `vercel:build:prod:raw`
+      (`vercel pull --environment=production` + `vercel build --prod`
+      from repo root), so prebuilt web artifacts remain current for
+      `submit:prod`.
 - **Submit flow**:
   - Web (`apps/web`): `submit:prod` deploys via Vercel CLI
-    (`vercel deploy --prebuilt --prod` from repo root) and publishes
+    (`turbo run build:prod --filter=web` through `vercel:build:prod`,
+    then `vercel deploy --prebuilt --prod` from repo root) and publishes
     desktop artifacts (`desktop:release`).
   - Native (`apps/native`): `submit:prod` submits local iOS IPA to
     App Store Connect.

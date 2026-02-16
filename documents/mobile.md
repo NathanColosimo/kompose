@@ -297,12 +297,15 @@ Native production scripts are:
 Root orchestration now uses direct Turborepo app task fan-out:
 
 - `bun run build:prod`
-  - Runs `turbo run build:prod --filter=web --filter=native`.
-  - Then runs `turbo run build:prod:desktop --filter=web` for desktop.
+  - Runs `turbo run build:prod:desktop --filter=web` first for desktop.
+  - Then runs `turbo run build:prod --filter=web --filter=native`.
   - Native path (`native#build:prod`) runs
     `build:prod`.
 - `bun run submit:prod`
   - Runs `turbo run submit:prod --filter=web --filter=native`.
+  - Web path runs Turbo-cached web prebuild first
+    (`turbo run build:prod --filter=web`), then deploys with
+    `vercel deploy --prebuilt --prod`.
   - Native path (`native#submit:prod`) runs
     `submit:prod`.
 
