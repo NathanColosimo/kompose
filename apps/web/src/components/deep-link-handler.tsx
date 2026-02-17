@@ -1,33 +1,35 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { env } from "@kompose/env";
 import { useCallback, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { authClient } from "@/lib/auth-client";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
-/** sessionStorage key used to track tokens we have already exchanged. */
+/**
+ * localStorage key for tracking processed tokens. Uses localStorage (not
+ * sessionStorage) because the verify flow navigates the webview cross-origin
+ * to kompose.dev and back — sessionStorage would be lost on origin change.
+ */
 const PROCESSED_TOKENS_KEY = "kompose:deep-link-processed-tokens";
 
-/**
- * Record a token so subsequent mounts (e.g. after a manual page reload)
- * won't try to verify it again from getCurrent().
- */
+/** Record a token so subsequent getCurrent() calls won't re-process it. */
 function markTokenProcessed(token: string) {
   try {
-    const raw = sessionStorage.getItem(PROCESSED_TOKENS_KEY);
+    const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
     const set: string[] = raw ? (JSON.parse(raw) as string[]) : [];
     set.push(token);
-    sessionStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(set));
+    // Cap at 20 entries to avoid unbounded growth.
+    if (set.length > 20) {
+      set.splice(0, set.length - 20);
+    }
+    localStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(set));
   } catch {
-    // sessionStorage may not be available; ignore.
+    // localStorage may not be available; ignore.
   }
 }
 
 function isTokenAlreadyProcessed(token: string): boolean {
   try {
-    const raw = sessionStorage.getItem(PROCESSED_TOKENS_KEY);
+    const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
     if (!raw) {
       return false;
     }
@@ -40,92 +42,56 @@ function isTokenAlreadyProcessed(token: string): boolean {
 /**
  * Handles kompose:// deep link URLs in the Tauri desktop app.
  *
- * Listens for deep link events via @tauri-apps/plugin-deep-link and processes
- * OAuth callback URLs of the form:
- *   kompose://auth/callback?token=ONE_TIME_TOKEN
- *
- * On receiving such a URL it exchanges the one-time token for a session cookie,
- * refreshes the session state, and navigates to the dashboard.
+ * On receiving `kompose://auth/callback?token=TOKEN`, navigates the webview
+ * to the server's desktop-callback verify endpoint as a **first-party page
+ * load**. This bypasses Safari/WKWebView ITP which blocks Set-Cookie on
+ * cross-origin fetch responses. The server sets the session cookie
+ * (first-party) and redirects back to tauri://localhost/dashboard.
  */
 export function DeepLinkHandler() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  // Guard against processing the same token twice (e.g. duplicate events).
   const processingRef = useRef(false);
 
-  const handleDeepLinkUrl = useCallback(
-    async (urlString: string) => {
-      // Only handle auth callback deep links.
-      if (!urlString.startsWith("kompose://auth/callback")) {
+  const handleDeepLinkUrl = useCallback((urlString: string) => {
+    if (!urlString.startsWith("kompose://auth/callback")) {
+      return;
+    }
+
+    if (processingRef.current) {
+      return;
+    }
+    processingRef.current = true;
+
+    try {
+      const url = new URL(urlString);
+      const token = url.searchParams.get("token");
+
+      if (!token) {
+        console.warn("[DeepLinkHandler] No token in deep link URL");
         return;
       }
 
-      // Prevent concurrent processing.
-      if (processingRef.current) {
+      // getCurrent() can return the same URL after the webview reloads.
+      // Skip tokens we have already handed off to the verify endpoint.
+      if (isTokenAlreadyProcessed(token)) {
         return;
       }
-      processingRef.current = true;
 
-      try {
-        const url = new URL(urlString);
-        const token = url.searchParams.get("token");
+      // Mark before navigating so the reload after redirect won't re-process.
+      markTokenProcessed(token);
 
-        if (!token) {
-          console.warn("[DeepLinkHandler] No token in deep link URL");
-          toast.error("Authentication failed. No token received.");
-          return;
-        }
-
-        // getCurrent() persists the last deep link URL across page reloads.
-        // On a manual reload the component re-mounts and getCurrent() returns
-        // the same URL. Skip tokens we already verified to avoid a 401.
-        if (isTokenAlreadyProcessed(token)) {
-          return;
-        }
-
-        // Verify the one-time token via the Better Auth client plugin.
-        // The after hook in auth config rewrites SameSite=None; Secure on
-        // the response cookies for tauri://localhost cross-origin requests.
-        const { error } = await authClient.oneTimeToken.verify({ token });
-
-        // The verify response sets the session cookie at the HTTP layer.
-        // The client may still report an error (e.g. cross-origin response
-        // parsing), so confirm the session via getSession rather than
-        // trusting the verify result alone.
-        const session = await authClient.getSession({
-          query: { disableCookieCache: true },
-        });
-
-        if (!session?.data?.user) {
-          if (error) {
-            console.error(
-              "[DeepLinkHandler] Token verification failed:",
-              error
-            );
-          }
-          toast.error("Authentication failed. Please try again.");
-          return;
-        }
-
-        // Remember this token so we don't re-process it after navigation.
-        markTokenProcessed(token);
-
-        // Invalidate all cached queries so the dashboard refetches session,
-        // accounts, events, etc. with the freshly-set cookie.
-        await queryClient.invalidateQueries();
-
-        toast.success("Signed in successfully.");
-
-        router.push("/dashboard");
-      } catch (error) {
-        console.error("[DeepLinkHandler] Error processing deep link:", error);
-        toast.error("Something went wrong during sign-in.");
-      } finally {
-        processingRef.current = false;
-      }
-    },
-    [router, queryClient]
-  );
+      // Navigate the webview to the server as a first-party page load.
+      // The server verifies the one-time token, sets the session cookie
+      // (bypasses ITP), and redirects back to tauri://localhost/dashboard.
+      const verifyUrl = new URL(
+        "/api/auth/desktop-callback",
+        env.NEXT_PUBLIC_WEB_URL
+      );
+      verifyUrl.searchParams.set("verify", token);
+      window.location.href = verifyUrl.toString();
+    } finally {
+      processingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -144,7 +110,7 @@ export function DeepLinkHandler() {
         const startUrls = await getCurrent();
         if (startUrls && startUrls.length > 0) {
           for (const url of startUrls) {
-            await handleDeepLinkUrl(url);
+            handleDeepLinkUrl(url);
           }
         }
 
@@ -169,6 +135,5 @@ export function DeepLinkHandler() {
     };
   }, [handleDeepLinkUrl]);
 
-  // Renderless component.
   return null;
 }

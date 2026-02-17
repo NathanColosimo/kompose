@@ -1,26 +1,118 @@
 import { auth } from "@kompose/auth";
+import { env } from "@kompose/env";
 import type { NextRequest } from "next/server";
+
+const SAME_SITE_RE = /SameSite=\w+/i;
+const SECURE_RE = /;\s*Secure/i;
 
 /**
  * GET /api/auth/desktop-callback
  *
- * Called by the browser after Better Auth completes the OAuth flow. At this
- * point the browser has the session cookie set by Better Auth. This route:
- *  1. Generates a one-time token tied to the current session via the plugin.
- *  2. Returns an HTML page that auto-redirects to kompose://auth/callback.
+ * Two modes:
+ *
+ * 1. **Token generation** (no `verify` param):
+ *    Called by the browser after Better Auth completes the OAuth flow.
+ *    Generates a one-time token and redirects to kompose://auth/callback.
+ *
+ * 2. **Token verification** (`?verify=TOKEN`):
+ *    Called by the Tauri webview as a first-party page navigation.
+ *    Verifies the one-time token, sets the session cookie (first-party,
+ *    bypassing Safari/WKWebView ITP), and redirects back to the embedded
+ *    Tauri app at tauri://localhost/dashboard.
  */
 export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const verifyToken = url.searchParams.get("verify");
+
+  if (verifyToken) {
+    return await handleVerify(verifyToken);
+  }
+
+  return await handleGenerateToken(request);
+}
+
+/**
+ * Verify mode: exchange a one-time token for a session cookie via a
+ * first-party page load. WKWebView (Safari engine) blocks Set-Cookie on
+ * cross-origin fetch responses (ITP), but allows them on first-party
+ * navigations. After setting the cookie, redirects the webview back to
+ * tauri://localhost/dashboard so the embedded app can use the cookie.
+ */
+async function handleVerify(token: string) {
   try {
-    // Generate a one-time token for the current session. The plugin's
-    // sessionMiddleware validates the session from cookies automatically.
+    // Call auth.handler so Better Auth produces correctly signed cookies.
+    const verifyResponse = await auth.handler(
+      new Request(`${env.NEXT_PUBLIC_WEB_URL}/api/auth/one-time-token/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      })
+    );
+
+    if (!verifyResponse.ok) {
+      return new Response(
+        htmlPage(
+          "Authentication failed",
+          "Invalid or expired token. Please close this tab and try again.",
+          // Auto-redirect back to the Tauri app login page after a moment.
+          '<script>setTimeout(function(){window.location.href="tauri://localhost/login"},2000);</script>'
+        ),
+        { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } }
+      );
+    }
+
+    // In production (HTTPS), rewrite cookies to SameSite=None; Secure so
+    // subsequent cross-origin fetch from tauri://localhost includes them.
+    // In dev (HTTP), leave as-is — WKWebView is lenient with localhost.
+    const isProduction = env.NEXT_PUBLIC_WEB_URL.startsWith("https://");
+    const cookies = verifyResponse.headers.getSetCookie();
+    const patchedCookies = isProduction
+      ? cookies.map((c) => {
+          let patched = c.replace(SAME_SITE_RE, "SameSite=None");
+          if (!SECURE_RE.test(patched)) {
+            patched += "; Secure";
+          }
+          return patched;
+        })
+      : cookies;
+
+    // Return HTML that redirects the webview back to the embedded Tauri app.
+    const response = new Response(
+      htmlPage(
+        "Signed in!",
+        "Returning to Kompose...",
+        '<script>window.location.href="tauri://localhost/dashboard";</script>'
+      ),
+      { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+
+    for (const cookie of patchedCookies) {
+      response.headers.append("Set-Cookie", cookie);
+    }
+
+    return response;
+  } catch (error) {
+    console.error("[desktop-callback] Verify error:", error);
+    return new Response(
+      htmlPage(
+        "Authentication failed",
+        "Something went wrong. Please try again.",
+        '<script>setTimeout(function(){window.location.href="tauri://localhost/login"},2000);</script>'
+      ),
+      { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
+}
+
+/** Generate mode: create a one-time token and redirect to the deep link. */
+async function handleGenerateToken(request: NextRequest) {
+  try {
     const data = await auth.api.generateOneTimeToken({
       headers: request.headers,
     });
 
-    // Build the deep link URL for the Tauri app.
     const deepLinkUrl = `kompose://auth/callback?token=${data.token}`;
 
-    // Return an HTML page that auto-redirects to the deep link.
     return new Response(
       htmlPage(
         "Signed in!",
