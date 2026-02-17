@@ -11,6 +11,13 @@ import { createAuthClient } from "better-auth/react";
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   plugins: [inferAdditionalFields<typeof auth>(), oneTimeTokenClient()],
+  fetchOptions: {
+    // Diagnostic: log Better Auth client-side fetch errors so we can
+    // identify cross-origin response parsing issues in Tauri.
+    onError(context) {
+      console.error("[authClient] fetch error:", context.error);
+    },
+  },
   sessionOptions: {
     // Avoid repetitive get-session calls while the dashboard is active.
     refetchOnWindowFocus: false,

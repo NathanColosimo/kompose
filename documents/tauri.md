@@ -88,8 +88,9 @@ auto-updates.
 - `apps/web/src/components/deep-link-handler.tsx`
   - Listens for `kompose://auth/callback?token=TOKEN` deep links via
     `@tauri-apps/plugin-deep-link` JS API.
-  - On receiving a token, verifies it via `authClient.oneTimeToken.verify()`
-    (which sets the signed session cookie), then navigates to `/dashboard`.
+  - On receiving a token, verifies it via `authClient.oneTimeToken.verify()`,
+    confirms the session via `getSession`, invalidates React Query caches,
+    and navigates to `/dashboard` with client-side routing.
 
 - `apps/web/src/app/dashboard/settings/page.tsx`
   - On Tauri desktop, account linking opens the system browser via
@@ -105,6 +106,12 @@ auto-updates.
   - GET endpoint called after OAuth completes in the browser.
   - Generates a one-time token via Better Auth's `oneTimeToken` plugin
     and redirects to `kompose://auth/callback?token=TOKEN`.
+
+- `packages/auth/src/index.ts`
+  - Added Better Auth after hook (`tauriCookieHook`) that rewrites
+    `SameSite=None; Secure` on Set-Cookie headers when the request
+    origin is `tauri://localhost`. This fixes all auth endpoints globally
+    for Tauri cross-origin cookie delivery.
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.
@@ -252,9 +259,12 @@ token exchange to bridge the browser session to the Tauri webview.
    redirects to `kompose://auth/callback?token=TOKEN`.
 8. macOS opens/focuses the Tauri app with the deep link.
 9. `DeepLinkHandler` component captures the URL, extracts the token, and
-   calls `authClient.oneTimeToken.verify({ token })` which hits Better
-   Auth's built-in verify endpoint and sets the signed session cookie.
-10. Session is refreshed and the app navigates to `/dashboard`.
+   calls `authClient.oneTimeToken.verify({ token })`. The after hook in
+   auth config rewrites `SameSite=None; Secure` on the response cookie
+   for cross-origin compatibility.
+10. The handler confirms the session via `getSession` (resilient to
+    cross-origin client-side parsing errors from the verify response),
+    invalidates React Query caches, and navigates to `/dashboard`.
 
 ### Account linking flow
 
@@ -277,9 +287,11 @@ to Better Auth's link-social endpoint with the recovered session.
   stored in the `verification` table with a 3-minute TTL and consumed
   (deleted) after a single use.
 - Link tokens require an authenticated session to create.
-- Session cookies are set by Better Auth's built-in verify endpoint with
-  proper signing. WKWebView (Tauri's macOS webview) accepts `SameSite=Lax`
-  cookies for cross-origin requests from `tauri://localhost`.
+- A Better Auth after hook (`tauriCookieHook`) rewrites `SameSite=None;
+  Secure` on all Set-Cookie headers when the request origin is
+  `tauri://localhost`. This is necessary because `SameSite=Lax` (the
+  default) blocks cookie delivery on cross-origin fetch from Tauri to
+  the API server in production.
 
 ### macOS testing caveat
 

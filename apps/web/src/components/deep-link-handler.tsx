@@ -83,13 +83,26 @@ export function DeepLinkHandler() {
           return;
         }
 
-        // Verify the one-time token directly via the Better Auth client plugin.
-        // This hits the built-in /api/auth/one-time-token/verify endpoint, which
-        // sets the signed session cookie in the response.
+        // Verify the one-time token via the Better Auth client plugin.
+        // The after hook in auth config rewrites SameSite=None; Secure on
+        // the response cookies for tauri://localhost cross-origin requests.
         const { error } = await authClient.oneTimeToken.verify({ token });
 
-        if (error) {
-          console.error("[DeepLinkHandler] Token verification failed:", error);
+        // The verify response sets the session cookie at the HTTP layer.
+        // The client may still report an error (e.g. cross-origin response
+        // parsing), so confirm the session via getSession rather than
+        // trusting the verify result alone.
+        const session = await authClient.getSession({
+          query: { disableCookieCache: true },
+        });
+
+        if (!session?.data?.user) {
+          if (error) {
+            console.error(
+              "[DeepLinkHandler] Token verification failed:",
+              error
+            );
+          }
           toast.error("Authentication failed. Please try again.");
           return;
         }
@@ -103,8 +116,6 @@ export function DeepLinkHandler() {
 
         toast.success("Signed in successfully.");
 
-        // Client-side navigation; the dashboard auth guard uses
-        // disableCookieCache so it will pick up the freshly-set cookie.
         router.push("/dashboard");
       } catch (error) {
         console.error("[DeepLinkHandler] Error processing deep link:", error);
