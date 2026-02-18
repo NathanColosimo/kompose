@@ -5,6 +5,7 @@ import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { getTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -23,6 +24,8 @@ export const queryClient = new QueryClient({
   }),
 });
 
+const tauri = isTauriRuntime();
+
 const link = new RPCLink({
   url: `${env.NEXT_PUBLIC_WEB_URL}/api/rpc`,
   plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
@@ -34,8 +37,18 @@ const link = new RPCLink({
   },
   headers: async () => {
     if (typeof window !== "undefined") {
-      // Client timestamp for network latency measurement on the server
-      return { "x-request-start": Date.now().toString() };
+      const h: Record<string, string> = {
+        "x-request-start": Date.now().toString(),
+      };
+      // In Tauri, authenticate ORPC calls via bearer token instead of
+      // cookies. WKWebView ITP blocks cross-origin cookies in production.
+      if (tauri) {
+        const token = getTauriBearer();
+        if (token) {
+          h.Authorization = `Bearer ${token}`;
+        }
+      }
+      return h;
     }
 
     const { headers } = await import("next/headers");

@@ -1,14 +1,13 @@
 "use client";
 
-import { env } from "@kompose/env";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
-/**
- * localStorage key for tracking processed tokens. Uses localStorage (not
- * sessionStorage) because the verify flow navigates the webview cross-origin
- * to kompose.dev and back — sessionStorage would be lost on origin change.
- */
+/** localStorage key for tracking tokens we have already exchanged. */
 const PROCESSED_TOKENS_KEY = "kompose:deep-link-processed-tokens";
 
 /** Record a token so subsequent getCurrent() calls won't re-process it. */
@@ -42,56 +41,87 @@ function isTokenAlreadyProcessed(token: string): boolean {
 /**
  * Handles kompose:// deep link URLs in the Tauri desktop app.
  *
- * On receiving `kompose://auth/callback?token=TOKEN`, navigates the webview
- * to the server's desktop-callback verify endpoint as a **first-party page
- * load**. This bypasses Safari/WKWebView ITP which blocks Set-Cookie on
- * cross-origin fetch responses. The server sets the session cookie
- * (first-party) and redirects back to tauri://localhost/dashboard.
+ * On receiving `kompose://auth/callback?token=TOKEN`, verifies the one-time
+ * token via the Better Auth client. The bearer plugin captures the session
+ * token from the `set-auth-token` response header and stores it in
+ * localStorage (configured globally in auth-client.ts). All subsequent
+ * requests use this bearer token via the Authorization header, bypassing
+ * WKWebView's ITP cookie restrictions entirely.
  */
 export function DeepLinkHandler() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const processingRef = useRef(false);
 
-  const handleDeepLinkUrl = useCallback((urlString: string) => {
-    if (!urlString.startsWith("kompose://auth/callback")) {
-      return;
-    }
-
-    if (processingRef.current) {
-      return;
-    }
-    processingRef.current = true;
-
-    try {
-      const url = new URL(urlString);
-      const token = url.searchParams.get("token");
-
-      if (!token) {
-        console.warn("[DeepLinkHandler] No token in deep link URL");
+  const handleDeepLinkUrl = useCallback(
+    async (urlString: string) => {
+      if (!urlString.startsWith("kompose://auth/callback")) {
         return;
       }
 
-      // getCurrent() can return the same URL after the webview reloads.
-      // Skip tokens we have already handed off to the verify endpoint.
-      if (isTokenAlreadyProcessed(token)) {
+      if (processingRef.current) {
         return;
       }
+      processingRef.current = true;
 
-      // Mark before navigating so the reload after redirect won't re-process.
-      markTokenProcessed(token);
+      try {
+        const url = new URL(urlString);
+        const token = url.searchParams.get("token");
 
-      // Navigate the webview to the server as a first-party page load.
-      // The server verifies the one-time token, sets the session cookie
-      // (bypasses ITP), and redirects back to tauri://localhost/dashboard.
-      const verifyUrl = new URL(
-        "/api/auth/desktop-callback",
-        env.NEXT_PUBLIC_WEB_URL
-      );
-      verifyUrl.searchParams.set("verify", token);
-      window.location.href = verifyUrl.toString();
-    } finally {
-      processingRef.current = false;
-    }
-  }, []);
+        if (!token) {
+          console.warn("[DeepLinkHandler] No token in deep link URL");
+          toast.error("Authentication failed. No token received.");
+          return;
+        }
+
+        // getCurrent() can return the same URL after component re-mounts.
+        // Skip tokens we have already verified to avoid a 401.
+        if (isTokenAlreadyProcessed(token)) {
+          return;
+        }
+
+        // Verify the one-time token. The global onSuccess handler in
+        // auth-client.ts captures the `set-auth-token` response header
+        // and stores it in localStorage as the bearer token.
+        const { error } = await authClient.oneTimeToken.verify({ token });
+
+        if (error) {
+          console.warn("[DeepLinkHandler] Token verification failed:", error);
+
+          // The token may have expired or already been consumed, but the
+          // user might still have a valid session from a previous login.
+          // Check before showing an error toast.
+          const session = await authClient.getSession({
+            query: { disableCookieCache: true },
+          });
+          if (session?.data?.user) {
+            await queryClient.invalidateQueries();
+            router.push("/dashboard");
+            return;
+          }
+
+          toast.error("Authentication failed. Please try again.");
+          return;
+        }
+
+        // Remember this token so we don't re-process it.
+        markTokenProcessed(token);
+
+        // Invalidate all cached queries so the dashboard refetches with
+        // the freshly-stored bearer token.
+        await queryClient.invalidateQueries();
+
+        toast.success("Signed in successfully.");
+        router.push("/dashboard");
+      } catch (error) {
+        console.error("[DeepLinkHandler] Error processing deep link:", error);
+        toast.error("Something went wrong during sign-in.");
+      } finally {
+        processingRef.current = false;
+      }
+    },
+    [router, queryClient]
+  );
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -110,7 +140,7 @@ export function DeepLinkHandler() {
         const startUrls = await getCurrent();
         if (startUrls && startUrls.length > 0) {
           for (const url of startUrls) {
-            handleDeepLinkUrl(url);
+            await handleDeepLinkUrl(url);
           }
         }
 

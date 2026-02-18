@@ -4,12 +4,13 @@ import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import {
   getExternalHttpUrl,
+  initTauriBearer,
   isTauriRuntime,
   openUrlInDesktopBrowser,
 } from "@/lib/tauri-desktop";
@@ -30,6 +31,35 @@ const ReactQueryDevtools = dynamic(
 function RealtimeSyncBootstrap() {
   useWebRealtimeSync();
   return null;
+}
+
+/**
+ * Loads the bearer token from Tauri Store into memory before rendering
+ * children. This ensures the first getSession / ORPC call already has
+ * the token available. On web (non-Tauri) this is a no-op pass-through.
+ *
+ * Starts with ready=true to match the server/static-export render and
+ * avoid a hydration mismatch. On Tauri the effect briefly hides children
+ * while the token loads from disk (<10 ms).
+ */
+function TauriBearerInit({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(true);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    // Pause rendering until the persisted bearer token is loaded.
+    setReady(false);
+    initTauriBearer().then(() => setReady(true));
+  }, []);
+
+  if (!ready) {
+    return null;
+  }
+
+  return children;
 }
 
 function TauriDesktopBridgeBootstrap() {
@@ -179,17 +209,19 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
       enableSystem
     >
-      <TauriUpdaterProvider>
-        <QueryClientProvider client={queryClient}>
-          <StateProvider config={config} storage={storage}>
-            <RealtimeSyncBootstrap />
-            <TauriDesktopBridgeBootstrap />
-            <DeepLinkHandler />
-            {children}
-          </StateProvider>
-          {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
-        </QueryClientProvider>
-      </TauriUpdaterProvider>
+      <TauriBearerInit>
+        <TauriUpdaterProvider>
+          <QueryClientProvider client={queryClient}>
+            <StateProvider config={config} storage={storage}>
+              <RealtimeSyncBootstrap />
+              <TauriDesktopBridgeBootstrap />
+              <DeepLinkHandler />
+              {children}
+            </StateProvider>
+            {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
+          </QueryClientProvider>
+        </TauriUpdaterProvider>
+      </TauriBearerInit>
       <Toaster richColors />
     </ThemeProvider>
   );

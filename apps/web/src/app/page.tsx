@@ -29,7 +29,8 @@ const highlights = [
 
 export default function Home() {
   const router = useRouter();
-  const [ready, setReady] = useState(!isTauriRuntime());
+  // Start true to match server/static-export render (avoids hydration mismatch).
+  const [ready, setReady] = useState(true);
 
   // On Tauri desktop, skip the marketing page and go straight to dashboard
   // if the user already has a session.
@@ -38,6 +39,7 @@ export default function Home() {
       return;
     }
 
+    setReady(false);
     authClient
       .getSession({ query: { disableCookieCache: true } })
       .then((result) => {

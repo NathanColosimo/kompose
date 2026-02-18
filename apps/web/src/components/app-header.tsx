@@ -50,6 +50,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { authClient } from "@/lib/auth-client";
+import { clearTauriBearer } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
 import {
   dashboardResponsiveLayoutAtom,
@@ -176,6 +177,8 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   const router = useRouter();
 
   const handleLogout = async () => {
+    // Clear the bearer token used by Tauri desktop before sign-out.
+    clearTauriBearer();
     // Wait for sign-out response first.
     await authClient.signOut();
     // Force a fresh server-backed session read (bypass Better Auth cookie cache)

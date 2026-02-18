@@ -59,11 +59,13 @@ auto-updates.
 
 - `apps/web/src-tauri/Cargo.toml`
   - Added: `tauri-plugin-deep-link = "2"`.
+  - Added: `tauri-plugin-store = "2"`.
   - Added: `tauri-plugin-updater = "2"`.
   - Added: `tauri-plugin-opener = "2"`.
 
 - `apps/web/src-tauri/capabilities/default.json`
   - Added: `deep-link:default` permission.
+  - Added: `store:default` permission.
   - Added: `updater:default` permission.
   - Added: `opener:default` permission.
   - Removed `$schema` binding to avoid stale generated-schema validation
@@ -88,13 +90,12 @@ auto-updates.
 - `apps/web/src/components/deep-link-handler.tsx`
   - Listens for `kompose://auth/callback?token=TOKEN` deep links via
     `@tauri-apps/plugin-deep-link` JS API.
-  - On receiving a token, navigates the webview to the server's
-    `desktop-callback?verify=TOKEN` endpoint as a first-party page load.
-    This bypasses Safari/WKWebView ITP which blocks Set-Cookie on
-    cross-origin fetch responses. The server sets the session cookie and
-    redirects back to `tauri://localhost/dashboard`.
-  - Uses `localStorage` (not `sessionStorage`) to track processed tokens,
-    because the cross-origin navigation round-trip would lose sessionStorage.
+  - On receiving a token, verifies it via `authClient.oneTimeToken.verify()`.
+    The bearer plugin captures the session token from the `set-auth-token`
+    response header and persists it to Tauri Store. All subsequent requests
+    use this bearer token via the Authorization header.
+  - Invalidates React Query caches and navigates to `/dashboard` via
+    client-side routing (no page reload).
 
 - `apps/web/src/app/dashboard/settings/page.tsx`
   - On Tauri desktop, account linking opens the system browser via
@@ -107,21 +108,15 @@ auto-updates.
   - Forwards state cookies and returns a 302 redirect to the OAuth provider.
 
 - `apps/web/src/app/api/auth/desktop-callback/route.ts`
-  - GET endpoint with two modes:
-    1. **Token generation** (no `verify` param): called by the browser
-       after OAuth completes, generates a one-time token, and redirects
-       to `kompose://auth/callback?token=TOKEN`.
-    2. **Token verification** (`?verify=TOKEN`): called by the Tauri
-       webview as a first-party page navigation, verifies the token,
-       sets the session cookie (bypasses ITP), rewrites to
-       `SameSite=None; Secure` in production, and redirects back to
-       `tauri://localhost/dashboard`.
+  - GET endpoint called by the browser after OAuth completes.
+  - Generates a one-time token via the `oneTimeToken` plugin and
+    redirects to `kompose://auth/callback?token=TOKEN`.
 
 - `packages/auth/src/index.ts`
-  - Added Better Auth after hook (`tauriCookieHook`) that rewrites
-    `SameSite=None; Secure` on Set-Cookie headers when the request
-    origin is `tauri://localhost`. This fixes all auth endpoints globally
-    for Tauri cross-origin cookie delivery.
+  - Added Better Auth `bearer()` plugin so the server accepts
+    `Authorization: Bearer` tokens in addition to cookies. This allows
+    Tauri desktop to authenticate without cookies (bypassing WKWebView
+    ITP which blocks cross-origin `Set-Cookie`).
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.
@@ -268,23 +263,24 @@ token exchange to bridge the browser session to the Tauri webview.
    plugin (stored in the `verification` table, 3-minute TTL) and
    redirects to `kompose://auth/callback?token=TOKEN`.
 8. macOS opens/focuses the Tauri app with the deep link.
-9. `DeepLinkHandler` captures the URL, marks the token as processed in
-   `localStorage`, and navigates the webview to
-   `https://kompose.dev/api/auth/desktop-callback?verify=TOKEN` as a
-   **first-party page load**. This is necessary because WKWebView's ITP
-   blocks `Set-Cookie` on cross-origin fetch responses in production.
-10. The server verifies the token via `auth.handler`, sets the session
-    cookie (first-party, bypasses ITP), rewrites it to
-    `SameSite=None; Secure` in production, and returns HTML that
-    redirects the webview back to `tauri://localhost/dashboard`.
-11. The Tauri app reloads at `/dashboard` with the session cookie in the
-    cookie jar. All subsequent API calls include the cookie.
+9. `DeepLinkHandler` captures the URL and calls
+   `authClient.oneTimeToken.verify({ token })` via cross-origin fetch.
+10. The server verifies the token and returns the session. The bearer
+    plugin includes a `set-auth-token` response header containing the
+    session token.
+11. The auth client's global `onSuccess` handler (configured in
+    `auth-client.ts`) captures this header and persists the bearer token
+    to Tauri Store (via in-memory cache + async IPC write).
+12. The handler invalidates React Query caches and navigates to
+    `/dashboard` via client-side routing (no page reload).
+13. All subsequent requests (auth client + ORPC) include the bearer
+    token via `Authorization: Bearer` header, bypassing cookies entirely.
 
 ### Account linking flow
 
 Same as sign-in but with an extra step: the Tauri app first generates a
 one-time token via `authClient.oneTimeToken.generate()` (using its
-existing session cookie), then opens the browser to
+bearer token for authentication), then opens the browser to
 `GET /api/auth/desktop-sign-in?provider=google&mode=link&link_token=TOKEN`.
 The server verifies the token via the `oneTimeToken` plugin and proxies
 to Better Auth's link-social endpoint with the recovered session.
@@ -301,15 +297,16 @@ to Better Auth's link-social endpoint with the recovered session.
   stored in the `verification` table with a 3-minute TTL and consumed
   (deleted) after a single use.
 - Link tokens require an authenticated session to create.
-- Session cookies are set via a **first-party page navigation** to the
-  API server (`desktop-callback?verify=TOKEN`). This bypasses
-  Safari/WKWebView ITP which blocks `Set-Cookie` on cross-origin fetch
-  responses. The server rewrites cookies to `SameSite=None; Secure` in
-  production so they are sent on subsequent cross-origin fetch from
-  `tauri://localhost`.
-- A Better Auth after hook (`tauriCookieHook`) additionally rewrites
-  `SameSite=None; Secure` on Set-Cookie headers for all Tauri-origin
-  requests, covering session refresh and other auth endpoints.
+- Tauri desktop uses **bearer tokens** (Authorization header) instead of
+  cookies. This bypasses WKWebView's ITP which blocks cross-origin
+  `Set-Cookie`. The bearer token is persisted in **Tauri Store**
+  (`tauri-plugin-store`), which stores data in the app's data directory
+  via Rust IPC -- not in the webview's `localStorage`. An in-memory
+  cache provides synchronous reads required by Better Auth's token
+  callback, loaded from Tauri Store on app startup.
+- The web app continues to use HttpOnly cookies unchanged.
+- Logout clears the bearer token from memory and Tauri Store before
+  sign-out.
 
 ### macOS testing caveat
 

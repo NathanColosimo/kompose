@@ -94,6 +94,95 @@ export async function openDesktopOAuth(
   await openUrlInDesktopBrowser(signInUrl.toString());
 }
 
+// ---------------------------------------------------------------------------
+// Bearer token storage for Tauri desktop.
+// The Tauri webview cannot use cookies cross-origin (WKWebView ITP blocks
+// Set-Cookie), so it authenticates via a bearer token. The token is kept in
+// an in-memory variable for synchronous reads (required by Better Auth's
+// fetchOptions.auth.token callback) and persisted to Tauri Store (app data
+// directory, accessed via Rust IPC) for cross-launch persistence.
+// ---------------------------------------------------------------------------
+
+const BEARER_STORE_KEY = "bearer-token";
+
+/** In-memory cache so `getTauriBearer()` can return synchronously. */
+let bearerCache = "";
+
+/** Read the bearer token synchronously from the in-memory cache. */
+export function getTauriBearer(): string {
+  return bearerCache;
+}
+
+/**
+ * Persist a bearer token received from the server's `set-auth-token` header.
+ * Updates the in-memory cache immediately and writes to Tauri Store async.
+ */
+export function setTauriBearer(token: string) {
+  bearerCache = token;
+  persistToStore(token);
+}
+
+/** Clear the bearer token on logout. */
+export function clearTauriBearer() {
+  bearerCache = "";
+  removeFromStore();
+}
+
+/**
+ * Load the bearer token from Tauri Store into the in-memory cache.
+ * Must be called once on app startup BEFORE any auth requests fire.
+ */
+export async function initTauriBearer(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  try {
+    const store = await getTauriStore();
+    const token = await store.get<string>(BEARER_STORE_KEY);
+    if (token) {
+      bearerCache = token;
+    }
+  } catch (error) {
+    console.warn("[initTauriBearer] Failed to load token from store:", error);
+  }
+}
+
+/** Lazily import and return a Tauri LazyStore instance. */
+async function getTauriStore() {
+  const { LazyStore } = await import("@tauri-apps/plugin-store");
+  return new LazyStore("auth.json");
+}
+
+/** Write the token to Tauri Store (fire-and-forget). */
+function persistToStore(token: string) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  getTauriStore()
+    .then(async (store) => {
+      await store.set(BEARER_STORE_KEY, token);
+      await store.save();
+    })
+    .catch((error) => {
+      console.warn("[setTauriBearer] Failed to persist token:", error);
+    });
+}
+
+/** Remove the token from Tauri Store (fire-and-forget). */
+function removeFromStore() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  getTauriStore()
+    .then(async (store) => {
+      await store.delete(BEARER_STORE_KEY);
+      await store.save();
+    })
+    .catch((error) => {
+      console.warn("[clearTauriBearer] Failed to remove token:", error);
+    });
+}
+
 // Return external http(s) URL for interception; null for internal/non-http links.
 export function getExternalHttpUrl(href: string, currentOrigin: string) {
   try {

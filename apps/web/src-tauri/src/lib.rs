@@ -8,6 +8,8 @@ pub fn run() {
     .plugin(tauri_plugin_deep_link::init())
     // Allow opening external URLs/files in the system handlers.
     .plugin(tauri_plugin_opener::init())
+    // Persistent key-value store for auth tokens and app settings.
+    .plugin(tauri_plugin_store::Builder::new().build())
     // Enable auto-update support for desktop builds.
     .plugin(tauri_plugin_updater::Builder::new().build())
     .setup(|app| {

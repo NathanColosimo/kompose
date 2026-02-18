@@ -9,6 +9,7 @@
     "core:default",
     "core:window:allow-start-dragging",
     "deep-link:default",
+    "store:default",
     "updater:default",
     "opener:default"
   ]
