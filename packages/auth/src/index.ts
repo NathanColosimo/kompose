@@ -6,9 +6,13 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { bearer, lastLoginMethod } from "better-auth/plugins";
+import { bearer } from "better-auth/plugins/bearer";
+import { lastLoginMethod } from "better-auth/plugins";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
+import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
 import { redisSecondaryStorage } from "./redis-storage";
+
+const OAUTH_PROXY_PRODUCTION_URL = "https://kompose.dev";
 
 export const auth = betterAuth({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
@@ -54,11 +58,13 @@ export const auth = betterAuth({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       scope: ["https://www.googleapis.com/auth/calendar"],
+      redirectURI: `${OAUTH_PROXY_PRODUCTION_URL}/api/auth/callback/google`,
     },
     apple: {
       clientId: env.APPLE_CLIENT_ID,
       clientSecret: env.APPLE_CLIENT_SECRET,
       appBundleIdentifier: env.APPLE_APP_BUNDLE_IDENTIFIER,
+      redirectURI: `${OAUTH_PROXY_PRODUCTION_URL}/api/auth/callback/apple`,
     },
   },
   logger: {
@@ -67,6 +73,10 @@ export const auth = betterAuth({
   plugins: [
     expo(),
     nextCookies(),
+    oAuthProxy({
+      productionURL: OAUTH_PROXY_PRODUCTION_URL,
+      maxAge: 60,
+    }),
     lastLoginMethod({
       cookieName: "kompose.last_used_login_method",
       storeInDatabase: false,
