@@ -1,9 +1,11 @@
 "use client";
 
+import { env } from "@kompose/env";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
@@ -13,6 +15,7 @@ import {
   initTauriBearer,
   isTauriRuntime,
   openUrlInDesktopBrowser,
+  syncDesktopCommandBarShortcutPreset,
 } from "@/lib/tauri-desktop";
 import { orpc, queryClient } from "@/utils/orpc";
 import { DeepLinkHandler } from "./deep-link-handler";
@@ -69,6 +72,20 @@ function TauriBearerInit({ children }: { children: React.ReactNode }) {
 }
 
 function TauriDesktopBridgeBootstrap() {
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    // Apply the persisted command-bar shortcut preset after desktop startup.
+    syncDesktopCommandBarShortcutPreset().catch((error) => {
+      console.warn(
+        "Failed to sync desktop command bar shortcut preset.",
+        error
+      );
+    });
+  }, []);
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       return;
@@ -205,8 +222,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     }),
     [stateAuthClient]
   );
-  // Only mount devtools in development to avoid production overhead.
-  const showReactQueryDevtools = process.env.NODE_ENV === "development";
+  const pathname = usePathname();
+  const isCommandBarRoute = pathname === "/desktop/command-bar";
+  const showReactQueryDevtools =
+    env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
 
   return (
     <ThemeProvider

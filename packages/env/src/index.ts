@@ -26,9 +26,17 @@ export const env = createEnv({
       .string()
       .min(1)
       .regex(/^https?:\/\//),
+    NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "preview", "production"]),
   },
 
   experimental__runtimeEnv: {
     NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
+    NEXT_PUBLIC_DEPLOYMENT_ENV: process.env.NEXT_PUBLIC_DEPLOYMENT_ENV,
   },
 });
+
+/**
+ * Deployment environment helpers shared across web and native clients.
+ */
+export const isProductionDeployment =
+  env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production";

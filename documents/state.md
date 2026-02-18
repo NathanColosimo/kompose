@@ -11,6 +11,8 @@
 
 - `collision-utils.ts`: Shared collision detection for calendar events (web + native). Calculates column positions, column spans, and z-index for overlapping items. Uses a 30-min side-by-side threshold, max 3 columns, and threshold-aware span expansion so events use full width when adjacent columns are stackable.
 - `atoms/command-bar.ts`: Command bar open state and focused task id atoms.
+- `atoms/auth.ts`: Auth convenience atoms, including synchronous
+  `lastUsedLoginMethodAtom` sourced from the configured auth client.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, and event window atoms.
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
 - `atoms/google-data.ts`: Google accounts/calendars atoms plus derived visible calendar ids.

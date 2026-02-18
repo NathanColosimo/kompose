@@ -34,3 +34,9 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-global-shortcut = "2.3.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"

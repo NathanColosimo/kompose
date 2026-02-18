@@ -31,7 +31,7 @@ function Command({
     <CommandSizeContext.Provider value={size}>
       <CommandPrimitive
         className={cn(
-          "flex size-full flex-col overflow-hidden rounded-xl bg-popover p-1 text-popover-foreground",
+          "flex h-full w-full flex-col overflow-hidden rounded-xl bg-popover p-1 text-popover-foreground",
           isLarge && "p-2",
           className
         )}
@@ -50,6 +50,7 @@ function CommandDialog({
   className,
   showCloseButton = false,
   size = "md",
+  overlayClassName,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
@@ -57,6 +58,7 @@ function CommandDialog({
   className?: string;
   showCloseButton?: boolean;
   size?: CommandSize;
+  overlayClassName?: string;
 }) {
   const isLarge = size === "lg";
 
@@ -72,6 +74,7 @@ function CommandDialog({
           isLarge && "sm:max-w-md!",
           className
         )}
+        overlayClassName={overlayClassName}
         showCloseButton={showCloseButton}
       >
         {children}
@@ -127,7 +130,7 @@ function CommandList({
   return (
     <CommandPrimitive.List
       className={cn(
-        "no-scrollbar max-h-72 scroll-py-1 overflow-y-auto overflow-x-hidden outline-none",
+        "no-scrollbar scroll-py-1 overflow-y-auto overflow-x-hidden outline-none max-h-72",
         isLarge && "max-h-80 scroll-py-2",
         className
       )}

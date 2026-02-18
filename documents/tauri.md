@@ -10,7 +10,8 @@ auto-updates.
 - Bundle identifier is aligned with mobile: `com.nathancolosimo.kompose`.
 - Tauri updater plugin is wired (Rust + JS), and a silent download +
   restart prompt is shown in the header once an update is ready.
-- Update checks run on app launch and every 6 hours.
+- In production desktop builds, update checks run on app launch and every 6
+  hours. Local/preview builds skip updater polling.
 - Desktop window now launches non-maximized by default so drag-to-move
   behavior stays consistent with dev.
 - Drag regions are explicitly defined for dashboard header plus
@@ -27,6 +28,14 @@ auto-updates.
 - Apple Silicon DMG build now succeeds with the standard Cargo defaults.
 - OAuth sign-in and account linking now open in the system browser and
   redirect back to the desktop app via `kompose://` deep link.
+- Command bar now supports a desktop global shortcut that toggles a
+  dedicated compact popup window (`/desktop/command-bar`) without focusing
+  the full dashboard window.
+- Command bar popup auto-hides on focus loss (click-away) and supports
+  selectable shortcut presets persisted in desktop settings store.
+- Better Auth last-login-method remains client cookie/storage based; in
+  Tauri desktop this is best-effort because auth itself uses bearer tokens
+  instead of relying on cross-origin cookies.
 - Root cause identified: `frontendDist` pointed at `../.next` while stale
   `../.next/dev/cache/turbopack/*` files were present from dev runs.
   Tauri tried to embed those volatile cache files, causing:
@@ -39,7 +48,8 @@ auto-updates.
 - `apps/web/src-tauri/tauri.conf.json`
   - `identifier`: `com.nathancolosimo.kompose`
   - `bundle.createUpdaterArtifacts`: `true`
-  - `bundle.macOS.signingIdentity`: placeholder, now replaced manually
+  - `bundle.macOS.signingIdentity`:
+    `Developer ID Application: Nathan Colosimo (B8R99NL6HM)`
   - `plugins.updater.pubkey`: placeholder to be filled
   - `plugins.updater.endpoints`:
     `https://github.com/nathancolosimo/kompose/releases/latest/download/latest.json`
@@ -48,6 +58,16 @@ auto-updates.
   - Added: `tauri_plugin_updater::Builder::new().build()`.
   - Added: `tauri_plugin_opener::init()` for system browser/file opens.
   - Added: `tauri_plugin_deep_link::init()` for `kompose://` deep link handling.
+  - Added: `tauri_plugin_global_shortcut` handler for command bar toggle.
+  - Added: hidden `command-bar` WebView window creation (`/desktop/command-bar`).
+  - Added: blur/focus-loss hide behavior for the `command-bar` popup.
+  - Added: Tauri command `set_command_bar_shortcut_preset` for runtime
+    unregister/register of selected preset.
+  - Added: Tauri command `dismiss_command_bar` for programmatic dismissal
+    that restores focus to the previously active app on macOS (uses
+    `[NSApp hide:nil]` to avoid a flicker of the main window).
+  - Added: macOS-only `get_frontmost_app_pid()` and `hide_app()` helpers
+    (via `objc` crate) for focus management.
   - Deep link URLs are logged on startup and at runtime via `on_open_url`.
   - Removed release startup maximize fallback to avoid drag no-op issues
     when the window opens maximized.
@@ -62,29 +82,45 @@ auto-updates.
   - Added: `tauri-plugin-store = "2"`.
   - Added: `tauri-plugin-updater = "2"`.
   - Added: `tauri-plugin-opener = "2"`.
+  - Added: `tauri-plugin-global-shortcut`.
+  - Added: `objc = "0.2"` (macOS-only) for native focus management.
 
 - `apps/web/src-tauri/capabilities/default.json`
+  - `windows`: includes both `main` and `command-bar` so the popup
+    window has access to Store, core APIs, etc. (required for auth
+    bearer token and authenticated queries like tags/tasks).
   - Added: `deep-link:default` permission.
   - Added: `store:default` permission.
   - Added: `updater:default` permission.
   - Added: `opener:default` permission.
-  - Removed `$schema` binding to avoid stale generated-schema validation
-    false positives for plugin permissions.
+  - Added: `global-shortcut:allow-register`.
+  - Added: `global-shortcut:allow-unregister`.
+  - Added: `global-shortcut:allow-is-registered`.
+  - Added: `core:window:allow-set-size`, `core:window:allow-center`,
+    `core:window:allow-hide`, `core:window:allow-show` for the
+    `command-bar` window auto-sizing.
+  - Capability file is schema-bound via
+    `../gen/schemas/desktop-schema.json`.
 
 - `apps/web/src/lib/tauri-desktop.ts`
   - Desktop runtime helper for Tauri detection and external URL opening.
   - Added: `openDesktopOAuth(provider, mode, baseUrl)` helper that opens
     the system browser to the desktop-sign-in endpoint for OAuth.
+  - Added: command bar shortcut preset model + store helpers.
+  - Added: `applyDesktopCommandBarShortcutPreset()` and
+    `syncDesktopCommandBarShortcutPreset()` for runtime rebind.
 
 - `apps/web/src/components/tauri-updater.tsx`
-  - New provider: checks updates on launch + every 6 hours, downloads
-    silently, exposes `isReadyToInstall` + `installUpdate()`.
+  - New provider: in production desktop builds, checks updates on launch +
+    every 6 hours, downloads silently, exposes `isReadyToInstall` +
+    `installUpdate()`.
 
 - `apps/web/src/components/providers.tsx`
   - Wraps app in `TauriUpdaterProvider`.
   - `getSession` now uses `authClient.getSession({ query: { disableCookieCache: true } })` to force server session checks without Better Auth cookie-cache reads.
   - Added desktop bridge bootstrap:
     - intercepts external link clicks and opens them in system browser
+    - syncs persisted command-bar shortcut preset on startup
   - Added `DeepLinkHandler` component for `kompose://` deep link processing.
 
 - `apps/web/src/components/deep-link-handler.tsx`
@@ -100,7 +136,14 @@ auto-updates.
 - `apps/web/src/app/dashboard/settings/page.tsx`
   - On Tauri desktop, account linking opens the system browser via
     `openDesktopOAuth` with `mode: "link"` instead of running in-webview.
+  - Desktop shortcut settings extracted to
+    `desktop-shortcut-settings.tsx` (co-located).
   - Web flow is unchanged.
+
+- `apps/web/src/app/dashboard/settings/desktop-shortcut-settings.tsx`
+  - Self-contained component for the desktop command bar shortcut preset
+    picker (5 preset options) with `react-hook-form`, persistence, and
+    runtime re-registration.
 
 - `apps/web/src/app/api/auth/desktop-sign-in/route.ts`
   - GET endpoint that initiates OAuth in the system browser.
@@ -117,10 +160,15 @@ auto-updates.
     `Authorization: Bearer` tokens in addition to cookies. This allows
     Tauri desktop to authenticate without cookies (bypassing WKWebView
     ITP which blocks cross-origin `Set-Cookie`).
+  - Added Better Auth `lastLoginMethod()` plugin for client-side "last used"
+    provider hints.
+  - Added Better Auth `oAuthProxy()` so local/preview OAuth flows can use a
+    stable provider redirect URI and still return to the initiating app URL.
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.
   - Added: `@tauri-apps/plugin-deep-link`.
+  - Added: `@tauri-apps/plugin-global-shortcut`.
 
 - `apps/web/src/components/app-header.tsx`
   - Added restart button with red dot when update is ready.
@@ -137,6 +185,18 @@ auto-updates.
 
 - `apps/web/src/app/dashboard/layout.tsx`
   - Dashboard auth guard now uses direct `authClient.getSession({ disableCookieCache: true })` before deciding to render or redirect.
+
+- `apps/web/src/app/desktop/command-bar/page.tsx`
+  - Dedicated command bar popup route for the Tauri `command-bar` window.
+  - Renders the same `CommandDialog` + `CommandBarContent` used on web
+    so behavior is identical -- no custom scroll modes or layout wrappers.
+  - The window is undecorated and auto-sizes to exactly fit the dialog
+    content via `ResizeObserver` (up to `COMMAND_BAR_MAX_HEIGHT`).
+  - Tauri API imports are cached per effect lifecycle to avoid
+    re-importing on every resize event.
+  - Hides popup when command state closes (via `dismiss_command_bar`
+    Rust command for flicker-free focus restoration on macOS) and
+    reopens state on window focus.
 
 - `packages/state/src/config.ts`
   - Shared session query keeps `refetchOnMount: "always"` for fresh session truth when state hooks consume auth atoms.
@@ -183,6 +243,9 @@ auto-updates.
 - Example template: `apps/web/.tauri.env.example`
 
 Script:
+
+- `desktop:build:unsigned`:
+  `bunx tauri build --no-sign --bundles dmg --target aarch64-apple-darwin`
 
 - `desktop:build:signed`:
   `set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target aarch64-apple-darwin`

@@ -83,7 +83,12 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - Right sidebar contains calendar date picker and calendar lists.
     - Left sidebar contains navigation (Inbox) and task lists.
 - **Auth integration**:
-  - Better Auth with Google OAuth only (v1).
+  - Better Auth with Google + Apple OAuth.
+  - OAuth Proxy plugin enabled so localhost/preview can reuse a stable
+    provider callback URL while preserving return-to-current-app callbacks.
+  - Environment gating is centralized via
+    `NEXT_PUBLIC_DEPLOYMENT_ENV=local|preview|production`.
+  - Last-login-method plugin enabled via client cookie/storage tracking.
   - Tab-based sign-in / sign-up UI on `/login`.
   - Redirect to `/dashboard` post-auth via Better Auth callback URLs.
 
@@ -97,6 +102,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - Shared state via `packages/state/` (same Jotai atoms and hooks as web).
 - **Auth**:
   - Better Auth flows through HTTP API.
+  - Last login method tracking is persisted in DB and exposed in client
+    plugins for UI hints.
   - Tokens stored securely via `expo-secure-store`.
 - **AI & Commands** (planned):
   - Command palette UI with fuzzy search and action execution.
@@ -151,6 +158,9 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 - **Auth provider**: Better Auth
   - Handles sign-in, OAuth providers, sessions, tokens.
+  - Uses `oauthProxy` for stable OAuth redirect handling across
+    local/dev/preview deployments.
+  - Uses `lastLoginMethod` for client-side last-used-provider hints.
   - Generates Drizzle schema for auth tables in Postgres.
 - **Server-side**:
   - All RPC endpoints require a valid session or token.
@@ -450,3 +460,21 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
     desktop artifacts (`desktop:release`).
   - Native (`apps/native`): `submit:prod` submits local iOS IPA to
     App Store Connect.
+
+### 6.18 Desktop Global Shortcut Command Bar
+- **Dedicated popup window**: Tauri now creates a hidden `command-bar`
+  window that loads `/desktop/command-bar` instead of opening the command
+  palette inside the main dashboard window.
+- **Global shortcut toggle**: `tauri-plugin-global-shortcut` registers a
+  command-bar shortcut and toggles only the popup window.
+- **Dismiss behavior**:
+  - Second shortcut press hides the popup.
+  - Focus loss (click-away) hides the popup automatically.
+- **Preset configuration**:
+  - Settings page now exposes 5 preset options:
+    `CommandOrControl+K`, `CommandOrControl+Shift+K`,
+    `CommandOrControl+Space`, `Alt+Space`, `CommandOrControl+J`.
+  - Selection is persisted in Tauri Store (`desktop-settings.json`) and
+    re-applied at app startup via desktop bootstrap.
+- **UI sizing**: Popup route uses a resize observer to keep window height
+  tight to command-bar content (no extra reserved space).

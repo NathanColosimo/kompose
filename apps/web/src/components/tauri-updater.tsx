@@ -1,5 +1,6 @@
 "use client";
 
+import { isProductionDeployment } from "@kompose/env";
 import type { Update } from "@tauri-apps/plugin-updater";
 import {
   createContext,
@@ -33,7 +34,6 @@ export function TauriUpdaterProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const isDevBuild = process.env.NODE_ENV !== "production";
   const updateRef = useRef<Update | null>(null);
   const isCheckingRef = useRef(false);
   const isDownloadingRef = useRef(false);
@@ -101,7 +101,10 @@ export function TauriUpdaterProvider({
   }, []);
 
   useEffect(() => {
-    if (!isTauriRuntime() || isDevBuild) {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    if (!isProductionDeployment) {
       return;
     }
 
@@ -115,7 +118,7 @@ export function TauriUpdaterProvider({
     return () => {
       clearInterval(intervalId);
     };
-  }, [checkForUpdates, isDevBuild]);
+  }, [checkForUpdates]);
 
   const value = useMemo(
     () => ({

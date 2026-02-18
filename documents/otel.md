@@ -186,3 +186,19 @@ This keeps the Axiom UI clean without losing meaningful data.
 4. **`autoDetectResources: false`** — suppresses `resource.host.*`, `resource.process.*`, `resource.process.runtime.*` attributes that add noise in Axiom without providing useful debugging info.
 
 5. **Fetch instrumentation disabled** — Next.js fetch auto-instrumentation creates high-cardinality spans (one per URL including query params). `Effect.fn` wrapping the Google Calendar client provides the same observability with controlled span names.
+
+---
+
+## Axiom Trace Dashboard Template
+
+A trace-first dashboard template is available at:
+
+- `documents/axiom-trace-explorer.dashboard.json`
+
+It is designed for operational debugging where KPI stats are secondary, and focuses on:
+
+- Chronological LogStream views with named spans/traces (not just IDs).
+- SmartFilter controls for service, exact endpoint, route template, span name, status, and trace ID search.
+- Endpoint extraction that prefers exact path fields (`url.path`, `http.target`) before route templates (`http.route`) so you can see concrete endpoints rather than grouped patterns like `/api/auth/[...all]`.
+
+To use it, replace `{{owner_id}}` and `{{dataset}}`, then create/update via the dashboard scripts in the `building-dashboards` skill.

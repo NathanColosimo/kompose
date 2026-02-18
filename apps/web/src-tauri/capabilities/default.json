@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "command-bar"
   ],
   "permissions": [
     "core:default",
@@ -11,6 +12,13 @@
     "deep-link:default",
     "store:default",
     "updater:default",
-    "opener:default"
+    "opener:default",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "core:window:allow-set-size",
+    "core:window:allow-center",
+    "core:window:allow-hide",
+    "core:window:allow-show"
   ]
 }

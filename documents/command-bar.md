@@ -40,6 +40,31 @@ Creates a task titled "Read that book" with 2 hour duration, due Monday, startin
 | `↵` | Select item / create task |
 | `Esc` | Go back to root view, or close |
 
+## Desktop Global Shortcut (Tauri)
+
+- Desktop uses a dedicated `command-bar` popup window (separate from the main
+  dashboard window). The popup renders the exact same `CommandBarContent`
+  component used in the web dialog -- no custom scroll modes or layout
+  overrides.
+- The popup window is undecorated; it auto-sizes to exactly fit the dialog
+  content via a `ResizeObserver` (up to a max height of 520px).
+- A global shortcut toggles the popup:
+  - First press shows and focuses only the popup window.
+  - Second press hides the popup.
+- Clicking outside the popup hides it immediately (focus-loss hide behavior).
+- Pressing Esc from a sub-view (Search/Create) returns to the root action
+  list. Pressing Esc from the root view dismisses the popup. On macOS,
+  dismissal restores focus to the app that was active before the popup
+  opened (e.g. browser) without flickering the main Kompose window.
+- The `command-bar` window must be listed in `capabilities/default.json` so
+  it has access to the Tauri Store (auth bearer token), core APIs, etc.
+- Preset shortcuts (selectable in Settings):
+  - `CommandOrControl+K`
+  - `CommandOrControl+Shift+K` (default)
+  - `CommandOrControl+Space`
+  - `Alt+Space`
+  - `CommandOrControl+J`
+
 ## Implementation
 
 - **Main component:** `apps/web/src/components/command-bar/command-bar.tsx`
@@ -47,5 +72,8 @@ Creates a task titled "Read that book" with 2 hour duration, due Monday, startin
 - **Search tasks:** `apps/web/src/components/command-bar/command-bar-search-tasks.tsx`
 - **Create task:** `apps/web/src/components/command-bar/command-bar-create-task.tsx`
 - **NLP parser:** `apps/web/src/lib/task-input-parser.ts`
-- **State atom:** `apps/web/src/atoms/command-bar.ts`
+- **State atom:** `packages/state/src/atoms/command-bar.ts`
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
+- **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`
+- **Desktop shortcut settings:** `apps/web/src/app/dashboard/settings/desktop-shortcut-settings.tsx`
+- **Desktop shortcut config/helpers:** `apps/web/src/lib/tauri-desktop.ts`

@@ -29,7 +29,8 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
 - **Expo SDK 55 (preview)** with React Native 0.83.x.
 - **New Architecture always on** in SDK 55 (no legacy toggle).
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
-- **Auth**: Better Auth Expo plugin + cookie header injection.
+- **Auth**: Better Auth Expo plugin + cookie header injection + client-side
+  last-login-method tracking via Expo storage.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
 - **Styling**: Uniwind + Tailwind CSS v4 + BNA UI components.
 - **Theming**: Uniwind CSS theme variables in `global.css` + runtime `Uniwind.setTheme()` for light/dark/system switching.
@@ -138,6 +139,7 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 ### Auth + RPC
 
 - Better Auth client: `apps/native/lib/auth-client.ts`
+  - Includes Expo `lastLoginMethodClient` for "Last used" auth UI hints.
 - oRPC client (cookie injection + URL fallback):
   - `apps/native/utils/orpc.ts`
 - Added Google social sign-in buttons:

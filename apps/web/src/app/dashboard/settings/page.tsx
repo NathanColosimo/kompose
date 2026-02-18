@@ -5,7 +5,7 @@ import { GOOGLE_ACCOUNTS_QUERY_KEY } from "@kompose/state/google-calendar-query-
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -30,16 +30,22 @@ import {
   isTauriRuntime,
   openDesktopOAuth,
 } from "@/lib/tauri-desktop";
+import { DesktopShortcutSettings } from "./desktop-shortcut-settings";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const unlinkGoogleAccount = useUnlinkGoogleAccount();
   const [isLinking, setIsLinking] = useState(false);
+  const [isDesktopRuntime, setIsDesktopRuntime] = useState(false);
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(
     null
   );
   const { profiles: googleAccountProfiles, isLoading } =
     useGoogleAccountProfiles();
+
+  useEffect(() => {
+    setIsDesktopRuntime(isTauriRuntime());
+  }, []);
 
   const handleLinkAnotherGoogleAccount = async () => {
     if (isLinking) {
@@ -213,6 +219,8 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {isDesktopRuntime ? <DesktopShortcutSettings /> : null}
       </div>
     </>
   );

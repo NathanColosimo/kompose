@@ -7,27 +7,50 @@ interface AuthErrorResult {
   } | null;
 }
 
+export type DesktopCommandBarShortcutPresetId =
+  | "cmd_or_ctrl_shift_k"
+  | "ctrl_space"
+  | "alt_space";
+
+export interface DesktopCommandBarShortcutPreset {
+  id: DesktopCommandBarShortcutPresetId;
+  label: string;
+  accelerator: string;
+}
+
+export const desktopCommandBarShortcutPresets: readonly DesktopCommandBarShortcutPreset[] =
+  [
+    {
+      id: "cmd_or_ctrl_shift_k",
+      label: "Cmd/Ctrl + Shift + K",
+      accelerator: "CommandOrControl+Shift+K",
+    },
+    {
+      id: "ctrl_space",
+      label: "Ctrl + Space",
+      accelerator: "Control+Space",
+    },
+    {
+      id: "alt_space",
+      label: "Alt/Option + Space",
+      accelerator: "Alt+Space",
+    },
+  ] as const;
+
+const DEFAULT_DESKTOP_COMMAND_BAR_SHORTCUT_PRESET_ID: DesktopCommandBarShortcutPresetId =
+  "cmd_or_ctrl_shift_k";
+const DESKTOP_SETTINGS_STORE_FILE = "desktop-settings.json";
+const COMMAND_BAR_SHORTCUT_PRESET_STORE_KEY = "command-bar-shortcut-preset-id";
+
+function isDesktopCommandBarShortcutPresetId(
+  value: string
+): value is DesktopCommandBarShortcutPresetId {
+  return desktopCommandBarShortcutPresets.some((preset) => preset.id === value);
+}
+
 // Detect whether code runs inside a Tauri WebView.
 export function isTauriRuntime() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  // Bundled desktop app serves from tauri://localhost.
-  if (window.location.protocol === "tauri:") {
-    return true;
-  }
-
-  // Tauri dev serves from http(s), but includes a UA marker.
-  if (
-    typeof navigator !== "undefined" &&
-    navigator.userAgent.includes("Tauri")
-  ) {
-    return true;
-  }
-
-  // Backward-compatible global checks.
-  return "__TAURI_INTERNALS__" in window || "__TAURI__" in window;
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 // Parse Better Auth error payloads robustly across methods.
@@ -93,6 +116,74 @@ export async function openDesktopOAuth(
   await openUrlInDesktopBrowser(signInUrl.toString());
 }
 
+/**
+ * Read the persisted desktop command bar shortcut preset.
+ */
+export async function getDesktopCommandBarShortcutPresetId(): Promise<DesktopCommandBarShortcutPresetId> {
+  if (!isTauriRuntime()) {
+    return DEFAULT_DESKTOP_COMMAND_BAR_SHORTCUT_PRESET_ID;
+  }
+
+  try {
+    const store = await getDesktopSettingsStore();
+    const storedPreset = await store.get<string>(
+      COMMAND_BAR_SHORTCUT_PRESET_STORE_KEY
+    );
+    if (
+      typeof storedPreset === "string" &&
+      isDesktopCommandBarShortcutPresetId(storedPreset)
+    ) {
+      return storedPreset;
+    }
+  } catch (error) {
+    console.warn(
+      "[getDesktopCommandBarShortcutPresetId] Failed to read preset:",
+      error
+    );
+  }
+
+  return DEFAULT_DESKTOP_COMMAND_BAR_SHORTCUT_PRESET_ID;
+}
+
+/**
+ * Persist the desktop command bar shortcut preset.
+ */
+export async function setDesktopCommandBarShortcutPresetId(
+  presetId: DesktopCommandBarShortcutPresetId
+): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const store = await getDesktopSettingsStore();
+  await store.set(COMMAND_BAR_SHORTCUT_PRESET_STORE_KEY, presetId);
+  await store.save();
+}
+
+/**
+ * Apply a command bar shortcut preset by invoking the desktop command.
+ */
+export async function applyDesktopCommandBarShortcutPreset(
+  presetId: DesktopCommandBarShortcutPresetId
+): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_command_bar_shortcut_preset", {
+    presetId,
+  });
+}
+
+/**
+ * Load the persisted preset and apply it at runtime.
+ */
+export async function syncDesktopCommandBarShortcutPreset(): Promise<DesktopCommandBarShortcutPresetId> {
+  const presetId = await getDesktopCommandBarShortcutPresetId();
+  await applyDesktopCommandBarShortcutPreset(presetId);
+  return presetId;
+}
+
 // ---------------------------------------------------------------------------
 // Bearer token storage for Tauri desktop.
 // The Tauri webview cannot use cookies cross-origin (WKWebView ITP blocks
@@ -150,6 +241,12 @@ export async function initTauriBearer(): Promise<void> {
 async function getTauriStore() {
   const { LazyStore } = await import("@tauri-apps/plugin-store");
   return new LazyStore("auth.json");
+}
+
+/** Lazily import and return the desktop settings store. */
+async function getDesktopSettingsStore() {
+  const { LazyStore } = await import("@tauri-apps/plugin-store");
+  return new LazyStore(DESKTOP_SETTINGS_STORE_FILE);
 }
 
 /** Write the token to Tauri Store (fire-and-forget). */
