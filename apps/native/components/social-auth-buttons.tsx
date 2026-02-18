@@ -3,6 +3,7 @@ import { AlertCircle } from "lucide-react-native";
 import { useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
@@ -38,6 +39,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
     null
   );
   const [error, setError] = useState<string | null>(null);
+  const lastUsedMethod = authClient.getLastUsedLoginMethod();
 
   async function handleSocialSignIn(provider: SocialProvider) {
     if (activeProvider) {
@@ -104,7 +106,14 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
         {activeProvider === "google" ? (
           <ActivityIndicator color={theme.colors.card} size="small" />
         ) : (
-          <Text>{copyByMode[mode].googleLabel}</Text>
+          <View className="flex-row items-center gap-2">
+            <Text>{copyByMode[mode].googleLabel}</Text>
+            {lastUsedMethod === "google" ? (
+              <Badge style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+                Last used
+              </Badge>
+            ) : null}
+          </View>
         )}
       </Button>
 
@@ -116,7 +125,14 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
         {activeProvider === "apple" ? (
           <ActivityIndicator color={theme.colors.card} size="small" />
         ) : (
-          <Text>{copyByMode[mode].appleLabel}</Text>
+          <View className="flex-row items-center gap-2">
+            <Text>{copyByMode[mode].appleLabel}</Text>
+            {lastUsedMethod === "apple" ? (
+              <Badge style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+                Last used
+              </Badge>
+            ) : null}
+          </View>
         )}
       </Button>
     </View>

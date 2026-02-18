@@ -1,4 +1,5 @@
 import { expoClient } from "@better-auth/expo/client";
+import { lastLoginMethodClient } from "@better-auth/expo/plugins";
 import type { auth } from "@kompose/auth";
 import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
@@ -12,6 +13,10 @@ export const authClient = createAuthClient({
     expoClient({
       cookiePrefix: Constants.expoConfig?.scheme as string,
       scheme: Constants.expoConfig?.scheme as string,
+      storagePrefix: Constants.expoConfig?.scheme as string,
+      storage: SecureStore,
+    }),
+    lastLoginMethodClient({
       storagePrefix: Constants.expoConfig?.scheme as string,
       storage: SecureStore,
     }),

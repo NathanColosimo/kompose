@@ -9,6 +9,7 @@ import {
   isTauriRuntime,
   openDesktopOAuth,
 } from "@/lib/tauri-desktop";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
 type SocialProvider = "google" | "apple";
@@ -50,6 +51,7 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
   const [activeProvider, setActiveProvider] = useState<SocialProvider | null>(
     null
   );
+  const lastUsedMethod = authClient.getLastUsedLoginMethod();
 
   const handleSocialSignIn = async (provider: SocialProvider) => {
     if (activeProvider) {
@@ -106,6 +108,11 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
         {activeProvider === "google"
           ? copyByMode[mode].googlePendingLabel
           : copyByMode[mode].googleLabel}
+        {lastUsedMethod === "google" && activeProvider !== "google" ? (
+          <Badge className="ml-2" variant="secondary">
+            Last used
+          </Badge>
+        ) : null}
       </Button>
       <Button
         className="w-full"
@@ -118,6 +125,11 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
         {activeProvider === "apple"
           ? copyByMode[mode].applePendingLabel
           : copyByMode[mode].appleLabel}
+        {lastUsedMethod === "apple" && activeProvider !== "apple" ? (
+          <Badge className="ml-2" variant="secondary">
+            Last used
+          </Badge>
+        ) : null}
       </Button>
     </div>
   );

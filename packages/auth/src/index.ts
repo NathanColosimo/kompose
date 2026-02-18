@@ -6,7 +6,7 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { bearer } from "better-auth/plugins";
+import { bearer, lastLoginMethod } from "better-auth/plugins";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { redisSecondaryStorage } from "./redis-storage";
 
@@ -67,6 +67,10 @@ export const auth = betterAuth({
   plugins: [
     expo(),
     nextCookies(),
+    lastLoginMethod({
+      cookieName: "kompose.last_used_login_method",
+      storeInDatabase: false,
+    }),
     // Bearer token auth for Tauri desktop. The Tauri webview cannot use
     // cookies cross-origin (WKWebView ITP blocks Set-Cookie), so it
     // authenticates via Authorization header instead.

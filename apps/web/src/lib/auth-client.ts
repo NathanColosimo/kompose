@@ -2,6 +2,7 @@ import type { auth } from "@kompose/auth";
 import { env } from "@kompose/env";
 import {
   inferAdditionalFields,
+  lastLoginMethodClient,
   oneTimeTokenClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
@@ -17,7 +18,13 @@ const tauri = isTauriRuntime();
 // where window.location.origin is "tauri://localhost".
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
-  plugins: [inferAdditionalFields<typeof auth>(), oneTimeTokenClient()],
+  plugins: [
+    inferAdditionalFields<typeof auth>(),
+    lastLoginMethodClient({
+      cookieName: "kompose.last_used_login_method",
+    }),
+    oneTimeTokenClient(),
+  ],
   fetchOptions: {
     // In Tauri, authenticate via bearer token instead of cookies.
     // WKWebView ITP blocks cross-origin Set-Cookie, so cookies never work
