@@ -41,7 +41,7 @@
       "cache": true
     },
     "submit:prod": {
-      "cache": false
+      "cache": true
     },
     "dev": {
       "cache": false,

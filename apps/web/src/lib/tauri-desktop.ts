@@ -77,9 +77,8 @@ export async function openDesktopOAuth(
   signInUrl.searchParams.set("provider", provider);
 
   if (mode === "link") {
-    // Generate a one-time token tied to the current session via the
-    // Better Auth oneTimeToken client plugin. The session cookie is
-    // sent automatically by the webview.
+    // Generate a one-time token tied to the current session. The bearer
+    // token is sent automatically via the Authorization header.
     const { authClient } = await import("@/lib/auth-client");
     const { data, error } = await authClient.oneTimeToken.generate();
 

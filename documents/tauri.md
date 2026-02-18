@@ -361,6 +361,8 @@ Desktop behavior in this flow:
       (`turbo run build:prod --filter=web`) so web prebuild can be reused
       from Turbo cache, then runs `vercel deploy --prebuilt --prod`.
   - `bun run desktop:release`
+- `submit:prod` is Turbo-cache-enabled, so unchanged reruns can be served
+  from cache.
 
 `desktop:release` remains upload-only and now fails fast when expected
 artifacts are missing or ambiguous (for example stale duplicate

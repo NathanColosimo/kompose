@@ -431,6 +431,8 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
   - Uses direct Turborepo app task fan-out:
     `--filter=web --filter=native`.
   - Both app production task chains run on each invocation.
+  - `build:prod`, `build:prod:desktop`, and `submit:prod` tasks are all
+    Turbo-cache-enabled.
 - **Build flow**:
   - Native (`apps/native`): `build:prod` runs local iOS production IPA
     build.

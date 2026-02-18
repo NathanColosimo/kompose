@@ -43,8 +43,8 @@ function isTokenAlreadyProcessed(token: string): boolean {
  *
  * On receiving `kompose://auth/callback?token=TOKEN`, verifies the one-time
  * token via the Better Auth client. The bearer plugin captures the session
- * token from the `set-auth-token` response header and stores it in
- * localStorage (configured globally in auth-client.ts). All subsequent
+ * token from the `set-auth-token` response header and persists it to
+ * Tauri Store (via setTauriBearer in auth-client.ts). All subsequent
  * requests use this bearer token via the Authorization header, bypassing
  * WKWebView's ITP cookie restrictions entirely.
  */
@@ -82,7 +82,7 @@ export function DeepLinkHandler() {
 
         // Verify the one-time token. The global onSuccess handler in
         // auth-client.ts captures the `set-auth-token` response header
-        // and stores it in localStorage as the bearer token.
+        // and persists it to Tauri Store via setTauriBearer().
         const { error } = await authClient.oneTimeToken.verify({ token });
 
         if (error) {

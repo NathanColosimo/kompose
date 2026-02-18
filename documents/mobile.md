@@ -308,6 +308,8 @@ Root orchestration now uses direct Turborepo app task fan-out:
     `vercel deploy --prebuilt --prod`.
   - Native path (`native#submit:prod`) runs
     `submit:prod`.
+  - `submit:prod` is Turbo-cache-enabled, so unchanged reruns can be
+    cache hits.
 
 ## Notes / limitations (v1)
 

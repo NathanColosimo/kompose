@@ -42,9 +42,6 @@ export const authClient = createAuthClient({
         setTauriBearer(authToken);
       }
     },
-    onError(context) {
-      console.error("[authClient] fetch error:", context.error);
-    },
   },
   sessionOptions: {
     // Avoid repetitive get-session calls while the dashboard is active.
