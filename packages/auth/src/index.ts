@@ -6,10 +6,10 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { bearer } from "better-auth/plugins/bearer";
 import { lastLoginMethod } from "better-auth/plugins";
-import { oneTimeToken } from "better-auth/plugins/one-time-token";
+import { bearer } from "better-auth/plugins/bearer";
 import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
+import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { redisSecondaryStorage } from "./redis-storage";
 
 const OAUTH_PROXY_PRODUCTION_URL = "https://kompose.dev";
