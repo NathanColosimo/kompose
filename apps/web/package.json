@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --bun next dev",
     "build": "bun --bun next build",
-    "build:prod": "bun --bun next build",
+    "build:prod": "(cd ../.. && vercel pull --yes --environment=production && vercel build --prod)",
     "build:prod:desktop": "bun run desktop:build:signed",
     "build:desktop": "bash ./scripts/build-desktop.sh",
     "start": "bun --bun next start",
@@ -19,7 +19,7 @@
     "desktop:build:signed:no-notary": "set -a && . ./.tauri.env && set +a && unset APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH && bunx tauri build --bundles app,dmg --target aarch64-apple-darwin",
     "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key \"$APPLE_API_KEY_PATH\" --key-id \"$APPLE_API_KEY\" --issuer \"$APPLE_API_ISSUER\"",
     "desktop:release": "bash ./release-dmg.sh",
-    "submit:prod": "(cd ../.. && vercel deploy --prod) && bun run desktop:release"
+    "submit:prod": "(cd ../.. && vercel deploy --prebuilt --prod) && bun run desktop:release"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.81",
