@@ -439,15 +439,23 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 - **Per-platform shortcuts**:
   - `bun run build:prod:web` — type-check web deps → desktop → web
   - `bun run build:prod:native` — type-check native deps → native
-  - `bun run submit:prod:web` / `bun run submit:prod:native`
-- **Package scripts** (self-contained, no `--cwd` indirection):
-  - `web#build:prod`: `vercel pull` + `vercel build --prod` (runs
-    directly in `apps/web/`).
+  - `bun run submit:prod:web` — Vercel deploy + desktop release
+  - `bun run submit:prod:desktop` — desktop release only
+  - `bun run submit:prod:native` — App Store Connect only
+- **Package scripts** (self-contained, `cd ../..` for Vercel CLI):
+  - `web#build:prod`: `cd ../.. && vercel pull + vercel build --prod`
+    (runs from repo root so `rootDirectory: apps/web` resolves correctly).
   - `web#build:prod:desktop`: signed/notarized Tauri build.
-  - `web#submit:prod`: `vercel deploy --prebuilt --prod` +
-    `desktop:release` (GitHub release of DMG).
+  - `web#submit:prod`: `cd ../.. && vercel deploy --prebuilt --prod`
+    (Vercel deploy only, no desktop).
+  - `web#submit:prod:desktop`: `desktop:release` (GitHub release of DMG).
+    Cached by Turbo — if no source files changed since the last
+    successful release, the task is a cache hit and skipped entirely.
   - `native#build:prod`: local EAS iOS production IPA build.
   - `native#submit:prod`: submit IPA to App Store Connect.
+- **Desktop release idempotency**: `release-dmg.sh` checks if the
+  GitHub release tag already exists and exits 0 gracefully, so a
+  duplicate release attempt is a no-op rather than a failure.
 - **Turborepo configuration**:
   - Root `turbo.json` contains only shared task definitions.
   - `apps/web/turbo.json` and `apps/native/turbo.json` use
@@ -463,9 +471,11 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
   - `native#build:prod`: caches `dist/**` (the IPA).
   - `web#build:prod:desktop`: caches
     `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
-  - `web#build:prod`: no outputs (Vercel build output lives in
-    `.vercel/output/` which is gitignored).
+  - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
   - `submit:prod` has `cache: false` (deployment side-effect).
+  - `submit:prod:desktop` has `cache: true` with
+    `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
+    changes occurred since the last release.
   - Build tasks include `dependsOn: ["^build"]` so cache keys factor
     in workspace dependency changes.
 - **Local build speed**:

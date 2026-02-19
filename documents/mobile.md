@@ -308,9 +308,13 @@ Root orchestration uses Turborepo with per-platform shortcuts:
   deps → native IPA).
 - `bun run submit:prod:native` — submits just the native IPA.
 - `bun run build:prod:web` / `bun run submit:prod:web` — web-only
-  equivalents.
+  equivalents (Vercel deploy + desktop release).
+- `bun run submit:prod:desktop` — desktop GitHub release only.
 - `submit:prod` has `cache: false` (deployment side-effect; always
   re-runs).
+- `submit:prod:desktop` has `cache: true` with
+  `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
+  changes occurred since the last release.
 - **Important**: Always run from repo root. Running `bun run build:prod`
   directly inside `apps/native/` bypasses Turbo (no caching).
 
@@ -326,9 +330,12 @@ Production task configuration uses **Package Configurations**
   dependency changes (e.g. `@kompose/state`).
 - `web#build:prod:desktop`: caches the Tauri bundle at
   `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
-- `web#build:prod`: cache-enabled but has no `outputs` declared because
-  `vercel build --prod` writes to the repo root `.vercel/output/`
-  directory, which is outside the package scope.
+- `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
+- `web#submit:prod:desktop`: cached turbo task that depends on
+  `build:prod:desktop`. If no source files changed since the last
+  successful release, the task is a cache hit and skipped entirely.
+  The release script (`release-dmg.sh`) is also idempotent — it
+  gracefully skips if the GitHub release tag already exists.
 
 ### Why local iOS builds are slow
 

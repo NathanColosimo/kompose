@@ -81,6 +81,11 @@ cat >"$LATEST_JSON_PATH" <<JSON
 }
 JSON
 
+if gh release view "$TAG" >/dev/null 2>&1; then
+  echo "Release $TAG already exists — skipping (no desktop changes)."
+  exit 0
+fi
+
 gh release create "$TAG" \
   "$DMG_FILE" \
   "$TAR_FILE" \
