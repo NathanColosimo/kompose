@@ -289,29 +289,55 @@ Native production scripts are:
 
 - `bun run --cwd apps/native build:prod`
   - Creates `apps/native/dist/kompose.ipa` using the EAS `production`
-    profile.
+    profile with `--local` (builds on your machine, not EAS cloud).
   - Runs with `--non-interactive` so EAS does not prompt in terminal
     automation.
+  - Sets `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` and
+    `EAS_LOCAL_BUILD_WORKINGDIR=~/.eas-build-cache/native` to persist the
+    build working directory between runs. This allows `pod install` to
+    reuse previously downloaded pods instead of fetching from scratch.
 - `bun run --cwd apps/native submit:prod`
   - Submits the existing IPA to App Store Connect and waits for status.
   - Runs with `--non-interactive` to avoid interactive prompts.
 
-Root orchestration now uses direct Turborepo app task fan-out:
+Root orchestration uses Turborepo with per-platform shortcuts:
 
-- `bun run build:prod`
-  - Runs `turbo run build:prod:desktop --filter=web` first for desktop.
-  - Then runs `turbo run build:prod --filter=web --filter=native`.
-  - Native path (`native#build:prod`) runs
-    `build:prod`.
-- `bun run submit:prod`
-  - Runs `turbo run submit:prod --filter=web --filter=native`.
-  - Web path runs Turbo-cached web prebuild first
-    (`turbo run build:prod --filter=web`), then deploys with
-    `vercel deploy --prebuilt --prod`.
-  - Native path (`native#submit:prod`) runs
-    `submit:prod`.
-  - `submit:prod` is Turbo-cache-enabled, so unchanged reruns can be
-    cache hits.
+- `bun run build:prod` — builds everything (type-check → desktop →
+  web + native).
+- `bun run build:prod:native` — builds only native (type-check native
+  deps → native IPA).
+- `bun run submit:prod:native` — submits just the native IPA.
+- `bun run build:prod:web` / `bun run submit:prod:web` — web-only
+  equivalents.
+- `submit:prod` has `cache: false` (deployment side-effect; always
+  re-runs).
+- **Important**: Always run from repo root. Running `bun run build:prod`
+  directly inside `apps/native/` bypasses Turbo (no caching).
+
+### Turbo caching for production tasks
+
+Production task configuration uses **Package Configurations**
+(`apps/web/turbo.json` and `apps/native/turbo.json` with
+`"extends": ["//"]`) instead of `package#task` overrides in the root
+`turbo.json`.
+
+- `native#build:prod`: caches `dist/**` (the IPA). Includes
+  `dependsOn: ["^build"]` so the cache key factors in workspace
+  dependency changes (e.g. `@kompose/state`).
+- `web#build:prod:desktop`: caches the Tauri bundle at
+  `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
+- `web#build:prod`: cache-enabled but has no `outputs` declared because
+  `vercel build --prod` writes to the repo root `.vercel/output/`
+  directory, which is outside the package scope.
+
+### Why local iOS builds are slow
+
+`eas build --local` always creates a fresh temp directory, runs
+`expo prebuild` (regenerates `ios/`), runs `pod install`, and does a full
+`xcodebuild` compilation. Local builds do not support EAS's cloud caching
+features (pod cache, compiler ccache). The persistent working directory
+env vars mitigate this by keeping downloaded pods across runs, but
+prebuild still regenerates `ios/` each time.
 
 ## Notes / limitations (v1)
 

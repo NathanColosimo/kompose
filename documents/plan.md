@@ -84,8 +84,6 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - Left sidebar contains navigation (Inbox) and task lists.
 - **Auth integration**:
   - Better Auth with Google + Apple OAuth.
-  - OAuth Proxy plugin enabled so localhost/preview can reuse a stable
-    provider callback URL while preserving return-to-current-app callbacks.
   - Environment gating is centralized via
     `NEXT_PUBLIC_DEPLOYMENT_ENV=local|preview|production`.
   - Last-login-method plugin enabled via client cookie/storage tracking.
@@ -434,32 +432,54 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 - See [`otel.md`](./otel.md) for full details.
 
 ### 6.17 Production Build/Submit Orchestration
-- **Root commands**:
-  - `bun run build:prod`
-  - `bun run submit:prod`
-- **Execution model**:
-  - Uses direct Turborepo app task fan-out:
-    `--filter=web --filter=native`.
-  - Both app production task chains run on each invocation.
-  - `build:prod`, `build:prod:desktop`, and `submit:prod` tasks are all
-    Turbo-cache-enabled.
-- **Build flow**:
-  - Native (`apps/native`): `build:prod` runs local iOS production IPA
-    build.
-  - Web (`apps/web`): `build:prod` runs two sequential web tasks, with
-    desktop first:
-    - `web#build:prod:desktop` runs signed/notarized Tauri desktop build.
-    - `web#build:prod` runs root script `vercel:build:prod:raw`
-      (`vercel pull --environment=production` + `vercel build --prod`
-      from repo root), so prebuilt web artifacts remain current for
-      `submit:prod`.
-- **Submit flow**:
-  - Web (`apps/web`): `submit:prod` deploys via Vercel CLI
-    (`turbo run build:prod --filter=web` through `vercel:build:prod`,
-    then `vercel deploy --prebuilt --prod` from repo root) and publishes
-    desktop artifacts (`desktop:release`).
-  - Native (`apps/native`): `submit:prod` submits local iOS IPA to
-    App Store Connect.
+- **Root commands** (all platforms):
+  - `bun run build:prod` — type-check → desktop → web + native
+  - `bun run submit:prod` — deploy web (Vercel) + desktop (GitHub)
+    + submit native (App Store Connect)
+- **Per-platform shortcuts**:
+  - `bun run build:prod:web` — type-check web deps → desktop → web
+  - `bun run build:prod:native` — type-check native deps → native
+  - `bun run submit:prod:web` / `bun run submit:prod:native`
+- **Package scripts** (self-contained, no `--cwd` indirection):
+  - `web#build:prod`: `vercel pull` + `vercel build --prod` (runs
+    directly in `apps/web/`).
+  - `web#build:prod:desktop`: signed/notarized Tauri build.
+  - `web#submit:prod`: `vercel deploy --prebuilt --prod` +
+    `desktop:release` (GitHub release of DMG).
+  - `native#build:prod`: local EAS iOS production IPA build.
+  - `native#submit:prod`: submit IPA to App Store Connect.
+- **Turborepo configuration**:
+  - Root `turbo.json` contains only shared task definitions.
+  - `apps/web/turbo.json` and `apps/native/turbo.json` use
+    Package Configurations (`"extends": ["//"]`) for app-specific
+    task overrides (outputs, env vars, caching).
+  - `lint` and `type-check` use the **Transit Nodes** pattern
+    (`dependsOn: ["transit"]`) for parallel execution across packages
+    with correct cache invalidation.
+  - `DATABASE_URL` and `REDIS_URL` are declared in web's package-level
+    `env` (not `globalEnv`) so they only affect the web build cache.
+  - All root scripts use `turbo run` (not the `turbo` shorthand).
+- **Turbo cache outputs**:
+  - `native#build:prod`: caches `dist/**` (the IPA).
+  - `web#build:prod:desktop`: caches
+    `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
+  - `web#build:prod`: no outputs (Vercel build output lives in
+    `.vercel/output/` which is gitignored).
+  - `submit:prod` has `cache: false` (deployment side-effect).
+  - Build tasks include `dependsOn: ["^build"]` so cache keys factor
+    in workspace dependency changes.
+- **Local build speed**:
+  - Native `build:prod` sets `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` and
+    `EAS_LOCAL_BUILD_WORKINGDIR=~/.eas-build-cache/native` to persist
+    the build working directory between runs, allowing `pod install` to
+    reuse previously downloaded pods.
+  - `eas build --local` still runs `expo prebuild` and full
+    `xcodebuild` each time; EAS local builds do not support cloud
+    caching features (pod cache, compiler ccache).
+- **Important**: Always invoke builds from the repo root via `bun run
+  build:prod[:web|:native]`. Running `bun run build:prod` directly
+  inside a package directory bypasses Turbo (no caching, no dependency
+  graph).
 
 ### 6.18 Desktop Global Shortcut Command Bar
 - **Dedicated popup window**: Tauri now creates a hidden `command-bar`

@@ -162,8 +162,6 @@ auto-updates.
     ITP which blocks cross-origin `Set-Cookie`).
   - Added Better Auth `lastLoginMethod()` plugin for client-side "last used"
     provider hints.
-  - Added Better Auth `oAuthProxy()` so local/preview OAuth flows can use a
-    stable provider redirect URI and still return to the initiating app URL.
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.

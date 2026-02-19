@@ -1,47 +1,23 @@
 {
-  "$schema": "https://turbo.build/schema.json",
+  "$schema": "https://turborepo.dev/schema.v2.json",
   "ui": "tui",
-  "globalEnv": ["DATABASE_URL", "REDIS_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**"]
     },
-    "web#build": {
-      "dependsOn": ["^build"],
-      "env": [
-        "BETTER_AUTH_SECRET",
-        "NEXT_PUBLIC_WEB_URL",
-        "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_WEBHOOK_TOKEN",
-        "REDIS_URL",
-        "GOOGLE_MAPS_API_KEY",
-        "APPLE_CLIENT_ID",
-        "APPLE_CLIENT_SECRET",
-        "AXIOM_API_TOKEN",
-        "AXIOM_DATASET",
-        "APPLE_APP_BUNDLE_IDENTIFIER",
-        "OPENAI_API_KEY"
-      ],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+    "transit": {
+      "dependsOn": ["^transit"]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["transit"]
     },
     "type-check": {
-      "dependsOn": ["^type-check"]
-    },
-    "build:prod": {
-      "cache": true
-    },
-    "build:prod:desktop": {
-      "cache": true
+      "dependsOn": ["transit"]
     },
     "submit:prod": {
-      "cache": true
+      "cache": false
     },
     "dev": {
       "cache": false,
