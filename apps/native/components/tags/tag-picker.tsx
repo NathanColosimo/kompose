@@ -7,8 +7,8 @@ import { Text } from "@/components/ui/text";
 import { tagIconMap } from "./tag-icon-map";
 
 interface TagPickerProps {
-  value: string[];
   onChange: (next: string[]) => void;
+  value: string[];
 }
 
 export function TagPicker({ value, onChange }: TagPickerProps) {

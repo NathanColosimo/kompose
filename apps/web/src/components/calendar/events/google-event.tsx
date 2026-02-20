@@ -18,17 +18,17 @@ import { calculateEventPosition } from "../days-view";
 import { EventEditPopover } from "./event-edit-popover";
 
 interface GoogleCalendarEventProps {
-  event: GoogleEvent;
-  start: Temporal.ZonedDateTime;
-  end: Temporal.ZonedDateTime;
   accountId: string;
   calendarId: string;
   /** Column index for horizontal positioning (0, 1, or 2) */
   columnIndex?: number;
-  /** Total columns in this item's collision group */
-  totalColumns?: number;
   /** How many consecutive columns this item spans */
   columnSpan?: number;
+  end: Temporal.ZonedDateTime;
+  event: GoogleEvent;
+  start: Temporal.ZonedDateTime;
+  /** Total columns in this item's collision group */
+  totalColumns?: number;
   /** Z-index for stacking order */
   zIndex?: number;
 }

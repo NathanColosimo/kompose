@@ -9,9 +9,9 @@ export type MeetingProvider =
   | "other";
 
 export interface MeetingLink {
-  url: string;
-  provider: MeetingProvider;
   label: string;
+  provider: MeetingProvider;
+  url: string;
 }
 
 const PROVIDER_LABELS: Record<MeetingProvider, string> = {

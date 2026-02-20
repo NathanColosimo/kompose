@@ -59,21 +59,21 @@ const RECURRENCE_FREQUENCIES: Array<{
 ];
 
 interface EventEditorFormValues {
-  summary: string;
-  description: string;
-  location: string;
-  colorId: string | null;
+  allDay: boolean;
   calendar: {
     accountId: string;
     calendarId: string;
   };
-  allDay: boolean;
-  startDate: Temporal.PlainDate;
-  endDate: Temporal.PlainDate;
-  startTime: Temporal.PlainTime | null;
-  endTime: Temporal.PlainTime | null;
-  recurrence: string[];
+  colorId: string | null;
   conferenceData: EventDraft["conferenceData"];
+  description: string;
+  endDate: Temporal.PlainDate;
+  endTime: Temporal.PlainTime | null;
+  location: string;
+  recurrence: string[];
+  startDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime | null;
+  summary: string;
 }
 
 function toFormValues(draft: EventDraft): EventEditorFormValues {
@@ -179,13 +179,13 @@ function buildRecurrenceRuleFromCurrent(
 }
 
 interface EventEditorSheetProps {
+  calendarOptions: CalendarOption[];
   draft: EventDraft;
   isVisible: boolean;
   onClose: () => void;
-  onSubmit: (draft: EventDraft) => void;
   onDelete?: (draft: EditEventDraft) => void;
+  onSubmit: (draft: EventDraft) => void;
   timeZone: string;
-  calendarOptions: CalendarOption[];
 }
 
 function EventEditorSheet({
@@ -875,12 +875,12 @@ function EventEditorSheet({
 }
 
 interface CreateEventEditorSheetProps {
+  calendarOptions: CalendarOption[];
   draft: CreateEventDraft;
   isVisible: boolean;
   onClose: () => void;
   onCreate: (draft: CreateEventDraft) => void;
   timeZone: string;
-  calendarOptions: CalendarOption[];
 }
 
 export function CreateEventEditorSheet(props: CreateEventEditorSheetProps) {
@@ -897,13 +897,13 @@ export function CreateEventEditorSheet(props: CreateEventEditorSheetProps) {
 }
 
 interface EditEventEditorSheetProps {
+  calendarOptions: CalendarOption[];
   draft: EditEventDraft;
   isVisible: boolean;
   onClose: () => void;
-  onSave: (draft: EditEventDraft) => void;
   onDelete: (draft: EditEventDraft) => void;
+  onSave: (draft: EditEventDraft) => void;
   timeZone: string;
-  calendarOptions: CalendarOption[];
 }
 
 export function EditEventEditorSheet(props: EditEventEditorSheetProps) {

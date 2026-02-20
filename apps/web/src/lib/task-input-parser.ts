@@ -5,24 +5,24 @@ import { Temporal } from "temporal-polyfill";
  * Result of parsing a task input string with NLP syntax.
  */
 export interface ParsedTaskInput {
-  /** The task title (text before any special tokens) */
-  title: string;
-  /** Duration in minutes, parsed from =duration token (e.g., =2h, =30m) */
-  durationMinutes: number | null;
   /** Due date, parsed from >date token (e.g., >monday, >tomorrow) */
   dueDate: Temporal.PlainDate | null;
-  /** Start date, parsed from ~date token (e.g., ~friday, ~next week) */
-  startDate: Temporal.PlainDate | null;
-  /** Tag names parsed from #tag tokens */
-  tagNames: string[];
-  /** Raw duration string for display (e.g., "2h", "30m") */
-  durationRaw: string | null;
   /** Raw due date string for display (e.g., "monday", "tomorrow") */
   dueDateRaw: string | null;
+  /** Duration in minutes, parsed from =duration token (e.g., =2h, =30m) */
+  durationMinutes: number | null;
+  /** Raw duration string for display (e.g., "2h", "30m") */
+  durationRaw: string | null;
+  /** Start date, parsed from ~date token (e.g., ~friday, ~next week) */
+  startDate: Temporal.PlainDate | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
   startDateRaw: string | null;
+  /** Tag names parsed from #tag tokens */
+  tagNames: string[];
   /** Raw tag strings for display (e.g., "design", "client work") */
   tagNamesRaw: string[];
+  /** The task title (text before any special tokens) */
+  title: string;
 }
 
 /**

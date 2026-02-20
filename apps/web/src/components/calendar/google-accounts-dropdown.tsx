@@ -32,8 +32,8 @@ import {
 import { authClient } from "@/lib/auth-client";
 
 interface GoogleAccount {
-  id: string;
   accountId: string;
+  id: string;
   providerId: string;
 }
 
@@ -183,8 +183,8 @@ interface AccountCalendarsSectionProps {
   account: AccountWithInfo;
   calendars: CalendarWithSource[];
   isCalendarVisible: (accountId: string, calendarId: string) => boolean;
-  toggleCalendar: (accountId: string, calendarId: string) => void;
   isLastAccount: boolean;
+  toggleCalendar: (accountId: string, calendarId: string) => void;
 }
 
 function AccountCalendarsSection({

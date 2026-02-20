@@ -30,11 +30,11 @@ export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
 // Navigation tabs for the sidebar icon strip
 interface SidebarNavItem {
-  id: string;
-  title: string;
   icon: LucideIcon;
-  type: "base" | "tag";
+  id: string;
   tagId?: string;
+  title: string;
+  type: "base" | "tag";
 }
 
 const navMain: SidebarNavItem[] = [

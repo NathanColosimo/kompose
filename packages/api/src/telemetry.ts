@@ -30,8 +30,8 @@ import { Layer } from "effect";
 // ── Shared exporter config ──────────────────────────────────────────
 
 interface OtlpExporterConfig {
-  url: string;
   headers?: Record<string, string>;
+  url: string;
 }
 
 function getExporterConfig(): OtlpExporterConfig | null {

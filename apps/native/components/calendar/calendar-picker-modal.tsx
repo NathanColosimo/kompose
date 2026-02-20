@@ -17,14 +17,14 @@ import { Text } from "@/components/ui/text";
 import { useColor } from "@/hooks/useColor";
 
 interface CalendarPickerModalProps {
-  open: boolean;
-  onClose: () => void;
   googleAccounts: Account[];
   googleCalendars: CalendarWithSource[];
-  visibleCalendars: VisibleCalendars;
+  onClose: () => void;
+  open: boolean;
   setVisibleCalendars: (
     next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
   ) => void;
+  visibleCalendars: VisibleCalendars;
 }
 
 type CalendarId = {
@@ -144,15 +144,15 @@ interface CalendarAccountSectionProps {
   account: Account;
   accountCalendars: CalendarWithSource[];
   allCalendarIds: CalendarId[];
-  visibleCalendars: VisibleCalendars;
+  borderColor: string;
+  isProfileLoading: boolean;
+  primaryColor: string;
+  primaryForegroundColor: string;
+  profile?: OAuth2UserInfo | null;
   setVisibleCalendars: (
     next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
   ) => void;
-  primaryColor: string;
-  primaryForegroundColor: string;
-  borderColor: string;
-  profile?: OAuth2UserInfo | null;
-  isProfileLoading: boolean;
+  visibleCalendars: VisibleCalendars;
 }
 
 function CalendarAccountSection({

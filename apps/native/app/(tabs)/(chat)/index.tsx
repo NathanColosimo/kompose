@@ -194,12 +194,12 @@ function ComposerAttachmentsPreview() {
 }
 
 interface HeaderSessionMenuProps {
-  sessions: { id: string; title: string | null }[];
   activeSessionId: string | null;
   isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
   onCreateSession: () => Promise<void>;
+  onOpenChange: (open: boolean) => void;
   onSelectSession: (sessionId: string) => void;
+  sessions: { id: string; title: string | null }[];
 }
 
 /**
@@ -286,11 +286,11 @@ function HeaderSessionMenu({
 }
 
 interface HeaderModelMenuProps {
-  selectedModel: ChatModelId;
-  isOpen: boolean;
   disabled: boolean;
+  isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectModel: (modelId: ChatModelId) => void;
+  selectedModel: ChatModelId;
 }
 
 /**
@@ -404,8 +404,8 @@ function ComposerInputRow({
 }
 
 interface ChatMessageCardProps {
-  message: UIMessage;
   isStreamingAssistant: boolean;
+  message: UIMessage;
 }
 
 /**

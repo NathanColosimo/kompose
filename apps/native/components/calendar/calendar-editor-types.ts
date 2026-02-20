@@ -8,18 +8,18 @@ export type CalendarOption = CalendarIdentifier & {
 };
 
 interface EventDraftBase {
-  summary: string;
-  description: string;
-  location: string;
-  colorId?: string | null;
-  calendar: CalendarIdentifier;
   allDay: boolean;
-  startDate: Temporal.PlainDate;
-  endDate: Temporal.PlainDate;
-  startTime: Temporal.PlainTime | null;
-  endTime: Temporal.PlainTime | null;
-  recurrence: string[];
+  calendar: CalendarIdentifier;
+  colorId?: string | null;
   conferenceData?: GoogleEvent["conferenceData"] | null;
+  description: string;
+  endDate: Temporal.PlainDate;
+  endTime: Temporal.PlainTime | null;
+  location: string;
+  recurrence: string[];
+  startDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime | null;
+  summary: string;
 }
 
 export interface CreateEventDraft extends EventDraftBase {
@@ -27,8 +27,8 @@ export interface CreateEventDraft extends EventDraftBase {
 }
 
 export interface EditEventDraft extends EventDraftBase {
-  mode: "edit";
   eventId: string;
+  mode: "edit";
   sourceCalendar: CalendarIdentifier;
   sourceEvent: GoogleEvent;
 }

@@ -214,28 +214,28 @@ function getNextPlainTime(
 }
 
 interface DueDateScaleBase {
-  baseStartDate: Temporal.PlainDate;
   baseDueDate: Temporal.PlainDate | null;
+  baseStartDate: Temporal.PlainDate;
 }
 
 interface DateScaleContext {
-  baseStartDate: Temporal.PlainDate | null;
   baseDueDate: Temporal.PlainDate | null;
-  nextStartDate: Temporal.PlainDate | null;
-  nextDueDate: Temporal.PlainDate | null;
-  startDateChanged: boolean;
+  baseStartDate: Temporal.PlainDate | null;
   dueDateChanged: boolean;
-  startDateDelta: Temporal.Duration | null;
-  shouldClearDueDate: boolean;
   dueDateScaleBase: DueDateScaleBase | null;
+  nextDueDate: Temporal.PlainDate | null;
+  nextStartDate: Temporal.PlainDate | null;
+  shouldClearDueDate: boolean;
+  startDateChanged: boolean;
+  startDateDelta: Temporal.Duration | null;
 }
 
 interface TimeScaleContext {
   baseStartTime: Temporal.PlainTime | null;
   nextStartTime: Temporal.PlainTime | null;
   startTimeChanged: boolean;
-  startTimeMode: "none" | "clear" | "set" | "shift";
   startTimeDelta: Temporal.Duration | null;
+  startTimeMode: "none" | "clear" | "set" | "shift";
 }
 
 /** Compute date-change context for a series update. */
@@ -345,11 +345,11 @@ function getTimeScaleContext(
 }
 
 interface SeriesOccurrenceUpdateParams {
-  seriesTask: TaskSelect;
   baseUpdate: TaskUpdate;
   dateContext: DateScaleContext;
-  timeContext: TimeScaleContext;
   inputStartTime: string | null | undefined;
+  seriesTask: TaskSelect;
+  timeContext: TimeScaleContext;
 }
 
 /** Build a per-occurrence update payload for a scaled series update. */

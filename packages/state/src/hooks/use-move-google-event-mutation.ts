@@ -8,8 +8,8 @@ import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys
 interface MoveGoogleEventInput {
   accountId: string;
   calendarId: string;
-  eventId: string;
   destinationCalendarId: string;
+  eventId: string;
   scope: RecurrenceScope;
 }
 

@@ -24,8 +24,8 @@ function useChainOfThought() {
 
 interface ChainOfThoughtProps {
   children: ReactNode;
-  defaultOpen?: boolean;
   className?: string;
+  defaultOpen?: boolean;
 }
 
 /**
@@ -99,11 +99,11 @@ export function ChainOfThoughtContent({
 }
 
 interface ChainOfThoughtStepProps {
-  label: ReactNode;
-  description?: ReactNode;
-  status?: "complete" | "active" | "pending";
   children?: ReactNode;
   className?: string;
+  description?: ReactNode;
+  label: ReactNode;
+  status?: "complete" | "active" | "pending";
 }
 
 /**

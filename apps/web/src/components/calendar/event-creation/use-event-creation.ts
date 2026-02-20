@@ -21,52 +21,52 @@ export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
 /** State for event creation via click-and-drag */
 export interface EventCreationState {
-  /** Currently in creation drag mode */
-  isCreating: boolean;
-  /** Where the drag started (null when not creating) */
-  startDateTime: Temporal.ZonedDateTime | null;
+  /** Which Google account to use */
+  accountId: string | null;
+  /** Which calendar to create on */
+  calendarId: string | null;
   /** Current drag end position (null when not creating) */
   endDateTime: Temporal.ZonedDateTime | null;
   /** Hover preview position when not dragging */
   hoverDateTime: Temporal.ZonedDateTime | null;
-  /** Which calendar to create on */
-  calendarId: string | null;
-  /** Which Google account to use */
-  accountId: string | null;
-  /** Whether the popover should be open after creation ends */
-  showPopover: boolean;
+  /** Currently in creation drag mode */
+  isCreating: boolean;
   /** Reference to the preview element for popover positioning */
   previewElement: HTMLDivElement | null;
+  /** Whether the popover should be open after creation ends */
+  showPopover: boolean;
+  /** Where the drag started (null when not creating) */
+  startDateTime: Temporal.ZonedDateTime | null;
 }
 
 /** Actions for managing event creation */
 export interface EventCreationActions {
+  /** Cancel creation (e.g., Escape key) */
+  cancelCreation: () => void;
+  /** Close the popover */
+  closePopover: () => void;
+  /** Called when mouse moves to a different slot during drag */
+  onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse enters a time slot (for hover preview) */
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse leaves the calendar area */
   onSlotLeave: () => void;
   /** Called when mouse down on a time slot (start creation) */
   onSlotMouseDown: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse moves to a different slot during drag */
-  onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse up to end creation */
   onSlotMouseUp: () => void;
-  /** Cancel creation (e.g., Escape key) */
-  cancelCreation: () => void;
-  /** Close the popover */
-  closePopover: () => void;
   /** Set the preview element ref for popover positioning */
   setPreviewElement: (element: HTMLDivElement | null) => void;
 }
 
 export interface EventCreationContextValue {
-  state: EventCreationState;
   actions: EventCreationActions;
   /** Computed start/end for popover (with minimum duration applied) */
   popoverTimes: {
     start: Temporal.ZonedDateTime;
     end: Temporal.ZonedDateTime;
   } | null;
+  state: EventCreationState;
 }
 
 const initialState: EventCreationState = {

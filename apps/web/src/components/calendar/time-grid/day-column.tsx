@@ -8,21 +8,21 @@ import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
 interface DayColumnProps {
-  date: Temporal.PlainDate;
-  timeZone: string;
-  width: string;
   children?: React.ReactNode;
+  date: Temporal.PlainDate;
   droppableDisabled?: boolean;
+  /** Called when mouse moves over a slot during creation drag */
+  onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse enters a slot (for hover preview) */
   onSlotHover?: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse leaves the column area */
   onSlotLeave?: () => void;
   /** Called when mouse down on a slot (start event creation) */
   onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse moves over a slot during creation drag */
-  onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse up on a slot (end event creation) */
   onSlotMouseUp?: () => void;
+  timeZone: string;
+  width: string;
 }
 
 export const DayColumn = memo(function DayColumnInner({

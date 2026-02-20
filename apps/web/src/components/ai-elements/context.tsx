@@ -22,10 +22,10 @@ const ICON_STROKE_WIDTH = 2;
 type ModelId = string;
 
 interface ContextSchema {
-  usedTokens: number;
   maxTokens: number;
-  usage?: LanguageModelUsage;
   modelId?: ModelId;
+  usage?: LanguageModelUsage;
+  usedTokens: number;
 }
 
 const ContextContext = createContext<ContextSchema | null>(null);

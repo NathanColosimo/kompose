@@ -99,38 +99,38 @@ import {
 } from "./event-edit-utils";
 
 interface EventEditPopoverProps {
+  accountId: string;
+  align?: "start" | "center" | "end";
+  calendarId: string;
+  children: ReactElement;
+  end: Date;
   /** The event to edit. Optional for create mode. */
   event?: GoogleEvent;
-  accountId: string;
-  calendarId: string;
-  start: Date;
-  end: Date;
-  children: ReactElement;
-  side?: "top" | "right" | "bottom" | "left";
-  align?: "start" | "center" | "end";
   /** Whether the popover is in create or edit mode. Defaults based on event presence. */
   mode?: "create" | "edit";
-  /** Controlled open state (optional). If provided, the popover is controlled. */
-  open?: boolean;
   /** Callback when open state changes (for controlled mode). */
   onOpenChange?: (open: boolean) => void;
+  /** Controlled open state (optional). If provided, the popover is controlled. */
+  open?: boolean;
+  side?: "top" | "right" | "bottom" | "left";
+  start: Date;
 }
 
 interface EventFormValues {
-  summary: string;
-  description: string;
-  location: string;
-  colorId?: string;
   allDay: boolean;
-  startDate: Date | null;
+  colorId?: string;
+  description: string;
   endDate: Date | null;
-  startTime: string;
   endTime: string;
+  location: string;
   recurrence: string[];
   /** Selected calendar for create mode (accountId) */
   selectedAccountId: string;
   /** Selected calendar for create mode (calendarId) */
   selectedCalendarId: string;
+  startDate: Date | null;
+  startTime: string;
+  summary: string;
 }
 
 type CloseSaveRequest =
@@ -172,12 +172,12 @@ function RecurrenceEditor({
   );
 
   interface RecurrenceEditorValues {
-    freq: Frequency;
     byDay: string[];
+    count: number;
     endType: RecurrenceEnd["type"];
+    freq: Frequency;
     /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
     untilRule: string;
-    count: number;
   }
 
   const defaultValues = useMemo<RecurrenceEditorValues>(() => {

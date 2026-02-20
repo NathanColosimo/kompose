@@ -139,10 +139,10 @@ function toPositionedGoogleEvent(
 }
 
 interface DaysViewProps {
-  /** All tasks to display (will be filtered to scheduled ones) */
-  tasks: TaskSelectDecoded[];
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
+  /** All tasks to display (will be filtered to scheduled ones) */
+  tasks: TaskSelectDecoded[];
   /** Optional externally clamped day slice for responsive layouts */
   visibleDays?: Temporal.PlainDate[];
 }

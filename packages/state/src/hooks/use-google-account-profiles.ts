@@ -8,8 +8,8 @@ import { useGoogleAccounts } from "./use-google-accounts";
 
 export interface GoogleAccountProfile {
   account: Account;
-  profile: OAuth2UserInfo | null;
   isLoading: boolean;
+  profile: OAuth2UserInfo | null;
 }
 
 /**

@@ -67,25 +67,25 @@ import { RecurrenceEditor } from "./recurrence-editor";
 
 /** Form state uses Temporal types, convert to native Date only at picker boundary */
 interface TaskFormValues {
-  title: string;
   description: string;
-  tagIds: string[];
-  /** Start date - when task appears in inbox or on calendar */
-  startDate: Temporal.PlainDate | null;
-  /** Start time - time of day for calendar scheduling (independent of startDate) */
-  startTime: Temporal.PlainTime | null;
   /** Due date - when task is due */
   dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
   /** Recurrence pattern (null = non-recurring) */
   recurrence: TaskRecurrence | null;
+  /** Start date - when task appears in inbox or on calendar */
+  startDate: Temporal.PlainDate | null;
+  /** Start time - time of day for calendar scheduling (independent of startDate) */
+  startTime: Temporal.PlainTime | null;
+  tagIds: string[];
+  title: string;
 }
 
 interface TaskEditPopoverProps {
-  task: TaskSelectDecoded;
+  align?: "start" | "center" | "end";
   children: ReactElement;
   side?: "top" | "right" | "bottom" | "left";
-  align?: "start" | "center" | "end";
+  task: TaskSelectDecoded;
 }
 
 /**

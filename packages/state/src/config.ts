@@ -6,9 +6,9 @@ import type { AuthClient, OrpcUtils } from "./types";
  * Shared state configuration provided by the host app.
  */
 export interface StateConfig {
-  orpc: OrpcUtils;
   authClient: AuthClient;
   notifyError?: (error: Error) => void;
+  orpc: OrpcUtils;
 }
 
 /**

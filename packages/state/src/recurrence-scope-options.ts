@@ -5,8 +5,8 @@ import type {
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
-  value: TValue;
   label: string;
+  value: TValue;
 }
 
 export type RecurrenceScopeValue = RecurrenceScope;

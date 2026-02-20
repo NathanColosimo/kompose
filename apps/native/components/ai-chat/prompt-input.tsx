@@ -24,28 +24,28 @@ import { cn } from "@/lib/utils";
 type PromptInputFile = FileUIPart & { id: string };
 
 interface PromptInputTextContextValue {
-  text: string;
-  setText: (next: string) => void;
   clearText: () => void;
+  setText: (next: string) => void;
+  text: string;
 }
 
 interface PromptInputAttachmentsContextValue {
+  clearFiles: () => void;
   files: PromptInputFile[];
+  openDocumentPicker: () => Promise<void>;
+  openImagePicker: () => Promise<void>;
+  removeFile: (id: string) => void;
   setFiles: (
     updater: (current: PromptInputFile[]) => PromptInputFile[]
   ) => void;
-  clearFiles: () => void;
-  removeFile: (id: string) => void;
-  openImagePicker: () => Promise<void>;
-  openDocumentPicker: () => Promise<void>;
 }
 
 interface PromptInputSubmitContextValue {
+  disabled?: boolean;
   onSubmit?: (input: {
     text: string;
     files: FileUIPart[];
   }) => void | Promise<void>;
-  disabled?: boolean;
 }
 
 interface PromptInputActionMenuContextValue {
@@ -257,12 +257,12 @@ export function PromptInputProvider({ children }: { children: ReactNode }) {
 
 interface PromptInputProps {
   children: ReactNode;
+  className?: string;
+  disabled?: boolean;
   onSubmit?: (input: {
     text: string;
     files: FileUIPart[];
   }) => void | Promise<void>;
-  disabled?: boolean;
-  className?: string;
 }
 
 /**

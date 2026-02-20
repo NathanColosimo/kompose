@@ -10,10 +10,10 @@ export interface SlotData {
 }
 
 export interface PreviewRect {
-  top: number;
-  left: number;
-  width: number;
   height: number;
+  left: number;
+  top: number;
+  width: number;
 }
 
 export type DragData =

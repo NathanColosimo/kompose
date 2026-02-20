@@ -15,12 +15,12 @@ import { type TagIconName, tagIconMap } from "./tag-icon-map";
 import { TagIconPicker } from "./tag-icon-picker";
 
 interface TagManagerPopoverProps {
-  /** Currently selected tag ID for filtering (null = show all) */
-  value: string | null;
   /** Called when the user selects a tag or clears selection */
   onChange: (next: string | null) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  /** Currently selected tag ID for filtering (null = show all) */
+  value: string | null;
 }
 
 export function TagManagerPopover({

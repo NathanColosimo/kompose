@@ -4,9 +4,9 @@ import { View } from "@/components/ui/view";
 import { cn } from "@/lib/utils";
 
 interface MessageProps {
-  from: UIMessage["role"];
   children: ReactNode;
   className?: string;
+  from: UIMessage["role"];
 }
 
 /**

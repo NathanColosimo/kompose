@@ -100,8 +100,8 @@ export const ConversationScrollButton = ({
 };
 
 export interface ConversationMessage {
-  role: "user" | "assistant" | "system" | "data" | "tool";
   content: string;
+  role: "user" | "assistant" | "system" | "data" | "tool";
 }
 
 export type ConversationDownloadProps = Omit<

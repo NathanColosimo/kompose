@@ -52,8 +52,8 @@ function plainDateToDate(plainDate: Temporal.PlainDate): Date {
 }
 
 interface TaskSection {
-  title: string;
   data: TaskSelectDecoded[];
+  title: string;
 }
 
 type BaseTaskTab = "Inbox" | "Today";
@@ -189,17 +189,17 @@ function TaskRow({
 }
 
 interface TaskListProps {
-  mode: TaskListMode;
   inboxTasks: TaskSelectDecoded[];
-  todaySections: TaskSection[];
-  tagSections: TaskSection[];
-  tagName: string | null;
   isLoading: boolean;
   isRefreshing: boolean;
-  tintColor: string;
-  onRefresh: () => void;
+  mode: TaskListMode;
   onPressTask: (task: TaskSelectDecoded) => void;
+  onRefresh: () => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
+  tagName: string | null;
+  tagSections: TaskSection[];
+  tintColor: string;
+  todaySections: TaskSection[];
 }
 
 // Shared list renderer for Inbox and Today views.

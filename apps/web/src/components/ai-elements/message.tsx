@@ -111,12 +111,12 @@ export const MessageAction = ({
 };
 
 interface MessageBranchContextType {
-  currentBranch: number;
-  totalBranches: number;
-  goToPrevious: () => void;
-  goToNext: () => void;
   branches: ReactElement[];
+  currentBranch: number;
+  goToNext: () => void;
+  goToPrevious: () => void;
   setBranches: (branches: ReactElement[]) => void;
+  totalBranches: number;
 }
 
 const MessageBranchContext = createContext<MessageBranchContextType | null>(

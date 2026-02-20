@@ -99,8 +99,8 @@ function getMediaIcon(category: AttachmentMediaCategory) {
 
 interface AttachmentsProps {
   children: ReactNode;
-  variant?: AttachmentVariant;
   className?: string;
+  variant?: AttachmentVariant;
 }
 
 /**
@@ -128,10 +128,10 @@ export function Attachments({
 }
 
 interface AttachmentProps {
-  data: AttachmentData;
   children: ReactNode;
-  onRemove?: () => void;
   className?: string;
+  data: AttachmentData;
+  onRemove?: () => void;
 }
 
 /**

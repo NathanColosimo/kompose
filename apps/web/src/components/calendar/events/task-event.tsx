@@ -13,13 +13,13 @@ import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../days-view";
 
 interface TaskEventProps {
-  task: TaskSelectDecoded;
   /** Column index for horizontal positioning (0, 1, or 2) */
   columnIndex?: number;
-  /** Total columns in this item's collision group */
-  totalColumns?: number;
   /** How many consecutive columns this item spans */
   columnSpan?: number;
+  task: TaskSelectDecoded;
+  /** Total columns in this item's collision group */
+  totalColumns?: number;
   /** Z-index for stacking order */
   zIndex?: number;
 }

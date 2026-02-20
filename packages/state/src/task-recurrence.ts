@@ -20,13 +20,13 @@ export type TaskRecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 export type TaskRecurrenceEndType = "never" | "until" | "count";
 
 export interface TaskRecurrenceEditorState {
-  freq: TaskRecurrenceFrequency;
-  interval: number;
   byDay: TaskRecurrenceDayCode[];
   byMonthDay: number;
-  endType: TaskRecurrenceEndType;
-  until: Temporal.PlainDate | null;
   count: number;
+  endType: TaskRecurrenceEndType;
+  freq: TaskRecurrenceFrequency;
+  interval: number;
+  until: Temporal.PlainDate | null;
 }
 
 function normalizePositiveInt(value: number | undefined, fallback = 1): number {
@@ -197,8 +197,8 @@ export function toggleTaskRecurrenceDay(
 
 interface TaskRecurrenceSource {
   id: string;
-  seriesMasterId: string | null;
   recurrence: TaskRecurrence | null | undefined;
+  seriesMasterId: string | null;
 }
 
 /**
@@ -283,12 +283,12 @@ function normalizeTemporalLike(
 }
 
 export interface TaskScopeComparableFields {
-  title: string | null | undefined;
   description: string | null | undefined;
-  durationMinutes: number | null | undefined;
   dueDate: { toString(): string } | string | null | undefined;
+  durationMinutes: number | null | undefined;
   startDate: { toString(): string } | string | null | undefined;
   startTime: { toString(): string } | string | null | undefined;
+  title: string | null | undefined;
 }
 
 export function haveTaskCoreFieldsChanged(params: {

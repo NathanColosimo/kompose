@@ -21,8 +21,8 @@ export interface CreateGoogleEventInput {
 export interface UpdateGoogleEventInput {
   accountId: string;
   calendarId: string;
-  eventId: string;
   event: Event;
+  eventId: string;
   recurrenceScope?: "this" | "all" | "following";
 }
 

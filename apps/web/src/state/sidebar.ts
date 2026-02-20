@@ -22,9 +22,9 @@ export const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
 export interface DashboardResponsiveLayout {
   canDockRightSidebar: boolean;
   canShowCalendar: boolean;
+  maxDaysForCurrentLayout: number;
   maxDaysWithDockedRight: number;
   maxDaysWithoutRightSidebar: number;
-  maxDaysForCurrentLayout: number;
 }
 
 function toNonNegativeInteger(value: number) {

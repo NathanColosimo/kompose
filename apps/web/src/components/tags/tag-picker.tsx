@@ -14,8 +14,8 @@ import { cn } from "@/lib/utils";
 import { tagIconMap } from "./tag-icon-map";
 
 interface TagPickerProps {
-  value: string[];
   onChange: (next: string[]) => void;
+  value: string[];
 }
 
 export function TagPicker({ value, onChange }: TagPickerProps) {

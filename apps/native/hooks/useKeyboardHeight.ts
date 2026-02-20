@@ -7,9 +7,9 @@ import {
 } from "react-native";
 
 interface UseKeyboardHeightReturn {
-  keyboardHeight: number;
   isKeyboardVisible: boolean;
   keyboardAnimationDuration: number;
+  keyboardHeight: number;
 }
 
 export function useKeyboardHeight(): UseKeyboardHeightReturn {

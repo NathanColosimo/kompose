@@ -7,12 +7,12 @@ import { View } from "@/components/ui/view";
 import { cn } from "@/lib/utils";
 
 interface ContextValue {
-  usedTokens: number;
-  maxTokens: number;
-  usage?: LanguageModelUsage;
-  modelId?: string;
   isOpen: boolean;
+  maxTokens: number;
+  modelId?: string;
   setIsOpen: (value: boolean) => void;
+  usage?: LanguageModelUsage;
+  usedTokens: number;
 }
 
 const ContextUsageContext = createContext<ContextValue | null>(null);
@@ -26,11 +26,11 @@ function useContextUsage() {
 }
 
 interface ContextProps {
-  usedTokens: number;
-  maxTokens: number;
-  usage?: LanguageModelUsage;
-  modelId?: string;
   children: ReactNode;
+  maxTokens: number;
+  modelId?: string;
+  usage?: LanguageModelUsage;
+  usedTokens: number;
 }
 
 /**
@@ -57,8 +57,8 @@ export function Context({
 }
 
 interface ContextTriggerProps {
-  className?: string;
   children?: ReactNode;
+  className?: string;
 }
 
 /**

@@ -14,9 +14,9 @@ interface CommandBarRootProps {
 }
 
 interface Action {
+  icon: React.ElementType;
   id: string;
   label: string;
-  icon: React.ElementType;
   view: Exclude<CommandBarView, "root">;
 }
 

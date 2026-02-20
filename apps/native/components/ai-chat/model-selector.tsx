@@ -29,9 +29,9 @@ function useModelSelectorContext() {
 }
 
 interface ModelSelectorProps {
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
   children: ReactNode;
+  onOpenChange: (next: boolean) => void;
+  open: boolean;
 }
 
 /**
@@ -125,9 +125,9 @@ export function ModelSelectorContent({
 }
 
 interface ModelSelectorInputProps {
-  value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
+  value: string;
 }
 
 /**
@@ -180,8 +180,8 @@ export function ModelSelectorEmpty({ children }: ModelSelectorEmptyProps) {
 }
 
 interface ModelSelectorGroupProps {
-  heading?: ReactNode;
   children: ReactNode;
+  heading?: ReactNode;
 }
 
 export function ModelSelectorGroup({
@@ -228,8 +228,8 @@ export function ModelSelectorItem({
 }
 
 interface ModelSelectorLogoProps {
-  provider: string;
   className?: string;
+  provider: string;
 }
 
 /**

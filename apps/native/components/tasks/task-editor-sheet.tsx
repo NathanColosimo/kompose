@@ -27,29 +27,29 @@ import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 
 export interface TaskDraft {
-  title: string;
   description: string;
-  tagIds: string[];
-  durationMinutes: number;
-  status: "todo" | "in_progress" | "done";
   dueDate: Temporal.PlainDate | null;
+  durationMinutes: number;
+  recurrence: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null;
   startTime: Temporal.PlainTime | null;
-  recurrence: TaskRecurrence | null;
+  status: "todo" | "in_progress" | "done";
+  tagIds: string[];
+  title: string;
 }
 
 interface TaskEditorSheetProps {
+  draft: TaskDraft | null;
   isVisible: boolean;
   mode: "create" | "edit";
-  draft: TaskDraft | null;
-  setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   onClose: () => void;
-  onSave: () => void;
   onDelete?: () => void;
+  onSave: () => void;
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
+  setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
+  snapPoints?: number[];
   timeZone: string;
   title?: string;
-  snapPoints?: number[];
 }
 
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];

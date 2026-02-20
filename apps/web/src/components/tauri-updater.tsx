@@ -18,11 +18,11 @@ import { isTauriRuntime } from "@/lib/tauri-desktop";
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 interface TauriUpdaterContextValue {
-  isReadyToInstall: boolean;
-  isDownloading: boolean;
-  isChecking: boolean;
-  isInstalling: boolean;
   installUpdate: () => Promise<void>;
+  isChecking: boolean;
+  isDownloading: boolean;
+  isInstalling: boolean;
+  isReadyToInstall: boolean;
 }
 
 const TauriUpdaterContext = createContext<TauriUpdaterContextValue | null>(

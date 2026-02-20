@@ -233,8 +233,8 @@ function ComposerAttachmentsPreview() {
 }
 
 interface SidebarChatMessageProps {
-  message: UIMessage;
   isStreamingAssistant: boolean;
+  message: UIMessage;
 }
 
 function SidebarChatMessage({

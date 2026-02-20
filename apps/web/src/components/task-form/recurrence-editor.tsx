@@ -32,12 +32,12 @@ import {
 import { cn } from "@/lib/utils";
 
 interface RecurrenceEditorProps {
-  /** Current recurrence value (null = no recurrence) */
-  value: TaskRecurrence | null;
   /** Called when recurrence changes */
   onChange: (recurrence: TaskRecurrence | null) => void;
   /** Reference date for defaults (typically the task's startDate) */
   referenceDate?: Temporal.PlainDate | null;
+  /** Current recurrence value (null = no recurrence) */
+  value: TaskRecurrence | null;
 }
 
 /**

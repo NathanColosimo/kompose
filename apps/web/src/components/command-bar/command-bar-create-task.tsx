@@ -28,11 +28,11 @@ import { formatPlainDate } from "@/lib/temporal-utils";
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
 
 interface CommandBarCreateTaskProps {
-  search: string;
   /** Callback when a task is successfully created (to clear/reset input) */
   onCreated: () => void;
   /** Callback to update the search input */
   onUpdateSearch: (next: string) => void;
+  search: string;
 }
 
 /**

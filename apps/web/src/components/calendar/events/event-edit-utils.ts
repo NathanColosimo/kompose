@@ -33,18 +33,18 @@ export function buildRecurrenceRule(
 
 interface TemporalFormValues {
   allDay: boolean;
-  startDate: Date | null;
   endDate: Date | null;
-  startTime: string;
   endTime: string;
+  startDate: Date | null;
+  startTime: string;
 }
 
 interface TemporalPayload {
-  startPayload: { date?: string; dateTime?: string };
   endPayload: { date?: string; dateTime?: string };
-  startDateTime: Date | null;
   isAllDay: boolean;
   occurrenceStart: Date;
+  startDateTime: Date | null;
+  startPayload: { date?: string; dateTime?: string };
 }
 
 /** Combine a Date and time string (HH:mm) into a single Date */

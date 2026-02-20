@@ -201,6 +201,7 @@ function calendarLookupKey(accountId: string, calendarId: string): string {
 }
 
 interface PositionedGoogleEvent {
+  end: Temporal.ZonedDateTime;
   source: {
     accountId: string;
     calendarId: string;
@@ -210,10 +211,10 @@ interface PositionedGoogleEvent {
     calendarForegroundColor: string | null;
   };
   start: Temporal.ZonedDateTime;
-  end: Temporal.ZonedDateTime;
 }
 
 interface AllDayGoogleEvent {
+  date: Temporal.PlainDate;
   source: {
     accountId: string;
     calendarId: string;
@@ -222,7 +223,6 @@ interface AllDayGoogleEvent {
     calendarBackgroundColor: string | null;
     calendarForegroundColor: string | null;
   };
-  date: Temporal.PlainDate;
 }
 
 function buildDraftFromTask(

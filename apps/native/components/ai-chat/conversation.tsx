@@ -34,9 +34,9 @@ export function ConversationContent({
 }
 
 interface ConversationEmptyStateProps {
-  title: string;
   description: string;
   icon?: ReactNode;
+  title: string;
 }
 
 /**
@@ -59,8 +59,8 @@ export function ConversationEmptyState({
 }
 
 interface ConversationScrollButtonProps {
-  visible?: boolean;
   onPress?: () => void;
+  visible?: boolean;
 }
 
 /**

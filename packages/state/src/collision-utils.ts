@@ -19,14 +19,14 @@ const MAX_COLUMNS = 3;
  * for collision detection purposes.
  */
 export interface PositionedItem {
-  /** Unique identifier for the item */
-  id: string;
-  /** Type discriminator */
-  type: "task" | "google-event";
-  /** Start time in minutes from midnight */
-  startMinutes: number;
   /** End time in minutes from midnight */
   endMinutes: number;
+  /** Unique identifier for the item */
+  id: string;
+  /** Start time in minutes from midnight */
+  startMinutes: number;
+  /** Type discriminator */
+  type: "task" | "google-event";
 }
 
 /**
@@ -35,10 +35,10 @@ export interface PositionedItem {
 export interface ItemLayout {
   /** Column index (0, 1, or 2) for horizontal positioning */
   columnIndex: number;
-  /** Total columns in this item's collision group */
-  totalColumns: number;
   /** How many consecutive columns this item spans (1 = own column only) */
   columnSpan: number;
+  /** Total columns in this item's collision group */
+  totalColumns: number;
   /** Z-index for stacking order (higher = on top) */
   zIndex: number;
 }
