@@ -309,3 +309,22 @@ used for tasks/calendars):
   errors, including `MODEL_NOT_CONFIGURED -> SERVICE_UNAVAILABLE`, instead of
   collapsing known AI config failures into generic 500 responses.
 
+---
+
+## 15) Tool-calling rebuild — Phase 1 infrastructure
+
+Implemented foundational API changes needed before wiring AI SDK tool execution:
+
+- Added `@orpc/ai-sdk` to workspace catalog and `@kompose/api` dependencies.
+- Simplified API context/auth shape:
+  - `packages/api/src/context.ts` now returns only `{ user }`.
+  - `requireAuth` in `packages/api/src/index.ts` now validates `context.user?.id`
+    only and passes user-only context forward.
+- Added a new authenticated `account` router:
+  - `packages/api/src/routers/account/contract.ts`
+  - `packages/api/src/routers/account/router.ts`
+  - `list` returns linked account rows with `{ id, providerId, email, name, image? }`
+    by joining Better Auth `account` and `user` tables for the current user.
+- Wired `accountRouter` into `appRouter` at
+  `packages/api/src/routers/index.ts` as `account.list`.
+

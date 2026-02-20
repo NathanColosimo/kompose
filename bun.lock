@@ -236,6 +236,7 @@
         "@opentelemetry/sdk-node": "catalog:",
         "@opentelemetry/sdk-trace-base": "catalog:",
         "@opentelemetry/sdk-trace-node": "catalog:",
+        "@orpc/ai-sdk": "catalog:",
         "@orpc/contract": "catalog:",
         "@orpc/experimental-ratelimit": "catalog:",
         "@orpc/otel": "catalog:",
@@ -364,6 +365,7 @@
     "@opentelemetry/sdk-trace-node": "^2.5.1",
     "@opentelemetry/sdk-trace-web": "^2.5.1",
     "@opentelemetry/semantic-conventions": "^1.33.0",
+    "@orpc/ai-sdk": "^1.13.5",
     "@orpc/client": "^1.13.5",
     "@orpc/contract": "^1.13.5",
     "@orpc/experimental-ratelimit": "^1.13.5",
@@ -1029,6 +1031,8 @@
     "@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.39.0", "", {}, "sha512-R5R9tb2AXs2IRLNKLBJDynhkfmx7mX0vi8NkhZb3gUkPWHn6HXk5J8iQ/dql0U3ApfWym4kXXmBDRGO+oeOfjg=="],
 
     "@orama/orama": ["@orama/orama@3.1.18", "", {}, "sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA=="],
+
+    "@orpc/ai-sdk": ["@orpc/ai-sdk@1.13.5", "", { "dependencies": { "@orpc/client": "1.13.5", "@orpc/contract": "1.13.5", "@orpc/server": "1.13.5", "@orpc/shared": "1.13.5" }, "peerDependencies": { "ai": ">=5.0.76" } }, "sha512-Oj0WRvn8Qy25iZB7q/otNdZPSvSUhorvJpGHBHQnEEIjvZ3KL+NCqTqHfGDSUWkwtNl/SGtHuM23IlL5WZ0k5w=="],
 
     "@orpc/client": ["@orpc/client@1.13.5", "", { "dependencies": { "@orpc/shared": "1.13.5", "@orpc/standard-server": "1.13.5", "@orpc/standard-server-fetch": "1.13.5", "@orpc/standard-server-peer": "1.13.5" } }, "sha512-j0VJpiWiFv9Xfan3NOoouHL07nSiHX8haxYaZzHYWSdWh+ABzwa8aRTwQSUpuCfD6i0EtYEZJAB6gVwtAnQoxQ=="],
 

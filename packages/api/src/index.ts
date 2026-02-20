@@ -7,12 +7,9 @@ export const requireAuth = base.middleware(({ context, next }) => {
   if (!context.user?.id) {
     throw new ORPCError("UNAUTHORIZED User not found");
   }
-  if (!context.session?.token) {
-    throw new ORPCError("UNAUTHORIZED Session not found");
-  }
+
   return next({
     context: {
-      session: context.session,
       user: context.user,
     },
   });

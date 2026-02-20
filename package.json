@@ -50,6 +50,7 @@
       "@ai-sdk/react": "^3.0.99",
       "@orpc/client": "^1.13.5",
       "@orpc/contract": "^1.13.5",
+      "@orpc/ai-sdk": "^1.13.5",
       "@orpc/experimental-ratelimit": "^1.13.5",
       "@orpc/openapi": "^1.13.5",
       "@orpc/server": "^1.13.5",

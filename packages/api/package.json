@@ -32,6 +32,7 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@opentelemetry/sdk-trace-node": "catalog:",
+    "@orpc/ai-sdk": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/experimental-ratelimit": "catalog:",
     "@orpc/otel": "catalog:",

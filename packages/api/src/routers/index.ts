@@ -1,4 +1,5 @@
 import type { RouterClient } from "@orpc/server";
+import { accountRouter } from "./account/router";
 import { aiRouter } from "./ai/router";
 import { googleCalRouter } from "./google-cal/router";
 import { mapsRouter } from "./maps/router";
@@ -8,6 +9,7 @@ import { taskRouter } from "./task/router";
 
 export const appRouter = {
   ai: aiRouter,
+  account: accountRouter,
   googleCal: googleCalRouter,
   maps: mapsRouter,
   sync: syncRouter,
