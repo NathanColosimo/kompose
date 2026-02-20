@@ -122,7 +122,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/postcss": "^4.2.0",
     "@tanstack/react-query-devtools": "catalog:",
     "@tauri-apps/cli": "^2.9.6",
     "@types/node": "catalog:",
