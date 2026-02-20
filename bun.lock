@@ -18,7 +18,7 @@
       "name": "native",
       "version": "1.0.0",
       "dependencies": {
-        "@ai-sdk/react": "^3.0.83",
+        "@ai-sdk/react": "catalog:",
         "@better-auth/expo": "catalog:",
         "@expo/metro-runtime": "~55.0.5",
         "@expo/vector-icons": "^15.0.2",
@@ -26,7 +26,7 @@
         "@kompose/auth": "workspace:*",
         "@kompose/google-cal": "workspace:*",
         "@kompose/state": "workspace:*",
-        "@orpc/client": "^1.13.4",
+        "@orpc/client": "catalog:",
         "@react-native-picker/picker": "2.11.4",
         "@react-navigation/bottom-tabs": "^7.4.0",
         "@react-navigation/drawer": "^7.5.0",
@@ -34,7 +34,7 @@
         "@rn-primitives/separator": "^1.2.0",
         "@rn-primitives/slot": "^1.2.0",
         "@tanstack/react-form": "^1.28.0",
-        "@tanstack/react-query": "^5.90.20",
+        "@tanstack/react-query": "catalog:",
         "ai": "catalog:",
         "babel-preset-expo": "~55.0.0",
         "better-auth": "catalog:",
@@ -93,7 +93,7 @@
       "name": "web",
       "version": "0.1.0",
       "dependencies": {
-        "@ai-sdk/react": "^3.0.81",
+        "@ai-sdk/react": "catalog:",
         "@base-ui/react": "^1.1.0",
         "@dnd-kit/core": "^6.3.1",
         "@effect/opentelemetry": "catalog:",
@@ -350,6 +350,7 @@
   },
   "catalog": {
     "@ai-sdk/openai": "^3.0.26",
+    "@ai-sdk/react": "^3.0.83",
     "@better-auth/expo": "^1.4.18",
     "@effect/opentelemetry": "^0.61.0",
     "@opentelemetry/api": "^1.9.0",
