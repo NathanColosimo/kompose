@@ -2,6 +2,7 @@ import "../global.css";
 
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
+import type { Account } from "better-auth";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
@@ -134,7 +135,7 @@ export default function RootLayout() {
         const accountsResult = await authClient.listAccounts();
         const accounts = accountsResult?.data ?? [];
         const account = accounts.find(
-          (linkedAccount) => linkedAccount.accountId === accountId
+          (linkedAccount: Account) => linkedAccount.accountId === accountId
         );
 
         if (!account) {
@@ -152,13 +153,11 @@ export default function RootLayout() {
                 onSuccess: () => {
                   resolve();
                 },
-                onError: (error) => {
+                onError: (error: unknown) => {
                   reject(
-                    new Error(
-                      error.error.message ||
-                        error.error.statusText ||
-                        "Failed to unlink account."
-                    )
+                    error instanceof Error
+                      ? error
+                      : new Error("Failed to unlink account.")
                   );
                 },
               }

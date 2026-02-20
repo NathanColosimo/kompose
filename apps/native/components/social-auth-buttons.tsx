@@ -61,12 +61,12 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
           ...(mode === "sign-up" ? { newUserCallbackURL: callbackURL } : {}),
         },
         {
-          onError(err) {
+          // biome-ignore lint/suspicious/noExplicitAny: Error handling
+          onError(err: unknown) {
             setError(
-              err.error?.message ||
-                `Failed to ${copyByMode[mode].action} with ${
-                  provider === "apple" ? "Apple" : "Google"
-                }`
+              err instanceof Error
+                ? err.message
+                : `Failed to ${copyByMode[mode].action} with ${provider === "apple" ? "Apple" : "Google"}`
             );
             setActiveProvider(null);
           },

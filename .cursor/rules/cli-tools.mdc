@@ -11,7 +11,6 @@ Always prefer these faster, modern alternatives when running shell commands:
 | `find` | `fd` | `fd "*.py"` |
 | `cat` | `bat` | `bat file.py` |
 | `sed` | `sd` | `sd 'old' 'new' file.txt` |
-| `ls` | `eza` | `eza -la --git` |
 | `diff` | `delta` | `git diff \| delta` |
 | `jq` | `jaq` | `jaq '.key' file.json` |
 | `ps` | `procs` | `procs` |

@@ -22,6 +22,7 @@
     "@expo/metro-runtime": "~55.0.5",
     "@expo/vector-icons": "^15.0.2",
     "@kompose/api": "workspace:*",
+    "@kompose/auth": "workspace:*",
     "@kompose/google-cal": "workspace:*",
     "@kompose/state": "workspace:*",
     "@orpc/client": "^1.13.4",
