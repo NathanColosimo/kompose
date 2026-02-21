@@ -94,6 +94,10 @@ function publishGoogleCalendarEvent(
   });
 }
 
+function includesSearchText(value: string | undefined, query: string): boolean {
+  return value?.toLowerCase().includes(query) ?? false;
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 export const googleCalRouter = os.router({
@@ -357,6 +361,8 @@ export const googleCalRouter = os.router({
 
   events: {
     list: os.events.list.handler(({ input, context }) => {
+      const searchQuery = input.params.query?.toLowerCase();
+
       const program = Effect.gen(function* () {
         const cache = yield* GoogleCalendarCacheService;
 
@@ -369,20 +375,32 @@ export const googleCalRouter = os.router({
           .getCachedEvents(
             input.accountId,
             input.calendarId,
-            input.timeMin,
-            input.timeMax
+            input.params.timeMin,
+            input.params.timeMax
           )
           .pipe(logCacheErrorAndMiss);
         if (Option.isSome(cached)) {
-          return cached.value;
+          if (!searchQuery) {
+            return cached.value;
+          }
+          return cached.value.filter(
+            (event: {
+              summary?: string;
+              description?: string;
+              location?: string;
+            }) =>
+              includesSearchText(event.summary, searchQuery) ||
+              includesSearchText(event.description, searchQuery) ||
+              includesSearchText(event.location, searchQuery)
+          );
         }
 
         const events = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           return yield* service.listEvents(
             input.calendarId,
-            input.timeMin,
-            input.timeMax
+            input.params.timeMin,
+            input.params.timeMax
           );
         }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
@@ -390,13 +408,21 @@ export const googleCalRouter = os.router({
           .setCachedEvents(
             input.accountId,
             input.calendarId,
-            input.timeMin,
-            input.timeMax,
+            input.params.timeMin,
+            input.params.timeMax,
             events
           )
           .pipe(logAndSwallowCacheError);
 
-        return events;
+        if (!searchQuery) {
+          return events;
+        }
+        return events.filter(
+          (event) =>
+            includesSearchText(event.summary, searchQuery) ||
+            includesSearchText(event.description, searchQuery) ||
+            includesSearchText(event.location, searchQuery)
+        );
       });
 
       return Effect.runPromise(

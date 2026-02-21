@@ -31,8 +31,10 @@ export function useGoogleEvents({
         await orpc.googleCal.events.list({
           accountId: calendar.accountId,
           calendarId: calendar.calendarId,
-          timeMin: window.timeMin,
-          timeMax: window.timeMax,
+          params: {
+            timeMin: window.timeMin,
+            timeMax: window.timeMax,
+          },
         }),
       placeholderData: keepPreviousData,
       staleTime: 60_000,

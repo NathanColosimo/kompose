@@ -1,4 +1,10 @@
 import { env } from "@kompose/env";
+import {
+  CalendarSchema,
+  ColorsSchema,
+  type Event,
+  EventSchema,
+} from "@kompose/google-cal/schema";
 import { RedisClient } from "bun";
 import { Effect, Option } from "effect";
 import { CacheError } from "./errors";
@@ -128,7 +134,25 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         if (raw === null) {
           return Option.none();
         }
-        return Option.some(JSON.parse(raw));
+
+        const payload = yield* Effect.try({
+          try: () => JSON.parse(raw) as unknown,
+          catch: (cause) =>
+            new CacheError({
+              operation: "getCachedCalendars",
+              message: `Invalid cached JSON: ${String(cause)}`,
+            }),
+        });
+
+        const parsed = CalendarSchema.array().safeParse(payload);
+        if (!parsed.success) {
+          return yield* new CacheError({
+            operation: "getCachedCalendars",
+            message: `Invalid cached payload: ${parsed.error.message}`,
+          });
+        }
+
+        return Option.some(parsed.data);
       });
 
       const setCachedCalendars = Effect.fn(
@@ -188,7 +212,25 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         if (raw === null) {
           return Option.none();
         }
-        return Option.some(JSON.parse(raw));
+
+        const payload = yield* Effect.try({
+          try: () => JSON.parse(raw) as unknown,
+          catch: (cause) =>
+            new CacheError({
+              operation: "getCachedCalendar",
+              message: `Invalid cached JSON: ${String(cause)}`,
+            }),
+        });
+
+        const parsed = CalendarSchema.safeParse(payload);
+        if (!parsed.success) {
+          return yield* new CacheError({
+            operation: "getCachedCalendar",
+            message: `Invalid cached payload: ${parsed.error.message}`,
+          });
+        }
+
+        return Option.some(parsed.data);
       });
 
       const setCachedCalendar = Effect.fn(
@@ -243,7 +285,25 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         if (raw === null) {
           return Option.none();
         }
-        return Option.some(JSON.parse(raw));
+
+        const payload = yield* Effect.try({
+          try: () => JSON.parse(raw) as unknown,
+          catch: (cause) =>
+            new CacheError({
+              operation: "getCachedColors",
+              message: `Invalid cached JSON: ${String(cause)}`,
+            }),
+        });
+
+        const parsed = ColorsSchema.safeParse(payload);
+        if (!parsed.success) {
+          return yield* new CacheError({
+            operation: "getCachedColors",
+            message: `Invalid cached payload: ${parsed.error.message}`,
+          });
+        }
+
+        return Option.some(parsed.data);
       });
 
       const setCachedColors = Effect.fn(
@@ -288,7 +348,25 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         if (raw === null) {
           return Option.none();
         }
-        return Option.some(JSON.parse(raw));
+
+        const payload = yield* Effect.try({
+          try: () => JSON.parse(raw) as unknown,
+          catch: (cause) =>
+            new CacheError({
+              operation: "getCachedEvents",
+              message: `Invalid cached JSON: ${String(cause)}`,
+            }),
+        });
+
+        const parsed = EventSchema.array().safeParse(payload);
+        if (!parsed.success) {
+          return yield* new CacheError({
+            operation: "getCachedEvents",
+            message: `Invalid cached payload: ${parsed.error.message}`,
+          });
+        }
+
+        return Option.some(parsed.data);
       });
 
       const setCachedEvents = Effect.fn(
@@ -298,7 +376,7 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         calendarId: string,
         timeMin: string,
         timeMax: string,
-        data: unknown
+        data: Event[]
       ) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
@@ -335,7 +413,25 @@ export class GoogleCalendarCacheService extends Effect.Service<GoogleCalendarCac
         if (raw === null) {
           return Option.none();
         }
-        return Option.some(JSON.parse(raw));
+
+        const payload = yield* Effect.try({
+          try: () => JSON.parse(raw) as unknown,
+          catch: (cause) =>
+            new CacheError({
+              operation: "getCachedEvent",
+              message: `Invalid cached JSON: ${String(cause)}`,
+            }),
+        });
+
+        const parsed = EventSchema.safeParse(payload);
+        if (!parsed.success) {
+          return yield* new CacheError({
+            operation: "getCachedEvent",
+            message: `Invalid cached payload: ${parsed.error.message}`,
+          });
+        }
+
+        return Option.some(parsed.data);
       });
 
       const setCachedEvent = Effect.fn(

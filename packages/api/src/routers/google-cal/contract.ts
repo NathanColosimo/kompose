@@ -10,7 +10,6 @@ import { oc } from "@orpc/contract";
 import { z } from "zod";
 
 // --- Calendars ---
-
 export const ListCalendarsInputSchema = z.object({
   accountId: z.string(),
 });
@@ -76,11 +75,25 @@ export const deleteCalendar = oc
 
 // --- Events ---
 
+export const listEventsParamsSchema = z.object({
+  query: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("Optional text filter for title, description, or location.")
+    .optional(),
+  timeMin: z.iso
+    .datetime({ offset: true })
+    .describe("Start of time window (ISO datetime with offset)."),
+  timeMax: z.iso
+    .datetime({ offset: true })
+    .describe("End of time window (ISO datetime with offset)."),
+});
+
 export const ListEventsInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
-  timeMin: z.iso.datetime({ offset: true }),
-  timeMax: z.iso.datetime({ offset: true }),
+  params: listEventsParamsSchema,
 });
 export type ListEventsInput = z.infer<typeof ListEventsInputSchema>;
 

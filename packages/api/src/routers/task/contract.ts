@@ -126,9 +126,38 @@ const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
   userId: true,
 });
 
+export const listTasksParamsSchema = z.object({
+  query: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("Optional text filter for task title or description.")
+    .optional(),
+  startDateMin: z.iso
+    .date()
+    .describe("Minimum task start date (YYYY-MM-DD).")
+    .optional(),
+  startDateMax: z.iso
+    .date()
+    .describe("Maximum task start date (YYYY-MM-DD).")
+    .optional(),
+  dueDateMin: z.iso
+    .date()
+    .describe("Minimum task due date (YYYY-MM-DD).")
+    .optional(),
+  dueDateMax: z.iso
+    .date()
+    .describe("Maximum task due date (YYYY-MM-DD).")
+    .optional(),
+});
+
+export const listTasksInputSchema = z.object({
+  params: listTasksParamsSchema.optional(),
+}).optional();
+
 /** API returns string types - decode on client with taskSelectCodec */
 export const listTasks = oc
-  .input(z.void())
+  .input(listTasksInputSchema)
   .output(z.array(taskSelectSchemaWithTags));
 
 export const createTask = oc
@@ -162,3 +191,5 @@ export const taskContract = {
   update: updateTask,
   delete: deleteTask,
 };
+
+export type TaskListParams = z.infer<typeof listTasksParamsSchema>;

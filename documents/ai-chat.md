@@ -323,8 +323,27 @@ Implemented foundational API changes needed before wiring AI SDK tool execution:
 - Added a new authenticated `account` router:
   - `packages/api/src/routers/account/contract.ts`
   - `packages/api/src/routers/account/router.ts`
-  - `list` returns linked account rows with `{ id, providerId, email, name, image? }`
-    by joining Better Auth `account` and `user` tables for the current user.
+  - `list` returns linked account rows with `{ id, providerId, email, name }`.
 - Wired `accountRouter` into `appRouter` at
   `packages/api/src/routers/index.ts` as `account.list`.
+
+---
+
+## 16) Tool-calling rebuild — Phase 2 tool definitions
+
+Implemented the tool definition layer and schema descriptions needed for model-facing
+tool use:
+
+- Added `packages/api/src/routers/ai/tools.ts` with a declarative tool map and
+  `createAiTools(user)` built on `createTool` from `@orpc/ai-sdk`.
+- Defined the initial tool set:
+  - `list_linked_accounts`
+  - `list_calendars`
+  - `list_calendar_events`
+  - `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`
+  - `list_tasks`, `create_task`, `update_task`, `delete_task`
+- Added concise `.describe()` hints on key tool-facing input fields in:
+  - `packages/api/src/routers/google-cal/contract.ts`
+  - `packages/api/src/routers/task/contract.ts`
+  so the model gets clearer parameter guidance without duplicating schemas.
 

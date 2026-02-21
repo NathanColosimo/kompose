@@ -7,14 +7,12 @@ import {
   visibleDaysCountAtom,
 } from "@kompose/state/atoms/current-date";
 import {
-  type GoogleEventWithSource,
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import { getGoogleEventsQueryKey } from "@kompose/state/google-calendar-query-keys";
+import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -35,7 +33,6 @@ import {
   todayPlainDate,
 } from "@/lib/temporal-utils";
 import { dashboardResponsiveLayoutAtom } from "@/state/sidebar";
-import { orpc } from "@/utils/orpc";
 
 export default function Page() {
   const setCurrentDate = useSetAtom(currentDateAtom);
@@ -53,51 +50,10 @@ export default function Page() {
     tasksQuery: { data: tasks = [], isLoading },
   } = useTasks();
 
-  // Memoize query options to avoid recreating arrays on every render.
-  const eventsQueryOptions = useMemo(
-    () =>
-      visibleGoogleCalendars.map((calendar) => {
-        const options = {
-          queryFn: async () =>
-            orpc.googleCal.events.list({
-              accountId: calendar.accountId,
-              calendarId: calendar.calendarId,
-              timeMin: window.timeMin,
-              timeMax: window.timeMax,
-            }),
-          queryKey: getGoogleEventsQueryKey(calendar, window),
-        };
-
-        return {
-          ...options,
-          staleTime: 60_000,
-          placeholderData: keepPreviousData,
-        };
-      }),
-    [visibleGoogleCalendars, window]
-  );
-
-  // Fetch events for each visible calendar within the current window
-  const eventsQueries = useQueries({
-    queries: eventsQueryOptions,
+  const { events: googleEvents } = useGoogleEvents({
+    visibleCalendars: visibleGoogleCalendars,
+    window,
   });
-
-  const googleEvents = useMemo<GoogleEventWithSource[]>(
-    () =>
-      eventsQueries.flatMap((query, index) => {
-        const calendar = visibleGoogleCalendars[index];
-        if (!(calendar && query.data)) {
-          return [];
-        }
-
-        return query.data.map((event) => ({
-          event,
-          accountId: calendar.accountId,
-          calendarId: calendar.calendarId,
-        }));
-      }),
-    [eventsQueries, visibleGoogleCalendars]
-  );
 
   const effectiveVisibleDaysCount = useMemo(() => {
     if (!responsiveLayout.canShowCalendar) {
