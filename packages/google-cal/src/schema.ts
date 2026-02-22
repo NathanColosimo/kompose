@@ -165,3 +165,13 @@ export const ColorsSchema = z.object({
 
 
 export type Colors = z.infer<typeof ColorsSchema>;
+
+export const GoogleUserInfoSchema = z.object({
+  sub: z.string(),
+  email: z.string(),
+  name: z.string(),
+  email_verified: z.boolean(),
+  picture: z.string().optional(),
+});
+
+export type GoogleUserInfo = z.infer<typeof GoogleUserInfoSchema>;

@@ -41,7 +41,7 @@ export const createTagInputSchema = tagInsertSchemaWithIcon.omit({
 });
 
 export const listTags = oc
-  .input(z.void())
+  .input(z.object({}).optional())
   .output(z.array(tagSelectSchemaWithIcon));
 
 export const createTag = oc
@@ -62,7 +62,7 @@ const deleteTagInputSchema = z.object({
   id: z.uuidv7(),
 });
 
-export const deleteTag = oc.input(deleteTagInputSchema).output(z.void());
+export const deleteTag = oc.input(deleteTagInputSchema).output(z.null());
 
 export const tagContract = {
   list: listTags,

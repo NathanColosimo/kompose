@@ -9,7 +9,7 @@ export const linkedAccountSchema = z.object({
 });
 
 export const listLinkedAccounts = oc
-  .input(z.void())
+  .input(z.object({}).optional())
   .output(z.array(linkedAccountSchema));
 
 export const accountContract = {

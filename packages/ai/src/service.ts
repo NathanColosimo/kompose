@@ -1,11 +1,10 @@
-import type {
-  AiMessageSelect,
-  CreateAiSessionInput,
-} from "@kompose/db/schema/ai";
+import type { CreateAiSessionInput } from "@kompose/db/schema/ai";
 import {
   convertToModelMessages,
   generateText,
+  stepCountIs,
   streamText,
+  type ToolSet,
   TypeValidationError,
   type UIMessage,
   type UIMessageChunk,
@@ -14,7 +13,7 @@ import {
 import { Effect } from "effect";
 import { AiChatError } from "./errors";
 import { resolveChatModel } from "./model";
-import { BASE_CHAT_SYSTEM_PROMPT } from "./prompt";
+import { BASE_CHAT_SYSTEM_PROMPT, buildChatSystemPrompt } from "./prompt";
 import { AiChatRepository } from "./repository";
 
 function extractTextParts(parts: UIMessage["parts"]): string {
@@ -33,27 +32,6 @@ function getPersistedContent(
 ): string {
   const text = extractTextParts(parts);
   return text.length > 0 ? text : fallback;
-}
-
-function toUiMessage(message: AiMessageSelect): UIMessage {
-  const parsedParts =
-    Array.isArray(message.parts) && message.parts.length > 0
-      ? (message.parts as UIMessage["parts"])
-      : null;
-  const parts = parsedParts
-    ? parsedParts
-    : [
-        {
-          type: "text" as const,
-          text: message.content,
-        },
-      ];
-
-  return {
-    id: message.id,
-    role: message.role === "tool" ? "assistant" : message.role,
-    parts,
-  };
 }
 
 const MAX_SESSION_TITLE_LENGTH = 80;
@@ -172,15 +150,35 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           .find((message) => message.role === "assistant");
 
         if (lastAssistantMessage && lastAssistantMessage.parts.length > 0) {
-          yield* repository.createMessage({
-            sessionId: input.sessionId,
-            role: "assistant",
-            content: getPersistedContent(
-              lastAssistantMessage.parts,
-              "[non-text assistant message]"
-            ),
-            parts: lastAssistantMessage.parts,
-          });
+          const content = getPersistedContent(
+            lastAssistantMessage.parts,
+            "[non-text assistant message]"
+          );
+
+          // During tool-approval round-trips, onFinish fires once when the
+          // stream pauses for approval and again after the tool executes. If
+          // the most recent persisted message is already an assistant message
+          // (from the earlier round), update it in place instead of creating a
+          // duplicate row that would contain the same provider item IDs.
+          const existingMessages = yield* repository.listMessages(
+            input.sessionId
+          );
+          const lastPersistedMessage = existingMessages.at(-1);
+
+          if (lastPersistedMessage?.role === "assistant") {
+            yield* repository.updateMessageContent({
+              messageId: lastPersistedMessage.id,
+              content,
+              parts: lastAssistantMessage.parts,
+            });
+          } else {
+            yield* repository.createMessage({
+              sessionId: input.sessionId,
+              role: "assistant",
+              content,
+              parts: lastAssistantMessage.parts,
+            });
+          }
         }
 
         // Always clear active stream metadata when a stream finishes/aborts.
@@ -253,7 +251,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
       const startStream: (input: {
         userId: string;
         sessionId: string;
-        message: UIMessage;
+        messages: UIMessage[];
+        timeZone?: string;
+        tools?: ToolSet;
         abortSignal?: AbortSignal;
       }) => Effect.Effect<
         {
@@ -265,7 +265,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
       > = Effect.fn("AiChatService.startStream")(function* (input: {
         userId: string;
         sessionId: string;
-        message: UIMessage;
+        messages: UIMessage[];
+        timeZone?: string;
+        tools?: ToolSet;
         abortSignal?: AbortSignal;
       }) {
         yield* Effect.annotateCurrentSpan("userId", input.userId);
@@ -275,17 +277,8 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           input.userId,
           input.sessionId
         );
-        if (input.message.role !== "user") {
-          return yield* Effect.fail(
-            new AiChatError({
-              message: "Only user messages can start a chat stream.",
-              code: "BAD_REQUEST",
-            })
-          );
-        }
-
-        const userText = extractTextParts(input.message.parts);
-        if (input.message.parts.length === 0) {
+        const latestMessage = input.messages.at(-1);
+        if (!latestMessage) {
           return yield* Effect.fail(
             new AiChatError({
               message: "Message content is required.",
@@ -294,28 +287,76 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           );
         }
 
-        yield* repository.createMessage({
-          sessionId: input.sessionId,
-          role: "user",
-          // Keep a textual summary for quick list/search while full structured
-          // message payload lives in `parts`.
-          content: getPersistedContent(
-            input.message.parts,
-            "[non-text user message]"
-          ),
-          parts: input.message.parts,
-        });
+        const hasSessionTitle = (session.title ?? "").trim().length > 0;
+        let shouldGenerateTitle = false;
+        let firstMessageText: string | null = null;
+        let systemPromptText = BASE_CHAT_SYSTEM_PROMPT;
 
-        const history = yield* repository.listMessages(input.sessionId);
-        const originalMessages = history.map(toUiMessage);
-        const shouldGenerateTitle =
-          (session.title ?? "").trim().length === 0 &&
-          history.length === 1 &&
-          history[0]?.role === "user" &&
-          userText.trim().length > 0;
+        // Always load persisted messages so we can read the system prompt for
+        // every round (including approval round-trips where the latest message
+        // is an assistant message, not a user message).
+        const existingMessages = yield* repository.listMessages(
+          input.sessionId
+        );
+        const isFirstMessageForSession = existingMessages.length === 0;
+        const persistedSystemMessage = existingMessages.find(
+          (message) => message.role === "system"
+        );
+
+        if (
+          persistedSystemMessage &&
+          persistedSystemMessage.content.trim().length > 0
+        ) {
+          systemPromptText = persistedSystemMessage.content;
+        }
+
+        // Persist the most recent user message for queryable session history.
+        if (latestMessage.role === "user") {
+          if (latestMessage.parts.length === 0) {
+            return yield* Effect.fail(
+              new AiChatError({
+                message: "Message content is required.",
+                code: "BAD_REQUEST",
+              })
+            );
+          }
+
+          if (isFirstMessageForSession && !persistedSystemMessage) {
+            // Persist the first system prompt so later turns reuse the exact
+            // same prompt text for stable provider-side prompt caching.
+            systemPromptText = buildChatSystemPrompt({
+              timeZone: input.timeZone,
+            });
+            yield* repository.createMessage({
+              sessionId: input.sessionId,
+              role: "system",
+              content: systemPromptText,
+              parts: [{ type: "text", text: systemPromptText }],
+            });
+          }
+
+          const userText = extractTextParts(latestMessage.parts);
+          shouldGenerateTitle =
+            !hasSessionTitle &&
+            isFirstMessageForSession &&
+            userText.trim().length > 0;
+          firstMessageText = shouldGenerateTitle ? userText : null;
+
+          yield* repository.createMessage({
+            sessionId: input.sessionId,
+            role: "user",
+            // Keep a textual summary for quick list/search while full structured
+            // message payload lives in `parts`.
+            content: getPersistedContent(
+              latestMessage.parts,
+              "[non-text user message]"
+            ),
+            parts: latestMessage.parts,
+          });
+        }
 
         const validatedMessages = yield* Effect.tryPromise({
-          try: () => validateUIMessages({ messages: originalMessages }),
+          try: () => validateUIMessages({ messages: input.messages }),
           catch: (error) => {
             if (error instanceof TypeValidationError) {
               return new AiChatError({
@@ -332,8 +373,16 @@ export class AiChatService extends Effect.Service<AiChatService>()(
 
         const model = resolveChatModel(session.model ?? undefined);
         yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
+        const messagesWithSystem: UIMessage[] = [
+          {
+            id: `${input.sessionId}:system`,
+            role: "system",
+            parts: [{ type: "text", text: systemPromptText }],
+          },
+          ...validatedMessages.filter((message) => message.role !== "system"),
+        ];
         const modelMessages = yield* Effect.tryPromise({
-          try: () => convertToModelMessages(validatedMessages),
+          try: () => convertToModelMessages(messagesWithSystem),
           catch: () =>
             new AiChatError({
               message: "Failed to convert chat messages for model.",
@@ -345,8 +394,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         // an Effect.fn span so latency is visible in tracing.
         const streamResult = streamText({
           model,
-          system: BASE_CHAT_SYSTEM_PROMPT,
           messages: modelMessages,
+          stopWhen: stepCountIs(20),
+          tools: input.tools,
           abortSignal: input.abortSignal,
           providerOptions: {
             // Request readable reasoning summaries when supported.
@@ -357,7 +407,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         return {
           originalMessages: validatedMessages,
           streamResult: streamResult as UiStreamResultLike,
-          firstMessageText: shouldGenerateTitle ? userText : null,
+          firstMessageText: shouldGenerateTitle ? firstMessageText : null,
         };
       });
 

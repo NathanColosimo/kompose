@@ -40,7 +40,8 @@ export type ListAiMessagesInput = z.infer<typeof listAiMessagesInputSchema>;
 
 export const sendAiStreamInputSchema = z.object({
   sessionId: z.uuidv7(),
-  message: uiMessageSchema,
+  messages: z.array(uiMessageSchema).min(1),
+  timeZone: z.string().trim().min(1).optional(),
 });
 export type SendAiStreamInput = z.infer<typeof sendAiStreamInputSchema>;
 
@@ -51,13 +52,15 @@ export type ReconnectAiStreamInput = z.infer<
   typeof reconnectAiStreamInputSchema
 >;
 
-const listSessions = oc.input(z.void()).output(z.array(aiSessionSelectSchema));
+const listSessions = oc
+  .input(z.object({}).optional())
+  .output(z.array(aiSessionSelectSchema));
 
 const createSession = oc
   .input(createAiSessionInputSchema)
   .output(aiSessionSelectSchema);
 
-const deleteSession = oc.input(deleteAiSessionInputSchema).output(z.void());
+const deleteSession = oc.input(deleteAiSessionInputSchema).output(z.null());
 
 const listMessages = oc
   .input(listAiMessagesInputSchema)

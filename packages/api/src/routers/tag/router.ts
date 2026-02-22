@@ -100,7 +100,7 @@ export const tagRouter = os.router({
       TagService.deleteTag(context.user.id, input.id).pipe(
         Effect.provide(TagLive),
         Effect.match({
-          onSuccess: (value) => value,
+          onSuccess: () => null,
           onFailure: handleError,
         })
       )

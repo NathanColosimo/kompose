@@ -1,0 +1,20 @@
+{
+  "$schema": "https://btca.dev/btca.schema.json",
+  "dataDirectory": ".btca",
+  "resources": [
+    {
+      "type": "git",
+      "name": "better-auth",
+      "url": "https://github.com/better-auth/better-auth",
+      "branch": "main"
+    },
+    {
+      "type": "git",
+      "name": "effect",
+      "url": "https://github.com/Effect-TS/effect",
+      "branch": "main"
+    }
+  ],
+  "model": "gpt-5.1-codex-mini",
+  "provider": "openai"
+}

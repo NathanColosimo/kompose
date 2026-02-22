@@ -49,3 +49,6 @@ coverage
 tmp
 temp
 .vercel
+
+# btca local data
+.btca/

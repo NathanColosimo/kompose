@@ -8,13 +8,22 @@ import {
 } from "@kompose/state/hooks/use-ai-chat";
 import { eventIteratorToUnproxiedDataStream, ORPCError } from "@orpc/client";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ChatTransport, FileUIPart, UIMessage } from "ai";
+import {
+  type ChatAddToolApproveResponseFunction,
+  type ChatTransport,
+  type FileUIPart,
+  isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type UIMessage,
+} from "ai";
 import {
   BotIcon,
+  CheckIcon,
   Loader2Icon,
   MessageCircleIcon,
   PlusIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -38,6 +47,14 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
+import {
+  Confirmation,
+  ConfirmationAccepted,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRejected,
+  ConfirmationRequest,
+} from "@/components/ai-elements/confirmation";
 import {
   Context,
   ContextContent,
@@ -87,6 +104,14 @@ import {
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
+import type { ToolPart } from "@/components/ai-elements/tool";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
 import {
   SidebarContent,
@@ -157,29 +182,60 @@ function extractText(parts: UIMessage["parts"]): string {
     .trim();
 }
 
-function extractReasoning(parts: UIMessage["parts"]): string {
-  const reasoningLines: string[] = [];
-  for (const part of parts) {
-    if (part.type !== "reasoning") {
-      continue;
-    }
-    if (!isRecord(part)) {
-      continue;
-    }
-    const text = asString(part.text) ?? "";
-    if (text.length > 0) {
-      reasoningLines.push(text);
-    }
-  }
-  return reasoningLines.join("\n").trim();
-}
+type MessageSegment =
+  | { kind: "reasoning"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "tool"; part: ToolPart };
 
 /**
- * Some providers return a reasoning part with empty text. Presence of the part
- * still means reasoning occurred and should keep the COT UI visible.
+ * Walk parts in order and group consecutive text/reasoning into segments,
+ * breaking at tool boundaries so COT + tool + COT renders correctly.
  */
-function hasReasoningPart(parts: UIMessage["parts"]): boolean {
-  return parts.some((part) => part.type === "reasoning");
+function buildMessageSegments(parts: UIMessage["parts"]): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  // null = no reasoning seen in current group; "" = parts seen but no text yet
+  let pendingReasoning: string | null = null;
+  let pendingText = "";
+
+  const flushReasoning = () => {
+    if (pendingReasoning !== null) {
+      segments.push({ kind: "reasoning", text: pendingReasoning });
+      pendingReasoning = null;
+    }
+  };
+  const flushText = () => {
+    if (pendingText.length > 0) {
+      segments.push({ kind: "text", text: pendingText });
+      pendingText = "";
+    }
+  };
+
+  for (const part of parts) {
+    if (part.type === "reasoning") {
+      // Flush text before starting/continuing reasoning
+      flushText();
+      if (pendingReasoning === null) {
+        pendingReasoning = "";
+      }
+      const text = isRecord(part) ? (asString(part.text) ?? "") : "";
+      if (text.length > 0) {
+        pendingReasoning += (pendingReasoning.length > 0 ? "\n" : "") + text;
+      }
+    } else if (part.type === "text") {
+      const t = part.text?.trim() ?? "";
+      if (t.length > 0) {
+        pendingText += (pendingText.length > 0 ? "\n" : "") + part.text;
+      }
+    } else if (isToolUIPart(part)) {
+      flushReasoning();
+      flushText();
+      segments.push({ kind: "tool", part: part as ToolPart });
+    }
+  }
+
+  flushReasoning();
+  flushText();
+  return segments;
 }
 
 function extractAttachments(
@@ -232,28 +288,104 @@ function ComposerAttachmentsPreview() {
   );
 }
 
+function formatToolName(type: string): string {
+  return type
+    .replace(/^tool-/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Renders a single tool invocation with its input, confirmation (if approval-based),
+ * and output—all inside a single collapsible Tool component.
+ */
+function ToolInvocationPart({
+  part,
+  onApprovalResponse,
+}: {
+  part: ToolPart;
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
+}) {
+  const defaultOpen =
+    part.state === "approval-requested" ||
+    part.state === "output-available" ||
+    part.state === "output-error" ||
+    part.state === "output-denied";
+
+  return (
+    <Tool defaultOpen={defaultOpen}>
+      <ToolHeader
+        state={part.state}
+        title={formatToolName(part.type)}
+        type={part.type as `tool-${string}`}
+      />
+      <ToolContent>
+        {part.input !== undefined && <ToolInput input={part.input} />}
+
+        {part.approval && (
+          <Confirmation approval={part.approval} state={part.state}>
+            <ConfirmationRequest>
+              <span className="text-xs">Approve this action?</span>
+              <ConfirmationActions>
+                <ConfirmationAction
+                  onClick={() =>
+                    onApprovalResponse({
+                      id: part.approval!.id,
+                      approved: false,
+                    })
+                  }
+                  variant="outline"
+                >
+                  Reject
+                </ConfirmationAction>
+                <ConfirmationAction
+                  onClick={() =>
+                    onApprovalResponse({
+                      id: part.approval!.id,
+                      approved: true,
+                    })
+                  }
+                >
+                  Approve
+                </ConfirmationAction>
+              </ConfirmationActions>
+            </ConfirmationRequest>
+            <ConfirmationAccepted>
+              <CheckIcon className="size-3" />
+              <span className="text-xs">Approved</span>
+            </ConfirmationAccepted>
+            <ConfirmationRejected>
+              <XIcon className="size-3" />
+              <span className="text-xs">Rejected</span>
+            </ConfirmationRejected>
+          </Confirmation>
+        )}
+
+        <ToolOutput errorText={part.errorText} output={part.output} />
+      </ToolContent>
+    </Tool>
+  );
+}
+
 interface SidebarChatMessageProps {
   isStreamingAssistant: boolean;
   message: UIMessage;
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
 }
 
 function SidebarChatMessage({
   message,
   isStreamingAssistant,
+  onApprovalResponse,
 }: SidebarChatMessageProps) {
   const attachments = useMemo(
     () => extractAttachments(message.id, message.parts),
     [message.id, message.parts]
   );
-  const reasoning = useMemo(
-    () => extractReasoning(message.parts),
+  const segments = useMemo(
+    () => buildMessageSegments(message.parts),
     [message.parts]
   );
-  const hasReasoning = useMemo(
-    () => hasReasoningPart(message.parts),
-    [message.parts]
-  );
-  const text = useMemo(() => extractText(message.parts), [message.parts]);
 
   return (
     <Message from={message.role}>
@@ -269,29 +401,52 @@ function SidebarChatMessage({
           </Attachments>
         ) : null}
 
-        {message.role === "assistant" ? (
-          <ChainOfThought defaultOpen={isStreamingAssistant}>
-            {/* Keep COT above the assistant response for both stream + reload. */}
-            {hasReasoning ? <ChainOfThoughtHeader className="text-xs" /> : null}
-            {hasReasoning && (reasoning.length > 0 || isStreamingAssistant) ? (
-              <ChainOfThoughtContent>
-                <ChainOfThoughtStep
-                  className="text-xs"
-                  label={
-                    isStreamingAssistant ? "Reasoning (streaming)" : "Reasoning"
-                  }
-                  status={isStreamingAssistant ? "active" : "complete"}
-                >
-                  <MessageResponse>
-                    {reasoning || "Thinking..."}
-                  </MessageResponse>
-                </ChainOfThoughtStep>
-              </ChainOfThoughtContent>
-            ) : null}
-          </ChainOfThought>
-        ) : null}
+        {segments.map((segment, index) => {
+          if (segment.kind === "reasoning" && message.role === "assistant") {
+            const isLastSegment = index === segments.length - 1;
+            const isActive = isStreamingAssistant && isLastSegment;
+            const showContent = segment.text.length > 0 || isActive;
 
-        {text.length > 0 ? <MessageResponse>{text}</MessageResponse> : null}
+            return (
+              <ChainOfThought defaultOpen={isActive} key={`cot-${index}`}>
+                <ChainOfThoughtHeader className="text-xs" />
+                {showContent ? (
+                  <ChainOfThoughtContent>
+                    <ChainOfThoughtStep
+                      className="text-xs"
+                      label={isActive ? "Reasoning (streaming)" : "Reasoning"}
+                      status={isActive ? "active" : "complete"}
+                    >
+                      <MessageResponse>
+                        {segment.text || "Thinking..."}
+                      </MessageResponse>
+                    </ChainOfThoughtStep>
+                  </ChainOfThoughtContent>
+                ) : null}
+              </ChainOfThought>
+            );
+          }
+
+          if (segment.kind === "text") {
+            return (
+              <MessageResponse key={`text-${index}`}>
+                {segment.text}
+              </MessageResponse>
+            );
+          }
+
+          if (segment.kind === "tool") {
+            return (
+              <ToolInvocationPart
+                key={segment.part.toolCallId}
+                onApprovalResponse={onApprovalResponse}
+                part={segment.part}
+              />
+            );
+          }
+
+          return null;
+        })}
       </MessageContent>
     </Message>
   );
@@ -421,14 +576,14 @@ export function SidebarRightChat() {
           );
         }
 
-        const message = messages.at(-1);
-        if (!message) {
+        if (messages.length === 0) {
           throw new Error("A message payload is required.");
         }
 
         const iterator = await streamSessionMessage({
           sessionId: activeSessionId,
-          message,
+          messages,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           signal: abortSignal,
         });
 
@@ -468,6 +623,7 @@ export function SidebarRightChat() {
   );
 
   const {
+    addToolApprovalResponse,
     error,
     messages,
     resumeStream,
@@ -480,6 +636,7 @@ export function SidebarRightChat() {
     experimental_throttle: 50,
     messages: persistedMessages,
     resume: shouldResumeStream,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
     onFinish: async () => {
       if (!activeSessionId) {
@@ -493,6 +650,11 @@ export function SidebarRightChat() {
       ]);
     },
   });
+
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.role !== "system"),
+    [messages]
+  );
 
   // Retry resume a few times for active-session cross-device streams to avoid
   // missing the stream when reconnect races initial stream setup.
@@ -560,12 +722,12 @@ export function SidebarRightChat() {
   }, [persistedMessages, setMessages, status]);
 
   const estimatedUsedTokens = useMemo(() => {
-    const combined = messages
+    const combined = visibleMessages
       .map((message) => extractText(message.parts))
       .join("\n");
     const roughTokenEstimate = Math.ceil(combined.length / 4);
     return Math.max(roughTokenEstimate, 1);
-  }, [messages]);
+  }, [visibleMessages]);
 
   const handleCreateSession = useCallback(async () => {
     const session = await createSession.mutateAsync({ model: selectedModel });
@@ -606,7 +768,7 @@ export function SidebarRightChat() {
     [activeSessionId, sendMessage]
   );
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = visibleMessages.length > 0;
   const isComposerDisabled = !activeSessionId || createSession.isPending;
   const handleSelectSession = useCallback(
     (sessionId: string) => {
@@ -677,8 +839,8 @@ export function SidebarRightChat() {
         >
           <ConversationContent className="gap-4 px-3 py-3">
             {hasMessages ? (
-              messages.map((message, index) => {
-                const isLatest = index === messages.length - 1;
+              visibleMessages.map((message, index) => {
+                const isLatest = index === visibleMessages.length - 1;
                 const isStreamingAssistant =
                   message.role === "assistant" &&
                   isLatest &&
@@ -689,6 +851,7 @@ export function SidebarRightChat() {
                     isStreamingAssistant={isStreamingAssistant}
                     key={message.id}
                     message={message}
+                    onApprovalResponse={addToolApprovalResponse}
                   />
                 );
               })

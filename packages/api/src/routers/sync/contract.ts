@@ -5,7 +5,7 @@ import { syncEventSchema } from "../../realtime/events";
 export type SyncEvent = z.infer<typeof syncEventSchema>;
 
 export const streamSyncEvents = oc
-  .input(z.void())
+  .input(z.object({}).optional())
   .output(eventIterator(syncEventSchema));
 
 export const syncContract = {

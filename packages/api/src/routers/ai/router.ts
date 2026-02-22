@@ -13,6 +13,7 @@ import {
   sseStringStreamToUiMessageChunkStream,
   uiMessageChunkStreamToSseStringStream,
 } from "./stream-protocol";
+import { createAiTools } from "./tools";
 
 const AiChatLive = Layer.merge(AiChatService.Default, TelemetryLive);
 
@@ -110,9 +111,9 @@ export const aiRouter = os.router({
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => {
+            onSuccess: () => {
               publishAiChatEvent(context.user.id, input.sessionId);
-              return value;
+              return null;
             },
             onFailure: handleError,
           })
@@ -143,11 +144,14 @@ export const aiRouter = os.router({
   stream: {
     send: os.stream.send.handler(({ input, context, signal }) => {
       const program = Effect.gen(function* () {
+        const tools = createAiTools(context.user);
         const { originalMessages, streamResult, firstMessageText } =
           yield* AiChatService.startStream({
             userId: context.user.id,
             sessionId: input.sessionId,
-            message: input.message,
+            messages: input.messages,
+            timeZone: input.timeZone,
+            tools,
             abortSignal: signal,
           });
 

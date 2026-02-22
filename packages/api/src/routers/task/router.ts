@@ -108,9 +108,9 @@ export const taskRouter = os.router({
       TaskService.deleteTask(context.user.id, input.id, input.scope).pipe(
         Effect.provide(TaskLive),
         Effect.match({
-          onSuccess: (value) => {
+          onSuccess: () => {
             publishTasksEvent(context.user.id);
-            return value;
+            return null;
           },
           onFailure: handleError,
         })

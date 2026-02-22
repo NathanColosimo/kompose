@@ -71,7 +71,7 @@ export type DeleteCalendarInput = z.infer<typeof DeleteCalendarInputSchema>;
  */
 export const deleteCalendar = oc
   .input(DeleteCalendarInputSchema)
-  .output(z.void());
+  .output(z.null());
 
 // --- Events ---
 
@@ -151,7 +151,7 @@ export const DeleteEventInputSchema = z.object({
 });
 export type DeleteEventInput = z.infer<typeof DeleteEventInputSchema>;
 
-export const deleteEvent = oc.input(DeleteEventInputSchema).output(z.void());
+export const deleteEvent = oc.input(DeleteEventInputSchema).output(z.null());
 
 // --- Colors ---
 

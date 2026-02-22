@@ -277,7 +277,7 @@ export const googleCalRouter = os.router({
           input.accountId
         );
 
-        const result = yield* Effect.gen(function* () {
+        yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           return yield* service.deleteCalendar(input.calendarId);
         }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
@@ -301,7 +301,7 @@ export const googleCalRouter = os.router({
           input.calendarId
         );
 
-        return result;
+        return null;
       });
 
       return Effect.runPromise(
@@ -644,7 +644,7 @@ export const googleCalRouter = os.router({
           input.accountId
         );
 
-        const result = yield* Effect.gen(function* () {
+        yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
           return yield* service.deleteEvent(
             input.calendarId,
@@ -671,7 +671,7 @@ export const googleCalRouter = os.router({
           input.calendarId
         );
 
-        return result;
+        return null;
       });
 
       return Effect.runPromise(

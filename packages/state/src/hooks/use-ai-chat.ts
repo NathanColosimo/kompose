@@ -93,7 +93,11 @@ export function useAiChat(activeSessionId: string | null) {
   const streamSessionMessage = useCallback(
     async (input: SendSessionMessageInput) =>
       await orpc.ai.stream.send(
-        { sessionId: input.sessionId, message: input.message },
+        {
+          sessionId: input.sessionId,
+          messages: input.messages,
+          timeZone: input.timeZone,
+        },
         { signal: input.signal }
       ),
     [orpc]

@@ -151,9 +151,11 @@ export const listTasksParamsSchema = z.object({
     .optional(),
 });
 
-export const listTasksInputSchema = z.object({
-  params: listTasksParamsSchema.optional(),
-}).optional();
+export const listTasksInputSchema = z
+  .object({
+    params: listTasksParamsSchema.optional(),
+  })
+  .optional();
 
 /** API returns string types - decode on client with taskSelectCodec */
 export const listTasks = oc
@@ -183,7 +185,7 @@ export const deleteTask = oc
       scope: deleteScopeSchema,
     })
   )
-  .output(z.void());
+  .output(z.null());
 
 export const taskContract = {
   list: listTasks,

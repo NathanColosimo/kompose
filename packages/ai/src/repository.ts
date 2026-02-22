@@ -261,6 +261,31 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
         });
       });
 
+      const updateMessageContent: (input: {
+        messageId: string;
+        content: string;
+        parts?: CreateAiMessageInput["parts"];
+      }) => Effect.Effect<void, AiChatError> = Effect.fn(
+        "AiChatRepository.updateMessageContent"
+      )(function* (input: {
+        messageId: string;
+        content: string;
+        parts?: CreateAiMessageInput["parts"];
+      }) {
+        yield* Effect.tryPromise({
+          try: () =>
+            db
+              .update(aiMessageTable)
+              .set({ content: input.content, parts: input.parts })
+              .where(eq(aiMessageTable.id, input.messageId)),
+          catch: () =>
+            new AiChatError({
+              message: "Failed to update chat message.",
+              code: "INTERNAL",
+            }),
+        });
+      });
+
       return {
         listSessions,
         createSession,
@@ -268,6 +293,7 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
         deleteSession,
         listMessages,
         createMessage,
+        updateMessageContent,
         updateSessionActivity,
       };
     }),

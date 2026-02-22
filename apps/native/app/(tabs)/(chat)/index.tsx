@@ -615,14 +615,14 @@ export default function ChatScreen() {
           );
         }
 
-        const message = messages.at(-1);
-        if (!message) {
+        if (messages.length === 0) {
           throw new Error("A message payload is required.");
         }
 
         const iterator = await streamSessionMessage({
           sessionId: activeSessionId,
-          message,
+          messages,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           signal: abortSignal,
         });
 
@@ -685,6 +685,11 @@ export default function ChatScreen() {
       ]);
     },
   });
+
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.role !== "system"),
+    [messages]
+  );
 
   // Retry resume a few times for active-session cross-device streams to avoid
   // missing the stream when reconnect races initial stream setup.
@@ -750,7 +755,7 @@ export default function ChatScreen() {
     setMessages(persistedMessages);
   }, [persistedMessages, setMessages, status]);
 
-  const messageCount = messages.length;
+  const messageCount = visibleMessages.length;
 
   // Auto-scroll to latest message unless user intentionally scrolled up.
   useEffect(() => {
@@ -877,7 +882,7 @@ export default function ChatScreen() {
             {hasMessages ? (
               <FlatList
                 contentContainerStyle={{ gap: 12, paddingBottom: 0 }}
-                data={messages}
+                data={visibleMessages}
                 keyExtractor={(item) => item.id}
                 onContentSizeChange={handleContentSizeChange}
                 onScroll={handleScroll}
@@ -888,7 +893,7 @@ export default function ChatScreen() {
                 }}
                 ref={listRef}
                 renderItem={({ item, index }) => {
-                  const isLatest = index === messages.length - 1;
+                  const isLatest = index === visibleMessages.length - 1;
                   const isStreamingAssistant =
                     item.role === "assistant" &&
                     isLatest &&
