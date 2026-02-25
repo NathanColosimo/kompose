@@ -17,6 +17,7 @@
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
 - `atoms/google-data.ts`: Google accounts/calendars atoms plus derived visible calendar ids.
 - `atoms/visible-calendars.ts`: Visible calendar selection atoms and toggle helpers.
+- `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
 - `hooks/use-google-accounts.ts`: Query hook for linked Google accounts.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.

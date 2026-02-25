@@ -2,6 +2,14 @@
 
 import { useChat } from "@ai-sdk/react";
 import {
+  buildMessageSegments,
+  extractAttachments,
+  extractText,
+  formatToolName,
+  type ToolPart,
+  toUiMessage,
+} from "@kompose/state/ai-message-utils";
+import {
   AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
   useAiChat,
@@ -12,7 +20,6 @@ import {
   type ChatAddToolApproveResponseFunction,
   type ChatTransport,
   type FileUIPart,
-  isToolUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   type UIMessage,
 } from "ai";
@@ -35,7 +42,6 @@ import {
 } from "react";
 import {
   Attachment,
-  type AttachmentData,
   AttachmentInfo,
   AttachmentPreview,
   AttachmentRemove,
@@ -104,7 +110,6 @@ import {
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
-import type { ToolPart } from "@/components/ai-elements/tool";
 import {
   Tool,
   ToolContent,
@@ -128,139 +133,6 @@ const CHAT_MODELS: { id: ChatModelId; label: string }[] = [
 ];
 const MAX_STREAM_RESUME_ATTEMPTS = 4;
 const STREAM_RESUME_RETRY_INTERVAL_MS = 750;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function normalizeMessageRole(
-  role: string
-): Extract<UIMessage["role"], "assistant" | "system" | "user"> {
-  if (role === "assistant" || role === "system" || role === "user") {
-    return role;
-  }
-  return "assistant";
-}
-
-/**
- * Convert persisted DB rows into AI SDK UI messages for hydration.
- */
-function toUiMessage(row: {
-  id: string;
-  role: string;
-  content: string;
-  parts: unknown;
-}): UIMessage {
-  const parts =
-    Array.isArray(row.parts) && row.parts.length > 0
-      ? (row.parts as UIMessage["parts"])
-      : [{ type: "text" as const, text: row.content }];
-
-  return {
-    id: row.id,
-    role: normalizeMessageRole(row.role),
-    parts,
-  };
-}
-
-/**
- * Pull text from message parts so we can estimate token usage and title fallbacks.
- */
-function extractText(parts: UIMessage["parts"]): string {
-  return parts
-    .map((part) => {
-      if (part.type === "text") {
-        return part.text;
-      }
-      return "";
-    })
-    .join("\n")
-    .trim();
-}
-
-type MessageSegment =
-  | { kind: "reasoning"; text: string }
-  | { kind: "text"; text: string }
-  | { kind: "tool"; part: ToolPart };
-
-/**
- * Walk parts in order and group consecutive text/reasoning into segments,
- * breaking at tool boundaries so COT + tool + COT renders correctly.
- */
-function buildMessageSegments(parts: UIMessage["parts"]): MessageSegment[] {
-  const segments: MessageSegment[] = [];
-  // null = no reasoning seen in current group; "" = parts seen but no text yet
-  let pendingReasoning: string | null = null;
-  let pendingText = "";
-
-  const flushReasoning = () => {
-    if (pendingReasoning !== null) {
-      segments.push({ kind: "reasoning", text: pendingReasoning });
-      pendingReasoning = null;
-    }
-  };
-  const flushText = () => {
-    if (pendingText.length > 0) {
-      segments.push({ kind: "text", text: pendingText });
-      pendingText = "";
-    }
-  };
-
-  for (const part of parts) {
-    if (part.type === "reasoning") {
-      // Flush text before starting/continuing reasoning
-      flushText();
-      if (pendingReasoning === null) {
-        pendingReasoning = "";
-      }
-      const text = isRecord(part) ? (asString(part.text) ?? "") : "";
-      if (text.length > 0) {
-        pendingReasoning += (pendingReasoning.length > 0 ? "\n" : "") + text;
-      }
-    } else if (part.type === "text") {
-      const t = part.text?.trim() ?? "";
-      if (t.length > 0) {
-        pendingText += (pendingText.length > 0 ? "\n" : "") + part.text;
-      }
-    } else if (isToolUIPart(part)) {
-      flushReasoning();
-      flushText();
-      segments.push({ kind: "tool", part: part as ToolPart });
-    }
-  }
-
-  flushReasoning();
-  flushText();
-  return segments;
-}
-
-function extractAttachments(
-  messageId: string,
-  parts: UIMessage["parts"]
-): AttachmentData[] {
-  const attachments: AttachmentData[] = [];
-
-  for (const [index, part] of parts.entries()) {
-    if (part.type === "file") {
-      attachments.push({
-        ...part,
-        id: `${messageId}-file-${index}`,
-      });
-    }
-    if (part.type === "source-document") {
-      attachments.push({
-        ...part,
-        id: `${messageId}-source-${index}`,
-      });
-    }
-  }
-
-  return attachments;
-}
 
 function ComposerAttachmentsPreview() {
   const { files, remove } = usePromptInputAttachments();
@@ -286,13 +158,6 @@ function ComposerAttachmentsPreview() {
       </Attachments>
     </PromptInputHeader>
   );
-}
-
-function formatToolName(type: string): string {
-  return type
-    .replace(/^tool-/, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
@@ -408,7 +273,10 @@ function SidebarChatMessage({
             const showContent = segment.text.length > 0 || isActive;
 
             return (
-              <ChainOfThought defaultOpen={isActive} key={`cot-${index}`}>
+              <ChainOfThought
+                defaultOpen={isActive}
+                key={`${message.id}-cot-${index}`}
+              >
                 <ChainOfThoughtHeader className="text-xs" />
                 {showContent ? (
                   <ChainOfThoughtContent>
@@ -429,7 +297,7 @@ function SidebarChatMessage({
 
           if (segment.kind === "text") {
             return (
-              <MessageResponse key={`text-${index}`}>
+              <MessageResponse key={`${message.id}-text-${index}`}>
                 {segment.text}
               </MessageResponse>
             );
@@ -790,9 +658,7 @@ export function SidebarRightChat() {
           </div>
           <Button
             className="shrink-0"
-            onClick={async () => {
-              await handleCreateSession();
-            }}
+            onClick={handleCreateSession}
             size="sm"
             type="button"
             variant="outline"
@@ -816,9 +682,7 @@ export function SidebarRightChat() {
               </Button>
               <Button
                 className="size-7 rounded-full p-0"
-                onClick={async () => {
-                  await handleDeleteSession(session.id);
-                }}
+                onClick={() => handleDeleteSession(session.id)}
                 size="icon"
                 type="button"
                 variant="ghost"

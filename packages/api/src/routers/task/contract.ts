@@ -130,24 +130,28 @@ export const listTasksParamsSchema = z.object({
   query: z
     .string()
     .trim()
-    .min(1)
-    .describe("Optional text filter for task title or description.")
+    .describe("Text filter for task title or description.")
+    .nullable()
     .optional(),
   startDateMin: z.iso
     .date()
     .describe("Minimum task start date (YYYY-MM-DD).")
+    .nullable()
     .optional(),
   startDateMax: z.iso
     .date()
     .describe("Maximum task start date (YYYY-MM-DD).")
+    .nullable()
     .optional(),
   dueDateMin: z.iso
     .date()
     .describe("Minimum task due date (YYYY-MM-DD).")
+    .nullable()
     .optional(),
   dueDateMax: z.iso
     .date()
     .describe("Maximum task due date (YYYY-MM-DD).")
+    .nullable()
     .optional(),
 });
 

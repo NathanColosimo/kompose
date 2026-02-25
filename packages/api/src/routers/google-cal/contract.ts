@@ -79,8 +79,8 @@ export const listEventsParamsSchema = z.object({
   query: z
     .string()
     .trim()
-    .min(1)
-    .describe("Optional text filter for title, description, or location.")
+    .describe("Text filter for title, description, or location.")
+    .nullable()
     .optional(),
   timeMin: z.iso
     .datetime({ offset: true })

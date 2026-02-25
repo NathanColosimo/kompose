@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@t3-oss/env-nextjs", "@t3-oss/env-core"],
   experimental: {
     turbopackFileSystemCacheForDev: true,
+    optimizePackageImports: ["lucide-react"],
   },
   // Tauri requires static export; the Next.js Image component needs
   // unoptimized mode because there is no server to optimize images.

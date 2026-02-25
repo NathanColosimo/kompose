@@ -1,12 +1,25 @@
 import { useChat } from "@ai-sdk/react";
 import {
+  buildMessageSegments,
+  extractAttachments,
+  formatToolName,
+  type ToolPart,
+  toUiMessage,
+} from "@kompose/state/ai-message-utils";
+import {
   AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
   useAiChat,
 } from "@kompose/state/hooks/use-ai-chat";
 import { eventIteratorToUnproxiedDataStream, ORPCError } from "@orpc/client";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ChatTransport, FileUIPart, UIMessage } from "ai";
+import {
+  type ChatAddToolApproveResponseFunction,
+  type ChatTransport,
+  type FileUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type UIMessage,
+} from "ai";
 import { Stack } from "expo-router/stack";
 import {
   Check,
@@ -14,6 +27,7 @@ import {
   Loader2,
   MessageCircle,
   Plus,
+  X,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,7 +43,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StreamdownRN } from "streamdown-rn";
 import {
   Attachment,
-  type AttachmentData,
   AttachmentInfo,
   AttachmentPreview,
   AttachmentRemove,
@@ -41,6 +54,14 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
 } from "@/components/ai-chat/chain-of-thought";
+import {
+  Confirmation,
+  ConfirmationAccepted,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRejected,
+  ConfirmationRequest,
+} from "@/components/ai-chat/confirmation";
 import {
   Conversation,
   ConversationContent,
@@ -63,6 +84,13 @@ import {
   usePromptInputAttachments,
 } from "@/components/ai-chat/prompt-input";
 import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-chat/tool";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -81,88 +109,6 @@ const CHAT_MODELS: { id: ChatModelId; label: string; provider: string }[] = [
 ];
 const MAX_STREAM_RESUME_ATTEMPTS = 4;
 const STREAM_RESUME_RETRY_INTERVAL_MS = 750;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function normalizeMessageRole(
-  role: string
-): Extract<UIMessage["role"], "assistant" | "system" | "user"> {
-  if (role === "assistant" || role === "system" || role === "user") {
-    return role;
-  }
-  return "assistant";
-}
-
-/**
- * Converts persisted DB rows into AI SDK UI messages.
- */
-function toUiMessage(row: {
-  id: string;
-  role: string;
-  content: string;
-  parts: unknown;
-}): UIMessage {
-  const parts =
-    Array.isArray(row.parts) && row.parts.length > 0
-      ? (row.parts as UIMessage["parts"])
-      : [{ type: "text" as const, text: row.content }];
-
-  return {
-    id: row.id,
-    role: normalizeMessageRole(row.role),
-    parts,
-  };
-}
-
-/**
- * Aggregates text parts to support display + rough token estimation.
- */
-function extractText(parts: UIMessage["parts"]): string {
-  return parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("\n")
-    .trim();
-}
-
-function extractReasoning(parts: UIMessage["parts"]): string {
-  const lines: string[] = [];
-  for (const part of parts) {
-    if (part.type !== "reasoning" || !isRecord(part)) {
-      continue;
-    }
-    const text = asString(part.text) ?? "";
-    if (text.length > 0) {
-      lines.push(text);
-    }
-  }
-  return lines.join("\n").trim();
-}
-
-function hasReasoningPart(parts: UIMessage["parts"]): boolean {
-  return parts.some((part) => part.type === "reasoning");
-}
-
-function extractAttachments(
-  messageId: string,
-  parts: UIMessage["parts"]
-): AttachmentData[] {
-  const attachments: AttachmentData[] = [];
-  for (const [index, part] of parts.entries()) {
-    if (part.type === "file") {
-      attachments.push({ ...part, id: `${messageId}-file-${index}` });
-    }
-    if (part.type === "source-document") {
-      attachments.push({ ...part, id: `${messageId}-source-${index}` });
-    }
-  }
-  return attachments;
-}
 
 /**
  * Composer-level attachment preview list.
@@ -403,32 +349,105 @@ function ComposerInputRow({
   );
 }
 
+/**
+ * Renders a single tool invocation with input, confirmation, and output
+ * inside a collapsible Tool component.
+ */
+function NativeToolInvocationPart({
+  part,
+  onApprovalResponse,
+}: {
+  part: ToolPart;
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
+}) {
+  const iconColor = useColor("text");
+  const mutedIconColor = useColor("textMuted");
+
+  const defaultOpen =
+    part.state === "approval-requested" ||
+    part.state === "output-available" ||
+    part.state === "output-error" ||
+    part.state === "output-denied";
+
+  return (
+    <Tool defaultOpen={defaultOpen}>
+      <ToolHeader state={part.state} title={formatToolName(part.type)} />
+      <ToolContent>
+        {part.input !== undefined && <ToolInput input={part.input} />}
+
+        {part.approval && (
+          <Confirmation approval={part.approval} state={part.state}>
+            <ConfirmationRequest>
+              <Text className="text-xs">Approve this action?</Text>
+              <ConfirmationActions>
+                <ConfirmationAction
+                  onPress={() =>
+                    onApprovalResponse({
+                      id: part.approval!.id,
+                      approved: false,
+                    })
+                  }
+                  variant="outline"
+                >
+                  Reject
+                </ConfirmationAction>
+                <ConfirmationAction
+                  onPress={() =>
+                    onApprovalResponse({
+                      id: part.approval!.id,
+                      approved: true,
+                    })
+                  }
+                >
+                  Approve
+                </ConfirmationAction>
+              </ConfirmationActions>
+            </ConfirmationRequest>
+            <ConfirmationAccepted>
+              <View className="flex-row items-center gap-1">
+                <Check color={iconColor} size={12} />
+                <Text className="text-xs">Approved</Text>
+              </View>
+            </ConfirmationAccepted>
+            <ConfirmationRejected>
+              <View className="flex-row items-center gap-1">
+                <X color={mutedIconColor} size={12} />
+                <Text className="text-xs">Rejected</Text>
+              </View>
+            </ConfirmationRejected>
+          </Confirmation>
+        )}
+
+        <ToolOutput errorText={part.errorText} output={part.output} />
+      </ToolContent>
+    </Tool>
+  );
+}
+
 interface ChatMessageCardProps {
   isStreamingAssistant: boolean;
   message: UIMessage;
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
 }
 
 /**
- * Message renderer for text/reasoning/attachment parts.
+ * Message renderer using segment-based layout for correct
+ * interleaving of reasoning, text, and tool parts.
  */
 function ChatMessageCard({
   message,
   isStreamingAssistant,
+  onApprovalResponse,
 }: ChatMessageCardProps) {
   const colorScheme = useColorScheme();
   const attachments = useMemo(
     () => extractAttachments(message.id, message.parts),
     [message.id, message.parts]
   );
-  const reasoning = useMemo(
-    () => extractReasoning(message.parts),
+  const segments = useMemo(
+    () => buildMessageSegments(message.parts),
     [message.parts]
   );
-  const hasReasoning = useMemo(
-    () => hasReasoningPart(message.parts),
-    [message.parts]
-  );
-  const text = useMemo(() => extractText(message.parts), [message.parts]);
 
   return (
     <Message from={message.role}>
@@ -444,49 +463,69 @@ function ChatMessageCard({
           </Attachments>
         ) : null}
 
-        {message.role === "assistant" ? (
-          <ChainOfThought defaultOpen={isStreamingAssistant}>
-            {hasReasoning ? (
-              <ChainOfThoughtHeader>Reasoning</ChainOfThoughtHeader>
-            ) : null}
-            {hasReasoning && (reasoning.length > 0 || isStreamingAssistant) ? (
-              <ChainOfThoughtContent>
-                <ChainOfThoughtStep
-                  label={
-                    isStreamingAssistant ? "Reasoning (streaming)" : "Reasoning"
-                  }
-                  status={isStreamingAssistant ? "active" : "complete"}
-                >
-                  <MessageResponse className="w-full">
-                    <StreamdownRN
-                      // Reasoning can stream independently while the assistant response streams.
-                      isComplete={!isStreamingAssistant}
-                      style={{ flex: 0 }}
-                      theme={colorScheme}
-                    >
-                      {reasoning || "Thinking..."}
-                    </StreamdownRN>
-                  </MessageResponse>
-                </ChainOfThoughtStep>
-              </ChainOfThoughtContent>
-            ) : null}
-          </ChainOfThought>
-        ) : null}
+        {segments.map((segment, index) => {
+          if (segment.kind === "reasoning" && message.role === "assistant") {
+            const isLastSegment = index === segments.length - 1;
+            const isActive = isStreamingAssistant && isLastSegment;
+            const showContent = segment.text.length > 0 || isActive;
 
-        {text.length > 0 ? (
-          <MessageResponse
-            className={cn(message.role === "user" ? "bg-secondary" : "")}
-          >
-            <StreamdownRN
-              // Mark streaming completion so the renderer can finalize active blocks.
-              isComplete={!isStreamingAssistant}
-              style={{ flex: 0 }}
-              theme={colorScheme}
-            >
-              {text}
-            </StreamdownRN>
-          </MessageResponse>
-        ) : null}
+            return (
+              <ChainOfThought
+                defaultOpen={isActive}
+                key={`${message.id}-cot-${index}`}
+              >
+                <ChainOfThoughtHeader>Reasoning</ChainOfThoughtHeader>
+                {showContent ? (
+                  <ChainOfThoughtContent>
+                    <ChainOfThoughtStep
+                      label={isActive ? "Reasoning (streaming)" : "Reasoning"}
+                      status={isActive ? "active" : "complete"}
+                    >
+                      <MessageResponse className="w-full">
+                        <StreamdownRN
+                          isComplete={!isActive}
+                          style={{ flex: 0 }}
+                          theme={colorScheme}
+                        >
+                          {segment.text || "Thinking..."}
+                        </StreamdownRN>
+                      </MessageResponse>
+                    </ChainOfThoughtStep>
+                  </ChainOfThoughtContent>
+                ) : null}
+              </ChainOfThought>
+            );
+          }
+
+          if (segment.kind === "text") {
+            return (
+              <MessageResponse
+                className={cn(message.role === "user" ? "bg-secondary" : "")}
+                key={`${message.id}-text-${index}`}
+              >
+                <StreamdownRN
+                  isComplete={!isStreamingAssistant}
+                  style={{ flex: 0 }}
+                  theme={colorScheme}
+                >
+                  {segment.text}
+                </StreamdownRN>
+              </MessageResponse>
+            );
+          }
+
+          if (segment.kind === "tool") {
+            return (
+              <NativeToolInvocationPart
+                key={segment.part.toolCallId}
+                onApprovalResponse={onApprovalResponse}
+                part={segment.part}
+              />
+            );
+          }
+
+          return null;
+        })}
       </MessageContent>
     </Message>
   );
@@ -660,6 +699,7 @@ export default function ChatScreen() {
   );
 
   const {
+    addToolApprovalResponse,
     error,
     messages,
     resumeStream,
@@ -672,6 +712,7 @@ export default function ChatScreen() {
     experimental_throttle: 50,
     messages: persistedMessages,
     resume: shouldResumeStream,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
     onFinish: async () => {
       if (!activeSessionId) {
@@ -903,6 +944,7 @@ export default function ChatScreen() {
                     <ChatMessageCard
                       isStreamingAssistant={isStreamingAssistant}
                       message={item}
+                      onApprovalResponse={addToolApprovalResponse}
                     />
                   );
                 }}

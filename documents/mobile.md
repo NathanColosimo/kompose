@@ -2,7 +2,7 @@
 
 ## What we built (MVP)
 
-We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
+We implemented the initial mobile MVP inside `apps/native` with **four tabs**:
 
 - **Tasks tab**
   - Inbox-style list (non-done, non-scheduled tasks).
@@ -18,6 +18,14 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
   - Calendar visibility picker (per-account calendars, persisted).
   - Create / edit / delete **Google Calendar** timed events.
   - Tap-to-edit scheduled tasks (basic edit/delete from calendar).
+
+- **Chat tab**
+  - AI chat with streaming responses.
+  - Session management (create, switch sessions via header popover).
+  - Model selection (GPT-5, GPT-5 Mini).
+  - Chain-of-thought reasoning display.
+  - Tool calling with approval flow (approve/reject server-side actions).
+  - Image attachments.
 
 - **Settings tab**
   - Theme toggle (Light / Dark / System).
@@ -79,6 +87,9 @@ app/
     (calendar)/
       _layout.tsx          <- Stack (for headers)
       index.tsx            <- Calendar screen
+    (chat)/
+      _layout.tsx          <- Stack (for headers)
+      index.tsx            <- Chat screen
     (settings)/
       _layout.tsx          <- Stack (for headers)
       index.tsx            <- Settings screen
@@ -124,6 +135,27 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Layout: `apps/native/app/(tabs)/(calendar)/_layout.tsx`
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
+
+### Chat implementation
+
+- Layout: `apps/native/app/(tabs)/(chat)/_layout.tsx`
+- Screen: `apps/native/app/(tabs)/(chat)/index.tsx`
+  - Uses `useChat` from `@ai-sdk/react` with custom `ChatTransport` via oRPC.
+  - `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses`
+    ensures tool approvals trigger server-side execution.
+  - Segment-based message rendering (`buildMessageSegments`) correctly interleaves
+    reasoning, text, and tool parts.
+  - Data hook: `packages/state/src/hooks/use-ai-chat.ts` (imported via `@kompose/state/hooks`)
+- AI chat components live in `apps/native/components/ai-chat/`:
+  - `message.tsx` — Message, MessageContent, MessageResponse
+  - `chain-of-thought.tsx` — Collapsible reasoning display
+  - `tool.tsx` — Collapsible tool invocation (header, input, output)
+  - `confirmation.tsx` — Approval flow (request, accepted, rejected states)
+  - `prompt-input.tsx` — Composer with image attachments
+  - `attachments.tsx` — File attachment display
+  - `conversation.tsx` — Conversation container with scroll button
+  - `model-selector.tsx` — Model selection UI
+  - `context.tsx` — Context provider
 
 ### Settings + Theming
 

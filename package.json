@@ -94,5 +94,8 @@
       "@opentelemetry/semantic-conventions": "^1.33.0",
       "@orpc/otel": "^1.13.5"
     }
+  },
+  "dependencies": {
+    "vercel": "^50.23.2"
   }
 }

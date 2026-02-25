@@ -30,8 +30,12 @@ export default async function Page(props: {
       <DocsBody>
         <MDX
           components={getMDXComponents({
-            // Allow linking to other doc pages with relative file paths.
-            a: createRelativeLink(source, page),
+            // Fumadocs currently narrows `source.resolveHref` too aggressively in this generic.
+            // Runtime behavior is correct, so we widen to the helper's expected type here.
+            a: createRelativeLink(
+              source as unknown as Parameters<typeof createRelativeLink>[0],
+              page as unknown as Parameters<typeof createRelativeLink>[1]
+            ),
           })}
         />
       </DocsBody>

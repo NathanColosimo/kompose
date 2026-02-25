@@ -442,6 +442,54 @@ Wired tool invocation rendering and approval flow into the web sidebar chat:
   buttons, and code blocks to fit the narrow sidebar layout.
 
 Still pending:
-- Native tool/confirmation UI (`apps/native`)
 - `documents/ai-tools.md` architecture guide
+
+---
+
+## 19) Tool-calling rebuild — Phase 4 native tool UI
+
+Ported tool invocation rendering and approval flow from the web sidebar to
+the native (Expo) chat screen:
+
+- Created `apps/native/components/ai-chat/tool.tsx`:
+  - Collapsible `Tool` container (context + state pattern, same as `ChainOfThought`)
+  - `ToolHeader` with wrench icon, title, status `Badge`, and chevron toggle
+  - `ToolContent` (conditionally rendered children)
+  - `ToolInput` — formatted JSON in monospace text inside a muted ScrollView
+  - `ToolOutput` — result JSON or destructive error text
+  - No Shiki/CodeBlock on mobile; uses plain monospace `Text` for lightweight rendering
+- Created `apps/native/components/ai-chat/confirmation.tsx`:
+  - Context-based composable matching the web API: `Confirmation`,
+    `ConfirmationRequest`, `ConfirmationAccepted`, `ConfirmationRejected`,
+    `ConfirmationActions`, `ConfirmationAction`
+  - Uses existing `Alert` and `Button` components
+- Updated `apps/native/app/(tabs)/(chat)/index.tsx`:
+  - Replaced `extractReasoning`/`hasReasoningPart` with `buildMessageSegments`
+    for correct interleaving of reasoning, text, and tool parts
+  - Added `NativeToolInvocationPart` component rendering `Tool` + embedded
+    `Confirmation` + `ToolInput` + `ToolOutput`
+  - Wired `addToolApprovalResponse` from `useChat`
+  - Added `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses`
+    so approvals trigger server-side tool execution
+  - Added `formatToolName` helper
+
+---
+
+## 20) Canonical model context from persisted history
+
+`AiChatService.startStream` was using client-supplied `input.messages` for both
+the stream delta computation and the LLM model context. Client messages can be
+stale when another tab/device has added turns or the user sends before
+hydration finishes.
+
+- Added `dbRowToUiMessage` helper in `packages/ai/src/service.ts` to convert
+  persisted DB rows into `UIMessage` objects server-side.
+- `startStream` now builds canonical model context from the persisted DB
+  history (`repository.listMessages`) instead of the client cache:
+  - For new user messages: the just-persisted message is appended to the
+    canonical history.
+  - For approval round-trips: the last persisted assistant message is replaced
+    with the client's version (which carries transient approval-state deltas).
+- Client-supplied messages are still validated and used as `originalMessages`
+  for `toUIMessageStream` delta computation (must match the client's view).
 

@@ -1,4 +1,7 @@
-import type { CreateAiSessionInput } from "@kompose/db/schema/ai";
+import type {
+  AiMessageSelect,
+  CreateAiSessionInput,
+} from "@kompose/db/schema/ai";
 import {
   convertToModelMessages,
   generateText,
@@ -32,6 +35,24 @@ function getPersistedContent(
 ): string {
   const text = extractTextParts(parts);
   return text.length > 0 ? text : fallback;
+}
+
+/**
+ * Convert a persisted DB row into an AI SDK UIMessage.
+ * Used server-side to build canonical model context from storage.
+ */
+function dbRowToUiMessage(row: AiMessageSelect): UIMessage {
+  const parts =
+    Array.isArray(row.parts) && row.parts.length > 0
+      ? (row.parts as UIMessage["parts"])
+      : [{ type: "text" as const, text: row.content }];
+
+  const role: UIMessage["role"] =
+    row.role === "assistant" || row.role === "system" || row.role === "user"
+      ? row.role
+      : "assistant";
+
+  return { id: row.id, role, parts };
 }
 
 const MAX_SESSION_TITLE_LENGTH = 80;
@@ -273,10 +294,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         yield* Effect.annotateCurrentSpan("userId", input.userId);
         yield* Effect.annotateCurrentSpan("sessionId", input.sessionId);
 
-        const session = yield* repository.getSession(
-          input.userId,
-          input.sessionId
-        );
         const latestMessage = input.messages.at(-1);
         if (!latestMessage) {
           return yield* Effect.fail(
@@ -287,17 +304,20 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           );
         }
 
+        // Fetch session metadata and persisted messages in parallel —
+        // they are independent and each adds a full DB round-trip.
+        const [session, existingMessages] = yield* Effect.all(
+          [
+            repository.getSession(input.userId, input.sessionId),
+            repository.listMessages(input.sessionId),
+          ],
+          { concurrency: "unbounded" }
+        );
+
         const hasSessionTitle = (session.title ?? "").trim().length > 0;
         let shouldGenerateTitle = false;
         let firstMessageText: string | null = null;
         let systemPromptText = BASE_CHAT_SYSTEM_PROMPT;
-
-        // Always load persisted messages so we can read the system prompt for
-        // every round (including approval round-trips where the latest message
-        // is an assistant message, not a user message).
-        const existingMessages = yield* repository.listMessages(
-          input.sessionId
-        );
         const isFirstMessageForSession = existingMessages.length === 0;
         const persistedSystemMessage = existingMessages.find(
           (message) => message.role === "system"
@@ -355,6 +375,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           });
         }
 
+        // Validate client messages for the stream delta computation —
+        // toUIMessageStream needs originalMessages that match the client's
+        // local state so deltas merge correctly on the client side.
         const validatedMessages = yield* Effect.tryPromise({
           try: () => validateUIMessages({ messages: input.messages }),
           catch: (error) => {
@@ -371,6 +394,29 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           },
         });
 
+        // Build canonical model context from persisted history so the LLM
+        // always sees every turn, regardless of client cache staleness.
+        const canonicalMessages: UIMessage[] = existingMessages
+          .filter((row) => row.role !== "system")
+          .map(dbRowToUiMessage);
+
+        if (latestMessage.role === "user") {
+          // The user message was just persisted above but existingMessages
+          // was loaded before that — append it to the canonical history.
+          canonicalMessages.push(latestMessage);
+        } else if (latestMessage.role === "assistant") {
+          // Approval round-trip: the client's assistant message carries
+          // transient approval-state deltas that aren't persisted yet.
+          // Replace the last persisted assistant message with the client's
+          // version so the model knows which tools were approved/rejected.
+          const lastIdx = canonicalMessages.findLastIndex(
+            (m) => m.role === "assistant"
+          );
+          if (lastIdx >= 0) {
+            canonicalMessages[lastIdx] = latestMessage;
+          }
+        }
+
         const model = resolveChatModel(session.model ?? undefined);
         yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
         const messagesWithSystem: UIMessage[] = [
@@ -379,7 +425,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
             role: "system",
             parts: [{ type: "text", text: systemPromptText }],
           },
-          ...validatedMessages.filter((message) => message.role !== "system"),
+          ...canonicalMessages,
         ];
         const modelMessages = yield* Effect.tryPromise({
           try: () => convertToModelMessages(messagesWithSystem),
