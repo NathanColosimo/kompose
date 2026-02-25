@@ -19,10 +19,6 @@
     "submit:prod": {
       "cache": false
     },
-    "submit:prod:desktop": {
-      "dependsOn": ["build:prod:desktop"],
-      "cache": true
-    },
     "dev": {
       "cache": false,
       "persistent": true
