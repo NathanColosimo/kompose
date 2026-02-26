@@ -1,5 +1,6 @@
 "use client";
 
+import { GOOGLE_ACCOUNTS_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
@@ -107,12 +108,26 @@ export function DeepLinkHandler() {
         // Remember this token so we don't re-process it.
         markTokenProcessed(token);
 
-        // Invalidate all cached queries so the dashboard refetches with
-        // the freshly-stored bearer token.
-        await queryClient.invalidateQueries();
+        const isLinkMode = url.searchParams.get("mode") === "link";
 
-        toast.success("Signed in successfully.");
-        router.push("/dashboard");
+        if (isLinkMode) {
+          // Account linking: only refresh the accounts list, keep
+          // everything else cached. No navigation needed — the user
+          // is already on the settings page.
+          await queryClient.invalidateQueries({
+            queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ["google-account-info"],
+          });
+          toast.success("Google account linked.");
+        } else {
+          // Sign-in: invalidate everything so the dashboard refetches
+          // with the freshly-stored bearer token.
+          await queryClient.invalidateQueries();
+          toast.success("Signed in successfully.");
+          router.push("/dashboard");
+        }
       } catch (error) {
         console.error("[DeepLinkHandler] Error processing deep link:", error);
         toast.error("Something went wrong during sign-in.");

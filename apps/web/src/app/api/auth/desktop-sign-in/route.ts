@@ -1,5 +1,6 @@
 import { auth } from "@kompose/auth";
 import { env } from "@kompose/env";
+import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
 /**
@@ -29,41 +30,30 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Build the internal request to Better Auth.
     const baseUrl = env.NEXT_PUBLIC_WEB_URL;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    let endpoint: string;
-    let body: Record<string, unknown>;
 
     if (mode === "link" && linkToken) {
       // --- Account linking mode ---
-      // Verify and consume the one-time link token through auth.handler
-      // so Better Auth produces a proper Set-Cookie with the correctly
-      // formatted session cookie value.
-      const verifyResponse = await auth.handler(
-        new Request(`${baseUrl}/api/auth/one-time-token/verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: linkToken }),
-        })
-      );
-
-      if (!verifyResponse.ok) {
+      // Use direct API calls instead of auth.handler to avoid
+      // nextCookies() intercepting Set-Cookie headers and CSRF/session
+      // issues with synthetic Request objects.
+      // Verify the one-time token. This also calls setSessionCookie
+      // internally, and nextCookies() sets the signed cookie value via
+      // Next.js cookies() so we can read it back below.
+      try {
+        await auth.api.verifyOneTimeToken({
+          body: { token: linkToken },
+        });
+      } catch {
         return NextResponse.json(
           { error: "Invalid or expired link token" },
           { status: 401 }
         );
       }
 
-      // Extract the session cookie (name=value) from the verify response
-      // so we can forward it to the link-social endpoint.
-      const sessionCookie = verifyResponse.headers
-        .getSetCookie()
-        .find((c) => c.startsWith("kompose.session_token="));
-
+      // Read the signed session cookie that nextCookies() just set.
+      const cookieStore = await cookies();
+      const sessionCookie = cookieStore.get("kompose.session_token");
       if (!sessionCookie) {
         return NextResponse.json(
           { error: "Failed to recover session from link token" },
@@ -71,34 +61,62 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Forward just the name=value portion as a Cookie header.
-      headers.cookie = sessionCookie.split(";")[0];
-      endpoint = `${baseUrl}/api/auth/link-social`;
-      body = {
-        provider,
-        callbackURL: "/api/auth/desktop-callback",
-      };
-    } else {
-      // --- Sign-in mode ---
-      endpoint = `${baseUrl}/api/auth/sign-in/social`;
-      body = {
-        provider,
-        callbackURL: "/api/auth/desktop-callback",
-        errorCallbackURL: "/api/auth/desktop-callback",
-      };
+      const linkResponse = await auth.handler(
+        new Request(`${baseUrl}/api/auth/link-social`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            cookie: `${sessionCookie.name}=${sessionCookie.value}`,
+            origin: baseUrl,
+          },
+          body: JSON.stringify({
+            provider,
+            callbackURL: "/api/auth/desktop-callback?mode=link",
+          }),
+        })
+      );
+
+      const linkData = (await linkResponse.json().catch(() => null)) as {
+        url?: string;
+        redirect?: boolean;
+        code?: string;
+        message?: string;
+      } | null;
+
+      if (!linkData?.url) {
+        return NextResponse.json(
+          {
+            error: "Failed to initiate OAuth flow",
+            status: linkResponse.status,
+            detail: linkData,
+          },
+          { status: 500 }
+        );
+      }
+
+      // Forward OAuth state cookies from the internal response.
+      // nextCookies() also sets them via cookies(), but NextResponse.redirect
+      // doesn't merge cookies() into the response, so we forward manually.
+      const linkRedirect = NextResponse.redirect(linkData.url, 302);
+      for (const cookie of linkResponse.headers.getSetCookie()) {
+        linkRedirect.headers.append("Set-Cookie", cookie);
+      }
+      return linkRedirect;
     }
 
-    // Call Better Auth handler internally to get the OAuth redirect URL
-    // and the state cookies that must be forwarded to the browser.
+    // --- Sign-in mode ---
     const internalResponse = await auth.handler(
-      new Request(endpoint, {
+      new Request(`${baseUrl}/api/auth/sign-in/social`, {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          callbackURL: "/api/auth/desktop-callback",
+          errorCallbackURL: "/api/auth/desktop-callback",
+        }),
       })
     );
 
-    // Better Auth returns JSON { url, redirect: true } with Set-Cookie headers.
     const data = (await internalResponse.json()) as {
       url?: string;
       redirect?: boolean;
@@ -115,8 +133,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build a redirect response, forwarding all Set-Cookie headers from
-    // Better Auth (state cookie) so the browser can complete the OAuth flow.
+    // Forward Set-Cookie headers (OAuth state) so the browser can
+    // complete the sign-in flow.
     const redirectResponse = NextResponse.redirect(data.url, 302);
     for (const cookie of internalResponse.headers.getSetCookie()) {
       redirectResponse.headers.append("Set-Cookie", cookie);

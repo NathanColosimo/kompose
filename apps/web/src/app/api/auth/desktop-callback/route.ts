@@ -21,8 +21,12 @@ export async function GET(request: NextRequest) {
       headers: request.headers,
     });
 
-    // Build the deep link URL for the Tauri app.
-    const deepLinkUrl = `kompose://auth/callback?token=${data.token}`;
+    // Preserve the mode param so the Tauri deep link handler knows
+    // whether this was a sign-in or account-link operation.
+    const url = new URL(request.url);
+    const mode = url.searchParams.get("mode");
+    const modeParam = mode ? `&mode=${mode}` : "";
+    const deepLinkUrl = `kompose://auth/callback?token=${data.token}${modeParam}`;
 
     // Return an HTML page that auto-redirects to the deep link.
     return new Response(
