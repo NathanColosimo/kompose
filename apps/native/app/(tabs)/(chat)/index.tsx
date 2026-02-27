@@ -5,7 +5,7 @@ import {
   formatToolName,
   type ToolPart,
   toUiMessage,
-} from "@kompose/state/ai-message-utils";
+} from "@kompose/ai/ai-message-utils";
 import {
   AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
@@ -99,7 +99,6 @@ import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
 import { useColor } from "@/hooks/useColor";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { cn } from "@/lib/utils";
 
 type ChatModelId = "gpt-5" | "gpt-5-mini";
 
@@ -498,11 +497,18 @@ function ChatMessageCard({
           }
 
           if (segment.kind === "text") {
+            if (message.role === "user") {
+              return (
+                <MessageResponse
+                  className="bg-secondary"
+                  key={`${message.id}-text-${index}`}
+                >
+                  <Text>{segment.text}</Text>
+                </MessageResponse>
+              );
+            }
             return (
-              <MessageResponse
-                className={cn(message.role === "user" ? "bg-secondary" : "")}
-                key={`${message.id}-text-${index}`}
-              >
+              <MessageResponse key={`${message.id}-text-${index}`}>
                 <StreamdownRN
                   isComplete={!isStreamingAssistant}
                   style={{ flex: 0 }}
@@ -543,6 +549,8 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const autoCreateAttemptedRef = useRef(false);
   const localSubmitPendingRef = useRef(false);
+  const approvalPendingRef = useRef(false);
+  const prevStatusRef = useRef<string>("ready");
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
@@ -715,6 +723,7 @@ export default function ChatScreen() {
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
     onFinish: async () => {
+      approvalPendingRef.current = false;
       if (!activeSessionId) {
         return;
       }
@@ -726,6 +735,17 @@ export default function ChatScreen() {
       ]);
     },
   });
+
+  // Wrap addToolApprovalResponse so the rehydration effect doesn't
+  // overwrite the approval state before the auto-send microtask fires.
+  const handleApprovalResponse =
+    useCallback<ChatAddToolApproveResponseFunction>(
+      (response) => {
+        approvalPendingRef.current = true;
+        addToolApprovalResponse(response);
+      },
+      [addToolApprovalResponse]
+    );
 
   const visibleMessages = useMemo(
     () => messages.filter((message) => message.role !== "system"),
@@ -784,13 +804,28 @@ export default function ChatScreen() {
 
   // Rehydrate local chat state when switching sessions.
   useEffect(() => {
-    // A local send can briefly remain "ready" before useChat marks it
-    // submitted/streaming. Avoid rehydrating during that gap to prevent
-    // the optimistic first user message from disappearing.
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = status;
+
     if (localSubmitPendingRef.current) {
       return;
     }
     if (status === "streaming" || status === "submitted") {
+      approvalPendingRef.current = false;
+      return;
+    }
+    if (approvalPendingRef.current) {
+      approvalPendingRef.current = false;
+      return;
+    }
+    // When transitioning from streaming → ready, persistedMessages is still
+    // stale (onFinish query invalidation hasn't resolved yet). Skip this
+    // cycle to avoid flashing old data; the next run after queries settle
+    // will rehydrate with fresh data.
+    if (
+      (prevStatus === "streaming" || prevStatus === "submitted") &&
+      status === "ready"
+    ) {
       return;
     }
     setMessages(persistedMessages);
@@ -944,7 +979,7 @@ export default function ChatScreen() {
                     <ChatMessageCard
                       isStreamingAssistant={isStreamingAssistant}
                       message={item}
-                      onApprovalResponse={addToolApprovalResponse}
+                      onApprovalResponse={handleApprovalResponse}
                     />
                   );
                 }}

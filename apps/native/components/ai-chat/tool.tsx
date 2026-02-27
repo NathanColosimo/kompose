@@ -1,4 +1,4 @@
-import type { ToolPart } from "@kompose/state/ai-message-utils";
+import type { ToolPart } from "@kompose/ai/ai-message-utils";
 import {
   CheckCircle,
   ChevronDown,
@@ -21,8 +21,6 @@ const MONO_FONT = Platform.select({
   android: "monospace",
   default: "monospace",
 });
-
-export type { ToolPart };
 
 // ---------------------------------------------------------------------------
 // Collapsible context (mirrors ChainOfThought pattern)
@@ -80,6 +78,8 @@ function StatusIcon({ state }: { state: ToolPart["state"] }) {
       return <XCircle color={orange} size={STATUS_ICON_SIZE} />;
     case "output-error":
       return <XCircle color={red} size={STATUS_ICON_SIZE} />;
+    default:
+      return null;
   }
 }
 

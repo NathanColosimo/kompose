@@ -493,3 +493,52 @@ hydration finishes.
 - Client-supplied messages are still validated and used as `originalMessages`
   for `toUIMessageStream` delta computation (must match the client's view).
 
+---
+
+## 21) Approval-after-reload fix
+
+After a page reload the tool approval button did nothing. Root cause: the
+`useLayoutEffect` that rehydrates `useChat` from persisted messages ran
+synchronously after `addToolApprovalResponse` modified the internal state,
+overwriting the `approval-responded` state back to `approval-requested` before
+the AI SDK's auto-send microtask could fire.
+
+- Added `approvalPendingRef` in both web and native chat screens.
+- Wrapped `addToolApprovalResponse` in `handleApprovalResponse` which sets the
+  flag before delegating to the hook.
+- The rehydration effect skips one cycle when the flag is set, allowing the
+  auto-send microtask to fire and transition status to `submitted`/`streaming`.
+- The flag is cleared when status reaches `streaming`/`submitted`, or in
+  `onFinish`, or after the single skip.
+
+---
+
+## 22) Best-practices audit fixes
+
+- Parallelized `getSession` + `listMessages` in `AiChatService.startStream`
+  with `Effect.all` to eliminate a sequential DB waterfall.
+- Added `lucide-react` to `optimizePackageImports` in `next.config.mts` to
+  avoid barrel-import cold-start cost.
+- Removed unnecessary `async` wrappers on `onClick` handlers in web chat.
+- Replaced index-based keys for reasoning/text segments with
+  `${message.id}-cot-${index}` / `${message.id}-text-${index}` for stability.
+- Added `ai-sdk` to btca resources for source-first AI SDK research.
+- Deduplicated `extractTextParts` / `dbRowToUiMessage` from `@kompose/ai/service.ts`
+  by moving `ai-message-utils.ts` (types, `extractText`, `toUiMessage`, etc.) into
+  `@kompose/ai/src/ai-message-utils.ts` as the canonical home. Web and native imports
+  point directly to `@kompose/ai/ai-message-utils`; the old barrel in `@kompose/state`
+  was removed.
+
+---
+
+## 23) User message newlines & stream-end flash fix
+
+- **Newlines**: User text segments now render with `whitespace-pre-wrap` (web) /
+  plain `<Text>` (native) instead of through the Streamdown markdown renderer.
+  Single `\n` characters typed via Shift+Enter are now preserved visually.
+- **Flash fix**: Added `prevStatusRef` to the rehydration effect. When `status`
+  transitions from `streaming`/`submitted` → `ready`, the effect skips one cycle
+  because `persistedMessages` is still stale at that point (the `onFinish` query
+  invalidation hasn't resolved yet). The next run — triggered by the queries
+  settling with fresh data — rehydrates normally, eliminating the visible flash.
+

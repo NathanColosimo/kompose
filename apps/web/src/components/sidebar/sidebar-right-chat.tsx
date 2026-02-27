@@ -8,7 +8,7 @@ import {
   formatToolName,
   type ToolPart,
   toUiMessage,
-} from "@kompose/state/ai-message-utils";
+} from "@kompose/ai/ai-message-utils";
 import {
   AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
@@ -296,6 +296,16 @@ function SidebarChatMessage({
           }
 
           if (segment.kind === "text") {
+            if (message.role === "user") {
+              return (
+                <p
+                  className="whitespace-pre-wrap"
+                  key={`${message.id}-text-${index}`}
+                >
+                  {segment.text}
+                </p>
+              );
+            }
             return (
               <MessageResponse key={`${message.id}-text-${index}`}>
                 {segment.text}
@@ -326,6 +336,8 @@ export function SidebarRightChat() {
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const autoCreateAttemptedRef = useRef(false);
   const localSubmitPendingRef = useRef(false);
+  const approvalPendingRef = useRef(false);
+  const prevStatusRef = useRef<string>("ready");
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
@@ -507,6 +519,7 @@ export function SidebarRightChat() {
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
     onFinish: async () => {
+      approvalPendingRef.current = false;
       if (!activeSessionId) {
         return;
       }
@@ -518,6 +531,17 @@ export function SidebarRightChat() {
       ]);
     },
   });
+
+  // Wrap addToolApprovalResponse so the rehydration effect doesn't
+  // overwrite the approval state before the auto-send microtask fires.
+  const handleApprovalResponse =
+    useCallback<ChatAddToolApproveResponseFunction>(
+      (response) => {
+        approvalPendingRef.current = true;
+        addToolApprovalResponse(response);
+      },
+      [addToolApprovalResponse]
+    );
 
   const visibleMessages = useMemo(
     () => messages.filter((message) => message.role !== "system"),
@@ -577,13 +601,28 @@ export function SidebarRightChat() {
   // Rehydrate local stream state from persisted session messages before paint
   // to avoid visible top-to-bottom jumps during session switches.
   useLayoutEffect(() => {
-    // A local send can briefly remain "ready" before useChat marks it
-    // submitted/streaming. Avoid rehydrating during that gap to prevent
-    // the optimistic first user message from disappearing.
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = status;
+
     if (localSubmitPendingRef.current) {
       return;
     }
     if (status === "streaming" || status === "submitted") {
+      approvalPendingRef.current = false;
+      return;
+    }
+    if (approvalPendingRef.current) {
+      approvalPendingRef.current = false;
+      return;
+    }
+    // When transitioning from streaming → ready, persistedMessages is still
+    // stale (onFinish query invalidation hasn't resolved yet). Skip this
+    // cycle to avoid flashing old data; the next run after queries settle
+    // will rehydrate with fresh data.
+    if (
+      (prevStatus === "streaming" || prevStatus === "submitted") &&
+      status === "ready"
+    ) {
       return;
     }
     setMessages(persistedMessages);
@@ -715,7 +754,7 @@ export function SidebarRightChat() {
                     isStreamingAssistant={isStreamingAssistant}
                     key={message.id}
                     message={message}
-                    onApprovalResponse={addToolApprovalResponse}
+                    onApprovalResponse={handleApprovalResponse}
                   />
                 );
               })

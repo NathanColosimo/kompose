@@ -13,6 +13,12 @@
       "name": "effect",
       "url": "https://github.com/Effect-TS/effect",
       "branch": "main"
+    },
+    {
+      "type": "git",
+      "name": "ai-sdk",
+      "url": "https://github.com/vercel/ai",
+      "branch": "main"
     }
   ],
   "model": "gpt-5.1-codex-mini",

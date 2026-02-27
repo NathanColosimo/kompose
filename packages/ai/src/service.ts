@@ -1,7 +1,4 @@
-import type {
-  AiMessageSelect,
-  CreateAiSessionInput,
-} from "@kompose/db/schema/ai";
+import type { CreateAiSessionInput } from "@kompose/db/schema/ai";
 import {
   convertToModelMessages,
   generateText,
@@ -14,45 +11,18 @@ import {
   validateUIMessages,
 } from "ai";
 import { Effect } from "effect";
+import { extractText, toUiMessage } from "./ai-message-utils";
 import { AiChatError } from "./errors";
 import { resolveChatModel } from "./model";
 import { BASE_CHAT_SYSTEM_PROMPT, buildChatSystemPrompt } from "./prompt";
 import { AiChatRepository } from "./repository";
 
-function extractTextParts(parts: UIMessage["parts"]): string {
-  return parts
-    .filter((part): part is Extract<typeof part, { type: "text" }> => {
-      return part.type === "text" && typeof part.text === "string";
-    })
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
-}
-
 function getPersistedContent(
   parts: UIMessage["parts"],
   fallback: string
 ): string {
-  const text = extractTextParts(parts);
+  const text = extractText(parts);
   return text.length > 0 ? text : fallback;
-}
-
-/**
- * Convert a persisted DB row into an AI SDK UIMessage.
- * Used server-side to build canonical model context from storage.
- */
-function dbRowToUiMessage(row: AiMessageSelect): UIMessage {
-  const parts =
-    Array.isArray(row.parts) && row.parts.length > 0
-      ? (row.parts as UIMessage["parts"])
-      : [{ type: "text" as const, text: row.content }];
-
-  const role: UIMessage["role"] =
-    row.role === "assistant" || row.role === "system" || row.role === "user"
-      ? row.role
-      : "assistant";
-
-  return { id: row.id, role, parts };
 }
 
 const MAX_SESSION_TITLE_LENGTH = 80;
@@ -355,7 +325,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
             });
           }
 
-          const userText = extractTextParts(latestMessage.parts);
+          const userText = extractText(latestMessage.parts);
           shouldGenerateTitle =
             !hasSessionTitle &&
             isFirstMessageForSession &&
@@ -398,7 +368,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         // always sees every turn, regardless of client cache staleness.
         const canonicalMessages: UIMessage[] = existingMessages
           .filter((row) => row.role !== "system")
-          .map(dbRowToUiMessage);
+          .map(toUiMessage);
 
         if (latestMessage.role === "user") {
           // The user message was just persisted above but existingMessages
@@ -442,6 +412,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           model,
           messages: modelMessages,
           stopWhen: stepCountIs(20),
+          temperature: 0.8,
           tools: input.tools,
           abortSignal: input.abortSignal,
           providerOptions: {

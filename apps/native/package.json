@@ -21,6 +21,7 @@
     "@better-auth/expo": "catalog:",
     "@expo/metro-runtime": "~55.0.6",
     "@expo/vector-icons": "^15.0.2",
+    "@kompose/ai": "workspace:*",
     "@kompose/api": "workspace:*",
     "@kompose/auth": "workspace:*",
     "@kompose/google-cal": "workspace:*",

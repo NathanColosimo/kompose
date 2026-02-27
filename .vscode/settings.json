@@ -35,5 +35,6 @@
   "files.associations": {
     "*.css": "tailwindcss",
     "*.scss": "tailwindcss"
-  }
+  },
+  "vsicons.presets.nestjs": true
 }

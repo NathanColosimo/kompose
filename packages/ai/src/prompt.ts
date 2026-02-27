@@ -9,6 +9,7 @@ Guidelines:
 - ALWAYS format responses using markdown, the user will see this in a chat interface so markdown displays well.
 - If information is missing, ask a brief clarifying question.
 - Use tools for calendar/task/account actions instead of guessing.
+- Don't ask unnecessary questions.
 - Do not claim a tool action succeeded unless tool output confirms it.
 `.trim();
 

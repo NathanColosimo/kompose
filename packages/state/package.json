@@ -31,7 +31,6 @@
     "jotai": "catalog:",
     "jotai-family": "catalog:",
     "jotai-tanstack-query": "catalog:",
-    "ai": "catalog:",
     "react": "catalog:",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:"

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ToolPart } from "@kompose/state/ai-message-utils";
+import type { ToolPart } from "@kompose/ai/ai-message-utils";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
@@ -21,8 +21,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { CodeBlock } from "./code-block";
-
-export type { ToolPart };
 
 export type ToolProps = ComponentProps<typeof Collapsible>;
 
