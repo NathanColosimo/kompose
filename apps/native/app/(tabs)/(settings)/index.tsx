@@ -115,7 +115,7 @@ export default function SettingsScreen() {
                 disabled={isLinking}
                 onPress={handleLinkAnotherGoogleAccount}
               >
-                <Text>
+                <Text className="text-primary-foreground">
                   {isLinking ? "Linking…" : "Link another Google account"}
                 </Text>
               </Button>
@@ -220,7 +220,7 @@ export default function SettingsScreen() {
                 }}
                 variant="destructive"
               >
-                <Text>Sign Out</Text>
+                <Text className="text-destructive-foreground">Sign Out</Text>
               </Button>
             </CardContent>
           </Card>

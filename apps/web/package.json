@@ -14,7 +14,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build --bundles dmg",
     "desktop:build:unsigned": "bunx tauri build --no-sign --bundles dmg --target aarch64-apple-darwin",
-    "desktop:build:signed": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles app,dmg --target aarch64-apple-darwin",
+    "desktop:build:signed": "set -a && . ./.tauri.env && set +a && (hdiutil info 2>/dev/null | grep -B20 kompose | grep -oE '/dev/disk[0-9]+$' | sort -u | xargs -I{} hdiutil detach {} -force 2>/dev/null; rm -f src-tauri/target/aarch64-apple-darwin/release/bundle/macos/rw.*.dmg 2>/dev/null; true) && bunx tauri build --bundles app,dmg --target aarch64-apple-darwin",
     "desktop:build:signed:universal": "set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target universal-apple-darwin",
     "desktop:build:signed:no-notary": "set -a && . ./.tauri.env && set +a && unset APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH && bunx tauri build --bundles app,dmg --target aarch64-apple-darwin",
     "desktop:build:check-submission": "set -a; . ./.tauri.env; set +a && xcrun notarytool history --key \"$APPLE_API_KEY_PATH\" --key-id \"$APPLE_API_KEY\" --issuer \"$APPLE_API_ISSUER\"",

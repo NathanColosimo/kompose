@@ -1,5 +1,6 @@
 import { Stack } from "expo-router/stack";
 import { useColor } from "@/hooks/useColor";
+import { useColorScheme } from "@/lib/color-scheme-context";
 
 /**
  * Stack layout for the Settings tab.
@@ -7,12 +8,15 @@ import { useColor } from "@/hooks/useColor";
  */
 export default function SettingsLayout() {
   const textColor = useColor("text");
+  const { isDarkColorScheme } = useColorScheme();
 
   return (
     <Stack
       screenOptions={{
         headerTransparent: true,
-        headerBlurEffect: "systemMaterial",
+        headerBlurEffect: isDarkColorScheme
+          ? "systemMaterialDark"
+          : "systemMaterial",
         headerShadowVisible: false,
         headerBackButtonDisplayMode: "minimal",
         headerTintColor: textColor,

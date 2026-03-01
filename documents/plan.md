@@ -72,8 +72,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - TanStack Query (React Query) on the client
   - oRPC client for typed RPC calls to Next API endpoints.
 - **UI Layer**:
-  - React + TailwindCSS (Tailwind v4 with oklch color system)
-  - Typography: Libre Baskerville (serif), Lora (serif display), IBM Plex Mono (monospace)
+  - React + TailwindCSS (Tailwind v4 with warm HSL color palette)
+  - Typography: Sentient (Fontshare, serif — used as primary body and display font), JetBrains Mono (monospace)
   - Component library: shadcn/ui (Radix-based primitives).
   - Drag-and-drop: React DnD or `@dnd-kit/core` for dragging tasks onto calendar slots.
 - **Layout**:

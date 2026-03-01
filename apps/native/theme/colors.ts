@@ -3,20 +3,20 @@ import { THEME } from "@/lib/theme";
 
 export const Fonts = Platform.select({
   ios: {
-    sans: "system-ui",
-    serif: "ui-serif",
+    sans: "Sentient-Regular",
+    serif: "Sentient-Italic",
     rounded: "ui-rounded",
     mono: "ui-monospace",
   },
   default: {
-    sans: "normal",
-    serif: "serif",
+    sans: "Sentient-Regular",
+    serif: "Sentient-Italic",
     rounded: "normal",
     mono: "monospace",
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
+    sans: "'Sentient', serif",
+    serif: "'Sentient', serif",
     rounded: "'SF Pro Rounded', sans-serif",
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, monospace",
   },

@@ -6,7 +6,7 @@ import type { Account } from "better-auth";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
+import { ActivityIndicator, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SignIn } from "@/components/sign-in";
 import { Text } from "@/components/ui/text";
@@ -54,30 +54,19 @@ function RootLayoutContent() {
   // Show sign-in screen when not authenticated
   if (!session?.user) {
     return (
-      <View className="flex-1 bg-background">
+      <View className="flex-1 items-center justify-center bg-background p-6">
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: "center",
-            padding: 24,
-          }}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-        >
-          <View className="gap-6">
-            <View className="items-center gap-2">
-              <Text className="font-bold text-2xl text-foreground">
-                Welcome to Kompose
-              </Text>
-              <Text className="text-center text-muted-foreground">
-                Sign in to access your calendar and tasks
-              </Text>
-            </View>
-            <SignIn />
+        <View className="gap-6">
+          <View className="items-center gap-2">
+            <Text className="font-bold text-2xl text-foreground">
+              Welcome to Kompose
+            </Text>
+            <Text className="text-center text-muted-foreground">
+              Sign in to access your calendar and tasks
+            </Text>
           </View>
-        </ScrollView>
+          <SignIn />
+        </View>
       </View>
     );
   }
