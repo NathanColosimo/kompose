@@ -206,6 +206,8 @@ export type ReasoningContentProps = ComponentProps<
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+/** Type assertion: streamdown and @streamdown/code use different shiki versions (3.23 vs 3.22);
+ * BundledLanguage differs ("bird" added in 3.23). Runtime is compatible. */
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
@@ -216,7 +218,12 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown plugins={streamdownPlugins} {...props}>
+      <Streamdown
+        plugins={
+          streamdownPlugins as Parameters<typeof Streamdown>[0]["plugins"]
+        }
+        {...props}
+      >
         {children}
       </Streamdown>
     </CollapsibleContent>

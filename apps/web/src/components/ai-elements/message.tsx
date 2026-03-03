@@ -320,6 +320,8 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+/** Type assertion: streamdown and @streamdown/code use different shiki versions (3.23 vs 3.22);
+ * BundledLanguage differs ("bird" added in 3.23). Runtime is compatible. */
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
@@ -327,7 +329,7 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
-      plugins={streamdownPlugins}
+      plugins={streamdownPlugins as Parameters<typeof Streamdown>[0]["plugins"]}
       {...props}
     />
   ),

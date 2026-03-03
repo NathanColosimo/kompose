@@ -35,6 +35,8 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
+gh auth switch --user nathancolosimo 2>/dev/null || true
+
 if [[ ! -f "$TAURI_CONFIG" ]]; then
   echo "Error: Tauri config not found at $TAURI_CONFIG"
   exit 1
