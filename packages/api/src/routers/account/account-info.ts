@@ -1,13 +1,9 @@
 import { auth } from "@kompose/auth";
 import { getGoogleUserInfo } from "@kompose/google-cal";
-
-export interface LinkedAccountRecord {
-  id: string;
-  providerId: string;
-}
+import type { Account } from "better-auth";
 
 export async function getAccountInfo(input: {
-  account: LinkedAccountRecord;
+  account: Account;
   userId: string;
 }): Promise<{ email: string; name: string }> {
   if (input.account.providerId === "google") {
@@ -15,7 +11,7 @@ export async function getAccountInfo(input: {
       const { accessToken } = await auth.api.getAccessToken({
         body: {
           providerId: "google",
-          accountId: input.account.id,
+          accountId: input.account.accountId,
           userId: input.userId,
         },
       });

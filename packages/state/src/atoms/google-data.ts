@@ -76,7 +76,7 @@ const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
 export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
   const accounts = get(googleAccountsDataAtom);
   return accounts.flatMap((account) => {
-    const query = get(googleCalendarsAtomFamily(account.id));
+    const query = get(googleCalendarsAtomFamily(account.accountId));
     return query.data ?? [];
   });
 });

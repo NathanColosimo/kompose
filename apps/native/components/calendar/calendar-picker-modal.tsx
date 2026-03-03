@@ -56,7 +56,7 @@ export function CalendarPickerModal({
   const calendarsByAccount = useMemo(() => {
     const map = new Map<string, CalendarWithSource[]>();
     for (const account of googleAccounts) {
-      map.set(account.id, []);
+      map.set(account.accountId, []);
     }
     for (const cal of googleCalendars) {
       const bucket = map.get(cal.accountId);
@@ -82,7 +82,7 @@ export function CalendarPickerModal({
       { profile: OAuth2UserInfo | null; isLoading: boolean }
     >();
     for (const accountProfile of googleAccountProfiles) {
-      map.set(accountProfile.account.id, {
+      map.set(accountProfile.account.accountId, {
         profile: accountProfile.profile,
         isLoading: accountProfile.isLoading,
       });
@@ -115,8 +115,9 @@ export function CalendarPickerModal({
           </Text>
         ) : (
           googleAccounts.map((account) => {
-            const accountCalendars = calendarsByAccount.get(account.id) ?? [];
-            const accountProfile = accountProfilesById.get(account.id);
+            const accountCalendars =
+              calendarsByAccount.get(account.accountId) ?? [];
+            const accountProfile = accountProfilesById.get(account.accountId);
 
             return (
               <CalendarAccountSection
@@ -125,7 +126,7 @@ export function CalendarPickerModal({
                 allCalendarIds={allCalendarIds}
                 borderColor={borderColor}
                 isProfileLoading={accountProfile?.isLoading ?? false}
-                key={account.id}
+                key={account.accountId}
                 primaryColor={primaryColor}
                 primaryForegroundColor={primaryForegroundColor}
                 profile={accountProfile?.profile}
@@ -168,7 +169,7 @@ function CalendarAccountSection({
   isProfileLoading,
 }: CalendarAccountSectionProps) {
   const normalizedPalette = useAtomValue(
-    normalizedGoogleColorsAtomFamily(account.id)
+    normalizedGoogleColorsAtomFamily(account.accountId)
   );
 
   const accountTitle = isProfileLoading
@@ -207,7 +208,7 @@ function CalendarAccountSection({
         accountCalendars.map(({ calendar }) => {
           const checked = isCalendarVisible(
             visibleCalendars,
-            account.id,
+            account.accountId,
             calendar.id
           );
           const paletteColor =
@@ -220,12 +221,12 @@ function CalendarAccountSection({
           return (
             <Pressable
               className="mb-2 flex-row items-center gap-2.5 rounded-md border border-border px-3 py-2.5 active:bg-card"
-              key={`${account.id}-${calendar.id}`}
+              key={`${account.accountId}-${calendar.id}`}
               onPress={() =>
                 setVisibleCalendars((prev) => {
                   const base = prev ?? allCalendarIds;
                   return toggleCalendarSelection(base, {
-                    accountId: account.id,
+                    accountId: account.accountId,
                     calendarId: calendar.id,
                   });
                 })

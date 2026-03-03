@@ -27,10 +27,7 @@ export const accountRouter = os.router({
   list: os.list.handler(async ({ context }) => {
     try {
       const accounts = await db
-        .select({
-          id: accountTable.id,
-          providerId: accountTable.providerId,
-        })
+        .select()
         .from(accountTable)
         .where(eq(accountTable.userId, context.user.id));
 

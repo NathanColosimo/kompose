@@ -111,7 +111,7 @@ export function GoogleAccountsDropdown({
   const calendarsByAccount = useMemo(() => {
     const grouped = new Map<string, CalendarWithSource[]>();
     for (const account of googleAccounts) {
-      grouped.set(account.id, []);
+      grouped.set(account.accountId, []);
     }
     for (const calendar of googleCalendars) {
       const accountCalendars = grouped.get(calendar.accountId);
@@ -167,10 +167,10 @@ export function GoogleAccountsDropdown({
         {accountsWithInfo.map((account, accountIndex) => (
           <AccountCalendarsSection
             account={account}
-            calendars={calendarsByAccount.get(account.id) ?? []}
+            calendars={calendarsByAccount.get(account.accountId) ?? []}
             isCalendarVisible={isCalendarVisible}
             isLastAccount={accountIndex === accountsWithInfo.length - 1}
-            key={account.id}
+            key={account.accountId}
             toggleCalendar={toggleCalendar}
           />
         ))}
@@ -195,7 +195,7 @@ function AccountCalendarsSection({
   isLastAccount,
 }: AccountCalendarsSectionProps) {
   const normalizedPalette = useAtomValue(
-    normalizedGoogleColorsAtomFamily(account.id)
+    normalizedGoogleColorsAtomFamily(account.accountId)
   );
 
   const calendarItems = useMemo(
@@ -214,11 +214,11 @@ function AccountCalendarsSection({
 
         return (
           <DropdownMenuCheckboxItem
-            checked={isCalendarVisible(account.id, calendar.calendar.id)}
+            checked={isCalendarVisible(account.accountId, calendar.calendar.id)}
             className="cursor-pointer"
-            key={`${account.id}-${calendar.calendar.id}`}
+            key={`${account.accountId}-${calendar.calendar.id}`}
             onCheckedChange={() =>
-              toggleCalendar(account.id, calendar.calendar.id)
+              toggleCalendar(account.accountId, calendar.calendar.id)
             }
             onSelect={(event) => event.preventDefault()}
           >
@@ -231,7 +231,7 @@ function AccountCalendarsSection({
         );
       }),
     [
-      account.id,
+      account.accountId,
       calendars,
       isCalendarVisible,
       toggleCalendar,
