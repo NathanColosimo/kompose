@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { cn } from "@/lib/utils";
 
 const ModelSelectorContext = createContext<{

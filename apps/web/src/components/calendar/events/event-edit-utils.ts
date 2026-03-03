@@ -4,16 +4,13 @@ import {
   type EventRecurrenceFrequency,
   GOOGLE_EVENT_WEEKDAYS,
   parseGoogleEventRecurrenceRule,
-  untilInputToRule,
-  untilRuleToInput,
 } from "@kompose/state/google-event-recurrence";
+
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
 
 export type Frequency = EventRecurrenceFrequency;
 export type RecurrenceEnd = EventRecurrenceEnd;
 export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
-
-export { untilInputToRule, untilRuleToInput };
 
 export function parseRecurrence(rule?: string): {
   freq: Frequency;

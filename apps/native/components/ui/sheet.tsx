@@ -20,7 +20,7 @@ import Animated, {
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS, FONT_SIZE } from "@/theme/globals";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");

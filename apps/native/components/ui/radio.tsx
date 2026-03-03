@@ -5,7 +5,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Text } from "@/components/ui/text";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS, CORNERS, FONT_SIZE } from "@/theme/globals";
 
 export interface RadioOption {

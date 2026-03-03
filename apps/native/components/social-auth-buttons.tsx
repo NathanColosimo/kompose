@@ -61,7 +61,6 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
           ...(mode === "sign-up" ? { newUserCallbackURL: callbackURL } : {}),
         },
         {
-          // biome-ignore lint/suspicious/noExplicitAny: Error handling
           onError(err: unknown) {
             setError(
               err instanceof Error

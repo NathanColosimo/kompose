@@ -10,6 +10,10 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
+  untilInputToRule,
+  untilRuleToInput,
+} from "@kompose/state/google-event-recurrence";
+import {
   type CreateGoogleEventInput,
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -93,8 +97,6 @@ import {
   type Frequency,
   parseRecurrence,
   type RecurrenceEnd,
-  untilInputToRule,
-  untilRuleToInput,
   WEEKDAYS,
 } from "./event-edit-utils";
 
@@ -1238,28 +1240,36 @@ function EventEditForm({
         <Label className="font-medium text-muted-foreground text-xs">
           Meeting
         </Label>
-        {meetingLink ? (
-          <Button asChild size="sm" type="button" variant="outline">
-            <a href={meetingLink.url} rel="noreferrer" target="_blank">
+        {(() => {
+          if (meetingLink) {
+            return (
+              <Button asChild size="sm" type="button" variant="outline">
+                <a href={meetingLink.url} rel="noreferrer" target="_blank">
+                  <Video className="h-3 w-3" />
+                  Join {meetingLink.label}
+                </a>
+              </Button>
+            );
+          }
+          if (isConferencePending) {
+            return (
+              <div className="text-muted-foreground text-xs">
+                Google Meet will be created when you save.
+              </div>
+            );
+          }
+          return (
+            <Button
+              onClick={handleCreateMeeting}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
               <Video className="h-3 w-3" />
-              Join {meetingLink.label}
-            </a>
-          </Button>
-        ) : isConferencePending ? (
-          <div className="text-muted-foreground text-xs">
-            Google Meet will be created when you save.
-          </div>
-        ) : (
-          <Button
-            onClick={handleCreateMeeting}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Video className="h-3 w-3" />
-            Add Google Meet
-          </Button>
-        )}
+              Add Google Meet
+            </Button>
+          );
+        })()}
       </div>
 
       <div className="space-y-2">

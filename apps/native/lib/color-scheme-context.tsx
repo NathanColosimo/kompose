@@ -78,11 +78,14 @@ export function useColorScheme() {
 
   // Keep UI state in sync if theme changes outside this hook.
   useEffect(() => {
-    const nextPreference: ColorSchemePreference = hasAdaptiveThemes
-      ? "system"
-      : theme === "dark"
-        ? "dark"
-        : "light";
+    let nextPreference: ColorSchemePreference;
+    if (hasAdaptiveThemes) {
+      nextPreference = "system";
+    } else if (theme === "dark") {
+      nextPreference = "dark";
+    } else {
+      nextPreference = "light";
+    }
     setUserPreference((current) =>
       current === nextPreference ? current : nextPreference
     );

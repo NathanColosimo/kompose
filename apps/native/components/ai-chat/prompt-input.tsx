@@ -18,7 +18,7 @@ import {
 import { Pressable, TextInput } from "react-native";
 import { uuidv7 } from "uuidv7";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { cn } from "@/lib/utils";
 
 type PromptInputFile = FileUIPart & { id: string };

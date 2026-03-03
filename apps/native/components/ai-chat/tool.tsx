@@ -13,7 +13,7 @@ import { Platform, Pressable, ScrollView } from "react-native";
 import { Badge } from "@/components/ui/badge";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { cn } from "@/lib/utils";
 
 const MONO_FONT = Platform.select({
@@ -220,12 +220,14 @@ export function ToolOutput({ output, errorText, className }: ToolOutputProps) {
     return null;
   }
 
-  const displayText =
-    typeof output === "object" && output !== null
-      ? JSON.stringify(output, null, 2)
-      : typeof output === "string"
-        ? output
-        : String(output ?? "");
+  let displayText: string;
+  if (typeof output === "object" && output !== null) {
+    displayText = JSON.stringify(output, null, 2);
+  } else if (typeof output === "string") {
+    displayText = output;
+  } else {
+    displayText = String(output ?? "");
+  }
 
   return (
     <View className={cn("gap-1", className)}>

@@ -179,6 +179,7 @@ export const ModelSelectorLogo = ({
   className,
   ...props
 }: ModelSelectorLogoProps) => (
+  // biome-ignore lint/performance/noImgElement: external dynamic provider logo URL
   <img
     {...props}
     alt={`${provider} logo`}

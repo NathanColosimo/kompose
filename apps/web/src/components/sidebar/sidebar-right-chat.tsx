@@ -195,7 +195,7 @@ function ToolInvocationPart({
                 <ConfirmationAction
                   onClick={() =>
                     onApprovalResponse({
-                      id: part.approval!.id,
+                      id: part.approval?.id ?? "",
                       approved: false,
                     })
                   }
@@ -206,7 +206,7 @@ function ToolInvocationPart({
                 <ConfirmationAction
                   onClick={() =>
                     onApprovalResponse({
-                      id: part.approval!.id,
+                      id: part.approval?.id ?? "",
                       approved: true,
                     })
                   }

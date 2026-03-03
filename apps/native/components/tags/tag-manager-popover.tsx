@@ -10,7 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { RadioButton } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { type TagIconName, tagIconMap } from "./tag-icon-map";
 import { TagIconPicker } from "./tag-icon-picker";
 

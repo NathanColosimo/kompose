@@ -73,11 +73,14 @@ export function getTaskRecurrenceEditorState(
   value: TaskRecurrence | null,
   referenceDate?: Temporal.PlainDate | null
 ): TaskRecurrenceEditorState {
-  const endType: TaskRecurrenceEndType = value?.until
-    ? "until"
-    : value?.count
-      ? "count"
-      : "never";
+  let endType: TaskRecurrenceEndType;
+  if (value?.until) {
+    endType = "until";
+  } else if (value?.count) {
+    endType = "count";
+  } else {
+    endType = "never";
+  }
 
   return {
     freq: (value?.freq ?? "WEEKLY") as TaskRecurrenceFrequency,

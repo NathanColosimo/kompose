@@ -12,7 +12,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 interface SearchBarProps extends Omit<TextInputProps, "style"> {

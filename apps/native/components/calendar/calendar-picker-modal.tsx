@@ -14,7 +14,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 
 interface CalendarPickerModalProps {
   googleAccounts: Account[];
@@ -27,10 +27,10 @@ interface CalendarPickerModalProps {
   visibleCalendars: VisibleCalendars;
 }
 
-type CalendarId = {
+interface CalendarId {
   accountId: string;
   calendarId: string;
-};
+}
 
 /**
  * Calendar visibility picker for mobile.
@@ -178,11 +178,14 @@ function CalendarAccountSection({
       account.accountId ??
       "Google account");
 
-  const accountSubtitle = isProfileLoading
-    ? null
-    : profile?.name && profile.name !== profile.email
-      ? profile.name
-      : account.accountId;
+  let accountSubtitle: string | null;
+  if (isProfileLoading) {
+    accountSubtitle = null;
+  } else if (profile?.name && profile.name !== profile.email) {
+    accountSubtitle = profile.name;
+  } else {
+    accountSubtitle = account.accountId;
+  }
 
   return (
     <View className="mb-4">

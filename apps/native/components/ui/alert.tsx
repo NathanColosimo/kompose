@@ -4,7 +4,7 @@ import { Alert as RNAlert, type TextStyle, type ViewStyle } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS } from "@/theme/globals";
 
 type AlertVariant = "default" | "destructive";

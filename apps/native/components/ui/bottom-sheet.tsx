@@ -20,7 +20,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS } from "@/theme/globals";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");

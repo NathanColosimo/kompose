@@ -21,7 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 
 export type AlertDialogProps = {
   isVisible: boolean;

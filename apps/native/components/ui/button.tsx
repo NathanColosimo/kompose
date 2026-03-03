@@ -17,7 +17,7 @@ import Animated, {
 import { Icon } from "@/components/ui/icon";
 import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 export type ButtonVariant =

@@ -239,462 +239,448 @@ export function TaskEditorSheet({
   };
 
   return (
-    <>
-      <BottomSheet
-        headerRight={
-          <View className="flex-row items-center gap-2">
-            {mode === "edit" && onDelete ? (
-              <Button
-                onPress={onDelete}
-                size="icon"
-                style={{ borderRadius: 999 }}
-                variant="ghost"
-              >
-                <Icon as={Trash2} className="text-red-500" size={18} />
-              </Button>
-            ) : null}
+    <BottomSheet
+      headerRight={
+        <View className="flex-row items-center gap-2">
+          {mode === "edit" && onDelete ? (
             <Button
-              disabled={!canSave}
-              onPress={onSave}
+              onPress={onDelete}
               size="icon"
               style={{ borderRadius: 999 }}
               variant="ghost"
             >
-              <Icon
-                as={Check}
-                className={canSave ? "text-green-500" : "text-muted-foreground"}
-                size={18}
-              />
+              <Icon as={Trash2} className="text-red-500" size={18} />
             </Button>
-          </View>
-        }
-        isVisible={isVisible}
-        onClose={handleClose}
-        snapPoints={snapPoints}
-        title={title ?? (mode === "edit" ? "Edit task" : "New task")}
-      >
-        <View className="mb-3 flex-row items-center gap-1.5">
-          <View style={{ width: 86 }}>
-            <Picker
-              inputStyle={{ textAlign: "center" }}
-              modalTitle="Duration"
-              onValueChange={(value) => {
-                const nextMinutes = Number.parseInt(value, 10);
-                if (!Number.isFinite(nextMinutes)) {
-                  return;
-                }
-                setDraft((current) => ({
-                  ...current,
-                  durationMinutes: nextMinutes,
-                }));
-              }}
-              options={durationOptions}
-              placeholder="Duration"
-              showChevron={false}
-              style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 0 }}
-              value={String(draft.durationMinutes)}
-              variant="outline"
+          ) : null}
+          <Button
+            disabled={!canSave}
+            onPress={onSave}
+            size="icon"
+            style={{ borderRadius: 999 }}
+            variant="ghost"
+          >
+            <Icon
+              as={Check}
+              className={canSave ? "text-green-500" : "text-muted-foreground"}
+              size={18}
             />
-          </View>
+          </Button>
+        </View>
+      }
+      isVisible={isVisible}
+      onClose={handleClose}
+      snapPoints={snapPoints}
+      title={title ?? (mode === "edit" ? "Edit task" : "New task")}
+    >
+      <View className="mb-3 flex-row items-center gap-1.5">
+        <View style={{ width: 86 }}>
+          <Picker
+            inputStyle={{ textAlign: "center" }}
+            modalTitle="Duration"
+            onValueChange={(value) => {
+              const nextMinutes = Number.parseInt(value, 10);
+              if (!Number.isFinite(nextMinutes)) {
+                return;
+              }
+              setDraft((current) => ({
+                ...current,
+                durationMinutes: nextMinutes,
+              }));
+            }}
+            options={durationOptions}
+            placeholder="Duration"
+            showChevron={false}
+            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 0 }}
+            value={String(draft.durationMinutes)}
+            variant="outline"
+          />
+        </View>
 
-          <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-            <View className="min-w-0 flex-1">
-              <DatePicker
-                displayValue={
-                  draft.startDate
-                    ? formatPlainDateShort(draft.startDate)
-                    : "Start"
-                }
-                mode="date"
-                onChange={(date) =>
-                  setDraft((current) => ({
-                    ...current,
-                    startDate: date ? dateToPlainDate(date, timeZone) : null,
-                    startTime: date ? current.startTime : null,
-                  }))
-                }
-                placeholder="Start"
-                showIcon={false}
-                style={{
-                  borderRadius: 999,
-                  minHeight: 38,
-                  paddingHorizontal: 4,
-                }}
-                value={
-                  draft.startDate ? plainDateToDate(draft.startDate) : undefined
-                }
-                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-                variant="outline"
-              />
-            </View>
-            <View style={{ width: 74 }}>
-              <DatePicker
-                disabled={!draft.startDate}
-                displayValue={formatPlainTime24(draft.startTime)}
-                mode="time"
-                onChange={(date) =>
-                  setDraft((current) => ({
-                    ...current,
-                    startTime: date ? dateToPlainTime(date, timeZone) : null,
-                  }))
-                }
-                placeholder="--:--"
-                showIcon={false}
-                style={{
-                  borderRadius: 999,
-                  minHeight: 38,
-                  paddingHorizontal: 4,
-                }}
-                timeFormat="24"
-                value={
-                  draft.startTime ? plainTimeToDate(draft.startTime) : undefined
-                }
-                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-                variant="outline"
-              />
-            </View>
-          </View>
-
-          <View style={{ width: 86 }}>
+        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+          <View className="min-w-0 flex-1">
             <DatePicker
               displayValue={
-                draft.dueDate ? formatPlainDateShort(draft.dueDate) : "Due"
+                draft.startDate
+                  ? formatPlainDateShort(draft.startDate)
+                  : "Start"
               }
               mode="date"
               onChange={(date) =>
                 setDraft((current) => ({
                   ...current,
-                  dueDate: date ? dateToPlainDate(date, timeZone) : null,
+                  startDate: date ? dateToPlainDate(date, timeZone) : null,
+                  startTime: date ? current.startTime : null,
                 }))
               }
-              placeholder="Due"
+              placeholder="Start"
               showIcon={false}
-              style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 4 }}
-              value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
+              style={{
+                borderRadius: 999,
+                minHeight: 38,
+                paddingHorizontal: 4,
+              }}
+              value={
+                draft.startDate ? plainDateToDate(draft.startDate) : undefined
+              }
               valueTextStyle={{ fontSize: 13, textAlign: "center" }}
               variant="outline"
             />
           </View>
-
-          <Button
-            onPress={() => setIsRecurrenceExpanded((current) => !current)}
-            size="icon"
-            style={{ borderRadius: 999, height: 38, width: 38 }}
-            variant={isRecurrenceExpanded ? "default" : "outline"}
-          >
-            <Icon
-              as={Repeat2}
-              className={
-                isRecurrenceExpanded
-                  ? "text-primary-foreground"
-                  : "text-foreground"
+          <View style={{ width: 74 }}>
+            <DatePicker
+              disabled={!draft.startDate}
+              displayValue={formatPlainTime24(draft.startTime)}
+              mode="time"
+              onChange={(date) =>
+                setDraft((current) => ({
+                  ...current,
+                  startTime: date ? dateToPlainTime(date, timeZone) : null,
+                }))
               }
-              size={14}
+              placeholder="--:--"
+              showIcon={false}
+              style={{
+                borderRadius: 999,
+                minHeight: 38,
+                paddingHorizontal: 4,
+              }}
+              timeFormat="24"
+              value={
+                draft.startTime ? plainTimeToDate(draft.startTime) : undefined
+              }
+              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+              variant="outline"
             />
-          </Button>
+          </View>
         </View>
 
-        {isRecurrenceExpanded ? (
-          <View className="mb-2.5 rounded-md border border-border px-3 py-3">
-            <Text className="font-semibold text-foreground text-sm">
-              Repeat
-            </Text>
-            <Text className="mt-0.5 text-muted-foreground text-xs">
-              {recurrenceSummary}
-            </Text>
-
-            <View className="mt-2 flex-row flex-wrap gap-2">
-              {RECURRENCE_FREQUENCIES.map((frequency) => {
-                const active = activeFrequency === frequency.value;
-                return (
-                  <Button
-                    key={frequency.value}
-                    onPress={() => handleSelectFrequency(frequency.value)}
-                    size="sm"
-                    style={{ borderRadius: 999 }}
-                    variant={active ? "default" : "outline"}
-                  >
-                    <Text>{frequency.label}</Text>
-                  </Button>
-                );
-              })}
-            </View>
-
-            {draft.recurrence ? (
-              <>
-                <View className="mt-3 flex-row items-center gap-2">
-                  <Text className="text-muted-foreground text-xs">Every</Text>
-                  <Input
-                    containerStyle={{ width: 78 }}
-                    inputStyle={{ fontSize: 17 }}
-                    keyboardType="number-pad"
-                    onChangeText={(value) => {
-                      const nextInterval = Number.parseInt(value, 10) || 1;
-                      updateRecurrence({ interval: nextInterval });
-                    }}
-                    pill
-                    value={String(recurrenceState.interval)}
-                    variant="outline"
-                  />
-                  <Text className="text-foreground text-xs">
-                    {getTaskRecurrenceIntervalLabel(
-                      recurrenceState.freq,
-                      recurrenceState.interval
-                    )}
-                  </Text>
-                </View>
-
-                {recurrenceState.freq === "WEEKLY" ? (
-                  <View className="mt-3">
-                    <Text className="text-muted-foreground text-xs">
-                      On days
-                    </Text>
-                    <View className="mt-1 flex-row flex-wrap gap-2">
-                      {TASK_RECURRENCE_DAYS.map((day) => {
-                        const selected = recurrenceState.byDay.includes(
-                          day.value
-                        );
-                        return (
-                          <Button
-                            key={day.value}
-                            onPress={() =>
-                              updateRecurrence({
-                                byDay: toggleTaskRecurrenceDay(
-                                  recurrenceState.byDay,
-                                  day.value
-                                ),
-                              })
-                            }
-                            size="sm"
-                            style={{ borderRadius: 999 }}
-                            variant={selected ? "default" : "outline"}
-                          >
-                            <Text>{day.shortLabel}</Text>
-                          </Button>
-                        );
-                      })}
-                    </View>
-                  </View>
-                ) : null}
-
-                {recurrenceState.freq === "MONTHLY" ? (
-                  <View className="mt-3 flex-row items-center gap-2">
-                    <Text className="text-muted-foreground text-xs">
-                      On day
-                    </Text>
-                    <Input
-                      containerStyle={{ width: 78 }}
-                      inputStyle={{ fontSize: 13 }}
-                      keyboardType="number-pad"
-                      onChangeText={(value) => {
-                        const nextMonthDay = Number.parseInt(value, 10) || 1;
-                        updateRecurrence({ byMonthDay: nextMonthDay });
-                      }}
-                      pill
-                      value={String(recurrenceState.byMonthDay)}
-                      variant="outline"
-                    />
-                    <Text className="text-foreground text-xs">of month</Text>
-                  </View>
-                ) : null}
-
-                <View className="mt-3">
-                  <Text className="text-muted-foreground text-xs">Ends</Text>
-                  <View className="mt-1 flex-row flex-wrap gap-2">
-                    <Button
-                      onPress={() =>
-                        updateRecurrence({ endType: "never", until: null })
-                      }
-                      size="sm"
-                      style={{ borderRadius: 999 }}
-                      variant={
-                        recurrenceState.endType === "never"
-                          ? "default"
-                          : "outline"
-                      }
-                    >
-                      <Text>Never</Text>
-                    </Button>
-                    <Button
-                      onPress={() =>
-                        updateRecurrence({
-                          endType: "until",
-                          until: recurrenceState.until ?? fallbackUntil,
-                        })
-                      }
-                      size="sm"
-                      style={{ borderRadius: 999 }}
-                      variant={
-                        recurrenceState.endType === "until"
-                          ? "default"
-                          : "outline"
-                      }
-                    >
-                      <Text>On date</Text>
-                    </Button>
-                    <Button
-                      onPress={() =>
-                        updateRecurrence({
-                          endType: "count",
-                          count:
-                            Number.isFinite(recurrenceState.count) &&
-                            recurrenceState.count > 0
-                              ? recurrenceState.count
-                              : 10,
-                        })
-                      }
-                      size="sm"
-                      style={{ borderRadius: 999 }}
-                      variant={
-                        recurrenceState.endType === "count"
-                          ? "default"
-                          : "outline"
-                      }
-                    >
-                      <Text>After N</Text>
-                    </Button>
-                  </View>
-
-                  {recurrenceState.endType === "until" ? (
-                    <View className="mt-2" style={{ maxWidth: 220 }}>
-                      <DatePicker
-                        displayValue={
-                          recurrenceState.until
-                            ? formatPlainDateShort(recurrenceState.until)
-                            : "Until date"
-                        }
-                        mode="date"
-                        onChange={(date) =>
-                          updateRecurrence({
-                            until: date
-                              ? dateToPlainDate(date, timeZone)
-                              : null,
-                          })
-                        }
-                        placeholder="Until date"
-                        showIcon={false}
-                        style={{
-                          borderRadius: 999,
-                          minHeight: 38,
-                          paddingHorizontal: 10,
-                        }}
-                        value={
-                          recurrenceState.until
-                            ? plainDateToDate(recurrenceState.until)
-                            : undefined
-                        }
-                        valueTextStyle={{ fontSize: 13 }}
-                        variant="outline"
-                      />
-                    </View>
-                  ) : null}
-
-                  {recurrenceState.endType === "count" ? (
-                    <View className="mt-2 flex-row items-center gap-2">
-                      <Input
-                        containerStyle={{ width: 78 }}
-                        inputStyle={{ fontSize: 17 }}
-                        keyboardType="number-pad"
-                        onChangeText={(value) => {
-                          const nextCount = Number.parseInt(value, 10) || 1;
-                          updateRecurrence({ count: nextCount });
-                        }}
-                        pill
-                        value={String(recurrenceState.count)}
-                        variant="outline"
-                      />
-                      <Text className="text-foreground text-xs">
-                        occurrences
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              </>
-            ) : null}
-          </View>
-        ) : null}
-
-        <View className="mb-2.5 flex-row items-center gap-2">
-          <Checkbox
-            checked={isDone}
-            disabled={!canToggleDone}
-            onCheckedChange={(checked) => {
-              if (canToggleDone) {
-                const nextStatus: TaskDraft["status"] = checked
-                  ? "done"
-                  : "todo";
-                setDraft((current) => ({ ...current, status: nextStatus }));
-                onToggleDone?.(nextStatus);
-              }
-            }}
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: 0,
-              width: 36,
-            }}
-          />
-          <Input
-            containerStyle={{ flex: 1 }}
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, title: value }))
+        <View style={{ width: 86 }}>
+          <DatePicker
+            displayValue={
+              draft.dueDate ? formatPlainDateShort(draft.dueDate) : "Due"
             }
-            pill
-            placeholder="Title"
-            value={draft.title}
+            mode="date"
+            onChange={(date) =>
+              setDraft((current) => ({
+                ...current,
+                dueDate: date ? dateToPlainDate(date, timeZone) : null,
+              }))
+            }
+            placeholder="Due"
+            showIcon={false}
+            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 4 }}
+            value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
+            valueTextStyle={{ fontSize: 13, textAlign: "center" }}
             variant="outline"
           />
         </View>
 
-        <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
-          <View className="flex-row items-center justify-between">
-            <Text className="font-semibold text-foreground text-sm">Tags</Text>
-            <Button
-              onPress={() => setIsTagPickerExpanded((current) => !current)}
-              size="icon"
-              style={{ borderRadius: 999, height: 30, width: 30 }}
-              variant="ghost"
-            >
-              <Icon as={Plus} className="text-foreground" size={14} />
-            </Button>
-          </View>
+        <Button
+          onPress={() => setIsRecurrenceExpanded((current) => !current)}
+          size="icon"
+          style={{ borderRadius: 999, height: 38, width: 38 }}
+          variant={isRecurrenceExpanded ? "default" : "outline"}
+        >
+          <Icon
+            as={Repeat2}
+            className={
+              isRecurrenceExpanded
+                ? "text-primary-foreground"
+                : "text-foreground"
+            }
+            size={14}
+          />
+        </Button>
+      </View>
+
+      {isRecurrenceExpanded ? (
+        <View className="mb-2.5 rounded-md border border-border px-3 py-3">
+          <Text className="font-semibold text-foreground text-sm">Repeat</Text>
+          <Text className="mt-0.5 text-muted-foreground text-xs">
+            {recurrenceSummary}
+          </Text>
 
           <View className="mt-2 flex-row flex-wrap gap-2">
-            {selectedTags.length > 0 ? (
-              selectedTags.map((tag) => renderTagPill(tag, "remove"))
-            ) : (
-              <Text className="text-muted-foreground text-xs">
-                No tags selected
-              </Text>
-            )}
+            {RECURRENCE_FREQUENCIES.map((frequency) => {
+              const active = activeFrequency === frequency.value;
+              return (
+                <Button
+                  key={frequency.value}
+                  onPress={() => handleSelectFrequency(frequency.value)}
+                  size="sm"
+                  style={{ borderRadius: 999 }}
+                  variant={active ? "default" : "outline"}
+                >
+                  <Text>{frequency.label}</Text>
+                </Button>
+              );
+            })}
           </View>
 
-          {isTagPickerExpanded ? (
+          {draft.recurrence ? (
             <>
-              <View className="mt-2 border-border border-t" />
-              <View className="mt-2 flex-row flex-wrap gap-2">
-                {availableTags.length > 0 ? (
-                  availableTags.map((tag) => renderTagPill(tag, "add"))
-                ) : (
-                  <Text className="text-muted-foreground text-xs">
-                    All tags selected
-                  </Text>
-                )}
+              <View className="mt-3 flex-row items-center gap-2">
+                <Text className="text-muted-foreground text-xs">Every</Text>
+                <Input
+                  containerStyle={{ width: 78 }}
+                  inputStyle={{ fontSize: 17 }}
+                  keyboardType="number-pad"
+                  onChangeText={(value) => {
+                    const nextInterval = Number.parseInt(value, 10) || 1;
+                    updateRecurrence({ interval: nextInterval });
+                  }}
+                  pill
+                  value={String(recurrenceState.interval)}
+                  variant="outline"
+                />
+                <Text className="text-foreground text-xs">
+                  {getTaskRecurrenceIntervalLabel(
+                    recurrenceState.freq,
+                    recurrenceState.interval
+                  )}
+                </Text>
+              </View>
+
+              {recurrenceState.freq === "WEEKLY" ? (
+                <View className="mt-3">
+                  <Text className="text-muted-foreground text-xs">On days</Text>
+                  <View className="mt-1 flex-row flex-wrap gap-2">
+                    {TASK_RECURRENCE_DAYS.map((day) => {
+                      const selected = recurrenceState.byDay.includes(
+                        day.value
+                      );
+                      return (
+                        <Button
+                          key={day.value}
+                          onPress={() =>
+                            updateRecurrence({
+                              byDay: toggleTaskRecurrenceDay(
+                                recurrenceState.byDay,
+                                day.value
+                              ),
+                            })
+                          }
+                          size="sm"
+                          style={{ borderRadius: 999 }}
+                          variant={selected ? "default" : "outline"}
+                        >
+                          <Text>{day.shortLabel}</Text>
+                        </Button>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
+              {recurrenceState.freq === "MONTHLY" ? (
+                <View className="mt-3 flex-row items-center gap-2">
+                  <Text className="text-muted-foreground text-xs">On day</Text>
+                  <Input
+                    containerStyle={{ width: 78 }}
+                    inputStyle={{ fontSize: 13 }}
+                    keyboardType="number-pad"
+                    onChangeText={(value) => {
+                      const nextMonthDay = Number.parseInt(value, 10) || 1;
+                      updateRecurrence({ byMonthDay: nextMonthDay });
+                    }}
+                    pill
+                    value={String(recurrenceState.byMonthDay)}
+                    variant="outline"
+                  />
+                  <Text className="text-foreground text-xs">of month</Text>
+                </View>
+              ) : null}
+
+              <View className="mt-3">
+                <Text className="text-muted-foreground text-xs">Ends</Text>
+                <View className="mt-1 flex-row flex-wrap gap-2">
+                  <Button
+                    onPress={() =>
+                      updateRecurrence({ endType: "never", until: null })
+                    }
+                    size="sm"
+                    style={{ borderRadius: 999 }}
+                    variant={
+                      recurrenceState.endType === "never"
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    <Text>Never</Text>
+                  </Button>
+                  <Button
+                    onPress={() =>
+                      updateRecurrence({
+                        endType: "until",
+                        until: recurrenceState.until ?? fallbackUntil,
+                      })
+                    }
+                    size="sm"
+                    style={{ borderRadius: 999 }}
+                    variant={
+                      recurrenceState.endType === "until"
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    <Text>On date</Text>
+                  </Button>
+                  <Button
+                    onPress={() =>
+                      updateRecurrence({
+                        endType: "count",
+                        count:
+                          Number.isFinite(recurrenceState.count) &&
+                          recurrenceState.count > 0
+                            ? recurrenceState.count
+                            : 10,
+                      })
+                    }
+                    size="sm"
+                    style={{ borderRadius: 999 }}
+                    variant={
+                      recurrenceState.endType === "count"
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    <Text>After N</Text>
+                  </Button>
+                </View>
+
+                {recurrenceState.endType === "until" ? (
+                  <View className="mt-2" style={{ maxWidth: 220 }}>
+                    <DatePicker
+                      displayValue={
+                        recurrenceState.until
+                          ? formatPlainDateShort(recurrenceState.until)
+                          : "Until date"
+                      }
+                      mode="date"
+                      onChange={(date) =>
+                        updateRecurrence({
+                          until: date ? dateToPlainDate(date, timeZone) : null,
+                        })
+                      }
+                      placeholder="Until date"
+                      showIcon={false}
+                      style={{
+                        borderRadius: 999,
+                        minHeight: 38,
+                        paddingHorizontal: 10,
+                      }}
+                      value={
+                        recurrenceState.until
+                          ? plainDateToDate(recurrenceState.until)
+                          : undefined
+                      }
+                      valueTextStyle={{ fontSize: 13 }}
+                      variant="outline"
+                    />
+                  </View>
+                ) : null}
+
+                {recurrenceState.endType === "count" ? (
+                  <View className="mt-2 flex-row items-center gap-2">
+                    <Input
+                      containerStyle={{ width: 78 }}
+                      inputStyle={{ fontSize: 17 }}
+                      keyboardType="number-pad"
+                      onChangeText={(value) => {
+                        const nextCount = Number.parseInt(value, 10) || 1;
+                        updateRecurrence({ count: nextCount });
+                      }}
+                      pill
+                      value={String(recurrenceState.count)}
+                      variant="outline"
+                    />
+                    <Text className="text-foreground text-xs">occurrences</Text>
+                  </View>
+                ) : null}
               </View>
             </>
           ) : null}
         </View>
+      ) : null}
 
-        <Textarea
-          containerStyle={{ marginBottom: 10 }}
+      <View className="mb-2.5 flex-row items-center gap-2">
+        <Checkbox
+          checked={isDone}
+          disabled={!canToggleDone}
+          onCheckedChange={(checked) => {
+            if (canToggleDone) {
+              const nextStatus: TaskDraft["status"] = checked ? "done" : "todo";
+              setDraft((current) => ({ ...current, status: nextStatus }));
+              onToggleDone?.(nextStatus);
+            }
+          }}
+          style={{
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 0,
+            width: 36,
+          }}
+        />
+        <Input
+          containerStyle={{ flex: 1 }}
           onChangeText={(value) =>
-            setDraft((current) => ({ ...current, description: value }))
+            setDraft((current) => ({ ...current, title: value }))
           }
-          placeholder="Description"
-          value={draft.description}
+          pill
+          placeholder="Title"
+          value={draft.title}
           variant="outline"
         />
-      </BottomSheet>
-    </>
+      </View>
+
+      <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
+        <View className="flex-row items-center justify-between">
+          <Text className="font-semibold text-foreground text-sm">Tags</Text>
+          <Button
+            onPress={() => setIsTagPickerExpanded((current) => !current)}
+            size="icon"
+            style={{ borderRadius: 999, height: 30, width: 30 }}
+            variant="ghost"
+          >
+            <Icon as={Plus} className="text-foreground" size={14} />
+          </Button>
+        </View>
+
+        <View className="mt-2 flex-row flex-wrap gap-2">
+          {selectedTags.length > 0 ? (
+            selectedTags.map((tag) => renderTagPill(tag, "remove"))
+          ) : (
+            <Text className="text-muted-foreground text-xs">
+              No tags selected
+            </Text>
+          )}
+        </View>
+
+        {isTagPickerExpanded ? (
+          <>
+            <View className="mt-2 border-border border-t" />
+            <View className="mt-2 flex-row flex-wrap gap-2">
+              {availableTags.length > 0 ? (
+                availableTags.map((tag) => renderTagPill(tag, "add"))
+              ) : (
+                <Text className="text-muted-foreground text-xs">
+                  All tags selected
+                </Text>
+              )}
+            </View>
+          </>
+        ) : null}
+      </View>
+
+      <Textarea
+        containerStyle={{ marginBottom: 10 }}
+        onChangeText={(value) =>
+          setDraft((current) => ({ ...current, description: value }))
+        }
+        placeholder="Description"
+        value={draft.description}
+        variant="outline"
+      />
+    </BottomSheet>
   );
 }

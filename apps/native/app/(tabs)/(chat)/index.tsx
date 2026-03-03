@@ -97,8 +97,8 @@ import {
 } from "@/components/ui/popover";
 import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
-import { useColor } from "@/hooks/useColor";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useColor } from "@/hooks/use-color";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 
 type ChatModelId = "gpt-5" | "gpt-5-mini";
 
@@ -382,7 +382,7 @@ function NativeToolInvocationPart({
                 <ConfirmationAction
                   onPress={() =>
                     onApprovalResponse({
-                      id: part.approval!.id,
+                      id: part.approval?.id ?? "",
                       approved: false,
                     })
                   }
@@ -393,7 +393,7 @@ function NativeToolInvocationPart({
                 <ConfirmationAction
                   onPress={() =>
                     onApprovalResponse({
-                      id: part.approval!.id,
+                      id: part.approval?.id ?? "",
                       approved: true,
                     })
                   }

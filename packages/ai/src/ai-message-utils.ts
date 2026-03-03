@@ -7,6 +7,10 @@ import type {
 } from "ai";
 import { isToolUIPart } from "ai";
 
+const TOOL_PREFIX_RE = /^tool-/;
+const UNDERSCORE_RE = /_/g;
+const WORD_BOUNDARY_RE = /\b\w/g;
+
 // ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
@@ -36,9 +40,9 @@ export function asString(value: unknown): string | null {
 
 export function formatToolName(type: string): string {
   return type
-    .replace(/^tool-/, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+    .replace(TOOL_PREFIX_RE, "")
+    .replace(UNDERSCORE_RE, " ")
+    .replace(WORD_BOUNDARY_RE, (c) => c.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------

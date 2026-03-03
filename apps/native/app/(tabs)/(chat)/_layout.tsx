@@ -1,5 +1,5 @@
 import { Stack } from "expo-router/stack";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 
 /**
  * Stack layout for the Chat tab.

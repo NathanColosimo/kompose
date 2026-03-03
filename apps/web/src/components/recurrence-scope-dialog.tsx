@@ -19,8 +19,6 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
-export { RECURRENCE_SCOPE_OPTIONS };
-
 export function RecurrenceScopeDialog({
   open,
   onOpenChange,

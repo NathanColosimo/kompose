@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/popover";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { useColor } from "@/hooks/useColor";
+import { useColor } from "@/hooks/use-color";
 
 const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
@@ -349,15 +349,14 @@ function EventEditorSheet({
                     return;
                   }
 
-                  updateRecurrence({
-                    freq: frequency.value,
-                    byDay:
-                      frequency.value === "WEEKLY"
-                        ? parsedRecurrence.byDay.length > 0
-                          ? parsedRecurrence.byDay
-                          : ["MO"]
-                        : [],
-                  });
+                  let byDay: string[] = [];
+                  if (frequency.value === "WEEKLY") {
+                    byDay =
+                      parsedRecurrence.byDay.length > 0
+                        ? parsedRecurrence.byDay
+                        : ["MO"];
+                  }
+                  updateRecurrence({ freq: frequency.value, byDay });
                 }}
                 size="sm"
                 variant={active ? "default" : "outline"}
@@ -740,37 +739,45 @@ function EventEditorSheet({
         </View>
 
         <View className="flex-1 items-end">
-          {meetingLink ? (
-            <Button
-              onPress={() => {
-                Linking.openURL(meetingLink.url).catch((err) => {
-                  console.warn("Failed to open meeting URL:", err);
-                });
-              }}
-              size="sm"
-              variant="outline"
-            >
-              <Icon as={Video} className="text-foreground" size={14} />
-              <Text>Join {meetingLink.label}</Text>
-            </Button>
-          ) : isConferencePending ? (
-            <Text className="text-right text-muted-foreground text-xs">
-              Meet on save
-            </Text>
-          ) : (
-            <Button
-              onPress={() =>
-                setValue("conferenceData", buildGoogleMeetConferenceData(), {
-                  shouldDirty: true,
-                })
-              }
-              size="sm"
-              variant="outline"
-            >
-              <Icon as={Video} className="text-foreground" size={14} />
-              <Text>Add Meet</Text>
-            </Button>
-          )}
+          {(() => {
+            if (meetingLink) {
+              return (
+                <Button
+                  onPress={() => {
+                    Linking.openURL(meetingLink.url).catch((err) => {
+                      console.warn("Failed to open meeting URL:", err);
+                    });
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Icon as={Video} className="text-foreground" size={14} />
+                  <Text>Join {meetingLink.label}</Text>
+                </Button>
+              );
+            }
+            if (isConferencePending) {
+              return (
+                <Text className="text-right text-muted-foreground text-xs">
+                  Meet on save
+                </Text>
+              );
+            }
+            return (
+              <Button
+                onPress={() =>
+                  setValue("conferenceData", buildGoogleMeetConferenceData(), {
+                    shouldDirty: true,
+                  })
+                }
+                size="sm"
+                variant="outline"
+              >
+                <Icon as={Video} className="text-foreground" size={14} />
+                <Text>Add Meet</Text>
+              </Button>
+            );
+          })()}
         </View>
       </View>
 

@@ -23,6 +23,10 @@
       "cache": false,
       "persistent": true
     },
+    "devtools": {
+      "cache": false,
+      "persistent": true
+    },
     "db:push": {
       "cache": false,
       "persistent": true

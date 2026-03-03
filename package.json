@@ -16,7 +16,7 @@
     "submit:prod:desktop": "turbo run submit:prod:desktop --filter=web",
     "submit:prod:native": "turbo run submit:prod --filter=native",
     "dev:native": "turbo run dev -F native",
-    "dev:web": "turbo run dev db:studio -F web -F @kompose/db",
+    "dev:web": "turbo run dev devtools db:studio -F web -F @kompose/db",
     "knip": "knip",
     "db:push": "turbo run db:push -F @kompose/db",
     "db:studio": "turbo run db:studio -F @kompose/db",

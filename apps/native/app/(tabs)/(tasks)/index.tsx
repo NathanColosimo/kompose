@@ -255,12 +255,14 @@ function TaskList({
   const sectionItems = buildTodayItems(
     mode === "Today" ? todaySections : tagSections
   );
-  const emptyMessage =
-    mode === "Today"
-      ? "Nothing for today."
-      : tagName
-        ? `No tasks for tag ${tagName}.`
-        : "No tasks for this tag.";
+  let emptyMessage: string;
+  if (mode === "Today") {
+    emptyMessage = "Nothing for today.";
+  } else if (tagName) {
+    emptyMessage = `No tasks for tag ${tagName}.`;
+  } else {
+    emptyMessage = "No tasks for this tag.";
+  }
 
   return (
     <FlatList
