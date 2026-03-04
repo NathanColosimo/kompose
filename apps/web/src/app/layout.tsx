@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Libre_Baskerville, Lora } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "../index.css";
 import Providers from "@/components/providers";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
             {children}
           </div>
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
