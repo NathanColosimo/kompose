@@ -1,10 +1,10 @@
+import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
 import { db } from "@kompose/db";
 // biome-ignore lint/performance/noNamespaceImport: Auth Schema
 import * as schema from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { lastLoginMethod } from "better-auth/plugins";
 import { bearer } from "better-auth/plugins/bearer";

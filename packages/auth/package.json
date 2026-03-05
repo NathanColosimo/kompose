@@ -20,9 +20,11 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "better-auth": "catalog:",
+    "@better-auth/core": "^1.5.3",
+    "@better-auth/drizzle-adapter": "1.5.3",
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
-    "@kompose/env": "workspace:*"
+    "@kompose/env": "workspace:*",
+    "better-auth": "catalog:"
   }
 }
