@@ -4,6 +4,7 @@ import { env } from "@kompose/env";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { Analytics } from "@vercel/analytics/next";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -30,6 +31,13 @@ const ReactQueryDevtools = dynamic(
     ),
   { ssr: false }
 );
+
+function VercelAnalytics() {
+  if (isTauriRuntime()) {
+    return null;
+  }
+  return <Analytics />;
+}
 
 function RealtimeSyncBootstrap() {
   useWebRealtimeSync();
@@ -248,6 +256,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>
       <Toaster richColors />
+      <VercelAnalytics />
     </ThemeProvider>
   );
 }
