@@ -22,6 +22,8 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - `startDate`
 - `startTime`
 - `recurrence`
+- `links` (array of `LinkMeta` objects)
+- `linkInput` (current add-link input value)
 
 ## Form sections
 
@@ -29,6 +31,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - Description
 - Tags (`TagPicker`)
 - Duration (hours/minutes picker sheet)
+- **Links**: Multi-link UI. Existing links are displayed as pressable cards (opens URL) with remove buttons. An "Add link" input at the bottom accepts new URLs on blur. Each URL is parsed via `tasks.parseLink` and appended to the `links` array. Title and duration auto-fill from the first link's metadata when the fields are empty.
 - Due date
 - Start date
 - Start time

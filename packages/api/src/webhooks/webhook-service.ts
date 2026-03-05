@@ -2,6 +2,7 @@ import { auth } from "@kompose/auth";
 import type { WebhookSubscriptionSelect } from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
 import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
+import type { Account } from "better-auth";
 import { Effect } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
 import { publishToUserBestEffort } from "../realtime/sync";
@@ -21,7 +22,6 @@ import type {
   GoogleCalendarListSubscription,
 } from "./google-cal/webhook-service";
 import { GoogleCalendarWebhookService } from "./google-cal/webhook-service";
-import type { LinkedAccount } from "./webhook-repository-service";
 import { WebhookRepositoryService } from "./webhook-repository-service";
 
 // ── Public interfaces ────────────────────────────────────────────────
@@ -139,14 +139,14 @@ export class WebhookService extends Effect.Service<WebhookService>()(
       const ensureAccountWebhooks = Effect.fn(
         "WebhookService.ensureAccountWebhooks"
       )(function* (params: {
-        account: LinkedAccount;
+        account: Account;
         existingSubscriptions: WebhookSubscriptionSelect[];
         userId: string;
       }) {
         yield* Effect.annotateCurrentSpan("accountId", params.account.id);
         yield* Effect.annotateCurrentSpan("userId", params.userId);
         const client = yield* createGoogleClient({
-          accountId: params.account.id,
+          accountId: params.account.accountId,
           userId: params.userId,
         });
 

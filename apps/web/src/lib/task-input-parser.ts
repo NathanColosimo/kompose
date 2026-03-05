@@ -13,6 +13,8 @@ export interface ParsedTaskInput {
   durationMinutes: number | null;
   /** Raw duration string for display (e.g., "2h", "30m") */
   durationRaw: string | null;
+  /** URLs detected in the title text */
+  links: string[];
   /** Start date, parsed from ~date token (e.g., ~friday, ~next week) */
   startDate: Temporal.PlainDate | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
@@ -32,7 +34,8 @@ export interface ParsedTaskInput {
  */
 const DURATION_PATTERN = /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/;
 const TOKEN_PATTERN = /([=~>#])([^=~>#]+)/g;
-const FIRST_TOKEN_PATTERN = /[=~>#]/;
+const FIRST_TOKEN_PATTERN = /(?<!\S)[=~>#]/;
+const URL_PATTERN = /https?:\/\/\S+/g;
 
 /**
  * Parse duration string into minutes.
@@ -113,6 +116,7 @@ export function parseTaskInput(
     title: "",
     durationMinutes: null,
     dueDate: null,
+    links: [],
     startDate: null,
     tagNames: [],
     durationRaw: null,
@@ -128,6 +132,17 @@ export function parseTaskInput(
   } else {
     // No special tokens, entire input is the title
     result.title = input.trim();
+  }
+
+  // Extract all URLs from the title portion (before special tokens)
+  const urlMatches = [...result.title.matchAll(URL_PATTERN)];
+  if (urlMatches.length > 0) {
+    result.links = urlMatches.map((m) => m[0]);
+    result.title = result.title.replace(URL_PATTERN, "").trim();
+  }
+
+  // Return early if there were no special tokens
+  if (firstTokenMatch?.index === undefined) {
     return result;
   }
 

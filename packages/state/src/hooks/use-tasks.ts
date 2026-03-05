@@ -3,6 +3,7 @@
 import type {
   ClientTaskInsertDecoded,
   DeleteScope,
+  LinkMeta,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
@@ -85,6 +86,7 @@ export function useTasks() {
         startDate: task.startDate ?? null,
         startTime: task.startTime ?? null,
         durationMinutes: task.durationMinutes ?? 30,
+        links: task.links ?? [],
         seriesMasterId: null,
         recurrence: null,
         isException: false,
@@ -212,5 +214,13 @@ export function useTasks() {
     },
   });
 
-  return { tasksQuery, createTask, updateTask, deleteTask };
+  /** Parse a URL to extract provider metadata (title, duration, etc.) */
+  const parseLink = useMutation({
+    mutationFn: async (url: string): Promise<LinkMeta> => {
+      const result = await orpc.tasks.parseLink({ url });
+      return result as LinkMeta;
+    },
+  });
+
+  return { tasksQuery, createTask, updateTask, deleteTask, parseLink };
 }

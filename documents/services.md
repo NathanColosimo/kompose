@@ -106,6 +106,35 @@ TaskService.listTasks(userId).pipe(
 
 ---
 
+## Link Parser Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `services/link-parser/service.ts` | `LinkParserService` (Effect.Service) — provider detection and metadata fetching |
+| `services/link-parser/types.ts` | Zod discriminated union for `linkMeta` (provider variants) |
+| `services/link-parser/providers/*.ts` | Provider-specific parsers (Spotify, YouTube, Substack, unknown fallback) |
+
+### LinkParserService
+
+Detects the provider from a URL and fetches metadata via provider APIs or scraping. Returns a `LinkMeta` object (Zod discriminated union on `provider`). Tasks store an array of these objects in a single `links` JSONB column.
+
+| Provider | Source |
+|----------|--------|
+| Spotify | Spotify API (requires `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`) |
+| YouTube | YouTube Data API (requires `YOUTUBE_API_KEY`) |
+| Substack | Substack REST API (archive search + by-id) |
+| unknown | Fallback when provider cannot be detected |
+
+### Endpoint
+
+- `tasks.parseLink` — accepts a single URL, returns parsed metadata (`LinkMeta`). Called per-URL by the client; the client assembles results into the task's `links` array.
+
+Full details in [`link-parsing.md`](./link-parsing.md).
+
+---
+
 ## Tag Service
 
 ### Files

@@ -27,6 +27,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - Duration: numeric minutes input.
 - Due date: shadcn calendar, formatted `LLL dd, yyyy`.
 - Title / description: controlled inputs bound to form state.
+- **Links**: Multi-link UI. Existing links are displayed as `LinkMetaPreview` cards with remove buttons. An "Add link" input at the bottom accepts new URLs via paste, blur, or Enter. Each URL is parsed via `tasks.parseLink` and appended to the `links` array. Title and duration auto-fill from the first link's metadata when the fields are empty.
 
 ## Notes
 - Closing without changes does nothing; any change triggers a single update on close.

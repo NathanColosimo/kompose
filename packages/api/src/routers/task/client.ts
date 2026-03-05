@@ -473,6 +473,7 @@ function buildRegeneratedTaskRows(
       startDate: date.toString(),
       startTime: input.startTime ?? task.startTime,
       durationMinutes: input.durationMinutes ?? task.durationMinutes,
+      links: input.links ?? task.links,
       id,
       seriesMasterId: newMasterId,
       recurrence: index === 0 ? recurrence : null,
@@ -619,7 +620,6 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
     title: input.title ?? task.title,
     description: input.description ?? task.description,
     status: input.status ?? task.status,
-    // Keep the due date offset aligned with each occurrence's start date.
     dueDate: getDueDateForOccurrence({
       baseStartDate: parsedStartDate,
       baseDueDate: parsedDueDate,
@@ -628,9 +628,10 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
     startDate: date.toString(),
     startTime: input.startTime ?? task.startTime,
     durationMinutes: input.durationMinutes ?? task.durationMinutes,
+    links: input.links ?? task.links,
     id: uuidv7(),
-    seriesMasterId: task.id, // Points to the original task as master
-    recurrence: null, // Only master stores recurrence
+    seriesMasterId: task.id,
+    recurrence: null,
     isException: false,
   }));
 

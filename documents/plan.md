@@ -119,7 +119,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - `googleCal.events.{list,get,create,update,move,delete}`
     - `googleCal.colors.list`
     - `maps.search`
-    - `tasks.{list,create,update,delete}`
+    - `tasks.{list,create,update,delete,parseLink}`
     - `tags.{list,create,update,delete}`
     - `sync.events` (SSE stream)
 - **API Routes**:
@@ -132,7 +132,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - `mapsRateLimit` — 20 req/60s per user (stacked on global for maps search).
 - **Effect-TS Services**:
   - Business logic uses `Effect.Service` with `accessors: true`, `Effect.fn` for tracing, `Schema.TaggedError` for typed errors.
-  - Services: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
+  - Services: `TaskService`, `TagService`, `LinkParserService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
   - See [`services.md`](./services.md) for details.
 
 ### 4.4 Backend – Database & ORM
@@ -147,7 +147,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - `auth` schema (Better Auth generated; Postgres-only).
   - `app` schema:
     - `eventsPG`
-    - `tasksPG`
+    - `tasksPG` (includes `link` text, `linkMeta` jsonb — Zod discriminated union on `provider`: spotify, youtube, substack, unknown)
     - `calendarsPG`
     - `task_sourcesPG` (e.g., "kompose", "notion", "linear")
     - `integration_accountsPG` (per-user OAuth tokens & metadata)

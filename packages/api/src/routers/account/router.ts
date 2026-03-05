@@ -34,7 +34,7 @@ export const accountRouter = os.router({
       return await Promise.all(
         accounts.map(async (account) => {
           const { email, name } = await getAccountInfo({
-            account,
+            accountId: account.accountId,
             userId: context.user.id,
           });
           return {

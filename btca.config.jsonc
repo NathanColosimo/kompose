@@ -4,12 +4,6 @@
   "resources": [
     {
       "type": "git",
-      "name": "better-auth",
-      "url": "https://github.com/better-auth/better-auth",
-      "branch": "main"
-    },
-    {
-      "type": "git",
       "name": "effect",
       "url": "https://github.com/Effect-TS/effect",
       "branch": "main"
@@ -18,6 +12,18 @@
       "type": "git",
       "name": "ai-sdk",
       "url": "https://github.com/vercel/ai",
+      "branch": "main"
+    },
+    {
+      "type": "git",
+      "name": "better-auth",
+      "url": "https://github.com/better-auth/better-auth",
+      "branch": "main"
+    },
+    {
+      "type": "git",
+      "name": "bun",
+      "url": "https://github.com/oven-sh/bun",
       "branch": "main"
     }
   ],

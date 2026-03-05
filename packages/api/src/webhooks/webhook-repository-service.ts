@@ -9,16 +9,6 @@ import { and, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { formatUnknownCause, WebhookRepositoryError } from "./errors";
 
-// ── Types ────────────────────────────────────────────────────────────
-
-/** A linked OAuth account for a given provider. */
-export interface LinkedAccount {
-  /** Internal account ID (Better Auth's account.id). */
-  id: string;
-  /** External provider account ID (e.g. Google account ID). */
-  providerAccountId: string;
-}
-
 // ── Service ──────────────────────────────────────────────────────────
 
 export class WebhookRepositoryService extends Effect.Service<WebhookRepositoryService>()(
@@ -46,10 +36,7 @@ export class WebhookRepositoryService extends Effect.Service<WebhookRepositorySe
             }
 
             return db
-              .select({
-                id: account.id,
-                providerAccountId: account.accountId,
-              })
+              .select()
               .from(account)
               .where(and(...conditions));
           },

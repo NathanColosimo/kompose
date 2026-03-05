@@ -5,6 +5,7 @@ import type {
 } from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
 import { GoogleCalendar } from "@kompose/google-cal/client";
+import type { Account } from "better-auth";
 import { Effect } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
@@ -12,7 +13,6 @@ import {
   WebhookProviderError,
   WebhookValidationError,
 } from "../errors";
-import type { LinkedAccount } from "../webhook-repository-service";
 import { WebhookRepositoryService } from "../webhook-repository-service";
 import {
   GOOGLE_CHANNEL_TTL_MS,
@@ -132,7 +132,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
       const refreshListWatch = Effect.fn(
         "GoogleCalendarWebhookService.refreshListWatch"
       )(function* (params: {
-        account: LinkedAccount;
+        account: Account;
         existingSubscription?: GoogleCalendarListSubscription;
         userId: string;
       }) {
@@ -195,7 +195,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           expiresAt: computeExpiresAt(channel.expiration),
           id: subId,
           provider: GOOGLE_PROVIDER,
-          providerAccountId: params.account.providerAccountId,
+          providerAccountId: params.account.accountId,
           userId: params.userId,
           webhookToken: env.GOOGLE_WEBHOOK_TOKEN,
         });
@@ -206,7 +206,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
       const refreshEventsWatch = Effect.fn(
         "GoogleCalendarWebhookService.refreshEventsWatch"
       )(function* (params: {
-        account: LinkedAccount;
+        account: Account;
         calendarId: string;
         existingSubscription?: GoogleCalendarEventsSubscription;
         userId: string;
@@ -294,7 +294,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           expiresAt: computeExpiresAt(channel.expiration),
           id: subId,
           provider: GOOGLE_PROVIDER,
-          providerAccountId: params.account.providerAccountId,
+          providerAccountId: params.account.accountId,
           userId: params.userId,
           webhookToken: env.GOOGLE_WEBHOOK_TOKEN,
         });

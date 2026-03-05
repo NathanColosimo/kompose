@@ -14,7 +14,6 @@ import { redisSecondaryStorage } from "./redis-storage";
 export const auth = betterAuth({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   advanced: {
-    // Prefix Better Auth cookies for Kompose.
     cookiePrefix: "kompose",
   },
   database: drizzleAdapter(db, {

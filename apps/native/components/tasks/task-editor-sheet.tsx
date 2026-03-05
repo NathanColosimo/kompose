@@ -1,6 +1,17 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
-import type { TaskRecurrence } from "@kompose/api/routers/task/contract";
+import type {
+  LinkMeta,
+  TaskRecurrence,
+} from "@kompose/api/routers/task/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
+import { useTasks } from "@kompose/state/hooks/use-tasks";
+import {
+  dedupeLinks,
+  getLinkDurationMinutes,
+  getLinkWordCount,
+  getProviderLabel,
+  URL_REGEX,
+} from "@kompose/state/link-meta-utils";
 import {
   buildTaskRecurrence,
   getTaskRecurrenceDisplayText,
@@ -11,9 +22,19 @@ import {
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
-import { Check, Minus, Plus, Repeat2, Trash2 } from "lucide-react-native";
+import { Image } from "expo-image";
+import {
+  Check,
+  Link2,
+  Loader2,
+  Minus,
+  Plus,
+  Repeat2,
+  Trash2,
+  XCircle,
+} from "lucide-react-native";
 import React from "react";
-import { Pressable, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -30,6 +51,10 @@ export interface TaskDraft {
   description: string;
   dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
+  /** Current text in the link input field (not yet added to links array) */
+  linkInput: string;
+  /** Array of parsed link metadata objects */
+  links: LinkMeta[];
   recurrence: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null;
   startTime: Temporal.PlainTime | null;
@@ -136,10 +161,13 @@ export function TaskEditorSheet({
   snapPoints = [0.84, 0.95, 0.99],
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
+  const { parseLink } = useTasks();
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft ? draft.title.trim().length > 0 : false;
+  const canSave = draft
+    ? draft.title.trim().length > 0 || draft.links.length > 0
+    : false;
 
   if (!draft) {
     return null;
@@ -681,6 +709,165 @@ export function TaskEditorSheet({
         value={draft.description}
         variant="outline"
       />
+
+      <NativeLinkListEditor
+        isParsing={parseLink.isPending}
+        linkInput={draft.linkInput}
+        links={draft.links}
+        onAddLink={(url) => {
+          const isFirstLink = draft.links.length === 0;
+
+          // Insert placeholder immediately so the link survives a quick save
+          setDraft((current) => ({
+            ...current,
+            links: dedupeLinks([
+              ...current.links,
+              {
+                provider: "unknown" as const,
+                url,
+                fetchedAt: new Date().toISOString(),
+              },
+            ]),
+            linkInput: "",
+          }));
+
+          // Upgrade the placeholder in-place when metadata arrives
+          parseLink.mutate(url, {
+            onSuccess: (meta) => {
+              setDraft((current) => {
+                const next = {
+                  ...current,
+                  links: dedupeLinks(
+                    current.links.map((l) => (l.url === url ? meta : l))
+                  ),
+                };
+                if (isFirstLink) {
+                  if (meta.title && !current.title.trim()) {
+                    next.title = meta.title;
+                  }
+                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
+                  }
+                }
+                return next;
+              });
+            },
+          });
+        }}
+        onLinkInputChange={(value) =>
+          setDraft((current) => ({ ...current, linkInput: value }))
+        }
+        onRemoveLink={(index) =>
+          setDraft((current) => ({
+            ...current,
+            links: current.links.filter((_, i) => i !== index),
+          }))
+        }
+      />
     </BottomSheet>
+  );
+}
+
+/** Extracted link list + add-input for native, delegates mutations to parent */
+function NativeLinkListEditor({
+  links,
+  linkInput,
+  isParsing,
+  onAddLink,
+  onRemoveLink,
+  onLinkInputChange,
+}: {
+  isParsing: boolean;
+  linkInput: string;
+  links: LinkMeta[];
+  onAddLink: (url: string) => void;
+  onLinkInputChange: (value: string) => void;
+  onRemoveLink: (index: number) => void;
+}) {
+  const submitUrl = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (!URL_REGEX.test(trimmed)) {
+      return;
+    }
+    if (links.some((l) => l.url === trimmed)) {
+      onLinkInputChange("");
+      return;
+    }
+    onAddLink(trimmed);
+  };
+
+  return (
+    <>
+      {links.map((meta, index) => (
+        <View
+          className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
+          key={meta.url}
+        >
+          {meta.thumbnailUrl ? (
+            <Pressable onPress={() => Linking.openURL(meta.url)}>
+              <Image
+                source={{ uri: meta.thumbnailUrl }}
+                style={{ width: 40, height: 40, borderRadius: 4 }}
+              />
+            </Pressable>
+          ) : null}
+          <Pressable
+            className="min-w-0 flex-1"
+            onPress={() => Linking.openURL(meta.url)}
+          >
+            <Text
+              className="font-semibold text-foreground text-sm"
+              numberOfLines={1}
+            >
+              {meta.title ?? "Untitled"}
+            </Text>
+            <Text className="mt-0.5 text-muted-foreground text-xs">
+              {getProviderLabel(meta.provider)}
+              {(() => {
+                const dur = getLinkDurationMinutes(meta);
+                return dur !== null ? ` · ${dur}m` : "";
+              })()}
+              {(() => {
+                const wc = getLinkWordCount(meta);
+                return wc !== null ? ` · ${wc.toLocaleString()} words` : "";
+              })()}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onRemoveLink(index)}
+            style={{ paddingTop: 2 }}
+          >
+            <Icon as={XCircle} className="text-muted-foreground" size={16} />
+          </Pressable>
+        </View>
+      ))}
+
+      <View className="mb-2.5 flex-row items-center gap-2">
+        <Pressable
+          style={{ width: 36, alignItems: "center", justifyContent: "center" }}
+        >
+          {isParsing ? (
+            <Icon as={Loader2} className="text-muted-foreground" size={16} />
+          ) : (
+            <Icon as={Link2} className="text-muted-foreground" size={16} />
+          )}
+        </Pressable>
+        <Input
+          autoCapitalize="none"
+          autoCorrect={false}
+          containerStyle={{ flex: 1 }}
+          keyboardType="url"
+          onBlur={() => submitUrl(linkInput)}
+          onChangeText={onLinkInputChange}
+          pill
+          placeholder="https://..."
+          value={linkInput}
+          variant="outline"
+        />
+      </View>
+    </>
   );
 }

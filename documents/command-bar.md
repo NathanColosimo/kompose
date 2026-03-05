@@ -32,6 +32,10 @@ Type a task title followed by optional modifiers:
 
 Creates a task titled "Read that book" with 2 hour duration, due Monday, starting tomorrow.
 
+### URL detection
+
+The task input parser extracts all URLs from the title portion of the input into a `links: string[]` array. On task creation, `tasks.parseLink` is called for each URL to build the `links: LinkMeta[]` array. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
+
 ## Keyboard Navigation
 
 | Key | Action |

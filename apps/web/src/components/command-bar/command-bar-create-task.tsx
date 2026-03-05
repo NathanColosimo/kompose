@@ -1,16 +1,22 @@
 "use client";
 
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
-import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  ClientTaskInsertDecoded,
+  LinkMeta,
+} from "@kompose/api/routers/task/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
 import {
   CalendarIcon,
   CheckIcon,
   ClockIcon,
+  Link2Icon,
+  Loader2Icon,
   PlayCircleIcon,
 } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,6 +32,65 @@ import {
 import { formatPlainDate } from "@/lib/temporal-utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
+
+/** Fallback title when no typed title and no metadata */
+function fallbackTitle(link: string): string {
+  try {
+    return new URL(link).hostname;
+  } catch {
+    return link;
+  }
+}
+
+/** Build task data from parsed input and resolved link metadata */
+function buildTaskDataFromParsed(
+  parsed: ParsedTaskInput,
+  linkMetaMap: Record<string, LinkMeta>,
+  firstLinkMeta: LinkMeta | undefined,
+  matchedTagIds: string[]
+): ClientTaskInsertDecoded {
+  const links = dedupeLinks(
+    parsed.links.map((url) => {
+      if (linkMetaMap[url]) {
+        return linkMetaMap[url];
+      }
+      return {
+        provider: "unknown" as const,
+        url,
+        fetchedAt: new Date().toISOString(),
+      };
+    })
+  );
+
+  let title = parsed.title;
+  let durationMinutes = parsed.durationMinutes ?? 30;
+
+  if (firstLinkMeta) {
+    if (!title && firstLinkMeta.title) {
+      title = firstLinkMeta.title;
+    }
+    if (
+      !parsed.durationMinutes &&
+      "durationSeconds" in firstLinkMeta &&
+      firstLinkMeta.durationSeconds > 0
+    ) {
+      durationMinutes = Math.ceil(firstLinkMeta.durationSeconds / 60);
+    }
+  }
+
+  if (!title && parsed.links.length > 0) {
+    title = fallbackTitle(parsed.links[0]);
+  }
+
+  return {
+    title,
+    durationMinutes,
+    dueDate: parsed.dueDate ?? undefined,
+    startDate: parsed.startDate ?? undefined,
+    links,
+    tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
+  };
+}
 
 interface CommandBarCreateTaskProps {
   /** Callback when a task is successfully created (to clear/reset input) */
@@ -51,7 +116,7 @@ export function CommandBarCreateTask({
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
-  const { createTask } = useTasks();
+  const { createTask, parseLink } = useTasks();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? [];
 
@@ -61,8 +126,68 @@ export function CommandBarCreateTask({
     [search]
   );
 
-  // Check if the parsed input is valid for creation
-  const isValid = parsed.title.length > 0;
+  // Links alone are enough to create a task — the title will come from metadata
+  const isValid = parsed.title.length > 0 || parsed.links.length > 0;
+
+  // Track parsed metadata for each URL, keyed by URL string
+  const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
+  const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
+  const lastParsedUrls = useRef<string[]>([]);
+
+  const parseLinkMutate = parseLink.mutate;
+
+  // Fire parse requests for any newly detected URLs
+  const dispatchParses = useCallback(
+    (urls: string[]) => {
+      const previous = lastParsedUrls.current;
+      const newUrls = urls.filter((url) => !previous.includes(url));
+      lastParsedUrls.current = urls;
+
+      for (const url of newUrls) {
+        setPendingUrls((prev) => new Set([...prev, url]));
+        parseLinkMutate(url, {
+          onSuccess: (meta) => {
+            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
+            setPendingUrls((prev) => {
+              const next = new Set(prev);
+              next.delete(url);
+              return next;
+            });
+          },
+          onError: () => {
+            setPendingUrls((prev) => {
+              const next = new Set(prev);
+              next.delete(url);
+              return next;
+            });
+          },
+        });
+      }
+
+      if (urls.length === 0 && previous.length > 0) {
+        lastParsedUrls.current = [];
+        setLinkMetaMap({});
+        setPendingUrls(new Set());
+      }
+    },
+    [parseLinkMutate]
+  );
+
+  // Debounce URL parsing so partial URLs typed mid-keystroke don't trigger
+  // backend calls — only fire once the URL token stabilises (500ms idle).
+  // The timer resets on every keystroke; dispatchParses internally skips
+  // URLs that have already been parsed.
+  useEffect(() => {
+    const urls = parsed.links;
+    const timer = setTimeout(() => {
+      dispatchParses(urls);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [parsed.links, dispatchParses]);
+
+  // First link's metadata is used for auto-fill
+  const firstLinkMeta =
+    parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
 
   const tagQuery = useMemo(() => {
     const match = TAG_QUERY_PATTERN.exec(search);
@@ -70,7 +195,6 @@ export function CommandBarCreateTask({
       return null;
     }
     const raw = match[1];
-    // Trailing space means the tag was confirmed/selected — close dropdown
     if (raw.endsWith(" ")) {
       return null;
     }
@@ -102,7 +226,6 @@ export function CommandBarCreateTask({
     return;
   });
 
-  // Update ref to latest closure (no dependencies needed, runs every render)
   handleCreateRef.current = () => {
     if (!isValid || createTask.isPending) {
       return;
@@ -116,26 +239,27 @@ export function CommandBarCreateTask({
       )
     );
 
-    const taskData: ClientTaskInsertDecoded = {
-      title: parsed.title,
-      durationMinutes: parsed.durationMinutes ?? 30,
-      dueDate: parsed.dueDate ?? undefined,
-      startDate: parsed.startDate ?? undefined,
-      // No startTime - user can schedule later by dragging to calendar
-      tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
-    };
+    const taskData = buildTaskDataFromParsed(
+      parsed,
+      linkMetaMap,
+      firstLinkMeta,
+      matchedTagIds
+    );
 
-    createTask.mutate(taskData, {
-      onSuccess: () => {
-        // Clear input and stay in create mode for quick successive creation
-        onCreated();
-      },
-    });
+    createTask.mutate(taskData, { onSuccess: () => onCreated() });
   };
+
+  // Effective duration for display — explicit input takes priority
+  const effectiveDuration =
+    parsed.durationMinutes ??
+    (firstLinkMeta &&
+    "durationSeconds" in firstLinkMeta &&
+    firstLinkMeta.durationSeconds > 0
+      ? Math.ceil(firstLinkMeta.durationSeconds / 60)
+      : null);
 
   return (
     <>
-      {/* Show empty state when no valid title */}
       {!isValid && matchingTags.length === 0 && (
         <CommandEmpty>
           <div className="space-y-2">
@@ -176,7 +300,6 @@ export function CommandBarCreateTask({
         </CommandGroup>
       )}
 
-      {/* Show selectable create item when valid */}
       {isValid && (
         <>
           <CommandGroup heading="Create Task">
@@ -186,20 +309,20 @@ export function CommandBarCreateTask({
             >
               <CheckIcon className="text-muted-foreground" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="truncate font-medium">{parsed.title}</span>
+                <span className="truncate font-medium">
+                  {parsed.title || firstLinkMeta?.title || "New task from link"}
+                </span>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {/* Duration badge */}
-                  {parsed.durationMinutes && (
+                  {effectiveDuration !== null && (
                     <Badge
                       className="h-6 gap-1.5 px-2 text-[11px]"
                       variant="secondary"
                     >
                       <ClockIcon className="size-3.5" />
-                      {formatDuration(parsed.durationMinutes)}
+                      {formatDuration(effectiveDuration)}
                     </Badge>
                   )}
 
-                  {/* Due date badge */}
                   {parsed.dueDate && (
                     <Badge
                       className="h-6 gap-1.5 px-2 text-[11px]"
@@ -213,7 +336,26 @@ export function CommandBarCreateTask({
                     </Badge>
                   )}
 
-                  {/* Start date badge */}
+                  {/* Link badges — one per detected URL */}
+                  {parsed.links.map((url) => {
+                    const meta = linkMetaMap[url];
+                    const isPending = pendingUrls.has(url);
+                    return (
+                      <Badge
+                        className="h-6 gap-1.5 px-2 text-[11px]"
+                        key={url}
+                        variant="secondary"
+                      >
+                        {isPending ? (
+                          <Loader2Icon className="size-3.5 animate-spin" />
+                        ) : (
+                          <Link2Icon className="size-3.5" />
+                        )}
+                        {meta ? getProviderLabel(meta.provider) : "Link"}
+                      </Badge>
+                    );
+                  })}
+
                   {parsed.startDate && (
                     <Badge
                       className="h-6 gap-1.5 px-2 text-[11px]"
@@ -227,7 +369,6 @@ export function CommandBarCreateTask({
                     </Badge>
                   )}
 
-                  {/* Tag badges */}
                   {parsed.tagNames.map((name) => {
                     const tag = tags.find((t) => t.name === name);
                     if (!tag) {
@@ -250,7 +391,6 @@ export function CommandBarCreateTask({
             </CommandItem>
           </CommandGroup>
 
-          {/* Keybind hints footer */}
           <div className="flex justify-center gap-3 border-t px-3 py-2.5 text-muted-foreground text-sm">
             <span>
               <code className="rounded bg-muted px-1">=</code> duration

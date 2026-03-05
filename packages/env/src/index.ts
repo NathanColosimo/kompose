@@ -14,6 +14,10 @@ export const env = createEnv({
     GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
     GOOGLE_MAPS_API_KEY: z.string().min(1),
     OPENAI_API_KEY: z.string().min(1).optional(),
+    // Link parsing provider keys (optional — parsing degrades gracefully when missing)
+    SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
+    SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
+    YOUTUBE_API_KEY: z.string().min(1).optional(),
     // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
     // Takes priority over Axiom when set
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),

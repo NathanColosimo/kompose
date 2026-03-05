@@ -238,6 +238,8 @@ function buildDraftFromTask(
     dueDate: task.dueDate,
     startDate: task.startDate,
     startTime: task.startTime,
+    linkInput: "",
+    links: task.links ?? [],
     recurrence: recurrence ?? null,
   };
 }
@@ -1141,6 +1143,7 @@ export default function CalendarTab() {
           dueDate: nextDraft.dueDate,
           startDate: nextDraft.startDate,
           startTime: nextDraft.startTime,
+          links: nextDraft.links,
           recurrence: nextDraft.recurrence,
         },
       });

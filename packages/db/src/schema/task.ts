@@ -17,6 +17,7 @@ import {
 } from "drizzle-zod";
 import z from "zod";
 import { user } from "./auth";
+import { type LinkMeta, linkMetaSchema } from "./link";
 
 // ============================================================================
 // RECURRENCE SCHEMA (Zod discriminated union for JSONB column)
@@ -88,6 +89,9 @@ export const taskTable = pgTable("task", {
   startTime: time("start_time"),
   durationMinutes: integer("duration_minutes").notNull().default(30),
 
+  /** Array of parsed link metadata objects, discriminated by provider */
+  links: jsonb("links").$type<LinkMeta[]>().notNull().default([]),
+
   // Recurrence fields
   /** Points to the master task of the series. null=non-recurring, self=master, other=occurrence */
   seriesMasterId: uuid("series_master_id"),
@@ -105,11 +109,13 @@ export const taskTable = pgTable("task", {
 
 export const taskSelectSchema = createSelectSchema(taskTable).safeExtend({
   recurrence: taskRecurrenceSchema.nullable(),
+  links: z.array(linkMetaSchema),
 });
 
 export const taskInsertSchema = createInsertSchema(taskTable)
   .safeExtend({
     recurrence: taskRecurrenceSchema.nullable().optional(),
+    links: z.array(linkMetaSchema).optional(),
   })
   .omit({
     id: true,
@@ -117,6 +123,7 @@ export const taskInsertSchema = createInsertSchema(taskTable)
 
 export const taskUpdateSchema = createUpdateSchema(taskTable).safeExtend({
   recurrence: taskRecurrenceSchema.nullable().optional(),
+  links: z.array(linkMetaSchema).optional(),
 });
 
 export type TaskSelect = typeof taskTable.$inferSelect;

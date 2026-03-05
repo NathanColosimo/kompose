@@ -1,3 +1,4 @@
+import { linkMetaSchema } from "@kompose/db/schema/link";
 import {
   taskInsertSchema,
   taskSelectSchema,
@@ -12,7 +13,8 @@ import {
 } from "../../lib/temporal-codecs";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
 
-// Re-export recurrence types for frontend use
+// Re-export types for frontend use (native app lacks @kompose/db dependency)
+export type { LinkMeta } from "@kompose/db/schema/link";
 export type { TaskRecurrence } from "@kompose/db/schema/task";
 
 // ============================================================================
@@ -191,11 +193,16 @@ export const deleteTask = oc
   )
   .output(z.null());
 
+export const parseLink = oc
+  .input(z.object({ url: z.string().url() }))
+  .output(linkMetaSchema);
+
 export const taskContract = {
   list: listTasks,
   create: createTask,
   update: updateTask,
   delete: deleteTask,
+  parseLink,
 };
 
 export type TaskListParams = z.infer<typeof listTasksParamsSchema>;

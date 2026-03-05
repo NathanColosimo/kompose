@@ -320,12 +320,13 @@ function buildDraftFromTask(
     dueDate: task.dueDate,
     startDate: task.startDate,
     startTime: task.startTime,
+    linkInput: "",
+    links: task.links ?? [],
     recurrence: recurrence ?? null,
   };
 }
 
 function buildEmptyDraft(timeZone: string): TaskDraft {
-  // Default new tasks to start today and be due tomorrow.
   const today = Temporal.Now.plainDateISO(timeZone);
   const tomorrow = today.add({ days: 1 });
 
@@ -338,6 +339,8 @@ function buildEmptyDraft(timeZone: string): TaskDraft {
     dueDate: tomorrow,
     startDate: today,
     startTime: null,
+    linkInput: "",
+    links: [],
     recurrence: null,
   };
 }
@@ -457,13 +460,14 @@ export default function TasksScreen() {
         dueDate: nextDraft.dueDate,
         startDate: nextDraft.startDate,
         startTime: nextDraft.startTime,
+        links: nextDraft.links,
         recurrence: nextDraft.recurrence,
       },
     });
   }
 
   function handleSave() {
-    if (!draft.title.trim()) {
+    if (!draft.title.trim() && draft.links.length === 0) {
       return;
     }
     if (draft.durationMinutes <= 0) {
@@ -510,14 +514,22 @@ export default function TasksScreen() {
 
       commitTaskUpdate(draft, decision.scope);
     } else {
+      // Derive a title from the first link if the user didn't type one
+      let title = draft.title.trim();
+      if (!title && draft.links.length > 0) {
+        const first = draft.links[0];
+        title = first.title ?? new URL(first.url).hostname;
+      }
+
       createTask.mutate({
-        title: draft.title.trim(),
+        title,
         description: draft.description.trim() ? draft.description.trim() : null,
         tagIds: draft.tagIds,
         durationMinutes: draft.durationMinutes,
         dueDate: draft.dueDate,
         startDate: draft.startDate,
         startTime: draft.startTime,
+        links: draft.links,
         status: "todo",
         recurrence: draft.recurrence,
         seriesMasterId: null,

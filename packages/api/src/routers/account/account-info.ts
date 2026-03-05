@@ -1,34 +1,25 @@
 import { auth } from "@kompose/auth";
-import { getGoogleUserInfo } from "@kompose/google-cal";
-import type { Account } from "better-auth";
 
+/**
+ * Fetch provider profile info for a linked account using Better Auth's
+ * accountInfo endpoint (server-side, no session headers needed).
+ */
 export async function getAccountInfo(input: {
-  account: Account;
+  accountId: string;
   userId: string;
 }): Promise<{ email: string; name: string }> {
-  if (input.account.providerId === "google") {
-    try {
-      const { accessToken } = await auth.api.getAccessToken({
-        body: {
-          providerId: "google",
-          accountId: input.account.accountId,
-          userId: input.userId,
-        },
-      });
-      if (!accessToken) {
-        return { email: "", name: "" };
-      }
-
-      const userInfo = await getGoogleUserInfo(accessToken);
-      if (!userInfo) {
-        return { email: "", name: "" };
-      }
-
-      return { email: userInfo.email, name: userInfo.name };
-    } catch {
-      return { email: "", name: "" };
-    }
+  try {
+    const info = await auth.api.accountInfo({
+      query: {
+        accountId: input.accountId,
+        userId: input.userId,
+      } as Record<string, string>,
+    });
+    return {
+      email: info?.user?.email ?? "",
+      name: info?.user?.name ?? "",
+    };
+  } catch {
+    return { email: "", name: "" };
   }
-
-  return { email: "", name: "" };
 }

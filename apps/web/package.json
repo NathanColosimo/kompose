@@ -98,7 +98,7 @@
     "fumadocs-mdx": "^14.2.9",
     "fumadocs-ui": "^16.6.8",
     "jotai": "catalog:",
-    "lucide-react": "^0.576.0",
+    "lucide-react": "^0.577.0",
     "media-chrome": "^4.18.0",
     "motion": "^12.34.4",
     "nanoid": "^5.1.6",
@@ -126,7 +126,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
     "@tanstack/react-query-devtools": "catalog:",
-    "@tauri-apps/cli": "^2.10.0",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

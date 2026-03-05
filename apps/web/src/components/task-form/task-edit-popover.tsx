@@ -2,12 +2,20 @@
 
 import type {
   DeleteScope,
+  LinkMeta,
   TaskRecurrence,
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { focusedTaskIdAtom } from "@kompose/state/atoms/command-bar";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import {
+  dedupeLinks,
+  getLinkDurationMinutes,
+  getLinkWordCount,
+  getProviderLabel,
+  URL_REGEX,
+} from "@kompose/state/link-meta-utils";
 import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
@@ -18,9 +26,12 @@ import {
   CalendarCheck,
   CalendarClock,
   Clock3,
+  Link2,
+  Loader2,
   Timer,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 import {
   type ReactElement,
@@ -71,6 +82,8 @@ interface TaskFormValues {
   /** Due date - when task is due */
   dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
+  /** Array of parsed link metadata objects */
+  links: LinkMeta[];
   /** Recurrence pattern (null = non-recurring) */
   recurrence: TaskRecurrence | null;
   /** Start date - when task appears in inbox or on calendar */
@@ -157,7 +170,7 @@ function TaskEditForm({
   onClose: () => void;
   open: boolean;
 }) {
-  const { updateTask, deleteTask, tasksQuery } = useTasks();
+  const { updateTask, deleteTask, tasksQuery, parseLink } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
@@ -223,6 +236,7 @@ function TaskEditForm({
       startTime: task.startTime ?? null,
       dueDate: task.dueDate ?? null,
       durationMinutes: task.durationMinutes ?? 30,
+      links: task.links ?? [],
       recurrence: resolvedRecurrence,
     }),
     [
@@ -230,6 +244,7 @@ function TaskEditForm({
       task.tags,
       task.dueDate,
       task.durationMinutes,
+      task.links,
       resolvedRecurrence,
       task.startDate,
       task.startTime,
@@ -256,6 +271,8 @@ function TaskEditForm({
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
+  // Separate watch for links to preserve array type
+  const links = useWatch({ control, name: "links" }) as LinkMeta[];
 
   const commitUpdate = useCallback(
     (values: TaskFormValues, scope: UpdateScope) => {
@@ -274,6 +291,7 @@ function TaskEditForm({
           startTime: values.startTime,
           dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
+          links: values.links,
           recurrence: values.recurrence,
         },
         scope,
@@ -573,6 +591,59 @@ function TaskEditForm({
         />
       </div>
 
+      <LinkListEditor
+        isParsing={parseLink.isPending}
+        links={links}
+        onAddLink={(url) => {
+          // Insert an unknown placeholder immediately so the link
+          // is persisted even if the user saves before parse completes.
+          const placeholder: LinkMeta = {
+            provider: "unknown",
+            url,
+            fetchedAt: new Date().toISOString(),
+          };
+          const currentLinks =
+            (getValues("links") as unknown as LinkMeta[]) ?? [];
+          const isFirstLink = currentLinks.length === 0;
+          setValue("links", dedupeLinks([...currentLinks, placeholder]), {
+            shouldDirty: true,
+          });
+
+          // Upgrade the placeholder in-place when metadata arrives
+          parseLink.mutate(url, {
+            onSuccess: (meta) => {
+              const latest =
+                (getValues("links") as unknown as LinkMeta[]) ?? [];
+              setValue(
+                "links",
+                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
+                { shouldDirty: true }
+              );
+
+              if (isFirstLink) {
+                if (meta.title && !getValues("title")?.trim()) {
+                  setValue("title", meta.title, { shouldDirty: true });
+                }
+                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                  setValue(
+                    "durationMinutes",
+                    Math.ceil(meta.durationSeconds / 60),
+                    { shouldDirty: true }
+                  );
+                }
+              }
+            },
+          });
+        }}
+        onRemoveLink={(index) => {
+          setValue(
+            "links",
+            links.filter((_, i) => i !== index),
+            { shouldDirty: true }
+          );
+        }}
+      />
+
       <div className="space-y-2">
         <Label className="font-medium text-muted-foreground text-xs">
           Tags
@@ -666,5 +737,139 @@ function TaskEditForm({
         value={tagScope}
       />
     </form>
+  );
+}
+
+function LinkMetaPreview({
+  meta,
+  onRemove,
+}: {
+  meta: LinkMeta;
+  onRemove?: () => void;
+}) {
+  const label = getProviderLabel(meta.provider);
+  const durationMinutes = getLinkDurationMinutes(meta);
+  const wordCount = getLinkWordCount(meta);
+
+  return (
+    <div className="group flex items-start gap-2 rounded-md border bg-muted/50 p-2">
+      {meta.thumbnailUrl && (
+        // biome-ignore lint: external CDN hosts aren't in next.config remotePatterns
+        <img
+          alt={meta.title ?? "Link thumbnail"}
+          className="size-10 shrink-0 rounded object-cover"
+          height={40}
+          loading="lazy"
+          src={meta.thumbnailUrl}
+          width={40}
+        />
+      )}
+      <button
+        className="min-w-0 flex-1 space-y-0.5 text-left"
+        onClick={() => window.open(meta.url, "_blank", "noopener,noreferrer")}
+        tabIndex={-1}
+        type="button"
+      >
+        <p className="truncate font-medium text-xs">
+          {meta.title ?? "Untitled"}
+        </p>
+        <div className="flex items-center gap-2 text-muted-foreground text-xs">
+          <span>{label}</span>
+          {durationMinutes !== null && <span>{durationMinutes}m</span>}
+          {wordCount !== null && (
+            <span>{wordCount.toLocaleString()} words</span>
+          )}
+        </div>
+      </button>
+      {onRemove && (
+        <button
+          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          onClick={onRemove}
+          tabIndex={-1}
+          type="button"
+        >
+          <XCircle className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Multi-link editor: renders link list + add input, delegates mutations to parent */
+function LinkListEditor({
+  links,
+  isParsing,
+  onAddLink,
+  onRemoveLink,
+}: {
+  isParsing: boolean;
+  links: LinkMeta[];
+  onAddLink: (url: string) => void;
+  onRemoveLink: (index: number) => void;
+}) {
+  const [linkInput, setLinkInput] = useState("");
+
+  const submitUrl = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (!URL_REGEX.test(trimmed)) {
+      return;
+    }
+    if (links.some((l) => l.url === trimmed)) {
+      setLinkInput("");
+      return;
+    }
+    onAddLink(trimmed);
+    setLinkInput("");
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="font-medium text-muted-foreground text-xs">Links</Label>
+
+      {links.map((meta, index) => (
+        <LinkMetaPreview
+          key={meta.url}
+          meta={meta}
+          onRemove={() => onRemoveLink(index)}
+        />
+      ))}
+
+      <div className="relative">
+        <button
+          className="absolute top-1/2 left-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground"
+          tabIndex={-1}
+          type="button"
+        >
+          <Link2 className="h-4 w-4" />
+        </button>
+        <Input
+          className="pl-8"
+          onBlur={() => submitUrl(linkInput)}
+          onChange={(e) => setLinkInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submitUrl(linkInput);
+            }
+          }}
+          onPaste={(e) => {
+            const pasted = e.clipboardData.getData("text/plain").trim();
+            if (pasted && URL_REGEX.test(pasted)) {
+              e.preventDefault();
+              submitUrl(pasted);
+            }
+          }}
+          placeholder="https://..."
+          type="url"
+          value={linkInput}
+        />
+        {isParsing && (
+          <Loader2 className="absolute top-1/2 right-2.5 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+        )}
+      </div>
+    </div>
   );
 }

@@ -71,6 +71,13 @@
       "when": 1770845327134,
       "tag": "0009_add_ai_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772560042703,
+      "tag": "0010_add_task_links",
+      "breakpoints": true
     }
   ]
 }
