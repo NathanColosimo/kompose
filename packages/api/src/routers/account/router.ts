@@ -38,7 +38,7 @@ export const accountRouter = os.router({
             userId: context.user.id,
           });
           return {
-            id: account.id,
+            accountId: account.accountId,
             providerId: account.providerId,
             email,
             name,

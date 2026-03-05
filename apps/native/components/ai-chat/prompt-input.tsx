@@ -11,7 +11,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -20,6 +19,7 @@ import { uuidv7 } from "uuidv7";
 import { View } from "@/components/ui/view";
 import { useColor } from "@/hooks/use-color";
 import { cn } from "@/lib/utils";
+import { Fonts } from "@/theme/colors";
 
 type PromptInputFile = FileUIPart & { id: string };
 
@@ -61,8 +61,6 @@ const PromptInputSubmitContext =
   createContext<PromptInputSubmitContextValue | null>(null);
 const PromptInputActionMenuContext =
   createContext<PromptInputActionMenuContextValue | null>(null);
-const NEWLINE_PATTERN = /\r\n|\r|\n/;
-
 function useTextContext() {
   const context = useContext(PromptInputTextContext);
   if (!context) {
@@ -363,79 +361,27 @@ export function PromptInputTextarea({
   const mutedTextColor = useColor("textMuted");
   const baseLineHeight = 20;
   const fontSize = 16;
-  const horizontalPadding = 24;
-  const averageCharacterWidth = fontSize * 0.55;
-  const minInputHeight = Math.max(baseLineHeight, rows * baseLineHeight);
   const maxInputHeight = 140;
-  const [inputHeight, setInputHeight] = useState(minInputHeight);
-  const [inputContainerWidth, setInputContainerWidth] = useState(0);
-  const clampHeight = (nextHeight: number) =>
-    Math.min(maxInputHeight, Math.max(minInputHeight, Math.ceil(nextHeight)));
-
-  const estimateLineCount = (value: string) => {
-    if (value.length === 0) {
-      return rows;
-    }
-
-    const usableWidth = Math.max(1, inputContainerWidth - horizontalPadding);
-    const charsPerLine = Math.max(
-      1,
-      Math.floor(usableWidth / averageCharacterWidth)
-    );
-
-    return value
-      .split(NEWLINE_PATTERN)
-      .reduce(
-        (count, segment) =>
-          count + Math.max(1, Math.ceil(segment.length / charsPerLine)),
-        0
-      );
-  };
-
-  useEffect(() => {
-    if (text.length === 0) {
-      setInputHeight(minInputHeight);
-    }
-  }, [text, minInputHeight]);
 
   return (
     <View
       className={cn("rounded-xl border px-3 py-2", className)}
-      onLayout={(event) => {
-        const nextWidth = Math.floor(event.nativeEvent.layout.width);
-        setInputContainerWidth((currentWidth) =>
-          nextWidth > 0 && nextWidth !== currentWidth ? nextWidth : currentWidth
-        );
-      }}
       style={{ backgroundColor: cardColor, borderColor }}
     >
       <TextInput
         editable={!disabled}
         multiline
-        numberOfLines={rows}
-        onChangeText={(nextText) => {
-          setText(nextText);
-          // Fallback autosize path for wrapped typing when contentSize events lag.
-          const estimatedHeight = clampHeight(
-            estimateLineCount(nextText) * baseLineHeight
-          );
-          setInputHeight(estimatedHeight);
-        }}
-        onContentSizeChange={(event) => {
-          // Primary autosize path: follow measured content height precisely.
-          const nextHeight = clampHeight(event.nativeEvent.contentSize.height);
-          setInputHeight((current) =>
-            Math.abs(current - nextHeight) > 1 ? nextHeight : current
-          );
-        }}
+        onChangeText={setText}
         placeholder={placeholder}
         placeholderTextColor={mutedTextColor}
-        scrollEnabled={inputHeight >= maxInputHeight}
+        scrollEnabled
         style={{
           color: textColor,
+          fontFamily: Fonts.sans,
           fontSize,
           lineHeight: baseLineHeight,
-          height: inputHeight,
+          minHeight: rows * baseLineHeight,
+          maxHeight: maxInputHeight,
           textAlignVertical: "top",
           paddingVertical: 0,
         }}

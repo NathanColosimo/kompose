@@ -400,9 +400,10 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
 ### 6.12 SSE Realtime Sync
 - **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
 - **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
-- **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect).
+- **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `ai-chat` (session/stream lifecycle), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
 - **AI chat events**: `ai-chat` events carry `{ sessionId }` and are emitted for AI session create/delete and stream lifecycle updates so clients can invalidate targeted session/message caches.
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
+- **Keepalive**: Server sends `keepalive` events every 10 seconds. Client resets an inactivity timer (30s) on every event; if the timer fires (no events received), the connection is assumed dead and force-closed to trigger a reconnect.
 - **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
 
 ### 6.13 Rate Limiting

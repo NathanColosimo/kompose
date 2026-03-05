@@ -10,7 +10,6 @@ import {
   toUiMessage,
 } from "@kompose/ai/ai-message-utils";
 import {
-  AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
   useAiChat,
 } from "@kompose/state/hooks/use-ai-chat";
@@ -337,11 +336,12 @@ export function SidebarRightChat() {
   const autoCreateAttemptedRef = useRef(false);
   const localSubmitPendingRef = useRef(false);
   const approvalPendingRef = useRef(false);
-  const prevStatusRef = useRef<string>("ready");
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
   }>({ attempts: 0, streamId: null });
+  const activeStreamIdRef = useRef<string | null>(null);
+  const persistedMessagesRef = useRef<UIMessage[]>([]);
   const queryClient = useQueryClient();
   const {
     sessionsQuery,
@@ -355,9 +355,7 @@ export function SidebarRightChat() {
   const sessions = sessionsQuery.data ?? [];
   const activeSession =
     sessions.find((session) => session.id === activeSessionId) ?? null;
-  const shouldResumeStream = Boolean(
-    activeSessionId && activeSession?.activeStreamId
-  );
+  activeStreamIdRef.current = activeSession?.activeStreamId ?? null;
   const modelLabel =
     CHAT_MODELS.find((model) => model.id === selectedModel)?.label ??
     "GPT-5 Mini";
@@ -446,6 +444,7 @@ export function SidebarRightChat() {
       ),
     [cachedSessionRows, messagesQuery.data]
   );
+  persistedMessagesRef.current = persistedMessages;
 
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
@@ -471,12 +470,12 @@ export function SidebarRightChat() {
       },
 
       reconnectToStream: async ({ chatId }) => {
-        // Reconnect is best-effort: only attempt it when this session has an
-        // active stream pointer from the server.
+        // Read from ref so the Chat instance always sees the latest value,
+        // even though useChat doesn't recreate Chat when transport changes.
         if (
           !activeSessionId ||
           chatId !== activeSessionId ||
-          !activeSession?.activeStreamId
+          !activeStreamIdRef.current
         ) {
           return null;
         }
@@ -494,12 +493,7 @@ export function SidebarRightChat() {
         }
       },
     }),
-    [
-      activeSession?.activeStreamId,
-      activeSessionId,
-      resumeSessionStream,
-      streamSessionMessage,
-    ]
+    [activeSessionId, resumeSessionStream, streamSessionMessage]
   );
 
   const {
@@ -515,20 +509,10 @@ export function SidebarRightChat() {
     id: activeSessionId ?? "pending-chat",
     experimental_throttle: 50,
     messages: persistedMessages,
-    resume: shouldResumeStream,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
-    onFinish: async () => {
+    onFinish: () => {
       approvalPendingRef.current = false;
-      if (!activeSessionId) {
-        return;
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY }),
-        queryClient.invalidateQueries({
-          queryKey: getAiChatMessagesQueryKey(activeSessionId),
-        }),
-      ]);
     },
   });
 
@@ -573,6 +557,10 @@ export function SidebarRightChat() {
         return;
       }
       streamResumeStateRef.current.attempts += 1;
+      // Hydrate persisted messages (including the user message from the other
+      // device) before connecting to the stream. The normal rehydration effect
+      // is blocked while status is "streaming", so this is the only chance.
+      setMessages(persistedMessagesRef.current);
       resumeStream();
     };
 
@@ -596,10 +584,11 @@ export function SidebarRightChat() {
     return () => {
       clearInterval(timer);
     };
-  }, [activeSession?.activeStreamId, resumeStream, status]);
+  }, [activeSession?.activeStreamId, resumeStream, setMessages, status]);
 
   // Rehydrate local stream state from persisted session messages before paint
   // to avoid visible top-to-bottom jumps during session switches.
+  const prevStatusRef = useRef<string>("ready");
   useLayoutEffect(() => {
     const prevStatus = prevStatusRef.current;
     prevStatusRef.current = status;
@@ -617,7 +606,8 @@ export function SidebarRightChat() {
     }
     // When transitioning from streaming → ready, persistedMessages is still
     // stale (onFinish query invalidation hasn't resolved yet). Skip this
-    // cycle to avoid flashing old data; the next run after queries settle
+    // cycle so useChat's internal state (which has the full conversation)
+    // isn't overwritten with stale data. The next run after queries settle
     // will rehydrate with fresh data.
     if (
       (prevStatus === "streaming" || prevStatus === "submitted") &&

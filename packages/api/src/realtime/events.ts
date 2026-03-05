@@ -7,6 +7,7 @@ export const syncEventTypeSchema = z.enum([
   "tasks",
   "ai-chat",
   "reconnect",
+  "keepalive",
 ]);
 
 export const googleCalendarSyncEventSchema = z.object({
@@ -38,11 +39,17 @@ export const reconnectSyncEventSchema = z.object({
   payload: z.object({}).strict(),
 });
 
+export const keepaliveSyncEventSchema = z.object({
+  type: z.literal("keepalive"),
+  payload: z.object({}).strict(),
+});
+
 export const syncEventSchema = z.discriminatedUnion("type", [
   googleCalendarSyncEventSchema,
   tasksSyncEventSchema,
   aiChatSyncEventSchema,
   reconnectSyncEventSchema,
+  keepaliveSyncEventSchema,
 ]);
 
 export type SyncEvent = z.infer<typeof syncEventSchema>;

@@ -7,7 +7,6 @@ import {
   toUiMessage,
 } from "@kompose/ai/ai-message-utils";
 import {
-  AI_CHAT_SESSIONS_QUERY_KEY,
   getAiChatMessagesQueryKey,
   useAiChat,
 } from "@kompose/state/hooks/use-ai-chat";
@@ -99,6 +98,61 @@ import { Text } from "@/components/ui/text";
 import { View } from "@/components/ui/view";
 import { useColor } from "@/hooks/use-color";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { Fonts } from "@/theme/colors";
+
+/** Custom StreamdownRN themes that use Sentient instead of platform defaults. */
+const streamdownFonts = {
+  regular: Fonts.sans,
+  bold: "Sentient-Bold",
+  mono: Platform.select({ ios: "Menlo", default: "monospace" }) as string,
+};
+
+const streamdownThemes = {
+  light: {
+    colors: {
+      background: "#ffffff",
+      foreground: "#24292e",
+      muted: "#6a737d",
+      accent: "#0366d6",
+      codeBackground: "#f6f8fa",
+      codeForeground: "#24292e",
+      border: "#e1e4e8",
+      link: "#0366d6",
+      syntaxDefault: "#24292e",
+      syntaxKeyword: "#d73a49",
+      syntaxString: "#032f62",
+      syntaxNumber: "#005cc5",
+      syntaxComment: "#6a737d",
+      syntaxFunction: "#6f42c1",
+      syntaxClass: "#e36209",
+      syntaxOperator: "#d73a49",
+    },
+    fonts: streamdownFonts,
+    spacing: { block: 12, inline: 4, indent: 16 },
+  },
+  dark: {
+    colors: {
+      background: "#0d1117",
+      foreground: "#c9d1d9",
+      muted: "#8b949e",
+      accent: "#58a6ff",
+      codeBackground: "#161b22",
+      codeForeground: "#c9d1d9",
+      border: "#30363d",
+      link: "#58a6ff",
+      syntaxDefault: "#c9d1d9",
+      syntaxKeyword: "#ff7b72",
+      syntaxString: "#a5d6ff",
+      syntaxNumber: "#79c0ff",
+      syntaxComment: "#8b949e",
+      syntaxFunction: "#d2a8ff",
+      syntaxClass: "#ffa657",
+      syntaxOperator: "#ff7b72",
+    },
+    fonts: streamdownFonts,
+    spacing: { block: 12, inline: 4, indent: 16 },
+  },
+} as const;
 
 type ChatModelId = "gpt-5" | "gpt-5-mini";
 
@@ -477,14 +531,14 @@ function ChatMessageCard({
                 {showContent ? (
                   <ChainOfThoughtContent>
                     <ChainOfThoughtStep
-                      label={isActive ? "Reasoning (streaming)" : "Reasoning"}
+                      label=""
                       status={isActive ? "active" : "complete"}
                     >
                       <MessageResponse className="w-full">
                         <StreamdownRN
                           isComplete={!isActive}
                           style={{ flex: 0 }}
-                          theme={colorScheme}
+                          theme={streamdownThemes[colorScheme]}
                         >
                           {segment.text || "Thinking..."}
                         </StreamdownRN>
@@ -512,7 +566,7 @@ function ChatMessageCard({
                 <StreamdownRN
                   isComplete={!isStreamingAssistant}
                   style={{ flex: 0 }}
-                  theme={colorScheme}
+                  theme={streamdownThemes[colorScheme]}
                 >
                   {segment.text}
                 </StreamdownRN>
@@ -550,12 +604,13 @@ export default function ChatScreen() {
   const autoCreateAttemptedRef = useRef(false);
   const localSubmitPendingRef = useRef(false);
   const approvalPendingRef = useRef(false);
-  const prevStatusRef = useRef<string>("ready");
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
   }>({ attempts: 0, streamId: null });
   const isNearBottomRef = useRef(true);
+  const activeStreamIdRef = useRef<string | null>(null);
+  const persistedMessagesRef = useRef<UIMessage[]>([]);
   const listRef = useRef<FlatList<UIMessage> | null>(null);
   const queryClient = useQueryClient();
 
@@ -570,9 +625,7 @@ export default function ChatScreen() {
   const sessions = sessionsQuery.data ?? [];
   const activeSession =
     sessions.find((session) => session.id === activeSessionId) ?? null;
-  const shouldResumeStream = Boolean(
-    activeSessionId && activeSession?.activeStreamId
-  );
+  activeStreamIdRef.current = activeSession?.activeStreamId ?? null;
 
   const cachedSessionRows = useMemo(() => {
     if (!activeSessionId) {
@@ -652,6 +705,7 @@ export default function ChatScreen() {
       ),
     [cachedSessionRows, messagesQuery.data]
   );
+  persistedMessagesRef.current = persistedMessages;
 
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
@@ -676,11 +730,12 @@ export default function ChatScreen() {
         return eventIteratorToUnproxiedDataStream(iterator);
       },
       reconnectToStream: async ({ chatId }) => {
-        // Reconnect only when the server indicates an active stream.
+        // Read from ref so the Chat instance always sees the latest value,
+        // even though useChat doesn't recreate Chat when transport changes.
         if (
           !activeSessionId ||
           chatId !== activeSessionId ||
-          !activeSession?.activeStreamId
+          !activeStreamIdRef.current
         ) {
           return null;
         }
@@ -698,12 +753,7 @@ export default function ChatScreen() {
         }
       },
     }),
-    [
-      activeSession?.activeStreamId,
-      activeSessionId,
-      resumeSessionStream,
-      streamSessionMessage,
-    ]
+    [activeSessionId, resumeSessionStream, streamSessionMessage]
   );
 
   const {
@@ -719,20 +769,10 @@ export default function ChatScreen() {
     id: activeSessionId ?? "pending-chat",
     experimental_throttle: 50,
     messages: persistedMessages,
-    resume: shouldResumeStream,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport,
-    onFinish: async () => {
+    onFinish: () => {
       approvalPendingRef.current = false;
-      if (!activeSessionId) {
-        return;
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY }),
-        queryClient.invalidateQueries({
-          queryKey: getAiChatMessagesQueryKey(activeSessionId),
-        }),
-      ]);
     },
   });
 
@@ -777,6 +817,10 @@ export default function ChatScreen() {
         return;
       }
       streamResumeStateRef.current.attempts += 1;
+      // Hydrate persisted messages (including the user message from the other
+      // device) before connecting to the stream. The normal rehydration effect
+      // is blocked while status is "streaming", so this is the only chance.
+      setMessages(persistedMessagesRef.current);
       resumeStream();
     };
 
@@ -800,9 +844,10 @@ export default function ChatScreen() {
     return () => {
       clearInterval(timer);
     };
-  }, [activeSession?.activeStreamId, resumeStream, status]);
+  }, [activeSession?.activeStreamId, resumeStream, setMessages, status]);
 
   // Rehydrate local chat state when switching sessions.
+  const prevStatusRef = useRef<string>("ready");
   useEffect(() => {
     const prevStatus = prevStatusRef.current;
     prevStatusRef.current = status;
@@ -820,7 +865,8 @@ export default function ChatScreen() {
     }
     // When transitioning from streaming → ready, persistedMessages is still
     // stale (onFinish query invalidation hasn't resolved yet). Skip this
-    // cycle to avoid flashing old data; the next run after queries settle
+    // cycle so useChat's internal state (which has the full conversation)
+    // isn't overwritten with stale data. The next run after queries settle
     // will rehydrate with fresh data.
     if (
       (prevStatus === "streaming" || prevStatus === "submitted") &&
@@ -915,9 +961,6 @@ export default function ChatScreen() {
 
   const hasMessages = messageCount > 0;
   const isComposerDisabled = !activeSessionId || createSession.isPending;
-  const bottomTabsOffset =
-    (Platform.OS === "ios" ? 56 : 48) + Math.max(insets.bottom, 8);
-
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen
@@ -1025,7 +1068,7 @@ export default function ChatScreen() {
         {/* Composer */}
         <View
           className="border-border border-t bg-background px-2 pt-2"
-          style={{ paddingBottom: bottomTabsOffset }}
+          style={{ paddingBottom: insets.bottom + 8 }}
         >
           <PromptInputProvider>
             <PromptInput

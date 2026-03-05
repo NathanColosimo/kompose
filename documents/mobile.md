@@ -215,6 +215,14 @@ Uniwind uses theme variants and CSS variables defined in `global.css`. To dynami
    - Reads effective scheme from `useColorScheme()`
    - Provides React Navigation theme via ThemeProvider
 
+### Custom font (Sentient)
+
+Sentient is loaded at build time via the `expo-font` plugin in `app.json`. It is applied in two ways:
+
+- **Uniwind components** (e.g. `Text`): `global.css` maps `--font-sans` to `"Sentient-Regular"`, so the `font-sans` class applies it automatically.
+- **Raw `TextInput` components** (e.g. `Input`, `Textarea`, `PromptInputTextarea`): These bypass Uniwind and must set `fontFamily: Fonts.sans` from `@/theme/colors` in their inline style objects.
+- **StreamdownRN**: Uses custom `ThemeConfig` objects with `fonts.regular` / `fonts.bold` set to Sentient variants (defined at module level in `chat/index.tsx`).
+
 ### Adding new theme colors
 
 1. Add the color variable to both `@variant light` and `@variant dark` in `global.css`

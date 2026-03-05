@@ -2,7 +2,7 @@ import { oc } from "@orpc/contract";
 import { z } from "zod";
 
 export const linkedAccountSchema = z.object({
-  id: z.string(),
+  accountId: z.string(),
   providerId: z.string(),
   email: z.string(),
   name: z.string(),

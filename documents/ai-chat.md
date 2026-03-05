@@ -309,6 +309,13 @@ used for tasks/calendars):
 - AI router error mapping now preserves HTTP semantics for configured domain
   errors, including `MODEL_NOT_CONFIGURED -> SERVICE_UNAVAILABLE`, instead of
   collapsing known AI config failures into generic 500 responses.
+- SSE connection reliability hardened with keepalive heartbeats:
+  - Server sends `keepalive` events every 10 seconds via the sync generator.
+  - Client resets a 30-second inactivity timer on every received event
+    (including keepalive). If the timer fires without any event, the
+    connection is assumed dead and force-closed, triggering reconnect.
+  - This prevents silent TCP death (NAT timeout, WiFi switch, mobile
+    backgrounding) from permanently breaking cross-device sync.
 
 ---
 

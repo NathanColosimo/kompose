@@ -11,6 +11,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
+import { Fonts } from "@/theme/colors";
 import { BORDER_RADIUS, CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 export interface InputProps extends Omit<TextInputProps, "style"> {
@@ -108,10 +109,11 @@ export const Input = forwardRef<TextInput, InputProps>(
 
     const getInputStyle = (): TextStyle => ({
       flex: 1,
+      fontFamily: Fonts.sans,
       fontSize: FONT_SIZE,
       lineHeight: isTextarea ? (compact ? 18 : 20) : undefined,
       color: disabled ? muted : error ? danger : textColor,
-      paddingVertical: 0, // Remove default padding
+      paddingVertical: 0,
       textAlignVertical: isTextarea ? "top" : "center",
     });
 
@@ -523,6 +525,7 @@ export const GroupedInputItem = forwardRef<TextInput, GroupedInputItemProps>(
                 selectionColor={primary}
                 style={[
                   {
+                    fontFamily: Fonts.sans,
                     fontSize: FONT_SIZE,
                     lineHeight: 20,
                     color: disabled ? muted : error ? danger : text,
@@ -589,6 +592,7 @@ export const GroupedInputItem = forwardRef<TextInput, GroupedInputItemProps>(
                   style={[
                     {
                       flex: 1,
+                      fontFamily: Fonts.sans,
                       fontSize: FONT_SIZE,
                       color: disabled ? muted : error ? danger : text,
                       paddingVertical: 0,

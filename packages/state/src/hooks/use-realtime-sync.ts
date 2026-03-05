@@ -20,6 +20,10 @@ import {
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+// If no event (including keepalive) arrives within this window, assume the
+// connection is dead and force a reconnect. Must be > server keepalive
+// interval (10s) to avoid false positives.
+const INACTIVITY_TIMEOUT_MS = 30_000;
 
 export interface RealtimeSyncOptions {
   enabled?: boolean;
@@ -130,6 +134,9 @@ export function useRealtimeSync({
           invalidateCriticalQueries();
           return;
         }
+        case "keepalive": {
+          return;
+        }
         default: {
           return;
         }
@@ -151,6 +158,7 @@ export function useRealtimeSync({
     let cancelled = false;
     let reconnectAttempts = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
     let activeIterator: AsyncIterator<SyncEvent> | null = null;
 
     const clearReconnectTimer = () => {
@@ -188,6 +196,27 @@ export function useRealtimeSync({
       }, delayMs);
     };
 
+    const clearInactivityTimer = () => {
+      if (!inactivityTimer) {
+        return;
+      }
+      clearTimeout(inactivityTimer);
+      inactivityTimer = null;
+    };
+
+    const resetInactivityTimer = () => {
+      clearInactivityTimer();
+      if (cancelled) {
+        return;
+      }
+      inactivityTimer = setTimeout(() => {
+        // No events received within the timeout window — connection is
+        // likely dead. Force-close the iterator so the consume loop exits
+        // and triggers a reconnect.
+        closeActiveIterator();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
     const closeActiveIterator = async () => {
       if (!activeIterator) {
         return;
@@ -213,6 +242,7 @@ export function useRealtimeSync({
           break;
         }
 
+        resetInactivityTimer();
         handleSyncEvent(next.value);
 
         if (next.value.type === "reconnect") {
@@ -239,6 +269,7 @@ export function useRealtimeSync({
         }
 
         reconnectAttempts = 0;
+        resetInactivityTimer();
         await invalidateCriticalQueries();
         const reconnectRequested = await consumeIterator(iterator);
 
@@ -259,6 +290,7 @@ export function useRealtimeSync({
     return () => {
       cancelled = true;
       clearReconnectTimer();
+      clearInactivityTimer();
       closeActiveIterator();
     };
   }, [enabled, handleSyncEvent, invalidateCriticalQueries, orpc, userId]);

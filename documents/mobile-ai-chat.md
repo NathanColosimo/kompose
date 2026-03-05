@@ -141,8 +141,9 @@ Integrated `streamdown-rn` for native message rendering:
 
 - Installed in `apps/native/package.json`
 - Replaced plain text rendering with `StreamdownRN` in message body
-- Applied theme (`light`/`dark`) via color scheme hook
+- Custom `ThemeConfig` objects (defined at module level in `chat/index.tsx`) override the built-in `fonts.regular` and `fonts.bold` with Sentient so markdown body and heading text uses the app font instead of platform defaults
 - Applied same renderer in reasoning display for consistent markdown behavior
+- Chat composer `PromptInputTextarea` also uses `Fonts.sans` for consistent font in the input field
 
 ## 11) Auto-scroll while streaming
 

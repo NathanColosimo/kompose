@@ -124,7 +124,9 @@ export function ChainOfThoughtStep({
         <Dot color={status === "pending" ? mutedText : foreground} size={16} />
       </View>
       <View className="flex-1 gap-1">
-        <Text className="text-foreground text-xs">{label}</Text>
+        {label ? (
+          <Text className="text-foreground text-xs">{label}</Text>
+        ) : null}
         {description ? (
           <Text className="text-muted-foreground text-xs">{description}</Text>
         ) : null}

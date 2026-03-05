@@ -5,6 +5,7 @@ import { type SyncEvent, syncEventSchema } from "./events";
 
 const USER_CHANNEL_PREFIX = "user";
 const RECONNECT_EVENT_AFTER_MS = 11 * 60 * 1000;
+const KEEPALIVE_INTERVAL_MS = 10_000;
 
 const tracer = trace.getTracer("sync");
 
@@ -120,6 +121,7 @@ export async function* createUserSyncEventIterator(
   const queue = createAsyncQueue<SyncEvent>();
   const subscriber = await redisPublisher.duplicate();
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
   let queueClosed = false;
   let messagesReceived = 0;
 
@@ -158,6 +160,10 @@ export async function* createUserSyncEventIterator(
     await subscriber.subscribe(channel, listener);
     connectionSpan.addEvent("sync.subscribed");
 
+    keepaliveTimer = setInterval(() => {
+      queue.push({ type: "keepalive", payload: {} });
+    }, KEEPALIVE_INTERVAL_MS);
+
     reconnectTimer = setTimeout(() => {
       queue.push({
         type: "reconnect",
@@ -180,6 +186,9 @@ export async function* createUserSyncEventIterator(
       }
     }
   } finally {
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+    }
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
     }
