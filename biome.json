@@ -32,5 +32,17 @@
         "noLeakedRender": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/global.css"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noDuplicateCustomProperties": "off"
+          }
+        }
+      }
+    }
+  ]
 }

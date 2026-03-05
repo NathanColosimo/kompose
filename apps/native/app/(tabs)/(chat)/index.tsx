@@ -525,7 +525,7 @@ function ChatMessageCard({
             return (
               <ChainOfThought
                 defaultOpen={isActive}
-                key={`${message.id}-cot-${index}`}
+                key={`${message.id}-${segment.id}`}
               >
                 <ChainOfThoughtHeader>Reasoning</ChainOfThoughtHeader>
                 {showContent ? (
@@ -555,14 +555,14 @@ function ChatMessageCard({
               return (
                 <MessageResponse
                   className="bg-secondary"
-                  key={`${message.id}-text-${index}`}
+                  key={`${message.id}-${segment.id}`}
                 >
                   <Text>{segment.text}</Text>
                 </MessageResponse>
               );
             }
             return (
-              <MessageResponse key={`${message.id}-text-${index}`}>
+              <MessageResponse key={`${message.id}-${segment.id}`}>
                 <StreamdownRN
                   isComplete={!isStreamingAssistant}
                   style={{ flex: 0 }}

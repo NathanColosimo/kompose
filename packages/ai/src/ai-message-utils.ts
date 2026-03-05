@@ -22,9 +22,9 @@ export type AttachmentData =
   | (SourceDocumentUIPart & { id: string });
 
 export type MessageSegment =
-  | { kind: "reasoning"; text: string }
-  | { kind: "text"; text: string }
-  | { kind: "tool"; part: ToolPart };
+  | { id: string; kind: "reasoning"; text: string }
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "tool"; part: ToolPart };
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -99,16 +99,25 @@ export function buildMessageSegments(
   const segments: MessageSegment[] = [];
   let pendingReasoning: string | null = null;
   let pendingText = "";
+  let counter = 0;
 
   const flushReasoning = () => {
     if (pendingReasoning !== null) {
-      segments.push({ kind: "reasoning", text: pendingReasoning });
+      segments.push({
+        id: `reasoning-${counter++}`,
+        kind: "reasoning",
+        text: pendingReasoning,
+      });
       pendingReasoning = null;
     }
   };
   const flushText = () => {
     if (pendingText.length > 0) {
-      segments.push({ kind: "text", text: pendingText });
+      segments.push({
+        id: `text-${counter++}`,
+        kind: "text",
+        text: pendingText,
+      });
       pendingText = "";
     }
   };
@@ -131,7 +140,9 @@ export function buildMessageSegments(
     } else if (isToolUIPart(part)) {
       flushReasoning();
       flushText();
-      segments.push({ kind: "tool", part: part as ToolPart });
+      const toolId =
+        "toolCallId" in part ? part.toolCallId : `tool-${counter++}`;
+      segments.push({ id: toolId, kind: "tool", part: part as ToolPart });
     }
   }
 

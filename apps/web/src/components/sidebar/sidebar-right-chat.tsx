@@ -274,7 +274,7 @@ function SidebarChatMessage({
             return (
               <ChainOfThought
                 defaultOpen={isActive}
-                key={`${message.id}-cot-${index}`}
+                key={`${message.id}-${segment.id}`}
               >
                 <ChainOfThoughtHeader className="text-xs" />
                 {showContent ? (
@@ -299,14 +299,14 @@ function SidebarChatMessage({
               return (
                 <p
                   className="whitespace-pre-wrap"
-                  key={`${message.id}-text-${index}`}
+                  key={`${message.id}-${segment.id}`}
                 >
                   {segment.text}
                 </p>
               );
             }
             return (
-              <MessageResponse key={`${message.id}-text-${index}`}>
+              <MessageResponse key={`${message.id}-${segment.id}`}>
                 {segment.text}
               </MessageResponse>
             );
