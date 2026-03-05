@@ -147,6 +147,338 @@ function formatDurationMinutes(minutes: number): string {
   return `${hours}h ${remainder}m`;
 }
 
+function TaskRecurrenceEndSection({
+  recurrenceState,
+  fallbackUntil,
+  timeZone,
+  updateRecurrence,
+}: {
+  recurrenceState: TaskRecurrenceEditorState;
+  fallbackUntil: Temporal.PlainDate;
+  timeZone: string;
+  updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
+}) {
+  return (
+    <View className="mt-3">
+      <Text className="text-muted-foreground text-xs">Ends</Text>
+      <View className="mt-1 flex-row flex-wrap gap-2">
+        <Button
+          onPress={() => updateRecurrence({ endType: "never", until: null })}
+          size="sm"
+          style={{ borderRadius: 999 }}
+          variant={recurrenceState.endType === "never" ? "default" : "outline"}
+        >
+          <Text>Never</Text>
+        </Button>
+        <Button
+          onPress={() =>
+            updateRecurrence({
+              endType: "until",
+              until: recurrenceState.until ?? fallbackUntil,
+            })
+          }
+          size="sm"
+          style={{ borderRadius: 999 }}
+          variant={recurrenceState.endType === "until" ? "default" : "outline"}
+        >
+          <Text>On date</Text>
+        </Button>
+        <Button
+          onPress={() =>
+            updateRecurrence({
+              endType: "count",
+              count:
+                Number.isFinite(recurrenceState.count) &&
+                recurrenceState.count > 0
+                  ? recurrenceState.count
+                  : 10,
+            })
+          }
+          size="sm"
+          style={{ borderRadius: 999 }}
+          variant={recurrenceState.endType === "count" ? "default" : "outline"}
+        >
+          <Text>After N</Text>
+        </Button>
+      </View>
+
+      {recurrenceState.endType === "until" ? (
+        <View className="mt-2" style={{ maxWidth: 220 }}>
+          <DatePicker
+            displayValue={
+              recurrenceState.until
+                ? formatPlainDateShort(recurrenceState.until)
+                : "Until date"
+            }
+            mode="date"
+            onChange={(date) =>
+              updateRecurrence({
+                until: date ? dateToPlainDate(date, timeZone) : null,
+              })
+            }
+            placeholder="Until date"
+            showIcon={false}
+            style={{
+              borderRadius: 999,
+              minHeight: 38,
+              paddingHorizontal: 10,
+            }}
+            value={
+              recurrenceState.until
+                ? plainDateToDate(recurrenceState.until)
+                : undefined
+            }
+            valueTextStyle={{ fontSize: 13 }}
+            variant="outline"
+          />
+        </View>
+      ) : null}
+
+      {recurrenceState.endType === "count" ? (
+        <View className="mt-2 flex-row items-center gap-2">
+          <Input
+            containerStyle={{ width: 78 }}
+            inputStyle={{ fontSize: 17 }}
+            keyboardType="number-pad"
+            onChangeText={(value) => {
+              const nextCount = Number.parseInt(value, 10) || 1;
+              updateRecurrence({ count: nextCount });
+            }}
+            pill
+            value={String(recurrenceState.count)}
+            variant="outline"
+          />
+          <Text className="text-foreground text-xs">occurrences</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TaskRecurrenceEditor({
+  recurrenceState,
+  recurrenceSummary,
+  activeFrequency,
+  hasRecurrence,
+  fallbackUntil,
+  timeZone,
+  handleSelectFrequency,
+  updateRecurrence,
+}: {
+  recurrenceState: TaskRecurrenceEditorState;
+  recurrenceSummary: string;
+  activeFrequency: TaskRecurrenceFrequency | "NONE";
+  hasRecurrence: boolean;
+  fallbackUntil: Temporal.PlainDate;
+  timeZone: string;
+  handleSelectFrequency: (freq: TaskRecurrenceFrequency | "NONE") => void;
+  updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
+}) {
+  return (
+    <View className="mb-2.5 rounded-md border border-border px-3 py-3">
+      <Text className="font-semibold text-foreground text-sm">Repeat</Text>
+      <Text className="mt-0.5 text-muted-foreground text-xs">
+        {recurrenceSummary}
+      </Text>
+
+      <View className="mt-2 flex-row flex-wrap gap-2">
+        {RECURRENCE_FREQUENCIES.map((frequency) => {
+          const active = activeFrequency === frequency.value;
+          return (
+            <Button
+              key={frequency.value}
+              onPress={() => handleSelectFrequency(frequency.value)}
+              size="sm"
+              style={{ borderRadius: 999 }}
+              variant={active ? "default" : "outline"}
+            >
+              <Text>{frequency.label}</Text>
+            </Button>
+          );
+        })}
+      </View>
+
+      {hasRecurrence ? (
+        <>
+          <View className="mt-3 flex-row items-center gap-2">
+            <Text className="text-muted-foreground text-xs">Every</Text>
+            <Input
+              containerStyle={{ width: 78 }}
+              inputStyle={{ fontSize: 17 }}
+              keyboardType="number-pad"
+              onChangeText={(value) => {
+                const nextInterval = Number.parseInt(value, 10) || 1;
+                updateRecurrence({ interval: nextInterval });
+              }}
+              pill
+              value={String(recurrenceState.interval)}
+              variant="outline"
+            />
+            <Text className="text-foreground text-xs">
+              {getTaskRecurrenceIntervalLabel(
+                recurrenceState.freq,
+                recurrenceState.interval
+              )}
+            </Text>
+          </View>
+
+          {recurrenceState.freq === "WEEKLY" ? (
+            <View className="mt-3">
+              <Text className="text-muted-foreground text-xs">On days</Text>
+              <View className="mt-1 flex-row flex-wrap gap-2">
+                {TASK_RECURRENCE_DAYS.map((day) => {
+                  const selected = recurrenceState.byDay.includes(day.value);
+                  return (
+                    <Button
+                      key={day.value}
+                      onPress={() =>
+                        updateRecurrence({
+                          byDay: toggleTaskRecurrenceDay(
+                            recurrenceState.byDay,
+                            day.value
+                          ),
+                        })
+                      }
+                      size="sm"
+                      style={{ borderRadius: 999 }}
+                      variant={selected ? "default" : "outline"}
+                    >
+                      <Text>{day.shortLabel}</Text>
+                    </Button>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          {recurrenceState.freq === "MONTHLY" ? (
+            <View className="mt-3 flex-row items-center gap-2">
+              <Text className="text-muted-foreground text-xs">On day</Text>
+              <Input
+                containerStyle={{ width: 78 }}
+                inputStyle={{ fontSize: 13 }}
+                keyboardType="number-pad"
+                onChangeText={(value) => {
+                  const nextMonthDay = Number.parseInt(value, 10) || 1;
+                  updateRecurrence({ byMonthDay: nextMonthDay });
+                }}
+                pill
+                value={String(recurrenceState.byMonthDay)}
+                variant="outline"
+              />
+              <Text className="text-foreground text-xs">of month</Text>
+            </View>
+          ) : null}
+
+          <TaskRecurrenceEndSection
+            fallbackUntil={fallbackUntil}
+            recurrenceState={recurrenceState}
+            timeZone={timeZone}
+            updateRecurrence={updateRecurrence}
+          />
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function TaskTagPill({
+  tag,
+  action,
+  onPress,
+}: {
+  tag: TagSelect;
+  action: "add" | "remove";
+  onPress: () => void;
+}) {
+  const TagIcon = tagIconMap[tag.icon];
+  const ActionIcon = action === "add" ? Plus : Minus;
+
+  return (
+    <Pressable
+      className="rounded-full border border-border px-2.5 py-1.5"
+      onPress={onPress}
+    >
+      <View className="flex-row items-center gap-1.5">
+        <Icon as={TagIcon} className="text-muted-foreground" size={12} />
+        <Text className="text-foreground text-xs">{tag.name}</Text>
+        <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
+      </View>
+    </Pressable>
+  );
+}
+
+function TaskTagPicker({
+  selectedTags,
+  availableTags,
+  isExpanded,
+  onToggleExpanded,
+  onAdd,
+  onRemove,
+}: {
+  selectedTags: TagSelect[];
+  availableTags: TagSelect[];
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
+  onAdd: (tagId: string) => void;
+  onRemove: (tagId: string) => void;
+}) {
+  return (
+    <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
+      <View className="flex-row items-center justify-between">
+        <Text className="font-semibold text-foreground text-sm">Tags</Text>
+        <Button
+          onPress={onToggleExpanded}
+          size="icon"
+          style={{ borderRadius: 999, height: 30, width: 30 }}
+          variant="ghost"
+        >
+          <Icon as={Plus} className="text-foreground" size={14} />
+        </Button>
+      </View>
+
+      <View className="mt-2 flex-row flex-wrap gap-2">
+        {selectedTags.length > 0 ? (
+          selectedTags.map((tag) => (
+            <TaskTagPill
+              action="remove"
+              key={`remove-${tag.id}`}
+              onPress={() => onRemove(tag.id)}
+              tag={tag}
+            />
+          ))
+        ) : (
+          <Text className="text-muted-foreground text-xs">
+            No tags selected
+          </Text>
+        )}
+      </View>
+
+      {isExpanded ? (
+        <>
+          <View className="mt-2 border-border border-t" />
+          <View className="mt-2 flex-row flex-wrap gap-2">
+            {availableTags.length > 0 ? (
+              availableTags.map((tag) => (
+                <TaskTagPill
+                  action="add"
+                  key={`add-${tag.id}`}
+                  onPress={() => onAdd(tag.id)}
+                  tag={tag}
+                />
+              ))
+            ) : (
+              <Text className="text-muted-foreground text-xs">
+                All tags selected
+              </Text>
+            )}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 export function TaskEditorSheet({
   isVisible,
   mode,
@@ -246,25 +578,6 @@ export function TaskEditorSheet({
   };
 
   const fallbackUntil = draft.startDate ?? Temporal.Now.plainDateISO(timeZone);
-
-  const renderTagPill = (tag: TagSelect, action: "add" | "remove") => {
-    const TagIcon = tagIconMap[tag.icon];
-    const actionIcon = action === "add" ? Plus : Minus;
-
-    return (
-      <Pressable
-        className="rounded-full border border-border px-2.5 py-1.5"
-        key={`${action}-${tag.id}`}
-        onPress={() => (action === "add" ? addTag(tag.id) : removeTag(tag.id))}
-      >
-        <View className="flex-row items-center gap-1.5">
-          <Icon as={TagIcon} className="text-muted-foreground" size={12} />
-          <Text className="text-foreground text-xs">{tag.name}</Text>
-          <Icon as={actionIcon} className="text-muted-foreground" size={12} />
-        </View>
-      </Pressable>
-    );
-  };
 
   return (
     <BottomSheet
@@ -422,213 +735,16 @@ export function TaskEditorSheet({
       </View>
 
       {isRecurrenceExpanded ? (
-        <View className="mb-2.5 rounded-md border border-border px-3 py-3">
-          <Text className="font-semibold text-foreground text-sm">Repeat</Text>
-          <Text className="mt-0.5 text-muted-foreground text-xs">
-            {recurrenceSummary}
-          </Text>
-
-          <View className="mt-2 flex-row flex-wrap gap-2">
-            {RECURRENCE_FREQUENCIES.map((frequency) => {
-              const active = activeFrequency === frequency.value;
-              return (
-                <Button
-                  key={frequency.value}
-                  onPress={() => handleSelectFrequency(frequency.value)}
-                  size="sm"
-                  style={{ borderRadius: 999 }}
-                  variant={active ? "default" : "outline"}
-                >
-                  <Text>{frequency.label}</Text>
-                </Button>
-              );
-            })}
-          </View>
-
-          {draft.recurrence ? (
-            <>
-              <View className="mt-3 flex-row items-center gap-2">
-                <Text className="text-muted-foreground text-xs">Every</Text>
-                <Input
-                  containerStyle={{ width: 78 }}
-                  inputStyle={{ fontSize: 17 }}
-                  keyboardType="number-pad"
-                  onChangeText={(value) => {
-                    const nextInterval = Number.parseInt(value, 10) || 1;
-                    updateRecurrence({ interval: nextInterval });
-                  }}
-                  pill
-                  value={String(recurrenceState.interval)}
-                  variant="outline"
-                />
-                <Text className="text-foreground text-xs">
-                  {getTaskRecurrenceIntervalLabel(
-                    recurrenceState.freq,
-                    recurrenceState.interval
-                  )}
-                </Text>
-              </View>
-
-              {recurrenceState.freq === "WEEKLY" ? (
-                <View className="mt-3">
-                  <Text className="text-muted-foreground text-xs">On days</Text>
-                  <View className="mt-1 flex-row flex-wrap gap-2">
-                    {TASK_RECURRENCE_DAYS.map((day) => {
-                      const selected = recurrenceState.byDay.includes(
-                        day.value
-                      );
-                      return (
-                        <Button
-                          key={day.value}
-                          onPress={() =>
-                            updateRecurrence({
-                              byDay: toggleTaskRecurrenceDay(
-                                recurrenceState.byDay,
-                                day.value
-                              ),
-                            })
-                          }
-                          size="sm"
-                          style={{ borderRadius: 999 }}
-                          variant={selected ? "default" : "outline"}
-                        >
-                          <Text>{day.shortLabel}</Text>
-                        </Button>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : null}
-
-              {recurrenceState.freq === "MONTHLY" ? (
-                <View className="mt-3 flex-row items-center gap-2">
-                  <Text className="text-muted-foreground text-xs">On day</Text>
-                  <Input
-                    containerStyle={{ width: 78 }}
-                    inputStyle={{ fontSize: 13 }}
-                    keyboardType="number-pad"
-                    onChangeText={(value) => {
-                      const nextMonthDay = Number.parseInt(value, 10) || 1;
-                      updateRecurrence({ byMonthDay: nextMonthDay });
-                    }}
-                    pill
-                    value={String(recurrenceState.byMonthDay)}
-                    variant="outline"
-                  />
-                  <Text className="text-foreground text-xs">of month</Text>
-                </View>
-              ) : null}
-
-              <View className="mt-3">
-                <Text className="text-muted-foreground text-xs">Ends</Text>
-                <View className="mt-1 flex-row flex-wrap gap-2">
-                  <Button
-                    onPress={() =>
-                      updateRecurrence({ endType: "never", until: null })
-                    }
-                    size="sm"
-                    style={{ borderRadius: 999 }}
-                    variant={
-                      recurrenceState.endType === "never"
-                        ? "default"
-                        : "outline"
-                    }
-                  >
-                    <Text>Never</Text>
-                  </Button>
-                  <Button
-                    onPress={() =>
-                      updateRecurrence({
-                        endType: "until",
-                        until: recurrenceState.until ?? fallbackUntil,
-                      })
-                    }
-                    size="sm"
-                    style={{ borderRadius: 999 }}
-                    variant={
-                      recurrenceState.endType === "until"
-                        ? "default"
-                        : "outline"
-                    }
-                  >
-                    <Text>On date</Text>
-                  </Button>
-                  <Button
-                    onPress={() =>
-                      updateRecurrence({
-                        endType: "count",
-                        count:
-                          Number.isFinite(recurrenceState.count) &&
-                          recurrenceState.count > 0
-                            ? recurrenceState.count
-                            : 10,
-                      })
-                    }
-                    size="sm"
-                    style={{ borderRadius: 999 }}
-                    variant={
-                      recurrenceState.endType === "count"
-                        ? "default"
-                        : "outline"
-                    }
-                  >
-                    <Text>After N</Text>
-                  </Button>
-                </View>
-
-                {recurrenceState.endType === "until" ? (
-                  <View className="mt-2" style={{ maxWidth: 220 }}>
-                    <DatePicker
-                      displayValue={
-                        recurrenceState.until
-                          ? formatPlainDateShort(recurrenceState.until)
-                          : "Until date"
-                      }
-                      mode="date"
-                      onChange={(date) =>
-                        updateRecurrence({
-                          until: date ? dateToPlainDate(date, timeZone) : null,
-                        })
-                      }
-                      placeholder="Until date"
-                      showIcon={false}
-                      style={{
-                        borderRadius: 999,
-                        minHeight: 38,
-                        paddingHorizontal: 10,
-                      }}
-                      value={
-                        recurrenceState.until
-                          ? plainDateToDate(recurrenceState.until)
-                          : undefined
-                      }
-                      valueTextStyle={{ fontSize: 13 }}
-                      variant="outline"
-                    />
-                  </View>
-                ) : null}
-
-                {recurrenceState.endType === "count" ? (
-                  <View className="mt-2 flex-row items-center gap-2">
-                    <Input
-                      containerStyle={{ width: 78 }}
-                      inputStyle={{ fontSize: 17 }}
-                      keyboardType="number-pad"
-                      onChangeText={(value) => {
-                        const nextCount = Number.parseInt(value, 10) || 1;
-                        updateRecurrence({ count: nextCount });
-                      }}
-                      pill
-                      value={String(recurrenceState.count)}
-                      variant="outline"
-                    />
-                    <Text className="text-foreground text-xs">occurrences</Text>
-                  </View>
-                ) : null}
-              </View>
-            </>
-          ) : null}
-        </View>
+        <TaskRecurrenceEditor
+          activeFrequency={activeFrequency}
+          fallbackUntil={fallbackUntil}
+          handleSelectFrequency={handleSelectFrequency}
+          hasRecurrence={draft.recurrence !== null}
+          recurrenceState={recurrenceState}
+          recurrenceSummary={recurrenceSummary}
+          timeZone={timeZone}
+          updateRecurrence={updateRecurrence}
+        />
       ) : null}
 
       <View className="mb-2.5 flex-row items-center gap-2">
@@ -661,44 +777,14 @@ export function TaskEditorSheet({
         />
       </View>
 
-      <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
-        <View className="flex-row items-center justify-between">
-          <Text className="font-semibold text-foreground text-sm">Tags</Text>
-          <Button
-            onPress={() => setIsTagPickerExpanded((current) => !current)}
-            size="icon"
-            style={{ borderRadius: 999, height: 30, width: 30 }}
-            variant="ghost"
-          >
-            <Icon as={Plus} className="text-foreground" size={14} />
-          </Button>
-        </View>
-
-        <View className="mt-2 flex-row flex-wrap gap-2">
-          {selectedTags.length > 0 ? (
-            selectedTags.map((tag) => renderTagPill(tag, "remove"))
-          ) : (
-            <Text className="text-muted-foreground text-xs">
-              No tags selected
-            </Text>
-          )}
-        </View>
-
-        {isTagPickerExpanded ? (
-          <>
-            <View className="mt-2 border-border border-t" />
-            <View className="mt-2 flex-row flex-wrap gap-2">
-              {availableTags.length > 0 ? (
-                availableTags.map((tag) => renderTagPill(tag, "add"))
-              ) : (
-                <Text className="text-muted-foreground text-xs">
-                  All tags selected
-                </Text>
-              )}
-            </View>
-          </>
-        ) : null}
-      </View>
+      <TaskTagPicker
+        availableTags={availableTags}
+        isExpanded={isTagPickerExpanded}
+        onAdd={addTag}
+        onRemove={removeTag}
+        onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
+        selectedTags={selectedTags}
+      />
 
       <Textarea
         containerStyle={{ marginBottom: 10 }}

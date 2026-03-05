@@ -239,6 +239,79 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         return true;
       });
 
+      // -----------------------------------------------------------------------
+      // startStream helpers
+      // -----------------------------------------------------------------------
+
+      /**
+       * Resolve system prompt from persisted history or build a fresh one
+       * for the first message.
+       */
+      const resolveSystemPrompt = Effect.fn(
+        "AiChatService.resolveSystemPrompt"
+      )(function* (ctx: {
+        sessionId: string;
+        timeZone?: string;
+        existingMessages: Array<{ role: string; content: string }>;
+        isFirstMessageForSession: boolean;
+        persistedSystemMessage?: { content: string } | undefined;
+      }) {
+        if (
+          ctx.persistedSystemMessage &&
+          ctx.persistedSystemMessage.content.trim().length > 0
+        ) {
+          return ctx.persistedSystemMessage.content;
+        }
+
+        if (ctx.isFirstMessageForSession) {
+          const text = buildChatSystemPrompt({ timeZone: ctx.timeZone });
+          yield* repository.createMessage({
+            sessionId: ctx.sessionId,
+            role: "system",
+            content: text,
+            parts: [{ type: "text", text }],
+          });
+          return text;
+        }
+
+        return BASE_CHAT_SYSTEM_PROMPT;
+      });
+
+      /**
+       * Build canonical model context from persisted history, appending or
+       * patching the latest client message based on its role.
+       */
+      function buildCanonicalHistory(
+        existingMessages: Array<{
+          id: string;
+          role: string;
+          content: string;
+          parts: unknown;
+        }>,
+        latestMessage: UIMessage
+      ): UIMessage[] {
+        const canonical: UIMessage[] = existingMessages
+          .filter((row) => row.role !== "system")
+          .map(toUiMessage);
+
+        if (latestMessage.role === "user") {
+          canonical.push(latestMessage);
+        } else if (latestMessage.role === "assistant") {
+          const lastIdx = canonical.findLastIndex(
+            (m) => m.role === "assistant"
+          );
+          if (lastIdx >= 0) {
+            canonical[lastIdx] = latestMessage;
+          }
+        }
+
+        return canonical;
+      }
+
+      // -----------------------------------------------------------------------
+      // startStream
+      // -----------------------------------------------------------------------
+
       const startStream: (input: {
         userId: string;
         sessionId: string;
@@ -274,8 +347,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           );
         }
 
-        // Fetch session metadata and persisted messages in parallel —
-        // they are independent and each adds a full DB round-trip.
         const [session, existingMessages] = yield* Effect.all(
           [
             repository.getSession(input.userId, input.sessionId),
@@ -284,23 +355,21 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           { concurrency: "unbounded" }
         );
 
-        const hasSessionTitle = (session.title ?? "").trim().length > 0;
-        let shouldGenerateTitle = false;
-        let firstMessageText: string | null = null;
-        let systemPromptText = BASE_CHAT_SYSTEM_PROMPT;
         const isFirstMessageForSession = existingMessages.length === 0;
         const persistedSystemMessage = existingMessages.find(
           (message) => message.role === "system"
         );
 
-        if (
-          persistedSystemMessage &&
-          persistedSystemMessage.content.trim().length > 0
-        ) {
-          systemPromptText = persistedSystemMessage.content;
-        }
+        const systemPromptText = yield* resolveSystemPrompt({
+          sessionId: input.sessionId,
+          timeZone: input.timeZone,
+          existingMessages,
+          isFirstMessageForSession,
+          persistedSystemMessage,
+        });
 
-        // Persist the most recent user message for queryable session history.
+        let firstMessageText: string | null = null;
+
         if (latestMessage.role === "user") {
           if (latestMessage.parts.length === 0) {
             return yield* Effect.fail(
@@ -311,22 +380,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
             );
           }
 
-          if (isFirstMessageForSession && !persistedSystemMessage) {
-            // Persist the first system prompt so later turns reuse the exact
-            // same prompt text for stable provider-side prompt caching.
-            systemPromptText = buildChatSystemPrompt({
-              timeZone: input.timeZone,
-            });
-            yield* repository.createMessage({
-              sessionId: input.sessionId,
-              role: "system",
-              content: systemPromptText,
-              parts: [{ type: "text", text: systemPromptText }],
-            });
-          }
-
           const userText = extractText(latestMessage.parts);
-          shouldGenerateTitle =
+          const hasSessionTitle = (session.title ?? "").trim().length > 0;
+          const shouldGenerateTitle =
             !hasSessionTitle &&
             isFirstMessageForSession &&
             userText.trim().length > 0;
@@ -335,8 +391,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           yield* repository.createMessage({
             sessionId: input.sessionId,
             role: "user",
-            // Keep a textual summary for quick list/search while full structured
-            // message payload lives in `parts`.
             content: getPersistedContent(
               latestMessage.parts,
               "[non-text user message]"
@@ -345,9 +399,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           });
         }
 
-        // Validate client messages for the stream delta computation —
-        // toUIMessageStream needs originalMessages that match the client's
-        // local state so deltas merge correctly on the client side.
         const validatedMessages = yield* Effect.tryPromise({
           try: () => validateUIMessages({ messages: input.messages }),
           catch: (error) => {
@@ -364,28 +415,10 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           },
         });
 
-        // Build canonical model context from persisted history so the LLM
-        // always sees every turn, regardless of client cache staleness.
-        const canonicalMessages: UIMessage[] = existingMessages
-          .filter((row) => row.role !== "system")
-          .map(toUiMessage);
-
-        if (latestMessage.role === "user") {
-          // The user message was just persisted above but existingMessages
-          // was loaded before that — append it to the canonical history.
-          canonicalMessages.push(latestMessage);
-        } else if (latestMessage.role === "assistant") {
-          // Approval round-trip: the client's assistant message carries
-          // transient approval-state deltas that aren't persisted yet.
-          // Replace the last persisted assistant message with the client's
-          // version so the model knows which tools were approved/rejected.
-          const lastIdx = canonicalMessages.findLastIndex(
-            (m) => m.role === "assistant"
-          );
-          if (lastIdx >= 0) {
-            canonicalMessages[lastIdx] = latestMessage;
-          }
-        }
+        const canonicalMessages = buildCanonicalHistory(
+          existingMessages,
+          latestMessage
+        );
 
         const model = resolveChatModel(session.model ?? undefined);
         yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
@@ -406,8 +439,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
             }),
         });
 
-        // streamText performs the provider network call. We keep this inside
-        // an Effect.fn span so latency is visible in tracing.
         const streamResult = streamText({
           model,
           messages: modelMessages,
@@ -416,7 +447,6 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           tools: input.tools,
           abortSignal: input.abortSignal,
           providerOptions: {
-            // Request readable reasoning summaries when supported.
             openai: { reasoningSummary: "auto" },
           },
         });
@@ -424,7 +454,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         return {
           originalMessages: validatedMessages,
           streamResult: streamResult as UiStreamResultLike,
-          firstMessageText: shouldGenerateTitle ? firstMessageText : null,
+          firstMessageText,
         };
       });
 

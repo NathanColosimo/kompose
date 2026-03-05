@@ -6,6 +6,7 @@ import {
   extractAttachments,
   extractText,
   formatToolName,
+  type MessageSegment,
   type ToolPart,
   toUiMessage,
 } from "@kompose/ai/ai-message-utils";
@@ -231,6 +232,62 @@ function ToolInvocationPart({
   );
 }
 
+interface SegmentRendererProps {
+  isLastSegment: boolean;
+  isStreamingAssistant: boolean;
+  messageRole: UIMessage["role"];
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
+  segment: MessageSegment;
+}
+
+function SegmentRenderer({
+  segment,
+  messageRole,
+  isStreamingAssistant,
+  isLastSegment,
+  onApprovalResponse,
+}: SegmentRendererProps) {
+  if (segment.kind === "reasoning" && messageRole === "assistant") {
+    const isActive = isStreamingAssistant && isLastSegment;
+    const showContent = segment.text.length > 0 || isActive;
+
+    return (
+      <ChainOfThought defaultOpen={isActive}>
+        <ChainOfThoughtHeader className="text-xs" />
+        {showContent ? (
+          <ChainOfThoughtContent>
+            <ChainOfThoughtStep
+              className="text-xs"
+              label={isActive ? "Reasoning (streaming)" : "Reasoning"}
+              status={isActive ? "active" : "complete"}
+            >
+              <MessageResponse>{segment.text || "Thinking..."}</MessageResponse>
+            </ChainOfThoughtStep>
+          </ChainOfThoughtContent>
+        ) : null}
+      </ChainOfThought>
+    );
+  }
+
+  if (segment.kind === "text") {
+    if (messageRole === "user") {
+      return <p className="whitespace-pre-wrap">{segment.text}</p>;
+    }
+    return <MessageResponse>{segment.text}</MessageResponse>;
+  }
+
+  if (segment.kind === "tool") {
+    return (
+      <ToolInvocationPart
+        onApprovalResponse={onApprovalResponse}
+        part={segment.part}
+      />
+    );
+  }
+
+  return null;
+}
+
 interface SidebarChatMessageProps {
   isStreamingAssistant: boolean;
   message: UIMessage;
@@ -265,65 +322,20 @@ function SidebarChatMessage({
           </Attachments>
         ) : null}
 
-        {segments.map((segment, index) => {
-          if (segment.kind === "reasoning" && message.role === "assistant") {
-            const isLastSegment = index === segments.length - 1;
-            const isActive = isStreamingAssistant && isLastSegment;
-            const showContent = segment.text.length > 0 || isActive;
-
-            return (
-              <ChainOfThought
-                defaultOpen={isActive}
-                key={`${message.id}-${segment.id}`}
-              >
-                <ChainOfThoughtHeader className="text-xs" />
-                {showContent ? (
-                  <ChainOfThoughtContent>
-                    <ChainOfThoughtStep
-                      className="text-xs"
-                      label={isActive ? "Reasoning (streaming)" : "Reasoning"}
-                      status={isActive ? "active" : "complete"}
-                    >
-                      <MessageResponse>
-                        {segment.text || "Thinking..."}
-                      </MessageResponse>
-                    </ChainOfThoughtStep>
-                  </ChainOfThoughtContent>
-                ) : null}
-              </ChainOfThought>
-            );
-          }
-
-          if (segment.kind === "text") {
-            if (message.role === "user") {
-              return (
-                <p
-                  className="whitespace-pre-wrap"
-                  key={`${message.id}-${segment.id}`}
-                >
-                  {segment.text}
-                </p>
-              );
+        {segments.map((segment, index) => (
+          <SegmentRenderer
+            isLastSegment={index === segments.length - 1}
+            isStreamingAssistant={isStreamingAssistant}
+            key={
+              segment.kind === "tool"
+                ? segment.part.toolCallId
+                : `${message.id}-${segment.id}`
             }
-            return (
-              <MessageResponse key={`${message.id}-${segment.id}`}>
-                {segment.text}
-              </MessageResponse>
-            );
-          }
-
-          if (segment.kind === "tool") {
-            return (
-              <ToolInvocationPart
-                key={segment.part.toolCallId}
-                onApprovalResponse={onApprovalResponse}
-                part={segment.part}
-              />
-            );
-          }
-
-          return null;
-        })}
+            messageRole={message.role}
+            onApprovalResponse={onApprovalResponse}
+            segment={segment}
+          />
+        ))}
       </MessageContent>
     </Message>
   );

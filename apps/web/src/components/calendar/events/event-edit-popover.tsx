@@ -25,6 +25,7 @@ import { getMapsSearchUrl } from "@kompose/state/locations";
 import {
   buildGoogleMeetConferenceData,
   extractMeetingLink,
+  type MeetingLink,
 } from "@kompose/state/meeting";
 import { useAtomValue } from "jotai";
 import {
@@ -698,6 +699,415 @@ export function EventEditPopover({
   );
 }
 
+function buildCreatePayload(
+  values: EventFormValues,
+  clampToStartIfNeeded: (
+    s: Date | null,
+    e: Date | null
+  ) => { start: Date | null; end: Date | null },
+  conferenceData: GoogleEvent["conferenceData"] | null | undefined
+): CloseSaveRequest {
+  const trimmedTitle = values.summary.trim();
+  if (!trimmedTitle) {
+    return { type: "none" };
+  }
+
+  const temporalPayload = buildTemporalPayload(values, clampToStartIfNeeded);
+  if (!temporalPayload) {
+    return { type: "none" };
+  }
+
+  return {
+    type: "create",
+    payload: {
+      accountId: values.selectedAccountId,
+      calendarId: values.selectedCalendarId,
+      event: {
+        summary: trimmedTitle,
+        description: values.description?.trim() || undefined,
+        location: values.location?.trim() || undefined,
+        colorId: values.colorId ?? undefined,
+        recurrence:
+          values.recurrence?.length > 0 ? values.recurrence : undefined,
+        conferenceData: conferenceData ?? undefined,
+        start: temporalPayload.startPayload,
+        end: temporalPayload.endPayload,
+      },
+    },
+  };
+}
+
+function buildEditPayload(
+  values: EventFormValues,
+  ctx: {
+    accountId: string;
+    calendarId: string;
+    clampToStartIfNeeded: (
+      s: Date | null,
+      e: Date | null
+    ) => { start: Date | null; end: Date | null };
+    conferenceData: GoogleEvent["conferenceData"] | null | undefined;
+    event: GoogleEvent | undefined;
+    hasEdits: boolean;
+    masterRecurrence: string[] | null | undefined;
+  }
+): CloseSaveRequest {
+  const calendarChanged = values.selectedCalendarId !== ctx.calendarId;
+  if (!(ctx.hasEdits || calendarChanged)) {
+    return { type: "none" };
+  }
+
+  const temporalPayload = buildTemporalPayload(
+    values,
+    ctx.clampToStartIfNeeded
+  );
+  if (!temporalPayload) {
+    return { type: "none" };
+  }
+
+  const isRecurring = Boolean(
+    ctx.event?.recurringEventId ||
+      ctx.event?.recurrence?.length ||
+      ctx.masterRecurrence?.length
+  );
+  const defaultScope: RecurrenceScope = ctx.event?.recurringEventId
+    ? "this"
+    : "all";
+
+  const variables: UpdateGoogleEventInput = {
+    accountId: ctx.accountId,
+    calendarId: ctx.calendarId,
+    eventId: ctx.event?.id ?? "",
+    event: {
+      ...ctx.event,
+      id: ctx.event?.id ?? "",
+      summary: values.summary.trim(),
+      description: values.description ?? "",
+      location: values.location ?? "",
+      colorId: values.colorId ?? undefined,
+      recurrence: values.recurrence ?? ctx.event?.recurrence,
+      conferenceData: ctx.conferenceData ?? undefined,
+      start: {
+        ...ctx.event?.start,
+        ...temporalPayload.startPayload,
+      },
+      end: {
+        ...ctx.event?.end,
+        ...temporalPayload.endPayload,
+      },
+    },
+  };
+
+  return {
+    type: "save",
+    variables,
+    isRecurring,
+    defaultScope,
+    hasDataEdits: ctx.hasEdits,
+    calendarChanged: calendarChanged
+      ? { destinationCalendarId: values.selectedCalendarId }
+      : undefined,
+  };
+}
+
+function MeetingSection({
+  meetingLink,
+  isConferencePending,
+  onCreateMeeting,
+}: {
+  meetingLink: MeetingLink | null;
+  isConferencePending: boolean;
+  onCreateMeeting: () => void;
+}) {
+  if (meetingLink) {
+    return (
+      <div className="space-y-2">
+        <Label className="font-medium text-muted-foreground text-xs">
+          Meeting
+        </Label>
+        <Button asChild size="sm" type="button" variant="outline">
+          <a href={meetingLink.url} rel="noreferrer" target="_blank">
+            <Video className="h-3 w-3" />
+            Join {meetingLink.label}
+          </a>
+        </Button>
+      </div>
+    );
+  }
+
+  if (isConferencePending) {
+    return (
+      <div className="space-y-2">
+        <Label className="font-medium text-muted-foreground text-xs">
+          Meeting
+        </Label>
+        <div className="text-muted-foreground text-xs">
+          Google Meet will be created when you save.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label className="font-medium text-muted-foreground text-xs">
+        Meeting
+      </Label>
+      <Button
+        onClick={onCreateMeeting}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <Video className="h-3 w-3" />
+        Add Google Meet
+      </Button>
+    </div>
+  );
+}
+
+function EventColorAndTitleRow({
+  colorEntries,
+  selectedColorId,
+  calendarFallbackColor,
+  isCreateMode,
+  summary,
+  onSelectColor,
+  onSummaryChange,
+}: {
+  colorEntries: [string, { background?: string; foreground?: string }][];
+  selectedColorId: string | undefined;
+  calendarFallbackColor: string | undefined;
+  isCreateMode: boolean;
+  summary: string;
+  onSelectColor: (colorKey: string | undefined) => void;
+  onSummaryChange: (value: string) => void;
+}) {
+  const displayColor =
+    colorEntries.find(([key]) => key === selectedColorId)?.[1]?.background ??
+    calendarFallbackColor ??
+    undefined;
+
+  return (
+    <div className="flex items-center gap-3">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            aria-label="Pick color"
+            className={cn(
+              "h-8 w-8 rounded-full border-2 shadow-sm transition",
+              selectedColorId ? "border-transparent" : "border-muted"
+            )}
+            style={{ background: displayColor }}
+            type="button"
+          />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[220px]">
+          <div className="flex flex-wrap gap-2">
+            {colorEntries.map(([colorKey, palette]) => {
+              const isSelected = selectedColorId === colorKey;
+              return (
+                <button
+                  aria-label={`Color ${colorKey}`}
+                  className={cn(
+                    "h-7 w-7 rounded-full border-2 transition",
+                    isSelected ? "ring-2 ring-primary ring-offset-2" : ""
+                  )}
+                  key={colorKey}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onSelectColor(colorKey);
+                  }}
+                  style={{
+                    background: palette.background,
+                    borderColor: palette.foreground,
+                  }}
+                  type="button"
+                />
+              );
+            })}
+            <Button
+              className="h-7 w-7 p-0 text-[10px]"
+              onClick={() => onSelectColor(undefined)}
+              type="button"
+              variant="ghost"
+            >
+              <Palette className="h-4 w-4" />
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <Input
+        autoFocus={isCreateMode}
+        className="flex-1"
+        onChange={(e) => onSummaryChange(e.target.value)}
+        placeholder={isCreateMode ? "Event title (required)" : "Event title"}
+        value={summary}
+      />
+    </div>
+  );
+}
+
+function EventAllDayAndRecurrenceRow({
+  allDay,
+  onToggleAllDay,
+  canEditRecurrence,
+  recurrenceRule,
+  onRecurrenceChange,
+}: {
+  allDay: boolean;
+  onToggleAllDay: () => void;
+  canEditRecurrence: boolean;
+  recurrenceRule: string | undefined;
+  onRecurrenceChange: (rule: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <Button
+        className="gap-2 text-xs"
+        onClick={onToggleAllDay}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <div
+          className={cn(
+            "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+            allDay
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/50 bg-transparent"
+          )}
+        >
+          {allDay ? <Check className="h-3 w-3" /> : null}
+        </div>
+        All day
+      </Button>
+      <div className="flex items-center gap-2">
+        {canEditRecurrence ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button className="h-8 w-8" size="icon" variant="outline">
+                <Repeat className="h-4 w-4" />
+                <span className="sr-only">Edit recurrence</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[360px]">
+              <RecurrenceEditor
+                onChange={onRecurrenceChange}
+                recurrenceRule={recurrenceRule}
+                visible
+              />
+            </PopoverContent>
+          </Popover>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EventLocationCombobox({
+  location,
+  suggestions,
+  isSearching,
+  mapsUrl,
+  locationPopoverOpen,
+  onInputValueChange,
+  onOpenChange,
+  onValueChange,
+  onFocusInput,
+}: {
+  location: string;
+  suggestions: Array<{
+    description: string;
+    placeId?: string;
+    primary: string;
+    secondary?: string;
+  }>;
+  isSearching: boolean;
+  mapsUrl: string | null;
+  locationPopoverOpen: boolean;
+  onInputValueChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  onValueChange: (value: string | null) => void;
+  onFocusInput: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-medium text-muted-foreground text-xs">
+        Location
+      </Label>
+      <Combobox
+        inputValue={location}
+        onInputValueChange={onInputValueChange}
+        onOpenChange={onOpenChange}
+        onValueChange={onValueChange}
+        open={locationPopoverOpen}
+      >
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <ComboboxInput
+              className="w-full"
+              onFocus={onFocusInput}
+              placeholder="Where?"
+              showClear={Boolean(location)}
+            />
+          </div>
+          {mapsUrl ? (
+            <Button asChild size="icon" type="button" variant="outline">
+              <a href={mapsUrl} rel="noreferrer" target="_blank">
+                <MapPin className="h-3 w-3" />
+                <span className="sr-only">Open in Google Maps</span>
+              </a>
+            </Button>
+          ) : null}
+        </div>
+        <ComboboxContent align="start" sideOffset={6}>
+          <ComboboxList>
+            {suggestions.map((suggestion) => (
+              <ComboboxItem
+                key={suggestion.placeId ?? suggestion.description}
+                value={suggestion.description}
+              >
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground">
+                    {suggestion.primary}
+                  </span>
+                  {suggestion.secondary ? (
+                    <span className="text-muted-foreground">
+                      {suggestion.secondary}
+                    </span>
+                  ) : null}
+                </div>
+              </ComboboxItem>
+            ))}
+            <ComboboxEmpty>
+              {isSearching ? "Searching…" : "No matches found."}
+            </ComboboxEmpty>
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+    </div>
+  );
+}
+
+function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
+  return {
+    summary: watched.summary ?? "",
+    description: watched.description ?? "",
+    location: watched.location ?? "",
+    allDay: watched.allDay ?? false,
+    colorId: watched.colorId,
+    startDate: watched.startDate,
+    endDate: watched.endDate,
+    startTime: watched.startTime ?? "",
+    endTime: watched.endTime ?? "",
+    recurrence: watched.recurrence ?? [],
+    selectedAccountId: watched.selectedAccountId ?? "",
+    selectedCalendarId: watched.selectedCalendarId ?? "",
+  };
+}
+
 function EventEditForm({
   event,
   accountId,
@@ -833,8 +1243,9 @@ function EventEditForm({
     reset(initialValues, { keepDirty: false });
   }, [initialValues, reset]);
 
-  const watchedValues = useWatch({ control });
-  const locationQuery = watchedValues.location?.trim() ?? "";
+  const rawWatched = useWatch({ control });
+  const watchedValues = resolveWatchedDefaults(rawWatched);
+  const locationQuery = watchedValues.location.trim();
   const locationSearch = useLocationSearch(locationQuery);
   const locationSuggestions = locationSearch.data ?? [];
   const isLocationSearching = locationSearch.isFetching;
@@ -1002,128 +1413,36 @@ function EventEditForm({
     }
   }, [canCreateMeeting, isCreateMode, onRequestClose]);
 
-  const buildCreateCloseSaveRequest = useCallback(
+  const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      const trimmedTitle = values.summary.trim();
-      if (!trimmedTitle) {
-        return { type: "none" };
+      const resolvedConference =
+        pendingConferenceRef.current ?? pendingConference;
+      if (isCreateMode) {
+        return buildCreatePayload(
+          values,
+          clampToStartIfNeeded,
+          resolvedConference
+        );
       }
-
-      const temporalPayload = buildTemporalPayload(
-        values,
-        clampToStartIfNeeded
-      );
-      if (!temporalPayload) {
-        return { type: "none" };
-      }
-
-      return {
-        type: "create",
-        payload: {
-          accountId: values.selectedAccountId,
-          calendarId: values.selectedCalendarId,
-          event: {
-            summary: trimmedTitle,
-            description: values.description?.trim() || undefined,
-            location: values.location?.trim() || undefined,
-            colorId: values.colorId ?? undefined,
-            recurrence:
-              values.recurrence?.length > 0 ? values.recurrence : undefined,
-            conferenceData:
-              pendingConferenceRef.current ?? pendingConference ?? undefined,
-            start: temporalPayload.startPayload,
-            end: temporalPayload.endPayload,
-          },
-        },
-      };
-    },
-    [clampToStartIfNeeded, pendingConference]
-  );
-
-  const buildEditCloseSaveRequest = useCallback(
-    (values: EventFormValues): CloseSaveRequest => {
-      // Detect if the user moved the event to a different calendar
-      const calendarChanged = values.selectedCalendarId !== calendarId;
-      const hasEdits = hasUserEditedRef.current;
-
-      // Nothing to do if no data edits and calendar didn't change
-      if (!(hasEdits || calendarChanged)) {
-        return { type: "none" };
-      }
-
-      const temporalPayload = buildTemporalPayload(
-        values,
-        clampToStartIfNeeded
-      );
-      if (!temporalPayload) {
-        return { type: "none" };
-      }
-
-      const isRecurring = Boolean(
-        event?.recurringEventId ||
-          event?.recurrence?.length ||
-          masterQuery.data?.recurrence?.length
-      );
-      const defaultScope: RecurrenceScope = event?.recurringEventId
-        ? "this"
-        : "all";
-      const conferenceData =
-        pendingConferenceRef.current ??
-        pendingConference ??
-        event?.conferenceData;
-
-      // Prepare payload for mutation; recurrence scope is chosen after close.
-      const variables: UpdateGoogleEventInput = {
+      return buildEditPayload(values, {
         accountId,
         calendarId,
-        eventId: event?.id ?? "",
-        event: {
-          ...event,
-          id: event?.id ?? "",
-          summary: values.summary.trim(),
-          description: values.description ?? "",
-          location: values.location ?? "",
-          colorId: values.colorId ?? undefined,
-          recurrence: values.recurrence ?? event?.recurrence,
-          conferenceData: conferenceData ?? undefined,
-          start: {
-            ...event?.start,
-            ...temporalPayload.startPayload,
-          },
-          end: {
-            ...event?.end,
-            ...temporalPayload.endPayload,
-          },
-        },
-      };
-
-      return {
-        type: "save",
-        variables,
-        isRecurring,
-        defaultScope,
-        hasDataEdits: hasEdits,
-        calendarChanged: calendarChanged
-          ? { destinationCalendarId: values.selectedCalendarId }
-          : undefined,
-      };
+        clampToStartIfNeeded,
+        conferenceData: resolvedConference ?? event?.conferenceData,
+        event,
+        hasEdits: hasUserEditedRef.current,
+        masterRecurrence: masterQuery.data?.recurrence,
+      });
     },
     [
       accountId,
       calendarId,
       clampToStartIfNeeded,
       event,
+      isCreateMode,
       masterQuery.data,
       pendingConference,
     ]
-  );
-
-  const buildCloseSaveRequest = useCallback(
-    (values: EventFormValues): CloseSaveRequest =>
-      isCreateMode
-        ? buildCreateCloseSaveRequest(values)
-        : buildEditCloseSaveRequest(values),
-    [buildCreateCloseSaveRequest, buildEditCloseSaveRequest, isCreateMode]
   );
 
   // Register close-save callback so the popover can decide what to do on close.
@@ -1155,77 +1474,21 @@ function EventEditForm({
         e.preventDefault();
       }}
     >
-      <div className="flex items-center gap-3">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              aria-label="Pick color"
-              className={cn(
-                "h-8 w-8 rounded-full border-2 shadow-sm transition",
-                watchedValues.colorId ? "border-transparent" : "border-muted"
-              )}
-              style={{
-                background:
-                  colorEntries.find(
-                    ([key]) => key === watchedValues.colorId
-                  )?.[1]?.background ??
-                  calendarFallbackColor ??
-                  undefined,
-              }}
-              type="button"
-            />
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[220px]">
-            <div className="flex flex-wrap gap-2">
-              {colorEntries.map(([colorKey, palette]) => {
-                const isSelected = watchedValues.colorId === colorKey;
-                return (
-                  <button
-                    aria-label={`Color ${colorKey}`}
-                    className={cn(
-                      "h-7 w-7 rounded-full border-2 transition",
-                      isSelected ? "ring-2 ring-primary ring-offset-2" : ""
-                    )}
-                    key={colorKey}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      hasUserEditedRef.current = true;
-                      setValue("colorId", colorKey, { shouldDirty: true });
-                    }}
-                    style={{
-                      background: palette.background,
-                      borderColor: palette.foreground,
-                    }}
-                    type="button"
-                  />
-                );
-              })}
-              <Button
-                className="h-7 w-7 p-0 text-[10px]"
-                onClick={() => {
-                  hasUserEditedRef.current = true;
-                  setValue("colorId", undefined, { shouldDirty: true });
-                }}
-                type="button"
-                variant="ghost"
-              >
-                <Palette className="h-4 w-4" />
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <Input
-          autoFocus={isCreateMode}
-          className="flex-1"
-          onChange={(e) => {
-            hasUserEditedRef.current = true;
-            setValue("summary", e.target.value, { shouldDirty: true });
-          }}
-          placeholder={isCreateMode ? "Event title (required)" : "Event title"}
-          value={watchedValues.summary}
-        />
-      </div>
+      <EventColorAndTitleRow
+        calendarFallbackColor={calendarFallbackColor}
+        colorEntries={colorEntries}
+        isCreateMode={isCreateMode}
+        onSelectColor={(colorKey) => {
+          hasUserEditedRef.current = true;
+          setValue("colorId", colorKey, { shouldDirty: true });
+        }}
+        onSummaryChange={(value) => {
+          hasUserEditedRef.current = true;
+          setValue("summary", value, { shouldDirty: true });
+        }}
+        selectedColorId={watchedValues.colorId}
+        summary={watchedValues.summary}
+      />
 
       <Textarea
         onChange={(e) => {
@@ -1236,155 +1499,43 @@ function EventEditForm({
         value={watchedValues.description}
       />
 
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Meeting
-        </Label>
-        {(() => {
-          if (meetingLink) {
-            return (
-              <Button asChild size="sm" type="button" variant="outline">
-                <a href={meetingLink.url} rel="noreferrer" target="_blank">
-                  <Video className="h-3 w-3" />
-                  Join {meetingLink.label}
-                </a>
-              </Button>
-            );
-          }
-          if (isConferencePending) {
-            return (
-              <div className="text-muted-foreground text-xs">
-                Google Meet will be created when you save.
-              </div>
-            );
-          }
-          return (
-            <Button
-              onClick={handleCreateMeeting}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Video className="h-3 w-3" />
-              Add Google Meet
-            </Button>
-          );
-        })()}
-      </div>
+      <MeetingSection
+        isConferencePending={isConferencePending}
+        meetingLink={meetingLink}
+        onCreateMeeting={handleCreateMeeting}
+      />
 
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Location
-        </Label>
-        <Combobox
-          inputValue={watchedValues.location}
-          onInputValueChange={handleLocationInputChange}
-          onOpenChange={handleLocationOpenChange}
-          onValueChange={handleLocationValueChange}
-          open={locationPopoverOpen}
-        >
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <ComboboxInput
-                className="w-full"
-                onFocus={() => {
-                  if (locationQuery.length >= 2) {
-                    setLocationOpen(true);
-                  }
-                }}
-                placeholder="Where?"
-                showClear={Boolean(watchedValues.location)}
-              />
-            </div>
-            {mapsUrl ? (
-              <Button asChild size="icon" type="button" variant="outline">
-                <a href={mapsUrl} rel="noreferrer" target="_blank">
-                  <MapPin className="h-3 w-3" />
-                  <span className="sr-only">Open in Google Maps</span>
-                </a>
-              </Button>
-            ) : null}
-          </div>
-          <ComboboxContent align="start" sideOffset={6}>
-            <ComboboxList>
-              {locationSuggestions.map((suggestion) => (
-                <ComboboxItem
-                  key={suggestion.placeId ?? suggestion.description}
-                  value={suggestion.description}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-foreground">
-                      {suggestion.primary}
-                    </span>
-                    {suggestion.secondary ? (
-                      <span className="text-muted-foreground">
-                        {suggestion.secondary}
-                      </span>
-                    ) : null}
-                  </div>
-                </ComboboxItem>
-              ))}
-              <ComboboxEmpty>
-                {isLocationSearching ? "Searching…" : "No matches found."}
-              </ComboboxEmpty>
-            </ComboboxList>
-          </ComboboxContent>
-        </Combobox>
-      </div>
+      <EventLocationCombobox
+        isSearching={isLocationSearching}
+        location={watchedValues.location}
+        locationPopoverOpen={locationPopoverOpen}
+        mapsUrl={mapsUrl}
+        onFocusInput={() => {
+          if (locationQuery.length >= 2) {
+            setLocationOpen(true);
+          }
+        }}
+        onInputValueChange={handleLocationInputChange}
+        onOpenChange={handleLocationOpenChange}
+        onValueChange={handleLocationValueChange}
+        suggestions={locationSuggestions}
+      />
 
       <Separator />
 
-      <div className="flex items-center justify-between">
-        {/* All-day toggle button with checkbox indicator */}
-        <Button
-          className="gap-2 text-xs"
-          onClick={() => {
-            hasUserEditedRef.current = true;
-            setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
-          }}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {/* Checkbox indicator */}
-          <div
-            className={cn(
-              "flex h-4 w-4 items-center justify-center rounded border transition-colors",
-              watchedValues.allDay
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-muted-foreground/50 bg-transparent"
-            )}
-          >
-            {watchedValues.allDay ? <Check className="h-3 w-3" /> : null}
-          </div>
-          All day
-        </Button>
-        <div className="flex items-center gap-2">
-          {/* Recurrence editor - available in create mode and for recurring events in edit mode */}
-          {canEditRecurrence ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button className="h-8 w-8" size="icon" variant="outline">
-                  <Repeat className="h-4 w-4" />
-                  <span className="sr-only">Edit recurrence</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-[360px]">
-                <RecurrenceEditor
-                  onChange={(rule) => {
-                    hasUserEditedRef.current = true;
-                    setValue("recurrence", rule ? [rule] : [], {
-                      shouldDirty: true,
-                    });
-                  }}
-                  recurrenceRule={recurrenceRule}
-                  visible
-                />
-              </PopoverContent>
-            </Popover>
-          ) : null}
-        </div>
-      </div>
+      <EventAllDayAndRecurrenceRow
+        allDay={watchedValues.allDay}
+        canEditRecurrence={canEditRecurrence}
+        onRecurrenceChange={(rule) => {
+          hasUserEditedRef.current = true;
+          setValue("recurrence", rule ? [rule] : [], { shouldDirty: true });
+        }}
+        onToggleAllDay={() => {
+          hasUserEditedRef.current = true;
+          setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
+        }}
+        recurrenceRule={recurrenceRule}
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <Controller

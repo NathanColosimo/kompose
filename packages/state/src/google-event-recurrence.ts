@@ -82,6 +82,25 @@ export function dateToUntilRule(date: Date): string | null {
   return untilInputToRule(input);
 }
 
+const VALID_FREQUENCIES = new Set<EventRecurrenceFrequency>([
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY",
+]);
+
+function resolveEnd(
+  until: string | null,
+  count: number | null
+): EventRecurrenceEnd {
+  if (until !== null) {
+    return { type: "until", date: until };
+  }
+  if (count !== null) {
+    return { type: "count", count };
+  }
+  return { type: "none" };
+}
+
 export function parseGoogleEventRecurrenceRule(rule?: string): {
   freq: EventRecurrenceFrequency;
   byDay: string[];
@@ -101,34 +120,35 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
 
   for (const part of parts) {
     const [key, value] = part.split("=");
-    if (
-      key === "FREQ" &&
-      (value === "DAILY" || value === "WEEKLY" || value === "MONTHLY")
-    ) {
-      freq = value;
+    if (!value) {
+      continue;
     }
-    if (key === "BYDAY" && value) {
-      byDay = value.split(",");
-    }
-    if (key === "UNTIL" && value) {
-      until = value;
-    }
-    if (key === "COUNT" && value) {
-      const parsed = Number.parseInt(value, 10);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        count = parsed;
+
+    switch (key) {
+      case "FREQ":
+        if (VALID_FREQUENCIES.has(value as EventRecurrenceFrequency)) {
+          freq = value as EventRecurrenceFrequency;
+        }
+        break;
+      case "BYDAY":
+        byDay = value.split(",");
+        break;
+      case "UNTIL":
+        until = value;
+        break;
+      case "COUNT": {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          count = parsed;
+        }
+        break;
       }
+      default:
+        break;
     }
   }
 
-  if (until !== null) {
-    return { freq, byDay, end: { type: "until", date: until } };
-  }
-  if (count !== null) {
-    return { freq, byDay, end: { type: "count", count } };
-  }
-
-  return { freq, byDay, end: { type: "none" } };
+  return { freq, byDay, end: resolveEnd(until, count) };
 }
 
 export function buildGoogleEventRecurrenceRule(

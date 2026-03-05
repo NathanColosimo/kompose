@@ -89,6 +89,76 @@ export function extractText(parts: UIMessage["parts"]): string {
     .trim();
 }
 
+// ---------------------------------------------------------------------------
+// buildMessageSegments helpers
+// ---------------------------------------------------------------------------
+
+interface SegmentAccumulator {
+  counter: number;
+  pendingReasoning: string | null;
+  pendingText: string;
+  segments: MessageSegment[];
+}
+
+function flushReasoning(acc: SegmentAccumulator): void {
+  if (acc.pendingReasoning !== null) {
+    acc.segments.push({
+      id: `reasoning-${acc.counter++}`,
+      kind: "reasoning",
+      text: acc.pendingReasoning,
+    });
+    acc.pendingReasoning = null;
+  }
+}
+
+function flushText(acc: SegmentAccumulator): void {
+  if (acc.pendingText.length > 0) {
+    acc.segments.push({
+      id: `text-${acc.counter++}`,
+      kind: "text",
+      text: acc.pendingText,
+    });
+    acc.pendingText = "";
+  }
+}
+
+function handleReasoningPart(
+  part: UIMessage["parts"][number],
+  acc: SegmentAccumulator
+): void {
+  flushText(acc);
+  if (acc.pendingReasoning === null) {
+    acc.pendingReasoning = "";
+  }
+  const record = isRecord(part) ? (part as Record<string, unknown>) : null;
+  const text = record ? (asString(record.text) ?? "") : "";
+  if (text.length > 0) {
+    acc.pendingReasoning +=
+      (acc.pendingReasoning.length > 0 ? "\n" : "") + text;
+  }
+}
+
+function handleTextPart(
+  part: Extract<UIMessage["parts"][number], { type: "text" }>,
+  acc: SegmentAccumulator
+): void {
+  const t = part.text?.trim() ?? "";
+  if (t.length > 0) {
+    acc.pendingText += (acc.pendingText.length > 0 ? "\n" : "") + part.text;
+  }
+}
+
+function handleToolPart(
+  part: UIMessage["parts"][number],
+  acc: SegmentAccumulator
+): void {
+  flushReasoning(acc);
+  flushText(acc);
+  const toolId =
+    "toolCallId" in part ? part.toolCallId : `tool-${acc.counter++}`;
+  acc.segments.push({ id: toolId, kind: "tool", part: part as ToolPart });
+}
+
 /**
  * Walk parts in order and group consecutive text/reasoning into segments,
  * breaking at tool boundaries so COT + tool + COT renders correctly.
@@ -96,59 +166,26 @@ export function extractText(parts: UIMessage["parts"]): string {
 export function buildMessageSegments(
   parts: UIMessage["parts"]
 ): MessageSegment[] {
-  const segments: MessageSegment[] = [];
-  let pendingReasoning: string | null = null;
-  let pendingText = "";
-  let counter = 0;
-
-  const flushReasoning = () => {
-    if (pendingReasoning !== null) {
-      segments.push({
-        id: `reasoning-${counter++}`,
-        kind: "reasoning",
-        text: pendingReasoning,
-      });
-      pendingReasoning = null;
-    }
-  };
-  const flushText = () => {
-    if (pendingText.length > 0) {
-      segments.push({
-        id: `text-${counter++}`,
-        kind: "text",
-        text: pendingText,
-      });
-      pendingText = "";
-    }
+  const acc: SegmentAccumulator = {
+    segments: [],
+    pendingReasoning: null,
+    pendingText: "",
+    counter: 0,
   };
 
   for (const part of parts) {
     if (part.type === "reasoning") {
-      flushText();
-      if (pendingReasoning === null) {
-        pendingReasoning = "";
-      }
-      const text = isRecord(part) ? (asString(part.text) ?? "") : "";
-      if (text.length > 0) {
-        pendingReasoning += (pendingReasoning.length > 0 ? "\n" : "") + text;
-      }
+      handleReasoningPart(part, acc);
     } else if (part.type === "text") {
-      const t = part.text?.trim() ?? "";
-      if (t.length > 0) {
-        pendingText += (pendingText.length > 0 ? "\n" : "") + part.text;
-      }
+      handleTextPart(part, acc);
     } else if (isToolUIPart(part)) {
-      flushReasoning();
-      flushText();
-      const toolId =
-        "toolCallId" in part ? part.toolCallId : `tool-${counter++}`;
-      segments.push({ id: toolId, kind: "tool", part: part as ToolPart });
+      handleToolPart(part, acc);
     }
   }
 
-  flushReasoning();
-  flushText();
-  return segments;
+  flushReasoning(acc);
+  flushText(acc);
+  return acc.segments;
 }
 
 /**
