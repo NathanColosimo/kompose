@@ -21,7 +21,8 @@
       "!**/wrangler.jsonc",
       "!**/.source",
       "!packages/google-cal/src",
-      "!**/components/ui"
+      "!**/components/ui",
+      "!**/uniwind-types.d.ts"
     ]
   },
   "extends": ["ultracite/core", "ultracite/next", "ultracite/react"],
