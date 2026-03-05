@@ -1,0 +1,148 @@
+{
+  "name": "Kompose — Trace Explorer",
+  "description": "Vercel-style request log with exact endpoints, status codes, latency stats, and trace drill-down. Filter by endpoint, status class, or trace ID.",
+  "datasets": ["kompose-api-prod"],
+  "refreshTime": 60,
+  "schemaVersion": 2,
+  "timeWindowStart": "qr-now-2d",
+  "timeWindowEnd": "qr-now",
+  "charts": [
+    {
+      "id": "filters",
+      "name": "Filters",
+      "type": "SmartFilter",
+      "query": { "apl": "" },
+      "filters": [
+        {
+          "id": "endpoint_filter",
+          "name": "Endpoint",
+          "type": "select",
+          "selectType": "apl",
+          "active": true,
+          "apl": {
+            "apl": "['kompose-api-prod'] | where kind == 'server' | extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])) | where isnotempty(endpoint) | distinct endpoint | project key=endpoint, value=endpoint | sort by key asc",
+            "queryOptions": { "quickRange": "2d" }
+          },
+          "options": [{ "key": "All", "value": "", "default": true }]
+        },
+        {
+          "id": "status_filter",
+          "name": "Status",
+          "type": "select",
+          "selectType": "list",
+          "active": true,
+          "options": [
+            { "key": "All", "value": "", "default": true },
+            { "key": "2xx", "value": "2" },
+            { "key": "3xx", "value": "3" },
+            { "key": "4xx", "value": "4" },
+            { "key": "5xx", "value": "5" }
+          ]
+        },
+        {
+          "id": "trace_search",
+          "name": "Trace ID",
+          "type": "search",
+          "selectType": "list",
+          "active": true,
+          "options": [{ "key": "All", "value": "", "default": true }]
+        }
+      ]
+    },
+    {
+      "id": "request-count",
+      "name": "Requests",
+      "type": "Statistic",
+      "colorScheme": "Blue",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint endswith 'sync/events')\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize ['Requests'] = count()"
+      }
+    },
+    {
+      "id": "error-rate",
+      "name": "Error Rate",
+      "type": "Statistic",
+      "colorScheme": "Red",
+      "customUnits": "%",
+      "errorThreshold": "Above",
+      "errorThresholdValue": "5",
+      "warningThreshold": "Above",
+      "warningThresholdValue": "1",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint endswith 'sync/events')\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize total = count(), errors = countif(status >= 500)\n| extend ['Error Rate'] = iff(total > 0, round(100.0 * errors / total, 2), 0.0)\n| project ['Error Rate']"
+      }
+    },
+    {
+      "id": "p95-latency",
+      "name": "p95 Latency",
+      "type": "Statistic",
+      "colorScheme": "Orange",
+      "customUnits": "ms",
+      "errorThreshold": "Above",
+      "errorThresholdValue": "3000",
+      "warningThreshold": "Above",
+      "warningThresholdValue": "1000",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint startswith '/api/rpc/sync')\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize ['p95'] = round(percentile(duration, 95) / 1000000, 0)\n| project ['p95']"
+      }
+    },
+    {
+      "id": "error-count",
+      "name": "Errors",
+      "type": "Statistic",
+      "colorScheme": "Red",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint endswith 'sync/events') and status >= 500\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize ['Errors'] = count()"
+      }
+    },
+    {
+      "id": "request-rate-ts",
+      "name": "Request Rate",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint endswith 'sync/events')\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize ['req/min'] = count() by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "error-rate-ts",
+      "name": "Error Rate Over Time (%)",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code'])\n| where not(endpoint endswith 'sync/events')\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| summarize total = count(), errors = countif(status >= 500) by bin_auto(_time)\n| extend ['error_rate_%'] = iff(total > 0, round(100.0 * errors / total, 2), 0.0)\n| project _time, ['error_rate_%']"
+      }
+    },
+    {
+      "id": "request-log",
+      "name": "Request Log",
+      "type": "LogStream",
+      "query": {
+        "apl": "declare query_parameters (endpoint_filter:string = \"\", status_filter:string = \"\", trace_search:string = \"\");\n['kompose-api-prod']\n| where kind == 'server'\n| extend endpoint = extract('^([^?]+)', 1, tostring(['attributes.custom']['http.target'])), status = toint(['attributes.custom']['http.status_code']), method = tostring(['attributes.custom']['http.method'])\n| where isempty(endpoint_filter) or endpoint == endpoint_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| where isempty(trace_search) or trace_id contains trace_search\n| order by _time desc\n| take 500"
+      },
+      "tableSettings": {
+        "columns": [
+          { "name": "method", "width": 70 },
+          { "name": "endpoint", "width": 380 },
+          { "name": "status", "width": 70 },
+          { "name": "duration", "width": 120 },
+          { "name": "trace_id", "width": 280 }
+        ],
+        "settings": {
+          "fontSize": "13px",
+          "showTimestamp": true,
+          "wrapLines": false,
+          "hideNulls": true
+        }
+      }
+    }
+  ],
+  "layout": [
+    { "i": "filters", "x": 0, "y": 0, "w": 12, "h": 1 },
+    { "i": "request-count", "x": 0, "y": 1, "w": 3, "h": 2 },
+    { "i": "error-rate", "x": 3, "y": 1, "w": 3, "h": 2 },
+    { "i": "p95-latency", "x": 6, "y": 1, "w": 3, "h": 2 },
+    { "i": "error-count", "x": 9, "y": 1, "w": 3, "h": 2 },
+    { "i": "request-rate-ts", "x": 0, "y": 3, "w": 6, "h": 3 },
+    { "i": "error-rate-ts", "x": 6, "y": 3, "w": 6, "h": 3 },
+    { "i": "request-log", "x": 0, "y": 6, "w": 12, "h": 8 }
+  ]
+}

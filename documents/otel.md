@@ -189,16 +189,40 @@ This keeps the Axiom UI clean without losing meaningful data.
 
 ---
 
-## Axiom Trace Dashboard Template
+## Axiom Trace Explorer Dashboard
 
-A trace-first dashboard template is available at:
+**Prod:** [Kompose Traces](https://app.axiom.co/kompose-i1rh/dashboards/efNB7rBxQm5oP4aNdY) (`kompose-api-prod`)
+**Local:** [Kompose Traces](https://app.axiom.co/kompose-i1rh/dashboards/Vz0qGWifmO9IvNMsQE) (`kompose-api-local`)
+**Source:** `documents/axiom-trace-explorer.dashboard.json`
 
-- `documents/axiom-trace-explorer.dashboard.json`
+A Vercel-log-style request explorer designed for operational debugging. Shows one row per HTTP request (not per span) ordered by most recent, with exact endpoint paths, status codes, and trace drill-down.
 
-It is designed for operational debugging where KPI stats are secondary, and focuses on:
+### Features
 
-- Chronological LogStream views with named spans/traces (not just IDs).
-- SmartFilter controls for service, exact endpoint, route template, span name, status, and trace ID search.
-- Endpoint extraction that prefers exact path fields (`url.path`, `http.target`) before route templates (`http.route`) so you can see concrete endpoints rather than grouped patterns like `/api/auth/[...all]`.
+- **Request Log (LogStream):** Chronological list of all server requests. Each row shows method, exact endpoint path (extracted from `['attributes.custom']['http.target']`, query params stripped), status code, duration, network latency, and trace ID. Click a trace ID to see the full span waterfall.
+- **SmartFilter controls:** Filter by endpoint (dynamic APL dropdown), status class (2xx/3xx/4xx/5xx), or search by trace ID.
+- **Stats row:** Request count, error rate %, p95 latency (ms), error count. SSE `sync/events` connections are excluded from latency calculations.
+- **TimeSeries:** Request rate and error rate over time.
 
-To use it, replace `{{owner_id}}` and `{{dataset}}`, then create/update via the dashboard scripts in the `building-dashboards` skill.
+### APL field paths
+
+Dashboard queries filter to `kind == "server"` spans (one per HTTP request). Custom OTel attributes live in the `attributes.custom` map field and are accessed via bracket notation:
+
+| Field | APL access | Example value |
+|-------|------------|---------------|
+| Exact URL | `['attributes.custom']['http.target']` | `/api/rpc/tasks/list?nxtPrest=...` |
+| Status code | `['attributes.custom']['http.status_code']` | `200` |
+| HTTP method | `['attributes.custom']['http.method']` | `POST` |
+| Network latency | `['attributes.custom']['network.latency_ms']` | `68` |
+
+Endpoint extraction strips the query params: `extract("^([^?]+)", 1, tostring(['attributes.custom']['http.target']))`.
+
+### Updating the dashboard
+
+Edit `documents/axiom-trace-explorer.dashboard.json`, then deploy via the Axiom v2 API:
+
+```bash
+BODY=$(jq '{dashboard: (. | del(.id, .version, .createdAt, .updatedAt, .createdBy, .updatedBy) | .refreshTime = 60)}' documents/axiom-trace-explorer.dashboard.json)
+curl -X POST -H "Authorization: Bearer $AXIOM_TOKEN" -H "X-Axiom-Org-Id: kompose-i1rh" -H "Content-Type: application/json" -d "$BODY" "https://api.axiom.co/v2/dashboards"
+# Note: The v2 API creates a new dashboard (no in-place update). Delete the old one from the Axiom UI afterwards.
+```
