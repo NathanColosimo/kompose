@@ -97,6 +97,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **Data Layer**:
   - TanStack Query (React Query) for query/mutation APIs.
   - oRPC client with `RPCLink` for typed RPC calls.
+  - On native, authenticated RPC requests attach the Better Auth cookie
+    manually and use `credentials: "omit"` to avoid iOS cookie interference.
   - Shared state via `packages/state/` (same Jotai atoms and hooks as web).
 - **Auth**:
   - Better Auth flows through HTTP API.

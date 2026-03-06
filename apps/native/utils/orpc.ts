@@ -72,6 +72,10 @@ export const link = new RPCLink({
   async fetch(request, init) {
     return expoFetch(request.url, {
       body: await request.blob(),
+      // Better Auth Expo already injects the session cookie manually.
+      // On iOS, letting fetch use native cookie handling can interfere
+      // with that header and break server-side session resolution.
+      credentials: "omit",
       headers: request.headers,
       method: request.method,
       signal: request.signal,

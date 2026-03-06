@@ -39,6 +39,9 @@ We implemented the initial mobile MVP inside `apps/native` with **four tabs**:
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection + client-side
   last-login-method tracking via Expo storage.
+  - Native oRPC requests must manually attach the Better Auth cookie from
+    SecureStore **and** use `credentials: "omit"` so iOS/native cookie
+    handling does not interfere with session resolution on `/api/rpc`.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
 - **Styling**: Uniwind + Tailwind CSS v4 + BNA UI components.
 - **Theming**: Uniwind CSS theme variables in `global.css` + runtime `Uniwind.setTheme()` for light/dark/system switching.
@@ -173,6 +176,8 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Better Auth client: `apps/native/lib/auth-client.ts`
   - Includes Expo `lastLoginMethodClient` for "Last used" auth UI hints.
 - oRPC client (cookie injection + URL fallback):
+  - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
+    authenticated requests because the session cookie is attached manually.
   - `apps/native/utils/orpc.ts`
 - Added Google social sign-in buttons:
   - `apps/native/components/sign-in.tsx`
