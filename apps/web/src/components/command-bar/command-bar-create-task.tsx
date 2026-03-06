@@ -258,6 +258,17 @@ export function CommandBarCreateTask({
       ? Math.ceil(firstLinkMeta.durationSeconds / 60)
       : null);
 
+  // Keep the rendered label free to update from link metadata.
+  const createItemLabel =
+    parsed.title ||
+    firstLinkMeta?.title ||
+    (parsed.links[0] ? fallbackTitle(parsed.links[0]) : "New task from link");
+
+  // Keep the command item value stable across async link parsing so cmdk does
+  // not drop selection when the preview label changes after metadata resolves.
+  const createItemValue =
+    parsed.title || parsed.links.join(" ") || "create-task";
+
   return (
     <>
       {!isValid && matchingTags.length === 0 && (
@@ -305,13 +316,11 @@ export function CommandBarCreateTask({
           <CommandGroup heading="Create Task">
             <CommandItem
               onSelect={() => handleCreateRef.current()}
-              value={parsed.title}
+              value={createItemValue}
             >
               <CheckIcon className="text-muted-foreground" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="truncate font-medium">
-                  {parsed.title || firstLinkMeta?.title || "New task from link"}
-                </span>
+                <span className="truncate font-medium">{createItemLabel}</span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {effectiveDuration !== null && (
                     <Badge
