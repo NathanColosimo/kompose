@@ -216,7 +216,7 @@ auto-updates.
 - `apps/web/scripts/build-desktop.sh`
   - Moves `src/app/api` and `src/app/docs` into a temp directory before build.
   - Uses shell `trap` handlers to always restore both directories on exit, including failure/interruption paths.
-  - Clears `.next` + `out`, then runs `TAURI_BUILD=1 bun --bun next build`.
+  - Clears `.next` + `out`, then runs `TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build`.
 
 - `apps/web/next.config.mts`
   - Fumadocs MDX plugin is loaded only for non-Tauri builds.

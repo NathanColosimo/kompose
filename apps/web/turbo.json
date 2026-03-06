@@ -21,7 +21,7 @@
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "build:prod": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["build:prod:desktop", "^build"],
       "cache": true,
       "outputs": [".next/**", "!.next/cache/**"]
     },

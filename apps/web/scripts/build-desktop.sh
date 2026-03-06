@@ -42,4 +42,4 @@ if [ -d "$DOCS_DIR" ]; then
 fi
 
 rm -rf .next out
-TAURI_BUILD=1 bun --bun next build
+TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build
