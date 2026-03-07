@@ -357,6 +357,8 @@ Root orchestration uses Turborepo with per-platform shortcuts:
 - `bun run submit:prod:desktop` — desktop GitHub release only.
 - `submit:prod` has `cache: false` (deployment side-effect; always
   re-runs).
+- `web#submit:prod` depends on `build:prod`, so web deploys always use a
+  prebuilt artifact even though the deploy task itself is not cached.
 - `submit:prod:desktop` has `cache: true` with
   `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
   changes occurred since the last release.
@@ -376,6 +378,8 @@ Production task configuration uses **Package Configurations**
 - `web#build:prod:desktop`: caches the Tauri bundle at
   `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
 - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
+- `web#submit:prod`: depends on `build:prod`, so Turbo can reuse the web
+  prebuild before running `vercel deploy --prebuilt --prod`.
 - `web#submit:prod:desktop`: cached turbo task that depends on
   `build:prod:desktop`. If no source files changed since the last
   successful release, the task is a cache hit and skipped entirely.

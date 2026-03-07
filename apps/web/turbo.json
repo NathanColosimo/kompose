@@ -30,6 +30,9 @@
       "cache": true,
       "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
     },
+    "submit:prod": {
+      "dependsOn": ["build:prod"]
+    },
     "submit:prod:desktop": {
       "dependsOn": ["build:prod:desktop"],
       "cache": true

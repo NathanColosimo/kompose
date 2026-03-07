@@ -450,7 +450,8 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
     (runs from repo root so `rootDirectory: apps/web` resolves correctly).
   - `web#build:prod:desktop`: signed/notarized Tauri build.
   - `web#submit:prod`: `cd ../.. && vercel deploy --prebuilt --prod`
-    (Vercel deploy only, no desktop).
+    (Vercel deploy only, no desktop). Turbo wires it to depend on
+    `build:prod`, so deploy always runs against a prebuilt web artifact.
   - `web#submit:prod:desktop`: `desktop:release` (GitHub release of DMG).
     Cached by Turbo — if no source files changed since the last
     successful release, the task is a cache hit and skipped entirely.
@@ -475,7 +476,9 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
   - `web#build:prod:desktop`: caches
     `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
   - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
-  - `submit:prod` has `cache: false` (deployment side-effect).
+  - `submit:prod` has `cache: false` (deployment side-effect), but
+    `web#submit:prod` depends on `build:prod` so the prebuild can still
+    be reused from Turbo cache before the deploy step runs.
   - `submit:prod:desktop` has `cache: true` with
     `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
     changes occurred since the last release.

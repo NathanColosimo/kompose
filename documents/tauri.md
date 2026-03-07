@@ -417,13 +417,15 @@ Desktop behavior in this flow:
 - `desktop:build:signed` is the full signed + notarized path (it reads
   `apps/web/.tauri.env` and uses `APPLE_*` notarization env vars).
 - `submit:prod` runs `web#submit:prod`, which executes:
-  - `bun run --cwd ../.. vercel:submit:prod` (runs Vercel CLI from repo root)
-    - `vercel:submit:prod` first runs `vercel:build:prod`
-      (`turbo run build:prod --filter=web`) so web prebuild can be reused
-      from Turbo cache, then runs `vercel deploy --prebuilt --prod`.
+  - `cd ../.. && vercel deploy --prebuilt --prod` (runs Vercel CLI from
+    repo root).
+  - Turbo wires `web#submit:prod` to depend on `web#build:prod`, so the
+    deploy step always runs after a prebuilt web artifact exists and that
+    prebuild can still be reused from Turbo cache.
   - `bun run desktop:release`
-- `submit:prod` is Turbo-cache-enabled, so unchanged reruns can be served
-  from cache.
+- `submit:prod` itself is not cached because deployment has side effects,
+  but the dependent `web#build:prod` task can still be restored from cache
+  when inputs have not changed.
 
 `desktop:release` remains upload-only and now fails fast when expected
 artifacts are missing or ambiguous (for example stale duplicate
