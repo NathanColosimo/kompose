@@ -51,13 +51,7 @@ export const queryClient = new QueryClient({
 });
 
 export const link = new RPCLink({
-  /**
-   * Base URL for the Next.js server that hosts `/api/rpc`.
-   *
-   * We keep a small fallback so the app doesn't silently build an invalid URL
-   * when `.env` isn't configured yet.
-   */
-  url: `${process.env.EXPO_PUBLIC_SERVER_URL ?? "http://localhost:3001"}/api/rpc`,
+  url: `${process.env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
   plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
   headers() {
     const headers = new Map<string, string>();

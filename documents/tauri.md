@@ -17,6 +17,9 @@ auto-updates.
   hours. Local/preview builds skip updater polling.
 - Desktop window now launches non-maximized by default so drag-to-move
   behavior stays consistent with dev.
+- Main window loads `/dashboard` directly (via `url` in window config)
+  so logged-in users never see the marketing landing page. Unauthenticated
+  users are redirected to `/login` by the dashboard auth guard.
 - Drag regions are explicitly defined for dashboard header plus
   landing/auth pages so window dragging remains reliable.
 - Desktop builds now exclude the `/docs` route and skip loading the
