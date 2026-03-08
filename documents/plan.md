@@ -437,6 +437,7 @@ installed side by side on macOS.
 - **Provider**: `StateProvider` gates on authenticated session and hydrates shared state.
 - **Session ownership**: Dashboard/web and native root layout now use the shared session query as the single source of truth for auth gating instead of each surface issuing its own first-load `getSession()` call.
 - **Bootstrap seeding**: `use-dashboard-bootstrap` performs one bounded first-load request, then seeds the existing granular query keys so realtime sync and mutations keep working unchanged.
+- **Web auth gate**: The dashboard keeps auth ownership client-side, but now mounts the normal dashboard layout while the shared session query validates instead of returning a blank screen during that check.
 - See [`state.md`](./state.md) for full contents.
 
 ### 6.19 First-Load Bootstrap
@@ -448,8 +449,9 @@ installed side by side on macOS.
   - The bootstrap runs in the background and only seeds missing query keys for accounts, account profiles, calendars, colors, events, tasks, and tags.
   - After seeding, the screens continue to use the normal hooks/atoms, so realtime invalidation and optimistic updates still target the same keys as before.
 - **Event scope**:
-  - Bootstrap only warms event-list data for explicitly selected visible calendars.
-  - If calendar visibility is still at the default `null`/"show all" state during bootstrap, event lists are left to the normal per-calendar queries instead of overfetching every calendar's events.
+  - Bootstrap warms event-list data for the calendars currently visible in the UI.
+  - If calendar visibility is still at the default `null`/"show all" state during bootstrap, the route now warms all available calendars for the initial window.
+  - The web dashboard can still explicitly suppress bootstrap event warming when the responsive layout is hiding the calendar entirely.
 - **Server composition**:
   - The bootstrap route currently reuses the existing domain routers via
     server-side oRPC calls with injected auth context rather than maintaining a

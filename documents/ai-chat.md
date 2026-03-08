@@ -139,7 +139,7 @@ Shared chat access is now centralized again in state and backed by oRPC:
 Added chat UI to right sidebar:
 
 - `apps/web/src/components/sidebar/sidebar-right-chat.tsx`
-- `apps/web/src/components/sidebar/sidebar-right.tsx` now mounts this chat surface
+- `apps/web/src/components/sidebar/sidebar-right.tsx` now mounts this chat surface lazily so closed dashboard chat does not add its full UI bundle to the initial route load
 
 Features implemented:
 

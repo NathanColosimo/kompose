@@ -4,7 +4,7 @@ import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
@@ -35,14 +35,8 @@ export default function DashboardLayout({
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
 
-  // Ensure the initial client render matches the server render (both return
-  // null) to avoid a hydration mismatch caused by the session being available
-  // on the client but not during SSR.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateWidth = () => {
       setViewportWidth(window.innerWidth);
     };
@@ -58,9 +52,6 @@ export default function DashboardLayout({
     }
   }, [router, sessionQuery.status, sessionUser]);
 
-  const hasSession = Boolean(sessionUser);
-  const sessionSettled = sessionQuery.status !== "pending";
-
   // Constrained widths use overlay mode for right chat, so docked open must reset.
   useEffect(() => {
     if (responsiveLayout.canDockRightSidebar || !rightSidebarOpen) {
@@ -75,41 +66,21 @@ export default function DashboardLayout({
 
   // Smallest supported mode should keep the left task panel visible.
   useEffect(() => {
-    if (responsiveLayout.canShowCalendar || leftSidebarOpen) {
+    if (leftSidebarOpen) {
       return;
     }
     setLeftSidebarOpen(true);
-  }, [leftSidebarOpen, responsiveLayout.canShowCalendar, setLeftSidebarOpen]);
+  }, [leftSidebarOpen, setLeftSidebarOpen]);
 
   // When dock mode becomes available again, close overlay-only right chat.
   useEffect(() => {
-    if (
-      !responsiveLayout.canDockRightSidebar &&
-      responsiveLayout.canShowCalendar
-    ) {
+    if (!responsiveLayout.canDockRightSidebar) {
       return;
     }
     setRightSidebarOverlayOpen(false);
-  }, [
-    responsiveLayout.canDockRightSidebar,
-    responsiveLayout.canShowCalendar,
-    setRightSidebarOverlayOpen,
-  ]);
+  }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
 
-  // Avoid rendering dashboard UI until hydrated and session validated.
-  if (!mounted) {
-    return null;
-  }
-
-  if (!sessionSettled) {
-    return null;
-  }
-
-  if (!hasSession) {
-    return null;
-  }
-
-  if (!sessionUser) {
+  if (!sessionUser && sessionQuery.status !== "pending") {
     return null;
   }
 
@@ -132,10 +103,8 @@ export default function DashboardLayout({
         className="min-h-0 flex-1"
         style={
           {
-            // When calendar cannot fit, expand left sidebar to fill the main area.
-            "--sidebar-width": responsiveLayout.canShowCalendar
-              ? SIDEBAR_LEFT_WIDTH
-              : "100vw",
+            // Keep a stable left-sidebar width while the calendar region clamps itself.
+            "--sidebar-width": SIDEBAR_LEFT_WIDTH,
           } as React.CSSProperties
         }
       >
@@ -144,9 +113,7 @@ export default function DashboardLayout({
           <CalendarHotkeys />
           <CommandBar />
           <SidebarLeft />
-          {responsiveLayout.canShowCalendar ? (
-            <SidebarInset>{children}</SidebarInset>
-          ) : null}
+          <SidebarInset>{children}</SidebarInset>
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>

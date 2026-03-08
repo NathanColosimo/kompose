@@ -270,7 +270,6 @@ export function useRealtimeSync({
 
         reconnectAttempts = 0;
         resetInactivityTimer();
-        await invalidateCriticalQueries();
         const reconnectRequested = await consumeIterator(iterator);
 
         await closeActiveIterator();
@@ -293,5 +292,5 @@ export function useRealtimeSync({
       clearInactivityTimer();
       closeActiveIterator();
     };
-  }, [enabled, handleSyncEvent, invalidateCriticalQueries, orpc, userId]);
+  }, [enabled, handleSyncEvent, orpc, userId]);
 }

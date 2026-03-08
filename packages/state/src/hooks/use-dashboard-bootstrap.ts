@@ -3,7 +3,10 @@
 import type { DashboardBootstrapInput } from "@kompose/api/routers/bootstrap/contract";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { visibleCalendarsAtom } from "../atoms/visible-calendars";
+import {
+  type VisibleCalendars,
+  visibleCalendarsAtom,
+} from "../atoms/visible-calendars";
 import {
   DASHBOARD_BOOTSTRAP_STATUS_QUERY_KEY,
   seedDashboardBootstrapCache,
@@ -25,18 +28,21 @@ function getDashboardBootstrapQueryKey(window: DashboardBootstrapInput) {
  */
 export function useDashboardBootstrap({
   enabled = true,
+  visibleCalendarsOverride,
   window,
 }: {
   enabled?: boolean;
+  visibleCalendarsOverride?: VisibleCalendars;
   window: DashboardBootstrapInput;
 }) {
   const queryClient = useQueryClient();
   const hasSession = useAtomValue(hasSessionAtom);
-  const visibleCalendars = useAtomValue(visibleCalendarsAtom);
+  const storedVisibleCalendars = useAtomValue(visibleCalendarsAtom);
   const { orpc } = useStateConfig();
   const bootstrapComplete =
     queryClient.getQueryData<boolean>(DASHBOARD_BOOTSTRAP_STATUS_QUERY_KEY) ===
     true;
+  const visibleCalendars = visibleCalendarsOverride ?? storedVisibleCalendars;
 
   return useQuery({
     queryKey: getDashboardBootstrapQueryKey(window),

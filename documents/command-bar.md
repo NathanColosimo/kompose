@@ -50,6 +50,9 @@ The task input parser extracts all URLs from the title portion of the input into
   dashboard window). The popup renders the exact same `CommandBarContent`
   component used in the web dialog -- no custom scroll modes or layout
   overrides.
+- On web, the dialog shell is mounted eagerly but the heavy command-bar content
+  is lazy-loaded on first open so dashboard visits do not pay for search/create
+  command UI up front.
 - The popup window is undecorated; it auto-sizes to exactly fit the dialog
   content via a `ResizeObserver` (up to a max height of 520px).
 - A global shortcut toggles the popup:
@@ -72,6 +75,7 @@ The task input parser extracts all URLs from the title portion of the input into
 ## Implementation
 
 - **Main component:** `apps/web/src/components/command-bar/command-bar.tsx`
+- **Shared dialog body:** `apps/web/src/components/command-bar/command-bar-content.tsx`
 - **Root actions:** `apps/web/src/components/command-bar/command-bar-root.tsx`
 - **Search tasks:** `apps/web/src/components/command-bar/command-bar-search-tasks.tsx`
 - **Create task:** `apps/web/src/components/command-bar/command-bar-create-task.tsx`

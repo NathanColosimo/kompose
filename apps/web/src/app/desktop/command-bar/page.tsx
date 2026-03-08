@@ -6,7 +6,7 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtom } from "jotai";
 import { useEffect } from "react";
-import { CommandBarContent } from "@/components/command-bar/command-bar";
+import { CommandBarContent } from "@/components/command-bar/command-bar-content";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 const COMMAND_BAR_MAX_HEIGHT = 520;

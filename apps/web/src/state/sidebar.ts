@@ -21,7 +21,6 @@ export const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
 
 export interface DashboardResponsiveLayout {
   canDockRightSidebar: boolean;
-  canShowCalendar: boolean;
   maxDaysForCurrentLayout: number;
   maxDaysWithDockedRight: number;
   maxDaysWithoutRightSidebar: number;
@@ -58,20 +57,22 @@ export function computeDashboardResponsiveLayout(args: {
     mainRegionWidth - SIDEBAR_RIGHT_MIN_WIDTH_PX
   );
 
-  const canShowCalendar = maxDaysWithoutRightSidebar >= 1;
   const canDockRightSidebar =
     maxDaysWithDockedRight >= MIN_DAYS_WHEN_RIGHT_DOCKED;
   const isDockedRightSidebarActive =
     args.rightSidebarDockRequested && canDockRightSidebar;
+  const maxDaysForCurrentLayout = Math.max(
+    1,
+    isDockedRightSidebarActive
+      ? maxDaysWithDockedRight
+      : maxDaysWithoutRightSidebar
+  );
 
   return {
     canDockRightSidebar,
-    canShowCalendar,
     maxDaysWithDockedRight,
     maxDaysWithoutRightSidebar,
-    maxDaysForCurrentLayout: isDockedRightSidebarActive
-      ? maxDaysWithDockedRight
-      : maxDaysWithoutRightSidebar,
+    maxDaysForCurrentLayout,
   };
 }
 
@@ -97,11 +98,20 @@ export const sidebarRightOpenAtom = atomWithStorage<boolean>(
   { getOnInit: true }
 );
 
+function getInitialDashboardViewportWidth() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  return window.innerWidth;
+}
+
 /**
  * Current viewport width for dashboard responsive calculations.
  * Populated client-side from the dashboard layout.
  */
-export const dashboardViewportWidthAtom = atom(0);
+export const dashboardViewportWidthAtom = atom(
+  getInitialDashboardViewportWidth()
+);
 
 /**
  * Overlay-only open state for right chat in constrained widths.

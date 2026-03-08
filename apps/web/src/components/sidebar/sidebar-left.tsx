@@ -2,9 +2,11 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { sessionQueryAtom } from "@kompose/state/config";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
+import { useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
 import { CalendarClock, Inbox } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
@@ -54,6 +56,21 @@ const navMain: SidebarNavItem[] = [
 
 function renderEmptyMessage(message: string) {
   return <div className="p-4 text-muted-foreground text-sm">{message}</div>;
+}
+
+function renderSidebarLoadingContent() {
+  const loadingKeys = ["one", "two", "three", "four", "five", "six"] as const;
+
+  return (
+    <div className="flex flex-col p-2">
+      {loadingKeys.map((key) => (
+        <div
+          className="mx-2 my-1.5 h-12 rounded-md bg-muted/40"
+          key={`sidebar-loading-${key}`}
+        />
+      ))}
+    </div>
+  );
 }
 
 function renderInboxContent(inboxTasks: TaskSelectDecoded[]) {
@@ -221,7 +238,7 @@ function getSidebarContent({
   }
 
   if (isLoading) {
-    return renderEmptyMessage("Loading tasks...");
+    return renderSidebarLoadingContent();
   }
 
   if (error) {
@@ -257,10 +274,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const [activeItem, setActiveItem] = useState<SidebarNavItem | null>(
     navMain[0]
   );
+  const sessionQuery = useAtomValue(sessionQueryAtom);
   const { setOpen } = useSidebar();
   const { tagsQuery } = useTags();
   const {
-    tasksQuery: { isLoading, error },
+    tasksQuery,
     inboxTasks,
     overdueTasks,
     plannedTasks,
@@ -288,6 +306,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     return [...navMain, ...tagItems];
   }, [tagsQuery.data]);
 
+  const isSidebarLoading =
+    sessionQuery.status === "pending" ||
+    (tasksQuery.data === undefined && tasksQuery.error == null) ||
+    (tagsQuery.data === undefined && tagsQuery.error == null);
+
   // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
     id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
@@ -301,9 +324,9 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       getSidebarContent({
         activeItem,
         doneTasks,
-        error,
+        error: tasksQuery.error,
         inboxTasks,
-        isLoading,
+        isLoading: isSidebarLoading,
         overdueTasks,
         plannedTasks,
         tagDoneTasks,
@@ -314,11 +337,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     [
       activeItem,
       doneTasks,
-      error,
       inboxTasks,
-      isLoading,
+      isSidebarLoading,
       overdueTasks,
       plannedTasks,
+      tasksQuery.error,
       tagDoneTasks,
       tagOverdueTasks,
       tagTodoTasks,

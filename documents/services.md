@@ -72,7 +72,7 @@ packages/api/src/
 ### What it does
 
 - `bootstrap.dashboard` is a **bounded first-load read**, not a long-lived aggregate cache.
-- Input is just the initial event window: `{ timeMin, timeMax }`.
+- Input is the initial event window plus optional visible-calendar hints: `{ timeMin, timeMax, visibleCalendars? }`.
 - Output contains:
   - Google account summaries
   - Google account profiles
@@ -88,6 +88,8 @@ packages/api/src/
 - Starts app-owned reads (`tasks.list`, `tags.list`) in parallel with linked-account enrichment.
 - Fetches calendars and colors in parallel per account.
 - Fetches event lists in parallel per calendar after calendars are known.
+- Treats `visibleCalendars: null`/omitted as the default "all calendars visible" case and warms every available calendar for the initial window.
+- Treats `visibleCalendars: []` as an explicit "skip event warming" instruction from the client.
 - Reuses the existing Google Calendar Redis cache indirectly through the normal `googleCal.*` router handlers, so bootstrap benefits from the same cache-first reads and webhook/local invalidation model as standard client queries.
 - Handles each Google account independently so one revoked or broken token does not fail the whole bootstrap payload.
 
@@ -308,6 +310,10 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD, AI session + stream lifecycle updates) call `publishToUserBestEffort` to push events to the channel
+
+Client note:
+
+- Shared state clients no longer invalidate broad task/calendar/chat queries on the first successful SSE connect. They only run the broad recovery invalidation after an explicit `reconnect` event.
 
 ### Redis pub/sub functions
 

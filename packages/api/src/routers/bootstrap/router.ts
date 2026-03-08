@@ -58,13 +58,13 @@ export const bootstrapRouter = os.router({
         (account) => account.providerId === "google"
       );
       const visibleCalendarKeys =
-        input.visibleCalendars && input.visibleCalendars.length > 0
-          ? new Set(
+        input.visibleCalendars == null
+          ? null
+          : new Set(
               input.visibleCalendars.map((calendar) =>
                 toCalendarKey(calendar.accountId, calendar.calendarId)
               )
-            )
-          : null;
+            );
 
       // Resolve each Google account independently so one broken token does not
       // block the entire bootstrap payload.
@@ -83,9 +83,11 @@ export const bootstrapRouter = os.router({
             const eventsByCalendar = await Promise.all(
               calendars
                 .filter((calendar) =>
-                  visibleCalendarKeys?.has(
-                    toCalendarKey(account.accountId, calendar.id)
-                  )
+                  visibleCalendarKeys === null
+                    ? true
+                    : visibleCalendarKeys.has(
+                        toCalendarKey(account.accountId, calendar.id)
+                      )
                 )
                 .map(async (calendar) => ({
                   accountId: account.accountId,

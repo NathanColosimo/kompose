@@ -38,7 +38,7 @@ export const dashboardBootstrapInputSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Calendars currently visible in the UI. When omitted/null, bootstrap skips event-list warming."
+      "Calendars currently visible in the UI. When omitted/null, bootstrap warms events for all currently available calendars."
     ),
 });
 

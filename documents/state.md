@@ -22,7 +22,7 @@
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
 - `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
-- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, and only warms event-list caches for explicitly selected visible calendars.
+- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, warms event-list caches for the default `null`/"show all" selection, and can explicitly skip event warming when the web layout is not rendering the calendar.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
@@ -31,6 +31,7 @@
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
 - `hooks/use-ai-chat.ts`: Shared AI chat sessions/messages queries, session mutations, and streaming/reconnect wrappers over `orpc.ai`.
+- `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar/chat invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using timezone-aware filters.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
