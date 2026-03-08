@@ -1,8 +1,12 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { TASKS_QUERY_KEY } from "@kompose/state/atoms/tasks";
+import { DASHBOARD_BOOTSTRAP_STATUS_QUERY_KEY } from "@kompose/state/bootstrap-cache";
+import { SESSION_QUERY_KEY } from "@kompose/state/config";
 import {
+  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
   GOOGLE_ACCOUNTS_QUERY_KEY,
   GOOGLE_CALENDARS_QUERY_KEY,
+  GOOGLE_COLORS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
 import {
@@ -87,20 +91,30 @@ export const link = new RPCLink({
 export const orpc: AppRouterClient = createORPCClient(link);
 
 export function invalidateSessionQueries() {
+  queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNTS_QUERY_KEY });
+  queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
+  queryClient.invalidateQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
+  queryClient.invalidateQueries({
+    queryKey: DASHBOARD_BOOTSTRAP_STATUS_QUERY_KEY,
+  });
   // Invalidate all AI chat queries to prevent stale sessions/messages after auth changes.
   queryClient.invalidateQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: AI_CHAT_QUERY_ROOT });
 }
 
 export function clearSessionQueries() {
+  queryClient.removeQueries({ queryKey: SESSION_QUERY_KEY });
   queryClient.removeQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_ACCOUNTS_QUERY_KEY });
+  queryClient.removeQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
+  queryClient.removeQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
+  queryClient.removeQueries({ queryKey: DASHBOARD_BOOTSTRAP_STATUS_QUERY_KEY });
   // Remove all AI chat cache entries on sign-out.
   queryClient.removeQueries({ queryKey: AI_CHAT_SESSIONS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: AI_CHAT_QUERY_ROOT });

@@ -7,10 +7,8 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
-import { recurringEventMasterQueryOptions } from "@kompose/state/hooks/use-recurring-event-master";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { memo, useEffect } from "react";
+import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
@@ -44,31 +42,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   columnSpan = 1,
   zIndex = 1,
 }: GoogleCalendarEventProps) {
-  const queryClient = useQueryClient();
-
-  // Prefetch the recurring master in the background so opening the popover is instant.
-  const shouldPrefetchMaster = Boolean(event.recurringEventId);
-  useEffect(() => {
-    if (!(shouldPrefetchMaster && event.recurringEventId)) {
-      return;
-    }
-    queryClient
-      .prefetchQuery(
-        recurringEventMasterQueryOptions({
-          accountId,
-          calendarId,
-          recurringEventId: event.recurringEventId,
-        })
-      )
-      .catch((_error) => null);
-  }, [
-    accountId,
-    calendarId,
-    event.recurringEventId,
-    queryClient,
-    shouldPrefetchMaster,
-  ]);
-
   const durationMinutes = Math.max(
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))

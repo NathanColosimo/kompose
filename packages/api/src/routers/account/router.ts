@@ -1,11 +1,8 @@
-import { db } from "@kompose/db";
-import { account as accountTable } from "@kompose/db/schema/auth";
 import { implement, ORPCError } from "@orpc/server";
-import { eq } from "drizzle-orm";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
-import { getAccountInfo } from "./account-info";
 import { accountContract } from "./contract";
+import { listLinkedAccountsWithProfile } from "./list-linked-accounts";
 
 const os = implement(accountContract).use(requireAuth).use(globalRateLimit);
 
@@ -26,25 +23,7 @@ function getCauseMessage(cause: unknown): string {
 export const accountRouter = os.router({
   list: os.list.handler(async ({ context }) => {
     try {
-      const accounts = await db
-        .select()
-        .from(accountTable)
-        .where(eq(accountTable.userId, context.user.id));
-
-      return await Promise.all(
-        accounts.map(async (account) => {
-          const { email, name } = await getAccountInfo({
-            accountId: account.accountId,
-            userId: context.user.id,
-          });
-          return {
-            accountId: account.accountId,
-            providerId: account.providerId,
-            email,
-            name,
-          };
-        })
-      );
+      return await listLinkedAccountsWithProfile(context.user.id);
     } catch (cause) {
       if (cause instanceof ORPCError) {
         throw cause;

@@ -16,8 +16,8 @@ import {
   GOOGLE_CALENDARS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
 import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
-import { useIsFetching, useQueries } from "@tanstack/react-query";
-import type { OAuth2UserInfo } from "better-auth";
+import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
+import { useIsFetching } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
@@ -29,7 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
 
 interface GoogleAccount {
   accountId: string;
@@ -74,37 +73,31 @@ export function GoogleAccountsDropdown({
   const dataReady = isFetchingAccounts === 0 && isFetchingCalendars === 0;
 
   useEnsureVisibleCalendars(allCalendarIds, dataReady);
-
-  // Fetch account info for each Google account to get their email
-  const accountInfoQueries = useQueries({
-    queries: googleAccounts.map((account) => ({
-      queryKey: ["google-account-info", account.accountId],
-      queryFn: async (): Promise<OAuth2UserInfo | null> => {
-        try {
-          const result = await authClient.accountInfo({
-            query: { accountId: account.accountId },
-          });
-          return result?.data?.user ?? null;
-        } catch {
-          return null;
-        }
-      },
-    })),
-  });
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  const accountProfilesById = useMemo(
+    () =>
+      new Map(
+        googleAccountProfiles.map((profile) => [
+          profile.account.accountId,
+          profile,
+        ])
+      ),
+    [googleAccountProfiles]
+  );
 
   // Merge account info with accounts
   const accountsWithInfo: AccountWithInfo[] = useMemo(
     () =>
-      googleAccounts.map((account, index) => {
-        const query = accountInfoQueries[index];
+      googleAccounts.map((account) => {
+        const query = accountProfilesById.get(account.accountId);
         return {
           ...account,
-          email: query?.data?.email ?? undefined,
-          name: query?.data?.name,
+          email: query?.profile?.email ?? undefined,
+          name: query?.profile?.name,
           isLoading: query?.isLoading,
         };
       }),
-    [googleAccounts, accountInfoQueries]
+    [accountProfilesById, googleAccounts]
   );
 
   // Group calendars by account

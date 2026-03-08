@@ -43,6 +43,7 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
+import { useDashboardBootstrap } from "@kompose/state/hooks/use-dashboard-bootstrap";
 import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
@@ -373,6 +374,13 @@ function TimedGoogleEventBlock({
 }
 
 export default function CalendarTab() {
+  const window = useAtomValue(eventWindowAtom);
+  useDashboardBootstrap({ window });
+
+  return <CalendarTabContent />;
+}
+
+function CalendarTabContent() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();

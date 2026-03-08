@@ -1,7 +1,10 @@
 "use client";
 
 import { env } from "@kompose/env";
-import { GOOGLE_ACCOUNTS_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
+import {
+  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+} from "@kompose/state/google-calendar-query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
@@ -119,7 +122,7 @@ export function DeepLinkHandler() {
             queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
           });
           await queryClient.invalidateQueries({
-            queryKey: ["google-account-info"],
+            queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
           });
           toast.success("Google account linked.");
         } else {

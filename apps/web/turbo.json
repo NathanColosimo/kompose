@@ -19,16 +19,37 @@
         "APPLE_APP_BUNDLE_IDENTIFIER",
         "OPENAI_API_KEY"
       ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!.next/**",
+        "!out/**",
+        "!src-tauri/target/**",
+        "!$TURBO_ROOT$/.vercel/**"
+      ],
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "build:prod": {
       "dependsOn": ["build:prod:desktop", "^build"],
       "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!.next/**",
+        "!out/**",
+        "!src-tauri/target/**",
+        "!$TURBO_ROOT$/.vercel/**"
+      ],
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "build:prod:desktop": {
       "dependsOn": ["^build"],
       "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!.next/**",
+        "!out/**",
+        "!src-tauri/target/**",
+        "!$TURBO_ROOT$/.vercel/**"
+      ],
       "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
     },
     "submit:prod": {

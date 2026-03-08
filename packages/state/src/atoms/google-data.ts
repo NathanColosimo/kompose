@@ -29,8 +29,7 @@ const googleAccountsAtom = atomWithQuery<Account[]>((get) => {
     queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const result = await authClient.listAccounts();
-      const accounts = result?.data ?? [];
+      const accounts = (await authClient.listAccounts())?.data ?? [];
       return accounts.filter((account) => account.providerId === "google");
     },
     staleTime: 1000 * 60 * 5,

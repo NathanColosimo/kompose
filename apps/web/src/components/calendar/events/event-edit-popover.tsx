@@ -1160,6 +1160,7 @@ function EventEditForm({
     accountId,
     calendarId,
     event: event ?? (null as GoogleEvent | null),
+    enabled: open,
   });
 
   const isAllDay = Boolean(event?.start?.date);

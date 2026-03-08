@@ -71,6 +71,9 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **State/Data Fetching**:
   - TanStack Query (React Query) on the client
   - oRPC client for typed RPC calls to Next API endpoints.
+  - Dashboard first load uses a bounded bootstrap RPC to seed the normal
+    query keys for accounts, profiles, calendars, tags, tasks, and the initial
+    event window before the screen mounts its usual hooks.
 - **UI Layer**:
   - React + TailwindCSS (Tailwind v4 with warm HSL color palette)
   - Typography: Sentient (Fontshare, serif — used as primary body and display font), JetBrains Mono (monospace)
@@ -100,6 +103,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - On native, authenticated RPC requests attach the Better Auth cookie
     manually and use `credentials: "omit"` to avoid iOS cookie interference.
   - Shared state via `packages/state/` (same Jotai atoms and hooks as web).
+  - Calendar first load uses the same bounded bootstrap RPC as web, then
+    continues with normal granular cache reads/invalidation.
 - **Auth**:
   - Better Auth flows through HTTP API.
   - Last login method tracking is persisted in DB and exposed in client
@@ -117,6 +122,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **RPC**:
   - **oRPC** as a TS-first RPC layer (contract-first with `oc` builder).
   - `AppRouter` (aggregated in `packages/api/src/routers/index.ts`):
+    - `bootstrap.dashboard`
     - `googleCal.calendars.{list,get,create,update,delete}`
     - `googleCal.events.{list,get,create,update,move,delete}`
     - `googleCal.colors.list`
@@ -429,7 +435,26 @@ installed side by side on macOS.
 - **Contents**: Google account/calendar/event atoms, task/tag query hooks, optimistic mutation hooks, visible calendar selection, collision detection utils, Temporal date helpers.
 - **Storage adapters**: `createPersistedAtom` with platform-specific adapters (web `localStorage`, native `SecureStore`).
 - **Provider**: `StateProvider` gates on authenticated session and hydrates shared state.
+- **Session ownership**: Dashboard/web and native root layout now use the shared session query as the single source of truth for auth gating instead of each surface issuing its own first-load `getSession()` call.
+- **Bootstrap seeding**: `use-dashboard-bootstrap` performs one bounded first-load request, then seeds the existing granular query keys so realtime sync and mutations keep working unchanged.
 - See [`state.md`](./state.md) for full contents.
+
+### 6.19 First-Load Bootstrap
+- **Goal**: Remove client-side first-load waterfalls without replacing the existing granular cache model.
+- **Endpoint**: `bootstrap.dashboard({ timeMin, timeMax })`.
+- **Payload**: Google account summaries, provider profile info, calendars per account, colors per account, events per calendar for the requested window, tasks, and tags.
+- **Client behavior**:
+  - Web dashboard and native calendar screen run the bootstrap once per signed-in cache lifecycle.
+  - The bootstrap runs in the background and only seeds missing query keys for accounts, account profiles, calendars, colors, events, tasks, and tags.
+  - After seeding, the screens continue to use the normal hooks/atoms, so realtime invalidation and optimistic updates still target the same keys as before.
+- **Event scope**:
+  - Bootstrap only warms event-list data for explicitly selected visible calendars.
+  - If calendar visibility is still at the default `null`/"show all" state during bootstrap, event lists are left to the normal per-calendar queries instead of overfetching every calendar's events.
+- **Server composition**:
+  - The bootstrap route currently reuses the existing domain routers via
+    server-side oRPC calls with injected auth context rather than maintaining a
+    second set of bespoke first-load read handlers.
+- **Important constraint**: The bootstrap is bounded to the initial event window only. Moving to a new window later still uses the regular per-calendar event queries instead of rerunning a global aggregate fetch.
 
 ### 6.16 OpenTelemetry
 - **Server-side only**: No client-side OTel SDK in web or native. Network latency is measured via `x-request-start` header (injected by both clients, read on server).

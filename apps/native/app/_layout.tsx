@@ -12,11 +12,13 @@ if (__DEV__) {
   };
 }
 
+import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useAtomValue } from "jotai";
 import React from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -40,9 +42,9 @@ export const unstable_settings = {
  */
 function RootLayoutContent() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
-  const { data: session, isPending: isSessionLoading } =
-    authClient.useSession();
-  useNativeRealtimeSync(session?.user?.id);
+  const sessionQuery = useAtomValue(sessionQueryAtom);
+  const sessionUser = useAtomValue(sessionUserAtom) as { id?: string } | null;
+  useNativeRealtimeSync(sessionUser?.id);
 
   // Update Android nav bar when color scheme changes
   React.useEffect(() => {
@@ -55,7 +57,7 @@ function RootLayoutContent() {
   const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
 
   // Wait for session to load
-  if (isSessionLoading) {
+  if (sessionQuery.status === "pending") {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
@@ -64,7 +66,7 @@ function RootLayoutContent() {
   }
 
   // Show sign-in screen when not authenticated
-  if (!session?.user) {
+  if (!sessionUser) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />

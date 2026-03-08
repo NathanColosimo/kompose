@@ -6,9 +6,14 @@ export interface GoogleEventsWindow {
 }
 
 export const GOOGLE_ACCOUNTS_QUERY_KEY = ["google-accounts"] as const;
+export const GOOGLE_ACCOUNT_INFO_QUERY_KEY = ["google-account-info"] as const;
 export const GOOGLE_CALENDARS_QUERY_KEY = ["google-calendars"] as const;
 export const GOOGLE_COLORS_QUERY_KEY = ["google-colors"] as const;
 export const GOOGLE_EVENTS_QUERY_KEY = ["google-events"] as const;
+
+export function getGoogleAccountInfoQueryKey(accountId: string) {
+  return [...GOOGLE_ACCOUNT_INFO_QUERY_KEY, accountId] as const;
+}
 
 export function getGoogleCalendarsQueryKey(accountId: string) {
   return [...GOOGLE_CALENDARS_QUERY_KEY, accountId] as const;

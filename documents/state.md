@@ -3,8 +3,10 @@
 - Added a shared state package at `packages/state` with Jotai atoms, shared hooks, and a `StateProvider` to centralize data/query logic between web and native.
 - Implemented a storage adapter layer with `createPersistedAtom` and platform adapters (web localStorage, native SecureStore) so persisted atoms stay in sync.
 - Wired both apps to the shared state package: web `Providers` now wraps `StateProvider`, native root layout now wraps it too.
+- Session ownership is now centralized in the shared state layer. Web dashboard and native root layout both gate off the shared session query instead of issuing separate first-load `getSession()` reads.
 - Migrated web and native imports to use shared atoms/hooks; removed legacy web atoms/hooks and added web-only replacements at `apps/web/src/state/sidebar.ts` and `apps/web/src/lib/use-mobile.ts`.
 - Added a shared AI chat hook at `packages/state/src/hooks/use-ai-chat.ts` that uses oRPC chat procedures (`orpc.ai.*`) for sessions, messages, and stream/reconnect helpers.
+- Added a bounded dashboard/calendar bootstrap path that makes one first-load request, then seeds the existing granular TanStack Query keys for accounts, account profiles, calendars, colors, windowed events, tasks, and tags.
 - Updated dependencies to include `@kompose/state` and adjusted TypeScript config/types for the new package; verified `@kompose/state` type-check passes.
 
 ## `packages/state` contents
@@ -15,14 +17,17 @@
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, and event window atoms.
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
-- `atoms/google-data.ts`: Google accounts/calendars atoms plus derived visible calendar ids.
+- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids.
 - `atoms/visible-calendars.ts`: Visible calendar selection atoms and toggle helpers.
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
+- `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
-- `hooks/use-google-accounts.ts`: Query hook for linked Google accounts.
+- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, and only warms event-list caches for explicitly selected visible calendars.
+- `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
-- `hooks/use-google-events.ts`: Query hook for events per calendar/time window.
+- `hooks/use-google-events.ts`: Query hook for events per calendar and bounded time window.
+- `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. Uses the same `google-account-info` query keys seeded by bootstrap so headers/settings/pickers do not each refetch independently on first load.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
 - `hooks/use-ai-chat.ts`: Shared AI chat sessions/messages queries, session mutations, and streaming/reconnect wrappers over `orpc.ai`.

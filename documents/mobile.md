@@ -102,7 +102,7 @@ app/
 
 Key files:
 - `apps/native/app/(tabs)/_layout.tsx` - NativeTabs with SF Symbol icons
-- `apps/native/app/_layout.tsx` - Root layout with QueryClient, StateProvider, auth
+- `apps/native/app/_layout.tsx` - Root layout with QueryClient, StateProvider, and shared session-query auth gating
 
 ### NativeTabs implementation
 
@@ -132,12 +132,15 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - `packages/state/src/hooks/use-google-accounts.ts` (imported via `@kompose/state/hooks`)
   - `packages/state/src/hooks/use-google-calendars.ts` (imported via `@kompose/state/hooks`)
   - `packages/state/src/hooks/use-google-events.ts` (imported via `@kompose/state/hooks`)
+  - `packages/state/src/hooks/use-dashboard-bootstrap.ts` (imported via `@kompose/state/hooks`)
 
 ### Calendar implementation
 
 - Layout: `apps/native/app/(tabs)/(calendar)/_layout.tsx`
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
+  - Runs a one-time bounded bootstrap request for the initial calendar window,
+    then continues reading from the normal granular task/account/calendar/event caches.
 
 ### Chat implementation
 
@@ -175,10 +178,17 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 
 - Better Auth client: `apps/native/lib/auth-client.ts`
   - Includes Expo `lastLoginMethodClient` for "Last used" auth UI hints.
+- Shared session ownership:
+  - Native root layout now uses the shared `sessionQueryAtom` / `sessionUserAtom`
+    from `packages/state` instead of a separate Better Auth `useSession()`
+    subscriber for first-load gating.
 - oRPC client (cookie injection + URL fallback):
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.
   - `apps/native/utils/orpc.ts`
+  - Auth cache cleanup also clears the shared session query, Google account
+    profiles, Google colors, and bootstrap status markers so sign-out/account
+    changes do not leave stale first-load data behind.
 - Added Google social sign-in buttons:
   - `apps/native/components/sign-in.tsx`
   - `apps/native/components/sign-up.tsx`

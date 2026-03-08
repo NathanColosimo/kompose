@@ -79,7 +79,7 @@ Used for click-and-drag event creation on the calendar.
 #### Recurrence master hydration + prefetch — Edit Mode Only
 - Recurring instances often do not include the RRULE on the instance.
 - The series master is fetched via `useRecurringEventMaster` and is:
-  - **Prefetched in the background** from `GoogleCalendarEvent` (non-blocking render)
+  - **Fetched lazily when the edit popover opens**
   - Reused in the popover to hydrate the recurrence editor
 - In create mode, the hook is disabled (no event to query).
 
@@ -110,7 +110,7 @@ Used for click-and-drag event creation on the calendar.
 - Recurring event edit; close: scope dialog appears; each scope behaves correctly.
 - Recurrence editor: set Frequency to **None**; RRULE is cleared.
 - Recurrence editor: weekly BYDAY changes persist; UNTIL/COUNT modes work.
-- Prefetch: opening a recurring instance's popover should not "wait" for recurrence to appear.
+- Lazy fetch: opening a recurring instance's popover may briefly wait for the series master before recurrence controls fully hydrate, but dashboard/event block rendering should not trigger `events.get` in the background anymore.
 - Move…:
   - With unsaved edits: save first, then move.
   - Scope `this`/`all`/`following` works; `following` does split + new series.

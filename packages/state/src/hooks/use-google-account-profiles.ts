@@ -4,6 +4,7 @@ import { useQueries } from "@tanstack/react-query";
 import type { Account, OAuth2UserInfo } from "better-auth";
 import { useMemo } from "react";
 import { useStateConfig } from "../config";
+import { getGoogleAccountInfoQueryKey } from "../google-calendar-query-keys";
 import { useGoogleAccounts } from "./use-google-accounts";
 
 export interface GoogleAccountProfile {
@@ -15,15 +16,19 @@ export interface GoogleAccountProfile {
 /**
  * Returns linked Google accounts enriched with profile metadata from provider.
  */
-export function useGoogleAccountProfiles() {
+export function useGoogleAccountProfiles({
+  enabled = true,
+}: {
+  enabled?: boolean;
+} = {}) {
   const { authClient } = useStateConfig();
   const { data: googleAccounts = [], isLoading: isAccountsLoading } =
     useGoogleAccounts();
 
   const profileQueries = useQueries({
     queries: googleAccounts.map((account) => ({
-      // Better Auth accountInfo expects provider accountId for lookup.
-      queryKey: ["google-account-info", account.accountId],
+      queryKey: getGoogleAccountInfoQueryKey(account.accountId),
+      enabled,
       queryFn: async (): Promise<OAuth2UserInfo | null> => {
         try {
           return await authClient.accountInfo(account.accountId);
@@ -50,6 +55,7 @@ export function useGoogleAccountProfiles() {
 
   return {
     profiles,
-    isLoading: isAccountsLoading || profileQueries.some((q) => q.isLoading),
+    isLoading:
+      enabled && (isAccountsLoading || profileQueries.some((q) => q.isLoading)),
   };
 }

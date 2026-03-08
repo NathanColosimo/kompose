@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
@@ -11,7 +12,6 @@ import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { authClient } from "@/lib/auth-client";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
@@ -27,8 +27,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [sessionUser, setSessionUser] = useState<User | null>(null);
+  const sessionQuery = useAtomValue(sessionQueryAtom);
+  const sessionUser = useAtomValue(sessionUserAtom) as User | null;
   const [leftSidebarOpen, setLeftSidebarOpen] = useAtom(sidebarLeftOpenAtom);
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
@@ -52,35 +52,14 @@ export default function DashboardLayout({
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
 
-  // Always use a direct Better Auth check for dashboard route gating.
   useEffect(() => {
-    let cancelled = false;
-
-    const finishCheck = (user: User | null) => {
-      if (cancelled) {
-        return;
-      }
-      setSessionUser(user);
-      setSessionChecked(true);
-      if (!user) {
-        router.replace("/login");
-      }
-    };
-
-    authClient
-      .getSession({ query: { disableCookieCache: true } })
-      .then((result) =>
-        finishCheck((result?.data?.user ?? null) as User | null)
-      )
-      .catch(() => finishCheck(null));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+    if (sessionQuery.status !== "pending" && !sessionUser) {
+      router.replace("/login");
+    }
+  }, [router, sessionQuery.status, sessionUser]);
 
   const hasSession = Boolean(sessionUser);
-  const sessionSettled = sessionChecked;
+  const sessionSettled = sessionQuery.status !== "pending";
 
   // Constrained widths use overlay mode for right chat, so docked open must reset.
   useEffect(() => {

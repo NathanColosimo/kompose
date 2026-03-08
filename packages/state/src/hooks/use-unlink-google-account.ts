@@ -2,7 +2,10 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
-import { GOOGLE_ACCOUNTS_QUERY_KEY } from "../google-calendar-query-keys";
+import {
+  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
+  GOOGLE_ACCOUNTS_QUERY_KEY,
+} from "../google-calendar-query-keys";
 import type { UnlinkAccountInput } from "../types";
 
 /**
@@ -18,7 +21,9 @@ export function useUnlinkGoogleAccount() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["google-account-info"] });
+      queryClient.invalidateQueries({
+        queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
+      });
     },
   });
 }

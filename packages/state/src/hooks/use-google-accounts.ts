@@ -17,8 +17,7 @@ export function useGoogleAccounts() {
     queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async (): Promise<Account[]> => {
-      const result = await authClient.listAccounts();
-      const accounts = result?.data ?? [];
+      const accounts = (await authClient.listAccounts())?.data ?? [];
       return accounts.filter((account) => account.providerId === "google");
     },
     staleTime: 5 * 60 * 1000,

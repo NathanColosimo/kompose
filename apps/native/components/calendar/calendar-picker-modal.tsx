@@ -51,7 +51,9 @@ export function CalendarPickerModal({
   const primaryColor = useColor("primary");
   const primaryForegroundColor = useColor("primaryForeground");
   const borderColor = useColor("border");
-  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles({
+    enabled: open,
+  });
 
   const calendarsByAccount = useMemo(() => {
     const map = new Map<string, CalendarWithSource[]>();

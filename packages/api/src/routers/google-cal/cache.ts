@@ -36,7 +36,7 @@ const KEY_PREFIX = "gcal";
 /** TTLs are safety nets — webhooks handle real invalidation. */
 const CALENDARS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 const COLORS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
-const EVENTS_TTL_SECONDS = 60 * 60; // 1 hour
+const EVENTS_TTL_SECONDS = 24 * 60 * 60; // 1 hour
 
 // ── Key builders ────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ export type DeleteScope = z.infer<typeof deleteScopeSchema>;
 const tagIdsSchema = z.array(z.uuidv7());
 const tagsSchema = z.array(tagSelectSchemaWithIcon);
 
-const taskSelectSchemaWithTags = taskSelectSchema.extend({
+export const taskSelectSchemaWithTags = taskSelectSchema.extend({
   tags: tagsSchema,
 });
 

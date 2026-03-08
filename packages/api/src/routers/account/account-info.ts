@@ -7,7 +7,7 @@ import { auth } from "@kompose/auth";
 export async function getAccountInfo(input: {
   accountId: string;
   userId: string;
-}): Promise<{ email: string; name: string }> {
+}): Promise<{ email: string; image: string | null; name: string }> {
   try {
     const info = await auth.api.accountInfo({
       query: {
@@ -17,9 +17,10 @@ export async function getAccountInfo(input: {
     });
     return {
       email: info?.user?.email ?? "",
+      image: info?.user?.image ?? null,
       name: info?.user?.name ?? "",
     };
   } catch {
-    return { email: "", name: "" };
+    return { email: "", image: null, name: "" };
   }
 }
