@@ -1,7 +1,8 @@
 import { auth } from "@kompose/auth";
-import { env } from "@kompose/env";
+import { desktopDeepLinkSchemeSchema, env } from "@kompose/env";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
+import { DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM } from "@/lib/desktop-deep-link";
 
 /**
  * GET /api/auth/desktop-sign-in?provider=google[&mode=link&link_token=TOKEN]
@@ -15,6 +16,7 @@ import { type NextRequest, NextResponse } from "next/server";
  *  - provider: OAuth provider name (e.g. "google", "apple")
  *  - mode: "link" for account linking (optional, defaults to sign-in)
  *  - link_token: One-time token for account linking (required when mode=link)
+ *  - desktop_scheme: Target custom URL scheme for the bundled desktop flavor
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -31,8 +33,18 @@ export async function GET(request: NextRequest) {
 
   try {
     const baseUrl = env.NEXT_PUBLIC_WEB_URL;
+    const desktopScheme = desktopDeepLinkSchemeSchema.parse(
+      url.searchParams.get(DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM)
+    );
+    // Keep the selected desktop scheme in the browser callback URL so the
+    // server can redirect back to the correct installed desktop flavor.
+    const callbackParams = new URLSearchParams({
+      [DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM]: desktopScheme,
+    });
 
     if (mode === "link" && linkToken) {
+      callbackParams.set("mode", "link");
+
       // --- Account linking mode ---
       // Use direct API calls instead of auth.handler to avoid
       // nextCookies() intercepting Set-Cookie headers and CSRF/session
@@ -71,7 +83,7 @@ export async function GET(request: NextRequest) {
           },
           body: JSON.stringify({
             provider,
-            callbackURL: "/api/auth/desktop-callback?mode=link",
+            callbackURL: `/api/auth/desktop-callback?${callbackParams.toString()}`,
           }),
         })
       );
@@ -111,8 +123,8 @@ export async function GET(request: NextRequest) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider,
-          callbackURL: "/api/auth/desktop-callback",
-          errorCallbackURL: "/api/auth/desktop-callback",
+          callbackURL: `/api/auth/desktop-callback?${callbackParams.toString()}`,
+          errorCallbackURL: `/api/auth/desktop-callback?${callbackParams.toString()}`,
         }),
       })
     );

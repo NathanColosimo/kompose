@@ -5,19 +5,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtom } from "jotai";
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { CommandBarContent } from "@/components/command-bar/command-bar";
-import { CommandDialog } from "@/components/ui/command";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 const COMMAND_BAR_MAX_HEIGHT = 520;
 
 /**
  * Dedicated command bar page for the desktop popup window.
- * Renders the same CommandDialog used on web so behavior is identical.
- * The dialog overlay is transparent and the DialogContent is pinned to
- * top-left so a ResizeObserver can snap the Tauri window to exactly
- * match the content dimensions.
+ * Renders only the command-bar surface for the popup window. The web dialog
+ * wrapper is intentionally skipped here because the popup already owns its own
+ * native window and should size directly to the command surface.
  */
 export default function DesktopCommandBarPage() {
   const [open, setOpen] = useAtom(commandBarOpenAtom);
@@ -103,7 +101,7 @@ export default function DesktopCommandBarPage() {
 
     const startObserving = () => {
       const el = document.querySelector<HTMLElement>(
-        '[data-slot="dialog-content"]'
+        "[data-command-bar-surface]"
       );
       if (!el) {
         const frameId = requestAnimationFrame(startObserving);
@@ -132,26 +130,29 @@ export default function DesktopCommandBarPage() {
     };
   }, [open]);
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      setOpen(nextOpen);
-    },
-    [setOpen]
-  );
-
   if (!isTauriRuntime()) {
     return null;
   }
 
+  if (!open) {
+    return null;
+  }
+
   return (
-    <CommandDialog
-      className="top-0! left-0! w-full! max-w-none! translate-x-0! translate-y-0! rounded-none!"
-      onOpenChange={handleOpenChange}
-      open={open}
-      overlayClassName="bg-transparent backdrop-blur-none"
-      size="lg"
+    <div
+      className="inline-block"
+      data-command-bar-surface
+      style={{
+        width: "32rem",
+        maxWidth: "100vw",
+      }}
     >
-      <CommandBarContent className="h-auto" isOpen={open} size="lg" />
-    </CommandDialog>
+      <CommandBarContent
+        className="h-auto"
+        isOpen={open}
+        onRequestClose={() => setOpen(false)}
+        size="lg"
+      />
+    </div>
   );
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { env } from "@kompose/env";
+import { DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM } from "@/lib/desktop-deep-link";
+
 interface AuthErrorResult {
   error?: {
     message?: string | null;
@@ -98,6 +101,12 @@ export async function openDesktopOAuth(
 ) {
   const signInUrl = new URL("/api/auth/desktop-sign-in", baseUrl);
   signInUrl.searchParams.set("provider", provider);
+  // Send the active bundled app scheme to the server so the browser callback
+  // returns to the correct installed flavor (prod vs desktop-dev).
+  signInUrl.searchParams.set(
+    DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM,
+    env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME
+  );
 
   if (mode === "link") {
     // Generate a one-time token tied to the current session. The bearer

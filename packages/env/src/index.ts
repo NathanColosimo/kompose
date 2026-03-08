@@ -1,6 +1,10 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+export const desktopDeepLinkSchemes = ["kompose", "kompose-dev"] as const;
+export const desktopDeepLinkSchemeSchema = z.enum(desktopDeepLinkSchemes);
+export type DesktopDeepLinkScheme = z.infer<typeof desktopDeepLinkSchemeSchema>;
+
 export const env = createEnv({
   server: {
     DATABASE_URL: z.string().min(1),
@@ -31,11 +35,14 @@ export const env = createEnv({
       .min(1)
       .regex(/^https?:\/\//),
     NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "preview", "production"]),
+    NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME: desktopDeepLinkSchemeSchema,
   },
 
   experimental__runtimeEnv: {
     NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
     NEXT_PUBLIC_DEPLOYMENT_ENV: process.env.NEXT_PUBLIC_DEPLOYMENT_ENV,
+    NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME:
+      process.env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME,
   },
 });
 

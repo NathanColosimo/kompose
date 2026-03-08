@@ -259,7 +259,11 @@ packages/
   state/        # Shared Jotai atoms, TanStack Query hooks, storage adapters (web + native)
 ```
 
-Note: Desktop (Tauri) app is planned but not yet implemented.
+Note: Desktop (Tauri) app is implemented in `apps/web/src-tauri`.
+Production keeps the `Kompose` app identity (`com.nathancolosimo.kompose`,
+`kompose://`), while local bundled testing uses a separate `Kompose Dev`
+flavor (`com.nathancolosimo.kompose.dev`, `kompose-dev://`) so both can stay
+installed side by side on macOS.
 
 ---
 
@@ -449,6 +453,9 @@ Note: Desktop (Tauri) app is planned but not yet implemented.
   - `web#build:prod`: `cd ../.. && vercel pull + vercel build --prod`
     (runs from repo root so `rootDirectory: apps/web` resolves correctly).
   - `web#build:prod:desktop`: signed/notarized Tauri build.
+  - Local bundled desktop testing uses `bun run --cwd apps/web desktop:build:dev`
+    to build the unsigned `Kompose Dev` flavor with its own icon and deep-link
+    scheme, leaving the installed production app untouched.
   - `web#submit:prod`: `cd ../.. && vercel deploy --prebuilt --prod`
     (Vercel deploy only, no desktop). Turbo wires it to depend on
     `build:prod`, so deploy always runs against a prebuilt web artifact.

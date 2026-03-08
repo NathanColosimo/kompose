@@ -7,7 +7,10 @@ auto-updates.
 ## Current state
 
 - Desktop app is in `apps/web/src-tauri`.
-- Bundle identifier is aligned with mobile: `com.nathancolosimo.kompose`.
+- Production desktop bundle identifier stays aligned with mobile:
+  `com.nathancolosimo.kompose`.
+- Local bundled testing now uses a separate desktop-dev flavor:
+  `com.nathancolosimo.kompose.dev`.
 - Tauri updater plugin is wired (Rust + JS), and a silent download +
   restart prompt is shown in the header once an update is ready.
 - In production desktop builds, update checks run on app launch and every 6
@@ -27,7 +30,11 @@ auto-updates.
 - A `.tauri.env` workflow exists for local signing/notarization builds.
 - Apple Silicon DMG build now succeeds with the standard Cargo defaults.
 - OAuth sign-in and account linking now open in the system browser and
-  redirect back to the desktop app via `kompose://` deep link.
+  redirect back to the desktop app via a flavor-specific deep link:
+  `kompose://` for production and `kompose-dev://` for desktop-dev.
+- Local bundled desktop testing now uses `bun run desktop:build:dev`, which
+  builds an unsigned `Kompose Dev` app without replacing the installed
+  production app.
 - Command bar now supports a desktop global shortcut that toggles a
   dedicated compact popup window (`/desktop/command-bar`) without focusing
   the full dashboard window.
@@ -54,10 +61,16 @@ auto-updates.
   - `plugins.updater.endpoints`:
     `https://github.com/nathancolosimo/kompose/releases/latest/download/latest.json`
 
+- `apps/web/src-tauri/tauri.desktop-dev.conf.json`
+  - `productName`: `Kompose Dev`
+  - `identifier`: `com.nathancolosimo.kompose.dev`
+  - `bundle.createUpdaterArtifacts`: `false`
+  - `plugins.deep-link.desktop.schemes`: `["kompose-dev"]`
+
 - `apps/web/src-tauri/src/lib.rs`
   - Added: `tauri_plugin_updater::Builder::new().build()`.
   - Added: `tauri_plugin_opener::init()` for system browser/file opens.
-  - Added: `tauri_plugin_deep_link::init()` for `kompose://` deep link handling.
+  - Added: `tauri_plugin_deep_link::init()` for desktop deep link handling.
   - Added: `tauri_plugin_global_shortcut` handler for command bar toggle.
   - Added: hidden `command-bar` WebView window creation (`/desktop/command-bar`).
   - Added: blur/focus-loss hide behavior for the `command-bar` popup.
@@ -105,10 +118,17 @@ auto-updates.
 - `apps/web/src/lib/tauri-desktop.ts`
   - Desktop runtime helper for Tauri detection and external URL opening.
   - Added: `openDesktopOAuth(provider, mode, baseUrl)` helper that opens
-    the system browser to the desktop-sign-in endpoint for OAuth.
+    the system browser to the desktop-sign-in endpoint for OAuth and forwards
+    the active desktop scheme.
   - Added: command bar shortcut preset model + store helpers.
   - Added: `applyDesktopCommandBarShortcutPreset()` and
     `syncDesktopCommandBarShortcutPreset()` for runtime rebind.
+
+- `apps/web/src/lib/desktop-deep-link.ts`
+  - Shared helper that builds the desktop callback URL from the typed scheme.
+  - The scheme itself now comes from required env validation in
+    `packages/env/src/index.ts` (`NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME` with
+    enum values `kompose | kompose-dev`).
 
 - `apps/web/src/components/tauri-updater.tsx`
   - New provider: in production desktop builds, checks updates on launch +
@@ -121,10 +141,11 @@ auto-updates.
   - Added desktop bridge bootstrap:
     - intercepts external link clicks and opens them in system browser
     - syncs persisted command-bar shortcut preset on startup
-  - Added `DeepLinkHandler` component for `kompose://` deep link processing.
+  - Added `DeepLinkHandler` component for flavor-aware desktop deep link
+    processing.
 
 - `apps/web/src/components/deep-link-handler.tsx`
-  - Listens for `kompose://auth/callback?token=TOKEN` deep links via
+  - Listens for `<scheme>://auth/callback?token=TOKEN` deep links via
     `@tauri-apps/plugin-deep-link` JS API.
   - On receiving a token, verifies it via `authClient.oneTimeToken.verify()`.
     The bearer plugin captures the session token from the `set-auth-token`
@@ -148,12 +169,15 @@ auto-updates.
 - `apps/web/src/app/api/auth/desktop-sign-in/route.ts`
   - GET endpoint that initiates OAuth in the system browser.
   - Proxies to Better Auth sign-in or link-social endpoint internally.
+  - Preserves the requested desktop scheme in the callback URL so browser auth
+    returns to the correct installed app flavor.
   - Forwards state cookies and returns a 302 redirect to the OAuth provider.
 
 - `apps/web/src/app/api/auth/desktop-callback/route.ts`
   - GET endpoint called by the browser after OAuth completes.
   - Generates a one-time token via the `oneTimeToken` plugin and
-    redirects to `kompose://auth/callback?token=TOKEN`.
+    redirects to the matching desktop scheme callback (`kompose://...` or
+    `kompose-dev://...`).
 
 - `packages/auth/src/index.ts`
   - Added Better Auth `bearer()` plugin so the server accepts
@@ -162,6 +186,7 @@ auto-updates.
     ITP which blocks cross-origin `Set-Cookie`).
   - Added Better Auth `lastLoginMethod()` plugin for client-side "last used"
     provider hints.
+  - Trusted origins now include both desktop custom schemes.
 
 - `apps/web/package.json`
   - Added: `@tauri-apps/plugin-opener`.
@@ -203,12 +228,16 @@ auto-updates.
   - Excluded `src-tauri/target/**` to avoid TS parsing generated files.
 
 - `apps/web/.gitignore`
-  - Added `.tauri.env` (local secret env file).
+  - Added `.tauri.env` and `.tauri.dev.env` (local secret env files).
 
 - `apps/web/.tauri.env.example`
   - Template env vars for signing + notarization.
 
+- `apps/web/.tauri.dev.env.example`
+  - Template env vars for the local unsigned desktop-dev build.
+
 - `apps/web/package.json`
+  - Added script: `desktop:build:dev`.
   - Added script: `desktop:build:signed`.
   - Added script: `desktop:build:signed:universal`.
   - Added script: `build:desktop` (runs `scripts/build-desktop.sh`).
@@ -217,6 +246,11 @@ auto-updates.
   - Moves `src/app/api` and `src/app/docs` into a temp directory before build.
   - Uses shell `trap` handlers to always restore both directories on exit, including failure/interruption paths.
   - Clears `.next` + `out`, then runs `TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build`.
+
+- `apps/web/scripts/build-desktop-dev.sh`
+  - Backs up `src-tauri/icons`, generates a temporary light icon set from
+    `src-tauri/icons/kompose-icon-light.png`, loads `.tauri.dev.env`, builds the unsigned desktop-dev
+    flavor, and restores the production icons on exit.
 
 - `apps/web/next.config.mts`
   - Fumadocs MDX plugin is loaded only for non-Tauri builds.
@@ -235,15 +269,30 @@ auto-updates.
     - `panic = "abort"`
     - `strip = true`
 
-## Local env file and build script
+## Local env files and build script
 
-- Local env file (not committed): `apps/web/.tauri.env`
-- Example template: `apps/web/.tauri.env.example`
+- Web/local runtime env file (not committed): `apps/web/.env.local`
+  - add `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME=kompose`
+- Signed desktop build env file (not committed): `apps/web/.tauri.env`
+  - add `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME=kompose`
+- Desktop-dev build env file (not committed): `apps/web/.tauri.dev.env`
+  - add:
+    - `NEXT_PUBLIC_WEB_URL=http://localhost:3000`
+    - `NEXT_PUBLIC_DEPLOYMENT_ENV=local`
+    - `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME=kompose-dev`
+- Example templates:
+  - `apps/web/.env.example`
+  - `apps/web/.tauri.env.example`
+  - `apps/web/.tauri.dev.env.example`
 
-Script:
+Scripts:
 
-- `desktop:build:unsigned`:
-  `bunx tauri build --no-sign --bundles dmg --target aarch64-apple-darwin`
+- `desktop:build:dev`:
+  - backs up the current generated icons
+  - runs `tauri icon src-tauri/icons/kompose-icon-light.png`
+  - builds the unsigned desktop-dev flavor with `kompose-dev://`
+    as both an `.app` and a drag-install `.dmg`
+  - restores the production icons after the build finishes
 
 - `desktop:build:signed`:
   `set -a && . ./.tauri.env && set +a && bunx tauri build --bundles dmg --target aarch64-apple-darwin`
@@ -314,6 +363,8 @@ token exchange to bridge the browser session to the Tauri webview.
 1. User clicks "Sign in with Google" in the Tauri app.
 2. App opens the system browser to
    `GET /api/auth/desktop-sign-in?provider=google`.
+   The desktop app also includes its active scheme (`kompose` or
+   `kompose-dev`) so the callback returns to the correct installed flavor.
 3. Server proxies to Better Auth's sign-in social endpoint, gets the
    Google auth URL, forwards state cookies, and returns a 302 redirect.
 4. Browser follows the Google OAuth flow.
@@ -322,7 +373,7 @@ token exchange to bridge the browser session to the Tauri webview.
 6. Better Auth redirects to `/api/auth/desktop-callback`.
 7. Desktop callback generates a one-time token via the `oneTimeToken`
    plugin (stored in the `verification` table, 3-minute TTL) and
-   redirects to `kompose://auth/callback?token=TOKEN`.
+   redirects to the matching desktop scheme callback.
 8. macOS opens/focuses the Tauri app with the deep link.
 9. `DeepLinkHandler` captures the URL and calls
    `authClient.oneTimeToken.verify({ token })` via cross-origin fetch.
@@ -348,9 +399,9 @@ to Better Auth's link-social endpoint with the recovered session.
 
 ### Plugins
 
-- `tauri-plugin-deep-link` (Rust + JS) registers the `kompose://`
-  custom URL scheme. Configured in `tauri.conf.json` under
-  `plugins.deep-link.desktop.schemes`.
+- `tauri-plugin-deep-link` (Rust + JS) registers the bundled app's custom URL
+  scheme. Production uses `kompose://`; desktop-dev uses `kompose-dev://`.
+  Configured via `tauri.conf.json` plus the desktop-dev override config.
 
 ### Security
 
@@ -375,7 +426,8 @@ Deep links on macOS only work with the bundled `.app` installed in
 `/Applications`. They cannot be tested in `tauri dev` mode. For
 development, the fallback in-webview flow still works (the desktop
 detection only triggers `openDesktopOAuth` when `isTauriRuntime()` is
-true in a bundled build).
+true in a bundled build). For side-by-side local testing of the real OAuth
+callback flow, use `bun run desktop:build:dev` and install `Kompose Dev.app`.
 
 ### Future: Linux/Windows
 
@@ -431,25 +483,23 @@ Desktop behavior in this flow:
 artifacts are missing or ambiguous (for example stale duplicate
 `.dmg`/`.app.tar.gz` files).
 
-## Manual no-notary flow (Apple Silicon)
+## Local desktop-dev flow (Apple Silicon)
 
-This flow keeps code signing enabled but skips notarization so you can
-produce a DMG for yourself and a few friends.
+Use this when you want to test the bundled desktop app locally without
+replacing the installed production app.
 
-1) Build (signed, no notarization):
+1. Build the unsigned desktop-dev flavor:
 
-- `bun run desktop:build:signed:no-notary`
+- `bun run desktop:build:dev`
 
-2) Release to GitHub (manual upload):
+2. Open the generated DMG from
+   `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/`.
 
-- `bun run desktop:release`
+3. Drag `Kompose Dev.app` into `/Applications`.
 
-Artifacts uploaded:
+Result:
 
-- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg`
-- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz`
-- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig`
-- `apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/latest.json`
-
-Intel users will need an `x86_64-apple-darwin` build or a universal build
-if they need to run the app.
+- Production `Kompose.app` keeps the `kompose://` scheme.
+- Local `Kompose Dev.app` uses `kompose-dev://`.
+- The build temporarily swaps in the light icon set, then restores the
+  production icons after the build completes.

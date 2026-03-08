@@ -32,6 +32,7 @@ export const auth = betterAuth({
   trustedOrigins: [
     env.NEXT_PUBLIC_WEB_URL,
     "kompose://",
+    "kompose-dev://",
     "exp://",
     "http://localhost:3000",
     "tauri://localhost",

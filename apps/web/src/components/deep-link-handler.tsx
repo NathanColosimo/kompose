@@ -1,48 +1,49 @@
 "use client";
 
+import { env } from "@kompose/env";
 import { GOOGLE_ACCOUNTS_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { getDesktopAuthCallbackPrefix } from "@/lib/desktop-deep-link";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 /** localStorage key for tracking tokens we have already exchanged. */
-const PROCESSED_TOKENS_KEY = "kompose:deep-link-processed-tokens";
+const DESKTOP_DEEP_LINK_SCHEME = env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME;
+const DESKTOP_AUTH_CALLBACK_PREFIX = getDesktopAuthCallbackPrefix(
+  DESKTOP_DEEP_LINK_SCHEME
+);
+const PROCESSED_TOKENS_KEY = `${DESKTOP_DEEP_LINK_SCHEME}:deep-link-processed-tokens`;
 
 /** Record a token so subsequent getCurrent() calls won't re-process it. */
 function markTokenProcessed(token: string) {
-  try {
-    const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
-    const set: string[] = raw ? (JSON.parse(raw) as string[]) : [];
-    set.push(token);
-    // Cap at 20 entries to avoid unbounded growth.
-    if (set.length > 20) {
-      set.splice(0, set.length - 20);
-    }
-    localStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(set));
-  } catch {
-    // localStorage may not be available; ignore.
+  const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
+  const processedTokens: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+  processedTokens.push(token);
+
+  // Cap at 20 entries to avoid unbounded growth.
+  if (processedTokens.length > 20) {
+    processedTokens.splice(0, processedTokens.length - 20);
   }
+
+  localStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(processedTokens));
 }
 
 function isTokenAlreadyProcessed(token: string): boolean {
-  try {
-    const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
-    if (!raw) {
-      return false;
-    }
-    return (JSON.parse(raw) as string[]).includes(token);
-  } catch {
+  const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
+  if (!raw) {
     return false;
   }
+
+  return (JSON.parse(raw) as string[]).includes(token);
 }
 
 /**
- * Handles kompose:// deep link URLs in the Tauri desktop app.
+ * Handles desktop deep link URLs in the Tauri app.
  *
- * On receiving `kompose://auth/callback?token=TOKEN`, verifies the one-time
+ * On receiving `<scheme>://auth/callback?token=TOKEN`, verifies the one-time
  * token via the Better Auth client. The bearer plugin captures the session
  * token from the `set-auth-token` response header and persists it to
  * Tauri Store (via setTauriBearer in auth-client.ts). All subsequent
@@ -56,7 +57,7 @@ export function DeepLinkHandler() {
 
   const handleDeepLinkUrl = useCallback(
     async (urlString: string) => {
-      if (!urlString.startsWith("kompose://auth/callback")) {
+      if (!urlString.startsWith(DESKTOP_AUTH_CALLBACK_PREFIX)) {
         return;
       }
 

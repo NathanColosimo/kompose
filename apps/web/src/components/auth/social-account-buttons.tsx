@@ -63,7 +63,8 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     try {
       // On Tauri desktop, open the system browser for OAuth instead of
       // running the flow inside the webview. The DeepLinkHandler component
-      // handles the kompose:// callback and completes the session exchange.
+      // handles the active desktop deep-link callback and completes the
+      // session exchange.
       if (isTauriRuntime()) {
         await openDesktopOAuth(provider, "sign-in", env.NEXT_PUBLIC_WEB_URL);
         // Don't clear activeProvider yet — the deep link handler will

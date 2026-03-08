@@ -1,5 +1,10 @@
 import { auth } from "@kompose/auth";
+import { desktopDeepLinkSchemeSchema } from "@kompose/env";
 import type { NextRequest } from "next/server";
+import {
+  buildDesktopAuthCallbackUrl,
+  DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM,
+} from "@/lib/desktop-deep-link";
 
 /**
  * GET /api/auth/desktop-callback
@@ -7,7 +12,8 @@ import type { NextRequest } from "next/server";
  * Called by the browser after Better Auth completes the OAuth flow. At this
  * point the browser has the session cookie set by Better Auth. This route:
  *  1. Generates a one-time token tied to the current session via the plugin.
- *  2. Returns an HTML page that auto-redirects to kompose://auth/callback.
+ *  2. Returns an HTML page that auto-redirects to the requesting desktop
+ *     flavor's custom URL scheme.
  *
  * The Tauri webview then verifies the token via the Better Auth client.
  * The bearer plugin returns the session token in a `set-auth-token` response
@@ -22,11 +28,18 @@ export async function GET(request: NextRequest) {
     });
 
     // Preserve the mode param so the Tauri deep link handler knows
-    // whether this was a sign-in or account-link operation.
+    // whether this was a sign-in or account-link operation, and preserve the
+    // desktop scheme so the browser returns to the correct installed flavor.
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode");
-    const modeParam = mode ? `&mode=${mode}` : "";
-    const deepLinkUrl = `kompose://auth/callback?token=${data.token}${modeParam}`;
+    const desktopScheme = desktopDeepLinkSchemeSchema.parse(
+      url.searchParams.get(DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM)
+    );
+    const deepLinkUrl = buildDesktopAuthCallbackUrl({
+      token: data.token,
+      mode,
+      scheme: desktopScheme,
+    });
 
     // Return an HTML page that auto-redirects to the deep link.
     return new Response(
