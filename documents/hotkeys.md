@@ -17,6 +17,8 @@ These hotkeys work anywhere in the app (except when typing in input fields, unle
 | `s`       | Toggle both sidebars (synced)          |
 | `←`       | Navigate back by visible days count    |
 | `→`       | Navigate forward by visible days count |
+| `Shift+←` | Navigate back 1 day                    |
+| `Shift+→` | Navigate forward 1 day                 |
 
 ## Contextual Hotkeys
 

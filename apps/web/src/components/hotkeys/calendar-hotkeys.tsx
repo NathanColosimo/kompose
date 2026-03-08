@@ -32,6 +32,8 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * - s: Toggle both sidebars (synced)
  * - ArrowLeft: Navigate back by visible days count
  * - ArrowRight: Navigate forward by visible days count
+ * - Shift+ArrowLeft: Navigate back 1 day
+ * - Shift+ArrowRight: Navigate forward 1 day
  *
  * Note: All hotkeys are disabled when focus is on form inputs.
  */
@@ -134,6 +136,21 @@ export function CalendarHotkeys() {
     () => setCurrentDate(currentDate.add({ days: visibleDaysCount })),
     hotkeyOptions,
     [currentDate, visibleDaysCount, setCurrentDate]
+  );
+
+  // Shift+Arrow keys to navigate by exactly 1 day
+  useHotkeys(
+    "shift+ArrowLeft",
+    () => setCurrentDate(currentDate.subtract({ days: 1 })),
+    hotkeyOptions,
+    [currentDate, setCurrentDate]
+  );
+
+  useHotkeys(
+    "shift+ArrowRight",
+    () => setCurrentDate(currentDate.add({ days: 1 })),
+    hotkeyOptions,
+    [currentDate, setCurrentDate]
   );
 
   // This component only registers hotkeys, renders nothing
