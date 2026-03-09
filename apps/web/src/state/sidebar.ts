@@ -2,6 +2,27 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 /**
+ * Base views available in the left sidebar.
+ */
+export type SidebarLeftBaseViewId = "inbox" | "today";
+
+/**
+ * Persisted selection for the left sidebar.
+ * Tag selections store only the tag id and rehydrate against live tag data.
+ */
+export type SidebarLeftViewSelection =
+  | { type: "base"; id: SidebarLeftBaseViewId }
+  | { type: "tag"; tagId: string };
+
+/**
+ * Default left-sidebar selection for first load and stale-storage fallback.
+ */
+export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
+  type: "base",
+  id: "inbox",
+};
+
+/**
  * Shared desktop widths for the dashboard sidebars.
  * clamp(min, preferred viewport width, max) keeps layouts responsive.
  */
@@ -87,6 +108,19 @@ export const sidebarLeftOpenAtom = atomWithStorage<boolean>(
   // Keep the first client render aligned with SSR, then hydrate from storage.
   { getOnInit: false }
 );
+
+/**
+ * Selected left-sidebar view persisted to localStorage.
+ * Defaults to the Inbox view for new users.
+ */
+export const sidebarLeftViewSelectionAtom =
+  atomWithStorage<SidebarLeftViewSelection>(
+    "sidebar-left-view-selection",
+    defaultSidebarLeftViewSelection,
+    undefined,
+    // Keep the first client render aligned with SSR, then hydrate from storage.
+    { getOnInit: false }
+  );
 
 /**
  * Right sidebar open/closed state persisted to localStorage.

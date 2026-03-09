@@ -6,10 +6,10 @@ import { sessionQueryAtom } from "@kompose/state/config";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
 import { CalendarClock, Inbox } from "lucide-react";
-import { type ComponentProps, useMemo, useState } from "react";
+import { type ComponentProps, useEffect, useMemo } from "react";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
@@ -25,6 +25,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import {
+  defaultSidebarLeftViewSelection,
+  type SidebarLeftBaseViewId,
+  sidebarLeftViewSelectionAtom,
+} from "@/state/sidebar";
 import { TaskItem } from "./task-item";
 
 /** Droppable ID for the sidebar task list area */
@@ -53,6 +58,18 @@ const navMain: SidebarNavItem[] = [
     type: "base",
   },
 ];
+
+function getBaseSidebarNavItem(id: SidebarLeftBaseViewId) {
+  return navMain.find((item) => item.id === id) ?? navMain[0];
+}
+
+function getSidebarSelectionFromNavItem(item: SidebarNavItem) {
+  if (item.type === "tag" && item.tagId) {
+    return { type: "tag" as const, tagId: item.tagId };
+  }
+
+  return { type: "base" as const, id: item.id as SidebarLeftBaseViewId };
+}
 
 function renderEmptyMessage(message: string) {
   return <div className="p-4 text-muted-foreground text-sm">{message}</div>;
@@ -233,12 +250,12 @@ function getSidebarContent({
   tagTodoTasks: TaskSelectDecoded[];
   unplannedTasks: TaskSelectDecoded[];
 }) {
-  if (!activeItem) {
-    return null;
-  }
-
   if (isLoading) {
     return renderSidebarLoadingContent();
+  }
+
+  if (!activeItem) {
+    return null;
   }
 
   if (error) {
@@ -271,8 +288,8 @@ function getSidebarContent({
 }
 
 export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
-  const [activeItem, setActiveItem] = useState<SidebarNavItem | null>(
-    navMain[0]
+  const [activeViewSelection, setActiveViewSelection] = useAtom(
+    sidebarLeftViewSelectionAtom
   );
   const sessionQuery = useAtomValue(sessionQueryAtom);
   const { setOpen } = useSidebar();
@@ -286,7 +303,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     doneTasks,
   } = useTaskSections();
   const activeTagId =
-    activeItem?.type === "tag" ? (activeItem.tagId ?? null) : null;
+    activeViewSelection.type === "tag" ? activeViewSelection.tagId : null;
   const {
     doneTasks: tagDoneTasks,
     overdueTasks: tagOverdueTasks,
@@ -305,6 +322,32 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
 
     return [...navMain, ...tagItems];
   }, [tagsQuery.data]);
+
+  const activeItem = useMemo(() => {
+    if (activeViewSelection.type === "base") {
+      return getBaseSidebarNavItem(activeViewSelection.id);
+    }
+
+    return (
+      navItems.find(
+        (item) =>
+          item.type === "tag" && item.tagId === activeViewSelection.tagId
+      ) ?? null
+    );
+  }, [activeViewSelection, navItems]);
+
+  useEffect(() => {
+    if (
+      activeViewSelection.type !== "tag" ||
+      tagsQuery.data === undefined ||
+      tagsQuery.data.some((tag) => tag.id === activeViewSelection.tagId)
+    ) {
+      return;
+    }
+
+    // Reset stale persisted tags back to Inbox once the tag list has loaded.
+    setActiveViewSelection(defaultSidebarLeftViewSelection);
+  }, [activeViewSelection, setActiveViewSelection, tagsQuery.data]);
 
   const isSidebarLoading =
     sessionQuery.status === "pending" ||
@@ -374,7 +417,9 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                       className="justify-center gap-0 px-0"
                       isActive={activeItem?.id === item.id}
                       onClick={() => {
-                        setActiveItem(item);
+                        setActiveViewSelection(
+                          getSidebarSelectionFromNavItem(item)
+                        );
                         setOpen(true);
                       }}
                       tooltip={{
@@ -406,12 +451,13 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           <SidebarHeader className="h-12 shrink-0 border-b">
             <div className="flex h-full w-full items-center justify-between gap-2 px-4">
               <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
-                {activeItem?.title}
+                {activeItem?.title ??
+                  (activeViewSelection.type === "tag" ? "Tag" : "Inbox")}
               </div>
               <CreateTaskForm
                 defaultTagIds={
-                  activeItem?.type === "tag" && activeItem.tagId
-                    ? [activeItem.tagId]
+                  activeViewSelection.type === "tag"
+                    ? [activeViewSelection.tagId]
                     : []
                 }
               />

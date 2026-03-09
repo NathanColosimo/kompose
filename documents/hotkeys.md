@@ -11,7 +11,8 @@ These hotkeys work anywhere in the app (except when typing in input fields, unle
 | `⌘K`      | Open command bar (works in inputs too) |
 | `1` - `7` | Set visible days count (1-7 days)      |
 | `w`       | Week view (7 days)                     |
-| `t`       | Go to today                            |
+| `t`       | Go to today and switch sidebar to Today |
+| `i`       | Switch sidebar to Inbox                |
 | `l`       | Toggle left sidebar                    |
 | `r`       | Toggle right sidebar                   |
 | `s`       | Toggle both sidebars (synced)          |

@@ -12,6 +12,7 @@ import { todayPlainDate } from "@/lib/temporal-utils";
 import {
   dashboardResponsiveLayoutAtom,
   sidebarLeftOpenAtom,
+  sidebarLeftViewSelectionAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
@@ -26,7 +27,8 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * - meta+k: Open command bar
  * - 1-7: Set visible days count
  * - w: Set visible days to 7 (week view)
- * - t: Go to today
+ * - t: Go to today and switch the left sidebar to Today
+ * - i: Switch the left sidebar to Inbox
  * - l: Toggle left sidebar
  * - r: Toggle right sidebar
  * - s: Toggle both sidebars (synced)
@@ -42,6 +44,7 @@ export function CalendarHotkeys() {
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   const setSidebarRightOpen = useSetAtom(sidebarRightOpenAtom);
   const setSidebarRightOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
@@ -70,12 +73,23 @@ export function CalendarHotkeys() {
   // "w" for week view (7 days)
   useHotkeys("w", () => setVisibleDaysCount(7), hotkeyOptions, []);
 
-  // "t" to go to today
+  // "t" to go to today and focus the Today task view.
   useHotkeys(
     "t",
-    () => setCurrentDate(todayPlainDate(timeZone)),
+    () => {
+      setCurrentDate(todayPlainDate(timeZone));
+      setSidebarLeftViewSelection({ type: "base", id: "today" });
+    },
     hotkeyOptions,
-    [timeZone, setCurrentDate]
+    [timeZone, setCurrentDate, setSidebarLeftViewSelection]
+  );
+
+  // "i" to focus the Inbox task view.
+  useHotkeys(
+    "i",
+    () => setSidebarLeftViewSelection({ type: "base", id: "inbox" }),
+    hotkeyOptions,
+    [setSidebarLeftViewSelection]
   );
 
   // "l" to toggle left sidebar

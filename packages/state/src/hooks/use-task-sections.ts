@@ -50,16 +50,30 @@ const isPlanned = (
   Temporal.PlainDate.compare(task.startDate, today) === 0 &&
   !isOverdue(task, today, nowZdt, timeZone);
 
-/** Unplanned: past/today startDate, no startTime, due date in future (or null). */
+/**
+ * Unplanned: unscheduled tasks with a start date and no start time.
+ * Recurring occurrences stay scoped to today so older untouched instances do not
+ * accumulate in the Today view.
+ */
 const isUnplanned = (
   task: TaskSelectDecoded,
   today: Temporal.PlainDate
-): boolean =>
-  task.startDate !== null &&
-  task.startTime === null &&
-  Temporal.PlainDate.compare(task.startDate, today) <= 0 &&
-  (task.dueDate === null ||
-    Temporal.PlainDate.compare(task.dueDate, today) > 0);
+): boolean => {
+  if (task.startDate === null || task.startTime !== null) {
+    return false;
+  }
+
+  const startsOnOrBeforeToday =
+    task.seriesMasterId === null
+      ? Temporal.PlainDate.compare(task.startDate, today) <= 0
+      : Temporal.PlainDate.compare(task.startDate, today) === 0;
+
+  return (
+    startsOnOrBeforeToday &&
+    (task.dueDate === null ||
+      Temporal.PlainDate.compare(task.dueDate, today) > 0)
+  );
+};
 
 /** Done today: completed tasks updated on today's local date. */
 const isDoneToday = (
@@ -100,7 +114,7 @@ export function useTaskSections() {
         };
       }
 
-      // Base filter: exclude recurring tasks to match sidebar behavior.
+      // Inbox remains non-recurring so scheduled series stay in Today sections only.
       const nonRecurring = tasks.filter(isNonRecurring);
 
       // Inbox: uncompleted, no startDate/startTime, sorted by updatedAt desc.
@@ -113,10 +127,10 @@ export function useTaskSections() {
         (task) =>
           task.status !== "done" && isOverdue(task, today, nowZdt, timeZone)
       );
-      const planned = nonRecurring.filter((task) =>
+      const planned = tasks.filter((task) =>
         isPlanned(task, today, nowZdt, timeZone)
       );
-      const unplanned = nonRecurring.filter(
+      const unplanned = tasks.filter(
         (task) => task.status !== "done" && isUnplanned(task, today)
       );
       // Done: completed today in the user's timezone.
