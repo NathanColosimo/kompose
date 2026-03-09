@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  ClientTaskInsertDecoded,
   DeleteScope,
   LinkMeta,
   TaskRecurrence,
@@ -73,11 +74,15 @@ import {
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import type {
+  CalendarCreateFormInterop,
+  CalendarCreateSharedFields,
+} from "../calendar/event-creation/create-form-shared";
 import { Label } from "../ui/label";
 import { RecurrenceEditor } from "./recurrence-editor";
 
 /** Form state uses Temporal types, convert to native Date only at picker boundary */
-interface TaskFormValues {
+export interface TaskFormValues {
   description: string;
   /** Due date - when task is due */
   dueDate: Temporal.PlainDate | null;
@@ -97,8 +102,107 @@ interface TaskFormValues {
 interface TaskEditPopoverProps {
   align?: "start" | "center" | "end";
   children: ReactElement;
+  initialValues?: Partial<TaskFormValues>;
+  mode?: "create" | "edit";
   side?: "top" | "right" | "bottom" | "left";
-  task: TaskSelectDecoded;
+  task?: TaskSelectDecoded;
+}
+
+const EMPTY_TASK_FORM_VALUES: TaskFormValues = {
+  title: "",
+  description: "",
+  tagIds: [],
+  startDate: null,
+  startTime: null,
+  dueDate: null,
+  durationMinutes: 30,
+  links: [],
+  recurrence: null,
+};
+
+function buildTaskInitialValues({
+  task,
+  initialValues,
+  resolvedRecurrence,
+}: {
+  task?: TaskSelectDecoded;
+  initialValues?: Partial<TaskFormValues>;
+  resolvedRecurrence?: TaskRecurrence | null;
+}): TaskFormValues {
+  if (!task) {
+    const initialDuration = initialValues?.durationMinutes;
+    return {
+      ...EMPTY_TASK_FORM_VALUES,
+      ...initialValues,
+      durationMinutes:
+        typeof initialDuration === "number" && initialDuration > 0
+          ? Math.round(initialDuration)
+          : EMPTY_TASK_FORM_VALUES.durationMinutes,
+    };
+  }
+
+  return {
+    title: task.title ?? "",
+    description: task.description ?? "",
+    tagIds: task.tags.map((tag) => tag.id),
+    startDate: task.startDate ?? null,
+    startTime: task.startTime ?? null,
+    dueDate: task.dueDate ?? null,
+    durationMinutes: task.durationMinutes ?? 30,
+    links: task.links ?? [],
+    recurrence: resolvedRecurrence ?? null,
+  };
+}
+
+function buildTaskCreatePayload(
+  values: TaskFormValues
+): ClientTaskInsertDecoded | null {
+  let title = values.title.trim();
+  if (!title && values.links.length > 0) {
+    const first = values.links[0];
+    title = first.title ?? new URL(first.url).hostname;
+  }
+
+  if (!title) {
+    return null;
+  }
+
+  return {
+    title,
+    description: values.description.trim() ? values.description.trim() : null,
+    tagIds: values.tagIds,
+    startDate: values.startDate,
+    startTime: values.startTime,
+    dueDate: values.dueDate,
+    durationMinutes:
+      Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
+        ? Math.round(values.durationMinutes)
+        : 30,
+    links: values.links,
+    recurrence: values.recurrence,
+    status: "todo",
+    seriesMasterId: null,
+    isException: false,
+  };
+}
+
+function getSharedFieldsFromTaskValues(
+  values: TaskFormValues
+): CalendarCreateSharedFields {
+  return {
+    title: values.title,
+    description: values.description,
+    startDate: values.startDate ? temporalToPickerDate(values.startDate) : null,
+    startTime: values.startTime
+      ? `${String(values.startTime.hour).padStart(2, "0")}:${String(
+          values.startTime.minute
+        ).padStart(2, "0")}`
+      : "",
+    durationMinutes:
+      Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
+        ? Math.round(values.durationMinutes)
+        : 30,
+  };
 }
 
 /**
@@ -107,21 +211,24 @@ interface TaskEditPopoverProps {
 export function TaskEditPopover({
   task,
   children,
+  initialValues,
+  mode: modeProp,
   side = "right",
   align = "start",
 }: TaskEditPopoverProps) {
+  const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
   const submitRef = useRef<(() => boolean) | null>(null);
   const [focusedTaskId, setFocusedTaskId] = useAtom(focusedTaskIdAtom);
 
   // Open popover when this task is focused via command bar search
   useEffect(() => {
-    if (focusedTaskId === task.id) {
+    if (mode === "edit" && task && focusedTaskId === task.id) {
       setOpen(true);
       // Clear the focused task ID after opening
       setFocusedTaskId(null);
     }
-  }, [focusedTaskId, task.id, setFocusedTaskId]);
+  }, [focusedTaskId, mode, setFocusedTaskId, task]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && submitRef.current) {
@@ -146,7 +253,9 @@ export function TaskEditPopover({
         side={side}
       >
         <TaskEditForm
-          key={task.id}
+          initialValues={initialValues}
+          key={task?.id ?? "create-task"}
+          mode={mode}
           onClose={handleClose}
           onRegisterSubmit={(fn) => {
             submitRef.current = fn;
@@ -159,28 +268,40 @@ export function TaskEditPopover({
   );
 }
 
-function TaskEditForm({
+export function TaskEditForm({
   task,
+  initialValues: initialCreateValues,
+  mode,
   onRegisterSubmit,
   onClose,
   open,
+  onRegisterCreateInterop,
 }: {
-  task: TaskSelectDecoded;
+  task?: TaskSelectDecoded;
+  initialValues?: Partial<TaskFormValues>;
+  mode: "create" | "edit";
   onRegisterSubmit: (fn: () => boolean) => void;
   onClose: () => void;
   open: boolean;
+  onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
 }) {
-  const { updateTask, deleteTask, tasksQuery, parseLink } = useTasks();
+  const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
+    useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
   const [pendingUpdate, setPendingUpdate] = useState<TaskFormValues | null>(
     null
   );
+  const isCreateMode = mode === "create";
 
   // Check if this task is part of a recurring series
-  const isRecurring = task.seriesMasterId !== null;
+  const isRecurring =
+    !isCreateMode && task ? task.seriesMasterId !== null : false;
   const resolvedRecurrence = useMemo(() => {
+    if (!task) {
+      return initialCreateValues?.recurrence ?? null;
+    }
     if (task.recurrence || !task.seriesMasterId) {
       return task.recurrence ?? null;
     }
@@ -189,7 +310,7 @@ function TaskEditForm({
       (candidate) => candidate.id === task.seriesMasterId
     );
     return masterTask?.recurrence ?? null;
-  }, [task.recurrence, task.seriesMasterId, tasksQuery.data]);
+  }, [initialCreateValues?.recurrence, task, tasksQuery.data]);
 
   // Opens confirmation dialog
   const handleDeleteClick = useCallback(() => {
@@ -199,10 +320,13 @@ function TaskEditForm({
   // Delete with specified scope
   const confirmDelete = useCallback(
     (scope: DeleteScope) => {
+      if (!task) {
+        return;
+      }
       onClose();
       deleteTask.mutate({ id: task.id, scope });
     },
-    [deleteTask, onClose, task.id]
+    [deleteTask, onClose, task]
   );
 
   // Delete hotkey - only active when popover is open, skips text inputs
@@ -223,33 +347,18 @@ function TaskEditForm({
       e.preventDefault();
       handleDeleteClick();
     },
-    { enabled: open },
-    [handleDeleteClick, open]
+    { enabled: open && !isCreateMode },
+    [handleDeleteClick, isCreateMode, open]
   );
 
-  const initialValues = useMemo<TaskFormValues>(
-    () => ({
-      title: task.title ?? "",
-      description: task.description ?? "",
-      tagIds: task.tags.map((tag) => tag.id),
-      startDate: task.startDate ?? null,
-      startTime: task.startTime ?? null,
-      dueDate: task.dueDate ?? null,
-      durationMinutes: task.durationMinutes ?? 30,
-      links: task.links ?? [],
-      recurrence: resolvedRecurrence,
-    }),
-    [
-      task.description,
-      task.tags,
-      task.dueDate,
-      task.durationMinutes,
-      task.links,
-      resolvedRecurrence,
-      task.startDate,
-      task.startTime,
-      task.title,
-    ]
+  const resolvedInitialValues = useMemo<TaskFormValues>(
+    () =>
+      buildTaskInitialValues({
+        task,
+        initialValues: initialCreateValues,
+        resolvedRecurrence,
+      }),
+    [initialCreateValues, resolvedRecurrence, task]
   );
 
   const {
@@ -260,13 +369,13 @@ function TaskEditForm({
     getValues,
     formState: { isDirty },
   } = useForm<TaskFormValues>({
-    defaultValues: initialValues,
+    defaultValues: resolvedInitialValues,
   });
 
   // Keep the form in sync if the task changes externally.
   useEffect(() => {
-    reset(initialValues, { keepDirty: false });
-  }, [initialValues, reset]);
+    reset(resolvedInitialValues, { keepDirty: false });
+  }, [reset, resolvedInitialValues]);
 
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
@@ -276,6 +385,9 @@ function TaskEditForm({
 
   const commitUpdate = useCallback(
     (values: TaskFormValues, scope: UpdateScope) => {
+      if (!task) {
+        return;
+      }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -297,11 +409,24 @@ function TaskEditForm({
         scope,
       });
     },
-    [task.durationMinutes, task.id, updateTask]
+    [task, updateTask]
   );
 
   const submit = useCallback(
     (values: TaskFormValues) => {
+      if (isCreateMode) {
+        const payload = buildTaskCreatePayload(values);
+        if (!payload) {
+          return true;
+        }
+        createTask.mutate(payload);
+        return true;
+      }
+
+      if (!task) {
+        return true;
+      }
+
       const decision = getTaskUpdateScopeDecision({
         isRecurring,
         isSeriesMaster: task.seriesMasterId === task.id,
@@ -339,19 +464,78 @@ function TaskEditForm({
       commitUpdate(values, decision.scope);
       return true;
     },
-    [commitUpdate, isRecurring, resolvedRecurrence, task]
+    [
+      commitUpdate,
+      createTask,
+      isCreateMode,
+      isRecurring,
+      resolvedRecurrence,
+      task,
+    ]
   );
 
   // Register submit callback so the popover can trigger save on close.
   // Only submit if the form has been modified.
   useEffect(() => {
     onRegisterSubmit(() => {
+      if (isCreateMode) {
+        return submit(getValues());
+      }
       if (!isDirty) {
         return true;
       }
       return submit(getValues());
     });
-  }, [getValues, isDirty, onRegisterSubmit, submit]);
+  }, [getValues, isCreateMode, isDirty, onRegisterSubmit, submit]);
+
+  const applySharedFields = useCallback(
+    (fields: CalendarCreateSharedFields) => {
+      setValue("title", fields.title, { shouldDirty: true });
+      setValue("description", fields.description, { shouldDirty: true });
+      setValue(
+        "startDate",
+        fields.startDate ? pickerDateToTemporal(fields.startDate) : null,
+        { shouldDirty: true }
+      );
+      setValue(
+        "startTime",
+        fields.startTime ? Temporal.PlainTime.from(fields.startTime) : null,
+        { shouldDirty: true }
+      );
+      setValue(
+        "durationMinutes",
+        Math.max(5, Math.round(fields.durationMinutes)),
+        {
+          shouldDirty: true,
+        }
+      );
+      setValue("dueDate", null, { shouldDirty: true });
+      setValue("links", [], { shouldDirty: true });
+      setValue("tagIds", [], { shouldDirty: true });
+      setValue("recurrence", null, { shouldDirty: true });
+    },
+    [setValue]
+  );
+
+  const getSharedFields = useCallback(
+    () => getSharedFieldsFromTaskValues(getValues()),
+    [getValues]
+  );
+
+  useEffect(() => {
+    if (!onRegisterCreateInterop) {
+      return;
+    }
+
+    onRegisterCreateInterop({
+      applySharedFields,
+      getSharedFields,
+    });
+
+    return () => {
+      onRegisterCreateInterop(null);
+    };
+  }, [applySharedFields, getSharedFields, onRegisterCreateInterop]);
 
   // Format start time for the time input (HH:mm) - uses watchedValues for reactivity
   const startTimeValue = watchedValues.startTime
@@ -657,85 +841,92 @@ function TaskEditForm({
         />
       </div>
 
-      <Separator />
+      {isCreateMode ? null : (
+        <>
+          <Separator />
 
-      {/* Delete button with confirmation dialog - shows scope options for recurring tasks */}
-      <AlertDialog onOpenChange={setShowDeleteConfirm} open={showDeleteConfirm}>
-        <AlertDialogTrigger asChild>
-          <Button
-            className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            type="button"
-            variant="outline"
+          {/* Delete button with confirmation dialog - shows scope options for recurring tasks */}
+          <AlertDialog
+            onOpenChange={setShowDeleteConfirm}
+            open={showDeleteConfirm}
           >
-            <Trash2 className="h-4 w-4" />
-            Delete task
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete task?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {isRecurring
-                ? "This is a recurring task. Choose what to delete."
-                : "This action cannot be undone."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter
-            className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
-          >
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {isRecurring ? (
-              <>
-                {/* Auto-focus "Only this" as the safer default for recurring tasks */}
-                <AlertDialogAction
-                  autoFocus
-                  onClick={() => confirmDelete("this")}
-                >
-                  Only this occurrence
-                </AlertDialogAction>
-                <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => confirmDelete("following")}
-                >
-                  This and following
-                </AlertDialogAction>
-              </>
-            ) : (
-              // Auto-focus delete button so Enter confirms deletion
-              <AlertDialogAction
-                autoFocus
-                onClick={() => confirmDelete("this")}
+            <AlertDialogTrigger asChild>
+              <Button
+                className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                type="button"
+                variant="outline"
               >
-                Delete
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+                <Trash2 className="h-4 w-4" />
+                Delete task
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete task?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {isRecurring
+                    ? "This is a recurring task. Choose what to delete."
+                    : "This action cannot be undone."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter
+                className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
+              >
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                {isRecurring ? (
+                  <>
+                    {/* Auto-focus "Only this" as the safer default for recurring tasks */}
+                    <AlertDialogAction
+                      autoFocus
+                      onClick={() => confirmDelete("this")}
+                    >
+                      Only this occurrence
+                    </AlertDialogAction>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => confirmDelete("following")}
+                    >
+                      This and following
+                    </AlertDialogAction>
+                  </>
+                ) : (
+                  // Auto-focus delete button so Enter confirms deletion
+                  <AlertDialogAction
+                    autoFocus
+                    onClick={() => confirmDelete("this")}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
-      <RecurrenceScopeDialog
-        confirmLabel="Apply"
-        description="This is a recurring task. Choose how broadly to apply the change."
-        onConfirm={() => {
-          if (!pendingUpdate) {
-            return;
-          }
-          commitUpdate(pendingUpdate, tagScope);
-          setPendingUpdate(null);
-          onClose();
-        }}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            setPendingUpdate(null);
-          }
-          setShowTagScopeDialog(nextOpen);
-        }}
-        onValueChange={(value) => setTagScope(value as UpdateScope)}
-        open={showTagScopeDialog}
-        options={TASK_UPDATE_SCOPE_OPTIONS}
-        title="Apply task update"
-        value={tagScope}
-      />
+          <RecurrenceScopeDialog
+            confirmLabel="Apply"
+            description="This is a recurring task. Choose how broadly to apply the change."
+            onConfirm={() => {
+              if (!pendingUpdate) {
+                return;
+              }
+              commitUpdate(pendingUpdate, tagScope);
+              setPendingUpdate(null);
+              onClose();
+            }}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                setPendingUpdate(null);
+              }
+              setShowTagScopeDialog(nextOpen);
+            }}
+            onValueChange={(value) => setTagScope(value as UpdateScope)}
+            open={showTagScopeDialog}
+            options={TASK_UPDATE_SCOPE_OPTIONS}
+            title="Apply task update"
+            value={tagScope}
+          />
+        </>
+      )}
     </form>
   );
 }

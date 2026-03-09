@@ -92,6 +92,8 @@ import {
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
 import { AlertDialog } from "@/components/ui/alert-dialog";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
@@ -245,6 +247,31 @@ function buildDraftFromTask(
   };
 }
 
+function buildCreateTaskDraftFromSlot(
+  day: Temporal.PlainDate,
+  minutes: number
+): TaskDraft {
+  const snapped = snapMinutes(minutes);
+
+  return {
+    title: "",
+    description: "",
+    tagIds: [],
+    durationMinutes: 30,
+    status: "todo",
+    dueDate: null,
+    startDate: day,
+    startTime: Temporal.PlainTime.from({
+      hour: Math.floor(snapped / 60),
+      minute: snapped % 60,
+      second: 0,
+    }),
+    linkInput: "",
+    links: [],
+    recurrence: null,
+  };
+}
+
 function AllDayEventChip({
   item,
   onPress,
@@ -380,6 +407,7 @@ export default function CalendarTab() {
   return <CalendarTabContent />;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CalendarTabContent coordinates the full mobile calendar surface.
 function CalendarTabContent() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
@@ -396,7 +424,7 @@ function CalendarTabContent() {
   const window = useAtomValue(eventWindowAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
-  const { tasksQuery, updateTask, deleteTask } = useTasks();
+  const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
@@ -664,6 +692,15 @@ function CalendarTabContent() {
   const [taskDeleteScope, setTaskDeleteScope] = useState<DeleteScope>("this");
   const [isTaskDeleteScopeDialogVisible, setIsTaskDeleteScopeDialogVisible] =
     useState(false);
+  const [createSlotSelection, setCreateSlotSelection] = useState<{
+    day: Temporal.PlainDate;
+    minutes: number;
+  } | null>(null);
+  const [pendingCreateAction, setPendingCreateAction] = useState<{
+    kind: "event" | "task";
+    day: Temporal.PlainDate;
+    minutes: number;
+  } | null>(null);
 
   const allCalendarOptions = useMemo<CalendarOption[]>(
     () =>
@@ -771,6 +808,56 @@ function CalendarTabContent() {
     },
     [defaultCalendar]
   );
+
+  const openCreateTaskAt = useCallback(
+    (day: Temporal.PlainDate, minutes: number) => {
+      setEditingTask(null);
+      setPendingTaskSaveDraft(null);
+      setIsTaskSaveScopeDialogVisible(false);
+      setIsTaskDeleteScopeDialogVisible(false);
+      setTaskDraft(buildCreateTaskDraftFromSlot(day, minutes));
+    },
+    []
+  );
+
+  // Native stays lighter than web here: choose event vs task first,
+  // then hand off to the existing editor sheet for that item type.
+  const openCreateChooserAt = useCallback(
+    (day: Temporal.PlainDate, minutes: number) => {
+      setCreateSlotSelection({ day, minutes: snapMinutes(minutes) });
+    },
+    []
+  );
+
+  const closeCreateChooser = useCallback(() => {
+    setCreateSlotSelection(null);
+  }, []);
+
+  useEffect(() => {
+    if (createSlotSelection !== null || pendingCreateAction === null) {
+      return;
+    }
+
+    // Wait for the chooser bottom-sheet modal to finish closing before opening
+    // the next sheet. Otherwise the closing modal can swallow the new one.
+    const timeoutId = setTimeout(() => {
+      if (pendingCreateAction.kind === "event") {
+        openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
+      } else {
+        openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
+      }
+      setPendingCreateAction(null);
+    }, 320);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [
+    createSlotSelection,
+    openCreateEventAt,
+    openCreateTaskAt,
+    pendingCreateAction,
+  ]);
 
   const openEditTimedEvent = useCallback((item: PositionedGoogleEvent) => {
     const editDraft: EditEventDraft = {
@@ -1160,9 +1247,43 @@ function CalendarTabContent() {
   );
 
   const saveTask = useCallback(() => {
-    if (!(editingTask && taskDraft)) {
+    if (!taskDraft) {
       return;
     }
+    if (!taskDraft.title.trim() && taskDraft.links.length === 0) {
+      return;
+    }
+    if (taskDraft.durationMinutes <= 0) {
+      return;
+    }
+
+    if (!editingTask) {
+      let title = taskDraft.title.trim();
+      if (!title && taskDraft.links.length > 0) {
+        const first = taskDraft.links[0];
+        title = first.title ?? new URL(first.url).hostname;
+      }
+
+      createTask.mutate({
+        title,
+        description: taskDraft.description.trim()
+          ? taskDraft.description.trim()
+          : null,
+        tagIds: taskDraft.tagIds,
+        durationMinutes: taskDraft.durationMinutes,
+        dueDate: taskDraft.dueDate,
+        startDate: taskDraft.startDate,
+        startTime: taskDraft.startTime,
+        links: taskDraft.links,
+        status: "todo",
+        recurrence: taskDraft.recurrence,
+        seriesMasterId: null,
+        isException: false,
+      });
+      closeTaskModal();
+      return;
+    }
+
     const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
       previous: {
         title: editingTask.title,
@@ -1202,7 +1323,7 @@ function CalendarTabContent() {
 
     commitTaskUpdate(taskDraft, decision.scope);
     closeTaskModal();
-  }, [closeTaskModal, commitTaskUpdate, editingTask, taskDraft]);
+  }, [closeTaskModal, commitTaskUpdate, createTask, editingTask, taskDraft]);
 
   const confirmScopedTaskSave = useCallback(() => {
     if (!(editingTask && pendingTaskSaveDraft)) {
@@ -1512,7 +1633,7 @@ function CalendarTabContent() {
                       onPress={(e) => {
                         const y = e.nativeEvent.locationY;
                         const minutes = (y / PIXELS_PER_HOUR) * 60;
-                        openCreateEventAt(day, minutes);
+                        openCreateChooserAt(day, minutes);
                       }}
                       style={{ height: totalHeight }}
                     >
@@ -1692,14 +1813,65 @@ function CalendarTabContent() {
         />
       ) : null}
 
+      <BottomSheet
+        isVisible={createSlotSelection !== null}
+        onClose={closeCreateChooser}
+        snapPoints={[0.34, 0.42]}
+        title="Create"
+      >
+        <Text className="mb-3 text-muted-foreground text-sm">
+          Create an event or a scheduled task for this time slot.
+        </Text>
+        <View className="gap-3">
+          <Button
+            disabled={!defaultCalendar}
+            onPress={() => {
+              if (!createSlotSelection) {
+                return;
+              }
+              setPendingCreateAction({
+                kind: "event",
+                day: createSlotSelection.day,
+                minutes: createSlotSelection.minutes,
+              });
+              closeCreateChooser();
+            }}
+            variant="outline"
+          >
+            New event
+          </Button>
+          <Button
+            onPress={() => {
+              if (!createSlotSelection) {
+                return;
+              }
+              setPendingCreateAction({
+                kind: "task",
+                day: createSlotSelection.day,
+                minutes: createSlotSelection.minutes,
+              });
+              closeCreateChooser();
+            }}
+            variant="outline"
+          >
+            New task
+          </Button>
+          {defaultCalendar ? null : (
+            <Text className="text-muted-foreground text-xs">
+              Event creation needs at least one writable calendar.
+            </Text>
+          )}
+        </View>
+      </BottomSheet>
+
       <TaskEditorSheet
         draft={taskDraft}
-        isVisible={editingTask !== null && taskDraft !== null}
-        mode="edit"
+        isVisible={taskDraft !== null}
+        mode={editingTask ? "edit" : "create"}
         onClose={closeTaskModal}
-        onDelete={deleteTaskFromCalendar}
+        onDelete={editingTask ? deleteTaskFromCalendar : undefined}
         onSave={saveTask}
-        onToggleDone={toggleTaskStatusFromCalendar}
+        onToggleDone={editingTask ? toggleTaskStatusFromCalendar : undefined}
         setDraft={(updater) =>
           setTaskDraft((current) => (current ? updater(current) : current))
         }

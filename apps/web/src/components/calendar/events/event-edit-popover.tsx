@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import {
   type ReactElement,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -92,6 +93,10 @@ import {
   pickerDateToTemporal,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import type {
+  CalendarCreateFormInterop,
+  CalendarCreateSharedFields,
+} from "../event-creation/create-form-shared";
 import {
   buildRecurrenceRule,
   buildTemporalPayload,
@@ -159,6 +164,82 @@ type CloseSaveRequest =
       /** Payload for creating a new event */
       payload: CreateGoogleEventInput;
     };
+
+function parseTimeString(
+  value: string
+): { hours: number; minutes: number } | null {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+  return { hours, minutes };
+}
+
+function buildSharedEndFields(
+  startDate: Date | null,
+  startTime: string,
+  durationMinutes: number
+): Pick<EventFormValues, "endDate" | "endTime"> {
+  const normalizedDuration =
+    Number.isFinite(durationMinutes) && durationMinutes > 0
+      ? Math.round(durationMinutes)
+      : 30;
+  const parsedStartTime = parseTimeString(startTime);
+
+  if (!(startDate && parsedStartTime)) {
+    return {
+      endDate: startDate,
+      endTime: startTime,
+    };
+  }
+
+  const nextEndDate = new Date(startDate);
+  nextEndDate.setHours(parsedStartTime.hours, parsedStartTime.minutes, 0, 0);
+  nextEndDate.setMinutes(nextEndDate.getMinutes() + normalizedDuration);
+
+  return {
+    endDate: nextEndDate,
+    endTime: formatTimeString(nextEndDate),
+  };
+}
+
+function getSharedFieldsFromEventValues(
+  values: EventFormValues
+): CalendarCreateSharedFields {
+  const startDate = values.startDate ?? values.endDate ?? null;
+  const parsedStartTime = parseTimeString(values.startTime);
+  const parsedEndTime = parseTimeString(values.endTime);
+  let durationMinutes = 30;
+
+  if (startDate && parsedStartTime && parsedEndTime) {
+    const startDateTime = new Date(startDate);
+    startDateTime.setHours(
+      parsedStartTime.hours,
+      parsedStartTime.minutes,
+      0,
+      0
+    );
+
+    const endBaseDate = values.endDate ?? startDate;
+    const endDateTime = new Date(endBaseDate);
+    endDateTime.setHours(parsedEndTime.hours, parsedEndTime.minutes, 0, 0);
+
+    const computedDuration = Math.round(
+      (endDateTime.getTime() - startDateTime.getTime()) / 60_000
+    );
+    if (computedDuration > 0) {
+      durationMinutes = computedDuration;
+    }
+  }
+
+  return {
+    title: values.summary,
+    description: values.description,
+    startDate,
+    startTime: values.startTime,
+    durationMinutes,
+  };
+}
 
 function RecurrenceEditor({
   visible,
@@ -1108,7 +1189,7 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   };
 }
 
-function EventEditForm({
+export function EventEditForm({
   event,
   accountId,
   calendarId,
@@ -1119,6 +1200,8 @@ function EventEditForm({
   onRequestClose,
   onDelete,
   open,
+  headerContent,
+  onRegisterCreateInterop,
 }: {
   event?: GoogleEvent;
   accountId: string;
@@ -1130,6 +1213,8 @@ function EventEditForm({
   onRequestClose: () => void;
   onDelete: () => void;
   open: boolean;
+  headerContent?: ReactNode;
+  onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
 }) {
   const isCreateMode = mode === "create";
   // Delete hotkey - only active when popover is open in edit mode, skips text inputs
@@ -1454,6 +1539,53 @@ function EventEditForm({
     });
   }, [buildCloseSaveRequest, getValues, onRegisterCloseSaveRequest]);
 
+  const applySharedFields = useCallback(
+    (fields: CalendarCreateSharedFields) => {
+      const nextStartDate = fields.startDate ?? null;
+      const nextStartTime = fields.startTime;
+      const nextEnd = buildSharedEndFields(
+        nextStartDate,
+        nextStartTime,
+        fields.durationMinutes
+      );
+
+      hasUserEditedRef.current = true;
+      pendingConferenceRef.current = null;
+      setPendingConference(null);
+      setValue("summary", fields.title, { shouldDirty: true });
+      setValue("description", fields.description, { shouldDirty: true });
+      setValue("startDate", nextStartDate, { shouldDirty: true });
+      setValue("endDate", nextEnd.endDate, { shouldDirty: true });
+      setValue("startTime", nextStartTime, { shouldDirty: true });
+      setValue("endTime", nextEnd.endTime, { shouldDirty: true });
+      setValue("allDay", false, { shouldDirty: true });
+      setValue("location", "", { shouldDirty: true });
+      setValue("colorId", undefined, { shouldDirty: true });
+      setValue("recurrence", [], { shouldDirty: true });
+    },
+    [setValue]
+  );
+
+  const getSharedFields = useCallback(
+    () => getSharedFieldsFromEventValues(getValues()),
+    [getValues]
+  );
+
+  useEffect(() => {
+    if (!onRegisterCreateInterop) {
+      return;
+    }
+
+    onRegisterCreateInterop({
+      applySharedFields,
+      getSharedFields,
+    });
+
+    return () => {
+      onRegisterCreateInterop(null);
+    };
+  }, [applySharedFields, getSharedFields, onRegisterCreateInterop]);
+
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = watchedValues.recurrence?.[0];
@@ -1475,6 +1607,8 @@ function EventEditForm({
         e.preventDefault();
       }}
     >
+      {headerContent ? <div>{headerContent}</div> : null}
+
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}

@@ -16,7 +16,9 @@ We implemented the initial mobile MVP inside `apps/native` with **four tabs**:
     - **Scheduled tasks** (tasks with `startDate` + `startTime`).
     - **Google Calendar timed events** (all-day events display in a small row).
   - Calendar visibility picker (per-account calendars, persisted).
+  - Empty-slot tap now offers `New event` or `New task`.
   - Create / edit / delete **Google Calendar** timed events.
+  - Create scheduled tasks directly from the calendar tab.
   - Tap-to-edit scheduled tasks (basic edit/delete from calendar).
 
 - **Chat tab**

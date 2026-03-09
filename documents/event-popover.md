@@ -38,7 +38,21 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 
 ### Create Mode
 
-Used for click-and-drag event creation on the calendar.
+Used for click-and-drag creation on the calendar.
+
+#### Create-type toggle
+- Web / Tauri now shows small `Event` / `Task` tabs at the top of the inline popover.
+- `Event` is the default on the first open.
+- After that, the popover reopens on whichever create type the user last selected.
+- The `Task` tab now reuses the full inline task form, including due date, recurrence, links, and tags.
+- Switching tabs preserves:
+  - title (`summary` <-> `title`)
+  - description
+  - start date / start time
+  - duration (`event end - start` <-> `task durationMinutes`)
+- Switching tabs resets non-shared fields back to the target form defaults.
+  - Event-only fields reset: calendar-specific details like location, color, recurrence, all-day, and meeting state
+  - Task-only fields reset: tags, links, due date, and recurrence
 
 #### Differences from Edit Mode
 - **Title is required**: Event is only saved if a non-empty title is provided
@@ -52,14 +66,17 @@ Used for click-and-drag event creation on the calendar.
 1. User hovers over calendar → 30-minute preview appears
 2. User clicks and drags → preview expands to selected time range
 3. User releases mouse → popover opens in create mode
-4. User enters title (required) and optional details
-5. User clicks away or presses Escape → event is created (if title provided) or discarded
+4. User keeps the default `Event` tab or switches to `Task`
+5. User enters title (required) and optional details
+6. User clicks away or presses Escape:
+   - `Event` tab: event is created if title is provided
+   - `Task` tab: task is created if title is provided
 
 #### Components
 - `EventCreationProvider` — Context provider for creation state
 - `useEventCreation` — Hook for managing creation state and actions
 - `CreationPreview` — Visual preview during hover/drag
-- `EventCreationPopover` — Renders `EventEditPopover` in create mode
+- `EventCreationPopover` — Renders the shared create popover with `Event` / `Task` tabs
 
 ### Behavior
 - Uses React Hook Form.
@@ -119,8 +136,10 @@ Used for click-and-drag event creation on the calendar.
 #### Create Mode
 - Hover on calendar: 30-minute preview appears.
 - Click and drag: preview expands to match selected time range.
-- Release: popover opens with title focused.
+- Release: popover opens on the last selected create type (`Event` on first use).
+- Switch to `Task`: title/description/start/duration carry over; other task fields start fresh.
 - Close without title: no event created.
 - Enter title and close: event created with correct time range.
+- Switch to `Task`, enter title, and close: scheduled task is created with the correct date/time and duration.
 - Set recurrence before saving: event created with RRULE.
 - All-day toggle: creates all-day event with correct date range.

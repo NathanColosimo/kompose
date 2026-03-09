@@ -1,6 +1,6 @@
 # Mobile Event Popover (Sheet)
 
-Mobile uses a bottom-sheet event editor that mirrors web behavior for create/edit, recurring scope prompts, calendar move behavior, and recurrence controls.
+Mobile keeps the event sheet for event create/edit, but empty-slot creation now starts with a lightweight chooser so users can create either an event or a task.
 
 ## Where to find it
 
@@ -19,6 +19,7 @@ Mobile uses a bottom-sheet event editor that mirrors web behavior for create/edi
 - Uses a single `EventEditorSheet` for create/edit with thin wrappers:
   - `CreateEventEditorSheet`
   - `EditEventEditorSheet`
+- Uses the existing `TaskEditorSheet` in `mode="create"` for task creation from the calendar tab.
 - Event-specific recurrence parsing/building and default scope logic are centralized in `@kompose/state`.
 
 ## Form layout (matches current mobile UX)
@@ -68,7 +69,13 @@ Top-to-bottom:
 ## Save/delete behavior
 
 Create:
-- Saves directly via `createEvent`.
+- Empty-slot tap now opens a chooser with `New event` and `New task`.
+- `New event` opens the existing event sheet and saves directly via `createEvent`.
+- `New task` opens the task sheet in create mode and saves via `createTask`.
+- Task creation is prefilled from the tapped slot:
+  - `startDate`
+  - `startTime`
+  - `durationMinutes` (currently 30 minutes)
 
 Edit (non-recurring):
 - Saves directly via `updateEvent`.
@@ -112,6 +119,10 @@ This is what both platforms now consume for parsing/building recurrence and scop
 
 ## Quick QA checklist
 
+- Empty-slot tap opens the create chooser instead of jumping straight into the event sheet.
+- Choosing `New event` still opens the event sheet with the tapped time prefilled.
+- Choosing `New task` opens the task sheet with the tapped date/time and a 30-minute duration.
+- Saving the new task creates a scheduled task block in the calendar.
 - Save icon closes editor and applies changes.
 - Recurring save opens scope prompt after editor closes.
 - Recurring delete opens scope prompt; non-recurring delete opens simple confirm.
