@@ -84,7 +84,8 @@ export const sidebarLeftOpenAtom = atomWithStorage<boolean>(
   "sidebar-left-open",
   true,
   undefined,
-  { getOnInit: true }
+  // Keep the first client render aligned with SSR, then hydrate from storage.
+  { getOnInit: false }
 );
 
 /**
@@ -95,14 +96,13 @@ export const sidebarRightOpenAtom = atomWithStorage<boolean>(
   "sidebar-right-open",
   true,
   undefined,
-  { getOnInit: true }
+  // Keep the first client render aligned with SSR, then hydrate from storage.
+  { getOnInit: false }
 );
 
 function getInitialDashboardViewportWidth() {
-  if (typeof window === "undefined") {
-    return 0;
-  }
-  return window.innerWidth;
+  // Start from a deterministic SSR-safe width and measure after mount.
+  return 0;
 }
 
 /**

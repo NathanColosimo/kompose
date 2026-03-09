@@ -3,6 +3,8 @@ use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 const COMMAND_BAR_WINDOW_LABEL: &str = "command-bar";
 const COMMAND_BAR_WINDOW_ROUTE: &str = "/desktop/command-bar";
@@ -114,7 +116,7 @@ fn create_command_bar_window(app: &tauri::App) -> tauri::Result<()> {
         return Ok(());
     }
 
-    let command_bar_window = tauri::WebviewWindowBuilder::new(
+    let command_bar_window_builder = tauri::WebviewWindowBuilder::new(
         app,
         COMMAND_BAR_WINDOW_LABEL,
         tauri::WebviewUrl::App(COMMAND_BAR_WINDOW_ROUTE.into()),
@@ -126,8 +128,26 @@ fn create_command_bar_window(app: &tauri::App) -> tauri::Result<()> {
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
-    .inner_size(480.0, 56.0)
-    .build()?;
+    .inner_size(480.0, 56.0);
+
+    #[cfg(target_os = "macos")]
+    let command_bar_window_builder = command_bar_window_builder.transparent(true);
+
+    let command_bar_window = command_bar_window_builder.build()?;
+
+    #[cfg(target_os = "macos")]
+    {
+        // Match the rounded command surface with a native macOS HUD material
+        // so the frameless popup keeps soft corners instead of a square shell.
+        if let Err(error) = apply_vibrancy(
+            &command_bar_window,
+            NSVisualEffectMaterial::HudWindow,
+            Some(NSVisualEffectState::Active),
+            Some(12.0),
+        ) {
+            log::warn!("Failed to apply command bar vibrancy: {}", error);
+        }
+    }
 
     // Hide the popup when focus leaves the command bar window (e.g. user
     // clicks another app). For programmatic Esc-dismiss the frontend calls

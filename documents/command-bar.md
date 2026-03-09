@@ -53,8 +53,11 @@ The task input parser extracts all URLs from the title portion of the input into
 - On web, the dialog shell is mounted eagerly but the heavy command-bar content
   is lazy-loaded on first open so dashboard visits do not pay for search/create
   command UI up front.
-- The popup window is undecorated; it auto-sizes to exactly fit the dialog
-  content via a `ResizeObserver` (up to a max height of 520px).
+- The popup window is undecorated; on macOS it uses a rounded native HUD-style
+  vibrancy treatment so the dedicated popup keeps soft corners instead of a
+  square frameless shell.
+- The popup auto-sizes to exactly fit the dialog content via a
+  `ResizeObserver` (up to a max height of 520px).
 - A global shortcut toggles the popup:
   - First press shows and focuses only the popup window.
   - Second press hides the popup.

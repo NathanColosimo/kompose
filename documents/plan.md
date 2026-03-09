@@ -540,6 +540,9 @@ installed side by side on macOS.
 - **Dismiss behavior**:
   - Second shortcut press hides the popup.
   - Focus loss (click-away) hides the popup automatically.
+- **Popup shell**: On macOS, the dedicated `command-bar` window now uses a
+  rounded native HUD vibrancy treatment so the frameless popup keeps softer
+  corners instead of a square shell.
 - **Preset configuration**:
   - Settings page now exposes 5 preset options:
     `CommandOrControl+K`, `CommandOrControl+Shift+K`,

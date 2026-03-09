@@ -41,8 +41,10 @@ auto-updates.
 - Command bar now supports a desktop global shortcut that toggles a
   dedicated compact popup window (`/desktop/command-bar`) without focusing
   the full dashboard window.
-- Command bar popup auto-hides on focus loss (click-away) and supports
-  selectable shortcut presets persisted in desktop settings store.
+- Command bar popup auto-hides on focus loss (click-away), and on macOS uses a
+  rounded native HUD vibrancy treatment so the frameless popup matches the
+  softer system window feel better.
+- Command bar shortcut presets are persisted in desktop settings store.
 - Better Auth last-login-method remains client cookie/storage based; in
   Tauri desktop this is best-effort because auth itself uses bearer tokens
   instead of relying on cross-origin cookies.
@@ -56,6 +58,8 @@ auto-updates.
 ## Repo changes made
 
 - `apps/web/src-tauri/tauri.conf.json`
+  - `app.macOSPrivateApi`: `true` (required for the macOS command-bar popup's
+    transparent native window + vibrancy treatment)
   - `identifier`: `com.nathancolosimo.kompose`
   - `bundle.createUpdaterArtifacts`: `true`
   - `bundle.macOS.signingIdentity`:
@@ -76,6 +80,8 @@ auto-updates.
   - Added: `tauri_plugin_deep_link::init()` for desktop deep link handling.
   - Added: `tauri_plugin_global_shortcut` handler for command bar toggle.
   - Added: hidden `command-bar` WebView window creation (`/desktop/command-bar`).
+  - Added: macOS-only transparent `command-bar` window shell plus rounded
+    `window-vibrancy` HUD material so the popup keeps soft corners.
   - Added: blur/focus-loss hide behavior for the `command-bar` popup.
   - Added: Tauri command `set_command_bar_shortcut_preset` for runtime
     unregister/register of selected preset.
@@ -94,11 +100,14 @@ auto-updates.
   - Web flow is unchanged.
 
 - `apps/web/src-tauri/Cargo.toml`
+  - `tauri` dependency enables `macos-private-api` for the rounded macOS
+    command-bar popup treatment.
   - Added: `tauri-plugin-deep-link = "2"`.
   - Added: `tauri-plugin-store = "2"`.
   - Added: `tauri-plugin-updater = "2"`.
   - Added: `tauri-plugin-opener = "2"`.
   - Added: `tauri-plugin-global-shortcut`.
+  - Added: `window-vibrancy = "0.7.1"` (macOS target only).
   - Added: `objc = "0.2"` (macOS-only) for native focus management.
 
 - `apps/web/src-tauri/capabilities/default.json`
@@ -214,8 +223,8 @@ auto-updates.
 
 - `apps/web/src/app/desktop/command-bar/page.tsx`
   - Dedicated command bar popup route for the Tauri `command-bar` window.
-  - Renders the same `CommandDialog` + `CommandBarContent` used on web
-    so behavior is identical -- no custom scroll modes or layout wrappers.
+  - Renders the same `CommandBarContent` used on web so behavior is
+    identical -- no custom scroll modes or layout wrappers.
   - The window is undecorated and auto-sizes to exactly fit the dialog
     content via `ResizeObserver` (up to `COMMAND_BAR_MAX_HEIGHT`).
   - Tauri API imports are cached per effect lifecycle to avoid
@@ -223,6 +232,10 @@ auto-updates.
   - Hides popup when command state closes (via `dismiss_command_bar`
     Rust command for flicker-free focus restoration on macOS) and
     reopens state on window focus.
+
+- `apps/web/src/app/desktop/command-bar/layout.tsx`
+  - Keeps the popup route shell transparent so the native macOS HUD material
+    shows through around the rounded command surface.
 
 - `packages/state/src/config.ts`
   - Shared session query keeps `refetchOnMount: "always"` for fresh session truth when state hooks consume auth atoms.

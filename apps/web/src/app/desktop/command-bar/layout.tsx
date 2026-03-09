@@ -9,7 +9,20 @@ export default function DesktopCommandBarLayout({
 }) {
   return (
     <>
-      <style>{"nextjs-portal { display: none !important; }"}</style>
+      <style>{`
+        nextjs-portal {
+          display: none !important;
+        }
+
+        html,
+        body {
+          background: transparent !important;
+        }
+
+        body > div.min-h-svh {
+          background: transparent !important;
+        }
+      `}</style>
       {children}
     </>
   );
