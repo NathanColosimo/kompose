@@ -49,6 +49,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { authClient } from "@/lib/auth-client";
 import { clearTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
@@ -551,31 +556,50 @@ function UpdatePromptButton() {
     buttonLabel = "Checking for updates";
   }
 
+  let tooltipLabel = "Click to check for updates";
+  if (status === "ready") {
+    tooltipLabel = "Click to restart and update";
+  } else if (status === "installing") {
+    tooltipLabel = "Currently installing update";
+  } else if (status === "downloading") {
+    tooltipLabel = "Currently downloading update";
+  } else if (status === "checking") {
+    tooltipLabel = "Currently checking for updates";
+  }
+
   return (
     <AlertDialog onOpenChange={setOpen} open={open}>
-      <Button
-        aria-label={buttonLabel}
-        className="relative"
-        disabled={isBusy}
-        onClick={async () => {
-          if (status === "ready") {
-            setOpen(true);
-            return;
-          }
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button
+              aria-label={buttonLabel}
+              className="relative"
+              disabled={isBusy}
+              onClick={async () => {
+                if (status === "ready") {
+                  setOpen(true);
+                  return;
+                }
 
-          await checkForUpdates();
-        }}
-        size="icon"
-        title={buttonLabel}
-        type="button"
-        variant="ghost"
-      >
-        <RotateCw className={cn("h-4 w-4", isBusy && "animate-spin")} />
-        {status === "ready" ? (
-          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
-        ) : null}
-        <span className="sr-only">{buttonLabel}</span>
-      </Button>
+                await checkForUpdates();
+              }}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <RotateCw className={cn("h-4 w-4", isBusy && "animate-spin")} />
+              {status === "ready" ? (
+                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
+              ) : null}
+              <span className="sr-only">{buttonLabel}</span>
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltipLabel}</p>
+        </TooltipContent>
+      </Tooltip>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Update ready</AlertDialogTitle>
