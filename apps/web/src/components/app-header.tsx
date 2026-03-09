@@ -1,6 +1,7 @@
 "use client";
 
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
+import { isProductionDeployment } from "@kompose/env";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useTags } from "@kompose/state/hooks/use-tags";
@@ -28,7 +29,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { authClient } from "@/lib/auth-client";
-import { clearTauriBearer } from "@/lib/tauri-desktop";
+import { clearTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
 import {
   dashboardResponsiveLayoutAtom,
@@ -528,28 +528,54 @@ function TagsMenu() {
 }
 
 function UpdatePromptButton() {
-  const { isReadyToInstall, isInstalling, installUpdate } = useTauriUpdater();
+  const { checkForUpdates, installUpdate, status } = useTauriUpdater();
   const [open, setOpen] = useState(false);
+  const isDesktopUpdaterVisible = isTauriRuntime() && isProductionDeployment;
+  const isBusy =
+    status === "checking" ||
+    status === "downloading" ||
+    status === "installing";
 
-  // Only show the restart affordance once an update is downloaded.
-  if (!isReadyToInstall) {
+  if (!isDesktopUpdaterVisible) {
     return null;
+  }
+
+  let buttonLabel = "Check for updates";
+  if (status === "ready") {
+    buttonLabel = "Restart to apply update";
+  } else if (status === "installing") {
+    buttonLabel = "Installing update";
+  } else if (status === "downloading") {
+    buttonLabel = "Downloading update";
+  } else if (status === "checking") {
+    buttonLabel = "Checking for updates";
   }
 
   return (
     <AlertDialog onOpenChange={setOpen} open={open}>
-      <AlertDialogTrigger asChild>
-        <Button
-          aria-label="Restart to apply update"
-          className="relative"
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <RotateCw className="h-4 w-4" />
+      <Button
+        aria-label={buttonLabel}
+        className="relative"
+        disabled={isBusy}
+        onClick={async () => {
+          if (status === "ready") {
+            setOpen(true);
+            return;
+          }
+
+          await checkForUpdates();
+        }}
+        size="icon"
+        title={buttonLabel}
+        type="button"
+        variant="ghost"
+      >
+        <RotateCw className={cn("h-4 w-4", isBusy && "animate-spin")} />
+        {status === "ready" ? (
           <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
-        </Button>
-      </AlertDialogTrigger>
+        ) : null}
+        <span className="sr-only">{buttonLabel}</span>
+      </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Update ready</AlertDialogTitle>
@@ -559,15 +585,17 @@ function UpdatePromptButton() {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isInstalling}>Later</AlertDialogCancel>
+          <AlertDialogCancel disabled={status === "installing"}>
+            Later
+          </AlertDialogCancel>
           <AlertDialogAction
-            disabled={isInstalling}
+            disabled={status === "installing"}
             onClick={async () => {
               setOpen(false);
               await installUpdate();
             }}
           >
-            Restart now
+            {status === "installing" ? "Installing..." : "Restart now"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

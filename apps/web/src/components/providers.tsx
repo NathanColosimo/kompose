@@ -234,6 +234,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const isCommandBarRoute = pathname === "/desktop/command-bar";
   const showReactQueryDevtools =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
+  const appProviders = (
+    <StateProvider config={config} storage={storage}>
+      <RealtimeSyncBootstrap />
+      <TauriDesktopBridgeBootstrap />
+      <DeepLinkHandler />
+      {children}
+    </StateProvider>
+  );
 
   return (
     <ThemeProvider
@@ -244,14 +252,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     >
       <QueryClientProvider client={queryClient}>
         <TauriBearerInit>
-          <TauriUpdaterProvider>
-            <StateProvider config={config} storage={storage}>
-              <RealtimeSyncBootstrap />
-              <TauriDesktopBridgeBootstrap />
-              <DeepLinkHandler />
-              {children}
-            </StateProvider>
-          </TauriUpdaterProvider>
+          {/* Keep updater ownership in the main desktop window only. */}
+          {isCommandBarRoute ? (
+            appProviders
+          ) : (
+            <TauriUpdaterProvider>{appProviders}</TauriUpdaterProvider>
+          )}
         </TauriBearerInit>
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>

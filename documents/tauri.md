@@ -11,12 +11,14 @@ auto-updates.
   `com.nathancolosimo.kompose`.
 - Local bundled testing now uses a separate desktop-dev flavor:
   `com.nathancolosimo.kompose.dev`.
-- Tauri updater plugin is wired (Rust + JS), and a silent download +
-  restart prompt is shown in the header once an update is ready.
-- In production desktop builds, update checks run on app launch and every 6
-  hours. Local/preview builds skip updater polling.
-- Desktop window now launches non-maximized by default so drag-to-move
-  behavior stays consistent with dev.
+- Tauri updater plugin is wired (Rust + JS), and the dashboard header always
+  shows a desktop update control for manual checks, download progress, and
+  restart-ready state.
+- In production desktop builds, the main desktop window checks for updates on
+  app launch, whenever it regains focus, and every 30 minutes in the
+  background. Local/preview builds skip updater polling.
+- Desktop window currently launches maximized in both production and desktop-dev
+  Tauri configs.
 - Main window loads `/dashboard` directly (via `url` in window config)
   so logged-in users never see the marketing landing page. Unauthenticated
   users are redirected to `/login` by the dashboard auth guard.
@@ -64,7 +66,7 @@ auto-updates.
   - `bundle.createUpdaterArtifacts`: `true`
   - `bundle.macOS.signingIdentity`:
     `Developer ID Application: Nathan Colosimo (B8R99NL6HM)`
-  - `plugins.updater.pubkey`: placeholder to be filled
+  - `plugins.updater.pubkey`: configured for the current updater signing key
   - `plugins.updater.endpoints`:
     `https://github.com/nathancolosimo/kompose/releases/latest/download/latest.json`
 
@@ -143,12 +145,14 @@ auto-updates.
     enum values `kompose | kompose-dev`).
 
 - `apps/web/src/components/tauri-updater.tsx`
-  - New provider: in production desktop builds, checks updates on launch +
-    every 6 hours, downloads silently, exposes `isReadyToInstall` +
-    `installUpdate()`.
+  - Production desktop provider: keeps updater ownership in the main app window,
+    checks on launch + foreground + every 30 minutes, downloads silently,
+    exposes manual `checkForUpdates()`, and tracks header-friendly updater
+    status.
 
 - `apps/web/src/components/providers.tsx`
-  - Wraps app in `TauriUpdaterProvider`.
+  - Wraps the main app in `TauriUpdaterProvider`, but skips the hidden
+    `command-bar` route so only the main window owns updater polling/state.
   - `getSession` now uses `authClient.getSession({ query: { disableCookieCache: true } })` to force server session checks without Better Auth cookie-cache reads.
   - Added desktop bridge bootstrap:
     - intercepts external link clicks and opens them in system browser
@@ -455,10 +459,11 @@ single-instance natively for deep links.
 
 ## Notes
 
-- The updater checks on launch and every 6 hours, downloads silently,
-  and prompts for a restart when ready.
-- Universal builds can use a single updater bundle in `latest.json`
-  for both `darwin-aarch64` and `darwin-x86_64`.
+- The main desktop window checks on launch, on foreground, and every
+  30 minutes, downloads silently, and surfaces restart readiness through the
+  dashboard header update control.
+- The current release helper publishes `latest.json` with the Apple Silicon
+  updater archive entry used by the desktop updater endpoint.
 
 ## Root production flow
 
