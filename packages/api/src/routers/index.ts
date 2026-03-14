@@ -7,6 +7,7 @@ import { mapsRouter } from "./maps/router";
 import { syncRouter } from "./sync/router";
 import { tagRouter } from "./tag/router";
 import { taskRouter } from "./task/router";
+import { whoopRouter } from "./whoop/router";
 
 export const appRouter = {
   ai: aiRouter,
@@ -17,6 +18,7 @@ export const appRouter = {
   sync: syncRouter,
   tags: tagRouter,
   tasks: taskRouter,
+  whoop: whoopRouter,
 };
 
 export type AppRouter = typeof appRouter;

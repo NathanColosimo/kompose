@@ -6,7 +6,7 @@ import * as schema from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
-import { lastLoginMethod } from "better-auth/plugins";
+import { genericOAuth, lastLoginMethod } from "better-auth/plugins";
 import { bearer } from "better-auth/plugins/bearer";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { redisSecondaryStorage } from "./redis-storage";
@@ -80,6 +80,66 @@ export const auth = betterAuth({
     // One-time tokens for cross-context auth (Tauri deep-link OAuth flow).
     oneTimeToken({
       storeToken: "hashed",
+    }),
+    genericOAuth({
+      config: [
+        {
+          providerId: "whoop",
+          authorizationUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
+          tokenUrl: "https://api.prod.whoop.com/oauth/oauth2/token",
+          clientId: env.WHOOP_CLIENT_ID ?? "",
+          clientSecret: env.WHOOP_CLIENT_SECRET ?? "",
+          accessType: "offline",
+          disableSignUp: true,
+          scopes: [
+            "read:profile",
+            "read:sleep",
+            "read:workout",
+            "read:recovery",
+            "read:cycles",
+            "offline",
+          ],
+          getUserInfo: async (tokens) => {
+            const response = await fetch(
+              "https://api.prod.whoop.com/developer/v1/user/profile/basic",
+              {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              }
+            );
+
+            if (!response.ok) {
+              return null;
+            }
+
+            const profile = (await response.json()) as {
+              email?: string;
+              first_name?: string;
+              last_name?: string;
+              user_id?: number;
+            };
+
+            const id = profile.user_id;
+            const email = profile.email;
+
+            if (!(id && email)) {
+              return null;
+            }
+
+            return {
+              id: String(id),
+              email,
+              emailVerified: true,
+              image: undefined,
+              name: [profile.first_name, profile.last_name]
+                .filter(Boolean)
+                .join(" ")
+                .trim(),
+            };
+          },
+        },
+      ],
     }),
   ],
 });

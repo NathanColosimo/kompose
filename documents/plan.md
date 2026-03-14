@@ -551,3 +551,17 @@ installed side by side on macOS.
     re-applied at app startup via desktop bootstrap.
 - **UI sizing**: Popup route uses a resize observer to keep window height
   tight to command-bar content (no extra reserved space).
+
+### 6.20 WHOOP Integration
+- **OAuth**: WHOOP linked via Better Auth `genericOAuth` plugin with `read:profile`, `read:sleep`, `read:workout`, `read:recovery`, `read:cycles`, `offline` scopes. Limited to one account per user.
+- **API client**: `packages/whoop/` — typed Zod-validated client wrapping WHOOP Developer API v1/v2 endpoints (profile, cycles, recoveries, sleeps, workouts).
+- **Backend service**: `WhoopService` in `packages/api/src/routers/whoop/` — fetches raw data for a date range, groups by day, and returns aggregated `WhoopDaySummary` objects. Per-day Redis caching (15 min TTL for today, 7 day TTL for past days).
+- **oRPC endpoints**: `whoop.days.list` (day summaries) and `whoop.profile.get` (basic profile info).
+- **Settings page**: WHOOP account card shows profile name and email (matching Google account card pattern).
+- **Calendar week view** (web):
+  - **Day header badges**: Recovery score (color-coded dot: green 67-100, yellow 34-66, red 0-33), strain score, and sleep performance percentage shown as compact badges below the date.
+  - **Sleep background band**: Sleep blocks rendered as translucent indigo bands behind all events, clamped to the column's day boundaries. All visible sleep blocks are checked per column so overnight sleep (e.g. 11pm-7am) renders on both the evening and morning day columns. Does not participate in collision layout.
+  - **Workout event blocks**: Workouts rendered as timed event blocks with teal WHOOP styling (sport name, time range, strain score). Participates in collision layout alongside Google events and tasks.
+  - **Cross-day event rendering**: Events spanning midnight (Google events, tasks, WHOOP sleep) are split into per-day segments clamped to midnight boundaries. Each segment renders independently in its column with correct positioning and collision layout.
+- **State layer**: WHOOP data uses the same `atomWithQuery` pattern as Google data (`atoms/whoop-data.ts`). Account atom, month-anchored summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. `DaysView` reads directly via `useAtomValue` — no prop drilling from the page component. `useWhoopAccount` hook kept for the settings page.
+- **Data flow**: WHOOP atoms resolve independently alongside Google atoms. `DaysView` reads `whoopSummariesByDayAtom` directly and distributes per-day summaries to `DayHeader`, `WhoopSleepBand`, and `WhoopWorkoutEvent` components.

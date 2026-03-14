@@ -1,0 +1,21 @@
+{
+  "name": "@kompose/whoop",
+  "version": "0.0.0",
+  "exports": {
+    "./client": "./src/client.ts",
+    "./errors": "./src/errors.ts",
+    "./schema": "./src/schema.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
+  }
+}

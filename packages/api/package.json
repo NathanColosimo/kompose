@@ -26,6 +26,7 @@
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/whoop": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-metrics": "catalog:",

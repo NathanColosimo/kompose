@@ -192,6 +192,7 @@ function DashboardCalendarGrid({
       visibleCalendars: visibleGoogleCalendars,
       window,
     });
+
   const tasks = tasksQuery.data ?? [];
   const isCalendarLoading =
     sessionQuery.status === "pending" ||

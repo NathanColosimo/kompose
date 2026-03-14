@@ -12,7 +12,8 @@ appRouter
 ├── maps        → Google Places autocomplete
 ├── sync        → SSE realtime event stream
 ├── tags        → Tag CRUD
-└── tasks       → Task CRUD (with recurrence)
+├── tasks       → Task CRUD (with recurrence)
+└── whoop       → WHOOP day summaries + profile
 ```
 
 Supporting systems sit alongside routers:
@@ -431,6 +432,52 @@ Full details in [`otel.md`](./otel.md). Summary:
 4. **`instrumentation.ts`** — Next.js hook ensuring early `NodeSDK.start()` to prevent orphaned root spans.
 
 No client-side OTel SDK. Network latency is measured via `x-request-start` headers from both web and native clients.
+
+---
+
+## WHOOP Service
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `routers/whoop/contract.ts` | oRPC contract (day summaries, profile) |
+| `routers/whoop/router.ts` | oRPC handler implementations |
+| `routers/whoop/service.ts` | `WhoopService` (Effect.Service) — day summary aggregation, profile fetch |
+| `routers/whoop/cache.ts` | `WhoopCacheService` — Redis caching for per-day raw data |
+| `routers/whoop/errors.ts` | `Schema.TaggedError` error types |
+
+The actual WHOOP API client lives in `packages/whoop/src/client.ts` — the service resolves an OAuth access token per-request via Better Auth's generic OAuth plugin.
+
+### Router operations
+
+**Days:** `list` — aggregated day summaries (recovery, strain, sleep, workouts) for a date range
+**Profile:** `get` — basic profile info (name, email) for a linked WHOOP account
+
+### WhoopService
+
+Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
+
+| Method | Purpose |
+|--------|---------|
+| `listDaySummaries` | Fetch cycles, recoveries, sleeps, workouts for a date range; group by day; cache per-day payloads |
+| `getProfile` | Fetch basic profile info (first name, last name, email) from WHOOP API |
+
+### Caching
+
+- Per-day raw data cached in Redis via `WhoopCacheService`.
+- Today's data: 15-minute TTL. Past days: 7-day TTL.
+- Cache errors are logged and swallowed (degrade to API fetch).
+
+### Errors (`Schema.TaggedError`)
+
+| Error | Meaning |
+|-------|---------|
+| `WhoopAccountNotLinkedError` | OAuth token retrieval failed |
+| `WhoopApiError` | WHOOP API returned an error |
+| `WhoopParseError` | Response failed Zod parse |
+| `WhoopInvalidRangeError` | Date range invalid or exceeds 62-day limit |
+| `WhoopCacheError` | Redis operation failed (always caught and logged) |
 
 ---
 

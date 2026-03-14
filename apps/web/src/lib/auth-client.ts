@@ -1,6 +1,7 @@
 import type { auth } from "@kompose/auth";
 import { env } from "@kompose/env";
 import {
+  genericOAuthClient,
   inferAdditionalFields,
   lastLoginMethodClient,
   oneTimeTokenClient,
@@ -20,6 +21,7 @@ export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   plugins: [
     inferAdditionalFields<typeof auth>(),
+    genericOAuthClient(),
     lastLoginMethodClient({
       cookieName: "kompose.last_used_login_method",
     }),

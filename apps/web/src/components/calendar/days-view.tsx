@@ -13,6 +13,7 @@ import {
   type GoogleEventWithSource,
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
+import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -43,6 +44,8 @@ import { useEventCreation } from "./event-creation/use-event-creation";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
+import { WhoopSleepBand } from "./events/whoop-sleep-band";
+import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
 import { DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
 import { TimeGutter } from "./time-grid/time-gutter";
@@ -64,6 +67,38 @@ function parseDateOnlyLocal(dateStr: string): Temporal.PlainDate {
     throw new Error(`Invalid date string: ${dateStr}`);
   }
   return Temporal.PlainDate.from({ year, month, day });
+}
+
+/**
+ * Clamp a positioned event to a single day's boundaries (midnight to midnight).
+ * Returns null if the event doesn't overlap the given day.
+ */
+function clampEventToDay(
+  event: PositionedGoogleEvent,
+  day: Temporal.PlainDate,
+  timeZone: string
+): PositionedGoogleEvent | null {
+  const dayStart = day.toZonedDateTime({
+    timeZone,
+    plainTime: Temporal.PlainTime.from("00:00"),
+  });
+  const dayEnd = dayStart.add({ days: 1 });
+
+  if (
+    Temporal.ZonedDateTime.compare(event.end, dayStart) <= 0 ||
+    Temporal.ZonedDateTime.compare(event.start, dayEnd) >= 0
+  ) {
+    return null;
+  }
+
+  const clampedStart =
+    Temporal.ZonedDateTime.compare(event.start, dayStart) < 0
+      ? dayStart
+      : event.start;
+  const clampedEnd =
+    Temporal.ZonedDateTime.compare(event.end, dayEnd) > 0 ? dayEnd : event.end;
+
+  return { ...event, start: clampedStart, end: clampedEnd };
 }
 
 function buildGoogleEventMaps({
@@ -107,10 +142,24 @@ function buildGoogleEventMaps({
       continue;
     }
 
-    const dayKey = positioned.start.toPlainDate().toString();
-    const dayEvents = timed.get(dayKey);
-    if (dayEvents) {
-      dayEvents.push(positioned);
+    const startDay = positioned.start.toPlainDate();
+    const endDay = positioned.end.toPlainDate();
+    if (startDay.equals(endDay)) {
+      const dayEvents = timed.get(startDay.toString());
+      if (dayEvents) {
+        dayEvents.push(positioned);
+      }
+    } else {
+      // Split overnight event into one segment per day it touches
+      for (const day of bufferedDays) {
+        const clamped = clampEventToDay(positioned, day, timeZone);
+        if (clamped) {
+          const bucket = timed.get(day.toString());
+          if (bucket) {
+            bucket.push(clamped);
+          }
+        }
+      }
     }
   }
 
@@ -177,6 +226,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 }: DaysViewProps) {
   const atomVisibleDays = useAtomValue(visibleDaysAtom);
   const visibleDays = visibleDaysProp ?? atomVisibleDays;
+  const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerContainerRef = useRef<HTMLDivElement>(null);
@@ -246,24 +296,24 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     [tasks]
   );
 
-  // Group scheduled tasks by day for efficient rendering
+  // Group scheduled tasks by start day. Tasks crossing midnight stay on
+  // their start day only — the collision layout clamps endMinutes to 1440
+  // and the visual overflow past the grid bottom is minimal.
   const tasksByDay = useMemo(() => {
     const grouped = new Map<string, TaskSelectDecoded[]>();
 
     for (const day of visibleDays) {
-      const dayKey = day.toString();
-      grouped.set(dayKey, []);
+      grouped.set(day.toString(), []);
     }
 
     for (const task of scheduledTasks) {
       if (!task.startDate) {
         continue;
       }
-      // Use startDate directly for grouping (startDate is PlainDate)
       const dayKey = task.startDate.toString();
-      const dayTasks = grouped.get(dayKey);
-      if (dayTasks) {
-        dayTasks.push(task);
+      const bucket = grouped.get(dayKey);
+      if (bucket) {
+        bucket.push(task);
       }
     }
 
@@ -291,8 +341,66 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
   const hasGoogleEvents = googleEvents.length > 0;
 
+  // Collect all sleep blocks across visible WHOOP summaries so each
+  // day column can render bands for sleeps that cross midnight.
+  // WhoopSleepBand handles overlap/clamp per column internally.
+  const allSleepBlocks = useMemo(() => {
+    const blocks: {
+      id: string;
+      isNap: boolean;
+      start: string;
+      end: string;
+      totalSleepMilliseconds: number;
+    }[] = [];
+    for (const summary of whoopSummaries.values()) {
+      if (summary.sleep) {
+        blocks.push({
+          id: summary.sleep.id,
+          isNap: false,
+          start: summary.sleep.start,
+          end: summary.sleep.end,
+          totalSleepMilliseconds: summary.sleep.totalSleepMilliseconds,
+        });
+      }
+      for (const nap of summary.naps) {
+        blocks.push({
+          id: nap.id,
+          isNap: true,
+          start: nap.start,
+          end: nap.end,
+          totalSleepMilliseconds: nap.totalSleepMilliseconds,
+        });
+      }
+    }
+    return blocks;
+  }, [whoopSummaries]);
+
+  // Collect all workouts across visible summaries so late-night workouts
+  // that cross midnight can render in both the start and end day columns.
+  const allWorkouts = useMemo(() => {
+    const workouts: {
+      id: string;
+      sportName: string | null;
+      strainScore: number | null;
+      start: string;
+      end: string;
+    }[] = [];
+    for (const summary of whoopSummaries.values()) {
+      for (const workout of summary.workouts) {
+        workouts.push({
+          id: workout.id,
+          sportName: workout.sportName,
+          strainScore: workout.strainScore,
+          start: workout.start,
+          end: workout.end,
+        });
+      }
+    }
+    return workouts;
+  }, [whoopSummaries]);
+
   // Calculate collision layouts for all visible days
-  // Combines tasks and google events into unified collision groups
+  // Combines tasks, google events, and whoop workouts into unified collision groups
   const collisionLayoutsByDay = useMemo(() => {
     const layoutsByDay = new Map<string, Map<string, ItemLayout>>();
 
@@ -301,8 +409,8 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       const dayTasks = tasksByDay.get(dayKey) ?? [];
       const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
 
-      // Convert tasks to PositionedItems
-      // Filter and type-narrow to tasks with both startDate and startTime
+      // Convert tasks to PositionedItems. Tasks stay on their start day;
+      // endMinutes is clamped to 1440 (midnight) for collision layout.
       const taskItems: PositionedItem[] = dayTasks
         .filter(
           (
@@ -318,7 +426,10 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
             plainTime: task.startTime,
           });
           const startMinutes = minutesFromMidnight(startZdt);
-          const endMinutes = startMinutes + (task.durationMinutes ?? 30);
+          const endMinutes = Math.min(
+            startMinutes + (task.durationMinutes ?? 30),
+            1440
+          );
           return {
             id: `task-${task.id}`,
             type: "task" as const,
@@ -327,28 +438,71 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
           };
         });
 
-      // Convert google events to PositionedItems
+      // Convert google events to PositionedItems.
+      // Events are already clamped to day boundaries by buildGoogleEventMaps,
+      // so endMinutes=0 means the event extends to midnight (1440).
       const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
         const startMinutes = minutesFromMidnight(ge.start);
-        const endMinutes = minutesFromMidnight(ge.end);
+        const rawEndMinutes = minutesFromMidnight(ge.end);
+        const endMinutes =
+          rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
         return {
           id: `google-${ge.accountId}-${ge.calendarId}-${ge.event.id}`,
           type: "google-event" as const,
           startMinutes,
-          // Handle events that might cross midnight or have same start/end
           endMinutes:
             endMinutes > startMinutes ? endMinutes : startMinutes + 30,
         };
       });
 
+      // Convert WHOOP workouts to PositionedItems, clamped to this day.
+      // Uses allWorkouts (collected from all summaries) so workouts that
+      // cross midnight appear in both day columns.
+      const dayStart = day.toZonedDateTime({
+        timeZone,
+        plainTime: Temporal.PlainTime.from("00:00"),
+      });
+      const dayEndZdt = dayStart.add({ days: 1 });
+
+      const whoopItems: PositionedItem[] = allWorkouts
+        .filter((w) => {
+          const wStart = isoStringToZonedDateTime(w.start, timeZone);
+          const wEnd = isoStringToZonedDateTime(w.end, timeZone);
+          return (
+            Temporal.ZonedDateTime.compare(wEnd, dayStart) > 0 &&
+            Temporal.ZonedDateTime.compare(wStart, dayEndZdt) < 0
+          );
+        })
+        .map((workout) => {
+          const wStart = isoStringToZonedDateTime(workout.start, timeZone);
+          const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
+          const clampedStart =
+            Temporal.ZonedDateTime.compare(wStart, dayStart) < 0
+              ? dayStart
+              : wStart;
+          const clampedEnd =
+            Temporal.ZonedDateTime.compare(wEnd, dayEndZdt) > 0
+              ? dayEndZdt
+              : wEnd;
+          const startMin = minutesFromMidnight(clampedStart);
+          const rawEndMin = minutesFromMidnight(clampedEnd);
+          const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
+          return {
+            id: `whoop-workout-${workout.id}`,
+            type: "whoop-workout" as const,
+            startMinutes: startMin,
+            endMinutes: Math.max(endMin, startMin + 15),
+          };
+        });
+
       // Calculate layout for all items on this day
-      const allItems = [...taskItems, ...googleItems];
+      const allItems = [...taskItems, ...googleItems, ...whoopItems];
       const layout = calculateCollisionLayout(allItems);
       layoutsByDay.set(dayKey, layout);
     }
 
     return layoutsByDay;
-  }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
+  }, [visibleDays, tasksByDay, timedEventsByDay, allWorkouts, timeZone]);
 
   // Each day column width as percentage of the parent container
   const dayColumnWidth = `${100 / visibleDays.length}%`;
@@ -376,14 +530,18 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         >
           <div className="flex flex-col" style={{ width: "100%" }}>
             <div className="flex">
-              {visibleDays.map((day) => (
-                <DayHeader
-                  date={day}
-                  isTodayHighlight={isToday(day, timeZone)}
-                  key={day.toString()}
-                  width={dayColumnWidth}
-                />
-              ))}
+              {visibleDays.map((day) => {
+                const dayKey = day.toString();
+                return (
+                  <DayHeader
+                    date={day}
+                    isTodayHighlight={isToday(day, timeZone)}
+                    key={dayKey}
+                    whoopSummary={whoopSummaries.get(dayKey)}
+                    width={dayColumnWidth}
+                  />
+                );
+              })}
             </div>
 
             {hasAllDayEvents ? (
@@ -444,6 +602,20 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
+                  {/* WHOOP sleep background bands — check all summaries
+                      since sleep blocks often cross midnight into an
+                      adjacent day that doesn't "own" the sleep cycle. */}
+                  {allSleepBlocks.map((sleep) => (
+                    <WhoopSleepBand
+                      columnDate={day}
+                      end={sleep.end}
+                      isNap={sleep.isNap}
+                      key={sleep.id}
+                      start={sleep.start}
+                      timeZone={timeZone}
+                      totalSleepMilliseconds={sleep.totalSleepMilliseconds}
+                    />
+                  ))}
                   {/* Creation preview for this column */}
                   <CreationPreview columnDate={day} />
                   {hasGoogleEvents
@@ -485,6 +657,29 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                         task={task}
                         totalColumns={layout?.totalColumns}
                         zIndex={layout?.zIndex}
+                      />
+                    );
+                  })}
+                  {/* WHOOP workout event blocks — rendered from all
+                      collected workouts so cross-midnight workouts
+                      appear in both day columns. */}
+                  {allWorkouts.map((workout) => {
+                    const layoutKey = `whoop-workout-${workout.id}`;
+                    const layout = dayLayouts?.get(layoutKey);
+                    if (!layout) {
+                      return null;
+                    }
+                    return (
+                      <WhoopWorkoutEvent
+                        columnDate={day}
+                        end={workout.end}
+                        id={workout.id}
+                        key={workout.id}
+                        layout={layout}
+                        sportName={workout.sportName}
+                        start={workout.start}
+                        strainScore={workout.strainScore}
+                        timeZone={timeZone}
                       />
                     );
                   })}

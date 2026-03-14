@@ -19,6 +19,7 @@
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
 - `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids.
 - `atoms/visible-calendars.ts`: Visible calendar selection atoms and toggle helpers.
+- `atoms/whoop-data.ts`: WHOOP account atom (`atomWithQuery` over Better Auth accounts filtered to WHOOP), month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
 - `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
@@ -35,6 +36,7 @@
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using timezone-aware filters.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
+- `whoop-query-keys.ts`: Shared query keys for WHOOP accounts and day summaries.
 - `state-provider.tsx`: State hydrator/provider wiring and session gating.
 - `storage.ts`: Storage adapter interface + persisted atom helper + web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.

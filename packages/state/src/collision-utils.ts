@@ -26,7 +26,7 @@ export interface PositionedItem {
   /** Start time in minutes from midnight */
   startMinutes: number;
   /** Type discriminator */
-  type: "task" | "google-event";
+  type: "task" | "google-event" | "whoop-workout";
 }
 
 /**
