@@ -13,7 +13,16 @@ import { authClient } from "@/lib/auth-client";
 import { getDesktopAuthCallbackPrefix } from "@/lib/desktop-deep-link";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
-/** localStorage key for tracking tokens we have already exchanged. */
+/**
+ * Module-level set of tokens claimed for processing in this app session.
+ * Unlike useRef (reset on unmount) and localStorage (written after verify),
+ * this survives component unmount/remount cycles and is checked synchronously
+ * before the async verify call, closing the race window that allowed
+ * TauriBearerInit's mount→unmount→remount cycle (or effect re-runs from
+ * dependency changes) to fire a second verify on an already-consumed token.
+ */
+const claimedTokens = new Set<string>();
+
 const WHOOP_ACCOUNTS_QUERY_KEY = ["whoop-accounts"] as const;
 const DESKTOP_DEEP_LINK_SCHEME = env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME;
 const DESKTOP_AUTH_CALLBACK_PREFIX = getDesktopAuthCallbackPrefix(
@@ -98,15 +107,16 @@ export function DeepLinkHandler() {
           return;
         }
 
-        // getCurrent() can return the same URL after component re-mounts.
-        // Skip tokens we have already verified to avoid a 401.
-        if (isTokenAlreadyProcessed(token)) {
+        // Deduplicate: skip tokens already verified (localStorage) or
+        // currently being verified in another mount/effect cycle (module Set).
+        if (isTokenAlreadyProcessed(token) || claimedTokens.has(token)) {
           return;
         }
 
-        // Verify the one-time token. The global onSuccess handler in
-        // auth-client.ts captures the `set-auth-token` response header
-        // and persists it to Tauri Store via setTauriBearer().
+        // Claim before the async verify so a concurrent re-mount or
+        // effect re-run will see the token and bail out immediately.
+        claimedTokens.add(token);
+
         const { error } = await authClient.oneTimeToken.verify({ token });
 
         if (error) {

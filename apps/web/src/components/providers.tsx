@@ -13,6 +13,7 @@ import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import {
   getExternalHttpUrl,
+  getTauriBearer,
   initTauriBearer,
   isTauriRuntime,
   openUrlInDesktopBrowser,
@@ -157,6 +158,16 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const stateAuthClient = useMemo(
     () => ({
       getSession: async () => {
+        // On Tauri, the bearer token must be loaded from persistent store
+        // before any session call is meaningful. If it hasn't been loaded
+        // yet (TauriBearerInit hasn't finished), return null immediately
+        // to avoid a wasted unauthenticated server call and a rate-limit
+        // slot. TauriBearerInit will clear the cache and re-trigger after
+        // the token is available.
+        if (isTauriRuntime() && !getTauriBearer()) {
+          return null;
+        }
+
         const result = await authClient.getSession({
           query: {
             // Route guards rely on server truth during auth transitions.

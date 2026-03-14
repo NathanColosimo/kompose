@@ -23,7 +23,15 @@
         "$TURBO_DEFAULT$",
         "!.next/**",
         "!out/**",
-        "!src-tauri/target/**",
+        "!src-tauri/**",
+        "!scripts/**",
+        "!release-dmg.sh",
+        "!src/app/desktop/**",
+        "!src/components/tauri-updater.tsx",
+        "!src/components/deep-link-handler.tsx",
+        "!src/lib/tauri-desktop.ts",
+        "!src/lib/desktop-deep-link.ts",
+        "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [".next/**", "!.next/cache/**"]
@@ -35,7 +43,15 @@
         "$TURBO_DEFAULT$",
         "!.next/**",
         "!out/**",
-        "!src-tauri/target/**",
+        "!src-tauri/**",
+        "!scripts/**",
+        "!release-dmg.sh",
+        "!src/app/desktop/**",
+        "!src/components/tauri-updater.tsx",
+        "!src/components/deep-link-handler.tsx",
+        "!src/lib/tauri-desktop.ts",
+        "!src/lib/desktop-deep-link.ts",
+        "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [".next/**", "!.next/cache/**"]
