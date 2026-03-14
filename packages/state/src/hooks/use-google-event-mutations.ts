@@ -3,6 +3,7 @@
 import type { DeleteEventInput } from "@kompose/api/routers/google-cal/contract";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
 
@@ -50,8 +51,67 @@ export function useGoogleEventMutations() {
         calendarId: variables.calendarId,
         event: variables.event,
       }),
-    onError: (err) => {
+    onMutate: async (variables) => {
+      // Skip optimistic update for recurring events
+      if (variables.event.recurrence?.length) {
+        return { previousQueries: undefined, optimisticId: undefined };
+      }
+
+      const queryKey = getGoogleEventsByCalendarQueryKey({
+        accountId: variables.accountId,
+        calendarId: variables.calendarId,
+      });
+
+      await queryClient.cancelQueries({ queryKey });
+
+      const previousQueries = queryClient.getQueriesData<Event[]>({
+        queryKey,
+      });
+
+      const optimisticId = `optimistic-${uuidv7()}`;
+      const optimisticEvent: Event = {
+        id: optimisticId,
+        ...variables.event,
+      };
+
+      // Append the optimistic event to every matching time-window query
+      for (const [qk, data] of previousQueries) {
+        if (Array.isArray(data)) {
+          queryClient.setQueryData<Event[]>(qk, [...data, optimisticEvent]);
+        }
+      }
+
+      return { previousQueries, optimisticId };
+    },
+    onSuccess: (createdEvent, _variables, context) => {
+      if (!context?.optimisticId) {
+        return;
+      }
+      if (!createdEvent) {
+        return;
+      }
+      // Replace the optimistic placeholder with the real server event
+      const queryKey = getGoogleEventsByCalendarQueryKey({
+        accountId: _variables.accountId,
+        calendarId: _variables.calendarId,
+      });
+      const queries = queryClient.getQueriesData<Event[]>({ queryKey });
+      for (const [qk, data] of queries) {
+        if (Array.isArray(data)) {
+          queryClient.setQueryData<Event[]>(
+            qk,
+            data.map((e) => (e.id === context.optimisticId ? createdEvent : e))
+          );
+        }
+      }
+    },
+    onError: (err, _variables, context) => {
       notifyError?.(err);
+      if (context?.previousQueries) {
+        for (const [qk, data] of context.previousQueries) {
+          queryClient.setQueryData(qk, data);
+        }
+      }
     },
     onSettled: (_data, _error, variables) => {
       if (!variables) {

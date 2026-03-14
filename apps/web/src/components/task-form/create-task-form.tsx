@@ -3,8 +3,9 @@
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -72,12 +73,24 @@ export function CreateTaskForm({
     }
   }, [defaultTagIds, open, reset]);
 
-  const onSubmit = async (data: ClientTaskInsertDecoded) => {
-    await createTask.mutateAsync(data);
-    // Reset form to fresh defaults and close dialog
-    reset(buildDefaultValues(defaultTagIds));
-    setOpen(false);
-  };
+  const onSubmit = useCallback(
+    async (data: ClientTaskInsertDecoded) => {
+      await createTask.mutateAsync(data);
+      reset(buildDefaultValues(defaultTagIds));
+      setOpen(false);
+    },
+    [createTask, defaultTagIds, reset]
+  );
+
+  useHotkeys(
+    "mod+enter",
+    (e) => {
+      e.preventDefault();
+      handleSubmit(onSubmit)();
+    },
+    { enabled: open, enableOnFormTags: true },
+    [handleSubmit, onSubmit, open]
+  );
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>

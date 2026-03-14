@@ -2,8 +2,10 @@
 
 import type { CreateGoogleEventInput } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -128,7 +130,11 @@ export function EventCreationPopover() {
     setMode(lastSelectedModeRef.current);
   }, [state.showPopover]);
 
-  const handleClose = () => {
+  const handleCancel = useCallback(() => {
+    actions.closePopover();
+  }, [actions]);
+
+  const handleSave = useCallback(() => {
     if (mode === "task") {
       const shouldClose = taskSubmitRef.current?.() ?? true;
       if (!shouldClose) {
@@ -147,22 +153,29 @@ export function EventCreationPopover() {
         (request as { payload: CreateGoogleEventInput }).payload
       );
     }
-  };
+  }, [actions, createEvent, mode]);
 
-  // Don't render if not showing or missing required data
+  useHotkeys(
+    "mod+enter",
+    (e) => {
+      e.preventDefault();
+      handleSave();
+    },
+    { enabled: state.showPopover, enableOnFormTags: true },
+    [handleSave, state.showPopover]
+  );
+
   if (
     !(state.showPopover && popoverTimes && state.accountId && state.calendarId)
   ) {
     return null;
   }
 
-  // We need to render the popover with its trigger
-  // The trigger is a hidden span, but we use controlled mode
   return (
     <Popover
       onOpenChange={(open) => {
-        if (!open) {
-          handleClose();
+        if (open) {
+          return;
         }
       }}
       open={state.showPopover}
@@ -179,12 +192,39 @@ export function EventCreationPopover() {
           }}
         />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[420px] p-4" side="right">
+      <PopoverContent
+        align="start"
+        className="w-[420px] p-4"
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
+        side="right"
+      >
         <Tabs className="gap-3" onValueChange={handleModeChange} value={mode}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="event">Event</TabsTrigger>
-            <TabsTrigger value="task">Task</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-2">
+            <TabsList className="grid grid-cols-2">
+              <TabsTrigger value="event">Event</TabsTrigger>
+              <TabsTrigger value="task">Task</TabsTrigger>
+            </TabsList>
+            <div className="ml-auto flex gap-2">
+              <Button
+                onClick={handleCancel}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSave} size="sm" type="button">
+                Save
+              </Button>
+            </div>
+          </div>
 
           {/* Keep both forms mounted so tab switches can transfer values in-place. */}
           <TabsContent
@@ -204,7 +244,7 @@ export function EventCreationPopover() {
               onRegisterCreateInterop={(interop) => {
                 eventInteropRef.current = interop;
               }}
-              onRequestClose={handleClose}
+              onSave={handleSave}
               open={state.showPopover}
               start={startDate}
             />
@@ -218,7 +258,7 @@ export function EventCreationPopover() {
             <TaskEditForm
               initialValues={initialTaskValues}
               mode="create"
-              onClose={handleClose}
+              onClose={handleCancel}
               onRegisterCreateInterop={(interop) => {
                 taskInteropRef.current = interop;
               }}

@@ -39,7 +39,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -218,48 +217,48 @@ export function TaskEditPopover({
 }: TaskEditPopoverProps) {
   const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
-  const submitRef = useRef<(() => boolean) | null>(null);
   const [focusedTaskId, setFocusedTaskId] = useAtom(focusedTaskIdAtom);
 
   // Open popover when this task is focused via command bar search
   useEffect(() => {
     if (mode === "edit" && task && focusedTaskId === task.id) {
       setOpen(true);
-      // Clear the focused task ID after opening
       setFocusedTaskId(null);
     }
   }, [focusedTaskId, mode, setFocusedTaskId, task]);
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && submitRef.current) {
-      const shouldClose = submitRef.current();
-      if (!shouldClose) {
-        return;
-      }
-    }
-    setOpen(nextOpen);
-  };
-
-  const handleClose = () => {
+  const handleCancel = useCallback(() => {
     setOpen(false);
-  };
+  }, []);
 
   return (
-    <Popover onOpenChange={handleOpenChange} open={open}>
+    <Popover
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          setOpen(true);
+        }
+      }}
+      open={open}
+    >
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align={align}
         className="w-[360px] space-y-3 p-4"
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
         side={side}
       >
         <TaskEditForm
           initialValues={initialValues}
           key={task?.id ?? "create-task"}
           mode={mode}
-          onClose={handleClose}
-          onRegisterSubmit={(fn) => {
-            submitRef.current = fn;
-          }}
+          onClose={handleCancel}
           open={open}
           task={task}
         />
@@ -280,11 +279,13 @@ export function TaskEditForm({
   task?: TaskSelectDecoded;
   initialValues?: Partial<TaskFormValues>;
   mode: "create" | "edit";
-  onRegisterSubmit: (fn: () => boolean) => void;
+  /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
+  onRegisterSubmit?: (fn: () => boolean) => void;
   onClose: () => void;
   open: boolean;
   onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
 }) {
+  const showActionButtons = !onRegisterSubmit;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
     useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -361,16 +362,10 @@ export function TaskEditForm({
     [initialCreateValues, resolvedRecurrence, task]
   );
 
-  const {
-    control,
-    reset,
-    setValue,
-    handleSubmit,
-    getValues,
-    formState: { isDirty },
-  } = useForm<TaskFormValues>({
-    defaultValues: resolvedInitialValues,
-  });
+  const { control, reset, setValue, handleSubmit, getValues } =
+    useForm<TaskFormValues>({
+      defaultValues: resolvedInitialValues,
+    });
 
   // Keep the form in sync if the task changes externally.
   useEffect(() => {
@@ -474,19 +469,30 @@ export function TaskEditForm({
     ]
   );
 
-  // Register submit callback so the popover can trigger save on close.
-  // Only submit if the form has been modified.
+  // Register submit callback for parent-controlled save (e.g. creation popover).
   useEffect(() => {
-    onRegisterSubmit(() => {
-      if (isCreateMode) {
-        return submit(getValues());
-      }
-      if (!isDirty) {
-        return true;
-      }
-      return submit(getValues());
-    });
-  }, [getValues, isCreateMode, isDirty, onRegisterSubmit, submit]);
+    if (!onRegisterSubmit) {
+      return;
+    }
+    onRegisterSubmit(() => submit(getValues()));
+  }, [getValues, onRegisterSubmit, submit]);
+
+  const handleSaveClick = useCallback(() => {
+    const result = submit(getValues());
+    if (result) {
+      onClose();
+    }
+  }, [getValues, onClose, submit]);
+
+  useHotkeys(
+    "mod+enter",
+    (e) => {
+      e.preventDefault();
+      handleSaveClick();
+    },
+    { enabled: open && showActionButtons, enableOnFormTags: true },
+    [handleSaveClick, open, showActionButtons]
+  );
 
   const applySharedFields = useCallback(
     (fields: CalendarCreateSharedFields) => {
@@ -559,6 +565,24 @@ export function TaskEditForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
+      <Input
+        onChange={(e) =>
+          setValue("title", e.target.value, { shouldDirty: true })
+        }
+        placeholder="Task title"
+        value={watchedValues.title}
+      />
+
+      <Textarea
+        onChange={(e) =>
+          setValue("description", e.target.value, { shouldDirty: true })
+        }
+        placeholder="Add details..."
+        value={watchedValues.description}
+      />
+
+      <Separator />
+
       {/* Row 1: Start date, time, duration (calendar scheduling) */}
       <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
         <Controller
@@ -749,32 +773,6 @@ export function TaskEditForm({
 
       <Separator />
 
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Title
-        </Label>
-        <Input
-          onChange={(e) =>
-            setValue("title", e.target.value, { shouldDirty: true })
-          }
-          placeholder="Task title"
-          value={watchedValues.title}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Description
-        </Label>
-        <Textarea
-          onChange={(e) =>
-            setValue("description", e.target.value, { shouldDirty: true })
-          }
-          placeholder="Add details..."
-          value={watchedValues.description}
-        />
-      </div>
-
       <LinkListEditor
         isParsing={parseLink.isPending}
         links={links}
@@ -828,104 +826,111 @@ export function TaskEditForm({
         }}
       />
 
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Tags
-        </Label>
-        <Controller
-          control={control}
-          name="tagIds"
-          render={({ field }) => (
-            <TagPicker onChange={field.onChange} value={field.value ?? []} />
-          )}
-        />
-      </div>
+      <Controller
+        control={control}
+        name="tagIds"
+        render={({ field }) => (
+          <TagPicker onChange={field.onChange} value={field.value ?? []} />
+        )}
+      />
 
-      {isCreateMode ? null : (
+      {showActionButtons ? (
         <>
           <Separator />
-
-          {/* Delete button with confirmation dialog - shows scope options for recurring tasks */}
-          <AlertDialog
-            onOpenChange={setShowDeleteConfirm}
-            open={showDeleteConfirm}
-          >
-            <AlertDialogTrigger asChild>
-              <Button
-                className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                type="button"
-                variant="outline"
+          <div className="flex items-center gap-2">
+            {isCreateMode ? null : (
+              <AlertDialog
+                onOpenChange={setShowDeleteConfirm}
+                open={showDeleteConfirm}
               >
-                <Trash2 className="h-4 w-4" />
-                Delete task
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete task?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {isRecurring
-                    ? "This is a recurring task. Choose what to delete."
-                    : "This action cannot be undone."}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter
-                className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
-              >
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                {isRecurring ? (
-                  <>
-                    {/* Auto-focus "Only this" as the safer default for recurring tasks */}
-                    <AlertDialogAction
-                      autoFocus
-                      onClick={() => confirmDelete("this")}
-                    >
-                      Only this occurrence
-                    </AlertDialogAction>
-                    <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      onClick={() => confirmDelete("following")}
-                    >
-                      This and following
-                    </AlertDialogAction>
-                  </>
-                ) : (
-                  // Auto-focus delete button so Enter confirms deletion
-                  <AlertDialogAction
-                    autoFocus
-                    onClick={() => confirmDelete("this")}
+                <AlertDialogTrigger asChild>
+                  <Button
+                    className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    size="sm"
+                    type="button"
+                    variant="outline"
                   >
+                    <Trash2 className="h-3.5 w-3.5" />
                     Delete
-                  </AlertDialogAction>
-                )}
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <RecurrenceScopeDialog
-            confirmLabel="Apply"
-            description="This is a recurring task. Choose how broadly to apply the change."
-            onConfirm={() => {
-              if (!pendingUpdate) {
-                return;
-              }
-              commitUpdate(pendingUpdate, tagScope);
-              setPendingUpdate(null);
-              onClose();
-            }}
-            onOpenChange={(nextOpen) => {
-              if (!nextOpen) {
-                setPendingUpdate(null);
-              }
-              setShowTagScopeDialog(nextOpen);
-            }}
-            onValueChange={(value) => setTagScope(value as UpdateScope)}
-            open={showTagScopeDialog}
-            options={TASK_UPDATE_SCOPE_OPTIONS}
-            title="Apply task update"
-            value={tagScope}
-          />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete task?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {isRecurring
+                        ? "This is a recurring task. Choose what to delete."
+                        : "This action cannot be undone."}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter
+                    className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
+                  >
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    {isRecurring ? (
+                      <>
+                        <AlertDialogAction
+                          autoFocus
+                          onClick={() => confirmDelete("this")}
+                        >
+                          Only this occurrence
+                        </AlertDialogAction>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => confirmDelete("following")}
+                        >
+                          This and following
+                        </AlertDialogAction>
+                      </>
+                    ) : (
+                      <AlertDialogAction
+                        autoFocus
+                        onClick={() => confirmDelete("this")}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    )}
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <div className="ml-auto flex gap-2">
+              <Button onClick={onClose} size="sm" type="button" variant="ghost">
+                Cancel
+              </Button>
+              <Button onClick={handleSaveClick} size="sm" type="button">
+                Save
+              </Button>
+            </div>
+          </div>
         </>
+      ) : null}
+
+      {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
+      {isCreateMode ? null : (
+        <RecurrenceScopeDialog
+          confirmLabel="Apply"
+          description="This is a recurring task. Choose how broadly to apply the change."
+          onConfirm={() => {
+            if (!pendingUpdate) {
+              return;
+            }
+            commitUpdate(pendingUpdate, tagScope);
+            setPendingUpdate(null);
+            onClose();
+          }}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setPendingUpdate(null);
+            }
+            setShowTagScopeDialog(nextOpen);
+          }}
+          onValueChange={(value) => setTagScope(value as UpdateScope)}
+          open={showTagScopeDialog}
+          options={TASK_UPDATE_SCOPE_OPTIONS}
+          title="Apply task update"
+          value={tagScope}
+        />
       )}
     </form>
   );

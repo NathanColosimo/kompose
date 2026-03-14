@@ -621,7 +621,11 @@ export function EventEditPopover({
     });
   }, [accountId, calendarId, deleteEvent, deleteScope, event]);
 
-  const handleClose = useCallback(() => {
+  const handleCancel = useCallback(() => {
+    setOpen(false);
+  }, [setOpen]);
+
+  const handleSave = useCallback(() => {
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
     setOpen(false);
 
@@ -629,17 +633,13 @@ export function EventEditPopover({
       return;
     }
 
-    // Handle create mode
     if (request.type === "create") {
       createEvent.mutate(request.payload);
       return;
     }
 
     if (request.type === "save") {
-      // Recurring events: show scope dialog (applies to both save and move)
       if (request.isRecurring) {
-        // Google API doesn't allow moving individual recurring instances,
-        // so force scope to "all" when a calendar move is pending.
         const forceAll = Boolean(request.calendarChanged);
         const scope = forceAll ? "all" : request.defaultScope;
         setPendingSave({
@@ -653,7 +653,6 @@ export function EventEditPopover({
         return;
       }
 
-      // Non-recurring: save directly, then move if calendar changed
       const saveAndMove = async () => {
         if (request.hasDataEdits) {
           await updateEvent.mutateAsync({
@@ -684,16 +683,23 @@ export function EventEditPopover({
     updateEvent,
   ]);
 
+  useHotkeys(
+    "mod+enter",
+    (e) => {
+      e.preventDefault();
+      handleSave();
+    },
+    { enabled: open, enableOnFormTags: true },
+    [handleSave, open]
+  );
+
   return (
     <>
       <Popover
         onOpenChange={(nextOpen) => {
-          // When closing, build a save request *before* the form unmounts.
-          if (!nextOpen) {
-            handleClose();
-            return;
+          if (nextOpen) {
+            setOpen(true);
           }
-          setOpen(true);
         }}
         open={open}
       >
@@ -701,6 +707,14 @@ export function EventEditPopover({
         <PopoverContent
           align={align}
           className="w-[420px] space-y-3 p-4"
+          onEscapeKeyDown={(e) => {
+            e.preventDefault();
+            handleCancel();
+          }}
+          onInteractOutside={(e) => {
+            e.preventDefault();
+            handleCancel();
+          }}
           side={side}
         >
           <EventEditForm
@@ -709,11 +723,12 @@ export function EventEditPopover({
             end={end}
             event={event}
             mode={mode}
+            onCancel={handleCancel}
             onDelete={handleDelete}
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
             }}
-            onRequestClose={() => handleClose()}
+            onSave={handleSave}
             open={open}
             start={start}
           />
@@ -1036,15 +1051,26 @@ function EventAllDayAndRecurrenceRow({
   canEditRecurrence,
   recurrenceRule,
   onRecurrenceChange,
+  calendarOptions,
+  calendarValue,
+  onCalendarChange,
 }: {
   allDay: boolean;
   onToggleAllDay: () => void;
   canEditRecurrence: boolean;
   recurrenceRule: string | undefined;
   onRecurrenceChange: (rule: string | null) => void;
+  calendarOptions: {
+    accountId: string;
+    calendarId: string;
+    label: string;
+    color?: string;
+  }[];
+  calendarValue: string;
+  onCalendarChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center gap-2">
       <Button
         className="gap-2 text-xs"
         onClick={onToggleAllDay}
@@ -1064,25 +1090,46 @@ function EventAllDayAndRecurrenceRow({
         </div>
         All day
       </Button>
-      <div className="flex items-center gap-2">
-        {canEditRecurrence ? (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button className="h-8 w-8" size="icon" variant="outline">
-                <Repeat className="h-4 w-4" />
-                <span className="sr-only">Edit recurrence</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-[360px]">
-              <RecurrenceEditor
-                onChange={onRecurrenceChange}
-                recurrenceRule={recurrenceRule}
-                visible
-              />
-            </PopoverContent>
-          </Popover>
-        ) : null}
-      </div>
+      {canEditRecurrence ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button className="h-8 w-8" size="icon" variant="outline">
+              <Repeat className="h-4 w-4" />
+              <span className="sr-only">Edit recurrence</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[360px]">
+            <RecurrenceEditor
+              onChange={onRecurrenceChange}
+              recurrenceRule={recurrenceRule}
+              visible
+            />
+          </PopoverContent>
+        </Popover>
+      ) : null}
+      <Select onValueChange={onCalendarChange} value={calendarValue}>
+        <SelectTrigger className="ml-auto h-8 w-auto min-w-0 gap-1.5 px-2 text-xs">
+          <SelectValue placeholder="Calendar" />
+        </SelectTrigger>
+        <SelectContent>
+          {calendarOptions.map((c) => (
+            <SelectItem
+              key={`${c.accountId}::${c.calendarId}`}
+              value={`${c.accountId}::${c.calendarId}`}
+            >
+              <span className="flex items-center gap-2">
+                {c.color ? (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: c.color }}
+                  />
+                ) : null}
+                {c.label}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -1189,6 +1236,46 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   };
 }
 
+function EventFormActionRow({
+  isCreateMode,
+  onDelete,
+  onCancel,
+  onSave,
+}: {
+  isCreateMode: boolean;
+  onDelete: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <>
+      <Separator />
+      <div className="flex items-center gap-2">
+        {isCreateMode ? null : (
+          <Button
+            className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={onDelete}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+        )}
+        <div className="ml-auto flex gap-2">
+          <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+            Cancel
+          </Button>
+          <Button onClick={onSave} size="sm" type="button">
+            Save
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function EventEditForm({
   event,
   accountId,
@@ -1197,7 +1284,8 @@ export function EventEditForm({
   end,
   mode,
   onRegisterCloseSaveRequest,
-  onRequestClose,
+  onSave,
+  onCancel,
   onDelete,
   open,
   headerContent,
@@ -1210,7 +1298,10 @@ export function EventEditForm({
   end: Date;
   mode: "create" | "edit";
   onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
-  onRequestClose: () => void;
+  /** Trigger the save flow (builds close-save request and processes it). */
+  onSave: () => void;
+  /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
+  onCancel?: () => void;
   onDelete: () => void;
   open: boolean;
   headerContent?: ReactNode;
@@ -1392,6 +1483,7 @@ export function EventEditForm({
           accountId: c.accountId,
           calendarId: c.calendar.id,
           label: c.calendar.summary ?? "Calendar",
+          color: pastelizeColor(c.calendar.backgroundColor),
         })),
     [accountId, calendars, isCreateMode]
   );
@@ -1495,9 +1587,9 @@ export function EventEditForm({
     pendingConferenceRef.current = nextConference;
     setPendingConference(nextConference);
     if (!isCreateMode) {
-      onRequestClose();
+      onSave();
     }
-  }, [canCreateMeeting, isCreateMode, onRequestClose]);
+  }, [canCreateMeeting, isCreateMode, onSave]);
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
@@ -1634,33 +1726,27 @@ export function EventEditForm({
         value={watchedValues.description}
       />
 
-      <MeetingSection
-        isConferencePending={isConferencePending}
-        meetingLink={meetingLink}
-        onCreateMeeting={handleCreateMeeting}
-      />
-
-      <EventLocationCombobox
-        isSearching={isLocationSearching}
-        location={watchedValues.location}
-        locationPopoverOpen={locationPopoverOpen}
-        mapsUrl={mapsUrl}
-        onFocusInput={() => {
-          if (locationQuery.length >= 2) {
-            setLocationOpen(true);
-          }
-        }}
-        onInputValueChange={handleLocationInputChange}
-        onOpenChange={handleLocationOpenChange}
-        onValueChange={handleLocationValueChange}
-        suggestions={locationSuggestions}
-      />
-
       <Separator />
 
       <EventAllDayAndRecurrenceRow
         allDay={watchedValues.allDay}
+        calendarOptions={calendarPickerOptions}
+        calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
         canEditRecurrence={canEditRecurrence}
+        onCalendarChange={(val) => {
+          const opt = calendarPickerOptions.find(
+            (c) => `${c.accountId}::${c.calendarId}` === val
+          );
+          if (opt) {
+            hasUserEditedRef.current = true;
+            setValue("selectedAccountId", opt.accountId, {
+              shouldDirty: true,
+            });
+            setValue("selectedCalendarId", opt.calendarId, {
+              shouldDirty: true,
+            });
+          }
+        }}
         onRecurrenceChange={(rule) => {
           hasUserEditedRef.current = true;
           setValue("recurrence", rule ? [rule] : [], { shouldDirty: true });
@@ -1814,58 +1900,36 @@ export function EventEditForm({
         </div>
       )}
 
-      {/* Calendar picker (both modes) — replaces the Move dialog in edit mode */}
-      <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
-          Calendar
-        </Label>
-        <Select
-          onValueChange={(val) => {
-            const opt = calendarPickerOptions.find(
-              (c) => `${c.accountId}::${c.calendarId}` === val
-            );
-            if (opt) {
-              setValue("selectedAccountId", opt.accountId, {
-                shouldDirty: true,
-              });
-              setValue("selectedCalendarId", opt.calendarId, {
-                shouldDirty: true,
-              });
-            }
-          }}
-          value={`${effectiveAccountId}::${effectiveCalendarId}`}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select calendar" />
-          </SelectTrigger>
-          <SelectContent>
-            {calendarPickerOptions.map((c) => (
-              <SelectItem
-                key={`${c.accountId}::${c.calendarId}`}
-                value={`${c.accountId}::${c.calendarId}`}
-              >
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <MeetingSection
+        isConferencePending={isConferencePending}
+        meetingLink={meetingLink}
+        onCreateMeeting={handleCreateMeeting}
+      />
 
-      {/* Delete button - only in edit mode */}
-      {isCreateMode ? null : (
-        <>
-          <Separator />
-          <Button
-            className="w-full gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            onClick={onDelete}
-            type="button"
-            variant="outline"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete event
-          </Button>
-        </>
-      )}
+      <EventLocationCombobox
+        isSearching={isLocationSearching}
+        location={watchedValues.location}
+        locationPopoverOpen={locationPopoverOpen}
+        mapsUrl={mapsUrl}
+        onFocusInput={() => {
+          if (locationQuery.length >= 2) {
+            setLocationOpen(true);
+          }
+        }}
+        onInputValueChange={handleLocationInputChange}
+        onOpenChange={handleLocationOpenChange}
+        onValueChange={handleLocationValueChange}
+        suggestions={locationSuggestions}
+      />
+
+      {onCancel ? (
+        <EventFormActionRow
+          isCreateMode={isCreateMode}
+          onCancel={onCancel}
+          onDelete={onDelete}
+          onSave={onSave}
+        />
+      ) : null}
     </form>
   );
 }

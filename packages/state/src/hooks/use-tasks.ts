@@ -59,9 +59,8 @@ export function useTasks() {
       return results.map((t) => taskSelectCodec.parse(t));
     },
     onMutate: async (task: ClientTaskInsertDecoded) => {
-      // Skip optimistic update for recurring tasks (creates multiple)
       if (task.recurrence) {
-        return { previousTasks: undefined };
+        return { previousTasks: undefined, optimisticId: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
@@ -74,8 +73,9 @@ export function useTasks() {
           ? tags.filter((tag) => task.tagIds?.includes(tag.id))
           : [];
 
+      const optimisticId = uuidv7();
       const optimisticTask: TaskSelectDecoded = {
-        id: uuidv7(),
+        id: optimisticId,
         userId: "optimistic",
         title: task.title,
         description: task.description ?? null,
@@ -98,7 +98,22 @@ export function useTasks() {
         optimisticTask,
       ]);
 
-      return { previousTasks };
+      return { previousTasks, optimisticId };
+    },
+    onSuccess: (createdTasks, _variables, context) => {
+      if (!context?.optimisticId) {
+        return;
+      }
+      // Replace the optimistic placeholder with the real server response
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) => {
+        if (!old) {
+          return createdTasks;
+        }
+        const withoutOptimistic = old.filter(
+          (t) => t.id !== context.optimisticId
+        );
+        return [...withoutOptimistic, ...createdTasks];
+      });
     },
     onError: (_err, _variables, context) => {
       if (context?.previousTasks) {
