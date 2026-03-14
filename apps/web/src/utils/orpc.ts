@@ -7,22 +7,36 @@ import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
 
-export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error, query) => {
-      const queryKey = query.queryKey;
-      toast.error(`Error: ${error.message}`, {
-        action: {
-          label: "retry",
-          onClick: () => {
-            // Retry only the failed query to avoid cascading refetches.
-            queryClient.invalidateQueries({ queryKey });
+interface CreateAppQueryClientOptions {
+  suppressToasts: boolean;
+}
+
+export function createAppQueryClient({
+  suppressToasts,
+}: CreateAppQueryClientOptions) {
+  const queryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        if (suppressToasts) {
+          return;
+        }
+
+        const queryKey = query.queryKey;
+        toast.error(`Error: ${error.message}`, {
+          action: {
+            label: "retry",
+            onClick: () => {
+              // Retry only the failed query to avoid cascading refetches.
+              queryClient.invalidateQueries({ queryKey });
+            },
           },
-        },
-      });
-    },
-  }),
-});
+        });
+      },
+    }),
+  });
+
+  return queryClient;
+}
 
 const tauri = isTauriRuntime();
 

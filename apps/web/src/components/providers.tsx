@@ -18,7 +18,8 @@ import {
   openUrlInDesktopBrowser,
   syncDesktopCommandBarShortcutPreset,
 } from "@/lib/tauri-desktop";
-import { orpc, queryClient } from "@/utils/orpc";
+import { isToastSuppressedPath } from "@/lib/toast-suppression";
+import { createAppQueryClient, orpc } from "@/utils/orpc";
 import { DeepLinkHandler } from "./deep-link-handler";
 import { TauriUpdaterProvider } from "./tauri-updater";
 import { ThemeProvider } from "./theme-provider";
@@ -147,6 +148,11 @@ function TauriDesktopBridgeBootstrap() {
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const suppressToasts = isToastSuppressedPath(pathname);
+  const [queryClient] = useState(() =>
+    createAppQueryClient({ suppressToasts })
+  );
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
     () => ({
@@ -225,20 +231,23 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       orpc,
       authClient: stateAuthClient,
       notifyError: (error: Error) => {
+        if (suppressToasts) {
+          return;
+        }
+
         toast.error(error.message);
       },
     }),
-    [stateAuthClient]
+    [stateAuthClient, suppressToasts]
   );
-  const pathname = usePathname();
-  const isCommandBarRoute = pathname === "/desktop/command-bar";
+  const isCommandBarRoute = suppressToasts;
   const showReactQueryDevtools =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
   const appProviders = (
     <StateProvider config={config} storage={storage}>
-      <RealtimeSyncBootstrap />
+      {isCommandBarRoute ? null : <RealtimeSyncBootstrap />}
       <TauriDesktopBridgeBootstrap />
-      <DeepLinkHandler />
+      {isCommandBarRoute ? null : <DeepLinkHandler />}
       {children}
     </StateProvider>
   );
@@ -261,7 +270,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         </TauriBearerInit>
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>
-      <Toaster richColors />
+      {isCommandBarRoute ? null : <Toaster richColors />}
       <VercelAnalytics />
     </ThemeProvider>
   );

@@ -5,6 +5,7 @@ import { isProductionDeployment } from "@kompose/env";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useTags } from "@kompose/state/hooks/use-tags";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -62,7 +63,6 @@ import {
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
-import { queryClient } from "@/utils/orpc";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPicker } from "./tags/tag-icon-picker";
 import { useTauriUpdater } from "./tauri-updater";
@@ -192,6 +192,7 @@ function SearchButton() {
  */
 function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const handleLogout = async () => {
     // Clear the bearer token used by Tauri desktop before sign-out.
