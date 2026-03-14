@@ -11,15 +11,9 @@ import {
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import { sessionQueryAtom } from "@kompose/state/config";
-import {
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-  GOOGLE_CALENDARS_QUERY_KEY,
-} from "@kompose/state/google-calendar-query-keys";
 import { useDashboardBootstrap } from "@kompose/state/hooks/use-dashboard-bootstrap";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { useIsFetching } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -177,33 +171,15 @@ function DashboardCalendarGrid({
 }: {
   effectiveVisibleDays: ReturnType<typeof todayPlainDate>[];
 }) {
-  const sessionQuery = useAtomValue(sessionQueryAtom);
   const window = useAtomValue(eventWindowAtom);
   const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
-  const accountFetchCount = useIsFetching({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
-  });
-  const calendarFetchCount = useIsFetching({
-    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
-  });
   const { tasksQuery } = useTasks();
-  const { events: googleEvents, isLoading: isGoogleEventsLoading } =
-    useGoogleEvents({
-      visibleCalendars: visibleGoogleCalendars,
-      window,
-    });
+  const { events: googleEvents } = useGoogleEvents({
+    visibleCalendars: visibleGoogleCalendars,
+    window,
+  });
 
   const tasks = tasksQuery.data ?? [];
-  const isCalendarLoading =
-    sessionQuery.status === "pending" ||
-    (tasksQuery.data === undefined && tasksQuery.error == null) ||
-    accountFetchCount > 0 ||
-    calendarFetchCount > 0 ||
-    isGoogleEventsLoading;
-
-  if (isCalendarLoading) {
-    return <CalendarGridPlaceholder />;
-  }
 
   return (
     <DaysView
