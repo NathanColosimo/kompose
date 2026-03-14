@@ -509,13 +509,14 @@ installed side by side on macOS.
   - `native#build:prod`: caches `dist/**` (the IPA).
   - `web#build:prod:desktop`: caches
     `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
+    Inputs exclude `src/app/api/**`, `src/app/docs/**`, and
+    `src/instrumentation.ts` so backend-only changes don't
+    invalidate the desktop build cache.
   - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
-  - `submit:prod` has `cache: false` (deployment side-effect), but
-    `web#submit:prod` depends on `build:prod` so the prebuild can still
-    be reused from Turbo cache before the deploy step runs.
-  - `submit:prod:desktop` has `cache: true` with
-    `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
-    changes occurred since the last release.
+  - `submit:prod` is cached (`cache: true`) for web, native, and
+    desktop. Each depends on its corresponding `build:prod` task, so
+    submissions are skipped when the build output hasn't changed.
+    Use `turbo run submit:prod --force` to force a re-deploy.
   - Build tasks include `dependsOn: ["^build"]` so cache keys factor
     in workspace dependency changes.
 - **Local build speed**:

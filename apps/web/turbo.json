@@ -48,12 +48,16 @@
         "!.next/**",
         "!out/**",
         "!src-tauri/target/**",
-        "!$TURBO_ROOT$/.vercel/**"
+        "!$TURBO_ROOT$/.vercel/**",
+        "!src/app/api/**",
+        "!src/app/docs/**",
+        "!src/instrumentation.ts"
       ],
       "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
     },
     "submit:prod": {
-      "dependsOn": ["build:prod"]
+      "dependsOn": ["build:prod"],
+      "cache": true
     },
     "submit:prod:desktop": {
       "dependsOn": ["build:prod:desktop"],

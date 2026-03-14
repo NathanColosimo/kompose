@@ -427,14 +427,17 @@ export class WhoopService extends Effect.Service<WhoopService>()(
                 .map(toSummary);
             }
 
-            // Use the user's timezone for fetch boundaries so the full
-            // local day is covered. UTC midnight doesn't align with the
-            // user's day — e.g. for UTC-8, midnight local = 08:00 UTC.
+            // Start 6 hours before midnight so WHOOP cycles/sleeps that
+            // begin in the late evening (typically ~11pm when the user
+            // falls asleep) are captured. Without this buffer, a sleep
+            // starting at 11:54pm falls outside the next day's midnight
+            // boundary and is excluded from narrow refetches.
             const fetchStart = Temporal.PlainDate.from(missingStart)
               .toZonedDateTime({
                 timeZone: params.timeZone,
                 plainTime: Temporal.PlainTime.from("00:00"),
               })
+              .subtract({ hours: 6 })
               .toInstant()
               .toString();
             const fetchEnd = Temporal.PlainDate.from(missingEnd)
@@ -468,8 +471,14 @@ export class WhoopService extends Effect.Service<WhoopService>()(
               workouts,
             });
 
+            // Only populate days that were actually missing from cache.
+            // Without this guard, a cycle fetched for a missing day can
+            // get grouped to an adjacent CACHED day (e.g., the active cycle
+            // starts on day N but its sleep ends on day N+1), overwriting
+            // that day's complete cached data with an incomplete grouping.
+            const missingDaySet = new Set(missingDays);
             for (const [day, payload] of groupedDays) {
-              if (!requestedDays.includes(day)) {
+              if (!missingDaySet.has(day)) {
                 continue;
               }
 

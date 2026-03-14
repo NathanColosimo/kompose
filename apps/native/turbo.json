@@ -5,6 +5,10 @@
       "dependsOn": ["^build"],
       "cache": true,
       "outputs": ["dist/**"]
+    },
+    "submit:prod": {
+      "dependsOn": ["build:prod"],
+      "cache": true
     }
   }
 }
