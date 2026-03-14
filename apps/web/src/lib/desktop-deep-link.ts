@@ -15,6 +15,7 @@ export function getDesktopAuthCallbackPrefix(
 export function buildDesktopAuthCallbackUrl(options: {
   token: string;
   mode?: string | null;
+  provider?: string | null;
   scheme: DesktopDeepLinkScheme;
 }): string {
   const callbackUrl = new URL(getDesktopAuthCallbackPrefix(options.scheme));
@@ -23,6 +24,10 @@ export function buildDesktopAuthCallbackUrl(options: {
 
   if (options.mode) {
     callbackUrl.searchParams.set("mode", options.mode);
+  }
+
+  if (options.provider) {
+    callbackUrl.searchParams.set("provider", options.provider);
   }
 
   return callbackUrl.toString();

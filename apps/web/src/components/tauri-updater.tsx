@@ -124,12 +124,22 @@ export function TauriUpdaterProvider({
 
     isInstallingRef.current = true;
     setIsInstalling(true);
+    let installed = false;
     try {
-      // Install the downloaded update (Tauri will restart the app).
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+
+      // Tauri installs the downloaded bundle first, then we explicitly
+      // relaunch the desktop process so the new version boots immediately.
       await updateRef.current.install();
+      installed = true;
+      await relaunch();
     } catch (error) {
       console.warn("Tauri updater install failed.", error);
-      toast.error("Failed to install update.");
+      toast.error(
+        installed
+          ? "Update installed. Please quit and reopen Kompose."
+          : "Failed to install update."
+      );
       isInstallingRef.current = false;
       setIsInstalling(false);
     }

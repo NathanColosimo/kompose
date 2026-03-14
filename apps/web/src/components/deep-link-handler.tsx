@@ -5,7 +5,7 @@ import {
   GOOGLE_ACCOUNT_INFO_QUERY_KEY,
   GOOGLE_ACCOUNTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import { getDesktopAuthCallbackPrefix } from "@/lib/desktop-deep-link";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 /** localStorage key for tracking tokens we have already exchanged. */
+const WHOOP_ACCOUNTS_QUERY_KEY = ["whoop-accounts"] as const;
 const DESKTOP_DEEP_LINK_SCHEME = env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME;
 const DESKTOP_AUTH_CALLBACK_PREFIX = getDesktopAuthCallbackPrefix(
   DESKTOP_DEEP_LINK_SCHEME
@@ -41,6 +42,24 @@ function isTokenAlreadyProcessed(token: string): boolean {
   }
 
   return (JSON.parse(raw) as string[]).includes(token);
+}
+
+async function refreshLinkedAccountQueries(queryClient: QueryClient) {
+  await queryClient.invalidateQueries({
+    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+  });
+  await queryClient.invalidateQueries({
+    queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
+  });
+  await queryClient.invalidateQueries({
+    queryKey: WHOOP_ACCOUNTS_QUERY_KEY,
+  });
+}
+
+function getLinkedAccountSuccessMessage(linkedProvider: string | null) {
+  return linkedProvider === "whoop"
+    ? "WHOOP account linked."
+    : "Google account linked.";
 }
 
 /**
@@ -113,18 +132,11 @@ export function DeepLinkHandler() {
         markTokenProcessed(token);
 
         const isLinkMode = url.searchParams.get("mode") === "link";
+        const linkedProvider = url.searchParams.get("provider");
 
         if (isLinkMode) {
-          // Account linking: only refresh the accounts list, keep
-          // everything else cached. No navigation needed — the user
-          // is already on the settings page.
-          await queryClient.invalidateQueries({
-            queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
-          });
-          await queryClient.invalidateQueries({
-            queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-          });
-          toast.success("Google account linked.");
+          await refreshLinkedAccountQueries(queryClient);
+          toast.success(getLinkedAccountSuccessMessage(linkedProvider));
         } else {
           // Sign-in: invalidate everything so the dashboard refetches
           // with the freshly-stored bearer token.

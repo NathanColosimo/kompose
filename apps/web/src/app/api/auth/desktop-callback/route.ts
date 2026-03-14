@@ -32,12 +32,14 @@ export async function GET(request: NextRequest) {
     // desktop scheme so the browser returns to the correct installed flavor.
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode");
+    const provider = url.searchParams.get("provider");
     const desktopScheme = desktopDeepLinkSchemeSchema.parse(
       url.searchParams.get(DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM)
     );
     const deepLinkUrl = buildDesktopAuthCallbackUrl({
       token: data.token,
       mode,
+      provider,
       scheme: desktopScheme,
     });
 

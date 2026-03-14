@@ -1,8 +1,11 @@
 import { auth } from "@kompose/auth";
 import { desktopDeepLinkSchemeSchema, env } from "@kompose/env";
-import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM } from "@/lib/desktop-deep-link";
+
+function isGenericOAuthProvider(provider: string) {
+  return provider === "whoop";
+}
 
 /**
  * GET /api/auth/desktop-sign-in?provider=google[&mode=link&link_token=TOKEN]
@@ -40,80 +43,97 @@ export async function GET(request: NextRequest) {
     // server can redirect back to the correct installed desktop flavor.
     const callbackParams = new URLSearchParams({
       [DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM]: desktopScheme,
+      provider,
     });
+
+    if (mode === "link" && !linkToken) {
+      return NextResponse.json(
+        { error: "Missing link token" },
+        { status: 400 }
+      );
+    }
 
     if (mode === "link" && linkToken) {
       callbackParams.set("mode", "link");
 
       // --- Account linking mode ---
-      // Use direct API calls instead of auth.handler to avoid
-      // nextCookies() intercepting Set-Cookie headers and CSRF/session
-      // issues with synthetic Request objects.
-      // Verify the one-time token. This also calls setSessionCookie
-      // internally, and nextCookies() sets the signed cookie value via
-      // Next.js cookies() so we can read it back below.
-      try {
-        await auth.api.verifyOneTimeToken({
+      // Recover the desktop session from the one-time token and then pass
+      // the recovered signed bearer token through explicit Authorization
+      // headers. This avoids depending on a transient cookie side effect,
+      // which was unreliable in production desktop flows.
+      const verification = await auth.api
+        .verifyOneTimeToken({
           body: { token: linkToken },
-        });
-      } catch {
+          returnHeaders: true,
+        })
+        .catch(() => null);
+
+      if (!verification) {
         return NextResponse.json(
           { error: "Invalid or expired link token" },
           { status: 401 }
         );
       }
 
-      // Read the signed session cookie that nextCookies() just set.
-      const cookieStore = await cookies();
-      const sessionCookie = cookieStore.get("kompose.session_token");
-      if (!sessionCookie) {
+      const recoveredAuthToken = verification.headers.get("set-auth-token");
+      if (!recoveredAuthToken) {
         return NextResponse.json(
           { error: "Failed to recover session from link token" },
           { status: 401 }
         );
       }
 
-      const linkResponse = await auth.handler(
-        new Request(`${baseUrl}/api/auth/link-social`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            cookie: `${sessionCookie.name}=${sessionCookie.value}`,
-            origin: baseUrl,
-          },
-          body: JSON.stringify({
-            provider,
-            callbackURL: `/api/auth/desktop-callback?${callbackParams.toString()}`,
-          }),
-        })
-      );
+      const authHeaders = new Headers({
+        authorization: `Bearer ${recoveredAuthToken}`,
+        origin: baseUrl,
+      });
 
-      const linkData = (await linkResponse.json().catch(() => null)) as {
-        url?: string;
-        redirect?: boolean;
-        code?: string;
-        message?: string;
-      } | null;
+      const callbackURL = `/api/auth/desktop-callback?${callbackParams.toString()}`;
 
-      if (!linkData?.url) {
+      try {
+        const linkResult = isGenericOAuthProvider(provider)
+          ? await auth.api.oAuth2LinkAccount({
+              body: {
+                callbackURL,
+                providerId: provider,
+              },
+              headers: authHeaders,
+              returnHeaders: true,
+            })
+          : await auth.api.linkSocialAccount({
+              body: {
+                callbackURL,
+                provider,
+              },
+              headers: authHeaders,
+              returnHeaders: true,
+            });
+
+        if (!linkResult.response.url) {
+          return NextResponse.json(
+            {
+              detail: linkResult.response,
+              error: "Failed to initiate OAuth flow",
+            },
+            { status: 500 }
+          );
+        }
+
+        const linkRedirect = NextResponse.redirect(
+          linkResult.response.url,
+          302
+        );
+        for (const cookie of linkResult.headers.getSetCookie()) {
+          linkRedirect.headers.append("Set-Cookie", cookie);
+        }
+        return linkRedirect;
+      } catch (error) {
+        console.error("[desktop-sign-in] Failed to initiate link flow:", error);
         return NextResponse.json(
-          {
-            error: "Failed to initiate OAuth flow",
-            status: linkResponse.status,
-            detail: linkData,
-          },
+          { error: "Failed to initiate OAuth flow" },
           { status: 500 }
         );
       }
-
-      // Forward OAuth state cookies from the internal response.
-      // nextCookies() also sets them via cookies(), but NextResponse.redirect
-      // doesn't merge cookies() into the response, so we forward manually.
-      const linkRedirect = NextResponse.redirect(linkData.url, 302);
-      for (const cookie of linkResponse.headers.getSetCookie()) {
-        linkRedirect.headers.append("Set-Cookie", cookie);
-      }
-      return linkRedirect;
     }
 
     // --- Sign-in mode ---
