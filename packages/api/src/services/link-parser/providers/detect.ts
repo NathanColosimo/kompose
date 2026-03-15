@@ -15,6 +15,8 @@ const SUBSTACK_CUSTOM_DOMAINS = [
   "blog.redwoodresearch.org",
   "www.gurwinder.blog",
   "www.interconnects.ai",
+  "newsletter.forethought.org",
+  "www.normaltech.ai",
 ];
 
 /** Check if URL has Substack-specific query params (post_id) */

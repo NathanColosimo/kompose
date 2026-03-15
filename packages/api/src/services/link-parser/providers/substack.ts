@@ -69,6 +69,12 @@ const postByIdResponseSchema = z.object({
 const SUBSTACK_SLUG_PATTERN = /\/p\/([a-z0-9-]+)/;
 const INBOX_POST_ID_PATTERN = /\/inbox\/post\/(\d+)/;
 const HOME_POST_ID_PATTERN = /\/home\/post\/p-(\d+)/;
+const HTML_POST_ID_PATTERNS = [
+  /\\?"post_id\\?":\s*(\d+)/,
+  /\\?"postId\\?":\s*(\d+)/,
+  /post_preview\/(\d+)\//,
+  /\/i\/(\d+)\?img=/,
+] as const;
 const WORDS_PER_MINUTE = 238;
 
 function extractSlug(url: string): string | null {
@@ -103,6 +109,17 @@ function extractBaseUrl(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+function extractHtmlPostId(html: string): string | null {
+  for (const pattern of HTML_POST_ID_PATTERNS) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
 }
 
 /** Fetch a post by numeric ID via the direct by-id endpoint */
@@ -202,6 +219,48 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
   return { post };
 });
 
+/** Fetch the public page HTML and extract an embedded post ID as a fallback */
+const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
+  function* (url: string) {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url),
+      catch: (cause) =>
+        new LinkParseError({
+          url,
+          message: "Failed to fetch Substack post HTML",
+          cause,
+        }),
+    });
+
+    if (!response.ok) {
+      return yield* new LinkParseError({
+        url,
+        message: `Substack post HTML returned ${response.status}`,
+      });
+    }
+
+    const html = yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (cause) =>
+        new LinkParseError({
+          url,
+          message: "Failed to read Substack post HTML",
+          cause,
+        }),
+    });
+
+    const postId = extractHtmlPostId(html);
+    if (!postId) {
+      return yield* new LinkParseError({
+        url,
+        message: "Could not extract Substack post ID from HTML",
+      });
+    }
+
+    return postId;
+  }
+);
+
 /** Build LinkMeta from a resolved Substack post */
 function postToLinkMeta(
   post: z.infer<typeof postSchema>,
@@ -274,6 +333,12 @@ export const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
     });
   }
 
-  const post = yield* fetchPostBySlug(url, baseUrl, slug);
-  return postToLinkMeta(post.post);
+  const slugResult = yield* Effect.either(fetchPostBySlug(url, baseUrl, slug));
+  if (slugResult._tag === "Right") {
+    return postToLinkMeta(slugResult.right.post);
+  }
+
+  const postId = yield* fetchPostIdFromHtml(url);
+  const data = yield* fetchPostById(url, postId);
+  return postToLinkMeta(data.post, data.publication);
 });

@@ -6,7 +6,7 @@ import { parseSpotifyLink } from "./providers/spotify";
 import { parseSubstackLink } from "./providers/substack";
 import { parseUnknownLink } from "./providers/unknown";
 import { parseYoutubeLink } from "./providers/youtube";
-import { LinkParseError } from "./types";
+import { LinkParseError, normalizeLinkMetaText } from "./types";
 
 // RFC 1918, loopback, link-local, and other reserved IPv4/IPv6 ranges
 const PRIVATE_IP_PREFIXES = [
@@ -113,13 +113,13 @@ const parseLink = Effect.fn("LinkParserService.parseLink")(function* (
 
   switch (provider) {
     case "spotify":
-      return yield* parseSpotifyLink(url);
+      return normalizeLinkMetaText(yield* parseSpotifyLink(url));
     case "youtube":
-      return yield* parseYoutubeLink(url);
+      return normalizeLinkMetaText(yield* parseYoutubeLink(url));
     case "substack":
-      return yield* parseSubstackLink(url);
+      return normalizeLinkMetaText(yield* parseSubstackLink(url));
     case "unknown":
-      return yield* parseUnknownLink(url);
+      return normalizeLinkMetaText(yield* parseUnknownLink(url));
     default:
       return yield* new LinkParseError({
         url,
