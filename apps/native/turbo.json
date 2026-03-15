@@ -2,9 +2,15 @@
   "extends": ["//"],
   "tasks": {
     "build:prod": {
-      "dependsOn": ["^build"],
       "cache": true,
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "!$TURBO_ROOT$/packages/api/src/**",
+        "!$TURBO_ROOT$/packages/db/src/**",
+        "!$TURBO_ROOT$/packages/whoop/src/**"
+      ]
     },
     "submit:prod": {
       "dependsOn": ["build:prod"],

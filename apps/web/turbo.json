@@ -57,7 +57,6 @@
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "build:prod:desktop": {
-      "dependsOn": ["^build"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -67,7 +66,11 @@
         "!$TURBO_ROOT$/.vercel/**",
         "!src/app/api/**",
         "!src/app/docs/**",
-        "!src/instrumentation.ts"
+        "!src/instrumentation.ts",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "!$TURBO_ROOT$/packages/api/src/**",
+        "!$TURBO_ROOT$/packages/db/src/**",
+        "!$TURBO_ROOT$/packages/whoop/src/**"
       ],
       "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
     },
