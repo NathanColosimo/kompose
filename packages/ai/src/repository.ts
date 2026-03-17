@@ -148,16 +148,25 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       });
 
       const listMessages: (
+        userId: string,
         sessionId: string
       ) => Effect.Effect<AiMessageSelect[], AiChatError> = Effect.fn(
         "AiChatRepository.listMessages"
-      )(function* (sessionId: string) {
+      )(function* (userId: string, sessionId: string) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
         yield* Effect.annotateCurrentSpan("sessionId", sessionId);
         const rows = yield* Effect.tryPromise({
-          try: () =>
+          try: async () =>
             db
-              .select()
+              .select({ message: aiMessageTable })
               .from(aiMessageTable)
+              .innerJoin(
+                aiSessionTable,
+                and(
+                  eq(aiSessionTable.id, aiMessageTable.sessionId),
+                  eq(aiSessionTable.userId, userId)
+                )
+              )
               .where(eq(aiMessageTable.sessionId, sessionId))
               .orderBy(asc(aiMessageTable.createdAt)),
           catch: () =>
@@ -167,7 +176,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
             }),
         });
 
-        const parsedRows = aiMessageSelectSchema.array().safeParse(rows);
+        const messages = rows.map((row) => row.message);
+        const parsedRows = aiMessageSelectSchema.array().safeParse(messages);
         if (!parsedRows.success) {
           return yield* new AiChatError({
             message: "Failed to parse chat messages.",

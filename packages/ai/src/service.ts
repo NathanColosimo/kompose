@@ -103,7 +103,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         yield* Effect.annotateCurrentSpan("userId", userId);
         yield* Effect.annotateCurrentSpan("sessionId", sessionId);
         yield* repository.getSession(userId, sessionId);
-        return yield* repository.listMessages(sessionId);
+        return yield* repository.listMessages(userId, sessionId);
       });
 
       const getActiveStreamId = Effect.fn("AiChatService.getActiveStreamId")(
@@ -152,6 +152,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           // (from the earlier round), update it in place instead of creating a
           // duplicate row that would contain the same provider item IDs.
           const existingMessages = yield* repository.listMessages(
+            input.userId,
             input.sessionId
           );
           const lastPersistedMessage = existingMessages.at(-1);
@@ -350,7 +351,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         const [session, existingMessages] = yield* Effect.all(
           [
             repository.getSession(input.userId, input.sessionId),
-            repository.listMessages(input.sessionId),
+            repository.listMessages(input.userId, input.sessionId),
           ],
           { concurrency: "unbounded" }
         );
