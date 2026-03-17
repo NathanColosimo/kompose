@@ -62,6 +62,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **Rendering**:
   - **All main pages statically generated** (SSG) at build time:
     - `/` landing (hero with feature grid)
+    - `/privacy` privacy policy
+    - `/terms` terms of service
     - `/login` (tab-based auth with Google sign-in/sign-up)
     - `/dashboard/*` (dashboard, settings, integrations)
   - Data is **fetched client-side** via TanStack Query + RPC (no SSR data dependency, good for Tauri).
@@ -164,8 +166,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 - **Auth provider**: Better Auth
   - Handles sign-in, OAuth providers, sessions, tokens.
-  - Uses `oauthProxy` for stable OAuth redirect handling across
-    local/dev/preview deployments.
+  - Uses `baseURL: env.NEXT_PUBLIC_WEB_URL` so OAuth callbacks resolve to the
+    deployed web domain (for example `https://kompose.dev/api/auth/callback/google`).
   - Uses `lastLoginMethod` for client-side last-used-provider hints.
   - Generates Drizzle schema for auth tables in Postgres.
 - **Server-side**:
@@ -509,9 +511,10 @@ installed side by side on macOS.
   - `native#build:prod`: caches `dist/**` (the IPA).
   - `web#build:prod:desktop`: caches
     `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
-    Inputs exclude `src/app/api/**`, `src/app/docs/**`, and
-    `src/instrumentation.ts` so backend-only changes don't
-    invalidate the desktop build cache.
+    Inputs exclude `src/app/api/**`, `src/app/docs/**`,
+    `src/app/privacy/**`, `src/app/terms/**`, and
+    `src/instrumentation.ts` so backend-only and hosted-legal-page changes
+    don't invalidate the desktop build cache.
   - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
   - `submit:prod` is cached (`cache: true`) for web, native, and
     desktop. Each depends on its corresponding `build:prod` task, so

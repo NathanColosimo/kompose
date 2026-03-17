@@ -26,6 +26,9 @@ auto-updates.
   landing/auth pages so window dragging remains reliable.
 - Desktop builds now exclude the `/docs` route and skip loading the
   Fumadocs MDX plugin.
+- Signed production desktop builds also exclude `/privacy` and `/terms` from
+  the embedded bundle; those links resolve to the hosted `https://kompose.dev`
+  legal pages instead.
 - External HTTP(S) links clicked inside the desktop app are now opened in
   the system browser (meeting links, maps links, and other third-party URLs).
 - Logout now clears in-memory query cache and auth route guards wait for
@@ -264,7 +267,11 @@ auto-updates.
 
 - `apps/web/scripts/build-desktop.sh`
   - Moves `src/app/api` and `src/app/docs` into a temp directory before build.
-  - Uses shell `trap` handlers to always restore both directories on exit, including failure/interruption paths.
+  - In production desktop builds, also moves `src/app/privacy` and
+    `src/app/terms` out of the app tree so those hosted legal pages are not
+    embedded in the signed desktop bundle.
+  - Uses shell `trap` handlers to always restore moved directories on exit,
+    including failure/interruption paths.
   - Clears `.next` + `out`, then runs `TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build`.
 
 - `apps/web/scripts/build-desktop-dev.sh`

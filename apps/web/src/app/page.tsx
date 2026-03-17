@@ -1,5 +1,6 @@
 "use client";
 
+import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -29,6 +30,14 @@ const highlights = [
 
 export default function Home() {
   const router = useRouter();
+  const privacyHref =
+    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
+      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
+      : "/privacy";
+  const termsHref =
+    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
+      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
+      : "/terms";
   // Start true to match server/static-export render (avoids hydration mismatch).
   const [ready, setReady] = useState(true);
 
@@ -102,6 +111,25 @@ export default function Home() {
           ))}
         </div>
       </section>
+      <footer className="border-border/60 border-t">
+        <div className="container mx-auto flex flex-col gap-3 px-6 py-6 text-center text-muted-foreground text-sm sm:flex-row sm:items-center sm:justify-between lg:text-left">
+          <p>
+            Kompose helps you coordinate calendar, task, and connected account
+            workflows in one place.
+          </p>
+          <div className="flex items-center justify-center gap-4 sm:justify-end">
+            <a
+              className="underline-offset-4 hover:underline"
+              href={privacyHref}
+            >
+              Privacy Policy
+            </a>
+            <a className="underline-offset-4 hover:underline" href={termsHref}>
+              Terms of Service
+            </a>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

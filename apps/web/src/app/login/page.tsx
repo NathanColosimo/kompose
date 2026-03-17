@@ -1,5 +1,6 @@
 "use client";
 
+import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,6 +11,14 @@ import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const privacyHref =
+    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
+      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
+      : "/privacy";
+  const termsHref =
+    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
+      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
+      : "/terms";
   const [sessionChecked, setSessionChecked] = useState(false);
   const [hasActiveSession, setHasActiveSession] = useState(false);
 
@@ -82,12 +91,20 @@ export default function LoginPage() {
                 <li>Local-first desktop + mobile apps</li>
               </ul>
             </div>
-            <p className="text-muted-foreground text-xs">
-              Need help? Email{" "}
-              <a className="underline" href="--">
-                --
+            <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
+              <a
+                className="underline-offset-4 hover:underline"
+                href={privacyHref}
+              >
+                Privacy Policy
               </a>
-            </p>
+              <a
+                className="underline-offset-4 hover:underline"
+                href={termsHref}
+              >
+                Terms of Service
+              </a>
+            </div>
           </div>
         </section>
         <section className="flex items-center justify-center px-6 pt-12 pb-20">
