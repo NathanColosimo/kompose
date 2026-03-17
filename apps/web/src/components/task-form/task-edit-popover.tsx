@@ -252,6 +252,7 @@ export function TaskEditPopover({
           e.preventDefault();
           handleCancel();
         }}
+        onOpenAutoFocus={(e) => e.preventDefault()}
         side={side}
       >
         <TaskEditForm

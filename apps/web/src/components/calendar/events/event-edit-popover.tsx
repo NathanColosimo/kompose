@@ -715,6 +715,11 @@ export function EventEditPopover({
             e.preventDefault();
             handleCancel();
           }}
+          onOpenAutoFocus={(e) => {
+            if (mode === "edit") {
+              e.preventDefault();
+            }
+          }}
           side={side}
         >
           <EventEditForm
