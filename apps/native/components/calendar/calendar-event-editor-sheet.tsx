@@ -253,12 +253,12 @@ function RecurrenceEditorSection({
         </View>
       ) : null}
 
-      {parsedRecurrence.freq !== "none" ? (
+      {parsedRecurrence.freq === "none" ? null : (
         <RecurrenceEndSection
           parsedRecurrence={parsedRecurrence}
           updateRecurrence={updateRecurrence}
         />
-      ) : null}
+      )}
     </View>
   );
 }

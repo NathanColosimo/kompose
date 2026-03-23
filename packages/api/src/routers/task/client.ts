@@ -727,9 +727,9 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
       yield* Effect.annotateCurrentSpan("userId", userId);
       const { tagIds, ...taskInput } = input;
       const normalizedTagIds =
-        tagIds !== undefined
-          ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
-          : undefined;
+        tagIds === undefined
+          ? undefined
+          : yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds));
 
       // Non-recurring task: simple insert
       if (!taskInput.recurrence) {
@@ -792,9 +792,9 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
       const { tagIds, ...dbInput } = input;
       const hasDbUpdates = Object.keys(dbInput).length > 0;
       const normalizedTagIds =
-        tagIds !== undefined
-          ? yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds))
-          : undefined;
+        tagIds === undefined
+          ? undefined
+          : yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds));
       let recurrenceChanged = false;
       if (
         scope === "following" &&

@@ -1001,9 +1001,9 @@ function CalendarTabContent() {
     ) => {
       const sourceCalendar = draft.sourceCalendar;
       const destinationCalendarId =
-        draft.calendar.calendarId !== sourceCalendar.calendarId
-          ? draft.calendar.calendarId
-          : null;
+        draft.calendar.calendarId === sourceCalendar.calendarId
+          ? null
+          : draft.calendar.calendarId;
       const eventPayload = buildEventPayload(draft);
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
@@ -1061,9 +1061,9 @@ function CalendarTabContent() {
 
       const sourceCalendar = draft.sourceCalendar;
       const destinationCalendarId =
-        draft.calendar.calendarId !== sourceCalendar.calendarId
-          ? draft.calendar.calendarId
-          : null;
+        draft.calendar.calendarId === sourceCalendar.calendarId
+          ? null
+          : draft.calendar.calendarId;
       const masterSeriesRecurrence =
         draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
       const recurring =

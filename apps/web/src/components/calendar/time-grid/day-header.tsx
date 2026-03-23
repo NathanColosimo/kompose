@@ -37,9 +37,9 @@ export const DayHeader = memo(function DayHeaderInner({
       whoopSummary.kilojoule !== null);
 
   const calories =
-    whoopSummary?.kilojoule != null
-      ? Math.round(whoopSummary.kilojoule * 0.239_006)
-      : null;
+    whoopSummary?.kilojoule == null
+      ? null
+      : Math.round(whoopSummary.kilojoule * 0.239_006);
 
   return (
     <div
@@ -66,12 +66,12 @@ export const DayHeader = memo(function DayHeaderInner({
 
       {hasWhoopData ? (
         <div className="flex items-center gap-1.5">
-          {whoopSummary.sleepPerformance !== null ? (
+          {whoopSummary.sleepPerformance === null ? null : (
             <span className="text-[10px] text-muted-foreground">
               😴{whoopSummary.sleepPerformance}%
             </span>
-          ) : null}
-          {whoopSummary.recoveryScore !== null ? (
+          )}
+          {whoopSummary.recoveryScore === null ? null : (
             <span className="flex items-center gap-0.5">
               <span
                 className={cn(
@@ -83,17 +83,17 @@ export const DayHeader = memo(function DayHeaderInner({
                 {whoopSummary.recoveryScore}
               </span>
             </span>
-          ) : null}
-          {whoopSummary.strainScore !== null ? (
+          )}
+          {whoopSummary.strainScore === null ? null : (
             <span className="text-[10px] text-muted-foreground">
               ⚡{whoopSummary.strainScore.toFixed(1)}
             </span>
-          ) : null}
-          {calories !== null ? (
+          )}
+          {calories === null ? null : (
             <span className="text-[10px] text-muted-foreground">
               🔥{calories}
             </span>
-          ) : null}
+          )}
         </div>
       ) : null}
     </div>

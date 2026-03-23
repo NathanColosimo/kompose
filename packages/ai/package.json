@@ -16,9 +16,6 @@
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
   "dependencies": {
     "@ai-sdk/openai": "catalog:",
     "@kompose/db": "workspace:*",

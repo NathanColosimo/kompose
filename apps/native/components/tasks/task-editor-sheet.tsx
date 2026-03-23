@@ -914,11 +914,11 @@ function NativeLinkListEditor({
               {getProviderLabel(meta.provider)}
               {(() => {
                 const dur = getLinkDurationMinutes(meta);
-                return dur !== null ? ` · ${dur}m` : "";
+                return dur === null ? "" : ` · ${dur}m`;
               })()}
               {(() => {
                 const wc = getLinkWordCount(meta);
-                return wc !== null ? ` · ${wc.toLocaleString()} words` : "";
+                return wc === null ? "" : ` · ${wc.toLocaleString()} words`;
               })()}
             </Text>
           </Pressable>

@@ -127,11 +127,11 @@ export function parseTaskInput(
 
   // Find the first special token to extract the title
   const firstTokenMatch = input.match(FIRST_TOKEN_PATTERN);
-  if (firstTokenMatch?.index !== undefined) {
-    result.title = input.slice(0, firstTokenMatch.index).trim();
-  } else {
+  if (firstTokenMatch?.index === undefined) {
     // No special tokens, entire input is the title
     result.title = input.trim();
+  } else {
+    result.title = input.slice(0, firstTokenMatch.index).trim();
   }
 
   // Extract all URLs from the title portion (before special tokens)

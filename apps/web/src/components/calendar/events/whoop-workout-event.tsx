@@ -98,7 +98,7 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
         )}
       >
         <div className="truncate font-medium text-teal-900 text-xs dark:text-teal-200">
-          {strainScore !== null ? `⚡${strainScore.toFixed(1)} · ` : ""}
+          {strainScore === null ? "" : `⚡${strainScore.toFixed(1)} · `}
           {label}
         </div>
         {durationMinutes >= 30 ? (

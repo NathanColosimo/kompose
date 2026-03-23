@@ -171,9 +171,9 @@ export function useTasks() {
           }
 
           const nextTags =
-            task.tagIds !== undefined
-              ? tags.filter((tag) => (task.tagIds ?? []).includes(tag.id))
-              : t.tags;
+            task.tagIds === undefined
+              ? t.tags
+              : tags.filter((tag) => (task.tagIds ?? []).includes(tag.id));
 
           return {
             ...t,

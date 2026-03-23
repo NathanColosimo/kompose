@@ -222,7 +222,6 @@ export const ReasoningContent = memo(
         plugins={
           streamdownPlugins as Parameters<typeof Streamdown>[0]["plugins"]
         }
-        {...props}
       >
         {children}
       </Streamdown>

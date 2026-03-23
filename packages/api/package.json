@@ -16,9 +16,6 @@
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
   "dependencies": {
     "@effect/opentelemetry": "catalog:",
     "@kompose/ai": "workspace:*",
