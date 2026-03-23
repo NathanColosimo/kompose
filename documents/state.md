@@ -15,7 +15,7 @@
 - `atoms/command-bar.ts`: Command bar open state and focused task id atoms.
 - `atoms/auth.ts`: Auth convenience atoms, including synchronous
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
-- `atoms/current-date.ts`: Calendar date, timezone, visible days, and event window atoms.
+- `atoms/current-date.ts`: Calendar date, timezone, visible days, event window atoms, and reactive `todayPlainDateAtom` / `nowZonedDateTimeAtom` (refreshed every 60s and on window focus/visibility via `todayTickAtom`).
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
 - `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids.
 - `atoms/visible-calendars.ts`: Visible calendar selection atoms and toggle helpers.
@@ -34,10 +34,11 @@
 - `hooks/use-ai-chat.ts`: Shared AI chat sessions/messages queries, session mutations, and streaming/reconnect wrappers over `orpc.ai`.
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar/chat invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
-- `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using timezone-aware filters.
+- `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
+- `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
 - `whoop-query-keys.ts`: Shared query keys for WHOOP accounts and day summaries.
-- `state-provider.tsx`: State hydrator/provider wiring and session gating.
+- `state-provider.tsx`: State hydrator/provider wiring, session gating, and today-tick refresh lifecycle.
 - `storage.ts`: Storage adapter interface + persisted atom helper + web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared types for auth client and ORPC utils (no REST chat client interface).

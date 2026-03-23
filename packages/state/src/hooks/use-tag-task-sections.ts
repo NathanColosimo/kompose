@@ -2,8 +2,11 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
 import { Temporal } from "temporal-polyfill";
-import { timezoneAtom } from "../atoms/current-date";
-import { todayPlainDate } from "../temporal-utils";
+import {
+  nowZonedDateTimeAtom,
+  timezoneAtom,
+  todayPlainDateAtom,
+} from "../atoms/current-date";
 import { isNonRecurring, isOverdue } from "./use-task-sections";
 import { useTasks } from "./use-tasks";
 
@@ -64,12 +67,8 @@ const compareNullablePlainDate = (
 export function useTagTaskSections(tagId: string | null) {
   const { tasksQuery, updateTask, deleteTask } = useTasks();
   const timeZone = useAtomValue(timezoneAtom);
-
-  const today = useMemo(() => todayPlainDate(timeZone), [timeZone]);
-  const nowZdt = useMemo(
-    () => Temporal.Now.zonedDateTimeISO(timeZone),
-    [timeZone]
-  );
+  const today = useAtomValue(todayPlainDateAtom);
+  const nowZdt = useAtomValue(nowZonedDateTimeAtom);
 
   const { overdueTasks, todoTasks, doneTasks } = useMemo(() => {
     const tasks = tasksQuery.data ?? [];

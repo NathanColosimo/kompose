@@ -1,5 +1,5 @@
 import { atom } from "jotai";
-import type { Temporal } from "temporal-polyfill";
+import { Temporal } from "temporal-polyfill";
 import { createPersistedAtom } from "../storage";
 import {
   endOfDayZoned,
@@ -98,3 +98,29 @@ export const eventWindowAtom = atom<{ timeMin: string; timeMax: string }>(
     };
   }
 );
+
+/**
+ * Tick counter incremented every 60s and on window focus/visibility to keep
+ * today/now atoms fresh. Components should never read this directly — use
+ * todayPlainDateAtom or nowZonedDateTimeAtom instead.
+ */
+export const todayTickAtom = atom(0);
+
+/**
+ * Today's date in the user's timezone, reactively refreshed via todayTickAtom.
+ * Unlike the stale useMemo approach, this stays correct across midnight
+ * boundaries when the app is left open overnight.
+ */
+export const todayPlainDateAtom = atom((get) => {
+  get(todayTickAtom);
+  return todayPlainDate(get(timezoneAtom));
+});
+
+/**
+ * Current ZonedDateTime in the user's timezone, reactively refreshed via
+ * todayTickAtom. Used for overdue detection (has a task's end time passed?).
+ */
+export const nowZonedDateTimeAtom = atom((get) => {
+  get(todayTickAtom);
+  return Temporal.Now.zonedDateTimeISO(get(timezoneAtom));
+});

@@ -17,6 +17,7 @@
     "submit:prod:native": "turbo run submit:prod --filter=native",
     "dev:native": "turbo run dev -F native",
     "dev:web": "turbo run dev devtools db:studio -F web -F @kompose/db",
+    "portless:proxy": "sudo portless proxy start --https --tld dev",
     "knip": "knip",
     "db:push": "turbo run db:push -F @kompose/db",
     "db:studio": "turbo run db:studio -F @kompose/db",

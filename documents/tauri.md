@@ -304,7 +304,7 @@ auto-updates.
   - add `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME=kompose`
 - Desktop-dev build env file (not committed): `apps/web/.tauri.dev.env`
   - add:
-    - `NEXT_PUBLIC_WEB_URL=http://localhost:3000`
+    - `NEXT_PUBLIC_WEB_URL=https://local.kompose.dev`
     - `NEXT_PUBLIC_DEPLOYMENT_ENV=local`
     - `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME=kompose-dev`
 - Example templates:

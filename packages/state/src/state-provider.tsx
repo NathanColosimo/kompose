@@ -5,12 +5,15 @@ import { useHydrateAtoms } from "jotai/utils";
 import { queryClientAtom } from "jotai-tanstack-query";
 import type { ReactNode } from "react";
 import { type StateConfig, stateConfigAtom } from "./config";
+import { type SubscribeToResume, useTodayTick } from "./hooks/use-today-tick";
 import { type StorageAdapter, setStorageAdapter } from "./storage";
 
 interface StateProviderProps {
   children: ReactNode;
   config: StateConfig;
   storage: StorageAdapter;
+  /** Platform-specific resume subscriber for immediate today/now refresh. */
+  subscribeToResume?: SubscribeToResume;
 }
 
 /**
@@ -21,9 +24,14 @@ export function StateProvider({
   children,
   config,
   storage,
+  subscribeToResume,
 }: StateProviderProps) {
   return (
-    <StateHydrator config={config} storage={storage}>
+    <StateHydrator
+      config={config}
+      storage={storage}
+      subscribeToResume={subscribeToResume}
+    >
       {children}
     </StateHydrator>
   );
@@ -33,10 +41,12 @@ function StateHydrator({
   children,
   config,
   storage,
+  subscribeToResume,
 }: {
   children: ReactNode;
   config: StateConfig;
   storage: StorageAdapter;
+  subscribeToResume?: SubscribeToResume;
 }) {
   // Ensure storage is available before any atom reads.
   setStorageAdapter(storage);
@@ -49,6 +59,9 @@ function StateHydrator({
     [stateConfigAtom, config],
     [queryClientAtom, queryClient],
   ]);
+
+  // Keep today/now atoms fresh across midnight boundaries and app resume.
+  useTodayTick(subscribeToResume);
 
   return <>{children}</>;
 }

@@ -22,6 +22,19 @@ First, install the dependencies:
 ```bash
 bun install
 ```
+
+Install `portless` globally so the web app can run at `https://local.kompose.dev` during development:
+
+```bash
+npm install -g portless
+```
+
+Start the Portless proxy with HTTPS and the `dev` TLD. The app name is set to `local.kompose`, which produces `https://local.kompose.dev`:
+
+```bash
+bun run portless:proxy
+```
+
 ## Database Setup
 
 This project uses PostgreSQL with Drizzle ORM.
@@ -41,7 +54,12 @@ Then, run the development server:
 bun run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see your fullstack application.
+For Google OAuth, set `NEXT_PUBLIC_WEB_URL=https://local.kompose.dev` in `apps/web/.env.local`, then add these entries in Google Cloud:
+
+- Authorized JavaScript origin: `https://local.kompose.dev`
+- Authorized redirect URI: `https://local.kompose.dev/api/auth/callback/google`
+
+Open [https://local.kompose.dev](https://local.kompose.dev) in your browser to see your fullstack application.
 Use the Expo Go app to run the mobile application.
 
 
@@ -66,6 +84,7 @@ kompose/
 ## Available Scripts
 
 - `bun run dev`: Start all applications in development mode
+- `bun run portless:proxy`: Start the local HTTPS proxy used by `local.kompose.dev`
 - `bun run build`: Build all applications
 - `bun run check-types`: Check TypeScript types across all apps
 - `bun run dev:native`: Start the React Native/Expo development server

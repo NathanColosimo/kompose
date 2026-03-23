@@ -131,18 +131,6 @@ function renderTodayContent({
         </div>
       )}
 
-      {/* Planned section — scheduled on today's calendar, not yet overdue */}
-      {hasPlanned && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Planned
-          </div>
-          {plannedTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
       {/* Unplanned section */}
       {hasUnplanned && (
         <div>
@@ -150,6 +138,18 @@ function renderTodayContent({
             Unplanned
           </div>
           {unplannedTasks.map((task) => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+
+      {/* Planned section — scheduled on today's calendar, not yet overdue */}
+      {hasPlanned && (
+        <div>
+          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Planned
+          </div>
+          {plannedTasks.map((task) => (
             <TaskItem key={task.id} task={task} />
           ))}
         </div>

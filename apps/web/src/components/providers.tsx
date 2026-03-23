@@ -1,6 +1,7 @@
 "use client";
 
 import { env } from "@kompose/env";
+import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +26,24 @@ import { DeepLinkHandler } from "./deep-link-handler";
 import { TauriUpdaterProvider } from "./tauri-updater";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
+
+/** Web resume subscriber: refreshes today/now atoms on tab visibility and window focus. */
+const webSubscribeToResume: SubscribeToResume = (refresh) => {
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") {
+      refresh();
+    }
+  };
+  const onFocus = () => refresh();
+
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("focus", onFocus);
+
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("focus", onFocus);
+  };
+};
 
 const ReactQueryDevtools = dynamic(
   () =>
@@ -255,7 +274,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const showReactQueryDevtools =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
   const appProviders = (
-    <StateProvider config={config} storage={storage}>
+    <StateProvider
+      config={config}
+      storage={storage}
+      subscribeToResume={webSubscribeToResume}
+    >
       {isCommandBarRoute ? null : <RealtimeSyncBootstrap />}
       <TauriDesktopBridgeBootstrap />
       {isCommandBarRoute ? null : <DeepLinkHandler />}

@@ -2,8 +2,11 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
 import { Temporal } from "temporal-polyfill";
-import { timezoneAtom } from "../atoms/current-date";
-import { todayPlainDate } from "../temporal-utils";
+import {
+  nowZonedDateTimeAtom,
+  timezoneAtom,
+  todayPlainDateAtom,
+} from "../atoms/current-date";
 import { useTasks } from "./use-tasks";
 
 /** Filter out recurring tasks (both masters and occurrences). */
@@ -93,13 +96,8 @@ const isDoneToday = (
 export function useTaskSections() {
   const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
   const timeZone = useAtomValue(timezoneAtom);
-
-  // Cache "today" and "now" per timezone to keep comparisons consistent.
-  const today = useMemo(() => todayPlainDate(timeZone), [timeZone]);
-  const nowZdt = useMemo(
-    () => Temporal.Now.zonedDateTimeISO(timeZone),
-    [timeZone]
-  );
+  const today = useAtomValue(todayPlainDateAtom);
+  const nowZdt = useAtomValue(nowZonedDateTimeAtom);
 
   const { inboxTasks, overdueTasks, plannedTasks, unplannedTasks, doneTasks } =
     useMemo(() => {

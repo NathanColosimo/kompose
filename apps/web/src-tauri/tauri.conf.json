@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "kompose",
-  "version": "0.1.95",
+  "version": "0.1.96",
   "identifier": "com.nathancolosimo.kompose",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "https://local.kompose.dev",
     "beforeDevCommand": "bun run dev",
     "beforeBuildCommand": "bun run build:desktop",
     "removeUnusedCommands": true
