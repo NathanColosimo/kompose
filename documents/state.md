@@ -17,8 +17,8 @@
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, event window atoms, and reactive `todayPlainDateAtom` / `nowZonedDateTimeAtom` (refreshed every 60s and on window focus/visibility via `todayTickAtom`).
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
-- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids.
-- `atoms/visible-calendars.ts`: Visible calendar selection atoms and toggle helpers.
+- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids. Explicit stored calendar selections are preserved while account/calendar metadata is still loading so event queries can resume immediately after refresh; stale per-calendar cleanup is deferred until the full calendar list settles.
+- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers.
 - `atoms/whoop-data.ts`: WHOOP account atom (`atomWithQuery` over Better Auth accounts filtered to WHOOP), month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
 - `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
@@ -39,6 +39,6 @@
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
 - `whoop-query-keys.ts`: Shared query keys for WHOOP accounts and day summaries.
 - `state-provider.tsx`: State hydrator/provider wiring, session gating, and today-tick refresh lifecycle.
-- `storage.ts`: Storage adapter interface + persisted atom helper + web adapter.
+- `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared types for auth client and ORPC utils (no REST chat client interface).

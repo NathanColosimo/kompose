@@ -15,10 +15,6 @@ import {
 import type { CalendarIdentifier } from "./visible-calendars";
 import { visibleCalendarsAtom } from "./visible-calendars";
 
-function toCalendarKey(calendar: CalendarIdentifier) {
-  return `${calendar.accountId}:${calendar.calendarId}`;
-}
-
 // --- Accounts ---
 
 const googleAccountsAtom = atomWithQuery<Account[]>((get) => {
@@ -97,18 +93,24 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       return [];
     }
 
-    const validKeys = new Set(allCalendarIds.map(toCalendarKey));
-    const filtered = stored.filter((calendar) =>
-      validKeys.has(toCalendarKey(calendar))
-    );
-
-    // Stale persisted selections (e.g. after DB reset/re-link) should not block
-    // events from loading; fall back to all currently available calendars.
-    if (filtered.length === 0 && allCalendarIds.length > 0) {
-      return allCalendarIds;
+    const accountsQuery = get(googleAccountsAtom);
+    const hasResolvedAccounts =
+      accountsQuery.data !== undefined || accountsQuery.error != null;
+    if (!hasResolvedAccounts) {
+      // Preserve the explicit stored selection while account metadata is still
+      // loading so event queries can start immediately after refresh.
+      return stored;
     }
 
-    return filtered;
+    const linkedAccountIds = new Set(
+      (accountsQuery.data ?? []).map((account) => account.accountId)
+    );
+
+    // Drop selections for accounts that are definitely no longer linked, but
+    // keep per-calendar cleanup deferred until the full calendar list settles.
+    return stored.filter((calendar) =>
+      linkedAccountIds.has(calendar.accountId)
+    );
   }
 );
 

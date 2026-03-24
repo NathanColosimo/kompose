@@ -10,6 +10,7 @@ if (!isTauriBuild) {
 }
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["localhost:3000", "local.kompose.dev"],
   typedRoutes: true,
   // Debug: disable Strict Mode to rule out dev double-mount behavior.
   reactStrictMode: false,

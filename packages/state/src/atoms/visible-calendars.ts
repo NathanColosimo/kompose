@@ -1,5 +1,5 @@
 import { atom } from "jotai";
-import { createPersistedAtom } from "../storage";
+import { getStorageAdapter } from "../storage";
 
 /**
  * Identifies a Google calendar within a specific linked Google account.
@@ -21,9 +21,88 @@ export type VisibleCalendars = CalendarIdentifier[] | null;
 /**
  * Atom to store which calendars are currently visible.
  */
-export const visibleCalendarsAtom = createPersistedAtom<VisibleCalendars>(
-  "visible-calendars",
-  null
+const VISIBLE_CALENDARS_STORAGE_KEY = "visible-calendars";
+
+interface VisibleCalendarsState {
+  hydrated: boolean;
+  value: VisibleCalendars;
+}
+
+function parseVisibleCalendars(raw: string | null): VisibleCalendars {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as VisibleCalendars;
+  } catch {
+    return null;
+  }
+}
+
+const visibleCalendarsStateAtom = atom<VisibleCalendarsState>({
+  hydrated: false,
+  value: null,
+});
+
+visibleCalendarsStateAtom.onMount = (setState) => {
+  const adapter = getStorageAdapter();
+  if (!adapter) {
+    setState((prev) => ({ ...prev, hydrated: true }));
+    return;
+  }
+
+  const apply = (raw: string | null) => {
+    setState({
+      hydrated: true,
+      value: parseVisibleCalendars(raw),
+    });
+  };
+  const markHydrated = () => {
+    setState((prev) => ({ ...prev, hydrated: true }));
+  };
+  const read = adapter.getItem(VISIBLE_CALENDARS_STORAGE_KEY);
+
+  if (read && typeof (read as Promise<string | null>).then === "function") {
+    (read as Promise<string | null>).then(apply).catch(markHydrated);
+  } else {
+    apply(read as string | null);
+  }
+};
+
+export const visibleCalendarsAtom = atom(
+  (get) => get(visibleCalendarsStateAtom).value,
+  (
+    get,
+    set,
+    update: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
+  ) => {
+    const current = get(visibleCalendarsStateAtom);
+    const next =
+      typeof update === "function"
+        ? (update as (prev: VisibleCalendars) => VisibleCalendars)(
+            current.value
+          )
+        : update;
+
+    // Keep the hydration bit stable so later writes do not flip readiness.
+    set(visibleCalendarsStateAtom, {
+      hydrated: current.hydrated,
+      value: next,
+    });
+
+    const adapter = getStorageAdapter();
+    if (!adapter) {
+      return;
+    }
+    adapter.setItem(VISIBLE_CALENDARS_STORAGE_KEY, JSON.stringify(next));
+  }
+);
+
+/**
+ * Tracks when the persisted calendar selection has been read from storage.
+ */
+export const visibleCalendarsHydratedAtom = atom(
+  (get) => get(visibleCalendarsStateAtom).hydrated
 );
 
 /**

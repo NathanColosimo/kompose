@@ -1,9 +1,12 @@
 "use client";
 
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import type { CalendarIdentifier } from "../atoms/visible-calendars";
-import { visibleCalendarsAtom } from "../atoms/visible-calendars";
+import {
+  visibleCalendarsAtom,
+  visibleCalendarsHydratedAtom,
+} from "../atoms/visible-calendars";
 
 function toCalendarKey(calendar: CalendarIdentifier) {
   return `${calendar.accountId}:${calendar.calendarId}`;
@@ -48,11 +51,13 @@ export function useEnsureVisibleCalendars(
   dataReady: boolean
 ) {
   const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
+  const visibleCalendarsHydrated = useAtomValue(visibleCalendarsHydratedAtom);
   const previousAllRef = useRef<CalendarIdentifier[]>([]);
 
   useEffect(() => {
-    // Skip all logic until every account/calendar query has settled.
-    if (!dataReady) {
+    // Skip all logic until the stored selection has been read and every
+    // account/calendar query has settled.
+    if (!(visibleCalendarsHydrated && dataReady)) {
       return;
     }
 
@@ -93,5 +98,11 @@ export function useEnsureVisibleCalendars(
     }
 
     previousAllRef.current = allCalendars;
-  }, [allCalendars, dataReady, setVisibleCalendars, visibleCalendars]);
+  }, [
+    allCalendars,
+    dataReady,
+    setVisibleCalendars,
+    visibleCalendars,
+    visibleCalendarsHydrated,
+  ]);
 }

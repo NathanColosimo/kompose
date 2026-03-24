@@ -20,6 +20,14 @@ export function setStorageAdapter(adapter: StorageAdapter) {
 }
 
 /**
+ * Read the currently configured adapter for atoms that need custom
+ * persistence behavior beyond the default helper.
+ */
+export function getStorageAdapter() {
+  return storageAdapter;
+}
+
+/**
  * JSON storage wrapper used by atomWithStorage.
  * Storage is resolved lazily so adapters can be configured at runtime.
  */

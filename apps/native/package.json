@@ -62,7 +62,7 @@
     "expo-updates": "~55.0.15",
     "expo-web-browser": "~55.0.10",
     "jotai": "catalog:",
-    "lucide-react-native": "^1.0.1",
+    "lucide-react-native": "^0.577.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-hook-form": "catalog:",
