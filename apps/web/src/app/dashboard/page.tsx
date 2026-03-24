@@ -11,7 +11,6 @@ import {
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import { useDashboardBootstrap } from "@kompose/state/hooks/use-dashboard-bootstrap";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -33,19 +32,9 @@ import {
   plainDateToDate,
   todayPlainDate,
 } from "@/lib/temporal-utils";
-import {
-  dashboardResponsiveLayoutAtom,
-  dashboardViewportWidthAtom,
-} from "@/state/sidebar";
+import { dashboardResponsiveLayoutAtom } from "@/state/sidebar";
 
 export default function Page() {
-  const window = useAtomValue(eventWindowAtom);
-  const viewportWidth = useAtomValue(dashboardViewportWidthAtom);
-  useDashboardBootstrap({
-    enabled: viewportWidth > 0,
-    window,
-  });
-
   return <DashboardPageContent />;
 }
 

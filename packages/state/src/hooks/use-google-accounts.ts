@@ -3,8 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { useAtomValue } from "jotai";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
 import { hasSessionAtom, useStateConfig } from "../config";
-import { GOOGLE_ACCOUNTS_QUERY_KEY } from "../google-calendar-query-keys";
 
 /**
  * Returns linked Better Auth accounts filtered to Google provider.
@@ -14,12 +14,13 @@ export function useGoogleAccounts() {
   const hasSession = useAtomValue(hasSessionAtom);
 
   return useQuery({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async (): Promise<Account[]> => {
-      const accounts = (await authClient.listAccounts())?.data ?? [];
-      return accounts.filter((account) => account.providerId === "google");
+      return (await authClient.listAccounts())?.data ?? [];
     },
+    select: (accounts) =>
+      accounts.filter((account) => account.providerId === "google"),
     staleTime: 5 * 60 * 1000,
   });
 }

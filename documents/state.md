@@ -6,7 +6,7 @@
 - Session ownership is now centralized in the shared state layer. Web dashboard and native root layout both gate off the shared session query instead of issuing separate first-load `getSession()` reads.
 - Migrated web and native imports to use shared atoms/hooks; removed legacy web atoms/hooks and added web-only replacements at `apps/web/src/state/sidebar.ts` and `apps/web/src/lib/use-mobile.ts`.
 - Added a shared AI chat hook at `packages/state/src/hooks/use-ai-chat.ts` that uses oRPC chat procedures (`orpc.ai.*`) for sessions, messages, and stream/reconnect helpers.
-- Added a bounded dashboard/calendar bootstrap path that makes one first-load request, then seeds the existing granular TanStack Query keys for accounts, account profiles, calendars, colors, windowed events, tasks, and tags.
+- The dashboard and native calendar now rely directly on the normal granular TanStack Query hooks instead of a separate bootstrap prefetch path.
 - Updated dependencies to include `@kompose/state` and adjusted TypeScript config/types for the new package; verified `@kompose/state` type-check passes.
 
 ## `packages/state` contents
@@ -17,18 +17,17 @@
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, event window atoms, and reactive `todayPlainDateAtom` / `nowZonedDateTimeAtom` (refreshed every 60s and on window focus/visibility via `todayTickAtom`).
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
-- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids. The effective visible set is calculated during reads: if no explicit preference is saved yet, all currently loaded calendars are treated as visible; explicit saved selections are filtered against known linked accounts/calendars only at runtime.
-- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet" rather than being rewritten by a reconciliation effect.
-- `atoms/whoop-data.ts`: WHOOP account atom (`atomWithQuery` over Better Auth accounts filtered to WHOOP), month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
+- `account-query-keys.ts`: Shared query keys for linked Better Auth account discovery.
+- `atoms/google-data.ts`: Shared linked Better Auth account query, Google-account derivations, per-account calendars, and derived visible calendar ids. The effective visible set is calculated during reads: if no explicit preference is saved yet, all currently loaded calendars are treated as visible; explicit saved selections are filtered against known linked accounts/calendars at runtime. When stale account ids are pruned during derivation, a microtask writes the cleaned selection back to persisted storage so every platform converges.
+- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet".
+- `atoms/whoop-data.ts`: WHOOP account derivation from the shared linked-account query, month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
-- `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
-- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, can still warm all calendars before the client materializes an explicit selection, and can explicitly skip event warming when the web layout is not rendering the calendar.
-- `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records.
+- `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
 - `hooks/use-google-events.ts`: Query hook for events per calendar and bounded time window.
-- `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. Uses the same `google-account-info` query keys seeded by bootstrap so headers/settings/pickers do not each refetch independently on first load.
+- `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. It can fetch eagerly, but only surfaces that actually render linked-account metadata should depend on it for display.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
 - `hooks/use-ai-chat.ts`: Shared AI chat sessions/messages queries, session mutations, and streaming/reconnect wrappers over `orpc.ai`.
@@ -37,7 +36,7 @@
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
 - `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
-- `whoop-query-keys.ts`: Shared query keys for WHOOP accounts and day summaries.
+- `whoop-query-keys.ts`: Shared query keys for WHOOP day summaries.
 - `state-provider.tsx`: State hydrator/provider wiring, session gating, and today-tick refresh lifecycle.
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.

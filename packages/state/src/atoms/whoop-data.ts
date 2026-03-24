@@ -4,33 +4,18 @@ import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig, hasSessionAtom } from "../config";
-import {
-  WHOOP_ACCOUNTS_QUERY_KEY,
-  WHOOP_DAYS_QUERY_KEY,
-} from "../whoop-query-keys";
+import { WHOOP_DAYS_QUERY_KEY } from "../whoop-query-keys";
 import { currentDateAtom, timezoneAtom } from "./current-date";
+import { linkedAccountsDataAtom } from "./google-data";
 
 // --- Account ---
 
-const whoopAccountAtom = atomWithQuery<Account | null>((get) => {
-  const { authClient } = getStateConfig(get);
-  const hasSession = get(hasSessionAtom);
-
-  return {
-    queryKey: WHOOP_ACCOUNTS_QUERY_KEY,
-    enabled: hasSession,
-    queryFn: async () => {
-      const accounts = (await authClient.listAccounts())?.data ?? [];
-      return accounts.find((account) => account.providerId === "whoop") ?? null;
-    },
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-  };
-});
-
 /** The linked WHOOP account, or null if none linked. */
 export const whoopAccountDataAtom = atom<Account | null>(
-  (get) => get(whoopAccountAtom).data ?? null
+  (get) =>
+    get(linkedAccountsDataAtom).find(
+      (account) => account.providerId === "whoop"
+    ) ?? null
 );
 
 export const whoopAccountIdAtom = atom<string | null>(

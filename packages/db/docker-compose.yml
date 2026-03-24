@@ -2,7 +2,7 @@ name: kompose
 
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18.2-alpine
     container_name: kompose-postgres
     environment:
       POSTGRES_DB: kompose
@@ -19,7 +19,7 @@ services:
       retries: 5
     restart: unless-stopped
   redis:
-    image: redis:7
+    image: redis:8.2-alpine
     container_name: kompose-redis
     ports:
       - "6379:6379"

@@ -134,15 +134,13 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - `packages/state/src/hooks/use-google-accounts.ts` (imported via `@kompose/state/hooks`)
   - `packages/state/src/hooks/use-google-calendars.ts` (imported via `@kompose/state/hooks`)
   - `packages/state/src/hooks/use-google-events.ts` (imported via `@kompose/state/hooks`)
-  - `packages/state/src/hooks/use-dashboard-bootstrap.ts` (imported via `@kompose/state/hooks`)
 
 ### Calendar implementation
 
 - Layout: `apps/native/app/(tabs)/(calendar)/_layout.tsx`
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
-  - Runs a one-time bounded bootstrap request for the initial calendar window,
-    then continues reading from the normal granular task/account/calendar/event caches.
+  - Reads directly from the normal granular task/account/calendar/event caches.
 
 ### Chat implementation
 
@@ -188,9 +186,9 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.
   - `apps/native/utils/orpc.ts`
-  - Auth cache cleanup also clears the shared session query, Google account
-    profiles, Google colors, and bootstrap status markers so sign-out/account
-    changes do not leave stale first-load data behind.
+  - Auth cache cleanup also clears the shared session query, linked-account,
+    Google profile, and Google calendar caches so sign-out/account changes do
+    not leave stale data behind.
 - Added Google social sign-in buttons:
   - `apps/native/components/sign-in.tsx`
   - `apps/native/components/sign-up.tsx`

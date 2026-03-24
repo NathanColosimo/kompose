@@ -1,14 +1,11 @@
 "use client";
 
 import { env } from "@kompose/env";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import { whoopAccountDataAtom } from "@kompose/state/atoms/whoop-data";
-import {
-  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-} from "@kompose/state/google-calendar-query-keys";
+import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
-import { WHOOP_ACCOUNTS_QUERY_KEY } from "@kompose/state/whoop-query-keys";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import Link from "next/link";
@@ -100,7 +97,7 @@ export default function SettingsPage() {
 
       toast.success("Google account linked.");
       queryClient.invalidateQueries({
-        queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+        queryKey: LINKED_ACCOUNTS_QUERY_KEY,
       });
       queryClient.invalidateQueries({
         queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
@@ -140,7 +137,7 @@ export default function SettingsPage() {
 
       toast.success("WHOOP account link started.");
       queryClient.invalidateQueries({
-        queryKey: WHOOP_ACCOUNTS_QUERY_KEY,
+        queryKey: LINKED_ACCOUNTS_QUERY_KEY,
       });
     } finally {
       setLinkingProvider(null);
@@ -184,7 +181,7 @@ export default function SettingsPage() {
       });
       toast.success("WHOOP account unlinked.");
       queryClient.invalidateQueries({
-        queryKey: WHOOP_ACCOUNTS_QUERY_KEY,
+        queryKey: LINKED_ACCOUNTS_QUERY_KEY,
       });
     } catch (error) {
       toast.error(

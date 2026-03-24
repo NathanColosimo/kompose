@@ -1,7 +1,5 @@
-import {
-  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-} from "@kompose/state/google-calendar-query-keys";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
+import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
 import { useQueryClient } from "@tanstack/react-query";
@@ -52,7 +50,7 @@ export default function SettingsScreen() {
           onSuccess: () => {
             invalidateSessionQueries();
             queryClient.invalidateQueries({
-              queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+              queryKey: LINKED_ACCOUNTS_QUERY_KEY,
             });
             queryClient.invalidateQueries({
               queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,

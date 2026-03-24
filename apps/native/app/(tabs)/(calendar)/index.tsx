@@ -7,6 +7,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
   eventWindowAtom,
@@ -34,7 +35,6 @@ import {
   type PositionedItem,
 } from "@kompose/state/collision-utils";
 import {
-  GOOGLE_ACCOUNTS_QUERY_KEY,
   GOOGLE_CALENDARS_QUERY_KEY,
   getGoogleEventsQueryKey,
 } from "@kompose/state/google-calendar-query-keys";
@@ -42,7 +42,6 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
-import { useDashboardBootstrap } from "@kompose/state/hooks/use-dashboard-bootstrap";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
@@ -399,9 +398,6 @@ function TimedGoogleEventBlock({
 }
 
 export default function CalendarTab() {
-  const window = useAtomValue(eventWindowAtom);
-  useDashboardBootstrap({ window });
-
   return <CalendarTabContent />;
 }
 
@@ -458,7 +454,7 @@ function CalendarTabContent() {
   const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const effectiveVisibleCalendars: VisibleCalendars = visibleCalendarIds;
   const isFetchingAccounts = useIsFetching({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
   });
   const isFetchingCalendars = useIsFetching({
     queryKey: GOOGLE_CALENDARS_QUERY_KEY,
@@ -1383,7 +1379,7 @@ function CalendarTabContent() {
     setIsPullRefreshing(true);
     tasksQuery.refetch();
     queryClient.invalidateQueries({
-      queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+      queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     });
     queryClient.invalidateQueries({
       queryKey: GOOGLE_CALENDARS_QUERY_KEY,

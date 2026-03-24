@@ -1,10 +1,8 @@
 "use client";
 
 import { env } from "@kompose/env";
-import {
-  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-} from "@kompose/state/google-calendar-query-keys";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
+import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
@@ -23,7 +21,6 @@ import { isTauriRuntime } from "@/lib/tauri-desktop";
  */
 const claimedTokens = new Set<string>();
 
-const WHOOP_ACCOUNTS_QUERY_KEY = ["whoop-accounts"] as const;
 const DESKTOP_DEEP_LINK_SCHEME = env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME;
 const DESKTOP_AUTH_CALLBACK_PREFIX = getDesktopAuthCallbackPrefix(
   DESKTOP_DEEP_LINK_SCHEME
@@ -55,13 +52,10 @@ function isTokenAlreadyProcessed(token: string): boolean {
 
 async function refreshLinkedAccountQueries(queryClient: QueryClient) {
   await queryClient.invalidateQueries({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
   });
   await queryClient.invalidateQueries({
     queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-  });
-  await queryClient.invalidateQueries({
-    queryKey: WHOOP_ACCOUNTS_QUERY_KEY,
   });
 }
 

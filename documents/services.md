@@ -6,7 +6,6 @@ All backend services live in `packages/api/src/`. Routers are aggregated in `pac
 
 ```
 appRouter
-├── bootstrap   → bounded first-load bootstrap payload
 ├── ai          → AI chat sessions/messages/streaming
 ├── googleCal   → Google Calendar CRUD
 ├── maps        → Google Places autocomplete
@@ -57,47 +56,6 @@ packages/api/src/
 - `MODEL_NOT_CONFIGURED` is explicitly mapped to
   `ORPCError("SERVICE_UNAVAILABLE")` so missing AI configuration is surfaced as
   `503` rather than generic `500`.
-
----
-
-## Bootstrap Service
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `routers/bootstrap/contract.ts` | Typed input/output contract for the bounded dashboard bootstrap |
-| `routers/bootstrap/router.ts` | oRPC handler that parallelizes first-load reads and returns one payload |
-| `routers/account/list-linked-accounts.ts` | Shared helper for linked-account + provider-profile enrichment |
-
-### What it does
-
-- `bootstrap.dashboard` is a **bounded first-load read**, not a long-lived aggregate cache.
-- Input is the initial event window plus optional visible-calendar hints: `{ timeMin, timeMax, visibleCalendars? }`.
-- Output contains:
-  - Google account summaries
-  - Google account profiles
-  - calendars per account
-  - colors per account
-  - events per calendar for the requested window
-  - tasks
-  - tags
-
-### Server-side loading pattern
-
-- Uses **server-side oRPC router calls** with injected auth context to reuse the existing `account.*`, `tasks.*`, `tags.*`, and `googleCal.*` procedures in-process.
-- Starts app-owned reads (`tasks.list`, `tags.list`) in parallel with linked-account enrichment.
-- Fetches calendars and colors in parallel per account.
-- Fetches event lists in parallel per calendar after calendars are known.
-- Treats `visibleCalendars: null`/omitted as a server-side "warm all calendars" hint and warms every available calendar for the initial window.
-- Treats `visibleCalendars: []` as an explicit "skip event warming" instruction from the client.
-- Reuses the existing Google Calendar Redis cache indirectly through the normal `googleCal.*` router handlers, so bootstrap benefits from the same cache-first reads and webhook/local invalidation model as standard client queries.
-- Handles each Google account independently so one revoked or broken token does not fail the whole bootstrap payload.
-
-### Client contract
-
-- The bootstrap route is intended to **seed existing granular query keys** on the client.
-- Realtime sync and mutations still invalidate the normal task/tag/google-calendar keys; they do not need special aggregate-cache handling.
 
 ---
 

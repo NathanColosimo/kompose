@@ -5,7 +5,6 @@ export interface GoogleEventsWindow {
   timeMin: string;
 }
 
-export const GOOGLE_ACCOUNTS_QUERY_KEY = ["google-accounts"] as const;
 export const GOOGLE_ACCOUNT_INFO_QUERY_KEY = ["google-account-info"] as const;
 export const GOOGLE_CALENDARS_QUERY_KEY = ["google-calendars"] as const;
 export const GOOGLE_COLORS_QUERY_KEY = ["google-colors"] as const;

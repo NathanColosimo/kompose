@@ -3,7 +3,6 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { isProductionDeployment } from "@kompose/env";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
-import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
@@ -20,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,22 +76,9 @@ import { useTauriUpdater } from "./tauri-updater";
  * On web, looks identical but without drag functionality.
  */
 export function AppHeader({ user }: { user: User | null }) {
-  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
-  const fallbackGoogleAvatar = useMemo(() => {
-    const email = user?.email?.toLowerCase();
-    if (!email) {
-      return googleAccountProfiles[0]?.profile?.image || "";
-    }
-
-    const matchedProfile = googleAccountProfiles.find(
-      (entry) => entry.profile?.email?.toLowerCase() === email
-    )?.profile;
-
-    return (
-      matchedProfile?.image || googleAccountProfiles[0]?.profile?.image || ""
-    );
-  }, [googleAccountProfiles, user]);
-  const avatarSrc = user?.image || fallbackGoogleAvatar || "";
+  // Keep the header independent from linked-account profile fetches so
+  // accountInfo only affects surfaces that actually render linked accounts.
+  const avatarSrc = user?.image || "";
 
   return (
     <header className="relative flex h-10 shrink-0 items-center border-b bg-background px-2">

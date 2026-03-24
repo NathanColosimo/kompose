@@ -99,6 +99,7 @@ export const auth = betterAuth({
             "read:cycles",
             "offline",
           ],
+
           getUserInfo: async (tokens) => {
             const response = await fetch(
               "https://api.prod.whoop.com/developer/v1/user/profile/basic",

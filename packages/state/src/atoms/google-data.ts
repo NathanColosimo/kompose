@@ -4,14 +4,12 @@ import type {
 } from "@kompose/google-cal/schema";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
-import { atom } from "jotai";
+import { atom, getDefaultStore } from "jotai";
 import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
+import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
 import { getStateConfig, hasSessionAtom } from "../config";
-import {
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-  getGoogleCalendarsQueryKey,
-} from "../google-calendar-query-keys";
+import { getGoogleCalendarsQueryKey } from "../google-calendar-query-keys";
 import {
   type CalendarIdentifier,
   visibleCalendarsAtom,
@@ -24,24 +22,29 @@ function toCalendarKey(calendar: CalendarIdentifier) {
 
 // --- Accounts ---
 
-const googleAccountsAtom = atomWithQuery<Account[]>((get) => {
+const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
   const hasSession = get(hasSessionAtom);
 
   return {
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
     queryFn: async () => {
-      const accounts = (await authClient.listAccounts())?.data ?? [];
-      return accounts.filter((account) => account.providerId === "google");
+      return (await authClient.listAccounts())?.data ?? [];
     },
     staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
   };
 });
 
-export const googleAccountsDataAtom = atom(
-  (get) => get(googleAccountsAtom).data ?? []
+export const linkedAccountsDataAtom = atom<Account[]>(
+  (get) => get(linkedAccountsAtom).data ?? []
+);
+
+export const googleAccountsDataAtom = atom<Account[]>((get) =>
+  get(linkedAccountsDataAtom).filter(
+    (account) => account.providerId === "google"
+  )
 );
 
 // --- Calendars per account ---
@@ -106,7 +109,7 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       return [];
     }
 
-    const accountsQuery = get(googleAccountsAtom);
+    const accountsQuery = get(linkedAccountsAtom);
     const hasResolvedAccounts =
       accountsQuery.data !== undefined || accountsQuery.error != null;
     if (!hasResolvedAccounts) {
@@ -114,11 +117,21 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
     }
 
     const linkedAccountIds = new Set(
-      (accountsQuery.data ?? []).map((account) => account.accountId)
+      (accountsQuery.data ?? [])
+        .filter((account) => account.providerId === "google")
+        .map((account) => account.accountId)
     );
     const accountFiltered = stored.filter((calendar) =>
       linkedAccountIds.has(calendar.accountId)
     );
+
+    // Prune stale account ids from persisted storage so every platform
+    // converges after an unlink that may have happened elsewhere.
+    if (accountFiltered.length < stored.length) {
+      queueMicrotask(() => {
+        getDefaultStore().set(visibleCalendarsAtom, accountFiltered);
+      });
+    }
 
     const allCalendarQueriesResolved = accounts.every((account) => {
       const query = get(googleCalendarsAtomFamily(account.accountId));
