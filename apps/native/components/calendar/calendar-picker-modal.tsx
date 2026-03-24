@@ -36,7 +36,7 @@ interface CalendarId {
  * Calendar visibility picker for mobile.
  *
  * Behavior:
- * - `visibleCalendars === null` => show all
+ * - `visibleCalendars === null` => selection is still materializing
  * - `visibleCalendars === []` => hide all
  * - else => show selected set
  */
@@ -101,7 +101,10 @@ export function CalendarPickerModal({
     >
       {/* Show all / Hide all actions */}
       <View className="mb-3 flex-row gap-2">
-        <Button onPress={() => setVisibleCalendars(null)} variant="outline">
+        <Button
+          onPress={() => setVisibleCalendars(allCalendarIds)}
+          variant="outline"
+        >
           <Text>Show all</Text>
         </Button>
         <Button onPress={() => setVisibleCalendars([])} variant="outline">

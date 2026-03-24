@@ -24,7 +24,6 @@ import {
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import {
-  type CalendarIdentifier,
   isCalendarVisible,
   type VisibleCalendars,
   visibleCalendarsAtom,
@@ -44,7 +43,6 @@ import {
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
 import { useDashboardBootstrap } from "@kompose/state/hooks/use-dashboard-bootstrap";
-import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
@@ -62,7 +60,7 @@ import {
 } from "@kompose/state/task-recurrence";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -407,7 +405,6 @@ export default function CalendarTab() {
   return <CalendarTabContent />;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CalendarTabContent coordinates the full mobile calendar surface.
 function CalendarTabContent() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
@@ -457,30 +454,15 @@ function CalendarTabContent() {
     return metadata;
   }, [googleCalendars]);
 
-  const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
-  const effectiveVisibleCalendars: VisibleCalendars = visibleCalendars ?? null;
-
-  const allCalendarIds = useMemo<CalendarIdentifier[]>(
-    () =>
-      googleCalendars.map((calendar) => ({
-        accountId: calendar.accountId,
-        calendarId: calendar.calendar.id,
-      })),
-    [googleCalendars]
-  );
-
-  // Check data readiness before sanitising the visible calendars selection.
+  const setVisibleCalendars = useSetAtom(visibleCalendarsAtom);
+  const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
+  const effectiveVisibleCalendars: VisibleCalendars = visibleCalendarIds;
   const isFetchingAccounts = useIsFetching({
     queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
   });
   const isFetchingCalendars = useIsFetching({
     queryKey: GOOGLE_CALENDARS_QUERY_KEY,
   });
-  const dataReady = isFetchingAccounts === 0 && isFetchingCalendars === 0;
-
-  useEnsureVisibleCalendars(allCalendarIds, dataReady);
-
-  const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({

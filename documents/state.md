@@ -17,13 +17,13 @@
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
 - `atoms/current-date.ts`: Calendar date, timezone, visible days, event window atoms, and reactive `todayPlainDateAtom` / `nowZonedDateTimeAtom` (refreshed every 60s and on window focus/visibility via `todayTickAtom`).
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
-- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids. Explicit stored calendar selections are preserved while account/calendar metadata is still loading so event queries can resume immediately after refresh; stale per-calendar cleanup is deferred until the full calendar list settles.
-- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers.
+- `atoms/google-data.ts`: Google-linked Better Auth accounts, per-account calendars, and derived visible calendar ids. The effective visible set is calculated during reads: if no explicit preference is saved yet, all currently loaded calendars are treated as visible; explicit saved selections are filtered against known linked accounts/calendars only at runtime.
+- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet" rather than being rewritten by a reconciliation effect.
 - `atoms/whoop-data.ts`: WHOOP account atom (`atomWithQuery` over Better Auth accounts filtered to WHOOP), month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `ai-message-utils.ts`: Pure utility functions and types for AI SDK messages shared between web and native. Exports `isRecord`, `asString`, `formatToolName`, `normalizeMessageRole`, `toUiMessage`, `extractText`, `buildMessageSegments`, `extractAttachments`, and types `ToolPart`, `AttachmentData`, `MessageSegment`.
 - `bootstrap-cache.ts`: Seeds the existing query cache from the bootstrap payload and tracks one-time bootstrap completion per signed-in cache lifecycle.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
-- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, warms event-list caches for the default `null`/"show all" selection, and can explicitly skip event warming when the web layout is not rendering the calendar.
+- `hooks/use-dashboard-bootstrap.ts`: One-time bounded bootstrap hook for the first dashboard/calendar paint. Calls `orpc.bootstrap.dashboard` in the background, seeds only missing granular caches, can still warm all calendars before the client materializes an explicit selection, and can explicitly skip event warming when the web layout is not rendering the calendar.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.

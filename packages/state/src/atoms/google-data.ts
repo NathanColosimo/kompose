@@ -12,8 +12,15 @@ import {
   GOOGLE_ACCOUNTS_QUERY_KEY,
   getGoogleCalendarsQueryKey,
 } from "../google-calendar-query-keys";
-import type { CalendarIdentifier } from "./visible-calendars";
-import { visibleCalendarsAtom } from "./visible-calendars";
+import {
+  type CalendarIdentifier,
+  visibleCalendarsAtom,
+  visibleCalendarsHydratedAtom,
+} from "./visible-calendars";
+
+function toCalendarKey(calendar: CalendarIdentifier) {
+  return `${calendar.accountId}:${calendar.calendarId}`;
+}
 
 // --- Accounts ---
 
@@ -78,6 +85,12 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
 
 export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
+    const hydrated = get(visibleCalendarsHydratedAtom);
+    if (!hydrated) {
+      return [];
+    }
+
+    const accounts = get(googleAccountsDataAtom);
     const calendars = get(googleCalendarsDataAtom);
     const allCalendarIds = calendars.map((calendar) => ({
       accountId: calendar.accountId,
@@ -97,19 +110,29 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
     const hasResolvedAccounts =
       accountsQuery.data !== undefined || accountsQuery.error != null;
     if (!hasResolvedAccounts) {
-      // Preserve the explicit stored selection while account metadata is still
-      // loading so event queries can start immediately after refresh.
       return stored;
     }
 
     const linkedAccountIds = new Set(
       (accountsQuery.data ?? []).map((account) => account.accountId)
     );
-
-    // Drop selections for accounts that are definitely no longer linked, but
-    // keep per-calendar cleanup deferred until the full calendar list settles.
-    return stored.filter((calendar) =>
+    const accountFiltered = stored.filter((calendar) =>
       linkedAccountIds.has(calendar.accountId)
+    );
+
+    const allCalendarQueriesResolved = accounts.every((account) => {
+      const query = get(googleCalendarsAtomFamily(account.accountId));
+      return query.data !== undefined || query.error != null;
+    });
+    if (!allCalendarQueriesResolved) {
+      return accountFiltered;
+    }
+
+    const validKeys = new Set(
+      allCalendarIds.map((calendar) => toCalendarKey(calendar))
+    );
+    return accountFiltered.filter((calendar) =>
+      validKeys.has(toCalendarKey(calendar))
     );
   }
 );

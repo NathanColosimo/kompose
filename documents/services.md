@@ -89,7 +89,7 @@ packages/api/src/
 - Starts app-owned reads (`tasks.list`, `tags.list`) in parallel with linked-account enrichment.
 - Fetches calendars and colors in parallel per account.
 - Fetches event lists in parallel per calendar after calendars are known.
-- Treats `visibleCalendars: null`/omitted as the default "all calendars visible" case and warms every available calendar for the initial window.
+- Treats `visibleCalendars: null`/omitted as a server-side "warm all calendars" hint and warms every available calendar for the initial window.
 - Treats `visibleCalendars: []` as an explicit "skip event warming" instruction from the client.
 - Reuses the existing Google Calendar Redis cache indirectly through the normal `googleCal.*` router handlers, so bootstrap benefits from the same cache-first reads and webhook/local invalidation model as standard client queries.
 - Handles each Google account independently so one revoked or broken token does not fail the whole bootstrap payload.

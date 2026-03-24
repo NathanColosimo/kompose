@@ -452,7 +452,7 @@ installed side by side on macOS.
   - After seeding, the screens continue to use the normal hooks/atoms, so realtime invalidation and optimistic updates still target the same keys as before.
 - **Event scope**:
   - Bootstrap warms event-list data for the calendars currently visible in the UI.
-  - If calendar visibility is still at the default `null`/"show all" state during bootstrap, the route now warms all available calendars for the initial window.
+  - If calendar visibility has not been materialized yet during bootstrap, the route still warms all available calendars for the initial window.
   - The web dashboard can still explicitly suppress bootstrap event warming when the responsive layout is hiding the calendar entirely.
 - **Server composition**:
   - The bootstrap route currently reuses the existing domain routers via

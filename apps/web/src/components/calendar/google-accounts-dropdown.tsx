@@ -4,21 +4,18 @@ import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
-import type { CalendarWithSource } from "@kompose/state/atoms/google-data";
+import {
+  type CalendarWithSource,
+  resolvedVisibleCalendarIdsAtom,
+} from "@kompose/state/atoms/google-data";
 import {
   type CalendarIdentifier,
-  isCalendarVisibleAtom,
+  isCalendarVisible,
   toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
-import {
-  GOOGLE_ACCOUNTS_QUERY_KEY,
-  GOOGLE_CALENDARS_QUERY_KEY,
-} from "@kompose/state/google-calendar-query-keys";
-import { useEnsureVisibleCalendars } from "@kompose/state/hooks/use-ensure-visible-calendars";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
-import { useIsFetching } from "@tanstack/react-query";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -51,8 +48,8 @@ export function GoogleAccountsDropdown({
   googleAccounts,
   googleCalendars,
 }: GoogleAccountsDropdownProps) {
-  const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
-  const isCalendarVisible = useAtomValue(isCalendarVisibleAtom);
+  const setVisibleCalendars = useSetAtom(visibleCalendarsAtom);
+  const resolvedVisibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
 
   const allCalendarIds = useMemo<CalendarIdentifier[]>(
     () =>
@@ -63,16 +60,6 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  // Only run sanitization once all account + calendar queries have settled.
-  const isFetchingAccounts = useIsFetching({
-    queryKey: GOOGLE_ACCOUNTS_QUERY_KEY,
-  });
-  const isFetchingCalendars = useIsFetching({
-    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
-  });
-  const dataReady = isFetchingAccounts === 0 && isFetchingCalendars === 0;
-
-  useEnsureVisibleCalendars(allCalendarIds, dataReady);
   const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
   const accountProfilesById = useMemo(
     () =>
@@ -128,13 +115,14 @@ export function GoogleAccountsDropdown({
     [allCalendarIds, setVisibleCalendars]
   );
 
+  const isResolvedCalendarVisible = useCallback(
+    (accountId: string, calendarId: string) =>
+      isCalendarVisible(resolvedVisibleCalendars, accountId, calendarId),
+    [resolvedVisibleCalendars]
+  );
+
   // Count of visible calendars
-  const visibleCount = useMemo(() => {
-    if (visibleCalendars === null) {
-      return googleCalendars.length;
-    }
-    return visibleCalendars.length;
-  }, [googleCalendars.length, visibleCalendars]);
+  const visibleCount = resolvedVisibleCalendars.length;
 
   const totalCount = googleCalendars.length;
 
@@ -161,7 +149,7 @@ export function GoogleAccountsDropdown({
           <AccountCalendarsSection
             account={account}
             calendars={calendarsByAccount.get(account.accountId) ?? []}
-            isCalendarVisible={isCalendarVisible}
+            isCalendarVisible={isResolvedCalendarVisible}
             isLastAccount={accountIndex === accountsWithInfo.length - 1}
             key={account.accountId}
             toggleCalendar={toggleCalendar}

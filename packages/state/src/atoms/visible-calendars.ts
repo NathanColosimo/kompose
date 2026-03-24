@@ -12,7 +12,7 @@ export interface CalendarIdentifier {
 /**
  * Persisted calendar visibility selection.
  *
- * - `null`: treat as "all calendars visible" (default)
+ * - `null`: no explicit saved preference yet
  * - `[]`: explicitly hide all calendars
  * - `[...ids]`: only those calendars visible
  */
@@ -20,6 +20,8 @@ export type VisibleCalendars = CalendarIdentifier[] | null;
 
 /**
  * Atom to store which calendars are currently visible.
+ * A missing persisted value stays `null`; callers derive the effective
+ * "show all loaded calendars" behavior at read time.
  */
 const VISIBLE_CALENDARS_STORAGE_KEY = "visible-calendars";
 
@@ -114,7 +116,7 @@ export function isCalendarVisible(
   calendarId: string
 ): boolean {
   if (visibleCalendars === null) {
-    return true;
+    return false;
   }
   if (visibleCalendars.length === 0) {
     return false;
@@ -123,16 +125,6 @@ export function isCalendarVisible(
     (c) => c.accountId === accountId && c.calendarId === calendarId
   );
 }
-
-/**
- * Atom-backed variant of isCalendarVisible for Jotai consumers.
- */
-export const isCalendarVisibleAtom = atom(
-  (get) => (accountId: string, calendarId: string) => {
-    const visibleCalendars = get(visibleCalendarsAtom);
-    return isCalendarVisible(visibleCalendars, accountId, calendarId);
-  }
-);
 
 /**
  * Toggle a calendar identifier in the visible set.
