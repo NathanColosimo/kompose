@@ -41,6 +41,8 @@
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/documents/privacy-policy.md",
+        "$TURBO_ROOT$/documents/terms-of-service.md",
         "!.next/**",
         "!out/**",
         "!src-tauri/**",

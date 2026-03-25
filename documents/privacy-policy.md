@@ -72,6 +72,9 @@ Affiliates: We may share personal information with affiliates that operate share
 
 Third Party Service Providers: We may provide personal information to third-party service providers that help us host, secure, analyze, support, and operate the Services.
 
+OpenAI: We use OpenAI to provide certain AI features in the Services. When you use AI features, we may send the prompts, messages, attachments, and related context needed to generate responses or other AI output to OpenAI for processing.
+You can view OpenAI's privacy policy here: https://openai.com/policies/privacy-policy/
+
 
 Professional Advisors: We may provide your personal information to our lawyers, accountants, bankers and other outside professional advisors in the course of the services they provide to us.
 
@@ -94,6 +97,8 @@ Third Party Websites: Our Site or the Services may contain links to third party 
 You have several choices regarding the use of your personal information on the Site and our Services:
 
 Email Communications: We may send you service-related communications about your account, linked providers, sign-ins, security, or changes to the Services or this Policy.
+
+Google User Data Retention And Deletion: We retain Google user data only for as long as needed to provide Google Calendar features, maintain your linked Google account connection, comply with legal obligations, resolve disputes, and enforce our agreements. If you unlink your Google account from Kompose, we stop syncing Google data for that account and delete stored Google OAuth tokens and related linked-account metadata from our active systems within a reasonable period, except where retention is required for security, fraud prevention, legal compliance, or backup recovery. Google-derived data displayed or cached through the Services may remain in transient caches, logs, or backups for a limited period before deletion.
 
 Cookies: If you decide at any time that you no longer wish to accept cookies from our Site for any of the purposes described above, then you can instruct your browser, by changing its settings, to stop accepting cookies or to prompt you before accepting a cookie from the websites you visit. Consult your browser’s technical information. If you do not accept cookies, however, you may not be able to use all portions of the Site or all functionality of the Services. If you have any questions about how to disable or modify cookies, visit https://www.allaboutcookies.org/.
 6. Security Of Your Personal Information
