@@ -56,7 +56,12 @@
         "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "../../.vercel/output/**",
+        "../../.vercel/project.json"
+      ]
     },
     "build:prod:desktop": {
       "cache": true,

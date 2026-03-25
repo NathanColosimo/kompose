@@ -495,7 +495,10 @@ installed side by side on macOS.
     `src/app/privacy/**`, `src/app/terms/**`, and
     `src/instrumentation.ts` so backend-only and hosted-legal-page changes
     don't invalidate the desktop build cache.
-  - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
+  - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus
+    the repo-root Vercel prebuild artifact at `.vercel/output/**` and
+    `.vercel/project.json`, which `vercel deploy --prebuilt --prod` needs on
+    cached re-runs.
   - `submit:prod` is cached (`cache: true`) for web, native, and
     desktop. Each depends on its corresponding `build:prod` task, so
     submissions are skipped when the build output hasn't changed.

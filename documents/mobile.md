@@ -387,7 +387,9 @@ Production task configuration uses **Package Configurations**
   dependency changes (e.g. `@kompose/state`).
 - `web#build:prod:desktop`: caches the Tauri bundle at
   `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
-- `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`).
+- `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus the
+  repo-root Vercel prebuild artifact at `.vercel/output/**` and
+  `.vercel/project.json`.
 - `web#submit:prod`: depends on `build:prod`, so Turbo can reuse the web
   prebuild before running `vercel deploy --prebuilt --prod`.
 - `web#submit:prod:desktop`: cached turbo task that depends on
