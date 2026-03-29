@@ -23,10 +23,12 @@ export function CommandBarContent({
   isOpen,
   onRequestClose,
   size = "lg",
+  selectionMode = "local",
   className,
 }: {
   isOpen: boolean;
   onRequestClose?: () => void;
+  selectionMode?: "desktop-popup" | "local";
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
@@ -123,7 +125,12 @@ export function CommandBarContent({
       />
       <CommandList>
         {view === "root" && <CommandBarRoot onNavigate={navigateToView} />}
-        {view === "search-tasks" && <CommandBarSearchTasks search={search} />}
+        {view === "search-tasks" && (
+          <CommandBarSearchTasks
+            search={search}
+            selectionMode={selectionMode}
+          />
+        )}
         {view === "create-task" && (
           <CommandBarCreateTask
             onCreated={() => setSearch("")}

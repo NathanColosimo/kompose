@@ -73,7 +73,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
   const isDone = task.status === "done";
 
   return (
-    <TaskEditPopover task={task}>
+    <TaskEditPopover surface="sidebar" task={task}>
       <div
         className={cn(
           "group flex cursor-grab items-start gap-3 border-b px-4 py-3 transition-colors last:border-b-0",

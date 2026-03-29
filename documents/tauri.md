@@ -49,6 +49,9 @@ auto-updates.
 - Command bar popup auto-hides on focus loss (click-away), and on macOS uses a
   rounded native HUD vibrancy treatment so the frameless popup matches the
   softer system window feel better.
+- Selecting a task from the dedicated popup now hands a typed task-open request
+  back to the main dashboard window, focuses/unminimizes that window, hides the
+  popup, and lets the main app open the matching calendar or sidebar popover.
 - Command bar shortcut presets are persisted in desktop settings store.
 - Better Auth last-login-method remains client cookie/storage based; in
   Tauri desktop this is best-effort because auth itself uses bearer tokens
@@ -93,6 +96,9 @@ auto-updates.
   - Added: Tauri command `dismiss_command_bar` for programmatic dismissal
     that restores focus to the previously active app on macOS (uses
     `[NSApp hide:nil]` to avoid a flicker of the main window).
+  - Added: Tauri command `focus_main_window_for_command_bar_selection`
+    so command-bar task selections can show/unminimize/focus the `main`
+    window and hide the popup without restoring the previously active app.
   - Added: macOS-only `get_frontmost_app_pid()` and `hide_app()` helpers
     (via `objc` crate) for focus management.
   - Deep link URLs are logged on startup and at runtime via `on_open_url`.

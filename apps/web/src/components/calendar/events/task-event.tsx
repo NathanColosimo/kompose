@@ -122,7 +122,12 @@ export const TaskEvent = memo(function TaskEventInner({
   };
 
   return (
-    <TaskEditPopover align="start" side="right" task={task}>
+    <TaskEditPopover
+      align="start"
+      side="right"
+      surface="calendar"
+      task={task}
+    >
       <div
         className={cn(
           "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",

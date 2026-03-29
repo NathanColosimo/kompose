@@ -8,7 +8,7 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
-import { focusedTaskIdAtom } from "@kompose/state/atoms/command-bar";
+import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -104,6 +104,7 @@ interface TaskEditPopoverProps {
   initialValues?: Partial<TaskFormValues>;
   mode?: "create" | "edit";
   side?: "top" | "right" | "bottom" | "left";
+  surface: "calendar" | "sidebar";
   task?: TaskSelectDecoded;
 }
 
@@ -212,20 +213,29 @@ export function TaskEditPopover({
   children,
   initialValues,
   mode: modeProp,
+  surface,
   side = "right",
   align = "start",
 }: TaskEditPopoverProps) {
   const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
-  const [focusedTaskId, setFocusedTaskId] = useAtom(focusedTaskIdAtom);
+  const [openRequest, setOpenRequest] = useAtom(commandBarTaskOpenRequestAtom);
 
-  // Open popover when this task is focused via command bar search
+  // Open popover only when this surface matches the active command-bar request.
   useEffect(() => {
-    if (mode === "edit" && task && focusedTaskId === task.id) {
+    if (
+      mode === "edit" &&
+      task &&
+      openRequest &&
+      openRequest.taskId === task.id &&
+      openRequest.target === surface
+    ) {
       setOpen(true);
-      setFocusedTaskId(null);
+      setOpenRequest((currentRequest) =>
+        currentRequest?.requestId === openRequest.requestId ? null : currentRequest
+      );
     }
-  }, [focusedTaskId, mode, setFocusedTaskId, task]);
+  }, [mode, openRequest, setOpenRequest, surface, task]);
 
   const handleCancel = useCallback(() => {
     setOpen(false);

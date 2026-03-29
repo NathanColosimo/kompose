@@ -15,8 +15,13 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
 - Excludes recurring tasks (no `seriesMasterId`)
 - Shows location indicator: Calendar (with date) or Inbox
 - Selecting a task:
-  - If scheduled on calendar: navigates to the task's date
-  - Opens the task edit popover automatically
+  - Resolves a single destination before opening anything:
+    - Calendar for tasks with both `startDate` and `startTime`
+    - Inbox for tasks with neither `startDate` nor `startTime`
+    - Today for non-calendar tasks that currently belong to Today sections
+  - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
+  - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
+  - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
 
 ## Create Task Syntax
 
@@ -50,6 +55,10 @@ The task input parser extracts all URLs from the title portion of the input into
   dashboard window). The popup renders the exact same `CommandBarContent`
   component used in the web dialog -- no custom scroll modes or layout
   overrides.
+- Selecting a task from the dedicated popup does not try to open the task in
+  the popup window. Instead it emits the same typed open request used by the
+  in-page command bar, focuses the main dashboard window, and lets the main
+  app route to calendar or sidebar before opening the matching popover.
 - On web, the dialog shell is mounted eagerly but the heavy command-bar content
   is lazy-loaded on first open so dashboard visits do not pay for search/create
   command UI up front.

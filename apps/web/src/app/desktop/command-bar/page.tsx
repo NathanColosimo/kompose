@@ -151,6 +151,7 @@ export default function DesktopCommandBarPage() {
         className="h-auto"
         isOpen={open}
         onRequestClose={() => setOpen(false)}
+        selectionMode="desktop-popup"
         size="lg"
       />
     </div>

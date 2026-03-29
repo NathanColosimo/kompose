@@ -1,6 +1,9 @@
 "use client";
 
 import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
+import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
+import { currentDateAtom } from "@kompose/state/atoms/current-date";
+import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
@@ -13,12 +16,18 @@ import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
+  applyCommandBarTaskOpenRequest,
+  COMMAND_BAR_TASK_OPEN_EVENT,
+} from "@/lib/command-bar-task-routing";
+import { isTauriRuntime } from "@/lib/tauri-desktop";
+import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
   sidebarLeftOpenAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
+  sidebarLeftViewSelectionAtom,
 } from "@/state/sidebar";
 
 export default function DashboardLayout({
@@ -34,6 +43,9 @@ export default function DashboardLayout({
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
+  const setCommandBarTaskOpenRequest = useSetAtom(commandBarTaskOpenRequestAtom);
+  const setCurrentDate = useSetAtom(currentDateAtom);
+  const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
   useLayoutEffect(() => {
@@ -79,6 +91,46 @@ export default function DashboardLayout({
     }
     setRightSidebarOverlayOpen(false);
   }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let cleanup: (() => void) | null = null;
+
+    import("@tauri-apps/api/event")
+      .then(async ({ listen }) => {
+        cleanup = await listen(COMMAND_BAR_TASK_OPEN_EVENT, (event) => {
+          if (!event.payload || typeof event.payload !== "object") {
+            return;
+          }
+
+          const request = deserializeCommandBarTaskOpenRequest(
+            event.payload as Parameters<
+              typeof deserializeCommandBarTaskOpenRequest
+            >[0]
+          );
+
+          applyCommandBarTaskOpenRequest(request, {
+            setCommandBarTaskOpenRequest,
+            setCurrentDate,
+            setSidebarLeftViewSelection,
+          });
+        });
+      })
+      .catch((error) => {
+        console.warn("Failed to listen for command bar task open events.", error);
+      });
+
+    return () => {
+      cleanup?.();
+    };
+  }, [
+    setCommandBarTaskOpenRequest,
+    setCurrentDate,
+    setSidebarLeftViewSelection,
+  ]);
 
   if (!sessionUser && sessionQuery.status !== "pending") {
     return null;

@@ -6,6 +6,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
+const MAIN_WINDOW_LABEL: &str = "main";
 const COMMAND_BAR_WINDOW_LABEL: &str = "command-bar";
 const COMMAND_BAR_WINDOW_ROUTE: &str = "/desktop/command-bar";
 const DEFAULT_SHORTCUT_PRESET_ID: &str = "cmd_or_ctrl_shift_k";
@@ -289,6 +290,40 @@ fn dismiss_command_bar(app: tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn focus_main_window_for_command_bar_selection(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+            return Err("Main window is not available.".to_string());
+        };
+
+        main_window
+            .show()
+            .map_err(|error| format!("Failed to show main window: {}", error))?;
+        main_window
+            .unminimize()
+            .map_err(|error| format!("Failed to unminimize main window: {}", error))?;
+        main_window
+            .set_focus()
+            .map_err(|error| format!("Failed to focus main window: {}", error))?;
+
+        if let Some(command_bar_window) = app.get_webview_window(COMMAND_BAR_WINDOW_LABEL) {
+            command_bar_window
+                .hide()
+                .map_err(|error| format!("Failed to hide command bar window: {}", error))?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -321,7 +356,8 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             set_command_bar_shortcut_preset,
-            dismiss_command_bar
+            dismiss_command_bar,
+            focus_main_window_for_command_bar_selection
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

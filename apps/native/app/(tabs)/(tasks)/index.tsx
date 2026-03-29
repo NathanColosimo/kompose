@@ -63,7 +63,7 @@ type TaskListItem =
   | { type: "header"; title: string }
   | { type: "task"; task: TaskSelectDecoded };
 
-// Build the Today view sections (Overdue, Planned, Unplanned, Done).
+// Build the Today view sections to match the web Today view ordering.
 function buildTodaySections(
   overdueTasks: TaskSelectDecoded[],
   plannedTasks: TaskSelectDecoded[],
@@ -74,11 +74,11 @@ function buildTodaySections(
   if (overdueTasks.length > 0) {
     sections.push({ title: "Overdue", data: overdueTasks });
   }
-  if (plannedTasks.length > 0) {
-    sections.push({ title: "Planned", data: plannedTasks });
-  }
   if (unplannedTasks.length > 0) {
     sections.push({ title: "Unplanned", data: unplannedTasks });
+  }
+  if (plannedTasks.length > 0) {
+    sections.push({ title: "Planned", data: plannedTasks });
   }
   if (doneTasks.length > 0) {
     sections.push({ title: "Done", data: doneTasks });

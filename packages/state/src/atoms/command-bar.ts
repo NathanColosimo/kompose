@@ -1,4 +1,5 @@
 import { atom } from "jotai";
+import type { CommandBarTaskOpenRequest } from "../task-search-routing";
 
 /**
  * Controls whether the command bar dialog is open.
@@ -6,6 +7,7 @@ import { atom } from "jotai";
 export const commandBarOpenAtom = atom(false);
 
 /**
- * Tracks the task ID that should be focused/opened for editing.
+ * Tracks the task open request that should be handled by the matching surface.
  */
-export const focusedTaskIdAtom = atom<string | null>(null);
+export const commandBarTaskOpenRequestAtom =
+  atom<CommandBarTaskOpenRequest | null>(null);
