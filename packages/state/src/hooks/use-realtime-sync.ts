@@ -45,7 +45,9 @@ export function useRealtimeSync({
   const { orpc } = useStateConfig();
 
   const invalidateTaskQueries = React.useCallback(() => {
-    return queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
+    // Tasks can be consumed via both useQuery and atomWithQuery. Refetching
+    // keeps atom-backed consumers in sync immediately across devices.
+    return queryClient.refetchQueries({ queryKey: TASKS_QUERY_KEY });
   }, [queryClient]);
 
   const invalidateGoogleCalendarQueries = React.useCallback(

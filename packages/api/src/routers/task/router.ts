@@ -3,7 +3,7 @@ import { implement, ORPCError } from "@orpc/server";
 import { Effect, Either, Layer } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
-import { publishToUserBestEffort } from "../../realtime/sync";
+import { publishToUser } from "../../realtime/sync";
 import { LinkParserService } from "../../services/link-parser/service";
 import { TelemetryLive } from "../../telemetry";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
@@ -58,10 +58,10 @@ const normalizeTaskTags = <T extends { tags: Array<{ icon: string }> }>(
 });
 
 function publishTasksEvent(userId: string) {
-  publishToUserBestEffort(userId, {
+  return publishToUser(userId, {
     type: "tasks",
     payload: {},
-  });
+  }).pipe(Effect.catchAll(() => Effect.void));
 }
 
 export const taskRouter = os.router({
@@ -86,12 +86,10 @@ export const taskRouter = os.router({
         userId: context.user.id,
       }).pipe(
         Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+        Effect.tap(() => publishTasksEvent(context.user.id)),
         Effect.provide(TaskLive),
         Effect.match({
-          onSuccess: (value) => {
-            publishTasksEvent(context.user.id);
-            return value;
-          },
+          onSuccess: (value) => value,
           onFailure: handleError,
         })
       )
@@ -105,12 +103,10 @@ export const taskRouter = os.router({
     return Effect.runPromise(
       TaskService.updateTask(context.user.id, input.id, task, input.scope).pipe(
         Effect.map((tasks) => tasks.map(normalizeTaskTags)),
+        Effect.tap(() => publishTasksEvent(context.user.id)),
         Effect.provide(TaskLive),
         Effect.match({
-          onSuccess: (value) => {
-            publishTasksEvent(context.user.id);
-            return value;
-          },
+          onSuccess: (value) => value,
           onFailure: handleError,
         })
       )
@@ -120,12 +116,10 @@ export const taskRouter = os.router({
   delete: os.delete.handler(({ input, context }) => {
     return Effect.runPromise(
       TaskService.deleteTask(context.user.id, input.id, input.scope).pipe(
+        Effect.tap(() => publishTasksEvent(context.user.id)),
         Effect.provide(TaskLive),
         Effect.match({
-          onSuccess: () => {
-            publishTasksEvent(context.user.id);
-            return null;
-          },
+          onSuccess: () => null,
           onFailure: handleError,
         })
       )

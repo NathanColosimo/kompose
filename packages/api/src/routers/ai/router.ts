@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
-import { publishToUserBestEffort } from "../../realtime/sync";
+import { publishToUser } from "../../realtime/sync";
 import { TelemetryLive } from "../../telemetry";
 import { aiContract } from "./contract";
 import { chatResumableStreamContext } from "./resumable-stream";
@@ -18,10 +18,10 @@ import { createAiTools } from "./tools";
 const AiChatLive = Layer.merge(AiChatService.Default, TelemetryLive);
 
 function publishAiChatEvent(userId: string, sessionId: string) {
-  publishToUserBestEffort(userId, {
+  return publishToUser(userId, {
     type: "ai-chat",
     payload: { sessionId },
-  });
+  }).pipe(Effect.catchAll(() => Effect.void));
 }
 
 function emptyUiMessageChunkIterator() {
@@ -89,12 +89,10 @@ export const aiRouter = os.router({
 
       return Effect.runPromise(
         program.pipe(
+          Effect.tap((value) => publishAiChatEvent(context.user.id, value.id)),
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => {
-              publishAiChatEvent(context.user.id, value.id);
-              return value;
-            },
+            onSuccess: (value) => value,
             onFailure: handleError,
           })
         )
@@ -109,12 +107,12 @@ export const aiRouter = os.router({
 
       return Effect.runPromise(
         program.pipe(
+          Effect.tap(() =>
+            publishAiChatEvent(context.user.id, input.sessionId)
+          ),
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: () => {
-              publishAiChatEvent(context.user.id, input.sessionId);
-              return null;
-            },
+            onSuccess: () => null,
             onFailure: handleError,
           })
         )
@@ -164,13 +162,14 @@ export const aiRouter = os.router({
               sessionId: input.sessionId,
               firstMessageText,
             }).pipe(
+              Effect.tap((didUpdate) =>
+                didUpdate
+                  ? publishAiChatEvent(context.user.id, input.sessionId)
+                  : Effect.void
+              ),
               Effect.provide(AiChatLive),
               Effect.match({
-                onSuccess: (didUpdate) => {
-                  if (didUpdate) {
-                    publishAiChatEvent(context.user.id, input.sessionId);
-                  }
-                },
+                onSuccess: () => undefined,
                 onFailure: () => undefined,
               })
             );
@@ -190,7 +189,9 @@ export const aiRouter = os.router({
               }).pipe(Effect.provide(AiChatLive))
             );
 
-            publishAiChatEvent(context.user.id, input.sessionId);
+            await Effect.runPromise(
+              publishAiChatEvent(context.user.id, input.sessionId)
+            );
           },
         });
 
@@ -223,7 +224,7 @@ export const aiRouter = os.router({
           sessionId: input.sessionId,
           streamId,
         });
-        publishAiChatEvent(context.user.id, input.sessionId);
+        yield* publishAiChatEvent(context.user.id, input.sessionId);
 
         return streamToEventIterator(
           sseStringStreamToUiMessageChunkStream(resumableSseStream)

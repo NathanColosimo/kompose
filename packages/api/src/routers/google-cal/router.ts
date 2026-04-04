@@ -9,7 +9,7 @@ import { implement, ORPCError } from "@orpc/server";
 import { Effect, Layer, Option } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
-import { publishToUserBestEffort } from "../../realtime/sync";
+import { publishToUser } from "../../realtime/sync";
 import { TelemetryLive } from "../../telemetry";
 import {
   GoogleCalendarCacheService,
@@ -88,10 +88,10 @@ function publishGoogleCalendarEvent(
   accountId: string,
   calendarId: string
 ) {
-  publishToUserBestEffort(userId, {
+  return publishToUser(userId, {
     type: "google-calendar",
     payload: { accountId, calendarId },
-  });
+  }).pipe(Effect.catchAll(() => Effect.void));
 }
 
 function includesSearchText(value: string | undefined, query: string): boolean {
@@ -206,7 +206,7 @@ export const googleCalRouter = os.router({
           .invalidateCalendars(input.accountId)
           .pipe(logAndSwallowCacheError);
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           calendar.id
@@ -248,7 +248,7 @@ export const googleCalRouter = os.router({
           .invalidateCalendars(input.accountId)
           .pipe(logAndSwallowCacheError);
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           input.calendarId
@@ -295,7 +295,7 @@ export const googleCalRouter = os.router({
           { concurrency: "unbounded", discard: true }
         );
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           input.calendarId
@@ -500,7 +500,7 @@ export const googleCalRouter = os.router({
           .invalidateEventLists(input.accountId, input.calendarId)
           .pipe(logAndSwallowCacheError);
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           input.calendarId
@@ -552,7 +552,7 @@ export const googleCalRouter = os.router({
           { concurrency: "unbounded", discard: true }
         );
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           input.calendarId
@@ -610,15 +610,20 @@ export const googleCalRouter = os.router({
           { concurrency: "unbounded", discard: true }
         );
 
-        publishGoogleCalendarEvent(
-          context.user.id,
-          input.accountId,
-          input.calendarId
-        );
-        publishGoogleCalendarEvent(
-          context.user.id,
-          input.accountId,
-          input.destinationCalendarId
+        yield* Effect.all(
+          [
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId
+            ),
+            publishGoogleCalendarEvent(
+              context.user.id,
+              input.accountId,
+              input.destinationCalendarId
+            ),
+          ],
+          { concurrency: "unbounded", discard: true }
         );
 
         return event;
@@ -665,7 +670,7 @@ export const googleCalRouter = os.router({
           { concurrency: "unbounded", discard: true }
         );
 
-        publishGoogleCalendarEvent(
+        yield* publishGoogleCalendarEvent(
           context.user.id,
           input.accountId,
           input.calendarId

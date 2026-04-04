@@ -146,7 +146,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         }
 
         // Stop old watch (best-effort)
-        if (params.existingSubscription) {
+        if (params.existingSubscription?.active) {
           yield* stopWatch({
             id: params.existingSubscription.id,
             operation: "google-calendar-list-stop-watch",
@@ -226,7 +226,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         }
 
         // Stop old watch (best-effort)
-        if (params.existingSubscription) {
+        if (params.existingSubscription?.active) {
           yield* stopWatch({
             id: params.existingSubscription.id,
             operation: "google-calendar-events-stop-watch",

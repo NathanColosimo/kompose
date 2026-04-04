@@ -5,7 +5,7 @@ import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
 import { Effect } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
-import { publishToUserBestEffort } from "../realtime/sync";
+import { publishToUser } from "../realtime/sync";
 import {
   GoogleCalendarCacheService,
   logAndSwallowCacheError,
@@ -152,8 +152,9 @@ export class WebhookService extends Effect.Service<WebhookService>()(
 
         // Partition existing subscriptions for this account
         const accountSubs = params.existingSubscriptions.filter(
-          (s) => s.accountId === params.account.id && s.active
+          (s) => s.accountId === params.account.id
         );
+        const activeAccountSubs = accountSubs.filter((s) => s.active);
 
         let existingListSub: GoogleCalendarListSubscription | undefined;
         const existingEventSubsByCalendarId = new Map<
@@ -181,7 +182,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           const calendarIdSet = new Set(calendarIds);
 
           // Identify stale event subscriptions for calendars no longer in the user's list
-          const staleEventSubs = accountSubs.filter(
+          const staleEventSubs = activeAccountSubs.filter(
             (s): s is GoogleCalendarEventsSubscription => {
               if (!isGoogleCalendarEventsSubscription(s)) {
                 return false;
@@ -346,13 +347,13 @@ export class WebhookService extends Effect.Service<WebhookService>()(
             .invalidateCalendars(subscription.accountId)
             .pipe(logAndSwallowCacheError);
 
-          publishToUserBestEffort(subscription.userId, {
+          yield* publishToUser(subscription.userId, {
             type: "google-calendar",
             payload: {
               accountId: subscription.accountId,
               calendarId: GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID,
             },
-          });
+          }).pipe(Effect.catchAll(() => Effect.void));
 
           return {
             followUpRefresh: {
@@ -378,13 +379,13 @@ export class WebhookService extends Effect.Service<WebhookService>()(
             )
             .pipe(logAndSwallowCacheError);
 
-          publishToUserBestEffort(subscription.userId, {
+          yield* publishToUser(subscription.userId, {
             type: "google-calendar",
             payload: {
               accountId: subscription.accountId,
               calendarId: subscription.config.calendarId,
             },
-          });
+          }).pipe(Effect.catchAll(() => Effect.void));
         }
 
         return {};

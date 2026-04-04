@@ -1,12 +1,12 @@
 import { env } from "@kompose/env";
-import { SpanStatusCode, trace } from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
 import { RedisClient } from "bun";
+import { Effect } from "effect";
 import { type SyncEvent, syncEventSchema } from "./events";
 
 const USER_CHANNEL_PREFIX = "user";
 const RECONNECT_EVENT_AFTER_MS = 11 * 60 * 1000;
 const KEEPALIVE_INTERVAL_MS = 10_000;
-
 const tracer = trace.getTracer("sync");
 
 interface AsyncQueue<T> {
@@ -65,45 +65,31 @@ export function getUserSyncChannel(userId: string): string {
 
 /**
  * Publish a sync event to a user's Redis channel.
- * Creates an OTel span for each publish, inheriting the caller's trace context.
+ * Uses Effect tracing so spans flow through the shared OTel layer.
  */
-export async function publishToUser(
+export const publishToUser = Effect.fn("sync.publish")(function* (
   userId: string,
   event: SyncEvent
-): Promise<void> {
-  const span = tracer.startSpan("sync.publish");
-  span.setAttribute("userId", userId);
-  span.setAttribute("eventType", event.type);
+) {
+  yield* Effect.annotateCurrentSpan("userId", userId);
+  yield* Effect.annotateCurrentSpan("eventType", event.type);
 
-  try {
-    const payload = syncEventSchema.parse(event);
-    await redisPublisher.publish(
-      getUserSyncChannel(userId),
-      JSON.stringify(payload)
-    );
-  } catch (error) {
-    span.recordException(
-      error instanceof Error ? error : new Error(String(error))
-    );
-    span.setStatus({ code: SpanStatusCode.ERROR });
-    throw error;
-  } finally {
-    span.end();
-  }
-}
-
-/**
- * Fire-and-forget publish. Errors are recorded on the OTel span
- * created by publishToUser rather than logged to console.
- */
-export function publishToUserBestEffort(
-  userId: string,
-  event: SyncEvent
-): void {
-  publishToUser(userId, event).catch(() => {
-    // Error already recorded on the sync.publish span
+  const payload = yield* Effect.try({
+    try: () => syncEventSchema.parse(event),
+    catch: (error) =>
+      error instanceof Error ? error : new Error(String(error)),
   });
-}
+
+  yield* Effect.tryPromise({
+    try: () =>
+      redisPublisher.publish(
+        getUserSyncChannel(userId),
+        JSON.stringify(payload)
+      ),
+    catch: (error) =>
+      error instanceof Error ? error : new Error(String(error)),
+  });
+});
 
 /**
  * Long-lived async generator for SSE connections.
