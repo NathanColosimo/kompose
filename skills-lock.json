@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "axiom-sre": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "computedHash": "c68aea9b6c0ca3ccc53060dde50af088fe756148e4bd1c98ccb7039b01124afc"
+    },
     "btca-cli": {
       "source": "davis7dotsh/better-context",
       "sourceType": "github",
