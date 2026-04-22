@@ -72,6 +72,7 @@ import {
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
+import { openUrlInDesktopBrowser } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
@@ -972,8 +973,8 @@ function LinkMetaPreview({
         />
       )}
       <button
-        className="min-w-0 flex-1 space-y-0.5 text-left"
-        onClick={() => window.open(meta.url, "_blank", "noopener,noreferrer")}
+        className="min-w-0 flex-1 cursor-pointer space-y-0.5 text-left"
+        onClick={() => openUrlInDesktopBrowser(meta.url)}
         tabIndex={-1}
         type="button"
       >
