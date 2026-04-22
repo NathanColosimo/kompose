@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "type-check": "tsc --noEmit",
+    "type-check": "tsgo --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio --verbose --port 4984",
     "redis:studio": "open -a 'Redis Insight'",
@@ -32,7 +32,7 @@
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
-    "postgres": "^3.4.8",
+    "postgres": "^3.4.9",
     "zod": "catalog:"
   }
 }

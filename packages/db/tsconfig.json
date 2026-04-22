@@ -4,6 +4,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "rootDir": "./",
     "outDir": "dist",
     "composite": true,
     "strictNullChecks": true

@@ -1,47 +1,34 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 
-import { createRequire } from "node:module";
 import path from "node:path";
-
+import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
 
-const config = getDefaultConfig(import.meta.dirname);
-const appNodeModules = path.resolve(import.meta.dirname, "node_modules");
-const workspaceNodeModules = path.resolve(
-  import.meta.dirname,
-  "..",
-  "..",
-  "node_modules"
-);
+const projectRoot = import.meta.dirname;
+const workspaceRoot = path.resolve(projectRoot, "../..");
 
-/**
- * Monorepo + Bun:
- * Dependencies are typically hoisted to the repo root `node_modules/`.
- * Explicitly add it so Metro can resolve packages like `lucide-react-native`.
- */
-config.resolver.nodeModulesPaths = [appNodeModules, workspaceNodeModules];
+// Keep Metro's entry-point math rooted at the app instead of the monorepo.
+// We add the workspace folders back manually below so local packages still resolve.
+process.env.EXPO_NO_METRO_WORKSPACE_ROOT ??= "1";
 
-// Bun installs can expose the same package through different symlink paths.
-// Force all modules (including react-hook-form) to resolve React from one path
-// to prevent invalid hook calls from duplicate React module instances.
-config.resolver.extraNodeModules = {
-  ...config.resolver.extraNodeModules,
-  react: path.join(appNodeModules, "react"),
-  "react/jsx-runtime": path.join(appNodeModules, "react/jsx-runtime.js"),
-  "react/jsx-dev-runtime": path.join(
-    appNodeModules,
-    "react/jsx-dev-runtime.js"
-  ),
-  "react-hook-form": path.join(appNodeModules, "react-hook-form"),
-};
+const config = getDefaultConfig(projectRoot);
 
 // Package exports resolution can break some packages under Metro.
 // Better Auth (and some modern packages) rely on exports subpaths like
 // `@better-auth/expo/client`, so we keep this enabled.
 config.resolver.unstable_enablePackageExports = true;
 
-export default withUniwindConfig(config, {
+const wrappedConfig = withUniwindConfig(config, {
   cssEntryFile: "./global.css",
 });
+
+wrappedConfig.watchFolders = [workspaceRoot];
+wrappedConfig.resolver.nodeModulesPaths = [
+  path.join(projectRoot, "node_modules"),
+  path.join(workspaceRoot, "node_modules"),
+];
+wrappedConfig.server.unstable_serverRoot = projectRoot;
+
+export default wrappedConfig;
