@@ -32,6 +32,8 @@ function sanitizeEventPayload(event: Event): CreateEvent {
     id: _id,
     htmlLink: _htmlLink,
     organizer: _organizer,
+    recurringEventId: _recurringEventId,
+    originalStartTime: _originalStartTime,
     ...rest
   } = event;
   return rest;

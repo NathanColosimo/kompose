@@ -93,6 +93,11 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       return [];
     }
 
+    const hasSession = get(hasSessionAtom);
+    if (!hasSession) {
+      return [];
+    }
+
     const accounts = get(googleAccountsDataAtom);
     const calendars = get(googleCalendarsDataAtom);
     const allCalendarIds = calendars.map((calendar) => ({

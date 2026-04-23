@@ -32,6 +32,7 @@ import {
   CalendarIcon,
   Check,
   Clock3,
+  Lock,
   MapPin,
   Palette,
   Repeat,
@@ -116,6 +117,8 @@ interface EventEditPopoverProps {
   event?: GoogleEvent;
   /** Whether the popover is in create or edit mode. Defaults based on event presence. */
   mode?: "create" | "edit";
+  readOnly?: boolean;
+  readOnlyReason?: string | null;
   /** Callback when open state changes (for controlled mode). */
   onOpenChange?: (open: boolean) => void;
   /** Controlled open state (optional). If provided, the popover is controlled. */
@@ -497,6 +500,8 @@ export function EventEditPopover({
   side = "right",
   align = "start",
   mode: modeProp,
+  readOnly = false,
+  readOnlyReason,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: EventEditPopoverProps) {
@@ -579,6 +584,9 @@ export function EventEditPopover({
 
   // Handle delete - opens appropriate confirmation dialog (edit mode only)
   const handleDelete = useCallback(() => {
+    if (readOnly) {
+      return;
+    }
     if (!event) {
       return;
     }
@@ -592,7 +600,7 @@ export function EventEditPopover({
       // Non-recurring: show simple confirmation
       setSimpleDeleteConfirmOpen(true);
     }
-  }, [event, setOpen]);
+  }, [event, readOnly, setOpen]);
 
   // Commit delete for non-recurring events
   const confirmSimpleDelete = useCallback(() => {
@@ -626,6 +634,10 @@ export function EventEditPopover({
   }, [setOpen]);
 
   const handleSave = useCallback(() => {
+    if (readOnly) {
+      setOpen(false);
+      return;
+    }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
     setOpen(false);
 
@@ -679,6 +691,7 @@ export function EventEditPopover({
     createEvent,
     event,
     moveEvent,
+    readOnly,
     setOpen,
     updateEvent,
   ]);
@@ -689,8 +702,8 @@ export function EventEditPopover({
       e.preventDefault();
       handleSave();
     },
-    { enabled: open, enableOnFormTags: true },
-    [handleSave, open]
+    { enabled: open && !readOnly, enableOnFormTags: true },
+    [handleSave, open, readOnly]
   );
 
   return (
@@ -733,6 +746,8 @@ export function EventEditPopover({
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
             }}
+            readOnly={readOnly}
+            readOnlyReason={readOnlyReason}
             onSave={handleSave}
             open={open}
             start={start}
@@ -806,14 +821,17 @@ function buildCreatePayload(
     s: Date | null,
     e: Date | null
   ) => { start: Date | null; end: Date | null },
-  conferenceData: GoogleEvent["conferenceData"] | null | undefined
+  conferenceData: GoogleEvent["conferenceData"] | null | undefined,
+  calendarTimeZone?: string
 ): CloseSaveRequest {
   const trimmedTitle = values.summary.trim();
   if (!trimmedTitle) {
     return { type: "none" };
   }
 
-  const temporalPayload = buildTemporalPayload(values, clampToStartIfNeeded);
+  const temporalPayload = buildTemporalPayload(values, clampToStartIfNeeded, {
+    timeZone: values.recurrence?.length ? calendarTimeZone : undefined,
+  });
   if (!temporalPayload) {
     return { type: "none" };
   }
@@ -848,6 +866,7 @@ function buildEditPayload(
       e: Date | null
     ) => { start: Date | null; end: Date | null };
     conferenceData: GoogleEvent["conferenceData"] | null | undefined;
+    calendarTimeZone?: string;
     event: GoogleEvent | undefined;
     hasEdits: boolean;
     masterRecurrence: string[] | null | undefined;
@@ -860,7 +879,16 @@ function buildEditPayload(
 
   const temporalPayload = buildTemporalPayload(
     values,
-    ctx.clampToStartIfNeeded
+    ctx.clampToStartIfNeeded,
+    {
+      timeZone:
+        values.recurrence?.length ||
+        ctx.event?.recurringEventId ||
+        ctx.event?.recurrence?.length ||
+        ctx.masterRecurrence?.length
+          ? ctx.calendarTimeZone
+          : undefined,
+    }
   );
   if (!temporalPayload) {
     return { type: "none" };
@@ -914,10 +942,12 @@ function buildEditPayload(
 function MeetingSection({
   meetingLink,
   isConferencePending,
+  readOnly = false,
   onCreateMeeting,
 }: {
   meetingLink: MeetingLink | null;
   isConferencePending: boolean;
+  readOnly?: boolean;
   onCreateMeeting: () => void;
 }) {
   if (meetingLink) {
@@ -955,6 +985,7 @@ function MeetingSection({
         Meeting
       </Label>
       <Button
+        disabled={readOnly}
         onClick={onCreateMeeting}
         size="sm"
         type="button"
@@ -972,6 +1003,7 @@ function EventColorAndTitleRow({
   selectedColorId,
   calendarFallbackColor,
   isCreateMode,
+  readOnly = false,
   summary,
   onSelectColor,
   onSummaryChange,
@@ -980,6 +1012,7 @@ function EventColorAndTitleRow({
   selectedColorId: string | undefined;
   calendarFallbackColor: string | undefined;
   isCreateMode: boolean;
+  readOnly?: boolean;
   summary: string;
   onSelectColor: (colorKey: string | undefined) => void;
   onSummaryChange: (value: string) => void;
@@ -997,8 +1030,10 @@ function EventColorAndTitleRow({
             aria-label="Pick color"
             className={cn(
               "h-8 w-8 rounded-full border-2 shadow-sm transition",
+              readOnly ? "cursor-default" : "",
               selectedColorId ? "border-transparent" : "border-muted"
             )}
+            disabled={readOnly}
             style={{ background: displayColor }}
             type="button"
           />
@@ -1014,6 +1049,7 @@ function EventColorAndTitleRow({
                     "h-7 w-7 rounded-full border-2 transition",
                     isSelected ? "ring-2 ring-primary ring-offset-2" : ""
                   )}
+                  disabled={readOnly}
                   key={colorKey}
                   onClick={(e) => {
                     e.preventDefault();
@@ -1029,6 +1065,7 @@ function EventColorAndTitleRow({
             })}
             <Button
               className="h-7 w-7 p-0 text-[10px]"
+              disabled={readOnly}
               onClick={() => onSelectColor(undefined)}
               type="button"
               variant="ghost"
@@ -1042,6 +1079,7 @@ function EventColorAndTitleRow({
       <Input
         autoFocus={isCreateMode}
         className="flex-1"
+        readOnly={readOnly}
         onChange={(e) => onSummaryChange(e.target.value)}
         placeholder={isCreateMode ? "Event title (required)" : "Event title"}
         value={summary}
@@ -1054,6 +1092,7 @@ function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
   canEditRecurrence,
+  readOnly = false,
   recurrenceRule,
   onRecurrenceChange,
   calendarOptions,
@@ -1063,6 +1102,7 @@ function EventAllDayAndRecurrenceRow({
   allDay: boolean;
   onToggleAllDay: () => void;
   canEditRecurrence: boolean;
+  readOnly?: boolean;
   recurrenceRule: string | undefined;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
@@ -1078,6 +1118,7 @@ function EventAllDayAndRecurrenceRow({
     <div className="flex items-center gap-2">
       <Button
         className="gap-2 text-xs"
+        disabled={readOnly}
         onClick={onToggleAllDay}
         size="sm"
         type="button"
@@ -1098,7 +1139,12 @@ function EventAllDayAndRecurrenceRow({
       {canEditRecurrence ? (
         <Popover>
           <PopoverTrigger asChild>
-            <Button className="h-8 w-8" size="icon" variant="outline">
+            <Button
+              className="h-8 w-8"
+              disabled={readOnly}
+              size="icon"
+              variant="outline"
+            >
               <Repeat className="h-4 w-4" />
               <span className="sr-only">Edit recurrence</span>
             </Button>
@@ -1112,8 +1158,15 @@ function EventAllDayAndRecurrenceRow({
           </PopoverContent>
         </Popover>
       ) : null}
-      <Select onValueChange={onCalendarChange} value={calendarValue}>
-        <SelectTrigger className="ml-auto h-8 w-auto min-w-0 gap-1.5 px-2 text-xs">
+      <Select
+        disabled={readOnly}
+        onValueChange={onCalendarChange}
+        value={calendarValue}
+      >
+        <SelectTrigger
+          className="ml-auto h-8 w-auto min-w-0 gap-1.5 px-2 text-xs"
+          disabled={readOnly}
+        >
           <SelectValue placeholder="Calendar" />
         </SelectTrigger>
         <SelectContent>
@@ -1145,6 +1198,7 @@ function EventLocationCombobox({
   isSearching,
   mapsUrl,
   locationPopoverOpen,
+  readOnly = false,
   onInputValueChange,
   onOpenChange,
   onValueChange,
@@ -1160,6 +1214,7 @@ function EventLocationCombobox({
   isSearching: boolean;
   mapsUrl: string | null;
   locationPopoverOpen: boolean;
+  readOnly?: boolean;
   onInputValueChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
   onValueChange: (value: string | null) => void;
@@ -1171,6 +1226,7 @@ function EventLocationCombobox({
         Location
       </Label>
       <Combobox
+        disabled={readOnly}
         inputValue={location}
         onInputValueChange={onInputValueChange}
         onOpenChange={onOpenChange}
@@ -1181,6 +1237,7 @@ function EventLocationCombobox({
           <div className="flex-1">
             <ComboboxInput
               className="w-full"
+              disabled={readOnly}
               onFocus={onFocusInput}
               placeholder="Where?"
               showClear={Boolean(location)}
@@ -1243,11 +1300,13 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
 
 function EventFormActionRow({
   isCreateMode,
+  readOnly = false,
   onDelete,
   onCancel,
   onSave,
 }: {
   isCreateMode: boolean;
+  readOnly?: boolean;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1256,7 +1315,7 @@ function EventFormActionRow({
     <>
       <Separator />
       <div className="flex items-center gap-2">
-        {isCreateMode ? null : (
+        {isCreateMode || readOnly ? null : (
           <Button
             className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
             onClick={onDelete}
@@ -1270,11 +1329,13 @@ function EventFormActionRow({
         )}
         <div className="ml-auto flex gap-2">
           <Button onClick={onCancel} size="sm" type="button" variant="ghost">
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </Button>
-          <Button onClick={onSave} size="sm" type="button">
-            Save
-          </Button>
+          {readOnly ? null : (
+            <Button onClick={onSave} size="sm" type="button">
+              Save
+            </Button>
+          )}
         </div>
       </div>
     </>
@@ -1293,6 +1354,8 @@ export function EventEditForm({
   onCancel,
   onDelete,
   open,
+  readOnly = false,
+  readOnlyReason,
   headerContent,
   onRegisterCreateInterop,
 }: {
@@ -1309,6 +1372,8 @@ export function EventEditForm({
   onCancel?: () => void;
   onDelete: () => void;
   open: boolean;
+  readOnly?: boolean;
+  readOnlyReason?: string | null;
   headerContent?: ReactNode;
   onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
 }) {
@@ -1327,8 +1392,8 @@ export function EventEditForm({
       e.preventDefault();
       onDelete();
     },
-    { enabled: open && !isCreateMode },
-    [onDelete, open, isCreateMode]
+    { enabled: open && !isCreateMode && !readOnly },
+    [onDelete, open, isCreateMode, readOnly]
   );
   /**
    * We intentionally do not run mutations from inside the form.
@@ -1525,6 +1590,9 @@ export function EventEditForm({
   );
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
+    if (readOnly) {
+      return;
+    }
     if (!value) {
       hasUserEditedRef.current = true;
       setValue(field, "", { shouldDirty: true });
@@ -1547,6 +1615,9 @@ export function EventEditForm({
 
   const handleLocationInputChange = useCallback(
     (value: string) => {
+      if (readOnly) {
+        return;
+      }
       hasUserEditedRef.current = true;
       setValue("location", value, { shouldDirty: true });
       if (value.trim().length >= 2) {
@@ -1555,11 +1626,14 @@ export function EventEditForm({
         setLocationOpen(false);
       }
     },
-    [setValue]
+    [readOnly, setValue]
   );
 
   const handleLocationValueChange = useCallback(
     (value: string | null) => {
+      if (readOnly) {
+        return;
+      }
       if (!value) {
         return;
       }
@@ -1567,11 +1641,15 @@ export function EventEditForm({
       setValue("location", value, { shouldDirty: true });
       setLocationOpen(false);
     },
-    [setValue]
+    [readOnly, setValue]
   );
 
   const handleLocationOpenChange = useCallback(
     (nextOpen: boolean) => {
+      if (readOnly) {
+        setLocationOpen(false);
+        return;
+      }
       if (!nextOpen) {
         setLocationOpen(false);
         return;
@@ -1580,10 +1658,13 @@ export function EventEditForm({
         setLocationOpen(true);
       }
     },
-    [locationQuery.length]
+    [locationQuery.length, readOnly]
   );
 
   const handleCreateMeeting = useCallback(() => {
+    if (readOnly) {
+      return;
+    }
     if (!canCreateMeeting) {
       return;
     }
@@ -1594,22 +1675,27 @@ export function EventEditForm({
     if (!isCreateMode) {
       onSave();
     }
-  }, [canCreateMeeting, isCreateMode, onSave]);
+  }, [canCreateMeeting, isCreateMode, onSave, readOnly]);
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
+      if (readOnly) {
+        return { type: "none" };
+      }
       const resolvedConference =
         pendingConferenceRef.current ?? pendingConference;
       if (isCreateMode) {
         return buildCreatePayload(
           values,
           clampToStartIfNeeded,
-          resolvedConference
+          resolvedConference,
+          calendar?.calendar.timeZone
         );
       }
       return buildEditPayload(values, {
         accountId,
         calendarId,
+        calendarTimeZone: calendar?.calendar.timeZone,
         clampToStartIfNeeded,
         conferenceData: resolvedConference ?? event?.conferenceData,
         event,
@@ -1625,6 +1711,7 @@ export function EventEditForm({
       isCreateMode,
       masterQuery.data,
       pendingConference,
+      readOnly,
     ]
   );
 
@@ -1705,11 +1792,18 @@ export function EventEditForm({
       }}
     >
       {headerContent ? <div>{headerContent}</div> : null}
+      {readOnly && readOnlyReason ? (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <p className="text-muted-foreground">{readOnlyReason}</p>
+        </div>
+      ) : null}
 
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}
         isCreateMode={isCreateMode}
+        readOnly={readOnly}
         onSelectColor={(colorKey) => {
           hasUserEditedRef.current = true;
           setValue("colorId", colorKey, { shouldDirty: true });
@@ -1723,6 +1817,7 @@ export function EventEditForm({
       />
 
       <Textarea
+        readOnly={readOnly}
         onChange={(e) => {
           hasUserEditedRef.current = true;
           setValue("description", e.target.value, { shouldDirty: true });
@@ -1738,6 +1833,7 @@ export function EventEditForm({
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
         canEditRecurrence={canEditRecurrence}
+        readOnly={readOnly}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val
@@ -1775,6 +1871,7 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
+                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="h-4 w-4" />
@@ -1788,6 +1885,7 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
+                  disabled={readOnly}
                   mode="single"
                   onSelect={(date) => {
                     const next = date ?? null;
@@ -1817,6 +1915,7 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
+                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="h-4 w-4" />
@@ -1830,6 +1929,7 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
+                  disabled={readOnly}
                   mode="single"
                   onSelect={(date) => {
                     const next = date ?? null;
@@ -1858,6 +1958,7 @@ export function EventEditForm({
                   "justify-start gap-2 text-left font-medium text-xs",
                   !startTimeValue && "text-muted-foreground"
                 )}
+                disabled={readOnly}
                 variant="outline"
               >
                 <Clock3 className="h-4 w-4" />
@@ -1870,6 +1971,7 @@ export function EventEditForm({
               </Label>
               <Input
                 className="mt-2"
+                disabled={readOnly}
                 onChange={(e) => handleTimeChange("startTime", e.target.value)}
                 step={900}
                 type="time"
@@ -1885,6 +1987,7 @@ export function EventEditForm({
                   "justify-start gap-2 text-left font-medium text-xs",
                   !endTimeValue && "text-muted-foreground"
                 )}
+                disabled={readOnly}
                 variant="outline"
               >
                 <Timer className="h-4 w-4" />
@@ -1895,6 +1998,7 @@ export function EventEditForm({
               <Label className="text-muted-foreground text-xs">End time</Label>
               <Input
                 className="mt-2"
+                disabled={readOnly}
                 onChange={(e) => handleTimeChange("endTime", e.target.value)}
                 step={900}
                 type="time"
@@ -1908,6 +2012,7 @@ export function EventEditForm({
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
+        readOnly={readOnly}
         onCreateMeeting={handleCreateMeeting}
       />
 
@@ -1916,6 +2021,7 @@ export function EventEditForm({
         location={watchedValues.location}
         locationPopoverOpen={locationPopoverOpen}
         mapsUrl={mapsUrl}
+        readOnly={readOnly}
         onFocusInput={() => {
           if (locationQuery.length >= 2) {
             setLocationOpen(true);
@@ -1930,6 +2036,7 @@ export function EventEditForm({
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}
+          readOnly={readOnly}
           onCancel={onCancel}
           onDelete={onDelete}
           onSave={onSave}

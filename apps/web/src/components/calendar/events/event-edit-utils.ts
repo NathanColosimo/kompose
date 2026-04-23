@@ -37,11 +37,11 @@ interface TemporalFormValues {
 }
 
 interface TemporalPayload {
-  endPayload: { date?: string; dateTime?: string };
+  endPayload: { date?: string; dateTime?: string; timeZone?: string };
   isAllDay: boolean;
   occurrenceStart: Date;
   startDateTime: Date | null;
-  startPayload: { date?: string; dateTime?: string };
+  startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
 /** Combine a Date and time string (HH:mm) into a single Date */
@@ -66,6 +66,9 @@ export function buildTemporalPayload(
   ) => {
     start: Date | null;
     end: Date | null;
+  },
+  options?: {
+    timeZone?: string;
   }
 ): TemporalPayload | null {
   const isAllDayEvent = values.allDay;
@@ -85,7 +88,10 @@ export function buildTemporalPayload(
 
   const startPayload = isAllDayEvent
     ? { date: dateToDateString(startDate) }
-    : { dateTime: startDateTime?.toISOString() };
+    : {
+        dateTime: startDateTime?.toISOString(),
+        ...(options?.timeZone ? { timeZone: options.timeZone } : {}),
+      };
 
   const endPayload = isAllDayEvent
     ? {
@@ -93,7 +99,10 @@ export function buildTemporalPayload(
           ? pickerDateToTemporal(resolvedTimes.end).add({ days: 1 }).toString()
           : undefined,
       }
-    : { dateTime: endDateTime?.toISOString() };
+    : {
+        dateTime: endDateTime?.toISOString(),
+        ...(options?.timeZone ? { timeZone: options.timeZone } : {}),
+      };
 
   return {
     startPayload,

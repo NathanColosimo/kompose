@@ -1,14 +1,24 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import {
+  getGoogleEventEditBlockReason,
+  isGoogleEventEditable,
+  type Event as GoogleEvent,
+} from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
+import { Lock } from "lucide-react";
 import { memo } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Temporal } from "temporal-polyfill";
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
@@ -46,8 +56,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))
   );
+  const isEditable = isGoogleEventEditable(event);
+  const editBlockedReason = getGoogleEventEditBlockReason(event);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    disabled: !isEditable,
     id: `google-event-${calendarId}-${event.id}`,
     data: {
       type: "google-event",
@@ -64,6 +77,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: startListeners,
     setNodeRef: setStartHandleRef,
   } = useDraggable({
+    disabled: !isEditable,
     id: `google-event-${calendarId}-${event.id}-resize-start`,
     data: {
       type: "google-event-resize",
@@ -81,6 +95,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: endListeners,
     setNodeRef: setEndHandleRef,
   } = useDraggable({
+    disabled: !isEditable,
     id: `google-event-${calendarId}-${event.id}-resize-end`,
     data: {
       type: "google-event-resize",
@@ -134,53 +149,77 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     color: foregroundColor ?? "hsl(var(--primary-foreground))",
   };
 
+  const eventCard = (
+    <div
+      className={cn(
+        "group pointer-events-auto rounded-md bg-background p-px shadow-sm transition-shadow",
+        "relative",
+        isEditable ? "cursor-grab hover:shadow-md" : "cursor-default opacity-90",
+        isDragging ? "opacity-0" : ""
+      )}
+      ref={setNodeRef}
+      style={style}
+      title={editBlockedReason ?? undefined}
+      {...attributes}
+      {...listeners}
+    >
+      <div
+        className="h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
+        style={fillStyle}
+      >
+        {!isEditable && editBlockedReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-black/15 text-current opacity-90">
+                <Lock className="size-2.5" />
+                <span className="sr-only">{editBlockedReason}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p>{editBlockedReason}</p>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        <div className="truncate font-medium text-xs">
+          {event.summary ?? "Google event"}
+        </div>
+        {/* Hide time for short events (<30min) to prevent overflow */}
+        {durationMinutes >= 30 && (
+          <div className="truncate text-[10px] opacity-85">
+            {formatTime(start)} - {formatTime(end)}
+          </div>
+        )}
+      </div>
+      {isEditable ? (
+        <>
+          <div
+            className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            ref={setStartHandleRef}
+            {...startAttributes}
+            {...startListeners}
+          />
+          <div
+            className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            ref={setEndHandleRef}
+            {...endAttributes}
+            {...endListeners}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+
   return (
     <EventEditPopover
       accountId={accountId}
       calendarId={calendarId}
       end={zonedDateTimeToDate(end)}
       event={event}
+      readOnly={!isEditable}
+      readOnlyReason={editBlockedReason}
       start={zonedDateTimeToDate(start)}
     >
-      <div
-        className={cn(
-          "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
-          "relative",
-          "hover:shadow-md",
-          isDragging ? "opacity-0" : ""
-        )}
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-      >
-        <div
-          className="h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
-          style={fillStyle}
-        >
-          <div className="truncate font-medium text-xs">
-            {event.summary ?? "Google event"}
-          </div>
-          {/* Hide time for short events (<30min) to prevent overflow */}
-          {durationMinutes >= 30 && (
-            <div className="truncate text-[10px] opacity-85">
-              {formatTime(start)} - {formatTime(end)}
-            </div>
-          )}
-        </div>
-        <div
-          className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-          ref={setStartHandleRef}
-          {...startAttributes}
-          {...startListeners}
-        />
-        <div
-          className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-          ref={setEndHandleRef}
-          {...endAttributes}
-          {...endListeners}
-        />
-      </div>
+      {eventCard}
     </EventEditPopover>
   );
 });

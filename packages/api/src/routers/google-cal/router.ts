@@ -5,6 +5,7 @@ import {
   GoogleCalendarLive,
   type GoogleCalendarZodError,
 } from "@kompose/google-cal/client";
+import { getGoogleEventEditBlockReason } from "@kompose/google-cal/schema";
 import { implement, ORPCError } from "@orpc/server";
 import { Effect, Layer, Option } from "effect";
 import { requireAuth } from "../..";
@@ -17,7 +18,7 @@ import {
   logCacheErrorAndMiss,
 } from "./cache";
 import { googleCalContract } from "./contract";
-import { AccountNotLinkedError } from "./errors";
+import { AccountNotLinkedError, NonEditableGoogleEventError } from "./errors";
 
 /** Merged layer providing both cache service and telemetry. */
 const GoogleCalLive = Layer.merge(
@@ -26,7 +27,11 @@ const GoogleCalLive = Layer.merge(
 );
 
 export function handleError(
-  error: AccountNotLinkedError | GoogleApiError | GoogleCalendarZodError,
+  error:
+    | AccountNotLinkedError
+    | GoogleApiError
+    | GoogleCalendarZodError
+    | NonEditableGoogleEventError,
   accountId: string,
   userId: string
 ): never {
@@ -45,6 +50,16 @@ export function handleError(
       throw new ORPCError("PARSE_ERROR", {
         message: error.message,
         data: { cause: error.cause },
+      });
+    case "NonEditableGoogleEventError":
+      throw new ORPCError("BAD_REQUEST", {
+        message: error.message,
+        data: {
+          accountId,
+          eventId: error.eventId,
+          eventType: error.eventType,
+          userId,
+        },
       });
     default:
       throw new ORPCError("UNKNOWN_ERROR", {
@@ -97,6 +112,38 @@ function publishGoogleCalendarEvent(
 function includesSearchText(value: string | undefined, query: string): boolean {
   return value?.toLowerCase().includes(query) ?? false;
 }
+
+const getCurrentGoogleEvent = (
+  accessToken: string,
+  calendarId: string,
+  eventId: string
+) =>
+  Effect.gen(function* () {
+    const service = yield* GoogleCalendar;
+    return yield* service.getEvent(calendarId, eventId);
+  }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
+
+const ensureGoogleEventEditable = (
+  event: {
+    id: string;
+    description?: string;
+    eventType?: string;
+    locked?: boolean;
+  }
+) => {
+  const blockedReason = getGoogleEventEditBlockReason(event);
+  if (!blockedReason) {
+    return Effect.void;
+  }
+
+  return Effect.fail(
+    new NonEditableGoogleEventError({
+      eventId: event.id,
+      eventType: event.eventType,
+      message: blockedReason,
+    })
+  );
+};
 
 // ── Router ──────────────────────────────────────────────────────────
 
@@ -528,6 +575,12 @@ export const googleCalRouter = os.router({
           context.user.id,
           input.accountId
         );
+        const currentEvent = yield* getCurrentGoogleEvent(
+          accessToken,
+          input.calendarId,
+          input.eventId
+        );
+        yield* ensureGoogleEventEditable(currentEvent);
 
         const event = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;
@@ -580,6 +633,12 @@ export const googleCalRouter = os.router({
           context.user.id,
           input.accountId
         );
+        const currentEvent = yield* getCurrentGoogleEvent(
+          accessToken,
+          input.calendarId,
+          input.eventId
+        );
+        yield* ensureGoogleEventEditable(currentEvent);
 
         const event = yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;

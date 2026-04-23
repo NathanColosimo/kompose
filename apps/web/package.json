@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "PORTLESS_APP_PORT=3000 PORTLESS_TLD=dev PORTLESS_HTTPS=1 portless local.kompose bun ./node_modules/next/dist/bin/next dev",
+    "dev": "PORTLESS_PORT=443 PORTLESS_APP_PORT=3000 PORTLESS_TLD=dev PORTLESS_HTTPS=1 portless local.kompose bun ./node_modules/next/dist/bin/next dev",
     "devtools": "bunx @ai-sdk/devtools",
     "build": "bun ./node_modules/next/dist/bin/next build",
     "build:prod": "(cd ../.. && vercel pull --yes --environment=production && vercel build --prod)",

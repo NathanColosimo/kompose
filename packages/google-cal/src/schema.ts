@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+const googleEventOpaqueObjectSchema = z.record(z.string(), z.unknown());
+const gmailGeneratedEventDescriptionMarker =
+  "This event was created from an email you received in Gmail.";
+
 export const CalendarSchema = z.object({
   id: z.string(),
   summary: z.string(),
@@ -34,6 +38,11 @@ export const EventSchema = z.object({
   status: z.string().optional(),
   htmlLink: z.string().optional(),
   colorId: z.string().optional(),
+  eventType: z.string().optional(),
+  locked: z.boolean().optional(),
+  birthdayProperties: googleEventOpaqueObjectSchema.optional(),
+  extendedProperties: googleEventOpaqueObjectSchema.optional(),
+  focusTimeProperties: googleEventOpaqueObjectSchema.optional(),
 
   // Present on recurring instances; identifies the original start of the series occurrence.
   originalStartTime: z
@@ -84,6 +93,9 @@ export const EventSchema = z.object({
     )
     .optional(),
 
+  outOfOfficeProperties: googleEventOpaqueObjectSchema.optional(),
+  workingLocationProperties: googleEventOpaqueObjectSchema.optional(),
+
   conferenceData: z
     .object({
       entryPoints: z
@@ -127,6 +139,44 @@ export const EventSchema = z.object({
 });
 
 export type Event = z.infer<typeof EventSchema>;
+
+type GoogleEventEditabilityInput = Pick<
+  Event,
+  "description" | "eventType" | "locked"
+>;
+
+export function isGoogleEventFromGmail(
+  event: GoogleEventEditabilityInput
+): boolean {
+  return (
+    event.eventType === "fromGmail" ||
+    event.description?.includes(gmailGeneratedEventDescriptionMarker) === true
+  );
+}
+
+export function getGoogleEventEditBlockReason(
+  event: GoogleEventEditabilityInput
+): string | null {
+  if (event.locked) {
+    return "Google marked this event as locked, so it can't be edited here.";
+  }
+
+  if (isGoogleEventFromGmail(event)) {
+    return "Events automatically created from Gmail can't be rescheduled here.";
+  }
+
+  if (event.eventType === "birthday") {
+    return "Birthday events are managed by Google and can't be edited here.";
+  }
+
+  return null;
+}
+
+export function isGoogleEventEditable(
+  event: GoogleEventEditabilityInput
+): boolean {
+  return getGoogleEventEditBlockReason(event) === null;
+}
 
 export const RecurrenceScopeSchema = z.enum(["this", "all", "following"]);
 export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;

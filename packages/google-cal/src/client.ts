@@ -134,6 +134,37 @@ function getConferenceDataVersion(event: { conferenceData?: unknown }): number |
   return event.conferenceData ? 1 : undefined;
 }
 
+function summarizeEventForDebug(event: CreateEvent) {
+  return {
+    summary: event.summary,
+    eventType: event.eventType ?? "default",
+    hasFocusTimeProperties: Boolean(event.focusTimeProperties),
+    hasOutOfOfficeProperties: Boolean(event.outOfOfficeProperties),
+    hasWorkingLocationProperties: Boolean(event.workingLocationProperties),
+    recurrenceCount: event.recurrence?.length ?? 0,
+    start: event.start,
+    end: event.end,
+  };
+}
+
+function logGoogleEventUpdateFailure(params: {
+  operation: "create" | "update";
+  calendarId: string;
+  eventId?: string;
+  scope?: string;
+  event: CreateEvent;
+  cause: unknown;
+}) {
+  console.error("[GoogleCalendar] Event mutation failed", {
+    operation: params.operation,
+    calendarId: params.calendarId,
+    eventId: params.eventId,
+    scope: params.scope,
+    event: summarizeEventForDebug(params.event),
+    cause: params.cause,
+  });
+}
+
 // -- Google User Info (standalone, no Effect) --
 
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
@@ -484,6 +515,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   const createEvent = Effect.fn("GoogleCalendar.createEvent")(function* (calendarId: string, event: CreateEvent) {
       yield* Effect.annotateCurrentSpan("calendarId", calendarId);
+      yield* Effect.annotateCurrentSpan("eventType", event.eventType ?? "default");
       const conferenceDataVersion = getConferenceDataVersion(event);
       const response = yield* Effect.tryPromise({
         try: () =>
@@ -491,7 +523,15 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             ...event,
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
-        catch: (cause) => new GoogleApiError({ cause }),
+        catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "create",
+            calendarId,
+            event,
+            cause,
+          });
+          return new GoogleApiError({ cause });
+        },
       });
 
       const parsed = EventSchema.safeParse(response);
@@ -516,6 +556,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   const updateEventThis = (calendarId: string, eventId: string, event: CreateEvent) =>
     Effect.gen(function* () {
+      yield* Effect.annotateCurrentSpan("eventType", event.eventType ?? "default");
       const conferenceDataVersion = getConferenceDataVersion(event);
       const response = yield* Effect.tryPromise({
         try: () =>
@@ -525,6 +566,14 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
         catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId,
+            scope: "this",
+            event,
+            cause,
+          });
           return new GoogleApiError({ cause });
         },
       });
@@ -556,6 +605,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           recurrence: event.recurrence ?? master.recurrence,
         })
       );
+      yield* Effect.annotateCurrentSpan("eventType", payload.eventType ?? "default");
       const conferenceDataVersion = getConferenceDataVersion(payload);
 
       const response = yield* Effect.tryPromise({
@@ -566,6 +616,14 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
         catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId: master.id,
+            scope: "all",
+            event: payload,
+            cause,
+          });
           return new GoogleApiError({ cause });
         },
       });
@@ -619,6 +677,10 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           recurrence: truncatedRecurrence,
         })
       );
+      yield* Effect.annotateCurrentSpan(
+        "eventType",
+        truncatedPayload.eventType ?? "default"
+      );
       const truncatedConferenceDataVersion =
         getConferenceDataVersion(truncatedPayload);
 
@@ -632,6 +694,14 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
               : {}),
           }),
         catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId: master.id,
+            scope: "following-truncate",
+            event: truncatedPayload,
+            cause,
+          });
           return new GoogleApiError({ cause });
         },
       });
@@ -685,6 +755,12 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
               : {}),
           }),
         catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "create",
+            calendarId,
+            event: newSeriesPayload,
+            cause,
+          });
           return new GoogleApiError({ cause });
         },
       }).pipe(
