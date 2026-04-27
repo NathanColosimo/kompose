@@ -1,3 +1,4 @@
+import { DatabaseLive } from "@kompose/db";
 import type {
   TagInsert,
   TagInsertRow,
@@ -21,6 +22,7 @@ import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
 
 export class TagService extends Effect.Service<TagService>()("TagService", {
   accessors: true,
+  dependencies: [DatabaseLive],
   effect: Effect.gen(function* () {
     const listTags = Effect.fn("TagService.listTags")(function* (
       userId: string

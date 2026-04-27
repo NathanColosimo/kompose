@@ -27,15 +27,17 @@ export function useGoogleCalendars(accountIds: string[]) {
   });
 
   // Memoize flattened calendars to keep a stable reference when data is unchanged.
-  const calendars = useMemo<CalendarWithSource[]>(() => {
-    return queries.flatMap((query, index) => {
-      const accountId = accountIds[index];
-      if (!(accountId && query.data)) {
-        return [];
-      }
-      return query.data.map((calendar) => ({ accountId, calendar }));
-    });
-  }, [accountIds, queries]);
+  const calendars = useMemo<CalendarWithSource[]>(
+    () =>
+      queries.flatMap((query, index) => {
+        const accountId = accountIds[index];
+        if (!(accountId && query.data)) {
+          return [];
+        }
+        return query.data.map((calendar) => ({ accountId, calendar }));
+      }),
+    [accountIds, queries]
+  );
 
   const isLoading = queries.some((q) => q.isLoading);
   const isFetching = queries.some((q) => q.isFetching);

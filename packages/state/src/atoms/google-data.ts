@@ -29,9 +29,7 @@ const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   return {
     queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     enabled: hasSession,
-    queryFn: async () => {
-      return (await authClient.listAccounts())?.data ?? [];
-    },
+    queryFn: async () => (await authClient.listAccounts())?.data ?? [],
     staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
   };

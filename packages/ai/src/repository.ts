@@ -1,4 +1,4 @@
-import { db } from "@kompose/db";
+import { Database, DatabaseLive } from "@kompose/db";
 import {
   type AiChatRole,
   type AiMessageInsertRow,
@@ -12,6 +12,7 @@ import {
   type CreateAiSessionInput,
 } from "@kompose/db/schema/ai";
 import { and, asc, desc, eq } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect } from "effect";
 import { uuidv7 } from "uuidv7";
 import { AiChatError } from "./errors";
@@ -20,34 +21,32 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
   "AiChatRepository",
   {
     accessors: true,
+    dependencies: [DatabaseLive],
     effect: Effect.gen(function* () {
+      const db = yield* Database;
+
       const listSessions: (
         userId: string
-      ) => Effect.Effect<AiSessionSelect[], AiChatError> = Effect.fn(
-        "AiChatRepository.listSessions"
-      )(function* (userId: string) {
-        yield* Effect.annotateCurrentSpan("userId", userId);
-        return yield* Effect.tryPromise({
-          try: () =>
-            db
-              .select()
-              .from(aiSessionTable)
-              .where(eq(aiSessionTable.userId, userId))
-              .orderBy(desc(aiSessionTable.lastMessageAt)),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to list chat sessions.",
-              code: "INTERNAL",
-            }),
+      ) => Effect.Effect<AiSessionSelect[], EffectDrizzleQueryError> =
+        Effect.fn("AiChatRepository.listSessions")(function* (userId: string) {
+          yield* Effect.annotateCurrentSpan("userId", userId);
+          return yield* db
+            .select()
+            .from(aiSessionTable)
+            .where(eq(aiSessionTable.userId, userId))
+            .orderBy(desc(aiSessionTable.lastMessageAt));
         });
-      });
 
       const createSession: (
         userId: string,
         input: CreateAiSessionInput
-      ) => Effect.Effect<AiSessionSelect, AiChatError> = Effect.fn(
-        "AiChatRepository.createSession"
-      )(function* (userId: string, input: CreateAiSessionInput) {
+      ) => Effect.Effect<
+        AiSessionSelect,
+        AiChatError | EffectDrizzleQueryError
+      > = Effect.fn("AiChatRepository.createSession")(function* (
+        userId: string,
+        input: CreateAiSessionInput
+      ) {
         yield* Effect.annotateCurrentSpan("userId", userId);
         const insert: AiSessionInsertRow = {
           id: uuidv7(),
@@ -58,14 +57,10 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
           lastMessageAt: new Date().toISOString(),
         };
 
-        const [row] = yield* Effect.tryPromise({
-          try: () => db.insert(aiSessionTable).values(insert).returning(),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to create chat session.",
-              code: "INTERNAL",
-            }),
-        });
+        const [row] = yield* db
+          .insert(aiSessionTable)
+          .values(insert)
+          .returning();
 
         if (!row) {
           return yield* new AiChatError({
@@ -79,28 +74,24 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       const getSession: (
         userId: string,
         sessionId: string
-      ) => Effect.Effect<AiSessionSelect, AiChatError> = Effect.fn(
-        "AiChatRepository.getSession"
-      )(function* (userId: string, sessionId: string) {
+      ) => Effect.Effect<
+        AiSessionSelect,
+        AiChatError | EffectDrizzleQueryError
+      > = Effect.fn("AiChatRepository.getSession")(function* (
+        userId: string,
+        sessionId: string
+      ) {
         yield* Effect.annotateCurrentSpan("userId", userId);
         yield* Effect.annotateCurrentSpan("sessionId", sessionId);
-        const [row] = yield* Effect.tryPromise({
-          try: () =>
-            db
-              .select()
-              .from(aiSessionTable)
-              .where(
-                and(
-                  eq(aiSessionTable.id, sessionId),
-                  eq(aiSessionTable.userId, userId)
-                )
-              ),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to get chat session.",
-              code: "INTERNAL",
-            }),
-        });
+        const [row] = yield* db
+          .select()
+          .from(aiSessionTable)
+          .where(
+            and(
+              eq(aiSessionTable.id, sessionId),
+              eq(aiSessionTable.userId, userId)
+            )
+          );
 
         if (!row) {
           return yield* Effect.fail(
@@ -116,65 +107,55 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       const deleteSession: (
         userId: string,
         sessionId: string
-      ) => Effect.Effect<void, AiChatError> = Effect.fn(
-        "AiChatRepository.deleteSession"
-      )(function* (userId: string, sessionId: string) {
-        yield* Effect.annotateCurrentSpan("userId", userId);
-        yield* Effect.annotateCurrentSpan("sessionId", sessionId);
-        const rows = yield* Effect.tryPromise({
-          try: () =>
-            db
-              .delete(aiSessionTable)
-              .where(
-                and(
-                  eq(aiSessionTable.id, sessionId),
-                  eq(aiSessionTable.userId, userId)
-                )
+      ) => Effect.Effect<void, AiChatError | EffectDrizzleQueryError> =
+        Effect.fn("AiChatRepository.deleteSession")(function* (
+          userId: string,
+          sessionId: string
+        ) {
+          yield* Effect.annotateCurrentSpan("userId", userId);
+          yield* Effect.annotateCurrentSpan("sessionId", sessionId);
+          const rows = yield* db
+            .delete(aiSessionTable)
+            .where(
+              and(
+                eq(aiSessionTable.id, sessionId),
+                eq(aiSessionTable.userId, userId)
               )
-              .returning({ id: aiSessionTable.id }),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to delete chat session.",
-              code: "INTERNAL",
-            }),
-        });
+            )
+            .returning({ id: aiSessionTable.id });
 
-        if (rows.length === 0) {
-          return yield* new AiChatError({
-            message: "Chat session not found.",
-            code: "NOT_FOUND",
-          });
-        }
-      });
+          if (rows.length === 0) {
+            return yield* new AiChatError({
+              message: "Chat session not found.",
+              code: "NOT_FOUND",
+            });
+          }
+        });
 
       const listMessages: (
         userId: string,
         sessionId: string
-      ) => Effect.Effect<AiMessageSelect[], AiChatError> = Effect.fn(
-        "AiChatRepository.listMessages"
-      )(function* (userId: string, sessionId: string) {
+      ) => Effect.Effect<
+        AiMessageSelect[],
+        AiChatError | EffectDrizzleQueryError
+      > = Effect.fn("AiChatRepository.listMessages")(function* (
+        userId: string,
+        sessionId: string
+      ) {
         yield* Effect.annotateCurrentSpan("userId", userId);
         yield* Effect.annotateCurrentSpan("sessionId", sessionId);
-        const rows = yield* Effect.tryPromise({
-          try: async () =>
-            db
-              .select({ message: aiMessageTable })
-              .from(aiMessageTable)
-              .innerJoin(
-                aiSessionTable,
-                and(
-                  eq(aiSessionTable.id, aiMessageTable.sessionId),
-                  eq(aiSessionTable.userId, userId)
-                )
-              )
-              .where(eq(aiMessageTable.sessionId, sessionId))
-              .orderBy(asc(aiMessageTable.createdAt)),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to list chat messages.",
-              code: "INTERNAL",
-            }),
-        });
+        const rows = yield* db
+          .select({ message: aiMessageTable })
+          .from(aiMessageTable)
+          .innerJoin(
+            aiSessionTable,
+            and(
+              eq(aiSessionTable.id, aiMessageTable.sessionId),
+              eq(aiSessionTable.userId, userId)
+            )
+          )
+          .where(eq(aiMessageTable.sessionId, sessionId))
+          .orderBy(asc(aiMessageTable.createdAt));
 
         const messages = rows.map((row) => row.message);
         const parsedRows = aiMessageSelectSchema.array().safeParse(messages);
@@ -190,9 +171,10 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
 
       const createMessage: (
         input: CreateAiMessageInput
-      ) => Effect.Effect<AiMessageSelect, AiChatError> = Effect.fn(
-        "AiChatRepository.createMessage"
-      )(function* (input: {
+      ) => Effect.Effect<
+        AiMessageSelect,
+        AiChatError | EffectDrizzleQueryError
+      > = Effect.fn("AiChatRepository.createMessage")(function* (input: {
         sessionId: string;
         role: AiChatRole;
         content: string;
@@ -207,14 +189,10 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
           parts: input.parts,
         };
 
-        const [row] = yield* Effect.tryPromise({
-          try: () => db.insert(aiMessageTable).values(insert).returning(),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to create chat message.",
-              code: "INTERNAL",
-            }),
-        });
+        const [row] = yield* db
+          .insert(aiMessageTable)
+          .values(insert)
+          .returning();
 
         if (!row) {
           return yield* new AiChatError({
@@ -238,7 +216,7 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
         sessionId: string;
         activeStreamId?: string | null;
         title?: string | null;
-      }) => Effect.Effect<void, AiChatError> = Effect.fn(
+      }) => Effect.Effect<void, EffectDrizzleQueryError> = Effect.fn(
         "AiChatRepository.updateSessionActivity"
       )(function* (input: {
         userId: string;
@@ -248,52 +226,36 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       }) {
         yield* Effect.annotateCurrentSpan("userId", input.userId);
         yield* Effect.annotateCurrentSpan("sessionId", input.sessionId);
-        yield* Effect.tryPromise({
-          try: () =>
-            db
-              .update(aiSessionTable)
-              .set({
-                activeStreamId: input.activeStreamId,
-                title: input.title,
-                lastMessageAt: new Date().toISOString(),
-              })
-              .where(
-                and(
-                  eq(aiSessionTable.id, input.sessionId),
-                  eq(aiSessionTable.userId, input.userId)
-                )
-              ),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to update chat session.",
-              code: "INTERNAL",
-            }),
-        });
+        yield* db
+          .update(aiSessionTable)
+          .set({
+            activeStreamId: input.activeStreamId,
+            title: input.title,
+            lastMessageAt: new Date().toISOString(),
+          })
+          .where(
+            and(
+              eq(aiSessionTable.id, input.sessionId),
+              eq(aiSessionTable.userId, input.userId)
+            )
+          );
       });
 
       const updateMessageContent: (input: {
         messageId: string;
         content: string;
         parts?: CreateAiMessageInput["parts"];
-      }) => Effect.Effect<void, AiChatError> = Effect.fn(
+      }) => Effect.Effect<void, EffectDrizzleQueryError> = Effect.fn(
         "AiChatRepository.updateMessageContent"
       )(function* (input: {
         messageId: string;
         content: string;
         parts?: CreateAiMessageInput["parts"];
       }) {
-        yield* Effect.tryPromise({
-          try: () =>
-            db
-              .update(aiMessageTable)
-              .set({ content: input.content, parts: input.parts })
-              .where(eq(aiMessageTable.id, input.messageId)),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to update chat message.",
-              code: "INTERNAL",
-            }),
-        });
+        yield* db
+          .update(aiMessageTable)
+          .set({ content: input.content, parts: input.parts })
+          .where(eq(aiMessageTable.id, input.messageId));
       });
 
       return {

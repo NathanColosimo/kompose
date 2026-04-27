@@ -1,4 +1,6 @@
+import { DatabaseLive } from "@kompose/db";
 import { implement, ORPCError } from "@orpc/server";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect, Layer } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
@@ -8,9 +10,19 @@ import type { TagSelect } from "./contract";
 import { tagContract, tagSelectSchemaWithIcon } from "./contract";
 import type { TagError } from "./errors";
 
-const TagLive = Layer.merge(TagService.Default, TelemetryLive);
+const TagLive = Layer.mergeAll(TagService.Default, DatabaseLive, TelemetryLive);
 
-function handleError(error: TagError): never {
+function handleError(error: TagError | EffectDrizzleQueryError): never {
+  if (error._tag === "EffectDrizzleQueryError") {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: error.message,
+      data: {
+        cause: error.cause,
+        query: error.query,
+      },
+    });
+  }
+
   switch (error._tag) {
     case "TagRepositoryError":
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
@@ -39,8 +51,8 @@ function handleError(error: TagError): never {
 const os = implement(tagContract).use(requireAuth).use(globalRateLimit);
 
 export const tagRouter = os.router({
-  list: os.list.handler(({ context }) => {
-    return Effect.runPromise(
+  list: os.list.handler(({ context }) =>
+    Effect.runPromise(
       TagService.listTags(context.user.id).pipe(
         Effect.map((tags) => {
           const parsedTags: TagSelect[] = tagSelectSchemaWithIcon
@@ -54,11 +66,11 @@ export const tagRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
-  create: os.create.handler(({ input, context }) => {
-    return Effect.runPromise(
+  create: os.create.handler(({ input, context }) =>
+    Effect.runPromise(
       TagService.createTag(context.user.id, {
         ...input,
         userId: context.user.id,
@@ -73,11 +85,11 @@ export const tagRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
-  update: os.update.handler(({ input, context }) => {
-    return Effect.runPromise(
+  update: os.update.handler(({ input, context }) =>
+    Effect.runPromise(
       TagService.updateTag(context.user.id, input.id, {
         name: input.name,
         icon: input.icon,
@@ -92,11 +104,11 @@ export const tagRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
-  delete: os.delete.handler(({ input, context }) => {
-    return Effect.runPromise(
+  delete: os.delete.handler(({ input, context }) =>
+    Effect.runPromise(
       TagService.deleteTag(context.user.id, input.id).pipe(
         Effect.provide(TagLive),
         Effect.match({
@@ -104,6 +116,6 @@ export const tagRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 });

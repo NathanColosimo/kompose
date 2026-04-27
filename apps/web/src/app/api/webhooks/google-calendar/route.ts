@@ -1,11 +1,10 @@
 /** biome-ignore-all lint/correctness/noNestedComponentDefinitions: route handler */
-import { TelemetryLive } from "@kompose/api/telemetry";
+import { WebhookLive } from "@kompose/api/webhooks/live";
 import { WebhookService } from "@kompose/api/webhooks/webhook-service";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 
 const tracer = trace.getTracer("kompose-api");
-const WebhookLive = Layer.merge(WebhookService.Default, TelemetryLive);
 
 export async function POST(request: Request): Promise<Response> {
   return await tracer.startActiveSpan(
@@ -59,9 +58,6 @@ export async function POST(request: Request): Promise<Response> {
                   { error }
                 )
               ),
-              Effect.catchTags({
-                WebhookRepositoryError: () => Effect.void,
-              }),
               Effect.provide(WebhookLive)
             )
           ).catch(() => undefined);

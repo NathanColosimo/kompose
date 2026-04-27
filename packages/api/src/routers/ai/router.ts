@@ -1,6 +1,8 @@
 import { AiChatError, AiChatService } from "@kompose/ai";
+import { DatabaseLive } from "@kompose/db";
 import { implement, ORPCError, streamToEventIterator } from "@orpc/server";
 import { generateId, type UIMessageChunk } from "ai";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import { requireAuth } from "../..";
@@ -15,7 +17,11 @@ import {
 } from "./stream-protocol";
 import { createAiTools } from "./tools";
 
-const AiChatLive = Layer.merge(AiChatService.Default, TelemetryLive);
+const AiChatLive = Layer.mergeAll(
+  AiChatService.Default,
+  DatabaseLive,
+  TelemetryLive
+);
 
 function publishAiChatEvent(userId: string, sessionId: string) {
   return publishToUser(userId, {
@@ -34,7 +40,17 @@ function emptyUiMessageChunkIterator() {
   );
 }
 
-function handleError(error: AiChatError): never {
+function handleError(error: AiChatError | EffectDrizzleQueryError): never {
+  if (error._tag === "EffectDrizzleQueryError") {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: error.message,
+      data: {
+        cause: error.cause,
+        query: error.query,
+      },
+    });
+  }
+
   const errorData = { aiErrorCode: error.code };
 
   switch (error.code) {

@@ -117,12 +117,12 @@ interface EventEditPopoverProps {
   event?: GoogleEvent;
   /** Whether the popover is in create or edit mode. Defaults based on event presence. */
   mode?: "create" | "edit";
-  readOnly?: boolean;
-  readOnlyReason?: string | null;
   /** Callback when open state changes (for controlled mode). */
   onOpenChange?: (open: boolean) => void;
   /** Controlled open state (optional). If provided, the popover is controlled. */
   open?: boolean;
+  readOnly?: boolean;
+  readOnlyReason?: string | null;
   side?: "top" | "right" | "bottom" | "left";
   start: Date;
 }
@@ -746,10 +746,10 @@ export function EventEditPopover({
             onRegisterCloseSaveRequest={(fn) => {
               buildCloseSaveRequestRef.current = fn;
             }}
-            readOnly={readOnly}
-            readOnlyReason={readOnlyReason}
             onSave={handleSave}
             open={open}
+            readOnly={readOnly}
+            readOnlyReason={readOnlyReason}
             start={start}
           />
         </PopoverContent>
@@ -1079,9 +1079,9 @@ function EventColorAndTitleRow({
       <Input
         autoFocus={isCreateMode}
         className="flex-1"
-        readOnly={readOnly}
         onChange={(e) => onSummaryChange(e.target.value)}
         placeholder={isCreateMode ? "Event title (required)" : "Event title"}
+        readOnly={readOnly}
         value={summary}
       />
     </div>
@@ -1709,6 +1709,7 @@ export function EventEditForm({
       clampToStartIfNeeded,
       event,
       isCreateMode,
+      calendar?.calendar.timeZone,
       masterQuery.data,
       pendingConference,
       readOnly,
@@ -1803,7 +1804,6 @@ export function EventEditForm({
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}
         isCreateMode={isCreateMode}
-        readOnly={readOnly}
         onSelectColor={(colorKey) => {
           hasUserEditedRef.current = true;
           setValue("colorId", colorKey, { shouldDirty: true });
@@ -1812,17 +1812,18 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("summary", value, { shouldDirty: true });
         }}
+        readOnly={readOnly}
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
 
       <Textarea
-        readOnly={readOnly}
         onChange={(e) => {
           hasUserEditedRef.current = true;
           setValue("description", e.target.value, { shouldDirty: true });
         }}
         placeholder="Add details..."
+        readOnly={readOnly}
         value={watchedValues.description}
       />
 
@@ -1833,7 +1834,6 @@ export function EventEditForm({
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
         canEditRecurrence={canEditRecurrence}
-        readOnly={readOnly}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val
@@ -1856,6 +1856,7 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
+        readOnly={readOnly}
         recurrenceRule={recurrenceRule}
       />
 
@@ -2012,8 +2013,8 @@ export function EventEditForm({
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
-        readOnly={readOnly}
         onCreateMeeting={handleCreateMeeting}
+        readOnly={readOnly}
       />
 
       <EventLocationCombobox
@@ -2021,7 +2022,6 @@ export function EventEditForm({
         location={watchedValues.location}
         locationPopoverOpen={locationPopoverOpen}
         mapsUrl={mapsUrl}
-        readOnly={readOnly}
         onFocusInput={() => {
           if (locationQuery.length >= 2) {
             setLocationOpen(true);
@@ -2030,16 +2030,17 @@ export function EventEditForm({
         onInputValueChange={handleLocationInputChange}
         onOpenChange={handleLocationOpenChange}
         onValueChange={handleLocationValueChange}
+        readOnly={readOnly}
         suggestions={locationSuggestions}
       />
 
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}
-          readOnly={readOnly}
           onCancel={onCancel}
           onDelete={onDelete}
           onSave={onSave}
+          readOnly={readOnly}
         />
       ) : null}
     </form>

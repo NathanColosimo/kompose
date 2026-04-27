@@ -1,8 +1,16 @@
 import { auth } from "@kompose/auth";
+import { Database, DatabaseLive } from "@kompose/db";
+import { account } from "@kompose/db/schema/auth";
 import type { WebhookSubscriptionSelect } from "@kompose/db/schema/webhook-subscription";
+import {
+  type WebhookSubscriptionProvider,
+  webhookSubscriptionTable,
+} from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
 import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
+import { and, eq } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
 import { publishToUser } from "../realtime/sync";
@@ -10,10 +18,11 @@ import {
   GoogleCalendarCacheService,
   logAndSwallowCacheError,
 } from "../routers/google-cal/cache";
-import type { WebhookProviderError, WebhookRepositoryError } from "./errors";
+import type { WebhookProviderError } from "./errors";
 import {
   formatUnknownCause,
   WebhookAuthError,
+  WebhookRepositoryError,
   WebhookValidationError,
 } from "./errors";
 import { GOOGLE_PROVIDER } from "./google-cal/constants";
@@ -22,7 +31,6 @@ import type {
   GoogleCalendarListSubscription,
 } from "./google-cal/webhook-service";
 import { GoogleCalendarWebhookService } from "./google-cal/webhook-service";
-import { WebhookRepositoryService } from "./webhook-repository-service";
 
 // ── Public interfaces ────────────────────────────────────────────────
 
@@ -44,6 +52,7 @@ export interface HandleGoogleNotificationResult {
 
 export type WebhookServiceError =
   | WebhookAuthError
+  | EffectDrizzleQueryError
   | WebhookProviderError
   | WebhookRepositoryError
   | WebhookValidationError;
@@ -81,6 +90,79 @@ function pickMostRecent<T extends WebhookSubscriptionSelect>(
   return candidateUpdatedAt >= currentUpdatedAt ? candidate : current;
 }
 
+const getAccountsByProvider = (params: {
+  accountId?: string;
+  providerId: string;
+  userId: string;
+}) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    const conditions = [
+      eq(account.userId, params.userId),
+      eq(account.providerId, params.providerId),
+    ];
+
+    if (params.accountId) {
+      conditions.push(eq(account.id, params.accountId));
+    }
+
+    return yield* db
+      .select()
+      .from(account)
+      .where(and(...conditions));
+  });
+
+const listSubscriptionsForUser = (params: {
+  provider?: WebhookSubscriptionProvider;
+  userId: string;
+}) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    const conditions = [eq(webhookSubscriptionTable.userId, params.userId)];
+
+    if (params.provider) {
+      conditions.push(eq(webhookSubscriptionTable.provider, params.provider));
+    }
+
+    return yield* db
+      .select()
+      .from(webhookSubscriptionTable)
+      .where(and(...conditions));
+  });
+
+const findActiveSubById = (params: { id: string }) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    const rows = yield* db
+      .select()
+      .from(webhookSubscriptionTable)
+      .where(
+        and(
+          eq(webhookSubscriptionTable.id, params.id),
+          eq(webhookSubscriptionTable.active, true)
+        )
+      )
+      .limit(1);
+
+    if (!rows[0]) {
+      return yield* new WebhookRepositoryError({
+        operation: "find-active-sub-by-id",
+        message: "No active subscription found",
+      });
+    }
+
+    return rows[0];
+  });
+
+const touchSubById = (params: { id: string; nowIso: string }) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    yield* db
+      .update(webhookSubscriptionTable)
+      .set({ lastNotifiedAt: params.nowIso })
+      .where(eq(webhookSubscriptionTable.id, params.id));
+  });
+
 // ── Service ──────────────────────────────────────────────────────────
 
 export class WebhookService extends Effect.Service<WebhookService>()(
@@ -88,14 +170,13 @@ export class WebhookService extends Effect.Service<WebhookService>()(
   {
     accessors: true,
     dependencies: [
+      DatabaseLive,
       GoogleCalendarCacheService.Default,
       GoogleCalendarWebhookService.Default,
-      WebhookRepositoryService.Default,
     ],
     effect: Effect.gen(function* () {
       const cache = yield* GoogleCalendarCacheService;
       const googleCalWebhooks = yield* GoogleCalendarWebhookService;
-      const repository = yield* WebhookRepositoryService;
 
       /**
        * Resolve an OAuth access token for a linked Google account
@@ -232,7 +313,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         if (params.accountId) {
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
         }
-        const accounts = yield* repository.getAccountsByProvider({
+        const accounts = yield* getAccountsByProvider({
           accountId: params.accountId,
           providerId: GOOGLE_PROVIDER,
           userId: params.userId,
@@ -242,11 +323,10 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           return;
         }
 
-        const existingSubscriptions =
-          yield* repository.listSubscriptionsForUser({
-            provider: GOOGLE_PROVIDER,
-            userId: params.userId,
-          });
+        const existingSubscriptions = yield* listSubscriptionsForUser({
+          provider: GOOGLE_PROVIDER,
+          userId: params.userId,
+        });
 
         // Process each account independently so one failure (e.g. revoked token)
         // doesn't prevent other accounts from being refreshed.
@@ -306,7 +386,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           });
         }
 
-        const subscription = yield* repository.findActiveSubById({
+        const subscription = yield* findActiveSubById({
           id: channelId,
         });
 
@@ -321,7 +401,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           return {};
         }
 
-        yield* repository.touchSubById({
+        yield* touchSubById({
           id: channelId,
           nowIso: new Date().toISOString(),
         });

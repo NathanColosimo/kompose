@@ -48,7 +48,7 @@ export function useAiChat(activeSessionId: string | null) {
     // session key while React Query performs a background refresh.
     placeholderData: () => {
       if (!activeSessionId) {
-        return undefined;
+        return;
       }
       return queryClient.getQueryData(
         getAiChatMessagesQueryKey(activeSessionId)

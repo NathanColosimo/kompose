@@ -83,7 +83,9 @@ export function CommandBarSearchTasks({
   const timeZone = useAtomValue(timezoneAtom);
 
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
-  const setCommandBarTaskOpenRequest = useSetAtom(commandBarTaskOpenRequestAtom);
+  const setCommandBarTaskOpenRequest = useSetAtom(
+    commandBarTaskOpenRequestAtom
+  );
   const setCurrentDate = useSetAtom(currentDateAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
@@ -134,9 +136,10 @@ export function CommandBarSearchTasks({
 
     // Filter by title match
     const query = search.trim().toLowerCase();
-    return searchable.filter((task: TaskSelectDecoded) =>
-      task.title.toLowerCase().includes(query) ||
-      task.description?.toLowerCase().includes(query)
+    return searchable.filter(
+      (task: TaskSelectDecoded) =>
+        task.title.toLowerCase().includes(query) ||
+        task.description?.toLowerCase().includes(query)
     );
   }, [tasks, search]);
 

@@ -64,7 +64,7 @@
     "expo-updates": "~55.0.21",
     "expo-web-browser": "~55.0.14",
     "jotai": "catalog:",
-    "lucide-react-native": "^1.8.0",
+    "lucide-react-native": "^1.11.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-hook-form": "catalog:",
@@ -81,13 +81,12 @@
     "tailwindcss": "catalog:",
     "tailwindcss-animate": "^1.0.7",
     "temporal-polyfill": "catalog:",
-    "uniwind": "^1.6.2",
+    "uniwind": "^1.6.3",
     "uuidv7": "catalog:"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@babel/plugin-transform-react-jsx": "^7.28.6",
-    "@typescript/native-preview": "beta",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.2"
   },

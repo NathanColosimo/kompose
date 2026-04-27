@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations } from "drizzle-orm/_relations";
 import { aiMessageTable, aiSessionTable } from "./ai";
 import { tagTable, taskTagTable } from "./tag";
 import { taskTable } from "./task";

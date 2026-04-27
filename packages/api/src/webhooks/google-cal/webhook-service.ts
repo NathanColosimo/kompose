@@ -1,11 +1,15 @@
+import { Database, DatabaseLive } from "@kompose/db";
 import type {
   GoogleCalendarEventsWebhookConfig,
   GoogleCalendarListWebhookConfig,
+  WebhookSubscriptionInsert,
   WebhookSubscriptionSelect,
 } from "@kompose/db/schema/webhook-subscription";
+import { webhookSubscriptionTable } from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
 import { GoogleCalendar } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
+import { eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
@@ -13,7 +17,6 @@ import {
   WebhookProviderError,
   WebhookValidationError,
 } from "../errors";
-import { WebhookRepositoryService } from "../webhook-repository-service";
 import {
   GOOGLE_CHANNEL_TTL_MS,
   GOOGLE_PROVIDER,
@@ -86,16 +89,43 @@ function isPushNotSupportedError(error: WebhookProviderError): boolean {
   );
 }
 
+const upsertSub = (values: WebhookSubscriptionInsert) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    yield* db
+      .insert(webhookSubscriptionTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: webhookSubscriptionTable.id,
+        set: {
+          active: values.active ?? true,
+          config: values.config,
+          expiresAt: values.expiresAt,
+          lastNotifiedAt: values.lastNotifiedAt,
+          providerAccountId: values.providerAccountId,
+          updatedAt: new Date().toISOString(),
+          webhookToken: values.webhookToken,
+        },
+      });
+  });
+
+const deactivateSubById = (params: { id: string }) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    yield* db
+      .update(webhookSubscriptionTable)
+      .set({ active: false })
+      .where(eq(webhookSubscriptionTable.id, params.id));
+  });
+
 // ── Service ──────────────────────────────────────────────────────────
 
 export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarWebhookService>()(
   "GoogleCalendarWebhookService",
   {
     accessors: true,
-    dependencies: [WebhookRepositoryService.Default],
+    dependencies: [DatabaseLive],
     effect: Effect.gen(function* () {
-      const repository = yield* WebhookRepositoryService;
-
       // ── Shared stop-watch helper ──
 
       const stopWatch = Effect.fn("GoogleCalendarWebhookService.stopWatch")(
@@ -186,7 +216,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           );
         }
 
-        yield* repository.upsertSub({
+        yield* upsertSub({
           accountId: params.account.id,
           config: {
             type: "google-calendar-list",
@@ -284,7 +314,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           );
         }
 
-        yield* repository.upsertSub({
+        yield* upsertSub({
           accountId: params.account.id,
           config: {
             type: "google-calendar-events",
@@ -318,7 +348,7 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           resourceId: params.subscription.config.resourceId,
         }).pipe(Effect.catchTag("WebhookProviderError", () => Effect.void));
 
-        yield* repository.deactivateSubById({
+        yield* deactivateSubById({
           id: params.subscription.id,
         });
       });

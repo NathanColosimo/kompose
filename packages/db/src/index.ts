@@ -1,23 +1,39 @@
-/** biome-ignore-all lint/performance/noNamespaceImport: Drizzle schema */
+import { layer as pgClientLayer } from "@effect/sql-pg/PgClient";
 import { env } from "@kompose/env";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as aiSchema from "./schema/ai";
-import * as authSchema from "./schema/auth";
-import * as relationsSchema from "./schema/relations";
-import * as tagSchema from "./schema/tag";
-import * as taskSchema from "./schema/task";
-import * as webhookSubscriptionSchema from "./schema/webhook-subscription";
+import {
+  DefaultServices,
+  make as makePgDrizzle,
+} from "drizzle-orm/effect-postgres";
+import { Context, Effect, Layer, Redacted } from "effect";
+import { types } from "pg";
+import { schema as dbSchema } from "./schema";
 
-const client = postgres(env.DATABASE_URL, { prepare: false });
+const rawDateTimeTypeIds = new Set([
+  1184, 1114, 1082, 1186, 1231, 1115, 1185, 1187, 1182,
+]);
 
-export const db = drizzle(client, {
-  schema: {
-    ...aiSchema,
-    ...authSchema,
-    ...taskSchema,
-    ...tagSchema,
-    ...relationsSchema,
-    ...webhookSubscriptionSchema,
+export const PgClientLive = pgClientLayer({
+  url: Redacted.make(env.DATABASE_URL),
+  types: {
+    getTypeParser: (typeId: number, format: "text" | "binary" | undefined) => {
+      if (rawDateTimeTypeIds.has(typeId)) {
+        return (value: string) => value;
+      }
+      return types.getTypeParser(typeId, format);
+    },
   },
 });
+
+const databaseEffect = makePgDrizzle({ schema: dbSchema }).pipe(
+  Effect.provide(DefaultServices)
+);
+
+export class Database extends Context.Tag("Database")<
+  Database,
+  Effect.Effect.Success<typeof databaseEffect>
+>() {}
+
+export const DatabaseLive = Layer.effect(Database, databaseEffect).pipe(
+  Layer.provide(PgClientLive),
+  Layer.orDie
+);

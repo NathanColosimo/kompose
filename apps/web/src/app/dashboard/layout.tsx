@@ -1,8 +1,8 @@
 "use client";
 
-import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { currentDateAtom } from "@kompose/state/atoms/current-date";
+import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -25,9 +25,9 @@ import {
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
   sidebarLeftOpenAtom,
+  sidebarLeftViewSelectionAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
-  sidebarLeftViewSelectionAtom,
 } from "@/state/sidebar";
 
 export default function DashboardLayout({
@@ -43,7 +43,9 @@ export default function DashboardLayout({
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
-  const setCommandBarTaskOpenRequest = useSetAtom(commandBarTaskOpenRequestAtom);
+  const setCommandBarTaskOpenRequest = useSetAtom(
+    commandBarTaskOpenRequestAtom
+  );
   const setCurrentDate = useSetAtom(currentDateAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
@@ -120,7 +122,10 @@ export default function DashboardLayout({
         });
       })
       .catch((error) => {
-        console.warn("Failed to listen for command bar task open events.", error);
+        console.warn(
+          "Failed to listen for command bar task open events.",
+          error
+        );
       });
 
     return () => {

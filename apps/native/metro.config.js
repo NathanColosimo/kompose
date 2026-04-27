@@ -1,7 +1,8 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 
-import path from "node:path";
 import { createRequire } from "node:module";
+import path from "node:path";
+
 const require = createRequire(import.meta.url);
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");

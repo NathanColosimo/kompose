@@ -10,6 +10,7 @@ import {
   type UIMessageChunk,
   validateUIMessages,
 } from "ai";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect } from "effect";
 import { extractText, toUiMessage } from "./ai-message-utils";
 import { AiChatError } from "./errors";
@@ -326,7 +327,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           streamResult: UiStreamResultLike;
           firstMessageText: string | null;
         },
-        AiChatError
+        AiChatError | EffectDrizzleQueryError
       > = Effect.fn("AiChatService.startStream")(function* (input: {
         userId: string;
         sessionId: string;

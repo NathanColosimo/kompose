@@ -1,13 +1,5 @@
 import { Schema } from "effect";
 
-export class TaskRepositoryError extends Schema.TaggedError<TaskRepositoryError>()(
-  "TaskRepositoryError",
-  {
-    cause: Schema.Unknown,
-    message: Schema.optional(Schema.String),
-  }
-) {}
-
 export class TaskNotFoundError extends Schema.TaggedError<TaskNotFoundError>()(
   "TaskNotFoundError",
   {
@@ -23,7 +15,4 @@ export class InvalidTaskError extends Schema.TaggedError<InvalidTaskError>()(
   }
 ) {}
 
-export type TaskError =
-  | TaskRepositoryError
-  | TaskNotFoundError
-  | InvalidTaskError;
+export type TaskError = TaskNotFoundError | InvalidTaskError;

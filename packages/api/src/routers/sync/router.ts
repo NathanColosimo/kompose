@@ -1,13 +1,11 @@
 import { implement } from "@orpc/server";
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
 import { createUserSyncEventIterator } from "../../realtime/sync";
-import { TelemetryLive } from "../../telemetry";
+import { WebhookLive } from "../../webhooks/live";
 import { WebhookService } from "../../webhooks/webhook-service";
 import { syncContract } from "./contract";
-
-const SyncLive = Layer.merge(WebhookService.Default, TelemetryLive);
 
 const os = implement(syncContract).use(requireAuth).use(globalRateLimit);
 
@@ -23,10 +21,7 @@ export const syncRouter = os.router({
             userId: context.user.id,
           })
         ),
-        Effect.catchTags({
-          WebhookRepositoryError: () => Effect.void,
-        }),
-        Effect.provide(SyncLive)
+        Effect.provide(WebhookLive)
       )
     ).catch(() => undefined);
 

@@ -67,12 +67,12 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { openUrlInDesktopBrowser } from "@/lib/tauri-desktop";
 import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
-import { openUrlInDesktopBrowser } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
@@ -233,7 +233,9 @@ export function TaskEditPopover({
     ) {
       setOpen(true);
       setOpenRequest((currentRequest) =>
-        currentRequest?.requestId === openRequest.requestId ? null : currentRequest
+        currentRequest?.requestId === openRequest.requestId
+          ? null
+          : currentRequest
       );
     }
   }, [mode, openRequest, setOpenRequest, surface, task]);

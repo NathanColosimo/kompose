@@ -1,6 +1,6 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
-import { db } from "@kompose/db";
+import { db } from "@kompose/db/legacy";
 // biome-ignore lint/performance/noNamespaceImport: Auth Schema
 import * as schema from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";

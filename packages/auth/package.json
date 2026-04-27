@@ -17,8 +17,8 @@
     "@types/node": "catalog:"
   },
   "dependencies": {
-    "@better-auth/core": "^1.6.7",
-    "@better-auth/drizzle-adapter": "1.6.7",
+    "@better-auth/core": "^1.6.9",
+    "@better-auth/drizzle-adapter": "1.6.9",
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",

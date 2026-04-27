@@ -1,4 +1,6 @@
+import { DatabaseLive } from "@kompose/db";
 import { implement, ORPCError } from "@orpc/server";
+import { Effect } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
 import { accountContract } from "./contract";
@@ -23,7 +25,11 @@ function getCauseMessage(cause: unknown): string {
 export const accountRouter = os.router({
   list: os.list.handler(async ({ context }) => {
     try {
-      return await listLinkedAccountsWithProfile(context.user.id);
+      return await Effect.runPromise(
+        listLinkedAccountsWithProfile(context.user.id).pipe(
+          Effect.provide(DatabaseLive)
+        )
+      );
     } catch (cause) {
       if (cause instanceof ORPCError) {
         throw cause;

@@ -25,7 +25,11 @@
       "!**/uniwind-types.d.ts"
     ]
   },
-  "extends": ["ultracite/core", "ultracite/next", "ultracite/react"],
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/next",
+    "ultracite/biome/react"
+  ],
   "linter": {
     "rules": {
       "nursery": {

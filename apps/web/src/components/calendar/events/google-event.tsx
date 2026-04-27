@@ -2,9 +2,9 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import {
+  type Event as GoogleEvent,
   getGoogleEventEditBlockReason,
   isGoogleEventEditable,
-  type Event as GoogleEvent,
 } from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -14,12 +14,12 @@ import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
 import { Lock } from "lucide-react";
 import { memo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Temporal } from "temporal-polyfill";
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { calculateEventPosition } from "../days-view";
@@ -154,7 +154,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       className={cn(
         "group pointer-events-auto rounded-md bg-background p-px shadow-sm transition-shadow",
         "relative",
-        isEditable ? "cursor-grab hover:shadow-md" : "cursor-default opacity-90",
+        isEditable
+          ? "cursor-grab hover:shadow-md"
+          : "cursor-default opacity-90",
         isDragging ? "opacity-0" : ""
       )}
       ref={setNodeRef}

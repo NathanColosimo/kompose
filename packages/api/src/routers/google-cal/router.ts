@@ -123,14 +123,12 @@ const getCurrentGoogleEvent = (
     return yield* service.getEvent(calendarId, eventId);
   }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
-const ensureGoogleEventEditable = (
-  event: {
-    id: string;
-    description?: string;
-    eventType?: string;
-    locked?: boolean;
-  }
-) => {
+const ensureGoogleEventEditable = (event: {
+  id: string;
+  description?: string;
+  eventType?: string;
+  locked?: boolean;
+}) => {
   const blockedReason = getGoogleEventEditBlockReason(event);
   if (!blockedReason) {
     return Effect.void;

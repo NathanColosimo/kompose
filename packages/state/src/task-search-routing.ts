@@ -36,7 +36,9 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
 }
 
 function isInboxTask(task: TaskSelectDecoded): boolean {
-  return task.status !== "done" && task.startDate === null && task.startTime === null;
+  return (
+    task.status !== "done" && task.startDate === null && task.startTime === null
+  );
 }
 
 function isOverdueTask(
@@ -79,7 +81,8 @@ function isUnplannedTodayTask(
 
   return (
     startsOnOrBeforeToday &&
-    (task.dueDate === null || Temporal.PlainDate.compare(task.dueDate, today) > 0)
+    (task.dueDate === null ||
+      Temporal.PlainDate.compare(task.dueDate, today) > 0)
   );
 }
 

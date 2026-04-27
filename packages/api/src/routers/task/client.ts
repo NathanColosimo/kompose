@@ -1,34 +1,192 @@
-import type { TaskTagInsert } from "@kompose/db/schema/tag";
+import { Database, DatabaseLive } from "@kompose/db";
+import type { TagSelect, TaskTagInsert } from "@kompose/db/schema/tag";
+import { tagTable, taskTagTable } from "@kompose/db/schema/tag";
 import type {
   TaskInsert,
   TaskRecurrence,
   TaskSelect,
   TaskUpdate,
 } from "@kompose/db/schema/task";
+import { taskTable } from "@kompose/db/schema/task";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
 import type { DeleteScope, UpdateScope } from "./contract";
-import {
-  dbDelete,
-  dbDeleteBySeriesFrom,
-  dbDeleteNonExceptionsBySeriesFrom,
-  dbDeleteTaskTagsForTasks,
-  dbInsert,
-  dbInsertTaskTags,
-  dbSelect,
-  dbSelectById,
-  dbSelectByIdsWithTags,
-  dbSelectBySeriesFrom,
-  dbSelectTagIdsForUser,
-  dbUpdate,
-  type TaskInsertRow,
-} from "./db";
 import { InvalidTaskError, type TaskError, TaskNotFoundError } from "./errors";
+
+type TaskSelectRow = typeof taskTable.$inferSelect;
+type TaskInsertRow = typeof taskTable.$inferInsert;
+type TaskWithTagsRow = TaskSelectRow & { tags: TagSelect[] };
+type TaskDbError = EffectDrizzleQueryError;
 
 type TaskInsertInput = TaskInsert & { tagIds?: string[] };
 type TaskUpdateInput = TaskUpdate & { tagIds?: string[] };
+
+const groupTaskTagRows = (
+  rows: Array<{ tag: TagSelect | null; task: TaskSelectRow }>
+): TaskWithTagsRow[] => {
+  const tasks = new Map<string, TaskWithTagsRow>();
+
+  for (const row of rows) {
+    const current = tasks.get(row.task.id) ?? { ...row.task, tags: [] };
+    if (row.tag) {
+      current.tags.push(row.tag);
+    }
+    tasks.set(row.task.id, current);
+  }
+
+  return [...tasks.values()];
+};
+
+const dbSelect = (userId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    const rows = yield* db
+      .select({ task: taskTable, tag: tagTable })
+      .from(taskTable)
+      .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
+      .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
+      .where(eq(taskTable.userId, userId))
+      .orderBy(desc(taskTable.createdAt));
+    return groupTaskTagRows(rows);
+  });
+
+const dbSelectById = (userId: string, taskId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .select()
+      .from(taskTable)
+      .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)));
+  });
+
+const dbSelectBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string
+) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .select()
+      .from(taskTable)
+      .where(
+        and(
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          eq(taskTable.userId, userId),
+          gte(taskTable.startDate, fromDate)
+        )
+      )
+      .orderBy(asc(taskTable.startDate));
+  });
+
+const dbSelectByIdsWithTags = (userId: string, taskIds: string[]) =>
+  Effect.gen(function* () {
+    if (taskIds.length === 0) {
+      return [];
+    }
+
+    const db = yield* Database;
+    const rows = yield* db
+      .select({ task: taskTable, tag: tagTable })
+      .from(taskTable)
+      .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
+      .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
+      .where(and(eq(taskTable.userId, userId), inArray(taskTable.id, taskIds)));
+
+    return groupTaskTagRows(rows);
+  });
+
+const dbInsert = (values: TaskInsertRow[]) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db.insert(taskTable).values(values).returning();
+  });
+
+const dbUpdate = (
+  userId: string,
+  taskId: string,
+  input: TaskUpdate & { isException?: boolean }
+) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .update(taskTable)
+      .set(input)
+      .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)))
+      .returning();
+  });
+
+const dbDelete = (userId: string, taskId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .delete(taskTable)
+      .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)));
+  });
+
+const dbDeleteBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string
+) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .delete(taskTable)
+      .where(
+        and(
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          eq(taskTable.userId, userId),
+          gte(taskTable.startDate, fromDate)
+        )
+      );
+  });
+
+const dbDeleteNonExceptionsBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string
+) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .delete(taskTable)
+      .where(
+        and(
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          eq(taskTable.userId, userId),
+          gte(taskTable.startDate, fromDate),
+          eq(taskTable.isException, false)
+        )
+      );
+  });
+
+const dbInsertTaskTags = (values: TaskTagInsert[]) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db.insert(taskTagTable).values(values).returning();
+  });
+
+const dbDeleteTaskTagsForTasks = (taskIds: string[]) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .delete(taskTagTable)
+      .where(inArray(taskTagTable.taskId, taskIds));
+  });
+
+const dbSelectTagIdsForUser = (userId: string, tagIds: string[]) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .select({ id: tagTable.id })
+      .from(tagTable)
+      .where(and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds)));
+  });
 
 function normalizeTagIds(tagIds: string[]): string[] {
   return Array.from(new Set(tagIds.filter(Boolean)));
@@ -43,52 +201,40 @@ function buildTaskTagRows(
   );
 }
 
-const resolveTagIdsForUser = Effect.fn("resolveTagIdsForUser")(function* (
-  userId: string,
-  tagIds: string[]
-) {
-  // Only keep tag IDs that belong to this user.
-  if (tagIds.length === 0) {
-    return [] as string[];
-  }
+const resolveTagIdsForUser = (userId: string, tagIds: string[]) =>
+  Effect.gen(function* () {
+    // Only keep tag IDs that belong to this user.
+    if (tagIds.length === 0) {
+      return [] as string[];
+    }
 
-  const rows = yield* dbSelectTagIdsForUser(userId, tagIds);
-  return rows.map((row) => row.id);
-});
+    const rows = yield* dbSelectTagIdsForUser(userId, tagIds);
+    return rows.map((row) => row.id);
+  });
 
-const selectTasksWithTagsByIds = Effect.fn("selectTasksWithTagsByIds")(
-  function* (userId: string, taskIds: string[]) {
-    return yield* dbSelectByIdsWithTags(userId, taskIds);
-  }
-);
+const insertTaskTagsForTasks = (taskIds: string[], tagIds: string[]) =>
+  Effect.gen(function* () {
+    if (taskIds.length === 0 || tagIds.length === 0) {
+      return;
+    }
 
-const insertTaskTagsForTasks = Effect.fn("insertTaskTagsForTasks")(function* (
-  taskIds: string[],
-  tagIds: string[]
-) {
-  if (taskIds.length === 0 || tagIds.length === 0) {
-    return;
-  }
+    yield* dbInsertTaskTags(buildTaskTagRows(taskIds, tagIds));
+  });
 
-  yield* dbInsertTaskTags(buildTaskTagRows(taskIds, tagIds));
-});
+const replaceTaskTagsForTasks = (taskIds: string[], tagIds: string[]) =>
+  Effect.gen(function* () {
+    // Replace tag links atomically by clearing then inserting.
+    if (taskIds.length === 0) {
+      return;
+    }
 
-const replaceTaskTagsForTasks = Effect.fn("replaceTaskTagsForTasks")(function* (
-  taskIds: string[],
-  tagIds: string[]
-) {
-  // Replace tag links atomically by clearing then inserting.
-  if (taskIds.length === 0) {
-    return;
-  }
+    yield* dbDeleteTaskTagsForTasks(taskIds);
+    if (tagIds.length === 0) {
+      return;
+    }
 
-  yield* dbDeleteTaskTagsForTasks(taskIds);
-  if (tagIds.length === 0) {
-    return;
-  }
-
-  yield* dbInsertTaskTags(buildTaskTagRows(taskIds, tagIds));
-});
+    yield* dbInsertTaskTags(buildTaskTagRows(taskIds, tagIds));
+  });
 
 // ============================================================================
 // Business logic helpers
@@ -669,7 +815,7 @@ const updateSingleTask = (
   task: TaskSelect,
   input: TaskUpdate,
   hasDbUpdates: boolean
-): Effect.Effect<TaskSelect[], TaskError> =>
+): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> =>
   hasDbUpdates
     ? dbUpdate(userId, taskId, { ...input, isException: true })
     : Effect.succeed([task]);
@@ -680,7 +826,7 @@ const updateNonRecurringTask = (
   task: TaskSelect,
   input: TaskUpdate,
   hasDbUpdates: boolean
-): Effect.Effect<TaskSelect[], TaskError> => {
+): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> => {
   if (input.recurrence) {
     return convertToRecurring(userId, task, input);
   }
@@ -696,7 +842,7 @@ const resolveUpdatedTasks = (
   hasDbUpdates: boolean,
   scope: UpdateScope,
   recurrenceChanged: boolean
-): Effect.Effect<TaskSelect[], TaskError> => {
+): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> => {
   if (!task.seriesMasterId) {
     return updateNonRecurringTask(userId, taskId, task, input, hasDbUpdates);
   }
@@ -712,6 +858,7 @@ const resolveUpdatedTasks = (
 
 export class TaskService extends Effect.Service<TaskService>()("TaskService", {
   accessors: true,
+  dependencies: [DatabaseLive],
   effect: Effect.gen(function* () {
     const listTasks = Effect.fn("TaskService.listTasks")(function* (
       userId: string
@@ -738,7 +885,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
         if (normalizedTagIds) {
           yield* insertTaskTagsForTasks([masterId], normalizedTagIds);
         }
-        return yield* selectTasksWithTagsByIds(
+        return yield* dbSelectByIdsWithTags(
           userId,
           tasks.map((task) => task.id)
         );
@@ -766,7 +913,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
           normalizedTagIds
         );
       }
-      return yield* selectTasksWithTagsByIds(
+      return yield* dbSelectByIdsWithTags(
         userId,
         tasks.map((task) => task.id)
       );
@@ -814,7 +961,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
         normalizedTagIds === undefined &&
         scope === "following" &&
         recurrenceChanged
-          ? ((yield* selectTasksWithTagsByIds(userId, [taskId]))[0]?.tags.map(
+          ? ((yield* dbSelectByIdsWithTags(userId, [taskId]))[0]?.tags.map(
               (tag) => tag.id
             ) ?? [])
           : [];
@@ -841,7 +988,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
         );
       }
 
-      return yield* selectTasksWithTagsByIds(
+      return yield* dbSelectByIdsWithTags(
         userId,
         updatedTasks.map((task) => task.id)
       );

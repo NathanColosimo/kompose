@@ -1,5 +1,7 @@
+import { DatabaseLive } from "@kompose/db";
 import type { LinkMeta } from "@kompose/db/schema/link";
 import { implement, ORPCError } from "@orpc/server";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect, Either, Layer } from "effect";
 import { requireAuth } from "../..";
 import { globalRateLimit } from "../../ratelimit";
@@ -23,16 +25,25 @@ function dedupeLinks(links: LinkMeta[] | undefined): LinkMeta[] | undefined {
   return [...map.values()];
 }
 
-const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
+const TaskLive = Layer.mergeAll(
+  TaskService.Default,
+  DatabaseLive,
+  TelemetryLive
+);
 const LinkParserLive = Layer.merge(LinkParserService.Default, TelemetryLive);
 
-function handleError(error: TaskError): never {
+function handleError(error: TaskError | EffectDrizzleQueryError): never {
+  if (error._tag === "EffectDrizzleQueryError") {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: error.message,
+      data: {
+        cause: error.cause,
+        query: error.query,
+      },
+    });
+  }
+
   switch (error._tag) {
-    case "TaskRepositoryError":
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message: error.message ?? "Task operation failed",
-        data: { cause: error.cause },
-      });
     case "TaskNotFoundError":
       throw new ORPCError("NOT_FOUND", {
         message: `Task not found: ${error.taskId}`,
@@ -65,8 +76,8 @@ function publishTasksEvent(userId: string) {
 }
 
 export const taskRouter = os.router({
-  list: os.list.handler(({ context }) => {
-    return Effect.runPromise(
+  list: os.list.handler(({ context }) =>
+    Effect.runPromise(
       TaskService.listTasks(context.user.id).pipe(
         Effect.map((tasks) => tasks.map(normalizeTaskTags)),
         Effect.provide(TaskLive),
@@ -75,11 +86,11 @@ export const taskRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
-  create: os.create.handler(({ input, context }) => {
-    return Effect.runPromise(
+  create: os.create.handler(({ input, context }) =>
+    Effect.runPromise(
       TaskService.createTask(context.user.id, {
         ...input,
         links: dedupeLinks(input.links),
@@ -93,8 +104,8 @@ export const taskRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
   update: os.update.handler(({ input, context }) => {
     const task = input.task.links
@@ -113,8 +124,8 @@ export const taskRouter = os.router({
     );
   }),
 
-  delete: os.delete.handler(({ input, context }) => {
-    return Effect.runPromise(
+  delete: os.delete.handler(({ input, context }) =>
+    Effect.runPromise(
       TaskService.deleteTask(context.user.id, input.id, input.scope).pipe(
         Effect.tap(() => publishTasksEvent(context.user.id)),
         Effect.provide(TaskLive),
@@ -123,8 +134,8 @@ export const taskRouter = os.router({
           onFailure: handleError,
         })
       )
-    );
-  }),
+    )
+  ),
 
   parseLink: os.parseLink.handler(async ({ input }) => {
     const result = await Effect.runPromise(
