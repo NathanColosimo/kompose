@@ -343,6 +343,11 @@ Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRe
 
 `handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
 
+Webhook subscriptions keep both Google account identifiers:
+
+- `accountId` is the Better Auth internal account row id and is used for DB ownership/refresh lookups.
+- `providerAccountId` is Google's account id and must be used for Google Calendar cache keys and realtime payloads because clients use that id in query keys and oRPC inputs.
+
 ### Webhook route handler
 
 **File:** `apps/web/src/app/api/webhooks/google-calendar/route.ts`

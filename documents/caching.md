@@ -186,6 +186,15 @@ const data = yield* service.listCalendars();
 yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
 ```
 
+## Account ID Invariant
+
+Google Calendar cache keys use the Google provider account id (`account.account_id`),
+which is also the id used by client query keys and oRPC Google Calendar inputs.
+Webhook subscription rows additionally store the Better Auth internal account row
+id (`webhook_subscription.account_id`) for database relations, but webhook cache
+invalidation and realtime payloads must use `webhook_subscription.provider_account_id`
+so they target the same keys as normal reads.
+
 ---
 
 ## Layer Composition

@@ -419,18 +419,19 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         if (isGoogleCalendarListSubscription(subscription)) {
           yield* Effect.log("WEBHOOK_CALENDAR_LIST_CHANGED", {
             accountId: subscription.accountId,
+            providerAccountId: subscription.providerAccountId,
             userId: subscription.userId,
           });
 
-          // Invalidate cached calendar list (best effort)
+          // Cache keys and client query keys use Google's provider account id.
           yield* cache
-            .invalidateCalendars(subscription.accountId)
+            .invalidateCalendars(subscription.providerAccountId)
             .pipe(logAndSwallowCacheError);
 
           yield* publishToUser(subscription.userId, {
             type: "google-calendar",
             payload: {
-              accountId: subscription.accountId,
+              accountId: subscription.providerAccountId,
               calendarId: GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID,
             },
           }).pipe(Effect.catchAll(() => Effect.void));
@@ -446,6 +447,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         if (isGoogleCalendarEventsSubscription(subscription)) {
           yield* Effect.log("WEBHOOK_CALENDAR_EVENTS_CHANGED", {
             accountId: subscription.accountId,
+            providerAccountId: subscription.providerAccountId,
             userId: subscription.userId,
             calendarId: subscription.config.calendarId,
           });
@@ -454,7 +456,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           // Webhooks don't tell us which event changed, so we clear everything.
           yield* cache
             .invalidateAllEvents(
-              subscription.accountId,
+              subscription.providerAccountId,
               subscription.config.calendarId
             )
             .pipe(logAndSwallowCacheError);
@@ -462,7 +464,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           yield* publishToUser(subscription.userId, {
             type: "google-calendar",
             payload: {
-              accountId: subscription.accountId,
+              accountId: subscription.providerAccountId,
               calendarId: subscription.config.calendarId,
             },
           }).pipe(Effect.catchAll(() => Effect.void));
