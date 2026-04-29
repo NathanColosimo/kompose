@@ -44,10 +44,6 @@ function handleError(error: AiChatError | EffectDrizzleQueryError): never {
   if (error._tag === "EffectDrizzleQueryError") {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
       message: error.message,
-      data: {
-        cause: error.cause,
-        query: error.query,
-      },
     });
   }
 
