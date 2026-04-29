@@ -121,7 +121,7 @@ function TauriDesktopBridgeBootstrap() {
     }
 
     // Delegate external-link clicks globally so meeting/maps/etc. all work in desktop.
-    const handleDocumentClickCapture = (event: MouseEvent) => {
+    const handleDocumentClickCapture = async (event: MouseEvent) => {
       if (
         event.defaultPrevented ||
         event.button !== 0 ||
@@ -152,9 +152,7 @@ function TauriDesktopBridgeBootstrap() {
       }
 
       event.preventDefault();
-      openUrlInDesktopBrowser(externalUrl).catch((error) => {
-        console.warn("Failed to open external URL via desktop browser.", error);
-      });
+      await openUrlInDesktopBrowser(externalUrl);
     };
 
     document.addEventListener("click", handleDocumentClickCapture, true);

@@ -976,7 +976,9 @@ function LinkMetaPreview({
       )}
       <button
         className="min-w-0 flex-1 cursor-pointer space-y-0.5 text-left"
-        onClick={() => openUrlInDesktopBrowser(meta.url)}
+        onClick={async () => {
+          await openUrlInDesktopBrowser(meta.url);
+        }}
         tabIndex={-1}
         type="button"
       >

@@ -172,7 +172,10 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         {!isEditable && editBlockedReason ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-black/15 text-current opacity-90">
+              <span
+                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-black/15 text-current opacity-90"
+                title=""
+              >
                 <Lock className="size-2.5" />
                 <span className="sr-only">{editBlockedReason}</span>
               </span>

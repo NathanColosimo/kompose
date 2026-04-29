@@ -705,6 +705,12 @@ export const googleCalRouter = os.router({
           context.user.id,
           input.accountId
         );
+        const currentEvent = yield* getCurrentGoogleEvent(
+          accessToken,
+          input.calendarId,
+          input.eventId
+        );
+        yield* ensureGoogleEventEditable(currentEvent);
 
         yield* Effect.gen(function* () {
           const service = yield* GoogleCalendar;

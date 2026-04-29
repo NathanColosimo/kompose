@@ -1,6 +1,7 @@
 "use client";
 
 import { env } from "@kompose/env";
+import { toast } from "sonner";
 import { DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM } from "@/lib/desktop-deep-link";
 
 interface AuthErrorResult {
@@ -75,12 +76,17 @@ export function extractAuthErrorMessage(result: unknown) {
 
 // Open URL in system browser when available.
 export async function openUrlInDesktopBrowser(url: string) {
-  if (!isTauriRuntime()) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
+  try {
+    if (!isTauriRuntime()) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch (error) {
+    console.warn("Failed to open URL in desktop browser.", error);
+    toast.error("Failed to open link.");
   }
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(url);
 }
 
 /**
