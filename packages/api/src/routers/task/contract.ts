@@ -44,6 +44,17 @@ const taskUpdateSchemaWithTagIds = taskUpdateSchema.extend({
   tagIds: tagIdsSchema.optional(),
 });
 
+const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+const clientTaskUpdateSchema = taskUpdateSchemaWithTagIds.omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
 // ============================================================================
 // SELECT CODEC (for API responses - decodes strings to Temporal)
 // ============================================================================
@@ -77,12 +88,10 @@ export type TaskSelectDecoded = z.output<typeof taskSelectCodec>;
  * - z.output = Temporal types (for app use)
  * - schema.encode(temporalData) = converts to strings for API
  */
-export const taskUpdateCodec = taskUpdateSchemaWithTagIds.extend({
+export const taskUpdateCodec = clientTaskUpdateSchema.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
   startTime: plainTimeCodec.nullable().optional(),
-  createdAt: instantCodec.optional(),
-  updatedAt: instantCodec.optional(),
 });
 
 export type TaskUpdateEncoded = z.input<typeof taskUpdateCodec>;
@@ -99,12 +108,10 @@ export type TaskUpdateDecoded = z.output<typeof taskUpdateCodec>;
  * - z.output = Temporal types (for app use)
  * - schema.encode(temporalData) = converts to strings for API
  */
-export const taskInsertCodec = taskInsertSchemaWithTagIds.extend({
+export const taskInsertCodec = clientTaskInsertSchema.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
   startTime: plainTimeCodec.nullable().optional(),
-  createdAt: instantCodec.optional(),
-  updatedAt: instantCodec.optional(),
 });
 
 export type TaskInsertEncoded = z.input<typeof taskInsertCodec>;
@@ -115,18 +122,13 @@ export type TaskInsertDecoded = z.output<typeof taskInsertCodec>;
 // ============================================================================
 
 /** Client insert codec - use .encode() to convert Temporal → strings */
-export const clientTaskInsertCodec = taskInsertCodec.omit({ userId: true });
+export const clientTaskInsertCodec = taskInsertCodec;
 export type ClientTaskInsertEncoded = z.input<typeof clientTaskInsertCodec>;
 export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 
 // ============================================================================
 // API CONTRACTS (use base string schemas - no Temporal transformations)
 // ============================================================================
-
-/** Base client insert schema (strings) for API contract */
-const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
-  userId: true,
-});
 
 export const listTasksParamsSchema = z.object({
   query: z
@@ -176,7 +178,7 @@ export const updateTask = oc
   .input(
     z.object({
       id: z.uuidv7(),
-      task: taskUpdateSchemaWithTagIds,
+      task: clientTaskUpdateSchema,
       /** Scope for recurring tasks: this (single), following (this + future) */
       scope: updateScopeSchema,
     })

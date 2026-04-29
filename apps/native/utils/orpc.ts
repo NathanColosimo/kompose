@@ -19,6 +19,7 @@ import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { fetch as expoFetch } from "expo/fetch";
 import { uuidv7 } from "uuidv7";
 import { authClient } from "@/lib/auth-client";
+import { env } from "@/lib/env";
 
 /**
  * Generate a W3C traceparent header for distributed tracing.
@@ -50,7 +51,7 @@ export const queryClient = new QueryClient({
 });
 
 export const link = new RPCLink({
-  url: `${process.env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
+  url: `${env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
   plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
   headers() {
     const headers = new Map<string, string>();

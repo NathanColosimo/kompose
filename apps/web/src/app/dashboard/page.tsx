@@ -27,9 +27,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  dateToPlainDate,
   formatPlainDate,
-  plainDateToDate,
+  pickerDateToTemporal,
+  temporalToPickerDate,
   todayPlainDate,
 } from "@/lib/temporal-utils";
 import { dashboardResponsiveLayoutAtom } from "@/state/sidebar";
@@ -205,21 +205,18 @@ function CalendarGridPlaceholder() {
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const timeZone = useAtomValue(timezoneAtom);
   const [open, setOpen] = useState(false);
 
-  // Convert to Date for react-day-picker
-  const selectedDate = plainDateToDate(currentDate, timeZone);
+  const selectedDate = temporalToPickerDate(currentDate);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        // Convert from Date back to PlainDate
-        setCurrentDate(dateToPlainDate(date, timeZone));
+        setCurrentDate(pickerDateToTemporal(date));
       }
       setOpen(false);
     },
-    [setCurrentDate, timeZone]
+    [setCurrentDate]
   );
 
   return (

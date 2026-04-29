@@ -6,9 +6,10 @@ import { createAuthClient } from "better-auth/react";
 import Constants from "expo-constants";
 // biome-ignore lint/performance/noNamespaceImport: SecureStore is a namespace object
 import * as SecureStore from "expo-secure-store";
+import { env } from "@/lib/env";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.EXPO_PUBLIC_SERVER_URL,
+  baseURL: env.EXPO_PUBLIC_SERVER_URL,
   plugins: [
     expoClient({
       cookiePrefix: Constants.expoConfig?.scheme as string,

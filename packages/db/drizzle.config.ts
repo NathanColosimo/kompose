@@ -1,11 +1,15 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { defineConfig } from "drizzle-kit";
+
+const configDir = fileURLToPath(new URL(".", import.meta.url));
 
 // Load environment variables from web app if not already present
 // This allows it to work in Vercel (where env vars are in process.env) and locally (where they are in .env)
 if (!process.env.DATABASE_URL) {
   dotenv.config({
-    path: "../../apps/web/.env",
+    path: resolve(configDir, "../../apps/web/.env"),
   });
 }
 

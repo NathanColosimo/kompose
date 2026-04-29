@@ -82,7 +82,8 @@
     "tailwindcss-animate": "^1.0.7",
     "temporal-polyfill": "catalog:",
     "uniwind": "^1.6.3",
-    "uuidv7": "catalog:"
+    "uuidv7": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

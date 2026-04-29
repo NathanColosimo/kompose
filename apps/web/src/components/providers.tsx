@@ -234,8 +234,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                 onError: (error) => {
                   reject(
                     new Error(
-                      error.error.message ||
-                        error.error.statusText ||
+                      error.error?.message ||
+                        error.error?.statusText ||
                         "Failed to unlink account."
                     )
                   );

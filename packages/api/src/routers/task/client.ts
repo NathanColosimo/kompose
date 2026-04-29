@@ -22,8 +22,24 @@ type TaskInsertRow = typeof taskTable.$inferInsert;
 type TaskWithTagsRow = TaskSelectRow & { tags: TagSelect[] };
 type TaskDbError = EffectDrizzleQueryError;
 
-type TaskInsertInput = TaskInsert & { tagIds?: string[] };
-type TaskUpdateInput = TaskUpdate & { tagIds?: string[] };
+type SystemManagedTaskField = "createdAt" | "updatedAt";
+type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
+  createdAt?: never;
+  tagIds?: string[];
+  updatedAt?: never;
+};
+type TaskUpdateInput = Omit<TaskUpdate, SystemManagedTaskField> & {
+  createdAt?: never;
+  tagIds?: string[];
+  updatedAt?: never;
+};
+
+function stripSystemManagedTaskFields<
+  T extends Partial<Record<SystemManagedTaskField, unknown>>,
+>(input: T): Omit<T, SystemManagedTaskField> {
+  const { createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = input;
+  return rest;
+}
 
 const groupTaskTagRows = (
   rows: Array<{ tag: TagSelect | null; task: TaskSelectRow }>
@@ -594,7 +610,7 @@ function buildRecurringTaskRows(
 function buildRegeneratedTaskRows(
   userId: string,
   task: TaskSelect,
-  input: TaskUpdate,
+  input: TaskUpdateInput,
   recurrence: TaskRecurrence,
   taskStartDate: string
 ): TaskInsertRow[] {
@@ -632,7 +648,7 @@ function buildRegeneratedTaskRows(
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdate
+  input: TaskUpdateInput
 ) {
   if (!task.startDate) {
     return yield* Effect.fail(
@@ -669,7 +685,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
 
 /** Update a recurring series by scaling date/time offsets across occurrences. */
 const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
-  function* (userId: string, task: TaskSelect, input: TaskUpdate) {
+  function* (userId: string, task: TaskSelect, input: TaskUpdateInput) {
     if (!task.seriesMasterId) {
       return yield* dbUpdate(userId, task.id, input);
     }
@@ -721,7 +737,7 @@ const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
 const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdate
+  input: TaskUpdateInput
 ) {
   const startDate = input.startDate ?? task.startDate;
   if (!startDate) {
@@ -813,7 +829,7 @@ const updateSingleTask = (
   userId: string,
   taskId: string,
   task: TaskSelect,
-  input: TaskUpdate,
+  input: TaskUpdateInput,
   hasDbUpdates: boolean
 ): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> =>
   hasDbUpdates
@@ -824,7 +840,7 @@ const updateNonRecurringTask = (
   userId: string,
   taskId: string,
   task: TaskSelect,
-  input: TaskUpdate,
+  input: TaskUpdateInput,
   hasDbUpdates: boolean
 ): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> => {
   if (input.recurrence) {
@@ -872,7 +888,8 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
       input: TaskInsertInput
     ) {
       yield* Effect.annotateCurrentSpan("userId", userId);
-      const { tagIds, ...taskInput } = input;
+      const { tagIds, ...unsafeTaskInput } = input;
+      const taskInput = stripSystemManagedTaskFields(unsafeTaskInput);
       const normalizedTagIds =
         tagIds === undefined
           ? undefined
@@ -936,7 +953,8 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
         return yield* Effect.fail(new TaskNotFoundError({ taskId }));
       }
 
-      const { tagIds, ...dbInput } = input;
+      const { tagIds, ...unsafeDbInput } = input;
+      const dbInput = stripSystemManagedTaskFields(unsafeDbInput);
       const hasDbUpdates = Object.keys(dbInput).length > 0;
       const normalizedTagIds =
         tagIds === undefined

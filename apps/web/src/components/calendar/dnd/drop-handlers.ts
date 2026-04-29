@@ -91,6 +91,13 @@ export function buildTaskResizeUpdate({
 }
 
 /** Build Google event update payload with new start/end times */
+function toGoogleDateTime(dateTime: Temporal.ZonedDateTime): string {
+  return dateTime.toString({
+    calendarName: "never",
+    timeZoneName: "never",
+  });
+}
+
 function buildGoogleUpdatePayload(
   event: DragData & { type: "google-event" | "google-event-resize" },
   start: Temporal.ZonedDateTime,
@@ -107,14 +114,14 @@ function buildGoogleUpdatePayload(
     id: event.event.id,
     ...rest,
     start: {
-      ...event.event.start,
-      dateTime: start.toInstant().toString(),
+      dateTime: toGoogleDateTime(start),
       date: undefined,
+      timeZone: start.timeZoneId,
     },
     end: {
-      ...event.event.end,
-      dateTime: end.toInstant().toString(),
+      dateTime: toGoogleDateTime(end),
       date: undefined,
+      timeZone: end.timeZoneId,
     },
   };
 }
