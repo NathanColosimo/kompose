@@ -20,6 +20,7 @@ import {
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const BACKGROUND_DISCONNECT_DELAY_MS = 30_000;
 // If no event (including keepalive) arrives within this window, assume the
 // connection is dead and force a reconnect. Must be > server keepalive
 // interval (10s) to avoid false positives.
@@ -30,11 +31,48 @@ export interface RealtimeSyncOptions {
   userId?: string;
 }
 
+interface RealtimeDocument {
+  addEventListener?: (type: string, listener: () => void) => void;
+  hasFocus?: () => boolean;
+  removeEventListener?: (type: string, listener: () => void) => void;
+  visibilityState?: string;
+}
+
+interface RealtimeWindow {
+  addEventListener?: (type: string, listener: () => void) => void;
+  removeEventListener?: (type: string, listener: () => void) => void;
+}
+
 function getReconnectDelayMs(attempt: number): number {
   return Math.min(
     BASE_RECONNECT_DELAY_MS * 2 ** Math.max(0, attempt),
     MAX_RECONNECT_DELAY_MS
   );
+}
+
+function getRealtimeDocument(): RealtimeDocument | undefined {
+  return (globalThis as { document?: RealtimeDocument }).document;
+}
+
+function getRealtimeWindow(): RealtimeWindow | undefined {
+  return (globalThis as { window?: RealtimeWindow }).window;
+}
+
+function canKeepRealtimeConnected(): boolean {
+  const currentDocument = getRealtimeDocument();
+  if (!currentDocument) {
+    return true;
+  }
+
+  if (currentDocument.visibilityState !== "visible") {
+    return false;
+  }
+
+  if (typeof currentDocument.hasFocus === "function") {
+    return currentDocument.hasFocus();
+  }
+
+  return true;
 }
 
 export function useRealtimeSync({
@@ -161,6 +199,9 @@ export function useRealtimeSync({
     let reconnectAttempts = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let pausedForBackground = !canKeepRealtimeConnected();
+    let connectInFlight = false;
     let activeIterator: AsyncIterator<SyncEvent> | null = null;
 
     const clearReconnectTimer = () => {
@@ -171,17 +212,25 @@ export function useRealtimeSync({
       reconnectTimer = null;
     };
 
+    const clearBackgroundDisconnectTimer = () => {
+      if (!backgroundDisconnectTimer) {
+        return;
+      }
+      clearTimeout(backgroundDisconnectTimer);
+      backgroundDisconnectTimer = null;
+    };
+
     const scheduleReconnect = (immediate: boolean) => {
       clearReconnectTimer();
 
-      if (cancelled) {
+      if (cancelled || pausedForBackground || !canKeepRealtimeConnected()) {
         return;
       }
 
       if (immediate) {
         reconnectAttempts = 0;
         reconnectTimer = setTimeout(() => {
-          connect();
+          void connect();
         }, 0);
         return;
       }
@@ -194,7 +243,7 @@ export function useRealtimeSync({
       reconnectAttempts += 1;
 
       reconnectTimer = setTimeout(() => {
-        connect();
+        void connect();
       }, delayMs);
     };
 
@@ -208,14 +257,14 @@ export function useRealtimeSync({
 
     const resetInactivityTimer = () => {
       clearInactivityTimer();
-      if (cancelled) {
+      if (cancelled || pausedForBackground) {
         return;
       }
       inactivityTimer = setTimeout(() => {
         // No events received within the timeout window — connection is
         // likely dead. Force-close the iterator so the consume loop exits
         // and triggers a reconnect.
-        closeActiveIterator();
+        void closeActiveIterator();
       }, INACTIVITY_TIMEOUT_MS);
     };
 
@@ -233,6 +282,60 @@ export function useRealtimeSync({
       } catch {
         // Expected on mobile when the stream is already closed.
       }
+    };
+
+    const pauseForBackground = async () => {
+      if (cancelled) {
+        return;
+      }
+      pausedForBackground = true;
+      clearReconnectTimer();
+      clearInactivityTimer();
+      await closeActiveIterator();
+    };
+
+    const scheduleBackgroundDisconnect = () => {
+      if (cancelled || canKeepRealtimeConnected()) {
+        return;
+      }
+
+      if (backgroundDisconnectTimer) {
+        return;
+      }
+
+      backgroundDisconnectTimer = setTimeout(() => {
+        backgroundDisconnectTimer = null;
+        if (!canKeepRealtimeConnected()) {
+          void pauseForBackground();
+        }
+      }, BACKGROUND_DISCONNECT_DELAY_MS);
+    };
+
+    const resumeFromBackground = () => {
+      if (cancelled || !canKeepRealtimeConnected()) {
+        return;
+      }
+
+      const wasPaused = pausedForBackground;
+      pausedForBackground = false;
+      clearBackgroundDisconnectTimer();
+
+      if (wasPaused) {
+        void invalidateCriticalQueries();
+      }
+
+      if (!(activeIterator || connectInFlight)) {
+        scheduleReconnect(true);
+      }
+    };
+
+    const handleConnectionActivity = () => {
+      if (canKeepRealtimeConnected()) {
+        resumeFromBackground();
+        return;
+      }
+
+      scheduleBackgroundDisconnect();
     };
 
     const consumeIterator = async (iterator: AsyncIterator<SyncEvent>) => {
@@ -257,15 +360,22 @@ export function useRealtimeSync({
     };
 
     const connect = async () => {
-      if (cancelled) {
+      if (
+        cancelled ||
+        pausedForBackground ||
+        !canKeepRealtimeConnected() ||
+        connectInFlight
+      ) {
         return;
       }
 
+      connectInFlight = true;
       try {
         const iterator = await orpc.sync.events();
+        connectInFlight = false;
         activeIterator = iterator;
 
-        if (cancelled) {
+        if (cancelled || pausedForBackground || !canKeepRealtimeConnected()) {
           await closeActiveIterator();
           return;
         }
@@ -280,19 +390,45 @@ export function useRealtimeSync({
           scheduleReconnect(reconnectRequested);
         }
       } catch {
+        connectInFlight = false;
         if (!cancelled) {
           scheduleReconnect(false);
         }
       }
     };
 
-    connect();
+    if (pausedForBackground) {
+      scheduleBackgroundDisconnect();
+    } else {
+      void connect();
+    }
+
+    const realtimeWindow = getRealtimeWindow();
+    const realtimeDocument = getRealtimeDocument();
+
+    if (realtimeWindow && realtimeDocument) {
+      realtimeWindow.addEventListener?.("focus", handleConnectionActivity);
+      realtimeWindow.addEventListener?.("blur", handleConnectionActivity);
+      realtimeDocument.addEventListener?.(
+        "visibilitychange",
+        handleConnectionActivity
+      );
+    }
 
     return () => {
       cancelled = true;
       clearReconnectTimer();
       clearInactivityTimer();
-      closeActiveIterator();
+      clearBackgroundDisconnectTimer();
+      if (realtimeWindow && realtimeDocument) {
+        realtimeWindow.removeEventListener?.("focus", handleConnectionActivity);
+        realtimeWindow.removeEventListener?.("blur", handleConnectionActivity);
+        realtimeDocument.removeEventListener?.(
+          "visibilitychange",
+          handleConnectionActivity
+        );
+      }
+      void closeActiveIterator();
     };
-  }, [enabled, handleSyncEvent, orpc, userId]);
+  }, [enabled, handleSyncEvent, invalidateCriticalQueries, orpc, userId]);
 }
