@@ -25,6 +25,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
@@ -155,24 +162,22 @@ function RecurrenceForm({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <span className="text-muted-foreground text-xs">Repeat</span>
-        <div className="flex flex-wrap gap-2">
-          {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const).map((next) => (
-            <Button
-              className={cn(
-                "h-auto px-3 py-1.5 text-sm",
-                freq === next && "border-primary bg-primary/10"
-              )}
-              key={next}
-              onClick={() => setFreq(next)}
-              type="button"
-              variant="outline"
-            >
-              {next.charAt(0) + next.slice(1).toLowerCase()}
-            </Button>
-          ))}
-        </div>
+      <div className="flex items-center gap-2">
+        <Label className="text-muted-foreground text-xs">Repeat</Label>
+        <Select
+          onValueChange={(v) => setFreq(v as TaskRecurrenceFrequency)}
+          value={freq}
+        >
+          <SelectTrigger className="h-8 w-[120px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="DAILY">Daily</SelectItem>
+            <SelectItem value="WEEKLY">Weekly</SelectItem>
+            <SelectItem value="MONTHLY">Monthly</SelectItem>
+            <SelectItem value="YEARLY">Yearly</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex items-center gap-2">
@@ -183,7 +188,7 @@ function RecurrenceForm({
           Every
         </Label>
         <Input
-          className="w-16"
+          className="h-7 w-14 px-2 text-xs"
           id="recurrence-interval"
           min={1}
           onChange={(event) =>
@@ -192,7 +197,7 @@ function RecurrenceForm({
           type="number"
           value={interval}
         />
-        <span className="text-muted-foreground text-sm">
+        <span className="text-muted-foreground text-xs">
           {getTaskRecurrenceIntervalLabel(freq, interval)}
         </span>
       </div>
@@ -201,21 +206,21 @@ function RecurrenceForm({
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
           <div className="flex gap-1">
-            {TASK_RECURRENCE_DAYS.map((day) => (
-              <button
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full border text-sm transition-colors",
-                  byDay.includes(day.value)
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background hover:bg-muted"
-                )}
-                key={day.value}
-                onClick={() => toggleDay(day.value)}
-                type="button"
-              >
-                {day.shortLabel}
-              </button>
-            ))}
+            {TASK_RECURRENCE_DAYS.map((day) => {
+              const active = byDay.includes(day.value);
+              return (
+                <Button
+                  className="h-8 w-8 rounded-full p-0 text-xs"
+                  key={day.value}
+                  onClick={() => toggleDay(day.value)}
+                  size="icon"
+                  type="button"
+                  variant={active ? "default" : "outline"}
+                >
+                  {day.shortLabel}
+                </Button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -229,7 +234,7 @@ function RecurrenceForm({
             On day
           </Label>
           <Input
-            className="w-16"
+            className="h-7 w-14 px-2 text-xs"
             id="recurrence-monthday"
             max={31}
             min={1}
@@ -239,7 +244,7 @@ function RecurrenceForm({
             type="number"
             value={byMonthDay}
           />
-          <span className="text-muted-foreground text-sm">of the month</span>
+          <span className="text-muted-foreground text-xs">of the month</span>
         </div>
       )}
 
@@ -247,32 +252,32 @@ function RecurrenceForm({
         <span className="text-muted-foreground text-xs">Ends</span>
         <div className="space-y-2">
           <Button
-            className={cn(
-              "h-auto justify-start gap-2 px-3 py-1.5 text-sm",
-              endType === "never" && "border-primary bg-primary/10"
-            )}
+            className="h-8 w-full justify-start text-xs"
             onClick={() => setEndType("never")}
+            size="sm"
             type="button"
-            variant="outline"
+            variant={endType === "never" ? "default" : "outline"}
           >
             Never
           </Button>
+
           <div className="flex items-center gap-2">
             <Button
-              className={cn(
-                "h-auto justify-start gap-2 px-3 py-1.5 text-sm",
-                endType === "until" && "border-primary bg-primary/10"
-              )}
+              className="h-8 shrink-0 text-xs"
               onClick={() => setEndType("until")}
+              size="sm"
               type="button"
-              variant="outline"
+              variant={endType === "until" ? "default" : "outline"}
             >
               On
             </Button>
             {endType === "until" && (
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button className="h-7 gap-1 px-2 text-xs" variant="outline">
+                  <Button
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    variant="outline"
+                  >
                     <CalendarIcon className="h-3 w-3" />
                     {until
                       ? formatPlainDate(until, {
@@ -294,22 +299,21 @@ function RecurrenceForm({
               </Popover>
             )}
           </div>
+
           <div className="flex items-center gap-2">
             <Button
-              className={cn(
-                "h-auto justify-start gap-2 px-3 py-1.5 text-sm",
-                endType === "count" && "border-primary bg-primary/10"
-              )}
+              className="h-8 shrink-0 text-xs"
               onClick={() => setEndType("count")}
+              size="sm"
               type="button"
-              variant="outline"
+              variant={endType === "count" ? "default" : "outline"}
             >
               After
             </Button>
             {endType === "count" && (
               <>
                 <Input
-                  className="h-7 w-14 px-2"
+                  className="h-7 w-14 px-2 text-xs"
                   min={1}
                   onChange={(event) =>
                     setCount(Number.parseInt(event.target.value, 10) || 1)
@@ -317,24 +321,25 @@ function RecurrenceForm({
                   type="number"
                   value={count}
                 />
-                <span className="text-sm">occurrences</span>
+                <span className="text-muted-foreground text-xs">times</span>
               </>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex justify-between pt-2">
+      <div className="flex justify-between border-t pt-3">
         <Button
           className="gap-1 text-destructive"
           onClick={handleClear}
+          size="sm"
           type="button"
           variant="ghost"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
           Clear
         </Button>
-        <Button onClick={handleApply} type="button">
+        <Button onClick={handleApply} size="sm" type="button">
           Apply
         </Button>
       </div>

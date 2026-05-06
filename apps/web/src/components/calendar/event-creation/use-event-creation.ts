@@ -9,11 +9,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Temporal } from "temporal-polyfill";
 import { isSameDay } from "@/lib/temporal-utils";
+import { PIXELS_PER_HOUR } from "../constants";
 import { MINUTES_STEP } from "../dnd/helpers";
 
 /** Default event duration in minutes when clicking (not dragging) */
@@ -151,30 +154,15 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Start creation on mouse down, centered on cursor position
-  const onSlotMouseDown = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      if (!defaultCalendar) {
-        return;
-      }
-      // Offset start by half duration to center the event on cursor (matches hover preview)
-      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
-      const centeredStart = dateTime.subtract({ minutes: halfDuration });
-      setState((prev) => ({
-        ...prev,
-        isCreating: true,
-        startDateTime: centeredStart,
-        endDateTime: centeredStart.add({
-          minutes: DEFAULT_EVENT_DURATION_MINUTES,
-        }),
-        hoverDateTime: null,
-        calendarId: defaultCalendar.calendarId,
-        accountId: defaultCalendar.accountId,
-        showPopover: false,
-      }));
-    },
-    [defaultCalendar]
-  );
+  // Refs for document-level drag listeners. The slot-level React listeners
+  // stop firing when the cursor crosses an existing event (events render with
+  // `pointer-events-auto` above the slots). Document-level native listeners
+  // aren't blocked, so we attach them on mousedown and remove on mouseup.
+  const startDateTimeRef = useRef<Temporal.ZonedDateTime | null>(null);
+  const documentListenerCleanupRef = useRef<(() => void) | null>(null);
+
+  // Safety: remove any leaked document listeners on unmount.
+  useEffect(() => () => documentListenerCleanupRef.current?.(), []);
 
   // Update end position during drag
   const onSlotDragMove = useCallback((dateTime: Temporal.ZonedDateTime) => {
@@ -211,11 +199,11 @@ export function useEventCreationState(): EventCreationContextValue {
 
   // End creation on mouse up, show popover
   const onSlotMouseUp = useCallback(() => {
+    documentListenerCleanupRef.current?.();
     setState((prev) => {
       if (!prev.isCreating) {
         return prev;
       }
-      // Keep the state but show the popover
       return {
         ...prev,
         isCreating: false,
@@ -224,13 +212,105 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
+  // Start creation on mouse down, centered on cursor position.
+  // Also attaches document-level mousemove/mouseup so the drag stays
+  // continuous even when the cursor passes over existing events.
+  const onSlotMouseDown = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      if (!defaultCalendar) {
+        return;
+      }
+      documentListenerCleanupRef.current?.();
+
+      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
+      const centeredStart = dateTime.subtract({ minutes: halfDuration });
+      startDateTimeRef.current = centeredStart;
+
+      setState((prev) => ({
+        ...prev,
+        isCreating: true,
+        startDateTime: centeredStart,
+        endDateTime: centeredStart.add({
+          minutes: DEFAULT_EVENT_DURATION_MINUTES,
+        }),
+        hoverDateTime: null,
+        calendarId: defaultCalendar.calendarId,
+        accountId: defaultCalendar.accountId,
+        showPopover: false,
+      }));
+
+      const handleDocumentMouseMove = (e: MouseEvent) => {
+        const start = startDateTimeRef.current;
+        if (!start) {
+          return;
+        }
+
+        // `closest()` walks up the DOM tree, so it finds the day column even
+        // when the topmost element is an existing event sitting inside it.
+        const target = document.elementFromPoint(
+          e.clientX,
+          e.clientY
+        ) as HTMLElement | null;
+        const column = target?.closest(
+          "[data-day-column]"
+        ) as HTMLElement | null;
+        if (!column) {
+          return;
+        }
+
+        const rect = column.getBoundingClientRect();
+        const offsetY = Math.min(
+          Math.max(e.clientY - rect.top, 0),
+          rect.height
+        );
+        const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
+        const snappedMinutes =
+          Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+        const clampedMinutes = Math.min(
+          Math.max(snappedMinutes, 0),
+          24 * 60 - MINUTES_STEP
+        );
+
+        const snapped = Temporal.ZonedDateTime.from({
+          year: start.year,
+          month: start.month,
+          day: start.day,
+          hour: Math.floor(clampedMinutes / 60),
+          minute: clampedMinutes % 60,
+          timeZone: start.timeZoneId,
+        });
+
+        onSlotDragMove(snapped);
+      };
+
+      const handleDocumentMouseUp = (e: MouseEvent) => {
+        if (e.button !== 0) {
+          return;
+        }
+        onSlotMouseUp();
+      };
+
+      document.addEventListener("mousemove", handleDocumentMouseMove);
+      document.addEventListener("mouseup", handleDocumentMouseUp);
+
+      documentListenerCleanupRef.current = () => {
+        document.removeEventListener("mousemove", handleDocumentMouseMove);
+        document.removeEventListener("mouseup", handleDocumentMouseUp);
+        documentListenerCleanupRef.current = null;
+      };
+    },
+    [defaultCalendar, onSlotDragMove, onSlotMouseUp]
+  );
+
   // Cancel creation entirely
   const cancelCreation = useCallback(() => {
+    documentListenerCleanupRef.current?.();
     setState(initialState);
   }, []);
 
   // Close popover (after save or discard)
   const closePopover = useCallback(() => {
+    documentListenerCleanupRef.current?.();
     setState(initialState);
   }, []);
 

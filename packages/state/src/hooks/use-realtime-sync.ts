@@ -230,7 +230,7 @@ export function useRealtimeSync({
       if (immediate) {
         reconnectAttempts = 0;
         reconnectTimer = setTimeout(() => {
-          void connect();
+          connect();
         }, 0);
         return;
       }
@@ -243,7 +243,7 @@ export function useRealtimeSync({
       reconnectAttempts += 1;
 
       reconnectTimer = setTimeout(() => {
-        void connect();
+        connect();
       }, delayMs);
     };
 
@@ -264,7 +264,7 @@ export function useRealtimeSync({
         // No events received within the timeout window — connection is
         // likely dead. Force-close the iterator so the consume loop exits
         // and triggers a reconnect.
-        void closeActiveIterator();
+        closeActiveIterator();
       }, INACTIVITY_TIMEOUT_MS);
     };
 
@@ -306,7 +306,7 @@ export function useRealtimeSync({
       backgroundDisconnectTimer = setTimeout(() => {
         backgroundDisconnectTimer = null;
         if (!canKeepRealtimeConnected()) {
-          void pauseForBackground();
+          pauseForBackground();
         }
       }, BACKGROUND_DISCONNECT_DELAY_MS);
     };
@@ -321,7 +321,7 @@ export function useRealtimeSync({
       clearBackgroundDisconnectTimer();
 
       if (wasPaused) {
-        void invalidateCriticalQueries();
+        invalidateCriticalQueries();
       }
 
       if (!(activeIterator || connectInFlight)) {
@@ -400,7 +400,7 @@ export function useRealtimeSync({
     if (pausedForBackground) {
       scheduleBackgroundDisconnect();
     } else {
-      void connect();
+      connect();
     }
 
     const realtimeWindow = getRealtimeWindow();
@@ -428,7 +428,7 @@ export function useRealtimeSync({
           handleConnectionActivity
         );
       }
-      void closeActiveIterator();
+      closeActiveIterator();
     };
   }, [enabled, handleSyncEvent, invalidateCriticalQueries, orpc, userId]);
 }

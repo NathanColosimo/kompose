@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DurationPicker } from "@/components/ui/duration-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,6 +26,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 import {
   formatPlainDate,
   pickerDateToTemporal,
@@ -110,13 +112,17 @@ export function CreateTaskForm({
             <Input id="title" placeholder="Task title" {...register("title")} />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="durationMinutes">Duration (minutes)</Label>
-            <Input
-              id="durationMinutes"
-              min={5}
-              step={5}
-              type="number"
-              {...register("durationMinutes", { valueAsNumber: true })}
+            <Label>Duration</Label>
+            <Controller
+              control={control}
+              name="durationMinutes"
+              render={({ field }) => (
+                <DurationPicker
+                  className="w-full"
+                  onChange={(minutes) => field.onChange(minutes)}
+                  value={field.value}
+                />
+              )}
             />
           </div>
           <div className="grid gap-2">
@@ -197,7 +203,7 @@ export function CreateTaskForm({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="startTime">Start Time</Label>
+              <Label>Start Time</Label>
               <Controller
                 control={control}
                 name="startTime"
@@ -209,23 +215,19 @@ export function CreateTaskForm({
                     : "";
 
                   return (
-                    <Input
-                      id="startTime"
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
+                    <TimePicker
+                      className="w-full"
+                      onChange={(nextValue) => {
                         if (!nextValue) {
                           field.onChange(null);
                           return;
                         }
-
                         const [hours, minutes] = nextValue
                           .split(":")
                           .map(Number);
                         if (Number.isNaN(hours) || Number.isNaN(minutes)) {
                           return;
                         }
-
-                        // Convert time input into a Temporal.PlainTime for storage.
                         field.onChange(
                           Temporal.PlainTime.from({
                             hour: hours,
@@ -233,7 +235,7 @@ export function CreateTaskForm({
                           })
                         );
                       }}
-                      type="time"
+                      placeholder="Pick a time"
                       value={value}
                     />
                   );

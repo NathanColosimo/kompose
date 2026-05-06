@@ -26,10 +26,8 @@ import { useAtom } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
-  Clock3,
   Link2,
   Loader2,
-  Timer,
   Trash2,
   X,
   XCircle,
@@ -59,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { DurationPicker } from "@/components/ui/duration-picker";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -67,6 +66,7 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 import { openUrlInDesktopBrowser } from "@/lib/tauri-desktop";
 import {
   formatPlainDate,
@@ -652,66 +652,20 @@ export function TaskEditForm({
           )}
         />
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              className={cn(
-                "justify-start gap-2 text-left font-medium text-xs",
-                !startTimeValue && "text-muted-foreground"
-              )}
-              variant="outline"
-            >
-              <Clock3 className="h-4 w-4 shrink-0" />
-              <span className="truncate">{startTimeValue || "Time"}</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[220px]">
-            <Label className="text-muted-foreground text-xs">Start time</Label>
-            <Input
-              className="mt-2"
-              onChange={(e) => handleTimeChange(e.target.value)}
-              step={300}
-              type="time"
-              value={startTimeValue}
-            />
-          </PopoverContent>
-        </Popover>
+        <TimePicker
+          onChange={handleTimeChange}
+          placeholder="Time"
+          value={startTimeValue}
+        />
 
         <Controller
           control={control}
           name="durationMinutes"
           render={({ field }) => (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  className="justify-start gap-2 text-xs"
-                  variant="outline"
-                >
-                  <Timer className="h-4 w-4 shrink-0" />
-                  <span className="truncate">
-                    {field.value ? `${field.value}m` : "Duration"}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-[220px] space-y-2">
-                <Label className="text-muted-foreground text-xs">
-                  Duration (minutes)
-                </Label>
-                <Input
-                  min={5}
-                  onChange={(e) =>
-                    field.onChange(
-                      e.target.value === ""
-                        ? undefined
-                        : Number.parseInt(e.target.value, 10)
-                    )
-                  }
-                  step={5}
-                  type="number"
-                  value={field.value ?? ""}
-                />
-              </PopoverContent>
-            </Popover>
+            <DurationPicker
+              onChange={(minutes) => field.onChange(minutes)}
+              value={field.value}
+            />
           )}
         />
       </div>

@@ -10,8 +10,8 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
-  untilInputToRule,
-  untilRuleToInput,
+  dateToUntilRule,
+  untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
   type CreateGoogleEventInput,
@@ -31,7 +31,6 @@ import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
   Check,
-  Clock3,
   Lock,
   MapPin,
   Palette,
@@ -88,6 +87,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 import {
   formatPlainDate,
   formatTimeString,
@@ -328,157 +328,194 @@ function RecurrenceEditor({
     onChange(nextRule);
   }, [onChange, values, buildEndFromValues]);
 
+  const untilDate = useMemo(
+    () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
+    [values.untilRule]
+  );
+
   if (!visible) {
     return null;
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
           <Repeat className="h-4 w-4" />
           <span>Recurrence</span>
         </div>
         {recurrenceRule ? (
-          <span className="truncate text-[10px] text-muted-foreground">
+          <span className="max-w-[160px] truncate text-[10px] text-muted-foreground">
             {recurrenceRule}
           </span>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Label className="text-xs">Frequency</Label>
-        <select
-          className="h-8 rounded-md border px-2 text-xs"
-          onChange={(e) => {
-            const nextFreq = (e.target.value as Frequency) || "none";
+      <div className="flex items-center gap-2">
+        <Label className="text-xs">Repeat</Label>
+        <Select
+          onValueChange={(v) => {
+            const nextFreq = v as Frequency;
             setValue("freq", nextFreq);
             if (nextFreq !== "WEEKLY") {
-              // Weekday selection only applies to weekly recurrence.
               setValue("byDay", []);
             }
           }}
           value={values.freq}
         >
-          <option value="none">None</option>
-          <option value="DAILY">Daily</option>
-          <option value="WEEKLY">Weekly</option>
-          <option value="MONTHLY">Monthly</option>
-        </select>
+          <SelectTrigger className="h-8 w-[120px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            <SelectItem value="DAILY">Daily</SelectItem>
+            <SelectItem value="WEEKLY">Weekly</SelectItem>
+            <SelectItem value="MONTHLY">Monthly</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {values.freq === "WEEKLY" && (
-        <div className="flex flex-wrap gap-2">
-          {WEEKDAYS.map((day) => {
-            const active = values.byDay.includes(day.value);
-            return (
-              <Button
-                key={day.value}
-                onClick={() => {
-                  const current = values.byDay;
-                  const next = active
-                    ? current.filter((d) => d !== day.value)
-                    : [...current, day.value];
-                  setValue("byDay", next);
-                }}
-                size="sm"
-                type="button"
-                variant={active ? "secondary" : "outline"}
-              >
-                {day.label}
-              </Button>
-            );
-          })}
+        <div className="space-y-2">
+          <span className="text-muted-foreground text-xs">On days</span>
+          <div className="flex gap-1">
+            {WEEKDAYS.map((day) => {
+              const active = values.byDay.includes(day.value);
+              return (
+                <Button
+                  className={cn(
+                    "h-8 w-8 rounded-full p-0 text-xs",
+                    active &&
+                      "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                  )}
+                  key={day.value}
+                  onClick={() => {
+                    const current = values.byDay;
+                    const next = active
+                      ? current.filter((d) => d !== day.value)
+                      : [...current, day.value];
+                    setValue("byDay", next);
+                  }}
+                  size="icon"
+                  type="button"
+                  variant={active ? "default" : "outline"}
+                >
+                  {day.label.slice(0, 2)}
+                </Button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      <div className="space-y-2 rounded-md border border-dashed p-3">
-        <Label className="text-xs">End</Label>
-        <div className="flex flex-wrap gap-2">
+      <div className="space-y-2">
+        <span className="text-muted-foreground text-xs">Ends</span>
+        <div className="space-y-2">
           <Button
+            className="h-8 w-full justify-start text-xs"
             onClick={() => {
               setValue("endType", "none");
               setValue("untilRule", "");
             }}
             size="sm"
             type="button"
-            variant={values.endType === "none" ? "secondary" : "outline"}
+            variant={values.endType === "none" ? "default" : "outline"}
           >
-            No end
+            Never
           </Button>
-          <Button
-            onClick={() => {
-              const fallback =
-                values.untilRule ||
-                untilInputToRule(
-                  `${new Date().toISOString().slice(0, 10)}T00:00`
-                ) ||
-                `${new Date().toISOString().slice(0, 10)}T000000Z`;
-              setValue("endType", "until");
-              setValue("untilRule", fallback);
-            }}
-            size="sm"
-            type="button"
-            variant={values.endType === "until" ? "secondary" : "outline"}
-          >
-            On date
-          </Button>
-          <Button
-            onClick={() => {
-              setValue("endType", "count");
-              setValue(
-                "count",
-                Number.isFinite(values.count) && values.count > 0
-                  ? values.count
-                  : 5
-              );
-            }}
-            size="sm"
-            type="button"
-            variant={values.endType === "count" ? "secondary" : "outline"}
-          >
-            After N
-          </Button>
-        </div>
 
-        {values.endType === "until" ? (
-          <Input
-            className="w-44 text-xs"
-            onChange={(e) => {
-              const val = e.target.value;
-              if (!val) {
-                setValue("untilRule", "");
-                setValue("endType", "none");
-                return;
-              }
-              const normalized = untilInputToRule(val);
-              if (!normalized) {
-                return;
-              }
-              setValue("untilRule", normalized);
-            }}
-            type="datetime-local"
-            value={values.untilRule ? untilRuleToInput(values.untilRule) : ""}
-          />
-        ) : null}
-
-        {values.endType === "count" ? (
           <div className="flex items-center gap-2">
-            <Input
-              className="w-20 text-xs"
-              min={1}
-              onChange={(e) => {
-                const parsed = Number.parseInt(e.target.value, 10);
-                if (Number.isFinite(parsed) && parsed > 0) {
-                  setValue("count", parsed);
-                }
+            <Button
+              className="h-8 shrink-0 text-xs"
+              onClick={() => {
+                const fallback =
+                  values.untilRule ||
+                  dateToUntilRule(new Date()) ||
+                  `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
+                setValue("endType", "until");
+                setValue("untilRule", fallback);
               }}
-              type="number"
-              value={values.count}
-            />
-            <span className="text-muted-foreground text-xs">occurrences</span>
+              size="sm"
+              type="button"
+              variant={values.endType === "until" ? "default" : "outline"}
+            >
+              On
+            </Button>
+            {values.endType === "until" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    variant="outline"
+                  >
+                    <CalendarIcon className="h-3 w-3" />
+                    {untilDate
+                      ? formatPlainDate(pickerDateToTemporal(untilDate), {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "Select date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) => {
+                      if (!date) {
+                        setValue("untilRule", "");
+                        setValue("endType", "none");
+                        return;
+                      }
+                      const rule = dateToUntilRule(date);
+                      if (rule) {
+                        setValue("untilRule", rule);
+                      }
+                    }}
+                    selected={untilDate ?? undefined}
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
-        ) : null}
+
+          <div className="flex items-center gap-2">
+            <Button
+              className="h-8 shrink-0 text-xs"
+              onClick={() => {
+                setValue("endType", "count");
+                setValue(
+                  "count",
+                  Number.isFinite(values.count) && values.count > 0
+                    ? values.count
+                    : 5
+                );
+              }}
+              size="sm"
+              type="button"
+              variant={values.endType === "count" ? "default" : "outline"}
+            >
+              After
+            </Button>
+            {values.endType === "count" && (
+              <>
+                <Input
+                  className="h-7 w-16 px-2 text-xs"
+                  min={1}
+                  onChange={(e) => {
+                    const parsed = Number.parseInt(e.target.value, 10);
+                    if (Number.isFinite(parsed) && parsed > 0) {
+                      setValue("count", parsed);
+                    }
+                  }}
+                  type="number"
+                  value={values.count}
+                />
+                <span className="text-muted-foreground text-xs">times</span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1952,61 +1989,19 @@ export function EventEditForm({
 
       {watchedValues.allDay ? null : (
         <div className="grid grid-cols-2 gap-2">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                className={cn(
-                  "justify-start gap-2 text-left font-medium text-xs",
-                  !startTimeValue && "text-muted-foreground"
-                )}
-                disabled={readOnly}
-                variant="outline"
-              >
-                <Clock3 className="h-4 w-4" />
-                {startTimeValue || "Start time"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[220px]">
-              <Label className="text-muted-foreground text-xs">
-                Start time
-              </Label>
-              <Input
-                className="mt-2"
-                disabled={readOnly}
-                onChange={(e) => handleTimeChange("startTime", e.target.value)}
-                step={900}
-                type="time"
-                value={startTimeValue}
-              />
-            </PopoverContent>
-          </Popover>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                className={cn(
-                  "justify-start gap-2 text-left font-medium text-xs",
-                  !endTimeValue && "text-muted-foreground"
-                )}
-                disabled={readOnly}
-                variant="outline"
-              >
-                <Timer className="h-4 w-4" />
-                {endTimeValue || "End time"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[220px]">
-              <Label className="text-muted-foreground text-xs">End time</Label>
-              <Input
-                className="mt-2"
-                disabled={readOnly}
-                onChange={(e) => handleTimeChange("endTime", e.target.value)}
-                step={900}
-                type="time"
-                value={endTimeValue}
-              />
-            </PopoverContent>
-          </Popover>
+          <TimePicker
+            disabled={readOnly}
+            onChange={(v) => handleTimeChange("startTime", v)}
+            placeholder="Start time"
+            value={startTimeValue}
+          />
+          <TimePicker
+            disabled={readOnly}
+            icon={<Timer className="h-4 w-4 shrink-0" />}
+            onChange={(v) => handleTimeChange("endTime", v)}
+            placeholder="End time"
+            value={endTimeValue}
+          />
         </div>
       )}
 
