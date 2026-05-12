@@ -10,7 +10,7 @@ export type SidebarLeftBaseViewId = "inbox" | "today";
  * Persisted selection for the left sidebar.
  * Tag selections store only the tag id and rehydrate against live tag data.
  */
-export type SidebarLeftViewSelection =
+type SidebarLeftViewSelection =
   | { type: "base"; id: SidebarLeftBaseViewId }
   | { type: "tag"; tagId: string };
 
@@ -33,14 +33,14 @@ export const SIDEBAR_RIGHT_WIDTH = "clamp(24rem, 30vw, 30rem)";
  * Width-budget constants used for responsive layout calculations.
  * Keep these in px so breakpoints are deterministic.
  */
-export const SIDEBAR_LEFT_MIN_WIDTH_PX = 288; // 18rem
-export const SIDEBAR_LEFT_ICON_WIDTH_PX = 48; // 3rem
-export const SIDEBAR_RIGHT_MIN_WIDTH_PX = 352; // 24rem
-export const CALENDAR_TIME_GUTTER_WIDTH_PX = 48; // w-16
-export const CALENDAR_DAY_MIN_WIDTH_PX = 138;
-export const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
+const SIDEBAR_LEFT_MIN_WIDTH_PX = 288; // 18rem
+const SIDEBAR_LEFT_ICON_WIDTH_PX = 48; // 3rem
+const SIDEBAR_RIGHT_MIN_WIDTH_PX = 352; // 24rem
+const CALENDAR_TIME_GUTTER_WIDTH_PX = 48; // w-16
+const CALENDAR_DAY_MIN_WIDTH_PX = 138;
+const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
 
-export interface DashboardResponsiveLayout {
+interface DashboardResponsiveLayout {
   canDockRightSidebar: boolean;
   maxDaysForCurrentLayout: number;
   maxDaysWithDockedRight: number;
@@ -63,7 +63,7 @@ function getCalendarDayCapacity(calendarRegionWidthPx: number) {
  * Compute calendar/day capacity from a viewport width budget.
  * The result drives day clamping and docked-vs-overlay right sidebar behavior.
  */
-export function computeDashboardResponsiveLayout(args: {
+function computeDashboardResponsiveLayout(args: {
   leftSidebarOpen: boolean;
   rightSidebarDockRequested: boolean;
   viewportWidth: number;

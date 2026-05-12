@@ -124,7 +124,7 @@ export function TimePicker({
           type="button"
           variant="outline"
         >
-          {icon ?? <Clock3 className="h-4 w-4 shrink-0" />}
+          {icon ?? <Clock3 className="size-4 shrink-0" />}
           <span className="truncate">{displayValue ?? placeholder}</span>
         </Button>
       </PopoverTrigger>

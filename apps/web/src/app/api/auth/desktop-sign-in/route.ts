@@ -7,21 +7,18 @@ function isGenericOAuthProvider(provider: string) {
   return provider === "whoop";
 }
 
-/**
- * GET /api/auth/desktop-sign-in?provider=google[&mode=link&link_token=TOKEN]
- *
- * Initiates an OAuth flow in the system browser for desktop (Tauri) sign-in or
- * account linking. Internally proxies to Better Auth's sign-in or link-social
- * endpoint, forwards the state cookies to the browser, and returns a 302
- * redirect to the OAuth provider (Google).
- *
- * Query params:
- *  - provider: OAuth provider name (e.g. "google", "apple")
- *  - mode: "link" for account linking (optional, defaults to sign-in)
- *  - link_token: One-time token for account linking (required when mode=link)
- *  - desktop_scheme: Target custom URL scheme for the bundled desktop flavor
- */
-export async function GET(request: NextRequest) {
+// POST: desktop opens this URL via the system browser. GET is required because
+// the browser navigates here directly (not via fetch). OAuth state parameters
+// and one-time link tokens protect against CSRF.
+export function POST(request: NextRequest) {
+  return handleDesktopSignIn(request);
+}
+
+export function GET(request: NextRequest) {
+  return handleDesktopSignIn(request);
+}
+
+async function handleDesktopSignIn(request: NextRequest) {
   const url = new URL(request.url);
   const provider = url.searchParams.get("provider");
   const mode = url.searchParams.get("mode"); // "link" or null (sign-in)
@@ -39,12 +36,11 @@ export async function GET(request: NextRequest) {
     const desktopScheme = desktopDeepLinkSchemeSchema.parse(
       url.searchParams.get(DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM)
     );
-    // Keep the selected desktop scheme in the browser callback URL so the
-    // server can redirect back to the correct installed desktop flavor.
-    const callbackParams = new URLSearchParams({
+
+    const callbackEntries: Record<string, string> = {
       [DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM]: desktopScheme,
       provider,
-    });
+    };
 
     if (mode === "link" && !linkToken) {
       return NextResponse.json(
@@ -54,7 +50,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (mode === "link" && linkToken) {
-      callbackParams.set("mode", "link");
+      callbackEntries.mode = "link";
+      const callbackParams = new URLSearchParams(callbackEntries);
 
       // --- Account linking mode ---
       // Recover the desktop session from the one-time token and then pass
@@ -137,6 +134,7 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Sign-in mode ---
+    const callbackParams = new URLSearchParams(callbackEntries);
     const internalResponse = await auth.handler(
       new Request(`${baseUrl}/api/auth/sign-in/social`, {
         method: "POST",

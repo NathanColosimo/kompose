@@ -76,7 +76,7 @@ function getLinkedAccountSuccessMessage(linkedProvider: string | null) {
  * WKWebView's ITP cookie restrictions entirely.
  */
 export function DeepLinkHandler() {
-  const router = useRouter();
+  const { push } = useRouter();
   const queryClient = useQueryClient();
   const processingRef = useRef(false);
 
@@ -124,7 +124,7 @@ export function DeepLinkHandler() {
           });
           if (session?.data?.user) {
             await queryClient.invalidateQueries();
-            router.push("/dashboard");
+            push("/dashboard");
             return;
           }
 
@@ -146,7 +146,7 @@ export function DeepLinkHandler() {
           // with the freshly-stored bearer token.
           await queryClient.invalidateQueries();
           toast.success("Signed in successfully.");
-          router.push("/dashboard");
+          push("/dashboard");
         }
       } catch (error) {
         console.error("[DeepLinkHandler] Error processing deep link:", error);
@@ -155,7 +155,7 @@ export function DeepLinkHandler() {
         processingRef.current = false;
       }
     },
-    [router, queryClient]
+    [push, queryClient]
   );
 
   useEffect(() => {

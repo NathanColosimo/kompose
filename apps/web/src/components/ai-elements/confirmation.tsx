@@ -2,7 +2,7 @@
 
 import type { ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, useContext } from "react";
+import { createContext, use } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ const ConfirmationContext = createContext<ConfirmationContextValue | null>(
 );
 
 const useConfirmation = () => {
-  const context = useContext(ConfirmationContext);
+  const context = use(ConfirmationContext);
 
   if (!context) {
     throw new Error("Confirmation components must be used within Confirmation");
@@ -54,7 +54,7 @@ const useConfirmation = () => {
   return context;
 };
 
-export type ConfirmationProps = ComponentProps<typeof Alert> & {
+type ConfirmationProps = ComponentProps<typeof Alert> & {
   approval?: ToolUIPartApproval;
   state: ToolUIPart["state"];
 };
@@ -79,16 +79,13 @@ export const Confirmation = ({
   );
 };
 
-export type ConfirmationTitleProps = ComponentProps<typeof AlertDescription>;
+type ConfirmationTitleProps = ComponentProps<typeof AlertDescription>;
 
-export const ConfirmationTitle = ({
-  className,
-  ...props
-}: ConfirmationTitleProps) => (
+const ConfirmationTitle = ({ className, ...props }: ConfirmationTitleProps) => (
   <AlertDescription className={cn("inline", className)} {...props} />
 );
 
-export interface ConfirmationRequestProps {
+interface ConfirmationRequestProps {
   children?: ReactNode;
 }
 
@@ -103,7 +100,7 @@ export const ConfirmationRequest = ({ children }: ConfirmationRequestProps) => {
   return children;
 };
 
-export interface ConfirmationAcceptedProps {
+interface ConfirmationAcceptedProps {
   children?: ReactNode;
 }
 
@@ -125,7 +122,7 @@ export const ConfirmationAccepted = ({
   return children;
 };
 
-export interface ConfirmationRejectedProps {
+interface ConfirmationRejectedProps {
   children?: ReactNode;
 }
 
@@ -147,7 +144,7 @@ export const ConfirmationRejected = ({
   return children;
 };
 
-export type ConfirmationActionsProps = ComponentProps<"div">;
+type ConfirmationActionsProps = ComponentProps<"div">;
 
 export const ConfirmationActions = ({
   className,
@@ -168,7 +165,7 @@ export const ConfirmationActions = ({
   );
 };
 
-export type ConfirmationActionProps = ComponentProps<typeof Button>;
+type ConfirmationActionProps = ComponentProps<typeof Button>;
 
 export const ConfirmationAction = (props: ConfirmationActionProps) => (
   <Button className="h-6 px-2 text-xs" type="button" {...props} />

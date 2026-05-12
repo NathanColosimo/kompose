@@ -20,7 +20,7 @@ import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import {
@@ -57,6 +57,60 @@ interface PendingTaskUpdate {
   task: object;
 }
 
+type ActiveGoogleEventData = Extract<
+  DragData,
+  { type: "google-event" | "google-event-resize" }
+>;
+
+interface DragState {
+  activeGoogleEvent: ActiveGoogleEventData | null;
+  activeTask: TaskSelectDecoded | null;
+  isResizing: boolean;
+  previewRect: PreviewRect | null;
+}
+
+const initialDragState: DragState = {
+  activeTask: null,
+  activeGoogleEvent: null,
+  isResizing: false,
+  previewRect: null,
+};
+
+type DragAction =
+  | { type: "start-task"; resizing: boolean; task: TaskSelectDecoded }
+  | {
+      type: "start-google-event";
+      data: ActiveGoogleEventData;
+      resizing: boolean;
+    }
+  | { type: "set-preview"; rect: PreviewRect | null }
+  | { type: "reset" };
+
+function dragReducer(state: DragState, action: DragAction): DragState {
+  switch (action.type) {
+    case "start-task":
+      return {
+        ...initialDragState,
+        activeTask: action.task,
+        isResizing: action.resizing,
+      };
+    case "start-google-event":
+      return {
+        ...initialDragState,
+        activeGoogleEvent: action.data,
+        isResizing: action.resizing,
+      };
+    case "set-preview":
+      return state.previewRect === action.rect
+        ? state
+        : { ...state, previewRect: action.rect };
+    case "reset":
+      return initialDragState;
+    default:
+      return state;
+  }
+}
+
 interface CalendarDndProviderProps {
   children: React.ReactNode;
 }
@@ -67,13 +121,8 @@ interface CalendarDndProviderProps {
  */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const timeZone = useAtomValue(timezoneAtom);
-  const [activeTask, setActiveTask] = useState<TaskSelectDecoded | null>(null);
-  const [activeGoogleEvent, setActiveGoogleEvent] = useState<Extract<
-    DragData,
-    { type: "google-event" | "google-event-resize" }
-  > | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [previewRect, setPreviewRect] = useState<PreviewRect | null>(null);
+  const [drag, dispatch] = useReducer(dragReducer, initialDragState);
+  const { activeTask, activeGoogleEvent, isResizing, previewRect } = drag;
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
   const stableChildren = useMemo(() => children, [children]);
@@ -99,19 +148,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
-    setPreviewRect(null);
+    dispatch({ type: "set-preview", rect: null });
   }, []);
 
   const resetDragState = useCallback(() => {
-    setActiveTask(null);
-    setActiveGoogleEvent(null);
-    setIsResizing(false);
-    clearPreview();
+    dispatch({ type: "reset" });
+    pendingPreviewRef.current = null;
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     }
-  }, [clearPreview]);
+  }, []);
 
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
@@ -225,16 +272,20 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     const data = active.data.current as DragData | undefined;
 
     if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
-      setActiveTask(data.task);
-      setActiveGoogleEvent(null);
-      setIsResizing(data.type === "task-resize");
+      dispatch({
+        type: "start-task",
+        task: data.task,
+        resizing: data.type === "task-resize",
+      });
       return;
     }
 
     if (data?.type === "google-event" || data?.type === "google-event-resize") {
-      setActiveGoogleEvent(data);
-      setActiveTask(null);
-      setIsResizing(data.type === "google-event-resize");
+      dispatch({
+        type: "start-google-event",
+        data,
+        resizing: data.type === "google-event-resize",
+      });
     }
   }, []);
 
@@ -599,7 +650,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (previewFrameRef.current === null) {
         previewFrameRef.current = requestAnimationFrame(() => {
           previewFrameRef.current = null;
-          setPreviewRect(pendingPreviewRef.current);
+          dispatch({ type: "set-preview", rect: pendingPreviewRef.current });
           pendingPreviewRef.current = null;
         });
       }

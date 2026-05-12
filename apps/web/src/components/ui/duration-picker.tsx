@@ -83,7 +83,7 @@ export function DurationPicker({
           type="button"
           variant="outline"
         >
-          <Timer className="h-4 w-4 shrink-0" />
+          <Timer className="size-4 shrink-0" />
           <span className="truncate">
             {displayValue || "Duration"}
           </span>

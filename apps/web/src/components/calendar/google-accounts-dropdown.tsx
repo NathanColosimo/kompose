@@ -204,7 +204,7 @@ function AccountCalendarsSection({
             onSelect={(event) => event.preventDefault()}
           >
             <span
-              className="mr-2 inline-block h-3 w-3 rounded-sm border"
+              className="mr-2 inline-block size-3 rounded-sm border"
               style={swatchStyle}
             />
             <span className="truncate">{calendar.calendar.summary}</span>

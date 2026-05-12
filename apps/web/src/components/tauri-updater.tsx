@@ -4,8 +4,8 @@ import { isProductionDeployment } from "@kompose/env";
 import type { Update } from "@tauri-apps/plugin-updater";
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -231,7 +231,7 @@ export function TauriUpdaterProvider({
 }
 
 export function useTauriUpdater() {
-  const context = useContext(TauriUpdaterContext);
+  const context = use(TauriUpdaterContext);
 
   if (!context) {
     return {

@@ -43,10 +43,12 @@ export function CalendarHotkeys() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
+  const [sidebarRightOpen, setSidebarRightOpen] = useAtom(sidebarRightOpenAtom);
+  const [sidebarRightOverlayOpen, setSidebarRightOverlayOpen] = useAtom(
+    sidebarRightOverlayOpenAtom
+  );
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
-  const setSidebarRightOpen = useSetAtom(sidebarRightOpenAtom);
-  const setSidebarRightOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const timeZone = useAtomValue(timezoneAtom);
 
@@ -105,7 +107,7 @@ export function CalendarHotkeys() {
         setSidebarRightOpen((prev) => !prev);
         return;
       }
-      setSidebarRightOverlayOpen(true);
+      setSidebarRightOverlayOpen((prev) => !prev);
     },
     hotkeyOptions,
     [
@@ -119,7 +121,11 @@ export function CalendarHotkeys() {
   useHotkeys(
     "s",
     () => {
-      const newState = !sidebarLeftOpen;
+      const isRightOpen = responsiveLayout.canDockRightSidebar
+        ? sidebarRightOpen
+        : sidebarRightOverlayOpen;
+      const newState = !(sidebarLeftOpen && isRightOpen);
+
       setSidebarLeftOpen(newState);
       if (responsiveLayout.canDockRightSidebar) {
         setSidebarRightOpen(newState);
@@ -134,6 +140,8 @@ export function CalendarHotkeys() {
       setSidebarRightOpen,
       setSidebarRightOverlayOpen,
       sidebarLeftOpen,
+      sidebarRightOpen,
+      sidebarRightOverlayOpen,
     ]
   );
 

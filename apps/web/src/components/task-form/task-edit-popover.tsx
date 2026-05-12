@@ -23,6 +23,7 @@ import {
   haveTaskCoreFieldsChanged,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
+import Image from "next/image";
 import {
   CalendarCheck,
   CalendarClock,
@@ -37,6 +38,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -300,6 +302,10 @@ export function TaskEditForm({
   onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
 }) {
   const showActionButtons = !onRegisterSubmit;
+  const onRegisterSubmitRef = useRef(onRegisterSubmit);
+  onRegisterSubmitRef.current = onRegisterSubmit;
+  const onRegisterCreateInteropRef = useRef(onRegisterCreateInterop);
+  onRegisterCreateInteropRef.current = onRegisterCreateInterop;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
     useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -483,13 +489,9 @@ export function TaskEditForm({
     ]
   );
 
-  // Register submit callback for parent-controlled save (e.g. creation popover).
   useEffect(() => {
-    if (!onRegisterSubmit) {
-      return;
-    }
-    onRegisterSubmit(() => submit(getValues()));
-  }, [getValues, onRegisterSubmit, submit]);
+    onRegisterSubmitRef.current?.(() => submit(getValues()));
+  }, [getValues, submit]);
 
   const handleSaveClick = useCallback(() => {
     const result = submit(getValues());
@@ -543,19 +545,20 @@ export function TaskEditForm({
   );
 
   useEffect(() => {
-    if (!onRegisterCreateInterop) {
+    const register = onRegisterCreateInteropRef.current;
+    if (!register) {
       return;
     }
 
-    onRegisterCreateInterop({
+    register({
       applySharedFields,
       getSharedFields,
     });
 
     return () => {
-      onRegisterCreateInterop(null);
+      register(null);
     };
-  }, [applySharedFields, getSharedFields, onRegisterCreateInterop]);
+  }, [applySharedFields, getSharedFields]);
 
   // Format start time for the time input (HH:mm) - uses watchedValues for reactivity
   const startTimeValue = watchedValues.startTime
@@ -612,7 +615,7 @@ export function TaskEditForm({
                   )}
                   variant="outline"
                 >
-                  <CalendarClock className="h-4 w-4 shrink-0" />
+                  <CalendarClock className="size-4 shrink-0" />
                   <span className="truncate">
                     {field.value
                       ? `Start: ${formatPlainDate(field.value, {
@@ -642,7 +645,7 @@ export function TaskEditForm({
                       type="button"
                       variant="ghost"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="size-4" />
                       Clear date
                     </Button>
                   </div>
@@ -685,7 +688,7 @@ export function TaskEditForm({
                   )}
                   variant="outline"
                 >
-                  <CalendarCheck className="h-4 w-4 shrink-0" />
+                  <CalendarCheck className="size-4 shrink-0" />
                   {field.value
                     ? `Due: ${formatPlainDate(field.value, {
                         month: "short",
@@ -715,7 +718,7 @@ export function TaskEditForm({
                       type="button"
                       variant="ghost"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="size-4" />
                       Clear date
                     </Button>
                   </div>
@@ -818,7 +821,7 @@ export function TaskEditForm({
                     type="button"
                     variant="outline"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-3.5" />
                     Delete
                   </Button>
                 </AlertDialogTrigger>
@@ -838,7 +841,6 @@ export function TaskEditForm({
                     {isRecurring ? (
                       <>
                         <AlertDialogAction
-                          autoFocus
                           onClick={() => confirmDelete("this")}
                         >
                           Only this occurrence
@@ -851,10 +853,7 @@ export function TaskEditForm({
                         </AlertDialogAction>
                       </>
                     ) : (
-                      <AlertDialogAction
-                        autoFocus
-                        onClick={() => confirmDelete("this")}
-                      >
+                      <AlertDialogAction onClick={() => confirmDelete("this")}>
                         Delete
                       </AlertDialogAction>
                     )}
@@ -918,13 +917,12 @@ function LinkMetaPreview({
   return (
     <div className="group flex items-start gap-2 rounded-md border bg-muted/50 p-2">
       {meta.thumbnailUrl && (
-        // biome-ignore lint: external CDN hosts aren't in next.config remotePatterns
-        <img
+        <Image
           alt={meta.title ?? "Link thumbnail"}
           className="size-10 shrink-0 rounded object-cover"
           height={40}
-          loading="lazy"
           src={meta.thumbnailUrl}
+          unoptimized
           width={40}
         />
       )}
@@ -954,7 +952,7 @@ function LinkMetaPreview({
           tabIndex={-1}
           type="button"
         >
-          <XCircle className="h-4 w-4" />
+          <XCircle className="size-4" />
         </button>
       )}
     </div>
@@ -1009,7 +1007,7 @@ function LinkListEditor({
           tabIndex={-1}
           type="button"
         >
-          <Link2 className="h-4 w-4" />
+          <Link2 className="size-4" />
         </button>
         <Input
           className="pl-8"
@@ -1033,7 +1031,7 @@ function LinkListEditor({
           value={linkInput}
         />
         {isParsing && (
-          <Loader2 className="absolute top-1/2 right-2.5 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          <Loader2 className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
         )}
       </div>
     </div>

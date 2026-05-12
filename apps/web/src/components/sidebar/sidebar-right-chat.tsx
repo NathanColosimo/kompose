@@ -261,7 +261,7 @@ function SegmentRenderer({
               label={isActive ? "Reasoning (streaming)" : "Reasoning"}
               status={isActive ? "active" : "complete"}
             >
-              <MessageResponse>{segment.text || "Thinking..."}</MessageResponse>
+              <MessageResponse>{segment.text || "Thinking…"}</MessageResponse>
             </ChainOfThoughtStep>
           </ChainOfThoughtContent>
         ) : null}
@@ -404,21 +404,17 @@ export function SidebarRightChat() {
 
   // Ensure there is always a selected session when sessions exist.
   useEffect(() => {
-    if (sessions.length === 0) {
-      if (activeSessionId !== null) {
-        setActiveSessionId(null);
+    setActiveSessionId((prev) => {
+      if (sessions.length === 0) {
+        return prev === null ? prev : null;
       }
-      return;
-    }
-    if (!activeSessionId) {
-      setActiveSessionId(sessions[0]?.id ?? null);
-      return;
-    }
-    const exists = sessions.some((session) => session.id === activeSessionId);
-    if (!exists) {
-      setActiveSessionId(sessions[0]?.id ?? null);
-    }
-  }, [activeSessionId, sessions]);
+      if (!prev) {
+        return sessions[0]?.id ?? null;
+      }
+      const exists = sessions.some((session) => session.id === prev);
+      return exists ? prev : (sessions[0]?.id ?? null);
+    });
+  }, [sessions]);
 
   // Auto-create a default session on first load so the composer is immediately usable.
   useEffect(() => {
@@ -691,7 +687,7 @@ export function SidebarRightChat() {
 
   return (
     <>
-      <SidebarHeader className="h-auto shrink-0 border-sidebar-border border-b px-2 py-2">
+      <SidebarHeader className="h-auto shrink-0 border-sidebar-border border-b p-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <BotIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -735,14 +731,14 @@ export function SidebarRightChat() {
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="min-h-0 gap-0 px-0 py-0">
+      <SidebarContent className="min-h-0 gap-0 p-0">
         <Conversation
           className="min-h-0"
           initial="instant"
           key={activeSessionId ?? "pending-chat"}
           resize="instant"
         >
-          <ConversationContent className="gap-4 px-3 py-3">
+          <ConversationContent className="gap-4 p-3">
             {hasMessages ? (
               visibleMessages.map((message, index) => {
                 const isLatest = index === visibleMessages.length - 1;
@@ -777,7 +773,7 @@ export function SidebarRightChat() {
             {messagesQuery.isLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <Loader2Icon className="size-3.5 animate-spin" />
-                Loading session messages...
+                Loading session messages…
               </div>
             ) : null}
           </ConversationContent>
@@ -785,7 +781,7 @@ export function SidebarRightChat() {
         </Conversation>
       </SidebarContent>
 
-      <SidebarFooter className="border-sidebar-border border-t px-2 py-2">
+      <SidebarFooter className="border-sidebar-border border-t p-2">
         <PromptInputProvider>
           <PromptInput
             className="w-full"
@@ -808,8 +804,8 @@ export function SidebarRightChat() {
                 disabled={isComposerDisabled}
                 placeholder={
                   isComposerDisabled
-                    ? "Preparing chat session..."
-                    : "Ask anything..."
+                    ? "Preparing chat session…"
+                    : "Ask anything…"
                 }
                 rows={1}
               />
@@ -839,7 +835,7 @@ export function SidebarRightChat() {
                     </PromptInputButton>
                   </ModelSelectorTrigger>
                   <ModelSelectorContent title="Choose model">
-                    <ModelSelectorInput placeholder="Filter models..." />
+                    <ModelSelectorInput placeholder="Filter models…" />
                     <ModelSelectorList>
                       <ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
                       <ModelSelectorGroup heading="OpenAI">

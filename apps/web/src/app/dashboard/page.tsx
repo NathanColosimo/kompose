@@ -15,7 +15,8 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -44,9 +45,9 @@ function DashboardPageContent() {
   const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
 
-  useEffect(() => {
+  useMountEffect(() => {
     setHydrated(true);
-  }, []);
+  });
 
   const effectiveVisibleDaysCount = useMemo(
     () =>

@@ -3,7 +3,7 @@
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
@@ -35,6 +35,8 @@ import {
 } from "@/lib/temporal-utils";
 import { RecurrenceEditor } from "./recurrence-editor";
 
+const EMPTY_TAG_IDS: string[] = [];
+
 const buildDefaultValues = (tagIds: string[]) => ({
   title: "",
   description: "",
@@ -47,7 +49,7 @@ const buildDefaultValues = (tagIds: string[]) => ({
 });
 
 export function CreateTaskForm({
-  defaultTagIds = [],
+  defaultTagIds = EMPTY_TAG_IDS,
 }: {
   defaultTagIds?: string[];
 }) {
@@ -68,12 +70,12 @@ export function CreateTaskForm({
   // Watch startDate for recurrence editor reference
   const startDate = useWatch({ control, name: "startDate" });
 
-  // Prefill tag context when opening from a tag view.
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
       reset(buildDefaultValues(defaultTagIds));
     }
-  }, [defaultTagIds, open, reset]);
+  };
 
   const onSubmit = useCallback(
     async (data: ClientTaskInsertDecoded) => {
@@ -95,10 +97,10 @@ export function CreateTaskForm({
   );
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
+    <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogTrigger asChild>
-        <Button className="h-8 w-8" size="icon" variant="ghost">
-          <Plus className="h-4 w-4" />
+        <Button className="size-8" size="icon" variant="ghost">
+          <Plus className="size-4" />
           <span className="sr-only">Create Task</span>
         </Button>
       </DialogTrigger>
@@ -161,7 +163,7 @@ export function CreateTaskForm({
                         }`}
                         variant="outline"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        <CalendarIcon className="mr-2 size-4" />
                         {field.value ? (
                           formatPlainDate(field.value, { dateStyle: "long" })
                         ) : (
@@ -192,7 +194,7 @@ export function CreateTaskForm({
                             type="button"
                             variant="ghost"
                           >
-                            <X className="h-4 w-4" />
+                            <X className="size-4" />
                             Clear date
                           </Button>
                         </div>
@@ -256,7 +258,7 @@ export function CreateTaskForm({
                         }`}
                         variant="outline"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        <CalendarIcon className="mr-2 size-4" />
                         {field.value ? (
                           formatPlainDate(field.value, { dateStyle: "long" })
                         ) : (
@@ -287,7 +289,7 @@ export function CreateTaskForm({
                             type="button"
                             variant="ghost"
                           >
-                            <X className="h-4 w-4" />
+                            <X className="size-4" />
                             Clear date
                           </Button>
                         </div>

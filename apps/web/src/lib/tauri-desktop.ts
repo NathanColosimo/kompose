@@ -16,7 +16,7 @@ export type DesktopCommandBarShortcutPresetId =
   | "ctrl_space"
   | "alt_space";
 
-export interface DesktopCommandBarShortcutPreset {
+interface DesktopCommandBarShortcutPreset {
   accelerator: string;
   id: DesktopCommandBarShortcutPresetId;
   label: string;

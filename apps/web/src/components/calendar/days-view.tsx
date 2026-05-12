@@ -411,32 +411,26 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
       // Convert tasks to PositionedItems. Tasks stay on their start day;
       // endMinutes is clamped to 1440 (midnight) for collision layout.
-      const taskItems: PositionedItem[] = dayTasks
-        .filter(
-          (
-            task
-          ): task is typeof task & {
-            startDate: NonNullable<typeof task.startDate>;
-            startTime: NonNullable<typeof task.startTime>;
-          } => task.startDate !== null && task.startTime !== null
-        )
-        .map((task) => {
-          const startZdt = task.startDate.toZonedDateTime({
-            timeZone,
-            plainTime: task.startTime,
-          });
-          const startMinutes = minutesFromMidnight(startZdt);
-          const endMinutes = Math.min(
-            startMinutes + (task.durationMinutes ?? 30),
-            1440
-          );
-          return {
-            id: `task-${task.id}`,
-            type: "task" as const,
-            startMinutes,
-            endMinutes,
-          };
+      const taskItems: PositionedItem[] = dayTasks.flatMap((task) => {
+        if (task.startDate === null || task.startTime === null) {
+          return [];
+        }
+        const startZdt = task.startDate.toZonedDateTime({
+          timeZone,
+          plainTime: task.startTime,
         });
+        const startMinutes = minutesFromMidnight(startZdt);
+        const endMinutes = Math.min(
+          startMinutes + (task.durationMinutes ?? 30),
+          1440
+        );
+        return {
+          id: `task-${task.id}`,
+          type: "task" as const,
+          startMinutes,
+          endMinutes,
+        };
+      });
 
       // Convert google events to PositionedItems.
       // Events are already clamped to day boundaries by buildGoogleEventMaps,
@@ -464,36 +458,30 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       });
       const dayEndZdt = dayStart.add({ days: 1 });
 
-      const whoopItems: PositionedItem[] = allWorkouts
-        .filter((w) => {
-          const wStart = isoStringToZonedDateTime(w.start, timeZone);
-          const wEnd = isoStringToZonedDateTime(w.end, timeZone);
-          return (
-            Temporal.ZonedDateTime.compare(wEnd, dayStart) > 0 &&
-            Temporal.ZonedDateTime.compare(wStart, dayEndZdt) < 0
-          );
-        })
-        .map((workout) => {
-          const wStart = isoStringToZonedDateTime(workout.start, timeZone);
-          const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
-          const clampedStart =
-            Temporal.ZonedDateTime.compare(wStart, dayStart) < 0
-              ? dayStart
-              : wStart;
-          const clampedEnd =
-            Temporal.ZonedDateTime.compare(wEnd, dayEndZdt) > 0
-              ? dayEndZdt
-              : wEnd;
-          const startMin = minutesFromMidnight(clampedStart);
-          const rawEndMin = minutesFromMidnight(clampedEnd);
-          const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
-          return {
-            id: `whoop-workout-${workout.id}`,
-            type: "whoop-workout" as const,
-            startMinutes: startMin,
-            endMinutes: Math.max(endMin, startMin + 15),
-          };
-        });
+      const { compare } = Temporal.ZonedDateTime;
+      const whoopItems: PositionedItem[] = allWorkouts.flatMap((workout) => {
+        const wStart = isoStringToZonedDateTime(workout.start, timeZone);
+        const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
+        if (
+          compare(wEnd, dayStart) <= 0 ||
+          compare(wStart, dayEndZdt) >= 0
+        ) {
+          return [];
+        }
+        const clampedStart =
+          compare(wStart, dayStart) < 0 ? dayStart : wStart;
+        const clampedEnd =
+          compare(wEnd, dayEndZdt) > 0 ? dayEndZdt : wEnd;
+        const startMin = minutesFromMidnight(clampedStart);
+        const rawEndMin = minutesFromMidnight(clampedEnd);
+        const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
+        return {
+          id: `whoop-workout-${workout.id}`,
+          type: "whoop-workout" as const,
+          startMinutes: startMin,
+          endMinutes: Math.max(endMin, startMin + 15),
+        };
+      });
 
       // Calculate layout for all items on this day
       const allItems = [...taskItems, ...googleItems, ...whoopItems];
@@ -719,7 +707,7 @@ function TimeGutterSynced({
       }
     };
 
-    scrollContainer.addEventListener("scroll", handleScroll);
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollContainer.removeEventListener("scroll", handleScroll);
   }, [scrollRef]);
 

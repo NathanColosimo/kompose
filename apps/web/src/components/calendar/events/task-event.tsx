@@ -136,7 +136,7 @@ export const TaskEvent = memo(function TaskEventInner({
         {...attributes}
         {...listeners}
       >
-        <div className="h-full rounded-[5px] border border-black/20 bg-primary/90 px-1 py-1 text-primary-foreground dark:border-white/30">
+        <div className="h-full rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30">
           <div
             className={cn(
               "flex h-full gap-1",
@@ -145,7 +145,7 @@ export const TaskEvent = memo(function TaskEventInner({
           >
             <Checkbox
               checked={isDone}
-              className="h-3.5 w-3.5 shrink-0 cursor-pointer"
+              className="size-3.5 shrink-0 cursor-pointer"
               onClick={handleStatusToggle}
             />
             <div className="min-w-0 flex-1">
@@ -194,7 +194,7 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
 
   return (
     <div className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg">
-      <div className="rounded-[5px] border border-black/20 bg-primary/90 px-1 py-1 text-primary-foreground dark:border-white/30">
+      <div className="rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30">
         <div className="truncate font-medium text-xs">{task.title}</div>
         {startZdt ? (
           <div className="truncate text-[10px] opacity-80">

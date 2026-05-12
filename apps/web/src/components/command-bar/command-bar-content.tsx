@@ -79,9 +79,20 @@ export function CommandBarContent({
         }
       }
 
-      // Enter in create-task view is handled by cmdk's native CommandItem
-      // onSelect — no manual interception needed. This allows tag items and
-      // the "Create Task" item to each respond to Enter correctly.
+      if (
+        e.key === "Enter" &&
+        selectionMode === "desktop-popup" &&
+        view !== "root"
+      ) {
+        const selected =
+          document.querySelector<HTMLElement>(
+            '[cmdk-item][data-selected="true"]'
+          ) ?? document.querySelector<HTMLElement>("[cmdk-item]");
+        if (selected) {
+          e.preventDefault();
+          selected.click();
+        }
+      }
 
       // Tab auto-completes the currently highlighted item (e.g., tag selection).
       if (e.key === "Tab" && view === "create-task") {
@@ -94,7 +105,7 @@ export function CommandBarContent({
         }
       }
     },
-    [onRequestClose, view]
+    [onRequestClose, selectionMode, view]
   );
 
   // Navigate to a specific view.

@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 import { CodeBlock } from "./code-block";
 
-export type ToolProps = ComponentProps<typeof Collapsible>;
+type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
@@ -31,7 +31,7 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   />
 );
 
-export type ToolHeaderProps = {
+type ToolHeaderProps = {
   title?: string;
   className?: string;
 } & (
@@ -63,7 +63,7 @@ const statusIcons: Record<ToolPart["state"], ReactNode> = {
   "output-error": <XCircleIcon className="size-3 text-red-600" />,
 };
 
-export const getStatusBadge = (status: ToolPart["state"]) => (
+const getStatusBadge = (status: ToolPart["state"]) => (
   <Badge
     className="gap-1 rounded-full px-1.5 py-0 text-[10px]"
     variant="secondary"
@@ -104,7 +104,7 @@ export const ToolHeader = ({
   );
 };
 
-export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
+type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
@@ -116,7 +116,7 @@ export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   />
 );
 
-export type ToolInputProps = ComponentProps<"div"> & {
+type ToolInputProps = ComponentProps<"div"> & {
   input: ToolPart["input"];
 };
 
@@ -131,7 +131,7 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
   </div>
 );
 
-export type ToolOutputProps = ComponentProps<"div"> & {
+type ToolOutputProps = ComponentProps<"div"> & {
   output: ToolPart["output"];
   errorText: ToolPart["errorText"];
 };

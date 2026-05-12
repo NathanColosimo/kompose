@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ export function DesktopShortcutSettings() {
   });
   const selectedPresetId = form.watch("presetId");
 
-  useEffect(() => {
+  useMountEffect(() => {
     setIsLoading(true);
     let cancelled = false;
     getDesktopCommandBarShortcutPresetId()
@@ -61,7 +62,7 @@ export function DesktopShortcutSettings() {
     return () => {
       cancelled = true;
     };
-  }, [form]);
+  });
 
   const applyForm = form.handleSubmit(async ({ presetId }) => {
     await applyDesktopCommandBarShortcutPreset(presetId);

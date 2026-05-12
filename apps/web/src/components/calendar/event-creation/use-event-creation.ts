@@ -7,8 +7,8 @@ import {
 import { useAtomValue } from "jotai";
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -23,7 +23,7 @@ import { MINUTES_STEP } from "../dnd/helpers";
 export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
 /** State for event creation via click-and-drag */
-export interface EventCreationState {
+interface EventCreationState {
   /** Which Google account to use */
   accountId: string | null;
   /** Which calendar to create on */
@@ -43,7 +43,7 @@ export interface EventCreationState {
 }
 
 /** Actions for managing event creation */
-export interface EventCreationActions {
+interface EventCreationActions {
   /** Cancel creation (e.g., Escape key) */
   cancelCreation: () => void;
   /** Close the popover */
@@ -62,7 +62,7 @@ export interface EventCreationActions {
   setPreviewElement: (element: HTMLDivElement | null) => void;
 }
 
-export interface EventCreationContextValue {
+interface EventCreationContextValue {
   actions: EventCreationActions;
   /** Computed start/end for popover (with minimum duration applied) */
   popoverTimes: {
@@ -91,7 +91,7 @@ export const EventCreationContext =
  * Must be used within EventCreationProvider.
  */
 export function useEventCreation(): EventCreationContextValue {
-  const context = useContext(EventCreationContext);
+  const context = use(EventCreationContext);
   if (!context) {
     throw new Error(
       "useEventCreation must be used within EventCreationProvider"

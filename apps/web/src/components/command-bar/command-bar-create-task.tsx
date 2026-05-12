@@ -233,9 +233,10 @@ export function CommandBarCreateTask({
 
     const matchedTagIds = Array.from(
       new Set(
-        parsed.tagNames
-          .map((name) => tags.find((tag) => tag.name === name)?.id)
-          .filter((id): id is string => Boolean(id))
+        parsed.tagNames.flatMap((name) => {
+          const id = tags.find((tag) => tag.name === name)?.id;
+          return id ? [id] : [];
+        })
       )
     );
 
@@ -274,7 +275,7 @@ export function CommandBarCreateTask({
       {!isValid && matchingTags.length === 0 && (
         <CommandEmpty>
           <div className="space-y-2">
-            <p>Type a task title to create...</p>
+            <p>Type a task title to create…</p>
             <div className="flex justify-center gap-2 text-muted-foreground">
               <span>
                 <code className="rounded bg-muted px-1">=</code> duration

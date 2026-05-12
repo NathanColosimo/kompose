@@ -1,6 +1,7 @@
 KOMPOSE TERMS OF SERVICE
 
 Last Updated: 2026-03-16
+
 1. Introduction
 
     Welcome to Kompose. Your use of https://kompose.dev and the related web, desktop, mobile, and connected services that link to these Terms (collectively, the “Services”) is governed by these Terms of Service (the “Terms”). In these Terms, “Kompose,” “we,” “our,” and “us” refer to the provider and operator of the Services.

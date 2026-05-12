@@ -40,7 +40,7 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
             const Icon = tagIconMap[tag.icon];
             return (
               <Badge className="gap-1.5" key={tag.id} variant="secondary">
-                <Icon className="h-3 w-3" />
+                <Icon className="size-3" />
                 {tag.name}
               </Badge>
             );
@@ -76,9 +76,9 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
                     onClick={() => toggleTag(tag)}
                     type="button"
                   >
-                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <Icon className="size-4 text-muted-foreground" />
                     <span className="flex-1 truncate">{tag.name}</span>
-                    {isSelected ? <Check className="h-4 w-4" /> : null}
+                    {isSelected ? <Check className="size-4" /> : null}
                   </button>
                 );
               })}

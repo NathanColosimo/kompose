@@ -21,7 +21,7 @@ export function TagIconPicker({ value, onChange }: TagIconPickerProps) {
           <Button
             aria-pressed={isActive}
             className={cn(
-              "h-8 w-8 p-0",
+              "size-8 p-0",
               isActive ? "bg-primary text-primary-foreground" : ""
             )}
             key={name}
@@ -29,7 +29,7 @@ export function TagIconPicker({ value, onChange }: TagIconPickerProps) {
             type="button"
             variant={isActive ? "default" : "outline"}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="size-4" />
             <span className="sr-only">{name}</span>
           </Button>
         );

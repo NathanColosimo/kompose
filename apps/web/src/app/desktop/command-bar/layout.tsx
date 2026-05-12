@@ -1,7 +1,9 @@
-/**
- * Layout for the desktop command bar popup window.
- * Hides the Next.js dev indicator which would overlap the compact popup.
- */
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Command Bar — kompose",
+};
+
 export default function DesktopCommandBarLayout({
   children,
 }: {

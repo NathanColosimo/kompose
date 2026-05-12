@@ -68,7 +68,6 @@ export const auth = betterAuth({
   },
   plugins: [
     expo(),
-    nextCookies(),
     lastLoginMethod({
       cookieName: "kompose.last_used_login_method",
       storeInDatabase: false,
@@ -142,5 +141,6 @@ export const auth = betterAuth({
         },
       ],
     }),
+    nextCookies(),
   ],
 });

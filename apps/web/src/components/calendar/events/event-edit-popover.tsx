@@ -45,6 +45,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -317,6 +318,9 @@ function RecurrenceEditor({
     reset(defaultValues);
   }, [defaultValues, recurrenceRule, reset]);
 
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   useEffect(() => {
     const end = buildEndFromValues(values);
     const nextRule = buildRecurrenceRule(values.freq, values.byDay, end);
@@ -325,8 +329,8 @@ function RecurrenceEditor({
       return;
     }
     lastEmittedRuleRef.current = normalizedNext;
-    onChange(nextRule);
-  }, [onChange, values, buildEndFromValues]);
+    onChangeRef.current(nextRule);
+  }, [values, buildEndFromValues]);
 
   const untilDate = useMemo(
     () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
@@ -341,7 +345,7 @@ function RecurrenceEditor({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          <Repeat className="h-4 w-4" />
+          <Repeat className="size-4" />
           <span>Recurrence</span>
         </div>
         {recurrenceRule ? (
@@ -384,7 +388,7 @@ function RecurrenceEditor({
               return (
                 <Button
                   className={cn(
-                    "h-8 w-8 rounded-full p-0 text-xs",
+                    "size-8 rounded-full p-0 text-xs",
                     active &&
                       "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
                   )}
@@ -448,7 +452,7 @@ function RecurrenceEditor({
                     className="h-7 gap-1.5 px-2 text-xs"
                     variant="outline"
                   >
-                    <CalendarIcon className="h-3 w-3" />
+                    <CalendarIcon className="size-3" />
                     {untilDate
                       ? formatPlainDate(pickerDateToTemporal(untilDate), {
                           month: "short",
@@ -523,6 +527,77 @@ function RecurrenceEditor({
 
 // Temporal / calendar helpers live in `event-edit-utils.ts`.
 
+interface EventEditDialogState {
+  deleteDialogOpen: boolean;
+  deleteScope: RecurrenceScope;
+  simpleDeleteConfirmOpen: boolean;
+  scopeDialogOpen: boolean;
+  pendingSave: {
+    variables: UpdateGoogleEventInput;
+    defaultScope: RecurrenceScope;
+    hasDataEdits: boolean;
+    calendarChanged?: { destinationCalendarId: string };
+  } | null;
+  selectedScope: RecurrenceScope;
+}
+
+type EventEditDialogAction =
+  | { type: "open-recurring-delete"; scope: RecurrenceScope }
+  | { type: "set-delete-dialog-open"; value: boolean }
+  | { type: "set-delete-scope"; value: RecurrenceScope }
+  | { type: "open-simple-delete" }
+  | { type: "set-simple-delete-open"; value: boolean }
+  | {
+      type: "open-scope-dialog";
+      pendingSave: EventEditDialogState["pendingSave"];
+      scope: RecurrenceScope;
+    }
+  | { type: "set-scope-dialog-open"; value: boolean }
+  | { type: "set-selected-scope"; value: RecurrenceScope }
+  | { type: "clear-pending-save" };
+
+const eventEditDialogInitialState: EventEditDialogState = {
+  deleteDialogOpen: false,
+  deleteScope: "this",
+  simpleDeleteConfirmOpen: false,
+  scopeDialogOpen: false,
+  pendingSave: null,
+  selectedScope: "this",
+};
+
+function eventEditDialogReducer(
+  state: EventEditDialogState,
+  action: EventEditDialogAction
+): EventEditDialogState {
+  switch (action.type) {
+    case "open-recurring-delete":
+      return { ...state, deleteDialogOpen: true, deleteScope: action.scope };
+    case "set-delete-dialog-open":
+      return { ...state, deleteDialogOpen: action.value };
+    case "set-delete-scope":
+      return { ...state, deleteScope: action.value };
+    case "open-simple-delete":
+      return { ...state, simpleDeleteConfirmOpen: true };
+    case "set-simple-delete-open":
+      return { ...state, simpleDeleteConfirmOpen: action.value };
+    case "open-scope-dialog":
+      return {
+        ...state,
+        scopeDialogOpen: true,
+        pendingSave: action.pendingSave,
+        selectedScope: action.scope,
+      };
+    case "set-scope-dialog-open":
+      return { ...state, scopeDialogOpen: action.value };
+    case "set-selected-scope":
+      return { ...state, selectedScope: action.value };
+    case "clear-pending-save":
+      return { ...state, pendingSave: null };
+    default:
+      return state;
+  }
+}
+
 /**
  * Inline editor for Google events, mirroring TaskEditPopover behavior.
  * Supports both create and edit modes.
@@ -563,28 +638,22 @@ export function EventEditPopover({
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
 
-  // Delete state for recurring events (scope dialog)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteScope, setDeleteScope] = useState<RecurrenceScope>("this");
-  // Delete state for non-recurring events (simple confirmation)
-  const [simpleDeleteConfirmOpen, setSimpleDeleteConfirmOpen] = useState(false);
+  const [dialogState, dispatchDialog] = useReducer(
+    eventEditDialogReducer,
+    eventEditDialogInitialState
+  );
+  const {
+    deleteDialogOpen,
+    deleteScope,
+    simpleDeleteConfirmOpen,
+    scopeDialogOpen,
+    pendingSave,
+    selectedScope,
+  } = dialogState;
 
-  /**
-   * The form registers a function that builds a save request synchronously.
-   * This lets the popover close immediately, then we can show dialogs / mutate.
-   */
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
-
-  const [scopeDialogOpen, setScopeDialogOpen] = useState(false);
-  const [pendingSave, setPendingSave] = useState<{
-    variables: UpdateGoogleEventInput;
-    defaultScope: RecurrenceScope;
-    hasDataEdits: boolean;
-    calendarChanged?: { destinationCalendarId: string };
-  } | null>(null);
-  const [selectedScope, setSelectedScope] = useState<RecurrenceScope>("this");
 
   const commitPendingSave = useCallback(async () => {
     if (!pendingSave) {
@@ -608,7 +677,7 @@ export function EventEditPopover({
         scope: selectedScope,
       });
     }
-    setPendingSave(null);
+    dispatchDialog({ type: "clear-pending-save" });
   }, [
     accountId,
     calendarId,
@@ -628,14 +697,11 @@ export function EventEditPopover({
       return;
     }
     setOpen(false);
-    // Show scope dialog for recurring events
     if (event.recurringEventId || event.recurrence?.length) {
       const defaultScope = event.recurringEventId ? "this" : "all";
-      setDeleteScope(defaultScope);
-      setDeleteDialogOpen(true);
+      dispatchDialog({ type: "open-recurring-delete", scope: defaultScope });
     } else {
-      // Non-recurring: show simple confirmation
-      setSimpleDeleteConfirmOpen(true);
+      dispatchDialog({ type: "open-simple-delete" });
     }
   }, [event, readOnly, setOpen]);
 
@@ -650,7 +716,7 @@ export function EventEditPopover({
       eventId: event.id,
       scope: "this",
     });
-    setSimpleDeleteConfirmOpen(false);
+    dispatchDialog({ type: "set-simple-delete-open", value: false });
   }, [accountId, calendarId, deleteEvent, event]);
 
   // Commit delete with selected scope
@@ -691,14 +757,16 @@ export function EventEditPopover({
       if (request.isRecurring) {
         const forceAll = Boolean(request.calendarChanged);
         const scope = forceAll ? "all" : request.defaultScope;
-        setPendingSave({
-          variables: request.variables,
-          defaultScope: scope,
-          hasDataEdits: request.hasDataEdits,
-          calendarChanged: request.calendarChanged,
+        dispatchDialog({
+          type: "open-scope-dialog",
+          pendingSave: {
+            variables: request.variables,
+            defaultScope: scope,
+            hasDataEdits: request.hasDataEdits,
+            calendarChanged: request.calendarChanged,
+          },
+          scope,
         });
-        setSelectedScope(scope);
-        setScopeDialogOpen(true);
         return;
       }
 
@@ -804,12 +872,14 @@ export function EventEditPopover({
             ? { this: true, following: true }
             : undefined
         }
-        onCancel={() => {
-          setPendingSave(null);
-        }}
+        onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
         onConfirm={commitPendingSave}
-        onOpenChange={setScopeDialogOpen}
-        onValueChange={setSelectedScope}
+        onOpenChange={(value) =>
+          dispatchDialog({ type: "set-scope-dialog-open", value })
+        }
+        onValueChange={(value) =>
+          dispatchDialog({ type: "set-selected-scope", value })
+        }
         open={scopeDialogOpen}
         title="Save recurring event changes"
         value={selectedScope}
@@ -819,10 +889,16 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         confirmLabel="Delete"
         description="Choose how broadly to apply the deletion."
-        onCancel={() => setDeleteDialogOpen(false)}
+        onCancel={() =>
+          dispatchDialog({ type: "set-delete-dialog-open", value: false })
+        }
         onConfirm={commitDelete}
-        onOpenChange={setDeleteDialogOpen}
-        onValueChange={setDeleteScope}
+        onOpenChange={(value) =>
+          dispatchDialog({ type: "set-delete-dialog-open", value })
+        }
+        onValueChange={(value) =>
+          dispatchDialog({ type: "set-delete-scope", value })
+        }
         open={deleteDialogOpen}
         title="Delete recurring event"
         value={deleteScope}
@@ -830,7 +906,9 @@ export function EventEditPopover({
 
       {/* Simple delete confirmation for non-recurring events */}
       <AlertDialog
-        onOpenChange={setSimpleDeleteConfirmOpen}
+        onOpenChange={(value) =>
+          dispatchDialog({ type: "set-simple-delete-open", value })
+        }
         open={simpleDeleteConfirmOpen}
       >
         <AlertDialogContent>
@@ -995,7 +1073,7 @@ function MeetingSection({
         </Label>
         <Button asChild size="sm" type="button" variant="outline">
           <a href={meetingLink.url} rel="noreferrer" target="_blank">
-            <Video className="h-3 w-3" />
+            <Video className="size-3" />
             Join {meetingLink.label}
           </a>
         </Button>
@@ -1028,7 +1106,7 @@ function MeetingSection({
         type="button"
         variant="outline"
       >
-        <Video className="h-3 w-3" />
+        <Video className="size-3" />
         Add Google Meet
       </Button>
     </div>
@@ -1066,7 +1144,7 @@ function EventColorAndTitleRow({
           <button
             aria-label="Pick color"
             className={cn(
-              "h-8 w-8 rounded-full border-2 shadow-sm transition",
+              "size-8 rounded-full border-2 shadow-sm transition",
               readOnly ? "cursor-default" : "",
               selectedColorId ? "border-transparent" : "border-muted"
             )}
@@ -1083,7 +1161,7 @@ function EventColorAndTitleRow({
                 <button
                   aria-label={`Color ${colorKey}`}
                   className={cn(
-                    "h-7 w-7 rounded-full border-2 transition",
+                    "size-7 rounded-full border-2 transition",
                     isSelected ? "ring-2 ring-primary ring-offset-2" : ""
                   )}
                   disabled={readOnly}
@@ -1101,20 +1179,19 @@ function EventColorAndTitleRow({
               );
             })}
             <Button
-              className="h-7 w-7 p-0 text-[10px]"
+              className="size-7 p-0 text-[10px]"
               disabled={readOnly}
               onClick={() => onSelectColor(undefined)}
               type="button"
               variant="ghost"
             >
-              <Palette className="h-4 w-4" />
+              <Palette className="size-4" />
             </Button>
           </div>
         </PopoverContent>
       </Popover>
 
       <Input
-        autoFocus={isCreateMode}
         className="flex-1"
         onChange={(e) => onSummaryChange(e.target.value)}
         placeholder={isCreateMode ? "Event title (required)" : "Event title"}
@@ -1163,13 +1240,13 @@ function EventAllDayAndRecurrenceRow({
       >
         <div
           className={cn(
-            "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+            "flex size-4 items-center justify-center rounded border transition-colors",
             allDay
               ? "border-primary bg-primary text-primary-foreground"
               : "border-muted-foreground/50 bg-transparent"
           )}
         >
-          {allDay ? <Check className="h-3 w-3" /> : null}
+          {allDay ? <Check className="size-3" /> : null}
         </div>
         All day
       </Button>
@@ -1177,12 +1254,12 @@ function EventAllDayAndRecurrenceRow({
         <Popover>
           <PopoverTrigger asChild>
             <Button
-              className="h-8 w-8"
+              className="size-8"
               disabled={readOnly}
               size="icon"
               variant="outline"
             >
-              <Repeat className="h-4 w-4" />
+              <Repeat className="size-4" />
               <span className="sr-only">Edit recurrence</span>
             </Button>
           </PopoverTrigger>
@@ -1215,7 +1292,7 @@ function EventAllDayAndRecurrenceRow({
               <span className="flex items-center gap-2">
                 {c.color ? (
                   <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    className="size-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: c.color }}
                   />
                 ) : null}
@@ -1283,7 +1360,7 @@ function EventLocationCombobox({
           {mapsUrl ? (
             <Button asChild size="icon" type="button" variant="outline">
               <a href={mapsUrl} rel="noreferrer" target="_blank">
-                <MapPin className="h-3 w-3" />
+                <MapPin className="size-3" />
                 <span className="sr-only">Open in Google Maps</span>
               </a>
             </Button>
@@ -1360,7 +1437,7 @@ function EventFormActionRow({
             type="button"
             variant="outline"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-3.5" />
             Delete
           </Button>
         )}
@@ -1437,6 +1514,10 @@ export function EventEditForm({
    * The popover wrapper controls “save on close” and dialogs.
    */
   const hasUserEditedRef = useRef(false);
+  const onRegisterCloseSaveRequestRef = useRef(onRegisterCloseSaveRequest);
+  onRegisterCloseSaveRequestRef.current = onRegisterCloseSaveRequest;
+  const onRegisterCreateInteropRef = useRef(onRegisterCreateInterop);
+  onRegisterCreateInteropRef.current = onRegisterCreateInterop;
 
   // Only query for recurring event master in edit mode when event exists
   const masterQuery = useRecurringEventMaster({
@@ -1485,10 +1566,8 @@ export function EventEditForm({
       allDay: isAllDay,
       startDate: initialStartDate ?? null,
       endDate: initialEndDate ?? null,
-      startTime: isAllDay
-        ? ""
-        : formatTimeString(initialStartDate ?? new Date()),
-      endTime: isAllDay ? "" : formatTimeString(initialEndDate ?? new Date()),
+      startTime: isAllDay ? "" : formatTimeString(initialStartDate),
+      endTime: isAllDay ? "" : formatTimeString(initialEndDate),
       recurrence: recurrenceSource,
       selectedAccountId: accountId,
       selectedCalendarId: calendarId,
@@ -1560,12 +1639,6 @@ export function EventEditForm({
   const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
   const locationPopoverOpen = locationOpen && locationQuery.length >= 2;
 
-  useEffect(() => {
-    if (locationQuery.length < 2 && locationOpen) {
-      setLocationOpen(false);
-    }
-  }, [locationOpen, locationQuery.length]);
-
   // Use the form's selected calendar (falls back to props on initial render)
   const effectiveAccountId = watchedValues.selectedAccountId ?? accountId;
   const effectiveCalendarId = watchedValues.selectedCalendarId ?? calendarId;
@@ -1579,19 +1652,28 @@ export function EventEditForm({
   // In edit mode, only same-account calendars (cross-account moves not supported).
   const calendarPickerOptions = useMemo(
     () =>
-      calendars
-        .filter(
-          (c) =>
-            c.calendar.accessRole === "writer" ||
-            c.calendar.accessRole === "owner"
-        )
-        .filter((c) => isCreateMode || c.accountId === accountId)
-        .map((c) => ({
-          accountId: c.accountId,
-          calendarId: c.calendar.id,
-          label: c.calendar.summary ?? "Calendar",
-          color: pastelizeColor(c.calendar.backgroundColor),
-        })),
+      calendars.reduce<
+        Array<{
+          accountId: string;
+          calendarId: string;
+          label: string;
+          color: string | undefined;
+        }>
+      >((acc, c) => {
+        if (
+          (c.calendar.accessRole === "writer" ||
+            c.calendar.accessRole === "owner") &&
+          (isCreateMode || c.accountId === accountId)
+        ) {
+          acc.push({
+            accountId: c.accountId,
+            calendarId: c.calendar.id,
+            label: c.calendar.summary ?? "Calendar",
+            color: pastelizeColor(c.calendar.backgroundColor),
+          });
+        }
+        return acc;
+      }, []),
     [accountId, calendars, isCreateMode]
   );
 
@@ -1753,13 +1835,11 @@ export function EventEditForm({
     ]
   );
 
-  // Register close-save callback so the popover can decide what to do on close.
   useEffect(() => {
-    onRegisterCloseSaveRequest(() => {
-      // This is called by the popover wrapper right before it closes.
-      return buildCloseSaveRequest(getValues());
-    });
-  }, [buildCloseSaveRequest, getValues, onRegisterCloseSaveRequest]);
+    onRegisterCloseSaveRequestRef.current(() =>
+      buildCloseSaveRequest(getValues())
+    );
+  }, [buildCloseSaveRequest, getValues]);
 
   const applySharedFields = useCallback(
     (fields: CalendarCreateSharedFields) => {
@@ -1794,19 +1874,19 @@ export function EventEditForm({
   );
 
   useEffect(() => {
-    if (!onRegisterCreateInterop) {
+    if (!onRegisterCreateInteropRef.current) {
       return;
     }
 
-    onRegisterCreateInterop({
+    onRegisterCreateInteropRef.current({
       applySharedFields,
       getSharedFields,
     });
 
     return () => {
-      onRegisterCreateInterop(null);
+      onRegisterCreateInteropRef.current?.(null);
     };
-  }, [applySharedFields, getSharedFields, onRegisterCreateInterop]);
+  }, [applySharedFields, getSharedFields]);
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
@@ -1821,18 +1901,11 @@ export function EventEditForm({
     );
 
   return (
-    <form
-      className="space-y-3"
-      onSubmit={(e) => {
-        // This form is saved from the popover wrapper (on close / action),
-        // so the inline submit should never do anything.
-        e.preventDefault();
-      }}
-    >
+    <div className="space-y-3">
       {headerContent ? <div>{headerContent}</div> : null}
       {readOnly && readOnlyReason ? (
         <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
           <p className="text-muted-foreground">{readOnlyReason}</p>
         </div>
       ) : null}
@@ -1912,7 +1985,7 @@ export function EventEditForm({
                   disabled={readOnly}
                   variant="outline"
                 >
-                  <CalendarIcon className="h-4 w-4" />
+                  <CalendarIcon className="size-4" />
                   {field.value
                     ? formatPlainDate(pickerDateToTemporal(field.value), {
                         month: "short",
@@ -1956,7 +2029,7 @@ export function EventEditForm({
                   disabled={readOnly}
                   variant="outline"
                 >
-                  <CalendarIcon className="h-4 w-4" />
+                  <CalendarIcon className="size-4" />
                   {field.value
                     ? formatPlainDate(pickerDateToTemporal(field.value), {
                         month: "short",
@@ -1997,7 +2070,7 @@ export function EventEditForm({
           />
           <TimePicker
             disabled={readOnly}
-            icon={<Timer className="h-4 w-4 shrink-0" />}
+            icon={<Timer className="size-4 shrink-0" />}
             onChange={(v) => handleTimeChange("endTime", v)}
             placeholder="End time"
             value={endTimeValue}
@@ -2038,6 +2111,6 @@ export function EventEditForm({
           readOnly={readOnly}
         />
       ) : null}
-    </form>
+    </div>
   );
 }

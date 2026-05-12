@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useReducer, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -128,7 +128,7 @@ function ChatToggleButton() {
 
   return (
     <Button
-      className="h-7 w-7"
+      className="size-7"
       onClick={() => {
         if (responsiveLayout.canDockRightSidebar) {
           setRightSidebarOpen((prev) => !prev);
@@ -167,7 +167,7 @@ function SearchButton() {
       type="button"
     >
       <Search className="size-4 shrink-0" />
-      <span className="flex-1 text-left">Do Anything...</span>
+      <span className="flex-1 text-left">Do Anything…</span>
       <Kbd>⌘K</Kbd>
     </button>
   );
@@ -177,21 +177,17 @@ function SearchButton() {
  * User avatar dropdown with account options and logout.
  */
 function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
-  const router = useRouter();
+  const { push, replace } = useRouter();
   const queryClient = useQueryClient();
 
   const handleLogout = async () => {
-    // Clear the bearer token used by Tauri desktop before sign-out.
     clearTauriBearer();
-    // Wait for sign-out response first.
     await authClient.signOut();
-    // Force a fresh server-backed session read (bypass Better Auth cookie cache)
-    // so route guards use authoritative signed-out state before redirect.
     await authClient
       .getSession({ query: { disableCookieCache: true } })
       .catch(() => null);
     queryClient.clear();
-    router.replace("/login");
+    replace("/login");
   };
 
   // Get initials for avatar fallback
@@ -229,7 +225,7 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+          <DropdownMenuItem onClick={() => push("/dashboard/settings")}>
             <Settings className="mr-2 size-4" />
             Settings
           </DropdownMenuItem>
@@ -244,34 +240,118 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   );
 }
 
+interface TagsMenuState {
+  deleteTarget: { id: string; name: string } | null;
+  editIcon: TagIconName;
+  editName: string;
+  editingTagId: string | null;
+  icon: TagIconName;
+  isEditMode: boolean;
+  name: string;
+  open: boolean;
+  showIconPicker: boolean;
+}
+
+type TagsMenuAction =
+  | { type: "open"; forceEditMode: boolean }
+  | { type: "close" }
+  | { type: "set-edit-mode"; value: boolean }
+  | { type: "set-name"; value: string }
+  | { type: "set-icon"; value: TagIconName }
+  | { type: "clear-name" }
+  | { type: "start-editing"; tag: TagSelect; openPicker?: boolean }
+  | { type: "stop-editing" }
+  | { type: "set-edit-name"; value: string }
+  | { type: "set-edit-icon"; value: TagIconName }
+  | { type: "set-show-icon-picker"; value: boolean }
+  | { type: "set-delete-target"; value: { id: string; name: string } | null };
+
+const tagsMenuInitialState: TagsMenuState = {
+  open: false,
+  isEditMode: false,
+  name: "",
+  icon: "Tag",
+  deleteTarget: null,
+  editingTagId: null,
+  editName: "",
+  editIcon: "Tag",
+  showIconPicker: false,
+};
+
+function tagsMenuReducer(
+  state: TagsMenuState,
+  action: TagsMenuAction
+): TagsMenuState {
+  switch (action.type) {
+    case "open":
+      return {
+        ...state,
+        open: true,
+        isEditMode: action.forceEditMode ? true : state.isEditMode,
+      };
+    case "close":
+      return {
+        ...state,
+        open: false,
+        editingTagId: null,
+        showIconPicker: false,
+      };
+    case "set-edit-mode":
+      return { ...state, isEditMode: action.value };
+    case "set-name":
+      return { ...state, name: action.value };
+    case "set-icon":
+      return { ...state, icon: action.value };
+    case "clear-name":
+      return { ...state, name: "" };
+    case "start-editing":
+      return {
+        ...state,
+        isEditMode: true,
+        editingTagId: action.tag.id,
+        editName: action.tag.name,
+        editIcon: action.tag.icon,
+        showIconPicker: action.openPicker ?? false,
+      };
+    case "stop-editing":
+      return { ...state, editingTagId: null, showIconPicker: false };
+    case "set-edit-name":
+      return { ...state, editName: action.value };
+    case "set-edit-icon":
+      return { ...state, editIcon: action.value };
+    case "set-show-icon-picker":
+      return { ...state, showIconPicker: action.value };
+    case "set-delete-target":
+      return { ...state, deleteTarget: action.value };
+    default:
+      return state;
+  }
+}
+
 function TagsMenu() {
   const { tagsQuery, createTag, updateTag, deleteTag } = useTags();
-  const [open, setOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [name, setName] = useState("");
-  const [icon, setIcon] = useState<TagIconName>("Tag");
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [editingTagId, setEditingTagId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editIcon, setEditIcon] = useState<TagIconName>("Tag");
-  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [state, dispatch] = useReducer(tagsMenuReducer, tagsMenuInitialState);
+  const {
+    open,
+    isEditMode,
+    name,
+    icon,
+    deleteTarget,
+    editingTagId,
+    editName,
+    editIcon,
+    showIconPicker,
+  } = state;
 
   const tags = tagsQuery.data ?? [];
 
-  useEffect(() => {
-    if (!open) {
-      setEditingTagId(null);
-      setShowIconPicker(false);
-      return;
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      dispatch({ type: "open", forceEditMode: tags.length === 0 });
+    } else {
+      dispatch({ type: "close" });
     }
-
-    if (tags.length === 0) {
-      setIsEditMode(true);
-    }
-  }, [open, tags.length]);
+  };
 
   const handleCreate = () => {
     const trimmed = name.trim();
@@ -283,18 +363,14 @@ function TagsMenu() {
       { name: trimmed, icon },
       {
         onSuccess: () => {
-          setName("");
+          dispatch({ type: "clear-name" });
         },
       }
     );
   };
 
   const startEditing = (tag: TagSelect, openPicker = false) => {
-    setIsEditMode(true);
-    setEditingTagId(tag.id);
-    setEditName(tag.name);
-    setEditIcon(tag.icon);
-    setShowIconPicker(openPicker);
+    dispatch({ type: "start-editing", tag, openPicker });
   };
 
   const handleSaveEdit = () => {
@@ -309,8 +385,7 @@ function TagsMenu() {
       { id: editingTagId, name: trimmed, icon: editIcon },
       {
         onSuccess: () => {
-          setEditingTagId(null);
-          setShowIconPicker(false);
+          dispatch({ type: "stop-editing" });
         },
       }
     );
@@ -323,17 +398,17 @@ function TagsMenu() {
     const targetId = deleteTarget.id;
     deleteTag.mutate(targetId, {
       onSettled: () => {
-        setDeleteTarget(null);
+        dispatch({ type: "set-delete-target", value: null });
       },
     });
   };
 
   return (
     <>
-      <Popover onOpenChange={setOpen} open={open}>
+      <Popover onOpenChange={handleOpenChange} open={open}>
         <PopoverTrigger asChild>
           <Button size="icon" type="button" variant="ghost">
-            <TagIcon className="h-4 w-4" />
+            <TagIcon className="size-4" />
             <span className="sr-only">Tags</span>
           </Button>
         </PopoverTrigger>
@@ -345,21 +420,20 @@ function TagsMenu() {
                   Tags
                 </div>
                 <Button
-                  className="h-7 w-7"
+                  className="size-7"
                   onClick={() => {
                     if (tags.length === 0) {
-                      setIsEditMode(true);
+                      dispatch({ type: "set-edit-mode", value: true });
                       return;
                     }
-                    setIsEditMode((prev) => !prev);
-                    setEditingTagId(null);
-                    setShowIconPicker(false);
+                    dispatch({ type: "set-edit-mode", value: !isEditMode });
+                    dispatch({ type: "stop-editing" });
                   }}
                   size="icon"
                   type="button"
                   variant={isEditMode ? "secondary" : "ghost"}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
+                  <Pencil className="size-3.5" />
                   <span className="sr-only">
                     {isEditMode ? "Exit edit mode" : "Edit tags"}
                   </span>
@@ -387,7 +461,7 @@ function TagsMenu() {
                             onClick={() => startEditing(tag, true)}
                             type="button"
                           >
-                            <Icon className="h-4 w-4 text-muted-foreground" />
+                            <Icon className="size-4 text-muted-foreground" />
                             <span className="sr-only">Edit tag icon</span>
                           </button>
                           {isEditing ? (
@@ -395,31 +469,28 @@ function TagsMenu() {
                               <Input
                                 className="h-8"
                                 onChange={(event) =>
-                                  setEditName(event.target.value)
+                                  dispatch({ type: "set-edit-name", value: event.target.value })
                                 }
                                 value={editName}
                               />
                               <Button
-                                className="h-7 w-7"
+                                className="size-7"
                                 onClick={handleSaveEdit}
                                 size="icon"
                                 type="button"
                                 variant="secondary"
                               >
-                                <Check className="h-3.5 w-3.5" />
+                                <Check className="size-3.5" />
                                 <span className="sr-only">Save tag</span>
                               </Button>
                               <Button
-                                className="h-7 w-7"
-                                onClick={() => {
-                                  setEditingTagId(null);
-                                  setShowIconPicker(false);
-                                }}
+                                className="size-7"
+                                onClick={() => dispatch({ type: "stop-editing" })}
                                 size="icon"
                                 type="button"
                                 variant="ghost"
                               >
-                                <X className="h-3.5 w-3.5" />
+                                <X className="size-3.5" />
                                 <span className="sr-only">Cancel edit</span>
                               </Button>
                             </>
@@ -434,18 +505,15 @@ function TagsMenu() {
                               </button>
                               {isEditMode ? (
                                 <Button
-                                  className="h-7 w-7 cursor-pointer"
+                                  className="size-7 cursor-pointer"
                                   onClick={() =>
-                                    setDeleteTarget({
-                                      id: tag.id,
-                                      name: tag.name,
-                                    })
+                                    dispatch({ type: "set-delete-target", value: { id: tag.id, name: tag.name } })
                                   }
                                   size="icon"
                                   type="button"
                                   variant="ghost"
                                 >
-                                  <X className="h-3.5 w-3.5" />
+                                  <X className="size-3.5" />
                                   <span className="sr-only">Delete tag</span>
                                 </Button>
                               ) : null}
@@ -454,7 +522,7 @@ function TagsMenu() {
                         </div>
                         {isEditing && showIconPicker ? (
                           <TagIconPicker
-                            onChange={setEditIcon}
+                            onChange={(value) => dispatch({ type: "set-edit-icon", value })}
                             value={editIcon}
                           />
                         ) : null}
@@ -470,18 +538,18 @@ function TagsMenu() {
                 <Label htmlFor="tag-name">Create tag</Label>
                 <Input
                   id="tag-name"
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => dispatch({ type: "set-name", value: event.target.value })}
                   placeholder="Tag name"
                   value={name}
                 />
-                <TagIconPicker onChange={setIcon} value={icon} />
+                <TagIconPicker onChange={(value) => dispatch({ type: "set-icon", value })} value={icon} />
                 <Button
                   className="w-full"
                   disabled={!name.trim() || createTag.isPending}
                   onClick={handleCreate}
                   type="button"
                 >
-                  {createTag.isPending ? "Creating..." : "Create tag"}
+                  {createTag.isPending ? "Creating…" : "Create tag"}
                 </Button>
               </div>
             ) : null}
@@ -491,7 +559,7 @@ function TagsMenu() {
       <AlertDialog
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
-            setDeleteTarget(null);
+            dispatch({ type: "set-delete-target", value: null });
           }
         }}
         open={Boolean(deleteTarget)}
@@ -575,9 +643,9 @@ function UpdatePromptButton() {
               type="button"
               variant="ghost"
             >
-              <RotateCw className={cn("h-4 w-4", isBusy && "animate-spin")} />
+              <RotateCw className={cn("size-4", isBusy && "animate-spin")} />
               {status === "ready" ? (
-                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
+                <span className="absolute top-1 right-1 size-2 rounded-full bg-destructive" />
               ) : null}
               <span className="sr-only">{buttonLabel}</span>
             </Button>
@@ -606,7 +674,7 @@ function UpdatePromptButton() {
               await installUpdate();
             }}
           >
-            {status === "installing" ? "Installing..." : "Restart now"}
+            {status === "installing" ? "Installing…" : "Restart now"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

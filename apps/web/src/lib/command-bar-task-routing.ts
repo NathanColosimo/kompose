@@ -11,10 +11,12 @@ export function applyCommandBarTaskOpenRequest(
   {
     setCommandBarTaskOpenRequest,
     setCurrentDate,
+    setSidebarLeftOpen,
     setSidebarLeftViewSelection,
   }: {
     setCommandBarTaskOpenRequest: (request: CommandBarTaskOpenRequest) => void;
     setCurrentDate: (date: Temporal.PlainDate) => void;
+    setSidebarLeftOpen: (open: boolean) => void;
     setSidebarLeftViewSelection: (selection: {
       id: SidebarLeftBaseViewId;
       type: "base";
@@ -26,6 +28,7 @@ export function applyCommandBarTaskOpenRequest(
   }
 
   if (request.target === "sidebar" && request.sidebarView) {
+    setSidebarLeftOpen(true);
     setSidebarLeftViewSelection({
       type: "base",
       id: request.sidebarView,

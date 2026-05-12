@@ -443,13 +443,13 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       <Sidebar className="min-w-0 flex-1" collapsible="none" mobile="inline">
         <div
           className={cn(
-            "flex h-full min-h-[200px] w-full flex-1 flex-col transition-colors",
+            "flex size-full min-h-[200px] flex-1 flex-col transition-colors",
             isOver ? "bg-primary/10" : ""
           )}
           ref={setNodeRef}
         >
           <SidebarHeader className="h-12 shrink-0 border-b">
-            <div className="flex h-full w-full items-center justify-between gap-2 px-4">
+            <div className="flex size-full items-center justify-between gap-2 px-4">
               <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
                 {activeItem?.title ??
                   (activeViewSelection.type === "tag" ? "Tag" : "Inbox")}

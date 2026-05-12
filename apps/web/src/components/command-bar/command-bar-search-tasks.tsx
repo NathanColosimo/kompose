@@ -38,7 +38,10 @@ import {
 } from "@/lib/command-bar-task-routing";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 import { formatPlainDate } from "@/lib/temporal-utils";
-import { sidebarLeftViewSelectionAtom } from "@/state/sidebar";
+import {
+  sidebarLeftOpenAtom,
+  sidebarLeftViewSelectionAtom,
+} from "@/state/sidebar";
 
 interface CommandBarSearchTasksProps {
   search: string;
@@ -87,6 +90,7 @@ export function CommandBarSearchTasks({
     commandBarTaskOpenRequestAtom
   );
   const setCurrentDate = useSetAtom(currentDateAtom);
+  const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
   // The standalone desktop popup has its own query cache and no realtime sync.
@@ -165,20 +169,25 @@ export function CommandBarSearchTasks({
             });
 
       if (selectionMode === "desktop-popup" && isTauriRuntime()) {
-        const { emit } = await import("@tauri-apps/api/event");
-        const { invoke } = await import("@tauri-apps/api/core");
+        const [{ emit }, { invoke }] = await Promise.all([
+          import("@tauri-apps/api/event"),
+          import("@tauri-apps/api/core"),
+        ]);
 
-        await emit(
-          COMMAND_BAR_TASK_OPEN_EVENT,
-          serializeCommandBarTaskOpenRequest(request)
-        );
-        await invoke("focus_main_window_for_command_bar_selection");
+        await Promise.all([
+          emit(
+            COMMAND_BAR_TASK_OPEN_EVENT,
+            serializeCommandBarTaskOpenRequest(request)
+          ),
+          invoke("focus_main_window_for_command_bar_selection"),
+        ]);
         return;
       }
 
       applyCommandBarTaskOpenRequest(request, {
         setCommandBarTaskOpenRequest,
         setCurrentDate,
+        setSidebarLeftOpen,
         setSidebarLeftViewSelection,
       });
 
@@ -191,6 +200,7 @@ export function CommandBarSearchTasks({
       setCommandBarOpen,
       setCommandBarTaskOpenRequest,
       setCurrentDate,
+      setSidebarLeftOpen,
       setSidebarLeftViewSelection,
       timeZone,
       today,
@@ -198,7 +208,7 @@ export function CommandBarSearchTasks({
   );
 
   if (isLoading) {
-    return <CommandEmpty>Loading tasks...</CommandEmpty>;
+    return <CommandEmpty>Loading tasks…</CommandEmpty>;
   }
 
   if (filteredTasks.length === 0) {

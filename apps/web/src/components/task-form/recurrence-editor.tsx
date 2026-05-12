@@ -8,12 +8,13 @@ import {
   getTaskRecurrenceIntervalLabel,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceDayCode,
+  type TaskRecurrenceEditorState,
   type TaskRecurrenceEndType,
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
 import { CalendarIcon, Repeat, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useReducer, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -37,6 +38,42 @@ import {
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+
+type RecurrenceAction =
+  | { type: "reset"; state: TaskRecurrenceEditorState }
+  | { type: "set-freq"; freq: TaskRecurrenceFrequency }
+  | { type: "set-interval"; interval: number }
+  | { type: "toggle-day"; day: TaskRecurrenceDayCode }
+  | { type: "set-month-day"; byMonthDay: number }
+  | { type: "set-end-type"; endType: TaskRecurrenceEndType }
+  | { type: "set-until"; until: Temporal.PlainDate | null }
+  | { type: "set-count"; count: number };
+
+function recurrenceReducer(
+  state: TaskRecurrenceEditorState,
+  action: RecurrenceAction,
+): TaskRecurrenceEditorState {
+  switch (action.type) {
+    case "reset":
+      return action.state;
+    case "set-freq":
+      return { ...state, freq: action.freq };
+    case "set-interval":
+      return { ...state, interval: action.interval };
+    case "toggle-day":
+      return { ...state, byDay: toggleTaskRecurrenceDay(state.byDay, action.day) };
+    case "set-month-day":
+      return { ...state, byMonthDay: action.byMonthDay };
+    case "set-end-type":
+      return { ...state, endType: action.endType };
+    case "set-until":
+      return { ...state, until: action.until };
+    case "set-count":
+      return { ...state, count: action.count };
+    default:
+      return state;
+  }
+}
 
 interface RecurrenceEditorProps {
   /** Called when recurrence changes */
@@ -70,7 +107,7 @@ export function RecurrenceEditor({
           )}
           variant="outline"
         >
-          <Repeat className="h-4 w-4 shrink-0" />
+          <Repeat className="size-4 shrink-0" />
           <span className="truncate">{displayText}</span>
         </Button>
       </PopoverTrigger>
@@ -78,7 +115,6 @@ export function RecurrenceEditor({
         <RecurrenceForm
           onChange={onChange}
           onClose={() => setOpen(false)}
-          open={open}
           referenceDate={referenceDate}
           value={value}
         />
@@ -91,69 +127,20 @@ function RecurrenceForm({
   value,
   onChange,
   onClose,
-  open,
   referenceDate,
-}: RecurrenceEditorProps & { onClose: () => void; open: boolean }) {
-  const initialState = useMemo(
+}: RecurrenceEditorProps & { onClose: () => void }) {
+  const initialFields = useMemo(
     () => getTaskRecurrenceEditorState(value, referenceDate),
     [referenceDate, value]
   );
 
-  const [freq, setFreq] = useState<TaskRecurrenceFrequency>(initialState.freq);
-  const [interval, setInterval] = useState(initialState.interval);
-  const [byDay, setByDay] = useState<TaskRecurrenceDayCode[]>(
-    initialState.byDay
-  );
-  const [byMonthDay, setByMonthDay] = useState(initialState.byMonthDay);
-  const [endType, setEndType] = useState<TaskRecurrenceEndType>(
-    initialState.endType
-  );
-  const [until, setUntil] = useState<Temporal.PlainDate | null>(
-    initialState.until
-  );
-  const [count, setCount] = useState(initialState.count);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    setFreq(initialState.freq);
-    setInterval(initialState.interval);
-    setByDay(initialState.byDay);
-    setByMonthDay(initialState.byMonthDay);
-    setEndType(initialState.endType);
-    setUntil(initialState.until);
-    setCount(initialState.count);
-  }, [initialState, open]);
-
-  const toggleDay = useCallback((day: TaskRecurrenceDayCode) => {
-    setByDay((prev) => toggleTaskRecurrenceDay(prev, day));
-  }, []);
+  const [state, dispatch] = useReducer(recurrenceReducer, initialFields);
+  const { freq, interval, byDay, byMonthDay, endType, until, count } = state;
 
   const handleApply = useCallback(() => {
-    onChange(
-      buildTaskRecurrence({
-        freq,
-        interval,
-        byDay,
-        byMonthDay,
-        endType,
-        until,
-        count,
-      })
-    );
+    onChange(buildTaskRecurrence(state));
     onClose();
-  }, [
-    freq,
-    interval,
-    byDay,
-    byMonthDay,
-    endType,
-    until,
-    count,
-    onChange,
-    onClose,
-  ]);
+  }, [state, onChange, onClose]);
 
   const handleClear = useCallback(() => {
     onChange(null);
@@ -165,7 +152,9 @@ function RecurrenceForm({
       <div className="flex items-center gap-2">
         <Label className="text-muted-foreground text-xs">Repeat</Label>
         <Select
-          onValueChange={(v) => setFreq(v as TaskRecurrenceFrequency)}
+          onValueChange={(v) =>
+            dispatch({ type: "set-freq", freq: v as TaskRecurrenceFrequency })
+          }
           value={freq}
         >
           <SelectTrigger className="h-8 w-[120px] text-xs">
@@ -192,7 +181,10 @@ function RecurrenceForm({
           id="recurrence-interval"
           min={1}
           onChange={(event) =>
-            setInterval(Number.parseInt(event.target.value, 10) || 1)
+            dispatch({
+              type: "set-interval",
+              interval: Number.parseInt(event.target.value, 10) || 1,
+            })
           }
           type="number"
           value={interval}
@@ -210,9 +202,11 @@ function RecurrenceForm({
               const active = byDay.includes(day.value);
               return (
                 <Button
-                  className="h-8 w-8 rounded-full p-0 text-xs"
+                  className="size-8 rounded-full p-0 text-xs"
                   key={day.value}
-                  onClick={() => toggleDay(day.value)}
+                  onClick={() =>
+                    dispatch({ type: "toggle-day", day: day.value })
+                  }
                   size="icon"
                   type="button"
                   variant={active ? "default" : "outline"}
@@ -239,7 +233,10 @@ function RecurrenceForm({
             max={31}
             min={1}
             onChange={(event) =>
-              setByMonthDay(Number.parseInt(event.target.value, 10) || 1)
+              dispatch({
+                type: "set-month-day",
+                byMonthDay: Number.parseInt(event.target.value, 10) || 1,
+              })
             }
             type="number"
             value={byMonthDay}
@@ -253,7 +250,7 @@ function RecurrenceForm({
         <div className="space-y-2">
           <Button
             className="h-8 w-full justify-start text-xs"
-            onClick={() => setEndType("never")}
+            onClick={() => dispatch({ type: "set-end-type", endType: "never" })}
             size="sm"
             type="button"
             variant={endType === "never" ? "default" : "outline"}
@@ -264,7 +261,9 @@ function RecurrenceForm({
           <div className="flex items-center gap-2">
             <Button
               className="h-8 shrink-0 text-xs"
-              onClick={() => setEndType("until")}
+              onClick={() =>
+                dispatch({ type: "set-end-type", endType: "until" })
+              }
               size="sm"
               type="button"
               variant={endType === "until" ? "default" : "outline"}
@@ -278,7 +277,7 @@ function RecurrenceForm({
                     className="h-7 gap-1.5 px-2 text-xs"
                     variant="outline"
                   >
-                    <CalendarIcon className="h-3 w-3" />
+                    <CalendarIcon className="size-3" />
                     {until
                       ? formatPlainDate(until, {
                           month: "short",
@@ -291,7 +290,10 @@ function RecurrenceForm({
                   <Calendar
                     mode="single"
                     onSelect={(date) =>
-                      setUntil(date ? pickerDateToTemporal(date) : null)
+                      dispatch({
+                        type: "set-until",
+                        until: date ? pickerDateToTemporal(date) : null,
+                      })
                     }
                     selected={until ? temporalToPickerDate(until) : undefined}
                   />
@@ -303,7 +305,9 @@ function RecurrenceForm({
           <div className="flex items-center gap-2">
             <Button
               className="h-8 shrink-0 text-xs"
-              onClick={() => setEndType("count")}
+              onClick={() =>
+                dispatch({ type: "set-end-type", endType: "count" })
+              }
               size="sm"
               type="button"
               variant={endType === "count" ? "default" : "outline"}
@@ -316,7 +320,10 @@ function RecurrenceForm({
                   className="h-7 w-14 px-2 text-xs"
                   min={1}
                   onChange={(event) =>
-                    setCount(Number.parseInt(event.target.value, 10) || 1)
+                    dispatch({
+                      type: "set-count",
+                      count: Number.parseInt(event.target.value, 10) || 1,
+                    })
                   }
                   type="number"
                   value={count}
@@ -336,7 +343,7 @@ function RecurrenceForm({
           type="button"
           variant="ghost"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="size-3.5" />
           Clear
         </Button>
         <Button onClick={handleApply} size="sm" type="button">

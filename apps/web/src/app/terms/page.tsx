@@ -14,10 +14,10 @@ const termsSource = readFileSync(
   "utf8"
 );
 
-const termsBlocks = termsSource
-  .split(/\n\s*\n/)
-  .map((block) => block.trim())
-  .filter(Boolean);
+const termsBlocks = termsSource.split(/\n\s*\n/).flatMap((block) => {
+  const trimmed = block.trim();
+  return trimmed ? [trimmed] : [];
+});
 
 const updatedAt =
   termsBlocks[1]?.replace(/^Last Updated:\s*/, "") ?? "2026-03-16";

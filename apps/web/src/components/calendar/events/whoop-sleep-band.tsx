@@ -96,7 +96,7 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 rounded-sm bg-indigo-500/8 dark:bg-indigo-400/15"
+      className="pointer-events-none absolute inset-x-0 rounded-sm bg-whoop-sleep/8 dark:bg-whoop-sleep/15"
       style={{
         top: `${top}px`,
         height: `${height}px`,
@@ -106,17 +106,17 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
       {isLargerSegment ? (
         <div className="flex h-full items-center justify-center overflow-hidden">
           <div className="flex flex-col items-center gap-0.5 rounded-md bg-background/70 px-2.5 py-1.5 backdrop-blur-sm dark:bg-background/60">
-            <span className="font-medium text-[10px] text-indigo-600/80 dark:text-indigo-300/80">
+            <span className="font-medium text-[10px] text-whoop-sleep-foreground/80 dark:text-whoop-sleep-foreground/80">
               {label}
             </span>
-            <span className="text-[9px] text-indigo-500/70 dark:text-indigo-300/60">
+            <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
               {formatTime(sleepStart)} – {formatTime(sleepEnd)}
             </span>
-            <span className="text-[9px] text-indigo-500/70 dark:text-indigo-300/60">
+            <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
               {formatSleepDuration(totalInBedMinutes * 60_000)} in bed
             </span>
             {totalSleepMilliseconds > 0 ? (
-              <span className="text-[9px] text-indigo-500/70 dark:text-indigo-300/60">
+              <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
                 {formatSleepDuration(totalSleepMilliseconds)} asleep
               </span>
             ) : null}

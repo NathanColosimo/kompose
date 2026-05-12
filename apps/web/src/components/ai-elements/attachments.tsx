@@ -1,6 +1,7 @@
 "use client";
 
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
+import Image from "next/image";
 import {
   FileTextIcon,
   GlobeIcon,
@@ -11,7 +12,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, use, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   HoverCard,
@@ -24,11 +25,11 @@ import { cn } from "@/lib/utils";
 // Types
 // ============================================================================
 
-export type AttachmentData =
+type AttachmentData =
   | (FileUIPart & { id: string })
   | (SourceDocumentUIPart & { id: string });
 
-export type AttachmentMediaCategory =
+type AttachmentMediaCategory =
   | "image"
   | "video"
   | "audio"
@@ -36,7 +37,7 @@ export type AttachmentMediaCategory =
   | "source"
   | "unknown";
 
-export type AttachmentVariant = "grid" | "inline" | "list";
+type AttachmentVariant = "grid" | "inline" | "list";
 
 const mediaCategoryIcons: Record<AttachmentMediaCategory, typeof ImageIcon> = {
   audio: Music2Icon,
@@ -51,9 +52,7 @@ const mediaCategoryIcons: Record<AttachmentMediaCategory, typeof ImageIcon> = {
 // Utility Functions
 // ============================================================================
 
-export const getMediaCategory = (
-  data: AttachmentData
-): AttachmentMediaCategory => {
+const getMediaCategory = (data: AttachmentData): AttachmentMediaCategory => {
   if (data.type === "source-document") {
     return "source";
   }
@@ -76,7 +75,7 @@ export const getMediaCategory = (
   return "unknown";
 };
 
-export const getAttachmentLabel = (data: AttachmentData): string => {
+const getAttachmentLabel = (data: AttachmentData): string => {
   if (data.type === "source-document") {
     return data.title || data.filename || "Source";
   }
@@ -91,21 +90,21 @@ const renderAttachmentImage = (
   isGrid: boolean
 ) =>
   isGrid ? (
-    // biome-ignore lint/performance/noImgElement: dynamic user-uploaded source with unknown dimensions
-    <img
+    <Image
       alt={filename || "Image"}
       className="size-full object-cover"
       height={96}
       src={url}
+      unoptimized
       width={96}
     />
   ) : (
-    // biome-ignore lint/performance/noImgElement: dynamic user-uploaded source with unknown dimensions
-    <img
+    <Image
       alt={filename || "Image"}
       className="size-full rounded object-cover"
       height={20}
       src={url}
+      unoptimized
       width={20}
     />
   );
@@ -133,11 +132,11 @@ const AttachmentContext = createContext<AttachmentContextValue | null>(null);
 // Hooks
 // ============================================================================
 
-export const useAttachmentsContext = () =>
-  useContext(AttachmentsContext) ?? { variant: "grid" as const };
+const useAttachmentsContext = () =>
+  use(AttachmentsContext) ?? { variant: "grid" as const };
 
-export const useAttachmentContext = () => {
-  const ctx = useContext(AttachmentContext);
+const useAttachmentContext = () => {
+  const ctx = use(AttachmentContext);
   if (!ctx) {
     throw new Error("Attachment components must be used within <Attachment>");
   }
@@ -148,7 +147,7 @@ export const useAttachmentContext = () => {
 // Attachments - Container
 // ============================================================================
 
-export type AttachmentsProps = HTMLAttributes<HTMLDivElement> & {
+type AttachmentsProps = HTMLAttributes<HTMLDivElement> & {
   variant?: AttachmentVariant;
 };
 
@@ -181,7 +180,7 @@ export const Attachments = ({
 // Attachment - Item
 // ============================================================================
 
-export type AttachmentProps = HTMLAttributes<HTMLDivElement> & {
+type AttachmentProps = HTMLAttributes<HTMLDivElement> & {
   data: AttachmentData;
   onRemove?: () => void;
 };
@@ -231,7 +230,7 @@ export const Attachment = ({
 // AttachmentPreview - Media preview
 // ============================================================================
 
-export type AttachmentPreviewProps = HTMLAttributes<HTMLDivElement> & {
+type AttachmentPreviewProps = HTMLAttributes<HTMLDivElement> & {
   fallbackIcon?: ReactNode;
 };
 
@@ -244,22 +243,28 @@ export const AttachmentPreview = ({
 
   const iconSize = variant === "inline" ? "size-3" : "size-4";
 
-  const renderIcon = (Icon: typeof ImageIcon) => (
-    <Icon className={cn(iconSize, "text-muted-foreground")} />
-  );
+  const FallbackIcon = mediaCategoryIcons[mediaCategory];
 
-  const renderContent = () => {
-    if (mediaCategory === "image" && data.type === "file" && data.url) {
-      return renderAttachmentImage(data.url, data.filename, variant === "grid");
-    }
-
-    if (mediaCategory === "video" && data.type === "file" && data.url) {
-      return <video className="size-full object-cover" muted src={data.url} />;
-    }
-
-    const Icon = mediaCategoryIcons[mediaCategory];
-    return fallbackIcon ?? renderIcon(Icon);
-  };
+  let content: ReactNode;
+  if (mediaCategory === "image" && data.type === "file" && data.url) {
+    content = renderAttachmentImage(
+      data.url,
+      data.filename,
+      variant === "grid"
+    );
+  } else if (
+    mediaCategory === "video" &&
+    data.type === "file" &&
+    data.url
+  ) {
+    content = (
+      <video className="size-full object-cover" muted src={data.url} />
+    );
+  } else {
+    content = fallbackIcon ?? (
+      <FallbackIcon className={cn(iconSize, "text-muted-foreground")} />
+    );
+  }
 
   return (
     <div
@@ -272,7 +277,7 @@ export const AttachmentPreview = ({
       )}
       {...props}
     >
-      {renderContent()}
+      {content}
     </div>
   );
 };
@@ -281,7 +286,7 @@ export const AttachmentPreview = ({
 // AttachmentInfo - Name and type display
 // ============================================================================
 
-export type AttachmentInfoProps = HTMLAttributes<HTMLDivElement> & {
+type AttachmentInfoProps = HTMLAttributes<HTMLDivElement> & {
   showMediaType?: boolean;
 };
 
@@ -313,7 +318,7 @@ export const AttachmentInfo = ({
 // AttachmentRemove - Remove button
 // ============================================================================
 
-export type AttachmentRemoveProps = ComponentProps<typeof Button> & {
+type AttachmentRemoveProps = ComponentProps<typeof Button> & {
   label?: string;
 };
 
@@ -325,7 +330,7 @@ export const AttachmentRemove = ({
 }: AttachmentRemoveProps) => {
   const { onRemove, variant } = useAttachmentContext();
 
-  const handleClick = useCallback(
+  const removeAttachment = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       onRemove?.();
@@ -356,7 +361,7 @@ export const AttachmentRemove = ({
         variant === "list" && ["size-8 shrink-0 rounded p-0", "[&>svg]:size-4"],
         className
       )}
-      onClick={handleClick}
+      onClick={removeAttachment}
       type="button"
       variant="ghost"
       {...props}
@@ -371,9 +376,9 @@ export const AttachmentRemove = ({
 // AttachmentHoverCard - Hover preview
 // ============================================================================
 
-export type AttachmentHoverCardProps = ComponentProps<typeof HoverCard>;
+type AttachmentHoverCardProps = ComponentProps<typeof HoverCard>;
 
-export const AttachmentHoverCard = ({
+const AttachmentHoverCard = ({
   openDelay = 0,
   closeDelay = 0,
   ...props
@@ -381,19 +386,15 @@ export const AttachmentHoverCard = ({
   <HoverCard closeDelay={closeDelay} openDelay={openDelay} {...props} />
 );
 
-export type AttachmentHoverCardTriggerProps = ComponentProps<
-  typeof HoverCardTrigger
->;
+type AttachmentHoverCardTriggerProps = ComponentProps<typeof HoverCardTrigger>;
 
-export const AttachmentHoverCardTrigger = (
-  props: AttachmentHoverCardTriggerProps
-) => <HoverCardTrigger {...props} />;
+const AttachmentHoverCardTrigger = (props: AttachmentHoverCardTriggerProps) => (
+  <HoverCardTrigger {...props} />
+);
 
-export type AttachmentHoverCardContentProps = ComponentProps<
-  typeof HoverCardContent
->;
+type AttachmentHoverCardContentProps = ComponentProps<typeof HoverCardContent>;
 
-export const AttachmentHoverCardContent = ({
+const AttachmentHoverCardContent = ({
   align = "start",
   className,
   ...props
@@ -409,9 +410,9 @@ export const AttachmentHoverCardContent = ({
 // AttachmentEmpty - Empty state
 // ============================================================================
 
-export type AttachmentEmptyProps = HTMLAttributes<HTMLDivElement>;
+type AttachmentEmptyProps = HTMLAttributes<HTMLDivElement>;
 
-export const AttachmentEmpty = ({
+const AttachmentEmpty = ({
   className,
   children,
   ...props

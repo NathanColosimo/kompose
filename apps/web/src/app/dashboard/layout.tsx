@@ -35,10 +35,9 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
+  const { replace } = useRouter();
   const sessionQuery = useAtomValue(sessionQueryAtom);
   const sessionUser = useAtomValue(sessionUserAtom) as User | null;
-  const [leftSidebarOpen, setLeftSidebarOpen] = useAtom(sidebarLeftOpenAtom);
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
@@ -47,6 +46,7 @@ export default function DashboardLayout({
     commandBarTaskOpenRequestAtom
   );
   const setCurrentDate = useSetAtom(currentDateAtom);
+  const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
@@ -62,9 +62,9 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (sessionQuery.status !== "pending" && !sessionUser) {
-      router.replace("/login");
+      replace("/login");
     }
-  }, [router, sessionQuery.status, sessionUser]);
+  }, [replace, sessionQuery.status, sessionUser]);
 
   // Constrained widths use overlay mode for right chat, so docked open must reset.
   useEffect(() => {
@@ -77,14 +77,6 @@ export default function DashboardLayout({
     rightSidebarOpen,
     setRightSidebarOpen,
   ]);
-
-  // Smallest supported mode should keep the left task panel visible.
-  useEffect(() => {
-    if (leftSidebarOpen) {
-      return;
-    }
-    setLeftSidebarOpen(true);
-  }, [leftSidebarOpen, setLeftSidebarOpen]);
 
   // When dock mode becomes available again, close overlay-only right chat.
   useEffect(() => {
@@ -117,6 +109,7 @@ export default function DashboardLayout({
           applyCommandBarTaskOpenRequest(request, {
             setCommandBarTaskOpenRequest,
             setCurrentDate,
+            setSidebarLeftOpen,
             setSidebarLeftViewSelection,
           });
         });
@@ -134,6 +127,7 @@ export default function DashboardLayout({
   }, [
     setCommandBarTaskOpenRequest,
     setCurrentDate,
+    setSidebarLeftOpen,
     setSidebarLeftViewSelection,
   ]);
 

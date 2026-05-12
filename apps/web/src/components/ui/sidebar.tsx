@@ -60,7 +60,7 @@ const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 const SidebarSideContext = React.createContext<"left" | "right">("left");
 
 function useSidebar() {
-  const context = React.useContext(SidebarContext);
+  const context = React.use(SidebarContext);
   if (!context) {
     throw new Error("useSidebar must be used within a SidebarProvider.");
   }
@@ -70,7 +70,7 @@ function useSidebar() {
 
 /** Hook to get the current sidebar's side (left or right) */
 function useSidebarSide() {
-  return React.useContext(SidebarSideContext);
+  return React.use(SidebarSideContext);
 }
 
 function SidebarProvider({
@@ -284,7 +284,7 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{wrappedChildren}</div>
+          <div className="flex size-full flex-col">{wrappedChildren}</div>
         </SheetContent>
       </Sheet>
     );
@@ -317,11 +317,11 @@ function Sidebar({
       />
       <div
         className={cn(
-          "fixed top-(--header-height,0) bottom-0 z-10 h-[calc(100svh-var(--header-height,0px))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear",
+          "fixed top-(--header-height,0) bottom-0 z-10 h-[calc(100svh-var(--header-height,0))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear",
           isMobile && mobile === "inline" ? "flex" : "hidden md:flex",
           side === "left"
-            ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
-            : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
+            ? "left-0 group-data-[collapsible=offcanvas]:-left-(--sidebar-width)"
+            : "right-0 group-data-[collapsible=offcanvas]:-right-(--sidebar-width)",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -333,7 +333,7 @@ function Sidebar({
         {...props}
       >
         <div
-          className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
         >
@@ -710,10 +710,8 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<"div"> & {
   showIcon?: boolean;
 }) {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(
-    () => `${Math.floor(Math.random() * 40) + 50}%`,
-    []
+  const [width] = React.useState(
+    () => `${Math.floor(Math.random() * 40) + 50}%`
   );
 
   return (

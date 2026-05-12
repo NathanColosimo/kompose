@@ -25,12 +25,15 @@ export function LegalShell({
             Kompose
           </Link>
           <div className="flex items-center gap-4 text-muted-foreground text-sm">
-            <a className="underline-offset-4 hover:underline" href="/privacy">
+            <Link
+              className="underline-offset-4 hover:underline"
+              href="/privacy"
+            >
               Privacy
-            </a>
-            <a className="underline-offset-4 hover:underline" href="/terms">
+            </Link>
+            <Link className="underline-offset-4 hover:underline" href="/terms">
               Terms
-            </a>
+            </Link>
             <Link className="underline-offset-4 hover:underline" href="/login">
               Sign in
             </Link>

@@ -17,7 +17,7 @@ type CommandSize = "sm" | "md" | "lg";
 const CommandSizeContext = React.createContext<CommandSize>("md");
 
 function useCommandSize() {
-  return React.useContext(CommandSizeContext);
+  return React.use(CommandSizeContext);
 }
 
 function Command({

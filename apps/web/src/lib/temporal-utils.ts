@@ -4,7 +4,7 @@ import { Temporal } from "temporal-polyfill";
 const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/;
 
 /** Get the system/browser timezone identifier (e.g., "America/New_York") */
-export function getSystemTimeZone() {
+function getSystemTimeZone() {
   return Temporal.Now.zonedDateTimeISO().timeZoneId;
 }
 
@@ -19,7 +19,7 @@ export function todayPlainDate(
  * Convert a PlainDate to a ZonedDateTime at midnight (start of day).
  * Use this for building range query start bounds.
  */
-export function startOfDayZoned(
+function startOfDayZoned(
   date: Temporal.PlainDate,
   timeZone: string
 ): Temporal.ZonedDateTime {
@@ -27,45 +27,6 @@ export function startOfDayZoned(
     timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
   });
-}
-
-/**
- * Returns the exclusive end of day (start of next day).
- * Use this for range queries: [startOfDay, endOfDay) where endOfDay is exclusive.
- */
-export function endOfDayZoned(
-  date: Temporal.PlainDate,
-  timeZone: string
-): Temporal.ZonedDateTime {
-  return date
-    .toZonedDateTime({ timeZone, plainTime: Temporal.PlainTime.from("00:00") })
-    .add({ days: 1 });
-}
-
-/**
- * Convert a PlainDate to a native Date at midnight in the given timezone.
- * Used for UI pickers (e.g., shadcn Calendar) that require native Date objects.
- */
-export function plainDateToDate(
-  date: Temporal.PlainDate,
-  timeZone: string
-): Date {
-  return new Date(
-    startOfDayZoned(date, timeZone).toInstant().epochMilliseconds
-  );
-}
-
-/**
- * Convert a native Date to a PlainDate in the given timezone.
- * Used for UI pickers (e.g., shadcn Calendar) that return native Date objects.
- */
-export function dateToPlainDate(
-  date: Date,
-  timeZone: string
-): Temporal.PlainDate {
-  return Temporal.Instant.from(date.toISOString())
-    .toZonedDateTimeISO(timeZone)
-    .toPlainDate();
 }
 
 /**
@@ -226,12 +187,4 @@ export function formatTimeString(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
-}
-
-/**
- * Convert a Temporal.PlainDateTime to a native Date for picker components.
- * Creates a Date in the local timezone.
- */
-export function plainDateTimeToPickerDate(pdt: Temporal.PlainDateTime): Date {
-  return new Date(pdt.year, pdt.month - 1, pdt.day, pdt.hour, pdt.minute, 0, 0);
 }

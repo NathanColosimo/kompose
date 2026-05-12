@@ -14,9 +14,9 @@ API_DIR="src/app/api"
 DOCS_DIR="src/app/docs"
 PRIVACY_DIR="src/app/privacy"
 TERMS_DIR="src/app/terms"
+LEGAL_COMPONENTS_DIR="src/components/legal"
 
-cleanup() {
-  exit_code=$?
+restore_removed_sources() {
   set +e
 
   if [ -d "$TEMP_DIR/api" ]; then
@@ -38,6 +38,16 @@ cleanup() {
     rm -rf "$TERMS_DIR"
     mv "$TEMP_DIR/terms" "$TERMS_DIR"
   fi
+
+  if [ -d "$TEMP_DIR/legal-components" ]; then
+    rm -rf "$LEGAL_COMPONENTS_DIR"
+    mv "$TEMP_DIR/legal-components" "$LEGAL_COMPONENTS_DIR"
+  fi
+}
+
+cleanup() {
+  exit_code=$?
+  restore_removed_sources
 
   rm -rf "$TEMP_DIR"
   exit "$exit_code"
@@ -63,7 +73,17 @@ if [ "${NEXT_PUBLIC_DEPLOYMENT_ENV:-}" = "production" ]; then
   if [ -d "$TERMS_DIR" ]; then
     mv "$TERMS_DIR" "$TEMP_DIR/terms"
   fi
+
+  if [ -d "$LEGAL_COMPONENTS_DIR" ]; then
+    mv "$LEGAL_COMPONENTS_DIR" "$TEMP_DIR/legal-components"
+  fi
 fi
 
 rm -rf .next out
 TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build
+
+# The desktop build intentionally generates route types while API/docs/legal
+# routes are absent. Restore the source tree, then refresh typed routes so
+# follow-up `tsgo --noEmit` runs see the normal app route set again.
+restore_removed_sources
+TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next typegen

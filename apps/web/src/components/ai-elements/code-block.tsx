@@ -5,8 +5,8 @@ import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
   createContext,
   memo,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -169,7 +169,7 @@ const createRawTokens = (code: string): TokenizedCode => ({
 });
 
 // Synchronous highlight with callback for async results
-export const highlightCode = (
+const highlightCode = (
   code: string,
   language: BundledLanguage,
   // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-callbacks)
@@ -303,7 +303,7 @@ const CodeBlockBody = memo(
 
 CodeBlockBody.displayName = "CodeBlockBody";
 
-export const CodeBlockContainer = ({
+const CodeBlockContainer = ({
   className,
   language,
   style,
@@ -324,7 +324,7 @@ export const CodeBlockContainer = ({
   />
 );
 
-export const CodeBlockHeader = ({
+const CodeBlockHeader = ({
   children,
   className,
   ...props
@@ -340,7 +340,7 @@ export const CodeBlockHeader = ({
   </div>
 );
 
-export const CodeBlockTitle = ({
+const CodeBlockTitle = ({
   children,
   className,
   ...props
@@ -350,7 +350,7 @@ export const CodeBlockTitle = ({
   </div>
 );
 
-export const CodeBlockFilename = ({
+const CodeBlockFilename = ({
   children,
   className,
   ...props
@@ -360,7 +360,7 @@ export const CodeBlockFilename = ({
   </span>
 );
 
-export const CodeBlockActions = ({
+const CodeBlockActions = ({
   children,
   className,
   ...props
@@ -373,7 +373,7 @@ export const CodeBlockActions = ({
   </div>
 );
 
-export const CodeBlockContent = ({
+const CodeBlockContent = ({
   code,
   language,
   showLineNumbers = false,
@@ -439,13 +439,13 @@ export const CodeBlock = ({
   );
 };
 
-export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
+type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
   onCopy?: () => void;
   onError?: (error: Error) => void;
   timeout?: number;
 };
 
-export const CodeBlockCopyButton = ({
+const CodeBlockCopyButton = ({
   onCopy,
   onError,
   timeout = 2000,
@@ -455,7 +455,7 @@ export const CodeBlockCopyButton = ({
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { code } = useContext(CodeBlockContext);
+  const { code } = use(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -500,17 +500,17 @@ export const CodeBlockCopyButton = ({
   );
 };
 
-export type CodeBlockLanguageSelectorProps = ComponentProps<typeof Select>;
+type CodeBlockLanguageSelectorProps = ComponentProps<typeof Select>;
 
-export const CodeBlockLanguageSelector = (
-  props: CodeBlockLanguageSelectorProps
-) => <Select {...props} />;
+const CodeBlockLanguageSelector = (props: CodeBlockLanguageSelectorProps) => (
+  <Select {...props} />
+);
 
-export type CodeBlockLanguageSelectorTriggerProps = ComponentProps<
+type CodeBlockLanguageSelectorTriggerProps = ComponentProps<
   typeof SelectTrigger
 >;
 
-export const CodeBlockLanguageSelectorTrigger = ({
+const CodeBlockLanguageSelectorTrigger = ({
   className,
   ...props
 }: CodeBlockLanguageSelectorTriggerProps) => (
@@ -524,29 +524,25 @@ export const CodeBlockLanguageSelectorTrigger = ({
   />
 );
 
-export type CodeBlockLanguageSelectorValueProps = ComponentProps<
-  typeof SelectValue
->;
+type CodeBlockLanguageSelectorValueProps = ComponentProps<typeof SelectValue>;
 
-export const CodeBlockLanguageSelectorValue = (
+const CodeBlockLanguageSelectorValue = (
   props: CodeBlockLanguageSelectorValueProps
 ) => <SelectValue {...props} />;
 
-export type CodeBlockLanguageSelectorContentProps = ComponentProps<
+type CodeBlockLanguageSelectorContentProps = ComponentProps<
   typeof SelectContent
 >;
 
-export const CodeBlockLanguageSelectorContent = ({
+const CodeBlockLanguageSelectorContent = ({
   align = "end",
   ...props
 }: CodeBlockLanguageSelectorContentProps) => (
   <SelectContent align={align} {...props} />
 );
 
-export type CodeBlockLanguageSelectorItemProps = ComponentProps<
-  typeof SelectItem
->;
+type CodeBlockLanguageSelectorItemProps = ComponentProps<typeof SelectItem>;
 
-export const CodeBlockLanguageSelectorItem = (
+const CodeBlockLanguageSelectorItem = (
   props: CodeBlockLanguageSelectorItemProps
 ) => <SelectItem {...props} />;

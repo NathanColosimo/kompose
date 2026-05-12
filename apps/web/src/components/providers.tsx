@@ -8,8 +8,9 @@ import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Analytics } from "@vercel/analytics/next";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -76,24 +77,24 @@ function RealtimeSyncBootstrap() {
  * render and avoid a hydration mismatch.
  */
 function TauriBearerInit({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(true);
+  const [bearerState, setBearerState] = useState<"idle" | "loading" | "ready">(
+    "idle"
+  );
   const qc = useQueryClient();
 
-  useEffect(() => {
+  useMountEffect(() => {
     if (!isTauriRuntime()) {
       return;
     }
 
-    setReady(false);
+    setBearerState("loading");
     initTauriBearer().then(() => {
-      // Wipe any query results from the brief initial render that ran
-      // without the bearer token (e.g. session returning null).
       qc.clear();
-      setReady(true);
+      setBearerState("ready");
     });
-  }, [qc]);
+  });
 
-  if (!ready) {
+  if (bearerState === "loading") {
     return null;
   }
 
@@ -101,26 +102,24 @@ function TauriBearerInit({ children }: { children: React.ReactNode }) {
 }
 
 function TauriDesktopBridgeBootstrap() {
-  useEffect(() => {
+  useMountEffect(() => {
     if (!isTauriRuntime()) {
       return;
     }
 
-    // Apply the persisted command-bar shortcut preset after desktop startup.
     syncDesktopCommandBarShortcutPreset().catch((error) => {
       console.warn(
         "Failed to sync desktop command bar shortcut preset.",
         error
       );
     });
-  }, []);
+  });
 
-  useEffect(() => {
+  useMountEffect(() => {
     if (!isTauriRuntime()) {
       return;
     }
 
-    // Delegate external-link clicks globally so meeting/maps/etc. all work in desktop.
     const handleDocumentClickCapture = async (event: MouseEvent) => {
       if (
         event.defaultPrevented ||
@@ -160,7 +159,7 @@ function TauriDesktopBridgeBootstrap() {
     return () => {
       document.removeEventListener("click", handleDocumentClickCapture, true);
     };
-  }, []);
+  });
 
   return null;
 }

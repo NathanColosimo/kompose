@@ -26,10 +26,10 @@ const privacyContent = privacySource
   .replace(SECTION_HEADING_LINE_REGEX, "\n\n")
   .trim();
 
-const privacyBlocks = privacyContent
-  .split(/\n\s*\n/)
-  .map((block) => block.trim())
-  .filter(Boolean);
+const privacyBlocks = privacyContent.split(/\n\s*\n/).flatMap((block) => {
+  const trimmed = block.trim();
+  return trimmed ? [trimmed] : [];
+});
 
 const sectionHeadingPattern = /^\d+\.\s/;
 
@@ -40,8 +40,10 @@ function normalizeBlockText(block: string) {
 function getParagraphLines(block: string) {
   return normalizeBlockText(block)
     .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      return trimmed ? [trimmed] : [];
+    });
 }
 
 export default function PrivacyPage() {

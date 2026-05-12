@@ -4,7 +4,7 @@ import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { LucideIcon } from "lucide-react";
 import { BrainIcon, ChevronDownIcon, DotIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useContext, useMemo } from "react";
+import { createContext, memo, use, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
@@ -23,7 +23,7 @@ const ChainOfThoughtContext = createContext<ChainOfThoughtContextValue | null>(
 );
 
 const useChainOfThought = () => {
-  const context = useContext(ChainOfThoughtContext);
+  const context = use(ChainOfThoughtContext);
   if (!context) {
     throw new Error(
       "ChainOfThought components must be used within ChainOfThought"
@@ -32,7 +32,7 @@ const useChainOfThought = () => {
   return context;
 };
 
-export type ChainOfThoughtProps = ComponentProps<"div"> & {
+type ChainOfThoughtProps = ComponentProps<"div"> & {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -68,9 +68,7 @@ export const ChainOfThought = memo(
   }
 );
 
-export type ChainOfThoughtHeaderProps = ComponentProps<
-  typeof CollapsibleTrigger
->;
+type ChainOfThoughtHeaderProps = ComponentProps<typeof CollapsibleTrigger>;
 
 export const ChainOfThoughtHeader = memo(
   ({ className, children, ...props }: ChainOfThoughtHeaderProps) => {
@@ -101,7 +99,7 @@ export const ChainOfThoughtHeader = memo(
   }
 );
 
-export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
+type ChainOfThoughtStepProps = ComponentProps<"div"> & {
   icon?: LucideIcon;
   label: ReactNode;
   description?: ReactNode;
@@ -148,9 +146,9 @@ export const ChainOfThoughtStep = memo(
   )
 );
 
-export type ChainOfThoughtSearchResultsProps = ComponentProps<"div">;
+type ChainOfThoughtSearchResultsProps = ComponentProps<"div">;
 
-export const ChainOfThoughtSearchResults = memo(
+const ChainOfThoughtSearchResults = memo(
   ({ className, ...props }: ChainOfThoughtSearchResultsProps) => (
     <div
       className={cn("flex flex-wrap items-center gap-2", className)}
@@ -159,9 +157,9 @@ export const ChainOfThoughtSearchResults = memo(
   )
 );
 
-export type ChainOfThoughtSearchResultProps = ComponentProps<typeof Badge>;
+type ChainOfThoughtSearchResultProps = ComponentProps<typeof Badge>;
 
-export const ChainOfThoughtSearchResult = memo(
+const ChainOfThoughtSearchResult = memo(
   ({ className, children, ...props }: ChainOfThoughtSearchResultProps) => (
     <Badge
       className={cn("gap-1 px-2 py-0.5 font-normal text-xs", className)}
@@ -173,9 +171,7 @@ export const ChainOfThoughtSearchResult = memo(
   )
 );
 
-export type ChainOfThoughtContentProps = ComponentProps<
-  typeof CollapsibleContent
->;
+type ChainOfThoughtContentProps = ComponentProps<typeof CollapsibleContent>;
 
 export const ChainOfThoughtContent = memo(
   ({ className, children, ...props }: ChainOfThoughtContentProps) => {
@@ -198,11 +194,11 @@ export const ChainOfThoughtContent = memo(
   }
 );
 
-export type ChainOfThoughtImageProps = ComponentProps<"div"> & {
+type ChainOfThoughtImageProps = ComponentProps<"div"> & {
   caption?: string;
 };
 
-export const ChainOfThoughtImage = memo(
+const ChainOfThoughtImage = memo(
   ({ className, children, caption, ...props }: ChainOfThoughtImageProps) => (
     <div className={cn("mt-2 space-y-2", className)} {...props}>
       <div className="relative flex max-h-[22rem] items-center justify-center overflow-hidden rounded-lg bg-muted p-3">

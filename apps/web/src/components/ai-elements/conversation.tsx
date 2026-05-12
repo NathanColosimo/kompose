@@ -7,7 +7,7 @@ import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+type ConversationProps = ComponentProps<typeof StickToBottom>;
 
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
@@ -19,9 +19,7 @@ export const Conversation = ({ className, ...props }: ConversationProps) => (
   />
 );
 
-export type ConversationContentProps = ComponentProps<
-  typeof StickToBottom.Content
->;
+type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>;
 
 export const ConversationContent = ({
   className,
@@ -33,7 +31,7 @@ export const ConversationContent = ({
   />
 );
 
-export type ConversationEmptyStateProps = ComponentProps<"div"> & {
+type ConversationEmptyStateProps = ComponentProps<"div"> & {
   title?: string;
   description?: string;
   icon?: React.ReactNode;
@@ -68,7 +66,7 @@ export const ConversationEmptyState = ({
   </div>
 );
 
-export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
+type ConversationScrollButtonProps = ComponentProps<typeof Button>;
 
 export const ConversationScrollButton = ({
   className,
@@ -99,12 +97,12 @@ export const ConversationScrollButton = ({
   );
 };
 
-export interface ConversationMessage {
+interface ConversationMessage {
   content: string;
   role: "user" | "assistant" | "system" | "data" | "tool";
 }
 
-export type ConversationDownloadProps = Omit<
+type ConversationDownloadProps = Omit<
   ComponentProps<typeof Button>,
   "onClick"
 > & {
@@ -119,7 +117,7 @@ const defaultFormatMessage = (message: ConversationMessage): string => {
   return `**${roleLabel}:** ${message.content}`;
 };
 
-export const messagesToMarkdown = (
+const messagesToMarkdown = (
   messages: ConversationMessage[],
   formatMessage: (
     message: ConversationMessage,
@@ -127,7 +125,7 @@ export const messagesToMarkdown = (
   ) => string = defaultFormatMessage
 ): string => messages.map((msg, i) => formatMessage(msg, i)).join("\n\n");
 
-export const ConversationDownload = ({
+const ConversationDownload = ({
   messages,
   filename = "conversation.md",
   formatMessage = defaultFormatMessage,
