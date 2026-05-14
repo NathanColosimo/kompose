@@ -46,10 +46,20 @@ export function useTags() {
 
   const deleteTag = useMutation({
     mutationFn: async (id: string) => await orpc.tags.delete({ id }),
-    onSuccess: (_res, id) => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: TAGS_QUERY_KEY });
+      const previous = queryClient.getQueryData<TagSelect[]>(TAGS_QUERY_KEY);
       queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) =>
         (old ?? []).filter((tag) => tag.id !== id)
       );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(TAGS_QUERY_KEY, context.previous);
+      }
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
@@ -59,13 +69,27 @@ export function useTags() {
       const tag = await orpc.tags.update(input);
       return tagSelectSchemaWithIcon.parse(tag);
     },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: TAGS_QUERY_KEY });
+      const previous = queryClient.getQueryData<TagSelect[]>(TAGS_QUERY_KEY);
+      queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) =>
+        (old ?? [])
+          .map((tag) => (tag.id === input.id ? { ...tag, ...input } : tag))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      return { previous };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(TAGS_QUERY_KEY, context.previous);
+      }
+    },
     onSuccess: (updated) => {
-      queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) => {
-        const next = (old ?? []).map((tag) =>
-          tag.id === updated.id ? updated : tag
-        );
-        return next.sort((a, b) => a.name.localeCompare(b.name));
-      });
+      queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) =>
+        (old ?? [])
+          .map((tag) => (tag.id === updated.id ? updated : tag))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });

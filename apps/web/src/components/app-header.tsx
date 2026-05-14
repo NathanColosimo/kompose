@@ -8,18 +8,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
-  Check,
   LogOut,
   MessageSquareIcon,
-  Pencil,
+  Plus,
   RotateCw,
   Search,
   Settings,
   Tag as TagIcon,
+  Trash2,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useReducer, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,12 +43,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import { Label } from "@/components/ui/label";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
   TooltipContent,
@@ -63,7 +63,7 @@ import {
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
-import { TagIconPicker } from "./tags/tag-icon-picker";
+import { TagIconPickerPopover } from "./tags/tag-icon-picker";
 import { useTauriUpdater } from "./tauri-updater";
 
 /**
@@ -240,365 +240,280 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   );
 }
 
-interface TagsMenuState {
-  deleteTarget: { id: string; name: string } | null;
-  editIcon: TagIconName;
-  editingTagId: string | null;
-  editName: string;
-  icon: TagIconName;
-  isEditMode: boolean;
-  name: string;
-  open: boolean;
-  showIconPicker: boolean;
-}
-
-type TagsMenuAction =
-  | { type: "open"; forceEditMode: boolean }
-  | { type: "close" }
-  | { type: "set-edit-mode"; value: boolean }
-  | { type: "set-name"; value: string }
-  | { type: "set-icon"; value: TagIconName }
-  | { type: "clear-name" }
-  | { type: "start-editing"; tag: TagSelect; openPicker?: boolean }
-  | { type: "stop-editing" }
-  | { type: "set-edit-name"; value: string }
-  | { type: "set-edit-icon"; value: TagIconName }
-  | { type: "set-show-icon-picker"; value: boolean }
-  | { type: "set-delete-target"; value: { id: string; name: string } | null };
-
-const tagsMenuInitialState: TagsMenuState = {
-  open: false,
-  isEditMode: false,
-  name: "",
-  icon: "Tag",
-  deleteTarget: null,
-  editingTagId: null,
-  editName: "",
-  editIcon: "Tag",
-  showIconPicker: false,
-};
-
-function tagsMenuReducer(
-  state: TagsMenuState,
-  action: TagsMenuAction
-): TagsMenuState {
-  switch (action.type) {
-    case "open":
-      return {
-        ...state,
-        open: true,
-        isEditMode: action.forceEditMode ? true : state.isEditMode,
-      };
-    case "close":
-      return {
-        ...state,
-        open: false,
-        editingTagId: null,
-        showIconPicker: false,
-      };
-    case "set-edit-mode":
-      return { ...state, isEditMode: action.value };
-    case "set-name":
-      return { ...state, name: action.value };
-    case "set-icon":
-      return { ...state, icon: action.value };
-    case "clear-name":
-      return { ...state, name: "" };
-    case "start-editing":
-      return {
-        ...state,
-        isEditMode: true,
-        editingTagId: action.tag.id,
-        editName: action.tag.name,
-        editIcon: action.tag.icon,
-        showIconPicker: action.openPicker ?? false,
-      };
-    case "stop-editing":
-      return { ...state, editingTagId: null, showIconPicker: false };
-    case "set-edit-name":
-      return { ...state, editName: action.value };
-    case "set-edit-icon":
-      return { ...state, editIcon: action.value };
-    case "set-show-icon-picker":
-      return { ...state, showIconPicker: action.value };
-    case "set-delete-target":
-      return { ...state, deleteTarget: action.value };
-    default:
-      return state;
-  }
-}
-
 function TagsMenu() {
   const { tagsQuery, createTag, updateTag, deleteTag } = useTags();
-  const [state, dispatch] = useReducer(tagsMenuReducer, tagsMenuInitialState);
-  const {
-    open,
-    isEditMode,
-    name,
-    icon,
-    deleteTarget,
-    editingTagId,
-    editName,
-    editIcon,
-    showIconPicker,
-  } = state;
-
+  const [open, setOpen] = useState(false);
   const tags = tagsQuery.data ?? [];
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) {
-      dispatch({ type: "open", forceEditMode: tags.length === 0 });
-    } else {
-      dispatch({ type: "close" });
-    }
-  };
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <Button size="icon" type="button" variant="ghost">
+          <TagIcon className="size-4" />
+          <span className="sr-only">Tags</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-0" sideOffset={8}>
+        <div className="px-3 pt-2.5 pb-1">
+          <span className="font-medium text-[11px] text-muted-foreground uppercase tracking-widest">
+            Tags
+          </span>
+        </div>
 
-  const handleCreate = () => {
+        {tags.length === 0 ? (
+          <div className="flex flex-col items-center gap-1.5 px-3 py-5 text-center">
+            <div className="flex size-9 items-center justify-center rounded-full bg-muted/50">
+              <TagIcon className="size-4 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Tags help you organize tasks
+            </p>
+          </div>
+        ) : (
+          <ScrollArea className="max-h-[240px]">
+            <div className="px-1.5 py-0.5">
+              {tags.map((tag) => (
+                <TagRow
+                  key={tag.id}
+                  onDelete={(id) => deleteTag.mutateAsync(id)}
+                  onUpdate={(input) => updateTag.mutate(input)}
+                  tag={tag}
+                />
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+
+        <div className="border-t px-1.5 py-1">
+          <CreateTagRow
+            isPending={createTag.isPending}
+            onCreate={(input) => createTag.mutateAsync(input)}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TagRow({
+  tag,
+  onUpdate,
+  onDelete,
+}: {
+  tag: TagSelect;
+  onUpdate: (input: { id: string; name?: string; icon?: TagIconName }) => void;
+  onDelete: (id: string) => Promise<unknown>;
+}) {
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(tag.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeletePending, setIsDeletePending] = useState(false);
+
+  const prevTagName = useRef(tag.name);
+  if (tag.name !== prevTagName.current) {
+    prevTagName.current = tag.name;
+    if (!editingName) {
+      setName(tag.name);
+    }
+  }
+
+  const inputCallbackRef = useCallback((el: HTMLInputElement | null) => {
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+
+  const Icon = tagIconMap[tag.icon];
+
+  const saveName = () => {
     const trimmed = name.trim();
-    if (!trimmed || createTag.isPending) {
-      return;
+    if (trimmed && trimmed !== tag.name) {
+      onUpdate({ id: tag.id, name: trimmed });
+    } else {
+      setName(tag.name);
     }
+    setEditingName(false);
+  };
 
-    createTag.mutate(
-      { name: trimmed, icon },
-      {
-        onSuccess: () => {
-          dispatch({ type: "clear-name" });
-        },
-      }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveName();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setName(tag.name);
+      setEditingName(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsDeletePending(true);
+    try {
+      await onDelete(tag.id);
+    } catch {
+      setIsDeletePending(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  if (confirmDelete) {
+    return (
+      <div className="flex h-8 items-center gap-1.5 rounded-md bg-destructive/10 px-2">
+        <span className="flex-1 truncate text-destructive/80 text-xs">
+          Delete &ldquo;{tag.name}&rdquo;?
+        </span>
+        <Button
+          onClick={() => setConfirmDelete(false)}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
+          No
+        </Button>
+        <Button
+          disabled={isDeletePending}
+          onClick={handleDelete}
+          size="xs"
+          type="button"
+          variant="destructive"
+        >
+          {isDeletePending ? "…" : "Yes"}
+        </Button>
+      </div>
     );
-  };
-
-  const startEditing = (tag: TagSelect, openPicker = false) => {
-    dispatch({ type: "start-editing", tag, openPicker });
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingTagId || updateTag.isPending) {
-      return;
-    }
-    const trimmed = editName.trim();
-    if (!trimmed) {
-      return;
-    }
-    updateTag.mutate(
-      { id: editingTagId, name: trimmed, icon: editIcon },
-      {
-        onSuccess: () => {
-          dispatch({ type: "stop-editing" });
-        },
-      }
-    );
-  };
-
-  const handleDelete = () => {
-    if (!deleteTarget || deleteTag.isPending) {
-      return;
-    }
-    const targetId = deleteTarget.id;
-    deleteTag.mutate(targetId, {
-      onSettled: () => {
-        dispatch({ type: "set-delete-target", value: null });
-      },
-    });
-  };
+  }
 
   return (
-    <>
-      <Popover onOpenChange={handleOpenChange} open={open}>
-        <PopoverTrigger asChild>
-          <Button size="icon" type="button" variant="ghost">
-            <TagIcon className="size-4" />
-            <span className="sr-only">Tags</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-80 p-3">
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-muted-foreground text-xs uppercase tracking-wide">
-                  Tags
-                </div>
-                <Button
-                  className="size-7"
-                  onClick={() => {
-                    if (tags.length === 0) {
-                      dispatch({ type: "set-edit-mode", value: true });
-                      return;
-                    }
-                    dispatch({ type: "set-edit-mode", value: !isEditMode });
-                    dispatch({ type: "stop-editing" });
-                  }}
-                  size="icon"
-                  type="button"
-                  variant={isEditMode ? "secondary" : "ghost"}
-                >
-                  <Pencil className="size-3.5" />
-                  <span className="sr-only">
-                    {isEditMode ? "Exit edit mode" : "Edit tags"}
-                  </span>
-                </Button>
-              </div>
-              {tags.length === 0 ? (
-                <div className="text-muted-foreground text-sm">
-                  No tags yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {tags.map((tag) => {
-                    const Icon = tagIconMap[tag.icon];
-                    const isEditing = editingTagId === tag.id;
-                    return (
-                      <div className="space-y-2" key={tag.id}>
-                        <div
-                          className={cn(
-                            "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                            isEditing && "border border-border"
-                          )}
-                        >
-                          <button
-                            className="flex items-center"
-                            onClick={() => startEditing(tag, true)}
-                            type="button"
-                          >
-                            <Icon className="size-4 text-muted-foreground" />
-                            <span className="sr-only">Edit tag icon</span>
-                          </button>
-                          {isEditing ? (
-                            <>
-                              <Input
-                                className="h-8"
-                                onChange={(event) =>
-                                  dispatch({
-                                    type: "set-edit-name",
-                                    value: event.target.value,
-                                  })
-                                }
-                                value={editName}
-                              />
-                              <Button
-                                className="size-7"
-                                onClick={handleSaveEdit}
-                                size="icon"
-                                type="button"
-                                variant="secondary"
-                              >
-                                <Check className="size-3.5" />
-                                <span className="sr-only">Save tag</span>
-                              </Button>
-                              <Button
-                                className="size-7"
-                                onClick={() =>
-                                  dispatch({ type: "stop-editing" })
-                                }
-                                size="icon"
-                                type="button"
-                                variant="ghost"
-                              >
-                                <X className="size-3.5" />
-                                <span className="sr-only">Cancel edit</span>
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                className="flex-1 truncate text-left"
-                                onClick={() => startEditing(tag, false)}
-                                type="button"
-                              >
-                                {tag.name}
-                              </button>
-                              {isEditMode ? (
-                                <Button
-                                  className="size-7 cursor-pointer"
-                                  onClick={() =>
-                                    dispatch({
-                                      type: "set-delete-target",
-                                      value: { id: tag.id, name: tag.name },
-                                    })
-                                  }
-                                  size="icon"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <X className="size-3.5" />
-                                  <span className="sr-only">Delete tag</span>
-                                </Button>
-                              ) : null}
-                            </>
-                          )}
-                        </div>
-                        {isEditing && showIconPicker ? (
-                          <TagIconPicker
-                            onChange={(value) =>
-                              dispatch({ type: "set-edit-icon", value })
-                            }
-                            value={editIcon}
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {isEditMode ? (
-              <div className="space-y-2 border-t pt-3">
-                <Label htmlFor="tag-name">Create tag</Label>
-                <Input
-                  id="tag-name"
-                  onChange={(event) =>
-                    dispatch({ type: "set-name", value: event.target.value })
-                  }
-                  placeholder="Tag name"
-                  value={name}
-                />
-                <TagIconPicker
-                  onChange={(value) => dispatch({ type: "set-icon", value })}
-                  value={icon}
-                />
-                <Button
-                  className="w-full"
-                  disabled={!name.trim() || createTag.isPending}
-                  onClick={handleCreate}
-                  type="button"
-                >
-                  {createTag.isPending ? "Creating…" : "Create tag"}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </PopoverContent>
-      </Popover>
-      <AlertDialog
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            dispatch({ type: "set-delete-target", value: null });
-          }
-        }}
-        open={Boolean(deleteTarget)}
+    <div className="group flex h-8 items-center gap-1 rounded-md px-1.5 transition-colors duration-100 hover:bg-muted/50">
+      <TagIconPickerPopover
+        onChange={(icon) => onUpdate({ id: tag.id, icon })}
+        value={tag.icon}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete tag?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the tag from all tasks.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteTag.isPending}
-              onClick={handleDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        <Button
+          className="text-muted-foreground"
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <Icon className="size-3.5" />
+        </Button>
+      </TagIconPickerPopover>
+
+      {editingName ? (
+        <Input
+          className="h-6 flex-1 bg-transparent"
+          onBlur={saveName}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={handleKeyDown}
+          ref={inputCallbackRef}
+          value={name}
+        />
+      ) : (
+        <button
+          className="min-w-0 flex-1 cursor-text truncate px-1 text-left text-sm"
+          onClick={() => setEditingName(true)}
+          type="button"
+        >
+          {name}
+        </button>
+      )}
+
+      <Button
+        className="text-muted-foreground opacity-0 transition-all duration-100 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        onClick={() => setConfirmDelete(true)}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+      >
+        <Trash2 className="size-3" />
+      </Button>
+    </div>
+  );
+}
+
+function CreateTagRow({
+  onCreate,
+  isPending,
+}: {
+  onCreate: (input: { name: string; icon: TagIconName }) => Promise<unknown>;
+  isPending: boolean;
+}) {
+  const [active, setActive] = useState(false);
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState<TagIconName>("Tag");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const inputCallbackRef = useCallback((el: HTMLInputElement | null) => {
+    inputRef.current = el;
+    if (el) {
+      el.focus();
+    }
+  }, []);
+
+  const handleCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || isPending) {
+      return;
+    }
+    await onCreate({ name: trimmed, icon });
+    setName("");
+    setIcon("Tag");
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCreate();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setName("");
+      setActive(false);
+    }
+  };
+
+  const SelectedIcon = tagIconMap[icon];
+
+  if (!active) {
+    return (
+      <Button
+        className="w-full justify-start gap-1 px-1.5 text-muted-foreground hover:text-foreground"
+        onClick={() => setActive(true)}
+        size="lg"
+        type="button"
+        variant="ghost"
+      >
+        <div className="flex size-6 items-center justify-center">
+          <Plus className="size-3.5" />
+        </div>
+        <span className="px-1 text-sm">New tag&hellip;</span>
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex h-8 items-center gap-1 rounded-md px-1.5">
+      <TagIconPickerPopover onChange={setIcon} value={icon}>
+        <Button
+          className="text-muted-foreground"
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <SelectedIcon className="size-3.5" />
+        </Button>
+      </TagIconPickerPopover>
+
+      <Input
+        className="h-6 flex-1 bg-transparent"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Tag name"
+        ref={inputCallbackRef}
+        value={name}
+      />
+    </div>
   );
 }
 
