@@ -62,6 +62,7 @@ export function CreateTaskForm({
     handleSubmit,
     control,
     reset,
+    setValue,
     formState: { isSubmitting },
   } = useForm<ClientTaskInsertDecoded>({
     defaultValues: buildDefaultValues(defaultTagIds),
@@ -189,7 +190,12 @@ export function CreateTaskForm({
                         <div className="border-t p-2">
                           <Button
                             className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
-                            onClick={() => field.onChange(null)}
+                            onClick={() => {
+                              field.onChange(null);
+                              setValue("startTime", null, {
+                                shouldDirty: true,
+                              });
+                            }}
                             size="sm"
                             type="button"
                             variant="ghost"

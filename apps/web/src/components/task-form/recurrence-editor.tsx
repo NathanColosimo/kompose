@@ -51,7 +51,7 @@ type RecurrenceAction =
 
 function recurrenceReducer(
   state: TaskRecurrenceEditorState,
-  action: RecurrenceAction,
+  action: RecurrenceAction
 ): TaskRecurrenceEditorState {
   switch (action.type) {
     case "reset":
@@ -61,7 +61,10 @@ function recurrenceReducer(
     case "set-interval":
       return { ...state, interval: action.interval };
     case "toggle-day":
-      return { ...state, byDay: toggleTaskRecurrenceDay(state.byDay, action.day) };
+      return {
+        ...state,
+        byDay: toggleTaskRecurrenceDay(state.byDay, action.day),
+      };
     case "set-month-day":
       return { ...state, byMonthDay: action.byMonthDay };
     case "set-end-type":

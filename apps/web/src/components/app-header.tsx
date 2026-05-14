@@ -243,8 +243,8 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
 interface TagsMenuState {
   deleteTarget: { id: string; name: string } | null;
   editIcon: TagIconName;
-  editName: string;
   editingTagId: string | null;
+  editName: string;
   icon: TagIconName;
   isEditMode: boolean;
   name: string;
@@ -469,7 +469,10 @@ function TagsMenu() {
                               <Input
                                 className="h-8"
                                 onChange={(event) =>
-                                  dispatch({ type: "set-edit-name", value: event.target.value })
+                                  dispatch({
+                                    type: "set-edit-name",
+                                    value: event.target.value,
+                                  })
                                 }
                                 value={editName}
                               />
@@ -485,7 +488,9 @@ function TagsMenu() {
                               </Button>
                               <Button
                                 className="size-7"
-                                onClick={() => dispatch({ type: "stop-editing" })}
+                                onClick={() =>
+                                  dispatch({ type: "stop-editing" })
+                                }
                                 size="icon"
                                 type="button"
                                 variant="ghost"
@@ -507,7 +512,10 @@ function TagsMenu() {
                                 <Button
                                   className="size-7 cursor-pointer"
                                   onClick={() =>
-                                    dispatch({ type: "set-delete-target", value: { id: tag.id, name: tag.name } })
+                                    dispatch({
+                                      type: "set-delete-target",
+                                      value: { id: tag.id, name: tag.name },
+                                    })
                                   }
                                   size="icon"
                                   type="button"
@@ -522,7 +530,9 @@ function TagsMenu() {
                         </div>
                         {isEditing && showIconPicker ? (
                           <TagIconPicker
-                            onChange={(value) => dispatch({ type: "set-edit-icon", value })}
+                            onChange={(value) =>
+                              dispatch({ type: "set-edit-icon", value })
+                            }
                             value={editIcon}
                           />
                         ) : null}
@@ -538,11 +548,16 @@ function TagsMenu() {
                 <Label htmlFor="tag-name">Create tag</Label>
                 <Input
                   id="tag-name"
-                  onChange={(event) => dispatch({ type: "set-name", value: event.target.value })}
+                  onChange={(event) =>
+                    dispatch({ type: "set-name", value: event.target.value })
+                  }
                   placeholder="Tag name"
                   value={name}
                 />
-                <TagIconPicker onChange={(value) => dispatch({ type: "set-icon", value })} value={icon} />
+                <TagIconPicker
+                  onChange={(value) => dispatch({ type: "set-icon", value })}
+                  value={icon}
+                />
                 <Button
                   className="w-full"
                   disabled={!name.trim() || createTag.isPending}

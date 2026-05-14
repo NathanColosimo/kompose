@@ -7,15 +7,12 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "../atoms/current-date";
+import { isInboxTask } from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
 /** Filter out recurring tasks (both masters and occurrences). */
 export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
   task.seriesMasterId === null;
-
-/** Inbox: uncompleted tasks with no startDate/startTime. */
-const isInboxTask = (task: TaskSelectDecoded): boolean =>
-  task.status !== "done" && task.startDate === null && task.startTime === null;
 
 /** Overdue: uncompleted tasks with past due date or past end time (start + duration). */
 export const isOverdue = (
@@ -112,11 +109,9 @@ export function useTaskSections() {
         };
       }
 
-      // Inbox remains non-recurring so scheduled series stay in Today sections only.
-      const nonRecurring = tasks.filter(isNonRecurring);
-
-      // Inbox: uncompleted, no startDate/startTime, sorted by updatedAt desc.
-      const inbox = nonRecurring
+      // Inbox: uncompleted, non-recurring, no startDate. This also catches
+      // legacy rows with an orphaned startTime but no startDate.
+      const inbox = tasks
         .filter(isInboxTask)
         .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
 

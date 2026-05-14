@@ -530,15 +530,15 @@ function RecurrenceEditor({
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
   deleteScope: RecurrenceScope;
-  simpleDeleteConfirmOpen: boolean;
-  scopeDialogOpen: boolean;
   pendingSave: {
     variables: UpdateGoogleEventInput;
     defaultScope: RecurrenceScope;
     hasDataEdits: boolean;
     calendarChanged?: { destinationCalendarId: string };
   } | null;
+  scopeDialogOpen: boolean;
   selectedScope: RecurrenceScope;
+  simpleDeleteConfirmOpen: boolean;
 }
 
 type EventEditDialogAction =

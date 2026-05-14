@@ -16,7 +16,6 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { useMountEffect } from "@/hooks/use-mount-effect";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -27,6 +26,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
   formatPlainDate,
   pickerDateToTemporal,

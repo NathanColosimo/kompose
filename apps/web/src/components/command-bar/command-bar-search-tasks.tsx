@@ -17,9 +17,11 @@ import {
   createCommandBarTaskOpenRequest,
   resolveTaskSearchDestination,
   serializeCommandBarTaskOpenRequest,
+  type TaskSearchDestination,
 } from "@kompose/state/task-search-routing";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  CalendarClockIcon,
   CalendarIcon,
   CircleDotIcon,
   CircleIcon,
@@ -60,11 +62,40 @@ function getStatusIcon(status: "todo" | "in_progress" | "done") {
   }
 }
 
-/**
- * Check if a task is scheduled on the calendar (has both startDate and startTime).
- */
-function isScheduledOnCalendar(task: TaskSelectDecoded): boolean {
-  return task.startDate !== null && task.startTime !== null;
+function TaskLocationIndicator({
+  destination,
+}: {
+  destination: TaskSearchDestination;
+}) {
+  if (destination.kind === "calendar") {
+    return (
+      <span className="flex items-center gap-1 text-muted-foreground text-sm">
+        <CalendarIcon className="size-3.5" />
+        {formatPlainDate(destination.date, {
+          month: "short",
+          day: "numeric",
+        })}
+      </span>
+    );
+  }
+
+  if (destination.kind === "sidebar" && destination.view === "today") {
+    return (
+      <span className="flex items-center gap-1 text-muted-foreground text-sm">
+        <CalendarClockIcon className="size-3.5" />
+        Today
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1 text-muted-foreground text-sm">
+      <InboxIcon className="size-3.5" />
+      {destination.kind === "sidebar" && destination.view === "inbox"
+        ? "Inbox"
+        : "Task"}
+    </span>
+  );
 }
 
 /**
@@ -223,7 +254,11 @@ export function CommandBarSearchTasks({
     <CommandGroup heading="Tasks">
       {filteredTasks.map((task) => {
         const StatusIcon = getStatusIcon(task.status);
-        const isScheduled = isScheduledOnCalendar(task);
+        const destination = resolveTaskSearchDestination(task, {
+          today,
+          now,
+          timeZone,
+        });
 
         return (
           <CommandItem
@@ -234,22 +269,7 @@ export function CommandBarSearchTasks({
             <StatusIcon className="text-muted-foreground" />
             <span className="flex-1 truncate">{task.title}</span>
 
-            {/* Location indicator */}
-            {isScheduled ? (
-              <span className="flex items-center gap-1 text-muted-foreground text-sm">
-                <CalendarIcon className="size-3.5" />
-                {task.startDate &&
-                  formatPlainDate(task.startDate, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-muted-foreground text-sm">
-                <InboxIcon className="size-3.5" />
-                Inbox
-              </span>
-            )}
+            <TaskLocationIndicator destination={destination} />
           </CommandItem>
         );
       })}

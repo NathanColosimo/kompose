@@ -462,16 +462,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       const whoopItems: PositionedItem[] = allWorkouts.flatMap((workout) => {
         const wStart = isoStringToZonedDateTime(workout.start, timeZone);
         const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
-        if (
-          compare(wEnd, dayStart) <= 0 ||
-          compare(wStart, dayEndZdt) >= 0
-        ) {
+        if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEndZdt) >= 0) {
           return [];
         }
-        const clampedStart =
-          compare(wStart, dayStart) < 0 ? dayStart : wStart;
-        const clampedEnd =
-          compare(wEnd, dayEndZdt) > 0 ? dayEndZdt : wEnd;
+        const clampedStart = compare(wStart, dayStart) < 0 ? dayStart : wStart;
+        const clampedEnd = compare(wEnd, dayEndZdt) > 0 ? dayEndZdt : wEnd;
         const startMin = minutesFromMidnight(clampedStart);
         const rawEndMin = minutesFromMidnight(clampedEnd);
         const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;

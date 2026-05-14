@@ -35,9 +35,11 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
   return task.startDate !== null && task.startTime !== null;
 }
 
-function isInboxTask(task: TaskSelectDecoded): boolean {
+export function isInboxTask(task: TaskSelectDecoded): boolean {
   return (
-    task.status !== "done" && task.startDate === null && task.startTime === null
+    task.status !== "done" &&
+    task.seriesMasterId === null &&
+    task.startDate === null
   );
 }
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMountEffect } from "@/hooks/use-mount-effect";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
   applyDesktopCommandBarShortcutPreset,
   type DesktopCommandBarShortcutPresetId,
