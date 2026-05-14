@@ -165,6 +165,24 @@ function logGoogleEventUpdateFailure(params: {
   });
 }
 
+function buildThisOccurrenceUpdatePayload(
+  event: CreateEvent,
+  currentEvent: Event
+): CreateEvent {
+  if (!currentEvent.recurringEventId) {
+    return event;
+  }
+
+  const { recurrence: _recurrence, ...singleOccurrence } = event;
+  return {
+    ...singleOccurrence,
+    recurringEventId: currentEvent.recurringEventId,
+    ...(currentEvent.originalStartTime
+      ? { originalStartTime: currentEvent.originalStartTime }
+      : {}),
+  };
+}
+
 // -- Google User Info (standalone, no Effect) --
 
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
@@ -230,7 +248,8 @@ export type GoogleCalendarService = {
     calendarId: string,
     eventId: string,
     event: CreateEvent,
-    scope: RecurrenceScope
+    scope: RecurrenceScope,
+    currentEvent: Event
   ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
   /**
    * Move an event between calendars, supporting recurring scopes.
@@ -554,14 +573,21 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       return parsed.data;
     });
 
-  const updateEventThis = (calendarId: string, eventId: string, event: CreateEvent) =>
+  const updateEventThis = (
+    calendarId: string,
+    eventId: string,
+    event: CreateEvent,
+    currentEvent: Event
+  ) =>
     Effect.gen(function* () {
-      yield* Effect.annotateCurrentSpan("eventType", event.eventType ?? "default");
-      const conferenceDataVersion = getConferenceDataVersion(event);
+      const payload = buildThisOccurrenceUpdatePayload(event, currentEvent);
+
+      yield* Effect.annotateCurrentSpan("eventType", payload.eventType ?? "default");
+      const conferenceDataVersion = getConferenceDataVersion(payload);
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(eventId, {
-            ...event,
+            ...payload,
             calendarId,
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
           }),
@@ -571,7 +597,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             calendarId,
             eventId,
             scope: "this",
-            event,
+            event: payload,
             cause,
           });
           return new GoogleApiError({ cause });
@@ -774,13 +800,19 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
     });
 
   const updateEvent = Effect.fn("GoogleCalendar.updateEvent")(
-    function* (calendarId: string, eventId: string, event: CreateEvent, scope: RecurrenceScope) {
+    function* (
+      calendarId: string,
+      eventId: string,
+      event: CreateEvent,
+      scope: RecurrenceScope,
+      currentEvent: Event
+    ) {
       yield* Effect.annotateCurrentSpan("calendarId", calendarId);
       yield* Effect.annotateCurrentSpan("eventId", eventId);
       yield* Effect.annotateCurrentSpan("scope", scope);
       switch (scope) {
         case "this":
-          return yield* updateEventThis(calendarId, eventId, event);
+          return yield* updateEventThis(calendarId, eventId, event, currentEvent);
         case "all":
           return yield* updateEventAll(calendarId, eventId, event);
         case "following":

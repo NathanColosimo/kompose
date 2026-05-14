@@ -586,7 +586,8 @@ export const googleCalRouter = os.router({
             input.calendarId,
             input.eventId,
             input.event,
-            input.scope
+            input.scope,
+            currentEvent
           );
         }).pipe(Effect.provide(GoogleCalendarLive(accessToken)));
 
