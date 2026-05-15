@@ -16,7 +16,16 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   reactCompiler: true,
   // Force environment validation at build time.
-  transpilePackages: ["@t3-oss/env-nextjs", "@t3-oss/env-core"],
+  transpilePackages: [
+    "@t3-oss/env-nextjs",
+    "@t3-oss/env-core",
+    "pg",
+    "pg-connection-string",
+    "pg-pool",
+    "pg-protocol",
+    "pg-types",
+    "pgpass",
+  ],
   experimental: {
     turbopackFileSystemCacheForDev: true,
     optimizePackageImports: ["lucide-react"],

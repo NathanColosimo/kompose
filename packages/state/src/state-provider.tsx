@@ -55,10 +55,8 @@ function StateHydrator({
   // Without this, atomWithQuery creates its own QueryClient and
   // queryClient.invalidateQueries / refetchQueries won't reach the atoms.
   const queryClient = useQueryClient();
-  useHydrateAtoms([
-    [stateConfigAtom, config],
-    [queryClientAtom, queryClient],
-  ]);
+  useHydrateAtoms([[stateConfigAtom, config]]);
+  useHydrateAtoms([[queryClientAtom, queryClient]]);
 
   // Keep today/now atoms fresh across midnight boundaries and app resume.
   useTodayTick(subscribeToResume);
