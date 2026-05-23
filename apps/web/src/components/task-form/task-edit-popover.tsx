@@ -560,26 +560,6 @@ export function TaskEditForm({
     };
   }, [applySharedFields, getSharedFields]);
 
-  // Format start time for the time input (HH:mm) - uses watchedValues for reactivity
-  const startTimeValue = watchedValues.startTime
-    ? `${String(watchedValues.startTime.hour).padStart(2, "0")}:${String(watchedValues.startTime.minute).padStart(2, "0")}`
-    : "";
-
-  const handleTimeChange = (value: string) => {
-    if (!value) {
-      setValue("startTime", null, { shouldDirty: true });
-      return;
-    }
-    const [hours, minutes] = value.split(":").map(Number);
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
-      return;
-    }
-
-    // Create PlainTime directly (just time of day, no date)
-    const next = Temporal.PlainTime.from({ hour: hours, minute: minutes });
-    setValue("startTime", next, { shouldDirty: true });
-  };
-
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
       <Input
@@ -658,10 +638,29 @@ export function TaskEditForm({
           )}
         />
 
-        <TimePicker
-          onChange={handleTimeChange}
-          placeholder="Time"
-          value={startTimeValue}
+        <Controller
+          control={control}
+          name="startTime"
+          render={({ field }) => {
+            const value = field.value
+              ? `${String(field.value.hour).padStart(2, "0")}:${String(
+                  field.value.minute
+                ).padStart(2, "0")}`
+              : "";
+
+            return (
+              <TimePicker
+                onChange={(nextValue) => {
+                  const [hours, minutes] = nextValue.split(":").map(Number);
+                  field.onChange(
+                    Temporal.PlainTime.from({ hour: hours, minute: minutes })
+                  );
+                }}
+                placeholder="Time"
+                value={value}
+              />
+            );
+          }}
         />
 
         <Controller

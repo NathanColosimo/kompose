@@ -1,9 +1,9 @@
-import { CreateEvent, Event } from "./schema";
-
+import type { CreateEvent, Event } from "./schema";
 
 const STRIP_TIME_SEPARATORS = /[-:]/g;
 const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/;
-const UNTIL_REGEX = /UNTIL=[^;]+/;
+const UNTIL_REGEX = /;?UNTIL=[^;]+/;
+const COUNT_REGEX = /;?COUNT=[^;]+/;
 
 export function truncateRecurrenceForFollowing(
   recurrence: string[],
@@ -11,13 +11,11 @@ export function truncateRecurrenceForFollowing(
   allDay: boolean
 ): string[] {
   const baseRule = recurrence[0];
-
   if (!baseRule) {
     return recurrence;
   }
 
   const untilDate = new Date(occurrenceStart);
-  // For all-day, stop the original series at the prior day; for timed, stop one second before.
   if (allDay) {
     untilDate.setDate(untilDate.getDate() - 1);
     untilDate.setHours(0, 0, 0, 0);
@@ -29,14 +27,16 @@ export function truncateRecurrenceForFollowing(
     .replace(STRIP_TIME_SEPARATORS, "")
     .replace(STRIP_MILLIS_SUFFIX, "Z");
 
-  const nextRule = baseRule.includes("UNTIL=")
-    ? baseRule.replace(UNTIL_REGEX, `UNTIL=${untilIso}`)
-    : `${baseRule};UNTIL=${untilIso}`;
+  // COUNT and UNTIL are mutually exclusive per RFC 5545 — strip COUNT before adding UNTIL.
+  const withoutCountOrUntil = baseRule
+    .replace(COUNT_REGEX, "")
+    .replace(UNTIL_REGEX, "");
+  const nextRule = `${withoutCountOrUntil};UNTIL=${untilIso}`;
 
   return [nextRule, ...recurrence.slice(1)];
 }
 
- // Strip server-managed fields so create/update inputs stay valid.
+// Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {
   const {
     id: _id,

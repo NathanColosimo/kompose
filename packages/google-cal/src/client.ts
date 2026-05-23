@@ -607,12 +607,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       return yield* parseEventResponse(response);
     });
 
-  const updateEventAll = (calendarId: string, eventId: string, event: CreateEvent) =>
+  const updateEventAll = (calendarId: string, event: CreateEvent, currentEvent: Event) =>
     Effect.gen(function* () {
-      const master = yield* getMasterRecurrence(calendarId, {
-        ...event,
-        id: eventId,
-      });
+      const master = yield* getMasterRecurrence(calendarId, currentEvent);
 
       // Preserve the master date, but apply edited times and duration.
       const { start: mergedStart, end: mergedEnd } = mergeStartEnd(
@@ -622,13 +619,14 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         event.end
       );
 
+      const recurrence = event.recurrence?.length ? event.recurrence : master.recurrence;
       const payload = stripRecurringLink(
         sanitizeEventPayload({
           ...master,
           ...event,
           start: mergedStart,
           end: mergedEnd,
-          recurrence: event.recurrence ?? master.recurrence,
+          recurrence,
         })
       );
       yield* Effect.annotateCurrentSpan("eventType", payload.eventType ?? "default");
@@ -659,28 +657,23 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
 
   const updateEventFollowing = (
     calendarId: string,
-    eventId: string,
-    event: CreateEvent
+    event: CreateEvent,
+    currentEvent: Event
   ) =>
     Effect.gen(function* () {
-      const master = yield* getMasterRecurrence(calendarId, {
-        ...event,
-        id: eventId,
-      });
+      const master = yield* getMasterRecurrence(calendarId, currentEvent);
       if (!master.recurrence) {
         return yield* Effect.fail(
           new GoogleApiError({ cause: new Error("Event is not a recurring event") })
         );
       }
-      // Keep a copy so we can recover if the series create fails after truncation.
-      const originalRecurrence = [...master.recurrence];
 
-      const originalStartIso =
-        event.originalStartTime?.dateTime ?? event.originalStartTime?.date;
       const startIso =
-        originalStartIso ?? event.start.dateTime ?? event.start.date;
+        currentEvent.originalStartTime?.dateTime ?? currentEvent.originalStartTime?.date ??
+        currentEvent.start.dateTime ?? currentEvent.start.date;
+      const masterStartIso = master.start.dateTime ?? master.start.date;
 
-      if (!startIso) {
+      if (!startIso || !masterStartIso) {
         return yield* Effect.fail(
           new GoogleApiError({
             cause: new Error("Event start is not a date or dateTime"),
@@ -689,8 +682,16 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
       }
 
       const occurrenceStart = new Date(startIso);
+      const masterStart = new Date(masterStartIso);
 
-      // Cut off old master's recurrence to the edited occurrence.
+      // First occurrence → "following" is the same as "all"
+      if (occurrenceStart.getTime() <= masterStart.getTime()) {
+        return yield* updateEventAll(calendarId, event, currentEvent);
+      }
+
+      const originalRecurrence = [...master.recurrence];
+      const recurrence = event.recurrence?.length ? event.recurrence : master.recurrence;
+
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
         occurrenceStart,
@@ -732,15 +733,13 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         },
       });
 
-      // Validate the truncate update (even though we return the new series).
       yield* parseEventResponse(truncateMasterResponse);
 
-      // Create new series starting at the edited occurrence.
       const newSeriesPayload = stripRecurringLink(
         sanitizeEventPayload({
           ...master,
           ...event,
-          recurrence: event.recurrence ?? master.recurrence,
+          recurrence,
         })
       );
       const newSeriesConferenceDataVersion =
@@ -814,9 +813,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
         case "this":
           return yield* updateEventThis(calendarId, eventId, event, currentEvent);
         case "all":
-          return yield* updateEventAll(calendarId, eventId, event);
+          return yield* updateEventAll(calendarId, event, currentEvent);
         case "following":
-          return yield* updateEventFollowing(calendarId, eventId, event);
+          return yield* updateEventFollowing(calendarId, event, currentEvent);
         default:
           return yield* Effect.fail(
             new GoogleApiError({ cause: new Error("Invalid recurrence scope") })

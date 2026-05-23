@@ -6,18 +6,32 @@ import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { calculateEventPosition } from "../days-view";
 
+type ScheduledTask = TaskSelectDecoded & {
+  startDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime;
+};
+
 interface TaskEventProps {
   /** Column index for horizontal positioning (0, 1, or 2) */
   columnIndex?: number;
   /** How many consecutive columns this item spans */
   columnSpan?: number;
-  task: TaskSelectDecoded;
+  /** Whether this segment contains the task's actual start time */
+  isFirstSegment: boolean;
+  /** Whether this segment contains the task's actual end time */
+  isLastSegment: boolean;
+  /** Clipped end time for this visible day segment */
+  segmentEnd: Temporal.ZonedDateTime;
+  /** Clipped start time for this visible day segment */
+  segmentStart: Temporal.ZonedDateTime;
+  task: ScheduledTask;
   /** Total columns in this item's collision group */
   totalColumns?: number;
   /** Z-index for stacking order */
@@ -26,6 +40,10 @@ interface TaskEventProps {
 
 export const TaskEvent = memo(function TaskEventInner({
   task,
+  segmentStart,
+  segmentEnd,
+  isFirstSegment,
+  isLastSegment,
   columnIndex = 0,
   totalColumns = 1,
   columnSpan = 1,
@@ -34,7 +52,7 @@ export const TaskEvent = memo(function TaskEventInner({
   const timeZone = useAtomValue(timezoneAtom);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `event-${task.id}`,
+    id: `event-${task.id}-${segmentStart.toString()}`,
     data: {
       type: "task",
       task,
@@ -82,28 +100,23 @@ export const TaskEvent = memo(function TaskEventInner({
     [task.id, task.status, updateTask]
   );
 
-  // Need both startDate and startTime to display on calendar
-  if (!(task.startDate && task.startTime)) {
-    return null;
-  }
-
-  // Validate durationMinutes before use
   const durationMinutes = task.durationMinutes;
-  if (durationMinutes <= 0) {
-    return null;
-  }
-
-  // Combine startDate + startTime into ZonedDateTime
-  const startZdt = task.startDate.toZonedDateTime({
+  const segmentDurationMinutes = Math.round(
+    segmentEnd.since(segmentStart).total({ unit: "minutes" })
+  );
+  const taskStart = task.startDate.toZonedDateTime({
     timeZone,
     plainTime: task.startTime,
   });
-  const endZdt = startZdt.add({ minutes: durationMinutes });
+  const taskEnd = taskStart.add({ minutes: durationMinutes });
 
-  const { top, height } = calculateEventPosition(startZdt, durationMinutes);
+  const { top, height } = calculateEventPosition(
+    segmentStart,
+    segmentDurationMinutes
+  );
   const isDone = task.status === "done";
   // Center content only for 15-minute tasks.
-  const isShortTask = durationMinutes <= 15;
+  const isShortTask = segmentDurationMinutes <= 15;
 
   // Calculate horizontal positioning based on collision layout
   // columnSpan lets items expand into adjacent empty columns
@@ -158,26 +171,30 @@ export const TaskEvent = memo(function TaskEventInner({
                 {task.title}
               </div>
               {/* Hide time for short events (<30min) to prevent overflow */}
-              {durationMinutes >= 30 && (
+              {segmentDurationMinutes >= 30 && (
                 <div className="truncate text-[10px] opacity-80">
-                  {formatTime(startZdt)} - {formatTime(endZdt)}
+                  {formatTime(taskStart)} - {formatTime(taskEnd)}
                 </div>
               )}
             </div>
           </div>
         </div>
-        <div
-          className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-          ref={setStartHandleRef}
-          {...startAttributes}
-          {...startListeners}
-        />
-        <div
-          className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-          ref={setEndHandleRef}
-          {...endAttributes}
-          {...endListeners}
-        />
+        {isFirstSegment ? (
+          <div
+            className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            ref={setStartHandleRef}
+            {...startAttributes}
+            {...startListeners}
+          />
+        ) : null}
+        {isLastSegment ? (
+          <div
+            className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            ref={setEndHandleRef}
+            {...endAttributes}
+            {...endListeners}
+          />
+        ) : null}
       </div>
     </TaskEditPopover>
   );

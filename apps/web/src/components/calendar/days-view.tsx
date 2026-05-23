@@ -59,6 +59,19 @@ type PositionedGoogleEvent = GoogleEventWithSource & {
   end: Temporal.ZonedDateTime;
 };
 
+type ScheduledTask = TaskSelectDecoded & {
+  startDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime;
+};
+
+interface PositionedTaskSegment {
+  end: Temporal.ZonedDateTime;
+  isFirstSegment: boolean;
+  isLastSegment: boolean;
+  start: Temporal.ZonedDateTime;
+  task: ScheduledTask;
+}
+
 type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
 
 function parseDateOnlyLocal(dateStr: string): Temporal.PlainDate {
@@ -187,6 +200,47 @@ function toPositionedGoogleEvent(
   }
 }
 
+function isScheduledTask(task: TaskSelectDecoded): task is ScheduledTask {
+  return task.startDate !== null && task.startTime !== null;
+}
+
+function clampTaskToDay(
+  task: ScheduledTask,
+  day: Temporal.PlainDate,
+  timeZone: string
+): PositionedTaskSegment | null {
+  const start = task.startDate.toZonedDateTime({
+    timeZone,
+    plainTime: task.startTime,
+  });
+  const end = start.add({ minutes: task.durationMinutes });
+  const dayStart = day.toZonedDateTime({
+    timeZone,
+    plainTime: Temporal.PlainTime.from("00:00"),
+  });
+  const dayEnd = dayStart.add({ days: 1 });
+
+  if (
+    Temporal.ZonedDateTime.compare(end, dayStart) <= 0 ||
+    Temporal.ZonedDateTime.compare(start, dayEnd) >= 0
+  ) {
+    return null;
+  }
+
+  const clampedStart =
+    Temporal.ZonedDateTime.compare(start, dayStart) < 0 ? dayStart : start;
+  const clampedEnd =
+    Temporal.ZonedDateTime.compare(end, dayEnd) > 0 ? dayEnd : end;
+
+  return {
+    task,
+    start: clampedStart,
+    end: clampedEnd,
+    isFirstSegment: Temporal.ZonedDateTime.compare(clampedStart, start) === 0,
+    isLastSegment: Temporal.ZonedDateTime.compare(clampedEnd, end) === 0,
+  };
+}
+
 interface DaysViewProps {
   /** Google events (raw from API) to render separately from tasks */
   googleEvents?: GoogleEventWithSource[];
@@ -287,38 +341,25 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     return () => observer.disconnect();
   }, []);
 
-  // Filter to only tasks that have both startDate AND startTime (scheduled tasks)
-  const scheduledTasks = useMemo(
-    () =>
-      tasks.filter(
-        (task) => task.startDate !== null && task.startTime !== null
-      ),
-    [tasks]
-  );
+  const scheduledTasks = useMemo(() => tasks.filter(isScheduledTask), [tasks]);
 
-  // Group scheduled tasks by start day. Tasks crossing midnight stay on
-  // their start day only — the collision layout clamps endMinutes to 1440
-  // and the visual overflow past the grid bottom is minimal.
-  const tasksByDay = useMemo(() => {
-    const grouped = new Map<string, TaskSelectDecoded[]>();
+  // Split scheduled tasks into per-day display segments so tasks that cross
+  // midnight render in each touched day without overflowing the grid.
+  const taskSegmentsByDay = useMemo(() => {
+    const grouped = new Map<string, PositionedTaskSegment[]>();
 
     for (const day of visibleDays) {
-      grouped.set(day.toString(), []);
-    }
-
-    for (const task of scheduledTasks) {
-      if (!task.startDate) {
-        continue;
-      }
-      const dayKey = task.startDate.toString();
-      const bucket = grouped.get(dayKey);
-      if (bucket) {
-        bucket.push(task);
-      }
+      grouped.set(
+        day.toString(),
+        scheduledTasks.flatMap((task) => {
+          const segment = clampTaskToDay(task, day, timeZone);
+          return segment ? [segment] : [];
+        })
+      );
     }
 
     return grouped;
-  }, [visibleDays, scheduledTasks]);
+  }, [visibleDays, scheduledTasks, timeZone]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(
@@ -406,26 +447,21 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
     for (const day of visibleDays) {
       const dayKey = day.toString();
-      const dayTasks = tasksByDay.get(dayKey) ?? [];
+      const dayTaskSegments = taskSegmentsByDay.get(dayKey) ?? [];
       const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
 
-      // Convert tasks to PositionedItems. Tasks stay on their start day;
-      // endMinutes is clamped to 1440 (midnight) for collision layout.
-      const taskItems: PositionedItem[] = dayTasks.flatMap((task) => {
-        if (task.startDate === null || task.startTime === null) {
-          return [];
-        }
-        const startZdt = task.startDate.toZonedDateTime({
-          timeZone,
-          plainTime: task.startTime,
-        });
-        const startMinutes = minutesFromMidnight(startZdt);
-        const endMinutes = Math.min(
-          startMinutes + (task.durationMinutes ?? 30),
-          1440
-        );
+      // Convert task segments to PositionedItems. Segments are already
+      // clamped to day boundaries, matching the rendered task blocks.
+      const taskItems: PositionedItem[] = dayTaskSegments.map((segment) => {
+        const startMinutes = minutesFromMidnight(segment.start);
+        const rawEndMinutes = minutesFromMidnight(segment.end);
+        const endMinutes =
+          rawEndMinutes === 0 &&
+          Temporal.ZonedDateTime.compare(segment.end, segment.start) > 0
+            ? 1440
+            : rawEndMinutes;
         return {
-          id: `task-${task.id}`,
+          id: `task-${segment.task.id}`,
           type: "task" as const,
           startMinutes,
           endMinutes,
@@ -485,7 +521,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     }
 
     return layoutsByDay;
-  }, [visibleDays, tasksByDay, timedEventsByDay, allWorkouts, timeZone]);
+  }, [visibleDays, taskSegmentsByDay, timedEventsByDay, allWorkouts, timeZone]);
 
   // Each day column width as percentage of the parent container
   const dayColumnWidth = `${100 / visibleDays.length}%`;
@@ -563,14 +599,14 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
         {/* Scrollable day columns - vertical only */}
         <div
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="scrollbar-none min-h-0 flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden"
           ref={scrollRef}
         >
           <div className="flex w-full">
             {visibleDays.map((day) => {
               const dayKey = day.toString();
-              const dayTasks = tasksByDay.get(dayKey) ?? [];
-              const dayGoogleEvents = timedEventsByDay?.get(dayKey) ?? [];
+              const dayTaskSegments = taskSegmentsByDay.get(dayKey) ?? [];
+              const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
               const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
               return (
@@ -629,15 +665,19 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                         }
                       )
                     : null}
-                  {dayTasks.map((task) => {
-                    const layoutKey = `task-${task.id}`;
+                  {dayTaskSegments.map((segment) => {
+                    const layoutKey = `task-${segment.task.id}`;
                     const layout = dayLayouts?.get(layoutKey);
                     return (
                       <TaskEvent
                         columnIndex={layout?.columnIndex}
                         columnSpan={layout?.columnSpan}
-                        key={task.id}
-                        task={task}
+                        isFirstSegment={segment.isFirstSegment}
+                        isLastSegment={segment.isLastSegment}
+                        key={`${segment.task.id}-${segment.start.toString()}`}
+                        segmentEnd={segment.end}
+                        segmentStart={segment.start}
+                        task={segment.task}
                         totalColumns={layout?.totalColumns}
                         zIndex={layout?.zIndex}
                       />
