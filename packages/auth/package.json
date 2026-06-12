@@ -22,6 +22,8 @@
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
-    "better-auth": "catalog:"
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
   }
 }

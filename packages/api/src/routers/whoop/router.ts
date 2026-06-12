@@ -16,11 +16,12 @@ const WhoopLive = Layer.mergeAll(
 
 function handleError(error: WhoopError): never {
   switch (error._tag) {
-    case "WhoopAccountNotLinkedError":
-      throw new ORPCError("ACCOUNT_NOT_LINKED", {
+    case "WhoopTokenUnavailableError":
+      throw new ORPCError("SERVICE_UNAVAILABLE", {
         message: error.message,
         data: {
           accountId: error.accountId,
+          whoopErrorCode: "TOKEN_UNAVAILABLE",
         },
       });
     case "WhoopInvalidRangeError":
@@ -44,10 +45,10 @@ function handleError(error: WhoopError): never {
           status: error.status,
         },
       });
-    default:
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message: "An unexpected WHOOP error occurred",
-      });
+    default: {
+      const unknownError: never = error;
+      throw unknownError;
+    }
   }
 }
 

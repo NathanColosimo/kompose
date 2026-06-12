@@ -1,8 +1,8 @@
 import type { WhoopApiError, WhoopParseError } from "@kompose/whoop/errors";
 import { Schema } from "effect";
 
-export class WhoopAccountNotLinkedError extends Schema.TaggedError<WhoopAccountNotLinkedError>()(
-  "WhoopAccountNotLinkedError",
+export class WhoopTokenUnavailableError extends Schema.TaggedError<WhoopTokenUnavailableError>()(
+  "WhoopTokenUnavailableError",
   {
     accountId: Schema.String,
     message: Schema.String,
@@ -26,7 +26,7 @@ export class WhoopCacheError extends Schema.TaggedError<WhoopCacheError>()(
 ) {}
 
 export type WhoopError =
-  | WhoopAccountNotLinkedError
   | WhoopApiError
   | WhoopInvalidRangeError
+  | WhoopTokenUnavailableError
   | WhoopParseError;

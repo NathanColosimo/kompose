@@ -10,6 +10,7 @@ import { genericOAuth, lastLoginMethod } from "better-auth/plugins";
 import { bearer } from "better-auth/plugins/bearer";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { redisSecondaryStorage } from "./redis-storage";
+import { whoopOAuthTokens } from "./whoop";
 
 export const auth = betterAuth({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
@@ -141,6 +142,7 @@ export const auth = betterAuth({
         },
       ],
     }),
+    whoopOAuthTokens(),
     nextCookies(),
   ],
 });

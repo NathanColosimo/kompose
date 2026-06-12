@@ -16,7 +16,7 @@ import {
 } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
-import { WhoopAccountNotLinkedError, WhoopInvalidRangeError } from "./errors";
+import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
 const TODAY_CACHE_TTL_SECONDS = 15 * 60;
@@ -332,33 +332,32 @@ function ttlForDay(day: string, timeZone: string): number {
     : PAST_CACHE_TTL_SECONDS;
 }
 
-const checkWhoopAccountIsLinked = Effect.fn("checkWhoopAccountIsLinked")(
-  function* (userId: string, accountId: string) {
-    yield* Effect.annotateCurrentSpan("userId", userId);
-    yield* Effect.annotateCurrentSpan("accountId", accountId);
-
+const getLinkedWhoopAccessToken = Effect.fn("getLinkedWhoopAccessToken")(
+  function* (params: { accountId: string; userId: string }) {
+    yield* Effect.annotateCurrentSpan("userId", params.userId);
+    yield* Effect.annotateCurrentSpan("accountId", params.accountId);
     const token = yield* Effect.tryPromise({
-      try: () =>
-        auth.api.getAccessToken({
+      try: async () => 
+         await auth.api.getAccessToken({
           body: {
-            accountId,
-            userId,
+            accountId: params.accountId,
             providerId: "whoop",
+            userId: params.userId,
           },
         }),
       catch: (cause) =>
-        new WhoopAccountNotLinkedError({
-          accountId,
-          message: "WHOOP account not linked or token unavailable",
+        new WhoopTokenUnavailableError({
+          accountId: params.accountId,
+          message: "WHOOP token unavailable",
           cause,
         }),
     });
 
     if (!token.accessToken) {
-      return yield* new WhoopAccountNotLinkedError({
-        accountId,
-        message: "WHOOP account not linked or token unavailable",
-        cause: null,
+      return yield* new WhoopTokenUnavailableError({
+        accountId: params.accountId,
+        message: "WHOOP token not returned from Better Auth",
+        cause: new Error("WHOOP token not returned from Better Auth"),
       });
     }
 
@@ -394,10 +393,10 @@ export class WhoopService extends Effect.Service<WhoopService>()(
             params.timeZone
           );
 
-          const accessToken = yield* checkWhoopAccountIsLinked(
-            params.userId,
-            params.accountId
-          );
+          const accessToken = yield* getLinkedWhoopAccessToken({
+            accountId: params.accountId,
+            userId: params.userId,
+          });
 
           const requestedDays = inclusiveDays(params.startDate, params.endDate);
           const cachedDays = yield* cache
@@ -506,10 +505,10 @@ export class WhoopService extends Effect.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const accessToken = yield* checkWhoopAccountIsLinked(
-            params.userId,
-            params.accountId
-          );
+          const accessToken = yield* getLinkedWhoopAccessToken({
+            accountId: params.accountId,
+            userId: params.userId,
+          });
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();
