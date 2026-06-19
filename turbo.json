@@ -16,7 +16,16 @@
     "type-check": {
       "dependsOn": ["transit"]
     },
+    "build:prod": {
+      "cache": false
+    },
+    "build:prod:desktop": {
+      "cache": false
+    },
     "submit:prod": {
+      "cache": false
+    },
+    "submit:prod:desktop": {
       "cache": false
     },
     "dev": {
