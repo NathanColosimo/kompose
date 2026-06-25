@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { PIXELS_PER_HOUR } from "../constants";
 import { calculateEventPosition } from "../days-view";
 import { EventEditPopover } from "./event-edit-popover";
 
@@ -56,6 +57,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))
   );
+  const isShortEvent = durationMinutes <= 15;
   const isEditable = isGoogleEventEditable(event);
   const editBlockedReason = getGoogleEventEditBlockReason(event);
 
@@ -166,7 +168,10 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       {...listeners}
     >
       <div
-        className="h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
+        className={cn(
+          "h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
+          isShortEvent ? "flex items-center py-0" : ""
+        )}
         style={fillStyle}
       >
         {!isEditable && editBlockedReason ? (
@@ -185,7 +190,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
             </TooltipContent>
           </Tooltip>
         ) : null}
-        <div className="truncate font-medium text-xs">
+        <div className="min-w-0 truncate font-medium text-xs">
           {event.summary ?? "Google event"}
         </div>
         {/* Hide time for short events (<30min) to prevent overflow */}
@@ -233,11 +238,13 @@ export const GoogleCalendarEventPreview = memo(
   function GoogleCalendarEventPreviewInner({
     event,
     start,
+    end,
     accountId,
     calendarId,
   }: {
     event: GoogleEvent;
     start: Temporal.ZonedDateTime;
+    end: Temporal.ZonedDateTime;
     accountId: string;
     calendarId: string;
   }) {
@@ -255,6 +262,12 @@ export const GoogleCalendarEventPreview = memo(
         calendarBackgroundColor: calendar?.calendar.backgroundColor,
         calendarForegroundColor: calendar?.calendar.foregroundColor,
       });
+    const durationMinutes = Math.max(
+      1,
+      Math.round(end.since(start).total({ unit: "minutes" }))
+    );
+    const isShortEvent = durationMinutes <= 15;
+    const shortEventHeight = (15 / 60) * PIXELS_PER_HOUR;
 
     const fillStyle: React.CSSProperties = {
       backgroundColor: backgroundColor ?? "hsl(var(--primary))",
@@ -262,17 +275,25 @@ export const GoogleCalendarEventPreview = memo(
     };
 
     return (
-      <div className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg">
+      <div
+        className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg"
+        style={isShortEvent ? { height: shortEventHeight } : undefined}
+      >
         <div
-          className="rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30"
+          className={cn(
+            "rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
+            isShortEvent ? "flex h-full items-center py-0" : ""
+          )}
           style={fillStyle}
         >
-          <div className="truncate font-medium text-xs">
+          <div className="min-w-0 truncate font-medium text-xs">
             {event.summary ?? "Google event"}
           </div>
-          <div className="truncate text-[10px] opacity-80">
-            {formatTime(start)}
-          </div>
+          {isShortEvent ? null : (
+            <div className="truncate text-[10px] opacity-80">
+              {formatTime(start)}
+            </div>
+          )}
         </div>
       </div>
     );

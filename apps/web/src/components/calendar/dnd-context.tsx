@@ -604,6 +604,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         <GoogleCalendarEventPreview
           accountId={activeGoogleEvent.accountId}
           calendarId={activeGoogleEvent.calendarId}
+          end={activeGoogleEvent.end}
           event={activeGoogleEvent.event}
           key={`google-overlay-${activeGoogleEvent.event.id}`}
           start={activeGoogleEvent.start}

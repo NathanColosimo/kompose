@@ -11,6 +11,7 @@ import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
+import { PIXELS_PER_HOUR } from "../constants";
 import { calculateEventPosition } from "../days-view";
 
 type ScheduledTask = TaskSelectDecoded & {
@@ -202,6 +203,8 @@ export const TaskEvent = memo(function TaskEventInner({
 
 export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   const timeZone = useAtomValue(timezoneAtom);
+  const isShortTask = task.durationMinutes <= 15;
+  const shortTaskHeight = (15 / 60) * PIXELS_PER_HOUR;
 
   // Combine startDate + startTime if both exist for time display
   const startZdt =
@@ -210,10 +213,18 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
       : null;
 
   return (
-    <div className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg">
-      <div className="rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30">
+    <div
+      className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg"
+      style={isShortTask ? { height: shortTaskHeight } : undefined}
+    >
+      <div
+        className={cn(
+          "rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30",
+          isShortTask ? "flex h-full items-center px-1.5 py-0" : ""
+        )}
+      >
         <div className="truncate font-medium text-xs">{task.title}</div>
-        {startZdt ? (
+        {startZdt && !isShortTask ? (
           <div className="truncate text-[10px] opacity-80">
             {formatTime(startZdt)}
           </div>
