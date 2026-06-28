@@ -14,7 +14,7 @@
     "update:prod": "eas update --channel production --environment production --platform ios --auto",
     "prebuild": "expo prebuild",
     "web": "expo start --web",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/react": "catalog:",
@@ -89,7 +89,7 @@
     "@babel/core": "^7.29.0",
     "@babel/plugin-transform-react-jsx": "^7.28.6",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.2"
+    "typescript": "catalog:"
   },
   "private": true
 }

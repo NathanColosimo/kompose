@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "type-check": "tsgo --noEmit",
+    "type-check": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio --verbose --port 4984",
     "redis:studio": "open -a 'Redis Insight'",

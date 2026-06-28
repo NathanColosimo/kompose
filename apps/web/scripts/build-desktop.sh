@@ -84,6 +84,6 @@ TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build
 
 # The desktop build intentionally generates route types while API/docs/legal
 # routes are absent. Restore the source tree, then refresh typed routes so
-# follow-up `tsgo --noEmit` runs see the normal app route set again.
+# follow-up `tsc --noEmit` runs see the normal app route set again.
 restore_removed_sources
 TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next typegen

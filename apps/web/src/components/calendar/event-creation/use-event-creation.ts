@@ -170,8 +170,9 @@ export function useEventCreationState(): EventCreationContextValue {
       if (!(prev.isCreating && prev.startDateTime)) {
         return prev;
       }
+      const dragStartDateTime = startDateTimeRef.current ?? prev.startDateTime;
       // Only allow same-day creation
-      if (!isSameDay(prev.startDateTime, dateTime)) {
+      if (!isSameDay(dragStartDateTime, dateTime)) {
         return prev;
       }
 
@@ -180,17 +181,21 @@ export function useEventCreationState(): EventCreationContextValue {
 
       // Determine if dragging forward or backward
       const isForward =
-        Temporal.ZonedDateTime.compare(slotEnd, prev.startDateTime) > 0;
+        Temporal.ZonedDateTime.compare(slotEnd, dragStartDateTime) > 0;
 
       if (isForward) {
-        // Dragging forward: start stays, end moves
-        return { ...prev, endDateTime: slotEnd };
+        // Dragging forward: original start stays, end moves
+        return {
+          ...prev,
+          startDateTime: dragStartDateTime,
+          endDateTime: slotEnd,
+        };
       }
-      // Dragging backward: swap - dateTime becomes new start, original start becomes end
+      // Dragging backward: start moves, original drag range stays anchored.
       return {
         ...prev,
         startDateTime: dateTime,
-        endDateTime: prev.startDateTime.add({
+        endDateTime: dragStartDateTime.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
       };

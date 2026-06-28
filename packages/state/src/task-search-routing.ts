@@ -6,7 +6,7 @@ export type TaskSearchSidebarView = "inbox" | "today";
 
 export type TaskSearchDestination =
   | { kind: "calendar"; date: Temporal.PlainDate }
-  | { kind: "sidebar"; view: TaskSearchSidebarView }
+  | { date?: Temporal.PlainDate; kind: "sidebar"; view: TaskSearchSidebarView }
   | { kind: "unmapped"; reason: string };
 
 export interface ResolveTaskSearchDestinationOptions {
@@ -88,6 +88,12 @@ function isUnplannedTodayTask(
   );
 }
 
+function isDatedUnplannedTask(task: TaskSelectDecoded): boolean {
+  return (
+    task.status !== "done" && task.startDate !== null && task.startTime === null
+  );
+}
+
 function isDoneTodayTask(
   task: TaskSelectDecoded,
   today: Temporal.PlainDate,
@@ -117,6 +123,14 @@ export function resolveTaskSearchDestination(
     return {
       kind: "sidebar",
       view: "inbox",
+    };
+  }
+
+  if (isDatedUnplannedTask(task) && task.startDate) {
+    return {
+      kind: "sidebar",
+      view: "today",
+      date: task.startDate,
     };
   }
 
@@ -155,6 +169,7 @@ export function createCommandBarTaskOpenRequest(args: {
     taskId: args.taskId,
     target: "sidebar",
     sidebarView: args.destination.view,
+    date: args.destination.date,
   };
 }
 

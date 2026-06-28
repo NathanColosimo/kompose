@@ -10,7 +10,7 @@
   },
   "type": "module",
   "scripts": {
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",

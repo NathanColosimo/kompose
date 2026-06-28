@@ -23,7 +23,10 @@ export function applyCommandBarTaskOpenRequest(
     }) => void;
   }
 ) {
-  if (request.target === "calendar" && request.date) {
+  if (
+    (request.target === "calendar" || request.target === "sidebar") &&
+    request.date
+  ) {
     setCurrentDate(request.date);
   }
 

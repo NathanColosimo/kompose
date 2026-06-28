@@ -37,18 +37,28 @@ export const isOverdue = (
   return task.status !== "done" && (hasPastDueDate || hasPastStartTime);
 };
 
-/** Planned: scheduled on today's calendar (has startDate=today + startTime) and not overdue. */
+/** Planned: scheduled on the target calendar date. Today excludes overdue tasks. */
 const isPlanned = (
   task: TaskSelectDecoded,
+  targetDate: Temporal.PlainDate,
   today: Temporal.PlainDate,
   nowZdt: Temporal.ZonedDateTime,
   timeZone: string
-): boolean =>
-  task.status !== "done" &&
-  task.startDate !== null &&
-  task.startTime !== null &&
-  Temporal.PlainDate.compare(task.startDate, today) === 0 &&
-  !isOverdue(task, today, nowZdt, timeZone);
+): boolean => {
+  if (
+    task.status === "done" ||
+    task.startDate === null ||
+    task.startTime === null ||
+    Temporal.PlainDate.compare(task.startDate, targetDate) !== 0
+  ) {
+    return false;
+  }
+
+  return (
+    Temporal.PlainDate.compare(targetDate, today) !== 0 ||
+    !isOverdue(task, today, nowZdt, timeZone)
+  );
+};
 
 /**
  * Unplanned: unscheduled tasks with a start date and no start time.
@@ -75,25 +85,40 @@ const isUnplanned = (
   );
 };
 
-/** Done today: completed tasks updated on today's local date. */
-const isDoneToday = (
+/** Unplanned on a specific non-today date. */
+const isUnplannedOnDate = (
   task: TaskSelectDecoded,
-  today: Temporal.PlainDate,
+  targetDate: Temporal.PlainDate
+): boolean =>
+  task.status !== "done" &&
+  task.startDate !== null &&
+  task.startTime === null &&
+  Temporal.PlainDate.compare(task.startDate, targetDate) === 0;
+
+/** Done on target date: completed tasks updated on that local date. */
+const isDoneOnDate = (
+  task: TaskSelectDecoded,
+  targetDate: Temporal.PlainDate,
   timeZone: string
 ): boolean =>
   task.status === "done" &&
   Temporal.PlainDate.compare(
     task.updatedAt.toZonedDateTimeISO(timeZone).toPlainDate(),
-    today
+    targetDate
   ) === 0;
+
+interface UseTaskSectionsOptions {
+  targetDate?: Temporal.PlainDate;
+}
 
 /**
  * Shared task sections to keep Inbox/Today parity across web and native.
  */
-export function useTaskSections() {
+export function useTaskSections(options: UseTaskSectionsOptions = {}) {
   const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
+  const targetDate = options.targetDate ?? today;
   const nowZdt = useAtomValue(nowZonedDateTimeAtom);
 
   const { inboxTasks, overdueTasks, plannedTasks, unplannedTasks, doneTasks } =
@@ -115,19 +140,26 @@ export function useTaskSections() {
         .filter(isInboxTask)
         .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
 
-      // Today view sections.
-      const overdue = tasks.filter(
-        (task) =>
-          task.status !== "done" && isOverdue(task, today, nowZdt, timeZone)
-      );
+      // Date view sections. Overdue is only meaningful for real today.
+      const isTargetToday = Temporal.PlainDate.compare(targetDate, today) === 0;
+      const overdue = isTargetToday
+        ? tasks.filter(
+            (task) =>
+              task.status !== "done" && isOverdue(task, today, nowZdt, timeZone)
+          )
+        : [];
       const planned = tasks.filter((task) =>
-        isPlanned(task, today, nowZdt, timeZone)
+        isPlanned(task, targetDate, today, nowZdt, timeZone)
       );
-      const unplanned = tasks.filter(
-        (task) => task.status !== "done" && isUnplanned(task, today)
+      const unplanned = isTargetToday
+        ? tasks.filter(
+            (task) => task.status !== "done" && isUnplanned(task, today)
+          )
+        : tasks.filter((task) => isUnplannedOnDate(task, targetDate));
+      // Done: completed on the target date in the user's timezone.
+      const done = tasks.filter((task) =>
+        isDoneOnDate(task, targetDate, timeZone)
       );
-      // Done: completed today in the user's timezone.
-      const done = tasks.filter((task) => isDoneToday(task, today, timeZone));
 
       return {
         inboxTasks: inbox,
@@ -136,7 +168,7 @@ export function useTaskSections() {
         unplannedTasks: unplanned,
         doneTasks: done,
       };
-    }, [tasksQuery.data, timeZone, today, nowZdt]);
+    }, [tasksQuery.data, timeZone, targetDate, today, nowZdt]);
 
   return {
     tasksQuery,

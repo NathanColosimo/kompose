@@ -10,7 +10,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "lint": "biome check .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "effect": "catalog:",

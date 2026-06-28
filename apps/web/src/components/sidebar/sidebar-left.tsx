@@ -2,6 +2,10 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import {
+  currentDateAtom,
+  todayPlainDateAtom,
+} from "@kompose/state/atoms/current-date";
 import { sessionQueryAtom } from "@kompose/state/config";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
@@ -10,6 +14,7 @@ import { useAtom, useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
 import { CalendarClock, Inbox } from "lucide-react";
 import { type ComponentProps, useEffect, useMemo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import {
@@ -24,6 +29,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import {
   defaultSidebarLeftViewSelection,
@@ -59,8 +65,14 @@ const navMain: SidebarNavItem[] = [
   },
 ];
 
-function getBaseSidebarNavItem(id: SidebarLeftBaseViewId) {
-  return navMain.find((item) => item.id === id) ?? navMain[0];
+function getBaseSidebarNavItem(
+  navItems: SidebarNavItem[],
+  id: SidebarLeftBaseViewId
+) {
+  return (
+    navItems.find((item) => item.type === "base" && item.id === id) ??
+    navItems[0]
+  );
 }
 
 function getSidebarSelectionFromNavItem(item: SidebarNavItem) {
@@ -69,6 +81,44 @@ function getSidebarSelectionFromNavItem(item: SidebarNavItem) {
   }
 
   return { type: "base" as const, id: item.id as SidebarLeftBaseViewId };
+}
+
+function formatDateSidebarTitle(
+  date: Temporal.PlainDate,
+  today: Temporal.PlainDate
+) {
+  const dayOffset = today.until(date, { largestUnit: "day" }).days;
+
+  if (dayOffset === 0) {
+    return "Today";
+  }
+  if (dayOffset === 1) {
+    return "Tomorrow";
+  }
+  if (dayOffset === -1) {
+    return "Yesterday";
+  }
+  if (Math.abs(dayOffset) <= 6) {
+    return formatPlainDate(date, { weekday: "long" });
+  }
+
+  return formatPlainDate(
+    date,
+    date.year === today.year
+      ? { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" }
+  );
+}
+
+function formatDateSidebarEmptyMessage(dateTitle: string) {
+  const normalizedTitle =
+    dateTitle === "Today" ||
+    dateTitle === "Tomorrow" ||
+    dateTitle === "Yesterday"
+      ? dateTitle.toLowerCase()
+      : dateTitle;
+
+  return `Nothing for ${normalizedTitle}.`;
 }
 
 function renderEmptyMessage(message: string) {
@@ -98,11 +148,13 @@ function renderInboxContent(inboxTasks: TaskSelectDecoded[]) {
 }
 
 function renderTodayContent({
+  dateTitle,
   overdueTasks,
   plannedTasks,
   doneTasks,
   unplannedTasks,
 }: {
+  dateTitle: string;
   overdueTasks: TaskSelectDecoded[];
   plannedTasks: TaskSelectDecoded[];
   doneTasks: TaskSelectDecoded[];
@@ -114,7 +166,7 @@ function renderTodayContent({
   const hasDone = doneTasks.length > 0;
 
   if (!(hasOverdue || hasPlanned || hasUnplanned || hasDone)) {
-    return renderEmptyMessage("Nothing for today.");
+    return renderEmptyMessage(formatDateSidebarEmptyMessage(dateTitle));
   }
 
   return (
@@ -143,7 +195,7 @@ function renderTodayContent({
         </div>
       )}
 
-      {/* Planned section — scheduled on today's calendar, not yet overdue */}
+      {/* Planned section */}
       {hasPlanned && (
         <div>
           <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -227,6 +279,7 @@ function renderTagContent({
 
 function getSidebarContent({
   activeItem,
+  dateTitle,
   doneTasks,
   error,
   inboxTasks,
@@ -239,6 +292,7 @@ function getSidebarContent({
   unplannedTasks,
 }: {
   activeItem: SidebarNavItem | null;
+  dateTitle: string;
   doneTasks: TaskSelectDecoded[];
   error: unknown;
   inboxTasks: TaskSelectDecoded[];
@@ -277,6 +331,7 @@ function getSidebarContent({
       return renderInboxContent(inboxTasks);
     case "today":
       return renderTodayContent({
+        dateTitle,
         doneTasks,
         overdueTasks,
         plannedTasks,
@@ -292,8 +347,14 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     sidebarLeftViewSelectionAtom
   );
   const sessionQuery = useAtomValue(sessionQueryAtom);
+  const currentDate = useAtomValue(currentDateAtom);
+  const today = useAtomValue(todayPlainDateAtom);
   const { setOpen } = useSidebar();
   const { tagsQuery } = useTags();
+  const dateTitle = useMemo(
+    () => formatDateSidebarTitle(currentDate, today),
+    [currentDate, today]
+  );
   const {
     tasksQuery,
     inboxTasks,
@@ -301,7 +362,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     plannedTasks,
     unplannedTasks,
     doneTasks,
-  } = useTaskSections();
+  } = useTaskSections({ targetDate: currentDate });
   const activeTagId =
     activeViewSelection.type === "tag" ? activeViewSelection.tagId : null;
   const {
@@ -311,6 +372,9 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   } = useTagTaskSections(activeTagId);
 
   const navItems = useMemo(() => {
+    const baseItems = navMain.map((item) =>
+      item.id === "today" ? { ...item, title: dateTitle } : item
+    );
     const tagItems =
       tagsQuery.data?.map((tag) => ({
         id: `tag-${tag.id}`,
@@ -320,12 +384,12 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         tagId: tag.id,
       })) ?? [];
 
-    return [...navMain, ...tagItems];
-  }, [tagsQuery.data]);
+    return [...baseItems, ...tagItems];
+  }, [dateTitle, tagsQuery.data]);
 
   const activeItem = useMemo(() => {
     if (activeViewSelection.type === "base") {
-      return getBaseSidebarNavItem(activeViewSelection.id);
+      return getBaseSidebarNavItem(navItems, activeViewSelection.id);
     }
 
     return (
@@ -358,6 +422,15 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const { setNodeRef, isOver } = useDroppable({
     id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
     data: {
+      sidebarTargetDate:
+        activeViewSelection.type === "base" &&
+        activeViewSelection.id === "today"
+          ? currentDate.toString()
+          : undefined,
+      sidebarView:
+        activeViewSelection.type === "base"
+          ? activeViewSelection.id
+          : undefined,
       activeTab: activeItem?.title ?? "Inbox",
     },
   });
@@ -366,6 +439,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     () =>
       getSidebarContent({
         activeItem,
+        dateTitle,
         doneTasks,
         error: tasksQuery.error,
         inboxTasks,
@@ -379,6 +453,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       }),
     [
       activeItem,
+      dateTitle,
       doneTasks,
       inboxTasks,
       isSidebarLoading,
@@ -455,6 +530,12 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                   (activeViewSelection.type === "tag" ? "Tag" : "Inbox")}
               </div>
               <CreateTaskForm
+                defaultStartDateString={
+                  activeViewSelection.type === "base" &&
+                  activeViewSelection.id === "today"
+                    ? currentDate.toString()
+                    : undefined
+                }
                 defaultTagIds={
                   activeViewSelection.type === "tag"
                     ? [activeViewSelection.tagId]

@@ -57,6 +57,12 @@ interface PendingTaskUpdate {
   task: object;
 }
 
+interface SidebarDropData {
+  activeTab?: string;
+  sidebarTargetDate?: string;
+  sidebarView?: "inbox" | "today";
+}
+
 type ActiveGoogleEventData = Extract<
   DragData,
   { type: "google-event" | "google-event-resize" }
@@ -178,18 +184,23 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   /**
    * Handle unscheduling a task by clearing startDate and startTime but keeping the duration.
    * Called when a task is dropped on the sidebar task list.
-   * If dropped on the "Today" tab, sets startDate to today but clears startTime (unplanned for today).
+   * If dropped on the date sidebar, sets startDate to that date but clears startTime.
    */
   const handleTaskUnschedule = useCallback(
-    (task: TaskSelectDecoded, activeTab?: string) => {
-      // When dropping on the "Today" tab, set startDate to today but clear startTime
-      // This places the task in the "Unplanned" section for today
-      if (activeTab === "Today") {
-        const today = Temporal.Now.plainDateISO(timeZone);
+    (task: TaskSelectDecoded, sidebarData?: SidebarDropData) => {
+      const shouldMoveToDateSidebar =
+        sidebarData?.sidebarView === "today" ||
+        sidebarData?.activeTab === "Today";
+
+      if (shouldMoveToDateSidebar) {
+        const targetDate = sidebarData?.sidebarTargetDate
+          ? Temporal.PlainDate.from(sidebarData.sidebarTargetDate)
+          : Temporal.Now.plainDateISO(timeZone);
+
         updateTask.mutate({
           id: task.id,
           task: {
-            startDate: today,
+            startDate: targetDate,
             startTime: null,
             durationMinutes: task.durationMinutes,
           },
@@ -291,12 +302,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Handle drops on the sidebar list by unscheduling task cards.
   const handleSidebarDrop = useCallback(
-    (data: DragData, activeTab?: string) => {
+    (data: DragData, sidebarData?: SidebarDropData) => {
       if (data.type !== "task") {
         return;
       }
 
-      handleTaskUnschedule(data.task, activeTab);
+      handleTaskUnschedule(data.task, sidebarData);
     },
     [handleTaskUnschedule]
   );
@@ -362,11 +373,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
 
       if (overId === SIDEBAR_TASK_LIST_DROPPABLE_ID) {
-        // Extract the active tab from the droppable's data
-        const sidebarData = over.data?.current as
-          | { activeTab?: string }
-          | undefined;
-        handleSidebarDrop(data, sidebarData?.activeTab);
+        const sidebarData = over.data?.current as SidebarDropData | undefined;
+        handleSidebarDrop(data, sidebarData);
         return;
       }
 

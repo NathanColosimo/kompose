@@ -28,6 +28,7 @@ import {
   InboxIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import {
   CommandEmpty,
@@ -64,8 +65,10 @@ function getStatusIcon(status: "todo" | "in_progress" | "done") {
 
 function TaskLocationIndicator({
   destination,
+  today,
 }: {
   destination: TaskSearchDestination;
+  today: Temporal.PlainDate;
 }) {
   if (destination.kind === "calendar") {
     return (
@@ -80,10 +83,14 @@ function TaskLocationIndicator({
   }
 
   if (destination.kind === "sidebar" && destination.view === "today") {
+    const label = destination.date
+      ? formatSidebarDateLabel(destination.date, today)
+      : "Today";
+
     return (
       <span className="flex items-center gap-1 text-muted-foreground text-sm">
         <CalendarClockIcon className="size-3.5" />
-        Today
+        {label}
       </span>
     );
   }
@@ -96,6 +103,28 @@ function TaskLocationIndicator({
         : "Task"}
     </span>
   );
+}
+
+function formatSidebarDateLabel(
+  date: Temporal.PlainDate,
+  today: Temporal.PlainDate
+) {
+  const dayOffset = today.until(date, { largestUnit: "day" }).days;
+
+  if (dayOffset === 0) {
+    return "Today";
+  }
+  if (dayOffset === 1) {
+    return "Tomorrow";
+  }
+  if (dayOffset === -1) {
+    return "Yesterday";
+  }
+
+  return formatPlainDate(date, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /**
@@ -264,12 +293,12 @@ export function CommandBarSearchTasks({
           <CommandItem
             key={task.id}
             onSelect={() => handleSelectTask(task)}
-            value={task.title}
+            value={`task:${task.id}`}
           >
             <StatusIcon className="text-muted-foreground" />
             <span className="flex-1 truncate">{task.title}</span>
 
-            <TaskLocationIndicator destination={destination} />
+            <TaskLocationIndicator destination={destination} today={today} />
           </CommandItem>
         );
       })}

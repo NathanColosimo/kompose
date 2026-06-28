@@ -37,21 +37,32 @@ import { RecurrenceEditor } from "./recurrence-editor";
 
 const EMPTY_TAG_IDS: string[] = [];
 
-const buildDefaultValues = (tagIds: string[]) => ({
-  title: "",
-  description: "",
-  startDate: todayPlainDate(),
-  startTime: null,
-  durationMinutes: 30,
-  dueDate: todayPlainDate().add({ days: 1 }),
-  recurrence: null,
-  tagIds,
-});
+const buildDefaultValues = (
+  tagIds: string[],
+  defaultStartDateString?: string
+) => {
+  const startDate = defaultStartDateString
+    ? Temporal.PlainDate.from(defaultStartDateString)
+    : todayPlainDate();
+
+  return {
+    title: "",
+    description: "",
+    startDate,
+    startTime: null,
+    durationMinutes: 30,
+    dueDate: startDate.add({ days: 1 }),
+    recurrence: null,
+    tagIds,
+  };
+};
 
 export function CreateTaskForm({
   defaultTagIds = EMPTY_TAG_IDS,
+  defaultStartDateString,
 }: {
   defaultTagIds?: string[];
+  defaultStartDateString?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -65,7 +76,7 @@ export function CreateTaskForm({
     setValue,
     formState: { isSubmitting },
   } = useForm<ClientTaskInsertDecoded>({
-    defaultValues: buildDefaultValues(defaultTagIds),
+    defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
   });
 
   // Watch startDate for recurrence editor reference
@@ -74,17 +85,17 @@ export function CreateTaskForm({
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) {
-      reset(buildDefaultValues(defaultTagIds));
+      reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
     }
   };
 
   const onSubmit = useCallback(
     async (data: ClientTaskInsertDecoded) => {
       await createTask.mutateAsync(data);
-      reset(buildDefaultValues(defaultTagIds));
+      reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
       setOpen(false);
     },
-    [createTask, defaultTagIds, reset]
+    [createTask, defaultStartDateString, defaultTagIds, reset]
   );
 
   useHotkeys(

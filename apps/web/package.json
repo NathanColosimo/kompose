@@ -10,7 +10,7 @@
     "build:prod:desktop": "bun run desktop:build:signed",
     "build:desktop": "bash ./scripts/build-desktop.sh",
     "start": "bun ./node_modules/next/dist/bin/next start",
-    "type-check": "bun ./node_modules/next/dist/bin/next typegen && tsgo --noEmit",
+    "type-check": "bun ./node_modules/next/dist/bin/next typegen && tsc --noEmit",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build --bundles dmg",
@@ -109,6 +109,6 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "6.0.3"
   }
 }
