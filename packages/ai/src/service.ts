@@ -1,13 +1,14 @@
 import type { CreateAiSessionInput } from "@kompose/db/schema/ai";
+import { env } from "@kompose/env";
 import {
   convertToModelMessages,
   generateText,
-  stepCountIs,
+  isStepCount,
   streamText,
+  type ToolApprovalConfiguration,
   type ToolSet,
   TypeValidationError,
   type UIMessage,
-  type UIMessageChunk,
   validateUIMessages,
 } from "ai";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
@@ -45,21 +46,8 @@ function normalizeGeneratedSessionTitle(text: string): string | null {
   return withoutOuterQuotes.slice(0, MAX_SESSION_TITLE_LENGTH);
 }
 
-interface UiStreamResultLike {
-  toUIMessageStream: (options?: {
-    originalMessages?: UIMessage[];
-    generateMessageId?: () => string;
-    onFinish?: (input: { messages: UIMessage[] }) => void | Promise<void>;
-  }) => ReadableStream<UIMessageChunk>;
-  toUIMessageStreamResponse: (options: {
-    originalMessages: UIMessage[];
-    generateMessageId?: () => string;
-    onFinish?: (input: { messages: UIMessage[] }) => void | Promise<void>;
-    consumeSseStream?: (input: {
-      stream: ReadableStream<string>;
-    }) => void | Promise<void>;
-  }) => Response;
-}
+type ChatStreamResult = ReturnType<typeof streamText>;
+type ChatToolApproval = ToolApprovalConfiguration<ToolSet, unknown>;
 
 /**
  * Chat service that centralizes persistence + model orchestration.
@@ -147,8 +135,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
             "[non-text assistant message]"
           );
 
-          // During tool-approval round-trips, onFinish fires once when the
-          // stream pauses for approval and again after the tool executes. If
+          // During tool-approval round-trips, the stream-end callback fires
+          // once when the stream pauses for approval and again after the tool
+          // executes. If
           // the most recent persisted message is already an assistant message
           // (from the earlier round), update it in place instead of creating a
           // duplicate row that would contain the same provider item IDs.
@@ -211,7 +200,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           try: () =>
             generateText({
               model: resolveChatModel(SESSION_TITLE_MODEL),
-              system: [
+              instructions: [
                 "Generate a concise chat title from the first user message.",
                 "Requirements:",
                 "- Return title text only.",
@@ -320,11 +309,12 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         messages: UIMessage[];
         timeZone?: string;
         tools?: ToolSet;
+        toolApproval?: ChatToolApproval;
         abortSignal?: AbortSignal;
       }) => Effect.Effect<
         {
           originalMessages: UIMessage[];
-          streamResult: UiStreamResultLike;
+          streamResult: ChatStreamResult;
           firstMessageText: string | null;
         },
         AiChatError | EffectDrizzleQueryError
@@ -334,6 +324,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         messages: UIMessage[];
         timeZone?: string;
         tools?: ToolSet;
+        toolApproval?: ChatToolApproval;
         abortSignal?: AbortSignal;
       }) {
         yield* Effect.annotateCurrentSpan("userId", input.userId);
@@ -424,16 +415,8 @@ export class AiChatService extends Effect.Service<AiChatService>()(
 
         const model = resolveChatModel(session.model ?? undefined);
         yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
-        const messagesWithSystem: UIMessage[] = [
-          {
-            id: `${input.sessionId}:system`,
-            role: "system",
-            parts: [{ type: "text", text: systemPromptText }],
-          },
-          ...canonicalMessages,
-        ];
         const modelMessages = yield* Effect.tryPromise({
-          try: () => convertToModelMessages(messagesWithSystem),
+          try: () => convertToModelMessages(canonicalMessages),
           catch: () =>
             new AiChatError({
               message: "Failed to convert chat messages for model.",
@@ -443,10 +426,13 @@ export class AiChatService extends Effect.Service<AiChatService>()(
 
         const streamResult = streamText({
           model,
+          instructions: systemPromptText,
           messages: modelMessages,
-          stopWhen: stepCountIs(20),
+          stopWhen: isStepCount(20),
           temperature: 0.8,
           tools: input.tools,
+          toolApproval: input.toolApproval,
+          experimental_toolApprovalSecret: `kompose-ai-tool-approval:${env.BETTER_AUTH_SECRET}`,
           abortSignal: input.abortSignal,
           providerOptions: {
             openai: { reasoningSummary: "auto" },
@@ -455,7 +441,7 @@ export class AiChatService extends Effect.Service<AiChatService>()(
 
         return {
           originalMessages: validatedMessages,
-          streamResult: streamResult as UiStreamResultLike,
+          streamResult,
           firstMessageText,
         };
       });

@@ -184,7 +184,7 @@ export function ContextReasoningUsage() {
   return (
     <ContextUsageRow
       label="Reasoning tokens"
-      value={usage?.reasoningTokens ?? 0}
+      value={usage?.outputTokenDetails?.reasoningTokens ?? 0}
     />
   );
 }

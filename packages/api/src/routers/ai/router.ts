@@ -1,7 +1,7 @@
 import { AiChatError, AiChatService } from "@kompose/ai";
 import { DatabaseLive } from "@kompose/db";
 import { implement, ORPCError, streamToEventIterator } from "@orpc/server";
-import { generateId, type UIMessageChunk } from "ai";
+import { generateId, toUIMessageStream, type UIMessageChunk } from "ai";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
@@ -15,7 +15,7 @@ import {
   sseStringStreamToUiMessageChunkStream,
   uiMessageChunkStreamToSseStringStream,
 } from "./stream-protocol";
-import { createAiTools } from "./tools";
+import { aiToolApproval, createAiTools } from "./tools";
 
 const AiChatLive = Layer.mergeAll(
   AiChatService.Default,
@@ -162,6 +162,7 @@ export const aiRouter = os.router({
             messages: input.messages,
             timeZone: input.timeZone,
             tools,
+            toolApproval: aiToolApproval,
             abortSignal: signal,
           });
 
@@ -189,10 +190,11 @@ export const aiRouter = os.router({
           yield* Effect.forkDaemon(titleGenerationProgram);
         }
 
-        const uiChunkStream = streamResult.toUIMessageStream({
+        const uiChunkStream = toUIMessageStream({
+          stream: streamResult.stream,
           originalMessages,
           generateMessageId: () => uuidv7(),
-          onFinish: async ({ messages }) => {
+          onEnd: async ({ messages }) => {
             await Effect.runPromise(
               AiChatService.persistAssistantFromUiMessages({
                 userId: context.user.id,
@@ -282,7 +284,8 @@ export const aiRouter = os.router({
         if (!resumedSseStream) {
           // Don't clear activeStreamId on reconnect misses. During cross-device
           // handoff, reconnect can race stream registration/transient delivery.
-          // onFinish still clears the pointer when the stream actually completes.
+          // The stream-end callback still clears the pointer when the stream
+          // actually completes.
           return emptyUiMessageChunkIterator();
         }
 

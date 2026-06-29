@@ -290,7 +290,7 @@ used for tasks/calendars):
   - stream finish (assistant persisted, active stream cleared)
   - async first-message title generation success
 - Reconnect misses no longer clear `activeStreamId` immediately; client retries
-  are allowed and normal `onFinish` cleanup clears the pointer.
+  are allowed and normal stream-end cleanup clears the pointer.
 - Shared realtime hook (`packages/state/src/hooks/use-realtime-sync.ts`) now:
   - invalidates `AI_CHAT_SESSIONS_QUERY_KEY`
   - only refetches `getAiChatMessagesQueryKey(sessionId)` when that session
@@ -382,9 +382,9 @@ tool-loop execution:
   - accepts `messages`, optional `timeZone`, optional `tools`
   - validates client-provided full message arrays (including tool parts)
   - persists a `system` message on first turn and reuses it for later turns
-  - prepends the persisted `system` message into the model `messages` array
-    (instead of passing `system` separately) to keep prompt caching stable
-  - passes `tools` and `stopWhen: stepCountIs(20)` to `streamText`
+  - passes the persisted system prompt as top-level `instructions`
+  - passes `tools`, `toolApproval`, a signed approval secret, and
+    `stopWhen: isStepCount(20)` to `streamText`
   - persists latest user message for session history before streaming
 - Wired tool creation into AI stream router in
   `packages/api/src/routers/ai/router.ts`: w
@@ -436,8 +436,8 @@ Wired tool invocation rendering and approval flow into the web sidebar chat:
   server. Without this, `addToolApprovalResponse` only updated client-side state
   and the tool never executed on the server—approvals were lost on page reload.
 - Fixed duplicate assistant message persistence during approval round-trips:
-  `onFinish` fires twice (once when the stream pauses for approval, once after
-  tool execution). `persistAssistantFromUiMessages` now checks if the last
+  the stream-end callback fires twice (once when the stream pauses for approval,
+  once after tool execution). `persistAssistantFromUiMessages` now checks if the last
   persisted message is already an assistant message and updates it in place
   instead of creating a duplicate row. This prevents "Duplicate item found"
   errors from OpenAI (same reasoning `itemId` appearing in two DB rows) and
@@ -516,7 +516,7 @@ the AI SDK's auto-send microtask could fire.
 - The rehydration effect skips one cycle when the flag is set, allowing the
   auto-send microtask to fire and transition status to `submitted`/`streaming`.
 - The flag is cleared when status reaches `streaming`/`submitted`, or in
-  `onFinish`, or after the single skip.
+  `useChat` `onFinish`, or after the single skip.
 
 ---
 
@@ -545,7 +545,6 @@ the AI SDK's auto-send microtask could fire.
   Single `\n` characters typed via Shift+Enter are now preserved visually.
 - **Flash fix**: Added `prevStatusRef` to the rehydration effect. When `status`
   transitions from `streaming`/`submitted` → `ready`, the effect skips one cycle
-  because `persistedMessages` is still stale at that point (the `onFinish` query
+  because `persistedMessages` is still stale at that point (the `useChat` `onFinish` query
   invalidation hasn't resolved yet). The next run — triggered by the queries
   settling with fresh data — rehydrates normally, eliminating the visible flash.
-

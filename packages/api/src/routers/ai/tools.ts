@@ -1,9 +1,18 @@
 import { createTool } from "@orpc/ai-sdk";
-import type { ToolSet } from "ai";
+import type { ToolApprovalConfiguration, ToolSet } from "ai";
 import type { User } from "better-auth";
 import { accountRouter } from "../account/router";
 import { googleCalRouter } from "../google-cal/router";
 import { taskRouter } from "../task/router";
+
+export const aiToolApproval = {
+  create_calendar_event: "user-approval",
+  update_calendar_event: "user-approval",
+  delete_calendar_event: "user-approval",
+  create_task: "user-approval",
+  update_task: "user-approval",
+  delete_task: "user-approval",
+} satisfies ToolApprovalConfiguration<ToolSet, unknown>;
 
 export function createAiTools(user: User): ToolSet {
   return {
@@ -22,17 +31,14 @@ export function createAiTools(user: User): ToolSet {
     create_calendar_event: createTool(googleCalRouter.events.create, {
       context: { user },
       description: "Create a calendar event.",
-      needsApproval: true,
     }),
     update_calendar_event: createTool(googleCalRouter.events.update, {
       context: { user },
       description: "Update a calendar event.",
-      needsApproval: true,
     }),
     delete_calendar_event: createTool(googleCalRouter.events.delete, {
       context: { user },
       description: "Delete a calendar event.",
-      needsApproval: true,
     }),
     list_tasks: createTool(taskRouter.list, {
       context: { user },
@@ -41,17 +47,14 @@ export function createAiTools(user: User): ToolSet {
     create_task: createTool(taskRouter.create, {
       context: { user },
       description: "Create a task.",
-      needsApproval: true,
     }),
     update_task: createTool(taskRouter.update, {
       context: { user },
       description: "Update a task.",
-      needsApproval: true,
     }),
     delete_task: createTool(taskRouter.delete, {
       context: { user },
       description: "Delete a task.",
-      needsApproval: true,
     }),
   };
 }

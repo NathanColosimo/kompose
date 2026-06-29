@@ -44,15 +44,15 @@
     ],
     "catalog": {
       "@better-auth/expo": "^1.6.11",
-      "@ai-sdk/openai": "^3.0.63",
-      "@ai-sdk/react": "^3.0.184",
-      "@orpc/client": "^1.14.3",
-      "@orpc/contract": "^1.14.3",
-      "@orpc/ai-sdk": "^1.14.3",
-      "@orpc/experimental-ratelimit": "^1.14.3",
-      "@orpc/openapi": "^1.14.3",
-      "@orpc/server": "^1.14.3",
-      "@orpc/zod": "^1.14.3",
+      "@ai-sdk/openai": "^4.0.2",
+      "@ai-sdk/react": "^4.0.5",
+      "@orpc/client": "^1.14.6",
+      "@orpc/contract": "^1.14.6",
+      "@orpc/ai-sdk": "^1.14.6",
+      "@orpc/experimental-ratelimit": "^1.14.6",
+      "@orpc/openapi": "^1.14.6",
+      "@orpc/server": "^1.14.6",
+      "@orpc/zod": "^1.14.6",
       "@t3-oss/env-nextjs": "^0.13.11",
       "@tanstack/react-query": "^5.100.10",
       "@tanstack/react-query-devtools": "^5.100.10",
@@ -60,7 +60,7 @@
       "@types/react": "~19.2.2",
       "@types/react-dom": "~19.2.2",
       "better-auth": "^1.6.11",
-      "ai": "^6.0.182",
+      "ai": "^7.0.4",
       "dotenv": "^17.4.2",
       "drizzle-orm": "1.0.0-beta.23",
       "effect": "^3.21.2",
@@ -90,7 +90,7 @@
       "@opentelemetry/resources": "^2.7.0",
       "@opentelemetry/sdk-trace-web": "^2.7.1",
       "@opentelemetry/semantic-conventions": "^1.41.1",
-      "@orpc/otel": "^1.14.3"
+      "@orpc/otel": "^1.14.6"
     }
   },
   "dependencies": {
