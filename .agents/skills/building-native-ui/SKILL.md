@@ -270,7 +270,7 @@ app/
 
 ```tsx
 // app/_layout.tsx
-import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Theme } from "../components/theme";
 
 export default function Layout() {
@@ -278,8 +278,8 @@ export default function Layout() {
     <Theme>
       <NativeTabs>
         <NativeTabs.Trigger name="(index)">
-          <Icon sf="list.dash" />
-          <Label>Items</Label>
+          <NativeTabs.Trigger.Icon sf="list.dash" />
+          <NativeTabs.Trigger.Label>Items</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="(search)" role="search" />
       </NativeTabs>

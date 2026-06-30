@@ -11,8 +11,9 @@ license: MIT
 - ./references/react-19.md -- SDK +54: React 19 changes (useContext → use, Context.Provider → Context, forwardRef removal)
 - ./references/react-compiler.md -- SDK +54: React Compiler setup and migration guide
 - ./references/native-tabs.md -- SDK +55: Native tabs changes (Icon/Label/Badge now accessed via NativeTabs.Trigger.\*)
-- ./references/expo-av-to-audio.md -- Migrate audio playback and recording from expo-av to expo-audio
-- ./references/expo-av-to-video.md -- Migrate video playback from expo-av to expo-video
+- ./references/react-navigation-to-expo-router.md -- SDK +56: Migrate @react-navigation/* imports to expo-router entry points (codemod + manual mapping)
+- ./references/expo-av-to-audio.md -- SDK +55: Migrate audio playback and recording from expo-av to expo-audio
+- ./references/expo-av-to-video.md -- SDK +55: Migrate video playback from expo-av to expo-video
 
 ## Beta/Preview Releases
 
@@ -53,7 +54,9 @@ watchman watch-del-all
 
 ## Prebuild for Native Changes
 
-If upgrading requires native changes:
+Before prebuilding, check whether `ios/` or `android/` directories are committed. If neither directory exists and the project uses Continuous Native Generation, prefer keeping it that way and skip prebuild unless the SDK migration guide explicitly requires native files.
+
+If upgrading requires native changes in a project with native directories:
 
 ```bash
 npx expo prebuild --clean
@@ -62,6 +65,8 @@ npx expo prebuild --clean
 This regenerates the `ios` and `android` directories. Ensure the project is not a bare workflow app before running this command.
 
 ## Clear caches for bare workflow
+
+Only run these commands when native `ios/` or `android/` directories exist.
 
 - Clear the cocoapods cache for iOS: `cd ios && pod install --repo-update`
 - Clear derived data for Xcode: `npx expo run:ios --no-build-cache`
@@ -76,6 +81,10 @@ This regenerates the `ios` and `android` directories. Ensure the project is not 
 - Remove implicit packages from `package.json`: `@babel/core`, `babel-preset-expo`, `expo-constants`.
 - If the babel.config.js only contains 'babel-preset-expo', delete the file
 - If the metro.config.js only contains expo defaults, delete the file
+
+## Hermes Engine v1
+
+SDK 56 ships the first stable Hermes engine release with React Native 0.85. After upgrading, clear Metro and native build caches if you see stale bytecode, native module registration, or runtime startup issues.
 
 ## Deprecated Packages
 

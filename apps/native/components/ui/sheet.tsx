@@ -250,7 +250,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
     backgroundColor: "rgba(0, 0, 0, 1)", // Opacity is controlled by animation
   },
   overlayPressable: {

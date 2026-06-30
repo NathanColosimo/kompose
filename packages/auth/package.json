@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@better-auth/core": "^1.6.11",
-    "@better-auth/drizzle-adapter": "1.6.11",
+    "@better-auth/drizzle-adapter": "1.6.23",
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
