@@ -36,8 +36,8 @@ We implemented the initial mobile MVP inside `apps/native` with **four tabs**:
 
 ## Key architecture decisions (current)
 
-- **Expo SDK 56** with React Native 0.85.x.
-- **New Architecture always on** in current Expo Go / SDK 56.
+- **Expo SDK 57** with React Native 0.86.x.
+- **New Architecture always on** in current Expo Go / SDK 57.
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection + client-side
   last-login-method tracking via Expo storage.
@@ -244,14 +244,14 @@ Sentient is loaded at build time via the `expo-font` plugin in `app.json`. It is
 2. Keep variable names consistent across themes (same keys in both variants)
 3. Use semantic classes in components (for example, `bg-background`, `text-foreground`)
 
-## Expo SDK 56 baseline
+## Expo SDK 57 baseline
 
 Current versions in `apps/native/package.json`:
-- `expo@56.0.12`
-- `react-native@0.85.3`
-- SDK56-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
+- `expo@57.0.2`
+- `react-native@0.86.0`
+- SDK57-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
 - `tailwindcss@^4`
-- `uniwind@^1.9.0`
+- `uniwind@^1.10.0`
 
 ## Build + bundling issues we hit (and fixes)
 
