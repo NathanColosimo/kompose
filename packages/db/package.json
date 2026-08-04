@@ -24,13 +24,13 @@
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.20.3",
     "drizzle-kit": "1.0.0-beta.23"
   },
   "dependencies": {
-    "@effect/platform": "^0.96.1",
-    "@effect/sql": "^0.51.1",
-    "@effect/sql-pg": "^0.52.1",
+    "@effect/platform": "catalog:",
+    "@effect/sql": "catalog:",
+    "@effect/sql-pg": "catalog:",
     "@kompose/env": "workspace:*",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",

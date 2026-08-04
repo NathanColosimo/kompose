@@ -1,7 +1,9 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 // When building for Tauri, use static export (no server routes).
 const isTauriBuild = process.env.TAURI_BUILD === "1";
+const workspaceRoot = path.resolve(import.meta.dirname, "../..");
 
 // Validate env at build time for web deploys only (Tauri builds
 // don't have server env vars like DATABASE_URL).
@@ -11,10 +13,17 @@ if (!isTauriBuild) {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["localhost:3000", "local.kompose.dev"],
+  turbopack: {
+    root: workspaceRoot,
+  },
   typedRoutes: true,
   // Debug: disable Strict Mode to rule out dev double-mount behavior.
   reactStrictMode: false,
   reactCompiler: true,
+  experimental: {
+    turbopackRustReactCompiler: true,
+    useOffline: true,
+  },
   // Force environment validation at build time.
   transpilePackages: [
     "@t3-oss/env-nextjs",
@@ -26,10 +35,6 @@ const nextConfig: NextConfig = {
     "pg-types",
     "pgpass",
   ],
-  experimental: {
-    turbopackFileSystemCacheForDev: true,
-    optimizePackageImports: ["lucide-react"],
-  },
   // Tauri requires static export; the Next.js Image component needs
   // unoptimized mode because there is no server to optimize images.
   ...(isTauriBuild && {
