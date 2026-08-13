@@ -10,12 +10,9 @@ import {
   type ToolPart,
   toUiMessage,
 } from "@kompose/ai/ai-message-utils";
-import {
-  getAiChatMessagesQueryKey,
-  useAiChat,
-} from "@kompose/state/hooks/use-ai-chat";
+import type { AiSessionOutput } from "@kompose/api/routers/ai/contract";
+import { useAiChat } from "@kompose/state/hooks/use-ai-chat";
 import { eventIteratorToUnproxiedDataStream, ORPCError } from "@orpc/client";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   type ChatAddToolApproveResponseFunction,
   type ChatTransport,
@@ -126,13 +123,24 @@ import {
 } from "@/components/ui/sidebar";
 
 type ChatModelId = "gpt-5" | "gpt-5-mini";
+interface ChatModelOverride {
+  model: ChatModelId;
+  sessionId: string | null;
+}
 
 const CHAT_MODELS: { id: ChatModelId; label: string }[] = [
   { id: "gpt-5", label: "GPT-5" },
   { id: "gpt-5-mini", label: "GPT-5 Mini" },
 ];
+const DEFAULT_CHAT_MODEL: ChatModelId = "gpt-5-mini";
 const MAX_STREAM_RESUME_ATTEMPTS = 4;
 const STREAM_RESUME_RETRY_INTERVAL_MS = 750;
+
+function getSessionModel(model: string | null | undefined): ChatModelId {
+  return model === "gpt-5" || model === "gpt-5-mini"
+    ? model
+    : DEFAULT_CHAT_MODEL;
+}
 
 function ComposerAttachmentsPreview() {
   const { files, remove } = usePromptInputAttachments();
@@ -145,18 +153,31 @@ function ComposerAttachmentsPreview() {
     <PromptInputHeader>
       <Attachments variant="inline">
         {files.map((file) => (
-          <Attachment
-            data={file}
-            key={file.id}
-            onRemove={() => remove(file.id)}
-          >
-            <AttachmentPreview />
-            <AttachmentInfo />
-            <AttachmentRemove />
-          </Attachment>
+          <ComposerAttachment file={file} key={file.id} onRemove={remove} />
         ))}
       </Attachments>
     </PromptInputHeader>
+  );
+}
+
+function ComposerAttachment({
+  file,
+  onRemove,
+}: {
+  file: FileUIPart & { id: string };
+  onRemove: (id: string) => void;
+}) {
+  const handleRemove = useCallback(
+    () => onRemove(file.id),
+    [file.id, onRemove]
+  );
+
+  return (
+    <Attachment data={file} onRemove={handleRemove}>
+      <AttachmentPreview />
+      <AttachmentInfo />
+      <AttachmentRemove />
+    </Attachment>
   );
 }
 
@@ -171,6 +192,17 @@ function ToolInvocationPart({
   part: ToolPart;
   onApprovalResponse: ChatAddToolApproveResponseFunction;
 }) {
+  const approvalId = part.approval?.id;
+  const handleReject = useCallback(() => {
+    if (approvalId) {
+      onApprovalResponse({ approved: false, id: approvalId });
+    }
+  }, [approvalId, onApprovalResponse]);
+  const handleApprove = useCallback(() => {
+    if (approvalId) {
+      onApprovalResponse({ approved: true, id: approvalId });
+    }
+  }, [approvalId, onApprovalResponse]);
   const defaultOpen =
     part.state === "approval-requested" ||
     part.state === "output-available" ||
@@ -187,30 +219,15 @@ function ToolInvocationPart({
       <ToolContent>
         {part.input !== undefined && <ToolInput input={part.input} />}
 
-        {part.approval && (
+        {part.approval ? (
           <Confirmation approval={part.approval} state={part.state}>
             <ConfirmationRequest>
               <span className="text-xs">Approve this action?</span>
               <ConfirmationActions>
-                <ConfirmationAction
-                  onClick={() =>
-                    onApprovalResponse({
-                      id: part.approval?.id ?? "",
-                      approved: false,
-                    })
-                  }
-                  variant="outline"
-                >
+                <ConfirmationAction onClick={handleReject} variant="outline">
                   Reject
                 </ConfirmationAction>
-                <ConfirmationAction
-                  onClick={() =>
-                    onApprovalResponse({
-                      id: part.approval?.id ?? "",
-                      approved: true,
-                    })
-                  }
-                >
+                <ConfirmationAction onClick={handleApprove}>
                   Approve
                 </ConfirmationAction>
               </ConfirmationActions>
@@ -224,7 +241,7 @@ function ToolInvocationPart({
               <span className="text-xs">Rejected</span>
             </ConfirmationRejected>
           </Confirmation>
-        )}
+        ) : null}
 
         <ToolOutput errorText={part.errorText} output={part.output} />
       </ToolContent>
@@ -341,80 +358,105 @@ function SidebarChatMessage({
   );
 }
 
-export function SidebarRightChat() {
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ChatModelId>("gpt-5-mini");
+function ChatSessionTab({
+  active,
+  onDelete,
+  onSelect,
+  session,
+}: {
+  active: boolean;
+  onDelete: (sessionId: string) => Promise<void>;
+  onSelect: (sessionId: string) => void;
+  session: AiSessionOutput;
+}) {
+  const handleSelect = useCallback(
+    () => onSelect(session.id),
+    [onSelect, session.id]
+  );
+  const handleDelete = useCallback(() => {
+    onDelete(session.id).catch((error) => {
+      console.warn("Failed to delete chat session.", error);
+    });
+  }, [onDelete, session.id]);
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        className="h-7 rounded-full px-3 text-xs"
+        onClick={handleSelect}
+        size="sm"
+        type="button"
+        variant={active ? "secondary" : "ghost"}
+      >
+        {session.title?.trim().length ? session.title : "Untitled chat"}
+      </Button>
+      <Button
+        aria-label={`Delete ${session.title?.trim() || "untitled chat"}`}
+        className="size-7 rounded-full p-0"
+        onClick={handleDelete}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <Trash2Icon className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+function ChatModelOption({
+  model,
+  onSelect,
+}: {
+  model: (typeof CHAT_MODELS)[number];
+  onSelect: (modelId: ChatModelId) => void;
+}) {
+  const handleSelect = useCallback(
+    () => onSelect(model.id),
+    [model.id, onSelect]
+  );
+
+  return (
+    <ModelSelectorItem onSelect={handleSelect} value={model.label}>
+      <ModelSelectorLogo provider="openai" />
+      <ModelSelectorName>{model.label}</ModelSelectorName>
+    </ModelSelectorItem>
+  );
+}
+
+function useSidebarChatController() {
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null
+  );
+  const [modelOverride, setModelOverride] = useState<ChatModelOverride | null>(
+    null
+  );
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const autoCreateAttemptedRef = useRef(false);
-  const localSubmitPendingRef = useRef(false);
-  const approvalPendingRef = useRef(false);
+  const autoCreateAttemptedRef = useRef<boolean>(false);
+  const localSubmitPendingRef = useRef<boolean>(false);
+  const approvalPendingRef = useRef<boolean>(false);
   const streamResumeStateRef = useRef<{
     attempts: number;
     streamId: string | null;
   }>({ attempts: 0, streamId: null });
-  const activeStreamIdRef = useRef<string | null>(null);
-  const persistedMessagesRef = useRef<UIMessage[]>([]);
-  const queryClient = useQueryClient();
   const {
+    activeSession,
+    activeSessionId,
+    sessions,
     sessionsQuery,
     messagesQuery,
     createSession,
     deleteSession,
     streamSessionMessage,
     resumeSessionStream,
-  } = useAiChat(activeSessionId);
-
-  const sessions = sessionsQuery.data ?? [];
-  const activeSession =
-    sessions.find((session) => session.id === activeSessionId) ?? null;
-  activeStreamIdRef.current = activeSession?.activeStreamId ?? null;
+  } = useAiChat(selectedSessionId);
+  const selectedModel =
+    modelOverride?.sessionId === activeSessionId
+      ? modelOverride.model
+      : getSessionModel(activeSession?.model);
   const modelLabel =
     CHAT_MODELS.find((model) => model.id === selectedModel)?.label ??
     "GPT-5 Mini";
-  const cachedSessionRows = useMemo(() => {
-    if (!activeSessionId) {
-      return [];
-    }
-    // Read per-session cache directly so session switches render instantly
-    // even before the observer settles on the new query result.
-    return (
-      queryClient.getQueryData<
-        {
-          id: string;
-          role: string;
-          content: string;
-          parts: unknown;
-        }[]
-      >(getAiChatMessagesQueryKey(activeSessionId)) ?? []
-    );
-  }, [activeSessionId, queryClient]);
-
-  // Keep local model selector aligned with the active session model when possible.
-  useEffect(() => {
-    if (!activeSession?.model) {
-      return;
-    }
-    if (
-      activeSession.model === "gpt-5" ||
-      activeSession.model === "gpt-5-mini"
-    ) {
-      setSelectedModel(activeSession.model);
-    }
-  }, [activeSession?.model]);
-
-  // Ensure there is always a selected session when sessions exist.
-  useEffect(() => {
-    setActiveSessionId((prev) => {
-      if (sessions.length === 0) {
-        return prev === null ? prev : null;
-      }
-      if (!prev) {
-        return sessions[0]?.id ?? null;
-      }
-      const exists = sessions.some((session) => session.id === prev);
-      return exists ? prev : (sessions[0]?.id ?? null);
-    });
-  }, [sessions]);
 
   // Auto-create a default session on first load so the composer is immediately usable.
   useEffect(() => {
@@ -425,6 +467,8 @@ export function SidebarRightChat() {
     ) {
       return;
     }
+    // Biome cannot see the async mutation callback that flips this ref.
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: updated asynchronously
     if (autoCreateAttemptedRef.current) {
       return;
     }
@@ -432,7 +476,7 @@ export function SidebarRightChat() {
     createSession
       .mutateAsync({ model: selectedModel })
       .then((session) => {
-        setActiveSessionId(session.id);
+        setSelectedSessionId(session.id);
       })
       .catch(() => {
         autoCreateAttemptedRef.current = false;
@@ -446,44 +490,17 @@ export function SidebarRightChat() {
   ]);
 
   const persistedMessages = useMemo(
-    () =>
-      (messagesQuery.data ?? cachedSessionRows).map((message) =>
-        toUiMessage(message)
-      ),
-    [cachedSessionRows, messagesQuery.data]
+    () => (messagesQuery.data ?? []).map((message) => toUiMessage(message)),
+    [messagesQuery.data]
   );
-  persistedMessagesRef.current = persistedMessages;
 
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
-      sendMessages: async ({ abortSignal, messages }) => {
-        if (!activeSessionId) {
-          throw new Error(
-            "Cannot send a message without an active chat session."
-          );
-        }
-
-        if (messages.length === 0) {
-          throw new Error("A message payload is required.");
-        }
-
-        const iterator = await streamSessionMessage({
-          sessionId: activeSessionId,
-          messages,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          signal: abortSignal,
-        });
-
-        return eventIteratorToUnproxiedDataStream(iterator);
-      },
-
       reconnectToStream: async ({ chatId }) => {
-        // Read from ref so the Chat instance always sees the latest value,
-        // even though useChat doesn't recreate Chat when transport changes.
         if (
           !activeSessionId ||
           chatId !== activeSessionId ||
-          !activeStreamIdRef.current
+          !activeSession?.activeStreamId
         ) {
           return null;
         }
@@ -493,15 +510,40 @@ export function SidebarRightChat() {
             sessionId: activeSessionId,
           });
           return eventIteratorToUnproxiedDataStream(iterator);
-        } catch (error) {
-          if (error instanceof ORPCError) {
+        } catch (caughtError) {
+          if (caughtError instanceof ORPCError) {
             return null;
           }
-          throw error;
+          throw caughtError;
         }
       },
+      sendMessages: async ({ abortSignal, messages: outgoingMessages }) => {
+        if (!activeSessionId) {
+          throw new Error(
+            "Cannot send a message without an active chat session."
+          );
+        }
+
+        if (outgoingMessages.length === 0) {
+          throw new Error("A message payload is required.");
+        }
+
+        const iterator = await streamSessionMessage({
+          messages: outgoingMessages,
+          sessionId: activeSessionId,
+          signal: abortSignal,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+
+        return eventIteratorToUnproxiedDataStream(iterator);
+      },
     }),
-    [activeSessionId, resumeSessionStream, streamSessionMessage]
+    [
+      activeSessionId,
+      activeSession?.activeStreamId,
+      resumeSessionStream,
+      streamSessionMessage,
+    ]
   );
 
   const {
@@ -514,14 +556,14 @@ export function SidebarRightChat() {
     status,
     stop,
   } = useChat({
-    id: activeSessionId ?? "pending-chat",
     experimental_throttle: 50,
+    id: activeSessionId ?? "pending-chat",
     messages: persistedMessages,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-    transport,
     onFinish: () => {
       approvalPendingRef.current = false;
     },
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    transport,
   });
 
   // Wrap addToolApprovalResponse so the rehydration effect doesn't
@@ -568,7 +610,7 @@ export function SidebarRightChat() {
       // Hydrate persisted messages (including the user message from the other
       // device) before connecting to the stream. The normal rehydration effect
       // is blocked while status is "streaming", so this is the only chance.
-      setMessages(persistedMessagesRef.current);
+      setMessages(persistedMessages);
       resumeStream();
     };
 
@@ -592,7 +634,13 @@ export function SidebarRightChat() {
     return () => {
       clearInterval(timer);
     };
-  }, [activeSession?.activeStreamId, resumeStream, setMessages, status]);
+  }, [
+    activeSession?.activeStreamId,
+    persistedMessages,
+    resumeStream,
+    setMessages,
+    status,
+  ]);
 
   // Rehydrate local stream state from persisted session messages before paint
   // to avoid visible top-to-bottom jumps during session switches.
@@ -601,6 +649,8 @@ export function SidebarRightChat() {
     const prevStatus = prevStatusRef.current;
     prevStatusRef.current = status;
 
+    // Biome cannot see the promise callback that flips this ref.
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: updated asynchronously
     if (localSubmitPendingRef.current) {
       return;
     }
@@ -608,6 +658,8 @@ export function SidebarRightChat() {
       approvalPendingRef.current = false;
       return;
     }
+    // Biome cannot see the approval callback that flips this ref.
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: updated asynchronously
     if (approvalPendingRef.current) {
       approvalPendingRef.current = false;
       return;
@@ -636,14 +688,14 @@ export function SidebarRightChat() {
 
   const handleCreateSession = useCallback(async () => {
     const session = await createSession.mutateAsync({ model: selectedModel });
-    setActiveSessionId(session.id);
+    setSelectedSessionId(session.id);
   }, [createSession, selectedModel]);
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       await deleteSession.mutateAsync({ sessionId });
       if (activeSessionId === sessionId) {
-        setActiveSessionId(null);
+        setSelectedSessionId(null);
       }
     },
     [activeSessionId, deleteSession]
@@ -662,8 +714,8 @@ export function SidebarRightChat() {
       // useChat will still manage streaming state and expose errors.
       localSubmitPendingRef.current = true;
       sendMessage({
-        text,
         files: input.files,
+        text,
       })
         .catch((_error) => undefined)
         .finally(() => {
@@ -675,15 +727,64 @@ export function SidebarRightChat() {
 
   const hasMessages = visibleMessages.length > 0;
   const isComposerDisabled = !activeSessionId || createSession.isPending;
-  const handleSelectSession = useCallback(
-    (sessionId: string) => {
-      if (sessionId === activeSessionId) {
-        return;
-      }
-      setActiveSessionId(sessionId);
+  const handleSelectSession = useCallback((sessionId: string) => {
+    setSelectedSessionId(sessionId);
+  }, []);
+  const handleSelectModel = useCallback(
+    (modelId: ChatModelId) => {
+      setModelOverride({ model: modelId, sessionId: activeSessionId });
+      setModelSelectorOpen(false);
     },
     [activeSessionId]
   );
+
+  return {
+    activeSessionId,
+    error,
+    estimatedUsedTokens,
+    handleApprovalResponse,
+    handleCreateSession,
+    handleDeleteSession,
+    handleSelectModel,
+    handleSelectSession,
+    handleSubmit,
+    hasMessages,
+    isComposerDisabled,
+    isLoadingMessages: messagesQuery.isLoading,
+    modelLabel,
+    modelSelectorOpen,
+    selectedModel,
+    sessions,
+    setModelSelectorOpen,
+    status,
+    stop,
+    visibleMessages,
+  };
+}
+
+export function SidebarRightChat() {
+  const {
+    activeSessionId,
+    error,
+    estimatedUsedTokens,
+    handleApprovalResponse,
+    handleCreateSession,
+    handleDeleteSession,
+    handleSelectModel,
+    handleSelectSession,
+    handleSubmit,
+    hasMessages,
+    isComposerDisabled,
+    isLoadingMessages,
+    modelLabel,
+    modelSelectorOpen,
+    selectedModel,
+    sessions,
+    setModelSelectorOpen,
+    status,
+    stop,
+    visibleMessages,
+  } = useSidebarChatController();
 
   return (
     <>
@@ -707,26 +808,13 @@ export function SidebarRightChat() {
 
         <SidebarMenu className="flex-row gap-1 overflow-x-auto pb-1">
           {sessions.map((session) => (
-            <div className="flex items-center gap-1" key={session.id}>
-              <Button
-                className="h-7 rounded-full px-3 text-xs"
-                onClick={() => handleSelectSession(session.id)}
-                size="sm"
-                type="button"
-                variant={activeSessionId === session.id ? "secondary" : "ghost"}
-              >
-                {session.title?.trim().length ? session.title : "Untitled chat"}
-              </Button>
-              <Button
-                className="size-7 rounded-full p-0"
-                onClick={() => handleDeleteSession(session.id)}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            </div>
+            <ChatSessionTab
+              active={activeSessionId === session.id}
+              key={session.id}
+              onDelete={handleDeleteSession}
+              onSelect={handleSelectSession}
+              session={session}
+            />
           ))}
         </SidebarMenu>
       </SidebarHeader>
@@ -770,7 +858,7 @@ export function SidebarRightChat() {
               </div>
             ) : null}
 
-            {messagesQuery.isLoading ? (
+            {isLoadingMessages ? (
               <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <Loader2Icon className="size-3.5 animate-spin" />
                 Loading session messages…
@@ -787,12 +875,7 @@ export function SidebarRightChat() {
             className="w-full"
             maxFiles={6}
             multiple
-            onSubmit={(input) =>
-              handleSubmit({
-                text: input.text,
-                files: input.files,
-              })
-            }
+            onSubmit={handleSubmit}
           >
             {/* Keep header/body/footer as direct children of PromptInput so
                 AI Elements input-group layout selectors can size correctly. */}
@@ -840,17 +923,11 @@ export function SidebarRightChat() {
                       <ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
                       <ModelSelectorGroup heading="OpenAI">
                         {CHAT_MODELS.map((model) => (
-                          <ModelSelectorItem
+                          <ChatModelOption
                             key={model.id}
-                            onSelect={() => {
-                              setSelectedModel(model.id);
-                              setModelSelectorOpen(false);
-                            }}
-                            value={model.label}
-                          >
-                            <ModelSelectorLogo provider="openai" />
-                            <ModelSelectorName>{model.label}</ModelSelectorName>
-                          </ModelSelectorItem>
+                            model={model}
+                            onSelect={handleSelectModel}
+                          />
                         ))}
                       </ModelSelectorGroup>
                     </ModelSelectorList>

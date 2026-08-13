@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -179,15 +180,24 @@ function SearchButton() {
 function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
   const { push, replace } = useRouter();
   const queryClient = useQueryClient();
+  const { refetch: refetchSession } = authClient.useSession();
 
   const handleLogout = async () => {
-    clearTauriBearer();
-    await authClient.signOut();
-    await authClient
-      .getSession({ query: { disableCookieCache: true } })
-      .catch(() => null);
-    queryClient.clear();
-    replace("/login");
+    try {
+      const { error } = await authClient.signOut();
+      if (error) {
+        throw new Error(error.message || "Failed to sign out.");
+      }
+
+      clearTauriBearer();
+      await refetchSession();
+      queryClient.clear();
+      replace("/login");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to sign out."
+      );
+    }
   };
 
   // Get initials for avatar fallback
@@ -309,14 +319,6 @@ function TagRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeletePending, setIsDeletePending] = useState(false);
 
-  const prevTagName = useRef(tag.name);
-  if (tag.name !== prevTagName.current) {
-    prevTagName.current = tag.name;
-    if (!editingName) {
-      setName(tag.name);
-    }
-  }
-
   const inputCallbackRef = useCallback((el: HTMLInputElement | null) => {
     if (el) {
       el.focus();
@@ -387,7 +389,7 @@ function TagRow({
   return (
     <div className="group flex h-8 items-center gap-1 rounded-md px-1.5 transition-colors duration-100 hover:bg-muted/50">
       <TagIconPickerPopover
-        onChange={(icon) => onUpdate({ id: tag.id, icon })}
+        onChange={(icon) => onUpdate({ icon, id: tag.id })}
         value={tag.icon}
       >
         <Button
@@ -412,15 +414,18 @@ function TagRow({
       ) : (
         <button
           className="min-w-0 flex-1 cursor-text truncate px-1 text-left text-sm"
-          onClick={() => setEditingName(true)}
+          onClick={() => {
+            setName(tag.name);
+            setEditingName(true);
+          }}
           type="button"
         >
-          {name}
+          {tag.name}
         </button>
       )}
 
       <Button
-        className="text-muted-foreground opacity-0 transition-all duration-100 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        className="text-muted-foreground opacity-0 transition-[color,background-color,opacity] duration-100 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
         onClick={() => setConfirmDelete(true)}
         size="icon-sm"
         type="button"
@@ -456,7 +461,7 @@ function CreateTagRow({
     if (!trimmed || isPending) {
       return;
     }
-    await onCreate({ name: trimmed, icon });
+    await onCreate({ icon, name: trimmed });
     setName("");
     setIcon("Tag");
     inputRef.current?.focus();

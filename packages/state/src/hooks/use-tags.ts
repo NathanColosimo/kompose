@@ -10,19 +10,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
 import { TAGS_QUERY_KEY } from "../atoms/tags";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
-import { hasSessionAtom, useStateConfig } from "../config";
+import { useStateConfig } from "../config";
 
 export function useTags() {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
-  const hasSession = useAtomValue(hasSessionAtom);
 
   const tagsQuery = useQuery({
     queryKey: TAGS_QUERY_KEY,
-    enabled: hasSession,
     queryFn: async () => {
       const tags = await orpc.tags.list();
       return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));

@@ -17,6 +17,7 @@
       "dependsOn": ["transit"]
     },
     "build:prod": {
+      "dependsOn": ["type-check"],
       "cache": false
     },
     "build:prod:desktop": {

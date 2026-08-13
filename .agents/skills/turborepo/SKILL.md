@@ -8,8 +8,6 @@ description: |
   Use when user: configures tasks/workflows/pipelines, creates packages, sets up
   monorepo, shares code between apps, runs changed/affected packages, debugs cache,
   or has apps/packages directories.
-metadata:
-  version: 2.8.11-canary.7
 ---
 
 # Turborepo Skill
@@ -128,7 +126,7 @@ Cache problems?
 ```
 Run only what changed?
 ├─ Changed packages + dependents (RECOMMENDED) → turbo run build --affected
-├─ Custom base branch → --affected --affected-base=origin/develop
+├─ Custom base branch → TURBO_SCM_BASE=origin/develop turbo run build --affected
 ├─ Manual git comparison → --filter=...[origin/main]
 └─ See all filter options → references/filtering/RULE.md
 ```
@@ -531,9 +529,15 @@ Don't use relative paths like `../` to reference files outside the package. Use 
 
 Common outputs by framework:
 
-- Next.js: `[".next/**", "!.next/cache/**"]`
+- Next.js: `[".next/**", "!.next/cache/**", "!.next/dev/**"]`
 - Vite/Rollup: `["dist/**"]`
 - tsc: `["dist/**"]` or custom `outDir`
+
+Next.js's `.next/cache/**` is an incremental framework cache, not a distributable
+task output. Keep it outside Turbo's output artifact and preserve it with the CI
+provider's framework-cache mechanism (Vercel handles this automatically) or a
+dedicated CI cache. A Turbo task-cache miss does not restore an older task's
+outputs, so adding `.next/cache/**` to `outputs` does not warm changed builds.
 
 **TypeScript `--noEmit` can still produce cache files:**
 
@@ -726,7 +730,7 @@ import { Button } from "@repo/ui/button";
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
     "dev": {
       "cache": false,

@@ -3,15 +3,24 @@
 import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 
-export default function LoginPageClient() {
+function DashboardRedirect() {
   const { replace } = useRouter();
+
+  useMountEffect(() => {
+    replace("/dashboard");
+  });
+
+  return null;
+}
+
+export default function LoginPageClient() {
+  const { data: session, isPending } = authClient.useSession();
   const privacyHref =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
@@ -20,39 +29,12 @@ export default function LoginPageClient() {
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
       : "/terms";
-  const [sessionStatus, setSessionStatus] = useState<
-    "checking" | "authenticated" | "unauthenticated"
-  >("checking");
-
-  useMountEffect(() => {
-    let cancelled = false;
-
-    authClient
-      .getSession({ query: { disableCookieCache: true } })
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        if (result?.data?.user) {
-          setSessionStatus("authenticated");
-          replace("/dashboard");
-        } else {
-          setSessionStatus("unauthenticated");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSessionStatus("unauthenticated");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  });
-
-  if (sessionStatus !== "unauthenticated") {
+  if (isPending) {
     return null;
+  }
+
+  if (session?.user) {
+    return <DashboardRedirect />;
   }
 
   return (

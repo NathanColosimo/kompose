@@ -36,7 +36,7 @@ import Image from "next/image";
 import {
   type ReactElement,
   useCallback,
-  useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -112,15 +112,15 @@ interface TaskEditPopoverProps {
 }
 
 const EMPTY_TASK_FORM_VALUES: TaskFormValues = {
-  title: "",
   description: "",
-  tagIds: [],
-  startDate: null,
-  startTime: null,
   dueDate: null,
   durationMinutes: 30,
   links: [],
   recurrence: null,
+  startDate: null,
+  startTime: null,
+  tagIds: [],
+  title: "",
 };
 
 function buildTaskInitialValues({
@@ -145,15 +145,15 @@ function buildTaskInitialValues({
   }
 
   return {
-    title: task.title ?? "",
     description: task.description ?? "",
-    tagIds: task.tags.map((tag) => tag.id),
-    startDate: task.startDate ?? null,
-    startTime: task.startTime ?? null,
     dueDate: task.dueDate ?? null,
     durationMinutes: task.durationMinutes ?? 30,
     links: task.links ?? [],
     recurrence: resolvedRecurrence ?? null,
+    startDate: task.startDate ?? null,
+    startTime: task.startTime ?? null,
+    tagIds: task.tags.map((tag) => tag.id),
+    title: task.title ?? "",
   };
 }
 
@@ -171,21 +171,21 @@ function buildTaskCreatePayload(
   }
 
   return {
-    title,
     description: values.description.trim() ? values.description.trim() : null,
-    tagIds: values.tagIds,
-    startDate: values.startDate,
-    startTime: values.startTime,
     dueDate: values.dueDate,
     durationMinutes:
       Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
         ? Math.round(values.durationMinutes)
         : 30,
+    isException: false,
     links: values.links,
     recurrence: values.recurrence,
-    status: "todo",
     seriesMasterId: null,
-    isException: false,
+    startDate: values.startDate,
+    startTime: values.startTime,
+    status: "todo",
+    tagIds: values.tagIds,
+    title,
   };
 }
 
@@ -193,18 +193,18 @@ function getSharedFieldsFromTaskValues(
   values: TaskFormValues
 ): CalendarCreateSharedFields {
   return {
-    title: values.title,
     description: values.description,
+    durationMinutes:
+      Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
+        ? Math.round(values.durationMinutes)
+        : 30,
     startDate: values.startDate ? temporalToPickerDate(values.startDate) : null,
     startTime: values.startTime
       ? `${String(values.startTime.hour).padStart(2, "0")}:${String(
           values.startTime.minute
         ).padStart(2, "0")}`
       : "",
-    durationMinutes:
-      Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
-        ? Math.round(values.durationMinutes)
-        : 30,
+    title: values.title,
   };
 }
 
@@ -223,28 +223,33 @@ export function TaskEditPopover({
   const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
   const [openRequest, setOpenRequest] = useAtom(commandBarTaskOpenRequestAtom);
-
-  // Open popover only when this surface matches the active command-bar request.
-  useEffect(() => {
-    if (
-      mode === "edit" &&
+  const matchesOpenRequest = Boolean(
+    mode === "edit" &&
       task &&
       openRequest &&
       openRequest.taskId === task.id &&
       openRequest.target === surface
-    ) {
+  );
+
+  const handleCancel = useCallback(() => {
+    setOpen(false);
+  }, []);
+  const handleOpenAutoFocus = useCallback(
+    (event: Event) => {
+      event.preventDefault();
+      if (!(matchesOpenRequest && openRequest)) {
+        return;
+      }
+
       setOpen(true);
       setOpenRequest((currentRequest) =>
         currentRequest?.requestId === openRequest.requestId
           ? null
           : currentRequest
       );
-    }
-  }, [mode, openRequest, setOpenRequest, surface, task]);
-
-  const handleCancel = useCallback(() => {
-    setOpen(false);
-  }, []);
+    },
+    [matchesOpenRequest, openRequest, setOpenRequest]
+  );
 
   return (
     <Popover
@@ -253,7 +258,7 @@ export function TaskEditPopover({
           setOpen(true);
         }
       }}
-      open={open}
+      open={open || matchesOpenRequest}
     >
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
@@ -267,7 +272,7 @@ export function TaskEditPopover({
           e.preventDefault();
           handleCancel();
         }}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={handleOpenAutoFocus}
         side={side}
       >
         <TaskEditForm
@@ -287,33 +292,27 @@ export function TaskEditForm({
   task,
   initialValues: initialCreateValues,
   mode,
-  onRegisterSubmit,
+  submitRef,
   onClose,
   open,
-  onRegisterCreateInterop,
+  createInteropRef,
 }: {
   task?: TaskSelectDecoded;
   initialValues?: Partial<TaskFormValues>;
   mode: "create" | "edit";
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
-  onRegisterSubmit?: (fn: () => boolean) => void;
+  submitRef?: React.Ref<() => boolean>;
   onClose: () => void;
   open: boolean;
-  onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
+  createInteropRef?: React.Ref<CalendarCreateFormInterop>;
 }) {
-  const showActionButtons = !onRegisterSubmit;
-  const onRegisterSubmitRef = useRef(onRegisterSubmit);
-  onRegisterSubmitRef.current = onRegisterSubmit;
-  const onRegisterCreateInteropRef = useRef(onRegisterCreateInterop);
-  onRegisterCreateInteropRef.current = onRegisterCreateInterop;
+  const showActionButtons = !submitRef;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
     useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
-  const [pendingUpdate, setPendingUpdate] = useState<TaskFormValues | null>(
-    null
-  );
+  const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   const isCreateMode = mode === "create";
 
   // Check if this task is part of a recurring series
@@ -375,22 +374,17 @@ export function TaskEditForm({
   const resolvedInitialValues = useMemo<TaskFormValues>(
     () =>
       buildTaskInitialValues({
-        task,
         initialValues: initialCreateValues,
         resolvedRecurrence,
+        task,
       }),
     [initialCreateValues, resolvedRecurrence, task]
   );
 
-  const { control, reset, setValue, handleSubmit, getValues } =
+  const { control, setValue, handleSubmit, getValues } =
     useForm<TaskFormValues>({
       defaultValues: resolvedInitialValues,
     });
-
-  // Keep the form in sync if the task changes externally.
-  useEffect(() => {
-    reset(resolvedInitialValues, { keepDirty: false });
-  }, [reset, resolvedInitialValues]);
 
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
@@ -410,18 +404,18 @@ export function TaskEditForm({
 
       updateTask.mutate({
         id: task.id,
+        scope,
         task: {
-          title: values.title.trim(),
           description: values.description ?? "",
-          tagIds: values.tagIds,
-          startDate: values.startDate,
-          startTime: values.startTime,
           dueDate: values.dueDate,
           durationMinutes: normalizedDuration,
           links: values.links,
           recurrence: values.recurrence,
+          startDate: values.startDate,
+          startTime: values.startTime,
+          tagIds: values.tagIds,
+          title: values.title.trim(),
         },
-        scope,
       });
     },
     [task, updateTask]
@@ -443,34 +437,34 @@ export function TaskEditForm({
       }
 
       const decision = getTaskUpdateScopeDecision({
-        isRecurring,
-        isSeriesMaster: task.seriesMasterId === task.id,
         hasCoreFieldChanges: haveTaskCoreFieldsChanged({
-          previous: {
-            title: task.title,
-            description: task.description,
-            durationMinutes: task.durationMinutes,
-            dueDate: task.dueDate,
-            startDate: task.startDate,
-            startTime: task.startTime,
-          },
           next: {
-            title: values.title,
             description: values.description,
-            durationMinutes: values.durationMinutes,
             dueDate: values.dueDate,
+            durationMinutes: values.durationMinutes,
             startDate: values.startDate,
             startTime: values.startTime,
+            title: values.title,
+          },
+          previous: {
+            description: task.description,
+            dueDate: task.dueDate,
+            durationMinutes: task.durationMinutes,
+            startDate: task.startDate,
+            startTime: task.startTime,
+            title: task.title,
           },
         }),
-        previousRecurrence: resolvedRecurrence,
+        isRecurring,
+        isSeriesMaster: task.seriesMasterId === task.id,
         nextRecurrence: values.recurrence,
-        previousTagIds: task.tags.map((tag) => tag.id),
         nextTagIds: values.tagIds,
+        previousRecurrence: resolvedRecurrence,
+        previousTagIds: task.tags.map((tag) => tag.id),
       });
 
       if (decision.action === "prompt") {
-        setPendingUpdate(values);
+        pendingUpdateRef.current = values;
         setTagScope(decision.defaultScope);
         setShowTagScopeDialog(true);
         return false;
@@ -489,9 +483,10 @@ export function TaskEditForm({
     ]
   );
 
-  useEffect(() => {
-    onRegisterSubmitRef.current?.(() => submit(getValues()));
-  }, [getValues, submit]);
+  useImperativeHandle(submitRef, () => () => submit(getValues()), [
+    getValues,
+    submit,
+  ]);
 
   const handleSaveClick = useCallback(() => {
     const result = submit(getValues());
@@ -544,21 +539,11 @@ export function TaskEditForm({
     [getValues]
   );
 
-  useEffect(() => {
-    const register = onRegisterCreateInteropRef.current;
-    if (!register) {
-      return;
-    }
-
-    register({
-      applySharedFields,
-      getSharedFields,
-    });
-
-    return () => {
-      register(null);
-    };
-  }, [applySharedFields, getSharedFields]);
+  useImperativeHandle(
+    createInteropRef,
+    () => ({ applySharedFields, getSharedFields }),
+    [applySharedFields, getSharedFields]
+  );
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
@@ -599,8 +584,8 @@ export function TaskEditForm({
                   <span className="truncate">
                     {field.value
                       ? `Start: ${formatPlainDate(field.value, {
-                          month: "short",
                           day: "numeric",
+                          month: "short",
                         })}`
                       : "Schedule"}
                   </span>
@@ -693,8 +678,8 @@ export function TaskEditForm({
                   <CalendarCheck className="size-4 shrink-0" />
                   {field.value
                     ? `Due: ${formatPlainDate(field.value, {
-                        month: "short",
                         day: "numeric",
+                        month: "short",
                       })}`
                     : "Due date"}
                 </Button>
@@ -753,9 +738,9 @@ export function TaskEditForm({
           // Insert an unknown placeholder immediately so the link
           // is persisted even if the user saves before parse completes.
           const placeholder: LinkMeta = {
+            fetchedAt: new Date().toISOString(),
             provider: "unknown",
             url,
-            fetchedAt: new Date().toISOString(),
           };
           const currentLinks =
             (getValues("links") as unknown as LinkMeta[]) ?? [];
@@ -881,16 +866,17 @@ export function TaskEditForm({
           confirmLabel="Apply"
           description="This is a recurring task. Choose how broadly to apply the change."
           onConfirm={() => {
+            const pendingUpdate = pendingUpdateRef.current;
             if (!pendingUpdate) {
               return;
             }
             commitUpdate(pendingUpdate, tagScope);
-            setPendingUpdate(null);
+            pendingUpdateRef.current = null;
             onClose();
           }}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
-              setPendingUpdate(null);
+              pendingUpdateRef.current = null;
             }
             setShowTagScopeDialog(nextOpen);
           }}
@@ -933,7 +919,6 @@ function LinkMetaPreview({
         onClick={async () => {
           await openUrlInDesktopBrowser(meta.url);
         }}
-        tabIndex={-1}
         type="button"
       >
         <p className="truncate font-medium text-xs">
@@ -949,9 +934,9 @@ function LinkMetaPreview({
       </button>
       {onRemove && (
         <button
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          aria-label={`Remove ${meta.title ?? "link"}`}
+          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
           onClick={onRemove}
-          tabIndex={-1}
           type="button"
         >
           <XCircle className="size-4" />
@@ -1004,13 +989,12 @@ function LinkListEditor({
       ))}
 
       <div className="relative">
-        <button
+        <span
+          aria-hidden
           className="absolute top-1/2 left-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground"
-          tabIndex={-1}
-          type="button"
         >
           <Link2 className="size-4" />
-        </button>
+        </span>
         <Input
           className="pl-8"
           onBlur={() => submitUrl(linkInput)}

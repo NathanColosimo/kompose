@@ -14,7 +14,7 @@
     },
     "submit:prod": {
       "dependsOn": ["build:prod"],
-      "cache": true
+      "cache": false
     }
   }
 }

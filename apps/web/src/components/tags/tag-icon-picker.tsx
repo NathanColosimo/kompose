@@ -2,7 +2,6 @@
 
 import { tagIconNames } from "@kompose/api/routers/tag/contract";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -10,39 +9,6 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { type TagIconName, tagIconMap } from "./tag-icon-map";
-
-interface TagIconPickerProps {
-  onChange: (value: TagIconName) => void;
-  value: TagIconName;
-}
-
-export function TagIconPicker({ value, onChange }: TagIconPickerProps) {
-  return (
-    <div className="grid grid-cols-5 gap-2">
-      {tagIconNames.map((name) => {
-        const Icon = tagIconMap[name];
-        const isActive = value === name;
-
-        return (
-          <Button
-            aria-pressed={isActive}
-            className={cn(
-              "size-8 p-0",
-              isActive ? "bg-primary text-primary-foreground" : ""
-            )}
-            key={name}
-            onClick={() => onChange(name)}
-            type="button"
-            variant={isActive ? "default" : "outline"}
-          >
-            <Icon className="size-4" />
-            <span className="sr-only">{name}</span>
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
 interface TagIconPickerPopoverProps {
   children: React.ReactNode;

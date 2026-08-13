@@ -5,49 +5,64 @@ import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { getDesktopAuthCallbackPrefix } from "@/lib/desktop-deep-link";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 /**
- * Module-level set of tokens claimed for processing in this app session.
- * Unlike useRef (reset on unmount) and localStorage (written after verify),
- * this survives component unmount/remount cycles and is checked synchronously
- * before the async verify call, closing the race window that allowed
- * TauriBearerInit's mount→unmount→remount cycle (or effect re-runs from
- * dependency changes) to fire a second verify on an already-consumed token.
+ * Module-level in-flight set closes the gap between receiving a token and
+ * persisting it as processed without permanently blocking a failed retry.
  */
-const claimedTokens = new Set<string>();
+const inFlightTokens = new Set<string>();
+const processedTokensInSession = new Set<string>();
 
 const DESKTOP_DEEP_LINK_SCHEME = env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME;
 const DESKTOP_AUTH_CALLBACK_PREFIX = getDesktopAuthCallbackPrefix(
   DESKTOP_DEEP_LINK_SCHEME
 );
 const PROCESSED_TOKENS_KEY = `${DESKTOP_DEEP_LINK_SCHEME}:deep-link-processed-tokens`;
+const processedTokensSchema = z.array(z.string());
+
+function readProcessedTokens(): string[] {
+  try {
+    const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    const result = processedTokensSchema.safeParse(parsed);
+    return result.success ? result.data : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Record a token so subsequent getCurrent() calls won't re-process it. */
 function markTokenProcessed(token: string) {
-  const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
-  const processedTokens: string[] = raw ? (JSON.parse(raw) as string[]) : [];
-  processedTokens.push(token);
+  processedTokensInSession.add(token);
+  const processedTokens = [...new Set([...readProcessedTokens(), token])];
 
   // Cap at 20 entries to avoid unbounded growth.
   if (processedTokens.length > 20) {
     processedTokens.splice(0, processedTokens.length - 20);
   }
 
-  localStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(processedTokens));
+  try {
+    localStorage.setItem(PROCESSED_TOKENS_KEY, JSON.stringify(processedTokens));
+  } catch {
+    // Token verification already succeeded; persistence is best-effort only.
+  }
 }
 
 function isTokenAlreadyProcessed(token: string): boolean {
-  const raw = localStorage.getItem(PROCESSED_TOKENS_KEY);
-  if (!raw) {
-    return false;
-  }
-
-  return (JSON.parse(raw) as string[]).includes(token);
+  return (
+    processedTokensInSession.has(token) || readProcessedTokens().includes(token)
+  );
 }
 
 async function refreshLinkedAccountQueries(queryClient: QueryClient) {
@@ -76,9 +91,19 @@ function getLinkedAccountSuccessMessage(linkedProvider: string | null) {
  * WKWebView's ITP cookie restrictions entirely.
  */
 export function DeepLinkHandler() {
+  const [enabled, setEnabled] = useState(false);
+
+  useMountEffect(() => {
+    setEnabled(isTauriRuntime());
+  });
+
+  return enabled ? <TauriDeepLinkHandler /> : null;
+}
+
+function TauriDeepLinkHandler() {
   const { push } = useRouter();
   const queryClient = useQueryClient();
-  const processingRef = useRef(false);
+  const { refetch: refetchSession } = authClient.useSession();
 
   const handleDeepLinkUrl = useCallback(
     async (urlString: string) => {
@@ -86,14 +111,10 @@ export function DeepLinkHandler() {
         return;
       }
 
-      if (processingRef.current) {
-        return;
-      }
-      processingRef.current = true;
-
+      let token: string | null = null;
       try {
         const url = new URL(urlString);
-        const token = url.searchParams.get("token");
+        token = url.searchParams.get("token");
 
         if (!token) {
           console.warn("[DeepLinkHandler] No token in deep link URL");
@@ -101,15 +122,12 @@ export function DeepLinkHandler() {
           return;
         }
 
-        // Deduplicate: skip tokens already verified (localStorage) or
-        // currently being verified in another mount/effect cycle (module Set).
-        if (isTokenAlreadyProcessed(token) || claimedTokens.has(token)) {
+        // Deduplicate tokens already verified or currently being verified.
+        if (isTokenAlreadyProcessed(token) || inFlightTokens.has(token)) {
           return;
         }
 
-        // Claim before the async verify so a concurrent re-mount or
-        // effect re-run will see the token and bail out immediately.
-        claimedTokens.add(token);
+        inFlightTokens.add(token);
 
         const { error } = await authClient.oneTimeToken.verify({ token });
 
@@ -119,10 +137,10 @@ export function DeepLinkHandler() {
           // The token may have expired or already been consumed, but the
           // user might still have a valid session from a previous login.
           // Check before showing an error toast.
-          const session = await authClient.getSession({
-            query: { disableCookieCache: true },
-          });
+          const session = await authClient.getSession();
           if (session?.data?.user) {
+            markTokenProcessed(token);
+            await refetchSession();
             await queryClient.invalidateQueries();
             push("/dashboard");
             return;
@@ -134,6 +152,9 @@ export function DeepLinkHandler() {
 
         // Remember this token so we don't re-process it.
         markTokenProcessed(token);
+        // The one-time-token plugin does not emit Better Auth's normal session
+        // signal, so refresh its built-in reactive store explicitly.
+        await refetchSession();
 
         const isLinkMode = url.searchParams.get("mode") === "link";
         const linkedProvider = url.searchParams.get("provider");
@@ -152,17 +173,16 @@ export function DeepLinkHandler() {
         console.error("[DeepLinkHandler] Error processing deep link:", error);
         toast.error("Something went wrong during sign-in.");
       } finally {
-        processingRef.current = false;
+        if (token) {
+          inFlightTokens.delete(token);
+        }
       }
     },
-    [push, queryClient]
+    [push, queryClient, refetchSession]
   );
 
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
+  useMountEffect(() => {
+    let disposed = false;
     let cleanupFn: (() => void) | undefined;
 
     const setup = async () => {
@@ -174,18 +194,20 @@ export function DeepLinkHandler() {
         // Check if the app was launched via a deep link.
         const startUrls = await getCurrent();
         if (startUrls && startUrls.length > 0) {
-          for (const url of startUrls) {
-            await handleDeepLinkUrl(url);
-          }
+          await Promise.all(startUrls.map(handleDeepLinkUrl));
         }
 
         // Listen for deep link events while the app is running.
         const unlisten = await onOpenUrl((urls) => {
-          for (const url of urls) {
-            handleDeepLinkUrl(url);
-          }
+          Promise.all(urls.map(handleDeepLinkUrl)).catch((error) => {
+            console.warn("[DeepLinkHandler] Failed to process URLs:", error);
+          });
         });
 
+        if (disposed) {
+          unlisten();
+          return;
+        }
         cleanupFn = unlisten;
       } catch (error) {
         // Deep link plugin may not be available in dev mode.
@@ -196,9 +218,10 @@ export function DeepLinkHandler() {
     setup();
 
     return () => {
+      disposed = true;
       cleanupFn?.();
     };
-  }, [handleDeepLinkUrl]);
+  });
 
   return null;
 }

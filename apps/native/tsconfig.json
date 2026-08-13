@@ -1,13 +1,10 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "target": "es2024",
     "strict": true,
-    "types": ["node"],
     "paths": {
       "@/*": ["./*"]
-    },
-    "strictNullChecks": true
+    }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

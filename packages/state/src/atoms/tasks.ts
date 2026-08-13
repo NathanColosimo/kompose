@@ -4,7 +4,7 @@ import {
 } from "@kompose/api/routers/task/contract";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
-import { getStateConfig, hasSessionAtom } from "../config";
+import { getStateConfig } from "../config";
 
 /** Shared query key for tasks. */
 export const TASKS_QUERY_KEY = ["tasks", "list"] as const;
@@ -14,11 +14,9 @@ export const TASKS_QUERY_KEY = ["tasks", "list"] as const;
  */
 export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
   const { orpc } = getStateConfig(get);
-  const hasSession = get(hasSessionAtom);
 
   return {
     queryKey: TASKS_QUERY_KEY,
-    enabled: hasSession,
     queryFn: async () => {
       const tasks = await orpc.tasks.list();
       return tasks.map((task) => taskSelectCodec.parse(task));

@@ -3,7 +3,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
-import { getStateConfig, hasSessionAtom } from "../config";
+import { getStateConfig } from "../config";
 import { WHOOP_DAYS_QUERY_KEY } from "../whoop-query-keys";
 import { currentDateAtom, timezoneAtom } from "./current-date";
 import { linkedAccountsDataAtom } from "./google-data";
@@ -43,14 +43,13 @@ const whoopWindowAtom = atom((get) => {
 
 const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
   const { orpc } = getStateConfig(get);
-  const hasSession = get(hasSessionAtom);
   const accountId = get(whoopAccountIdAtom);
   const timeZone = get(timezoneAtom);
   const { startDate, endDate } = get(whoopWindowAtom);
 
   return {
     queryKey: [...WHOOP_DAYS_QUERY_KEY, accountId, startDate, endDate] as const,
-    enabled: hasSession && !!accountId,
+    enabled: Boolean(accountId),
     queryFn: () => {
       if (!accountId) {
         throw new Error("No WHOOP account linked");

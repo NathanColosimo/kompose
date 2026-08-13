@@ -8,12 +8,12 @@
       "!**/.turbo",
       "!**/dev-dist",
       "!**/.zed",
+      "!**/.agents",
       "!**/.cursor",
       "!**/.vscode",
       "!**/routeTree.gen.ts",
       "!**/src-tauri",
       "!**/.nuxt",
-      "!bts.jsonc",
       "!**/.expo",
       "!**/.wrangler",
       "!**/.alchemy",
@@ -31,13 +31,6 @@
     "ultracite/biome/next",
     "ultracite/biome/react"
   ],
-  "linter": {
-    "rules": {
-      "nursery": {
-        "noLeakedRender": "off"
-      }
-    }
-  },
   "overrides": [
     {
       "includes": ["**/global.css"],

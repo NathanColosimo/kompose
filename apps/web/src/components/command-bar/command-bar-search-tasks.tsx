@@ -11,7 +11,6 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "@kompose/state/atoms/current-date";
-import { sessionQueryAtom } from "@kompose/state/config";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   createCommandBarTaskOpenRequest,
@@ -27,7 +26,7 @@ import {
   CircleIcon,
   InboxIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import {
@@ -75,8 +74,8 @@ function TaskLocationIndicator({
       <span className="flex items-center gap-1 text-muted-foreground text-sm">
         <CalendarIcon className="size-3.5" />
         {formatPlainDate(destination.date, {
-          month: "short",
           day: "numeric",
+          month: "short",
         })}
       </span>
     );
@@ -105,6 +104,33 @@ function TaskLocationIndicator({
   );
 }
 
+function TaskSearchResult({
+  destination,
+  onSelect,
+  task,
+  today,
+}: {
+  destination: TaskSearchDestination;
+  onSelect: (task: TaskSelectDecoded) => Promise<void>;
+  task: TaskSelectDecoded;
+  today: Temporal.PlainDate;
+}) {
+  const StatusIcon = getStatusIcon(task.status);
+  const handleSelect = useCallback(() => {
+    onSelect(task).catch((error) => {
+      console.warn("Failed to open task from command bar.", error);
+    });
+  }, [onSelect, task]);
+
+  return (
+    <CommandItem onSelect={handleSelect} value={`task:${task.id}`}>
+      <StatusIcon className="text-muted-foreground" />
+      <span className="flex-1 truncate">{task.title}</span>
+      <TaskLocationIndicator destination={destination} today={today} />
+    </CommandItem>
+  );
+}
+
 function formatSidebarDateLabel(
   date: Temporal.PlainDate,
   today: Temporal.PlainDate
@@ -122,8 +148,8 @@ function formatSidebarDateLabel(
   }
 
   return formatPlainDate(date, {
-    month: "short",
     day: "numeric",
+    month: "short",
   });
 }
 
@@ -138,8 +164,10 @@ export function CommandBarSearchTasks({
   search,
   selectionMode = "local",
 }: CommandBarSearchTasksProps) {
-  const { tasksQuery } = useTasks();
-  const sessionQuery = useAtomValue(sessionQueryAtom);
+  const { tasksQuery } = useTasks({
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+  });
   const { data: tasks, isLoading } = tasksQuery;
   const today = useAtomValue(todayPlainDateAtom);
   const now = useAtomValue(nowZonedDateTimeAtom);
@@ -152,34 +180,6 @@ export function CommandBarSearchTasks({
   const setCurrentDate = useSetAtom(currentDateAtom);
   const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
-
-  // The standalone desktop popup has its own query cache and no realtime sync.
-  // Refresh session + tasks when Search Tasks opens and whenever the window
-  // regains focus so popup results track the main app more closely.
-  useEffect(() => {
-    let cancelled = false;
-
-    const refreshSearchData = async () => {
-      await sessionQuery.refetch();
-      if (cancelled) {
-        return;
-      }
-      await tasksQuery.refetch();
-    };
-
-    refreshSearchData();
-
-    const handleFocus = () => {
-      refreshSearchData();
-    };
-
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [sessionQuery.refetch, tasksQuery.refetch]);
 
   // Filter tasks: exclude completed, exclude recurring, match search query
   const filteredTasks = useMemo(() => {
@@ -211,17 +211,17 @@ export function CommandBarSearchTasks({
   const handleSelectTask = useCallback(
     async (task: TaskSelectDecoded) => {
       const destination = resolveTaskSearchDestination(task, {
-        today,
         now,
         timeZone,
+        today,
       });
 
       const request =
         destination.kind === "unmapped"
           ? {
               requestId: uuidv7(),
-              taskId: task.id,
               target: "sidebar" as const,
+              taskId: task.id,
             }
           : createCommandBarTaskOpenRequest({
               destination,
@@ -282,24 +282,20 @@ export function CommandBarSearchTasks({
   return (
     <CommandGroup heading="Tasks">
       {filteredTasks.map((task) => {
-        const StatusIcon = getStatusIcon(task.status);
         const destination = resolveTaskSearchDestination(task, {
-          today,
           now,
           timeZone,
+          today,
         });
 
         return (
-          <CommandItem
+          <TaskSearchResult
+            destination={destination}
             key={task.id}
-            onSelect={() => handleSelectTask(task)}
-            value={`task:${task.id}`}
-          >
-            <StatusIcon className="text-muted-foreground" />
-            <span className="flex-1 truncate">{task.title}</span>
-
-            <TaskLocationIndicator destination={destination} today={today} />
-          </CommandItem>
+            onSelect={handleSelectTask}
+            task={task}
+            today={today}
+          />
         );
       })}
     </CommandGroup>

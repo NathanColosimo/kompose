@@ -131,7 +131,7 @@ If you use `.env.development` and `.env.production`, both should be in inputs.
         ".env.production",
         ".env.production.local"
       ],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     }
   }
 }

@@ -11,11 +11,9 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useMountEffect } from "@/hooks/use-mount-effect";
-import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import {
   getExternalHttpUrl,
-  getTauriBearer,
   initTauriBearer,
   isTauriRuntime,
   openUrlInDesktopBrowser,
@@ -61,11 +59,6 @@ function VercelAnalytics() {
   return <Analytics />;
 }
 
-function RealtimeSyncBootstrap() {
-  useWebRealtimeSync();
-  return null;
-}
-
 /**
  * Loads the bearer token from Tauri Store into memory before rendering
  * children. This ensures the first getSession / ORPC call already has
@@ -73,8 +66,9 @@ function RealtimeSyncBootstrap() {
  *
  * Must be rendered inside QueryClientProvider so it can clear any query
  * results that fired during the brief initial render (before the token
- * was available). Starts with ready=true to match the server/static-export
- * render and avoid a hydration mismatch.
+ * was available). The idle state preserves the server/static-export render;
+ * Tauri switches to loading after mount, then remounts children once the
+ * bearer token is available.
  */
 function TauriBearerInit({ children }: { children: React.ReactNode }) {
   const [bearerState, setBearerState] = useState<"idle" | "loading" | "ready">(
@@ -173,40 +167,22 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
     () => ({
-      getSession: async () => {
-        // On Tauri, the bearer token must be loaded from persistent store
-        // before any session call is meaningful. If it hasn't been loaded
-        // yet (TauriBearerInit hasn't finished), return null immediately
-        // to avoid a wasted unauthenticated server call and a rate-limit
-        // slot. TauriBearerInit will clear the cache and re-trigger after
-        // the token is available.
-        if (isTauriRuntime() && !getTauriBearer()) {
-          return null;
-        }
-
-        const result = await authClient.getSession({
-          query: {
-            // Route guards rely on server truth during auth transitions.
-            disableCookieCache: true,
-          },
-        });
-        if (!(result && "data" in result)) {
-          return null;
-        }
-        return { data: result.data };
-      },
-      listAccounts: async () => {
-        const result = await authClient.listAccounts();
-        if (!(result && "data" in result) || result.data == null) {
-          return null;
-        }
-        return { data: result.data };
-      },
       accountInfo: async (accountId: string) => {
         const result = await authClient.accountInfo({
           query: { accountId },
         });
         return result?.data?.user ?? null;
+      },
+      listAccounts: async () => {
+        const result = await authClient.listAccounts();
+        if (
+          !(result && "data" in result) ||
+          result.data === null ||
+          result.data === undefined
+        ) {
+          return null;
+        }
+        return { data: result.data };
       },
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
         const accountsResult = await authClient.listAccounts();
@@ -223,13 +199,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           authClient
             .unlinkAccount(
               {
-                providerId: account.providerId,
                 accountId,
+                providerId: account.providerId,
               },
               {
-                onSuccess: () => {
-                  resolve();
-                },
                 onError: (error) => {
                   reject(
                     new Error(
@@ -238,6 +211,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                         "Failed to unlink account."
                     )
                   );
+                },
+                onSuccess: () => {
+                  resolve();
                 },
               }
             )
@@ -255,7 +231,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   );
   const config = useMemo(
     () => ({
-      orpc,
       authClient: stateAuthClient,
       notifyError: (error: Error) => {
         if (suppressToasts) {
@@ -264,6 +239,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
         toast.error(error.message);
       },
+      orpc,
     }),
     [stateAuthClient, suppressToasts]
   );
@@ -276,7 +252,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       storage={storage}
       subscribeToResume={webSubscribeToResume}
     >
-      {isCommandBarRoute ? null : <RealtimeSyncBootstrap />}
       <TauriDesktopBridgeBootstrap />
       {isCommandBarRoute ? null : <DeepLinkHandler />}
       {children}

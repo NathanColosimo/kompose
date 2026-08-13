@@ -24,29 +24,34 @@ import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
-import { hasSessionAtom, useStateConfig } from "../config";
+import { useStateConfig } from "../config";
+
+interface UseTasksOptions {
+  refetchOnMount?: boolean | "always";
+  refetchOnWindowFocus?: boolean | "always";
+}
 
 /**
  * Centralized hook for task fetching and mutations.
  * Follows the same pattern as Google events: useQuery for fetching,
  * optimistic updates in onMutate, rollback in onError, invalidate in onSettled.
  */
-export function useTasks() {
+export function useTasks(options: UseTasksOptions = {}) {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
-  const hasSession = useAtomValue(hasSessionAtom);
   const tags = useAtomValue(tagsDataAtom);
 
   // Fetch tasks using useQuery directly (same pattern as useGoogleEvents)
   const tasksQuery = useQuery({
-    queryKey: TASKS_QUERY_KEY,
-    enabled: hasSession,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const tasks = await orpc.tasks.list();
       return tasks.map((task) => taskSelectCodec.parse(task));
     },
+    queryKey: TASKS_QUERY_KEY,
+    refetchOnMount: options.refetchOnMount,
+    refetchOnWindowFocus: options.refetchOnWindowFocus,
     staleTime: 1000 * 60 * 5,
-    placeholderData: keepPreviousData,
   });
 
   /**
@@ -58,9 +63,14 @@ export function useTasks() {
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
+    onError: (_err, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
+      }
+    },
     onMutate: async (task: ClientTaskInsertDecoded) => {
       if (task.recurrence) {
-        return { previousTasks: undefined, optimisticId: undefined };
+        return { optimisticId: undefined, previousTasks: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
@@ -75,22 +85,22 @@ export function useTasks() {
 
       const optimisticId = uuidv7();
       const optimisticTask: TaskSelectDecoded = {
-        id: optimisticId,
-        userId: "optimistic",
-        title: task.title,
-        description: task.description ?? null,
-        status: task.status ?? "todo",
         createdAt: now,
-        updatedAt: now,
+        description: task.description ?? null,
         dueDate: task.dueDate ?? null,
+        durationMinutes: task.durationMinutes ?? 30,
+        id: optimisticId,
+        isException: false,
+        links: task.links ?? [],
+        recurrence: null,
+        seriesMasterId: null,
         startDate: task.startDate ?? null,
         startTime: task.startTime ?? null,
-        durationMinutes: task.durationMinutes ?? 30,
-        links: task.links ?? [],
-        seriesMasterId: null,
-        recurrence: null,
-        isException: false,
+        status: task.status ?? "todo",
         tags: optimisticTags,
+        title: task.title,
+        updatedAt: now,
+        userId: "optimistic",
       };
 
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) => [
@@ -98,7 +108,10 @@ export function useTasks() {
         optimisticTask,
       ]);
 
-      return { previousTasks, optimisticId };
+      return { optimisticId, previousTasks };
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
     onSuccess: (createdTasks, _variables, context) => {
       if (!context?.optimisticId) {
@@ -114,14 +127,6 @@ export function useTasks() {
         );
         return [...withoutOptimistic, ...createdTasks];
       });
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
 
@@ -141,10 +146,15 @@ export function useTasks() {
       const encoded = taskUpdateCodec.encode(task);
       const results = await orpc.tasks.update({
         id,
-        task: encoded,
         scope,
+        task: encoded,
       });
       return results.map((t) => taskSelectCodec.parse(t));
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
+      }
     },
     onMutate: async ({
       id,
@@ -178,19 +188,14 @@ export function useTasks() {
           return {
             ...t,
             ...task,
-            tags: nextTags,
             createdAt: t.createdAt,
+            tags: nextTags,
             updatedAt: Temporal.Now.instant(),
           };
         })
       );
 
       return { previousTasks };
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
-      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
@@ -203,6 +208,11 @@ export function useTasks() {
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
       await orpc.tasks.delete({ id, scope }),
+    onError: (_err, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
+      }
+    },
     onMutate: async ({ id, scope }: { id: string; scope: DeleteScope }) => {
       // Only optimistic update for scope="this" (single task)
       if (scope !== "this") {
@@ -219,11 +229,6 @@ export function useTasks() {
 
       return { previousTasks };
     },
-    onError: (_err, _variables, context) => {
-      if (context?.previousTasks) {
-        queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
-      }
-    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
@@ -237,5 +242,5 @@ export function useTasks() {
     },
   });
 
-  return { tasksQuery, createTask, updateTask, deleteTask, parseLink };
+  return { createTask, deleteTask, parseLink, tasksQuery, updateTask };
 }

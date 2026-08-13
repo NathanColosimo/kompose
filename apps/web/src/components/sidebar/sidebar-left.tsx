@@ -6,7 +6,6 @@ import {
   currentDateAtom,
   todayPlainDateAtom,
 } from "@kompose/state/atoms/current-date";
-import { sessionQueryAtom } from "@kompose/state/config";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
@@ -346,7 +345,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const [activeViewSelection, setActiveViewSelection] = useAtom(
     sidebarLeftViewSelectionAtom
   );
-  const sessionQuery = useAtomValue(sessionQueryAtom);
   const currentDate = useAtomValue(currentDateAtom);
   const today = useAtomValue(todayPlainDateAtom);
   const { setOpen } = useSidebar();
@@ -414,7 +412,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   }, [activeViewSelection, setActiveViewSelection, tagsQuery.data]);
 
   const isSidebarLoading =
-    sessionQuery.status === "pending" ||
     (tasksQuery.data === undefined && tasksQuery.error == null) ||
     (tagsQuery.data === undefined && tagsQuery.error == null);
 

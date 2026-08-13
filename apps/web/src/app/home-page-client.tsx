@@ -12,25 +12,54 @@ import { isTauriRuntime } from "@/lib/tauri-desktop";
 // Marketing bullets used to keep the hero punchy without extra copy.
 const highlights = [
   {
-    title: "Calendar + tasks",
     body: "Plan deep work blocks, drag tasks into your day, and keep commitments realistic.",
+    title: "Calendar + tasks",
   },
   {
-    title: "AI assistant",
     body: "Reschedule work, draft plans, or ask for status with plain language instead of menus.",
+    title: "AI assistant",
   },
   {
-    title: "All your tools",
     body: "Notion, Linear, and Google Calendar data live in one orchestration canvas.",
+    title: "All your tools",
   },
   {
-    title: "Local-first sync",
     body: "Tauri and Expo apps stay fast offline, then reconcile instantly when you're back online.",
+    title: "Local-first sync",
   },
 ];
 
 export default function HomePageClient() {
+  const [showTauriSessionGate, setShowTauriSessionGate] = useState(false);
+
+  useMountEffect(() => {
+    setShowTauriSessionGate(isTauriRuntime());
+  });
+
+  return showTauriSessionGate ? <TauriHomeSessionGate /> : <HomePageContent />;
+}
+
+function DashboardRedirect() {
   const { replace } = useRouter();
+
+  useMountEffect(() => {
+    replace("/dashboard");
+  });
+
+  return null;
+}
+
+function TauriHomeSessionGate() {
+  const { data: session, isPending } = authClient.useSession();
+
+  if (isPending) {
+    return null;
+  }
+
+  return session?.user ? <DashboardRedirect /> : <HomePageContent />;
+}
+
+function HomePageContent() {
   const privacyHref =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
@@ -39,45 +68,6 @@ export default function HomePageClient() {
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
       : "/terms";
-  // "idle" matches SSR render (avoids hydration mismatch), "checking" while
-  // verifying session on Tauri, "ready" once resolved.
-  const [pageState, setPageState] = useState<"idle" | "checking" | "ready">(
-    "idle"
-  );
-
-  useMountEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
-    let active = true;
-    setPageState("checking");
-    authClient
-      .getSession({ query: { disableCookieCache: true } })
-      .then((result) => {
-        if (!active) {
-          return;
-        }
-        if (result?.data?.user) {
-          replace("/dashboard");
-        } else {
-          setPageState("ready");
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setPageState("ready");
-        }
-      });
-    return () => {
-      active = false;
-    };
-  });
-
-  if (pageState === "checking") {
-    return null;
-  }
-
   return (
     <main className="bg-background text-foreground">
       {/* Provide a drag handle on desktop (Tauri) without affecting web behavior. */}

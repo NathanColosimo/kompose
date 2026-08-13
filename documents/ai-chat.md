@@ -529,7 +529,6 @@ the AI SDK's auto-send microtask could fire.
 - Removed unnecessary `async` wrappers on `onClick` handlers in web chat.
 - Replaced index-based keys for reasoning/text segments with
   `${message.id}-cot-${index}` / `${message.id}-text-${index}` for stability.
-- Added `ai-sdk` to btca resources for source-first AI SDK research.
 - Deduplicated `extractTextParts` / `dbRowToUiMessage` from `@kompose/ai/service.ts`
   by moving `ai-message-utils.ts` (types, `extractText`, `toUiMessage`, etc.) into
   `@kompose/ai/src/ai-message-utils.ts` as the canonical home. Web and native imports

@@ -62,11 +62,11 @@ fn hide_app() {
 fn primary_modifier() -> Modifiers {
     #[cfg(target_os = "macos")]
     {
-        return Modifiers::SUPER;
+        Modifiers::SUPER
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return Modifiers::CONTROL;
+        Modifiers::CONTROL
     }
 }
 

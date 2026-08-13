@@ -2,7 +2,7 @@
 
 import type { ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, use } from "react";
+import { createContext, use, useMemo } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,12 +65,17 @@ export const Confirmation = ({
   state,
   ...props
 }: ConfirmationProps) => {
+  const contextValue = useMemo(
+    () => ({ approval, state }),
+    [approval, state]
+  );
+
   if (!approval || state === "input-streaming" || state === "input-available") {
     return null;
   }
 
   return (
-    <ConfirmationContext.Provider value={{ approval, state }}>
+    <ConfirmationContext.Provider value={contextValue}>
       <Alert
         className={cn("flex flex-col gap-1.5 px-2.5 py-2", className)}
         {...props}

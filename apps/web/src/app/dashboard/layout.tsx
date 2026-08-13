@@ -2,9 +2,7 @@
 
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { currentDateAtom } from "@kompose/state/atoms/current-date";
-import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
@@ -15,6 +13,9 @@ import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { useMountEffect } from "@/hooks/use-mount-effect";
+import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
+import { authClient } from "@/lib/auth-client";
 import {
   applyCommandBarTaskOpenRequest,
   COMMAND_BAR_TASK_OPEN_EVENT,
@@ -30,14 +31,24 @@ import {
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
+function LoginRedirect() {
+  const { replace } = useRouter();
+
+  useMountEffect(() => {
+    replace("/login");
+  });
+
+  return null;
+}
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { replace } = useRouter();
-  const sessionQuery = useAtomValue(sessionQueryAtom);
-  const sessionUser = useAtomValue(sessionUserAtom) as User | null;
+  const { data: session, isPending: isSessionPending } =
+    authClient.useSession();
+  const sessionUser = session?.user;
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
@@ -48,6 +59,7 @@ export default function DashboardLayout({
   const setCurrentDate = useSetAtom(currentDateAtom);
   const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
+  useWebRealtimeSync(sessionUser?.id);
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
   useLayoutEffect(() => {
@@ -59,12 +71,6 @@ export default function DashboardLayout({
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
-
-  useEffect(() => {
-    if (sessionQuery.status !== "pending" && !sessionUser) {
-      replace("/login");
-    }
-  }, [replace, sessionQuery.status, sessionUser]);
 
   // Constrained widths use overlay mode for right chat, so docked open must reset.
   useEffect(() => {
@@ -91,11 +97,12 @@ export default function DashboardLayout({
       return;
     }
 
+    let disposed = false;
     let cleanup: (() => void) | null = null;
 
     import("@tauri-apps/api/event")
       .then(async ({ listen }) => {
-        cleanup = await listen(COMMAND_BAR_TASK_OPEN_EVENT, (event) => {
+        const unlisten = await listen(COMMAND_BAR_TASK_OPEN_EVENT, (event) => {
           if (!event.payload || typeof event.payload !== "object") {
             return;
           }
@@ -113,6 +120,11 @@ export default function DashboardLayout({
             setSidebarLeftViewSelection,
           });
         });
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        cleanup = unlisten;
       })
       .catch((error) => {
         console.warn(
@@ -122,6 +134,7 @@ export default function DashboardLayout({
       });
 
     return () => {
+      disposed = true;
       cleanup?.();
     };
   }, [
@@ -131,13 +144,18 @@ export default function DashboardLayout({
     setSidebarLeftViewSelection,
   ]);
 
-  if (!sessionUser && sessionQuery.status !== "pending") {
+  if (isSessionPending) {
     return null;
+  }
+
+  if (!sessionUser) {
+    return <LoginRedirect />;
   }
 
   return (
     <div
       className="flex h-svh flex-col"
+      data-dashboard-layout
       style={
         {
           // Header height used by sidebars to offset from top

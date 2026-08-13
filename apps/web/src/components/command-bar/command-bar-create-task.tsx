@@ -32,6 +32,7 @@ import {
 import { formatPlainDate } from "@/lib/temporal-utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
+const EMPTY_TAGS: TagSelect[] = [];
 
 /** Fallback title when no typed title and no metadata */
 function fallbackTitle(link: string): string {
@@ -118,7 +119,7 @@ export function CommandBarCreateTask({
 }: CommandBarCreateTaskProps) {
   const { createTask, parseLink } = useTasks();
   const { tagsQuery } = useTags();
-  const tags = tagsQuery.data ?? [];
+  const tags = tagsQuery.data ?? EMPTY_TAGS;
 
   // Parse the input into structured task data
   const parsed: ParsedTaskInput = useMemo(
@@ -140,7 +141,8 @@ export function CommandBarCreateTask({
   const dispatchParses = useCallback(
     (urls: string[]) => {
       const previous = lastParsedUrls.current;
-      const newUrls = urls.filter((url) => !previous.includes(url));
+      const previousUrls = new Set(previous);
+      const newUrls = urls.filter((url) => !previousUrls.has(url));
       lastParsedUrls.current = urls;
 
       for (const url of newUrls) {
@@ -221,12 +223,7 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  // Ref to always have the latest create handler without re-registering
-  const handleCreateRef = useRef<() => void>(() => {
-    return;
-  });
-
-  handleCreateRef.current = () => {
+  const handleCreate = () => {
     if (!isValid || createTask.isPending) {
       return;
     }
@@ -316,7 +313,7 @@ export function CommandBarCreateTask({
         <>
           <CommandGroup heading="Create Task">
             <CommandItem
-              onSelect={() => handleCreateRef.current()}
+              onSelect={handleCreate}
               value={createItemValue}
             >
               <CheckIcon className="text-muted-foreground" />

@@ -8,67 +8,56 @@ const workspaceRoot = path.resolve(import.meta.dirname, "../..");
 // Validate env at build time for web deploys only (Tauri builds
 // don't have server env vars like DATABASE_URL).
 if (!isTauriBuild) {
-  import("@kompose/env");
+  await import("@kompose/env");
 }
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["localhost:3000", "local.kompose.dev"],
+  experimental: {
+    turbopackRustReactCompiler: true,
+  },
+  reactCompiler: true,
+  reactStrictMode: true,
   turbopack: {
     root: workspaceRoot,
   },
   typedRoutes: true,
-  // Debug: disable Strict Mode to rule out dev double-mount behavior.
-  reactStrictMode: false,
-  reactCompiler: true,
-  experimental: {
-    turbopackRustReactCompiler: true,
-    useOffline: true,
-  },
-  // Force environment validation at build time.
-  transpilePackages: [
-    "@t3-oss/env-nextjs",
-    "@t3-oss/env-core",
-    "pg",
-    "pg-connection-string",
-    "pg-pool",
-    "pg-protocol",
-    "pg-types",
-    "pgpass",
-  ],
   // Tauri requires static export; the Next.js Image component needs
   // unoptimized mode because there is no server to optimize images.
   ...(isTauriBuild && {
-    output: "export" as const,
     images: { unoptimized: true },
+    output: "export" as const,
   }),
-  // Allow the Tauri desktop webview (origin: tauri://localhost) to
-  // make credentialed cross-origin requests to /api routes.
-  async headers() {
-    return [
-      {
-        source: "/api/:path*",
-        headers: [
-          {
-            key: "Access-Control-Allow-Origin",
-            value: "tauri://localhost",
-          },
-          {
-            key: "Access-Control-Allow-Methods",
-            value: "GET, POST, PUT, DELETE, OPTIONS",
-          },
-          {
-            key: "Access-Control-Allow-Headers",
-            value:
-              "Content-Type, Authorization, X-Requested-With, x-request-start",
-          },
-          {
-            key: "Access-Control-Allow-Credentials",
-            value: "true",
-          },
-        ],
-      },
-    ];
-  },
+  // The deployed Next.js server needs these headers for requests from the
+  // Tauri webview. Static exports cannot apply server response headers.
+  ...(!isTauriBuild && {
+    async headers() {
+      return [
+        {
+          headers: [
+            {
+              key: "Access-Control-Allow-Origin",
+              value: "tauri://localhost",
+            },
+            {
+              key: "Access-Control-Allow-Methods",
+              value: "GET, POST, PUT, DELETE, OPTIONS",
+            },
+            {
+              key: "Access-Control-Allow-Headers",
+              value:
+                "Content-Type, Authorization, X-Requested-With, x-request-start",
+            },
+            {
+              key: "Access-Control-Allow-Credentials",
+              value: "true",
+            },
+          ],
+          source: "/api/:path*",
+        },
+      ];
+    },
+  }),
 };
 
 // Load Fumadocs MDX only for web builds. Desktop builds exclude docs routes.

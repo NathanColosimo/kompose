@@ -1,14 +1,14 @@
 "use client";
 
 import type {
+  AiSessionOutput,
   CreateAiSessionInput,
   ReconnectAiStreamInput,
   SendAiStreamInput,
 } from "@kompose/api/routers/ai/contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
 import { useCallback } from "react";
-import { hasSessionAtom, useStateConfig } from "../config";
+import { useStateConfig } from "../config";
 
 export type SendSessionMessageInput = SendAiStreamInput & {
   signal?: AbortSignal;
@@ -19,6 +19,7 @@ export type ResumeSessionStreamInput = ReconnectAiStreamInput & {
 
 export const AI_CHAT_QUERY_ROOT = ["ai"] as const;
 export const AI_CHAT_SESSIONS_QUERY_KEY = ["ai", "sessions"] as const;
+const EMPTY_AI_SESSIONS: AiSessionOutput[] = [];
 
 export function getAiChatMessagesQueryKey(sessionId: string | null) {
   return ["ai", "messages", sessionId] as const;
@@ -28,34 +29,28 @@ export function getAiChatMessagesQueryKey(sessionId: string | null) {
  * Shared AI chat state and operations backed by oRPC procedures.
  * This keeps web/native consumers on the same query/mutation contract.
  */
-export function useAiChat(activeSessionId: string | null) {
+export function useAiChat(selectedSessionId: string | null) {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
-  const hasSession = useAtomValue(hasSessionAtom);
 
   // Session list for the current authenticated user.
   const sessionsQuery = useQuery({
-    queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
-    enabled: hasSession,
     queryFn: async () => await orpc.ai.sessions.list(),
+    queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
   });
+  const sessions = sessionsQuery.data ?? EMPTY_AI_SESSIONS;
+  const activeSession =
+    sessions.find((session) => session.id === selectedSessionId) ??
+    sessions[0] ??
+    null;
+  const activeSessionId = activeSession?.id ?? null;
 
   // Messages for the currently selected chat session.
   const messagesQuery = useQuery({
-    queryKey: getAiChatMessagesQueryKey(activeSessionId),
-    enabled: hasSession && Boolean(activeSessionId),
-    // On session switches, immediately show existing cache for that exact
-    // session key while React Query performs a background refresh.
-    placeholderData: () => {
-      if (!activeSessionId) {
-        return;
-      }
-      return queryClient.getQueryData(
-        getAiChatMessagesQueryKey(activeSessionId)
-      );
-    },
+    enabled: Boolean(activeSessionId),
     queryFn: async () =>
       await orpc.ai.messages.list({ sessionId: activeSessionId as string }),
+    queryKey: getAiChatMessagesQueryKey(activeSessionId),
   });
 
   // Creates a new chat session and refreshes the sessions list.
@@ -94,8 +89,8 @@ export function useAiChat(activeSessionId: string | null) {
     async (input: SendSessionMessageInput) =>
       await orpc.ai.stream.send(
         {
-          sessionId: input.sessionId,
           messages: input.messages,
+          sessionId: input.sessionId,
           timeZone: input.timeZone,
         },
         { signal: input.signal }
@@ -114,11 +109,14 @@ export function useAiChat(activeSessionId: string | null) {
   );
 
   return {
-    sessionsQuery,
-    messagesQuery,
+    activeSession,
+    activeSessionId,
     createSession,
     deleteSession,
-    streamSessionMessage,
+    messagesQuery,
     resumeSessionStream,
+    sessions,
+    sessionsQuery,
+    streamSessionMessage,
   };
 }

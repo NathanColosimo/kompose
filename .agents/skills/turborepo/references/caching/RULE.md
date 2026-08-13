@@ -102,6 +102,6 @@ turbo build
 ## Key Points
 
 - Cache is content-addressed (based on input hash, not timestamps)
-- Empty `outputs` array means task runs but nothing is cached
-- Tasks without `outputs` key cache nothing (use `"outputs": []` to be explicit)
+- Empty or omitted `outputs` means no generated files are restored, but the task
+  result and logs can still be cached and the command skipped on a cache hit
 - Cache is invalidated when ANY input changes

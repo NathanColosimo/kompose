@@ -8,7 +8,7 @@ import { atom, getDefaultStore } from "jotai";
 import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
-import { getStateConfig, hasSessionAtom } from "../config";
+import { getStateConfig } from "../config";
 import { getGoogleCalendarsQueryKey } from "../google-calendar-query-keys";
 import {
   type CalendarIdentifier,
@@ -24,11 +24,9 @@ function toCalendarKey(calendar: CalendarIdentifier) {
 
 const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
-  const hasSession = get(hasSessionAtom);
 
   return {
     queryKey: LINKED_ACCOUNTS_QUERY_KEY,
-    enabled: hasSession,
     queryFn: async () => (await authClient.listAccounts())?.data ?? [],
     staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
@@ -55,11 +53,9 @@ export interface CalendarWithSource {
 const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<CalendarWithSource[]>((get) => {
     const { orpc } = getStateConfig(get);
-    const hasSession = get(hasSessionAtom);
 
     return {
       queryKey: getGoogleCalendarsQueryKey(accountId),
-      enabled: hasSession,
       queryFn: async () => {
         const calendars = await orpc.googleCal.calendars.list({
           accountId,
@@ -88,11 +84,6 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
     const hydrated = get(visibleCalendarsHydratedAtom);
     if (!hydrated) {
-      return [];
-    }
-
-    const hasSession = get(hasSessionAtom);
-    if (!hasSession) {
       return [];
     }
 

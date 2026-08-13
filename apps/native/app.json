@@ -49,7 +49,6 @@
         }
       ],
       "expo-secure-store",
-      "expo-web-browser",
       [
         "expo-font",
         {
@@ -61,16 +60,13 @@
             "./assets/fonts/Sentient-Light.ttf"
           ]
         }
-      ],
-      "expo-image",
-      "expo-status-bar"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "b17e2ef6-be9c-4a74-ae7f-53525505b559"
       }

@@ -37,7 +37,7 @@ We implemented the initial mobile MVP inside `apps/native` with **four tabs**:
 ## Key architecture decisions (current)
 
 - **Expo SDK 57** with React Native 0.86.x.
-- **New Architecture always on** in current Expo Go / SDK 57.
+- **New Architecture always on** in the SDK 57 development client.
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection + client-side
   last-login-method tracking via Expo storage.
@@ -124,10 +124,10 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 
 ### Google calendar visibility picker
 
-- Storage + helpers (SecureStore):
-  - `apps/native/lib/visible-calendars.ts`
-- Hook:
-  - `apps/native/hooks/use-visible-calendars.ts`
+- Shared persisted state:
+  - `packages/state/src/atoms/visible-calendars.ts`
+- Shared hook:
+  - `packages/state/src/hooks/use-visible-calendars.ts`
 - Picker UI modal:
   - `apps/native/components/calendar/calendar-picker-modal.tsx`
 - Google accounts / calendars / events hooks:
@@ -247,11 +247,11 @@ Sentient is loaded at build time via the `expo-font` plugin in `app.json`. It is
 ## Expo SDK 57 baseline
 
 Current versions in `apps/native/package.json`:
-- `expo@57.0.2`
-- `react-native@0.86.0`
+- `expo@57.0.10`
+- `react-native@0.86.2`
 - SDK57-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
 - `tailwindcss@^4`
-- `uniwind@^1.10.0`
+- `uniwind@^1.10.1`
 
 ## Build + bundling issues we hit (and fixes)
 
@@ -270,7 +270,10 @@ Note:
 
 We confirmed runtime resolution was correct, and the fix was to fully restart Metro:
 - stop the running Expo CLI (Ctrl+C)
-- restart with `bun run dev` (clears cache)
+- restart from the repo root with `bun run dev:native`
+
+Use `bunx expo start --clear` only when troubleshooting a genuinely stale
+Metro cache; clearing it on every normal start makes startup slower.
 
 ### 3) Metro bundling failed: missing `expo-network`
 
@@ -285,32 +288,21 @@ Symptoms:
 - Google sign-in works in TestFlight/real device but fails in iOS Simulator with a Google "Something went wrong" / unknown error page.
 - Server logs show auth start/proxy requests, but local simulator flow can still fail unexpectedly.
 
-Most reliable local reset:
-- Run `bun run ios:reset-simulator` from `apps/native`.
-- This shuts down + erases all simulators, clears Xcode DerivedData, then reinstalls the iOS dev client.
+If the simulator itself is corrupted, shut down and erase the affected device
+from Xcode's Devices and Simulators window, then reinstall with
+`bun run --cwd apps/native ios`.
+Avoid routinely erasing every simulator and all DerivedData.
 
 Notes:
 - Keep host usage consistent during a test run (`localhost` only, or ngrok only).
 - This issue appears simulator-state related; production/TestFlight auth can remain healthy.
 
-### 5) iOS pod warning: deployment target set to 9.0
-
-Symptom:
-- Xcode warning from pod targets (for example `SDWebImage`) saying `IPHONEOS_DEPLOYMENT_TARGET` is `9.0`.
-
-Fix:
-- Added a custom Expo config plugin at `apps/native/plugins/with-ios-pod-deployment-target.js`.
-- Wired it in `apps/native/app.json` plugins list.
-- The plugin injects a `post_install` step into Podfile generation to align all pod targets with the app deployment target.
-
-Why this matters:
-- `expo prebuild --clean` can regenerate `ios/Podfile`. The plugin ensures this fix is re-applied on every prebuild, not just once manually.
-
 ## Environment variables
 
 - `apps/native/.env`
-  - `EXPO_PUBLIC_SERVER_URL=http://localhost:3001`
-  - For a physical device, this must be your LAN IP (not localhost).
+  - `EXPO_PUBLIC_SERVER_URL=https://local.kompose.dev`
+  - A physical device needs a URL that is resolvable and trusted from that
+    device; the Mac-only Portless hostname is intended for the simulator.
 
 ## How to run (current recommended workflow)
 
@@ -319,23 +311,23 @@ Why this matters:
 From repo root:
 
 ```bash
-bun run dev
+bun run dev:web
 ```
 
 ### 2) Start Metro for the native app
 
-From `apps/native`:
+From repo root:
 
 ```bash
-bun run dev
+bun run dev:native
 ```
 
 ### 3) Build + run the dev client (iOS)
 
-From `apps/native`:
+From repo root:
 
 ```bash
-bun run ios
+bun run --cwd apps/native ios
 ```
 
 ## Production release flow (iOS)
@@ -365,10 +357,10 @@ Root orchestration uses Turborepo with per-platform shortcuts:
 - `bun run build:prod:web` / `bun run submit:prod:web` — web-only
   equivalents (Vercel deploy + desktop release).
 - `bun run submit:prod:desktop` — desktop GitHub release only.
-- `submit:prod` has `cache: false` (deployment side-effect; always
-  re-runs).
-- `web#submit:prod` depends on `build:prod`, so web deploys always use a
-  prebuilt artifact even though the deploy task itself is not cached.
+- Submission tasks are intentionally cached, so unchanged artifacts are not
+  submitted twice.
+- `web#submit:prod` depends on `build:prod`, so web deploys use a prebuilt
+  artifact.
 - `submit:prod:desktop` has `cache: true` with
   `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
   changes occurred since the last release.
@@ -382,9 +374,8 @@ Production task configuration uses **Package Configurations**
 `"extends": ["//"]`) instead of `package#task` overrides in the root
 `turbo.json`.
 
-- `native#build:prod`: caches `dist/**` (the IPA). Includes
-  `dependsOn: ["^build"]` so the cache key factors in workspace
-  dependency changes (e.g. `@kompose/state`).
+- `native#build:prod`: caches `dist/**` (the IPA). Its explicit shared-package
+  inputs make changes such as `@kompose/state` part of the cache key.
 - `web#build:prod:desktop`: caches the Tauri bundle at
   `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
 - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus the

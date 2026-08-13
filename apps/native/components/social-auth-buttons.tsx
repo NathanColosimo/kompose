@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { NAV_THEME } from "@/lib/theme";
-import { invalidateSessionQueries } from "@/utils/orpc";
+import { invalidateAuthenticatedQueries } from "@/utils/orpc";
 
 type SocialProvider = "google" | "apple";
 
@@ -70,7 +70,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
             setActiveProvider(null);
           },
           onSuccess() {
-            invalidateSessionQueries();
+            invalidateAuthenticatedQueries();
           },
           onFinished() {
             setActiveProvider(null);

@@ -12,11 +12,6 @@
       "sourceType": "github",
       "computedHash": "c68aea9b6c0ca3ccc53060dde50af088fe756148e4bd1c98ccb7039b01124afc"
     },
-    "btca-cli": {
-      "source": "davis7dotsh/better-context",
-      "sourceType": "github",
-      "computedHash": "99bc5301f4f839a6f3be99d98955f32f1cd576c218731fa05fa54a003bd20e9b"
-    },
     "emil-design-eng": {
       "source": "emilkowalski/skill",
       "sourceType": "github",

@@ -113,7 +113,7 @@ Use `turbo.json` in individual packages to override root settings:
   "extends": ["//"],
   "tasks": {
     "build": {
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     }
   }
 }
@@ -161,13 +161,13 @@ By default, array fields in Package Configurations **replace** root values. Use 
   "tasks": {
     "build": {
       // Inherits "dist/**" from root, adds ".next/**"
-      "outputs": ["$TURBO_EXTENDS$", ".next/**", "!.next/cache/**"]
+      "outputs": ["$TURBO_EXTENDS$", ".next/**", "!.next/cache/**", "!.next/dev/**"]
     }
   }
 }
 ```
 
-Without `$TURBO_EXTENDS$`, outputs would only be `[".next/**", "!.next/cache/**"]`.
+Without `$TURBO_EXTENDS$`, outputs would only be `[".next/**", "!.next/cache/**", "!.next/dev/**"]`.
 
 **Works with:**
 
@@ -204,7 +204,7 @@ Use `turbo.jsonc` extension to add comments with IDE support:
   "tasks": {
     "build": {
       // Next.js outputs
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     }
   }
 }

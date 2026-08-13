@@ -19,14 +19,6 @@ const tauri = isTauriRuntime();
 // where window.location.origin is "tauri://localhost".
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
-  plugins: [
-    inferAdditionalFields<typeof auth>(),
-    genericOAuthClient(),
-    lastLoginMethodClient({
-      cookieName: "kompose.last_used_login_method",
-    }),
-    oneTimeTokenClient(),
-  ],
   fetchOptions: {
     // In Tauri, authenticate via bearer token instead of cookies.
     // WKWebView ITP blocks cross-origin Set-Cookie, so cookies never work
@@ -35,8 +27,8 @@ export const authClient = createAuthClient({
     ...(tauri
       ? {
           auth: {
-            type: "Bearer" as const,
             token: getTauriBearer,
+            type: "Bearer" as const,
           },
         }
       : {}),
@@ -52,8 +44,12 @@ export const authClient = createAuthClient({
       }
     },
   },
-  sessionOptions: {
-    // Avoid repetitive get-session calls while the dashboard is active.
-    refetchOnWindowFocus: false,
-  },
+  plugins: [
+    inferAdditionalFields<typeof auth>(),
+    genericOAuthClient(),
+    lastLoginMethodClient({
+      cookieName: "kompose.last_used_login_method",
+    }),
+    oneTimeTokenClient(),
+  ],
 });

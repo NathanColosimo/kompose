@@ -5,16 +5,11 @@ export interface UnlinkAccountInput {
   accountId: string;
 }
 
-export interface AuthSessionData {
-  user?: unknown;
-}
-
 /**
  * Minimal auth client shape used by shared state.
  */
 export interface AuthClient {
   accountInfo: (accountId: string) => Promise<OAuth2UserInfo | null>;
-  getSession: () => Promise<{ data?: AuthSessionData | null } | null>;
   listAccounts: () => Promise<{ data?: Account[] } | null>;
   unlinkAccount: (input: UnlinkAccountInput) => Promise<void>;
 }

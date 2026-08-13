@@ -1,8 +1,7 @@
 "use client";
 
-import type { CreateGoogleEventInput } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
@@ -20,16 +19,14 @@ import {
   TaskEditForm,
   type TaskFormValues,
 } from "../../task-form/task-edit-popover";
-import { EventEditForm } from "../events/event-edit-popover";
+import {
+  type CloseSaveRequest,
+  EventEditForm,
+} from "../events/event-edit-popover";
 import type { CalendarCreateFormInterop } from "./create-form-shared";
 import { useEventCreation } from "./use-event-creation";
 
 type CreationMode = "event" | "task";
-type EventCreateCloseSaveRequest =
-  | { type: "none" }
-  | { type: "create"; payload: CreateGoogleEventInput }
-  | { type: "save" };
-
 function buildInitialSharedFields(start: Date, end: Date) {
   const durationMinutes = Math.max(
     15,
@@ -37,13 +34,13 @@ function buildInitialSharedFields(start: Date, end: Date) {
   );
 
   return {
-    title: "",
     description: "",
+    durationMinutes,
     startDate: start,
     startTime: `${String(start.getHours()).padStart(2, "0")}:${String(
       start.getMinutes()
     ).padStart(2, "0")}`,
-    durationMinutes,
+    title: "",
   };
 }
 
@@ -55,10 +52,9 @@ export function EventCreationPopover() {
   const { state, actions, popoverTimes } = useEventCreation();
   const { createEvent } = useGoogleEventMutations();
   const [mode, setMode] = useState<CreationMode>("event");
-  const lastSelectedModeRef = useRef<CreationMode>("event");
-  const eventCloseSaveRequestRef = useRef<
-    (() => EventCreateCloseSaveRequest) | null
-  >(null);
+  const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
+    null
+  );
   const taskSubmitRef = useRef<(() => boolean) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
@@ -81,19 +77,19 @@ export function EventCreationPopover() {
 
   const initialTaskValues = useMemo<Partial<TaskFormValues>>(
     () => ({
-      title: initialSharedFields.title,
       description: initialSharedFields.description,
+      dueDate: null,
+      durationMinutes: initialSharedFields.durationMinutes,
+      links: [],
+      recurrence: null,
       startDate: initialSharedFields.startDate
         ? pickerDateToTemporal(initialSharedFields.startDate)
         : null,
       startTime: initialSharedFields.startTime
         ? Temporal.PlainTime.from(initialSharedFields.startTime)
         : null,
-      durationMinutes: initialSharedFields.durationMinutes,
-      dueDate: null,
       tagIds: [],
-      links: [],
-      recurrence: null,
+      title: initialSharedFields.title,
     }),
     [initialSharedFields]
   );
@@ -116,19 +112,8 @@ export function EventCreationPopover() {
       nextInterop?.applySharedFields(sharedFields);
     }
 
-    lastSelectedModeRef.current = nextMode;
     setMode(nextMode);
   };
-
-  useEffect(() => {
-    if (!state.showPopover) {
-      return;
-    }
-
-    // Creation remembers the last type the user picked so repeated slot creation
-    // stays fast, while still defaulting to Event on the first ever open.
-    setMode(lastSelectedModeRef.current);
-  }, [state.showPopover]);
 
   const handleCancel = useCallback(() => {
     actions.closePopover();
@@ -149,9 +134,7 @@ export function EventCreationPopover() {
     actions.closePopover();
 
     if (request.type === "create") {
-      createEvent.mutate(
-        (request as { payload: CreateGoogleEventInput }).payload
-      );
+      createEvent.mutate(request.payload);
     }
   }, [actions, createEvent, mode]);
 
@@ -172,23 +155,16 @@ export function EventCreationPopover() {
   }
 
   return (
-    <Popover
-      onOpenChange={(open) => {
-        if (open) {
-          return;
-        }
-      }}
-      open={state.showPopover}
-    >
+    <Popover open={state.showPopover}>
       <PopoverTrigger asChild>
         <span
           style={{
+            height: state.previewElement?.getBoundingClientRect().height ?? 20,
+            left: state.previewElement?.getBoundingClientRect().right ?? 0,
+            pointerEvents: "none",
             position: "fixed",
             top: state.previewElement?.getBoundingClientRect().top ?? 0,
-            left: state.previewElement?.getBoundingClientRect().right ?? 0,
             width: "1px",
-            height: state.previewElement?.getBoundingClientRect().height ?? 20,
-            pointerEvents: "none",
           }}
         />
       </PopoverTrigger>
@@ -235,15 +211,11 @@ export function EventCreationPopover() {
             <EventEditForm
               accountId={state.accountId}
               calendarId={state.calendarId}
+              closeSaveRequestRef={eventCloseSaveRequestRef}
+              createInteropRef={eventInteropRef}
               end={endDate}
               mode="create"
               onDelete={() => undefined}
-              onRegisterCloseSaveRequest={(fn) => {
-                eventCloseSaveRequestRef.current = fn;
-              }}
-              onRegisterCreateInterop={(interop) => {
-                eventInteropRef.current = interop;
-              }}
               onSave={handleSave}
               open={state.showPopover}
               start={startDate}
@@ -256,16 +228,12 @@ export function EventCreationPopover() {
             value="task"
           >
             <TaskEditForm
+              createInteropRef={taskInteropRef}
               initialValues={initialTaskValues}
               mode="create"
               onClose={handleCancel}
-              onRegisterCreateInterop={(interop) => {
-                taskInteropRef.current = interop;
-              }}
-              onRegisterSubmit={(fn) => {
-                taskSubmitRef.current = fn;
-              }}
               open={state.showPopover}
+              submitRef={taskSubmitRef}
             />
           </TabsContent>
         </Tabs>

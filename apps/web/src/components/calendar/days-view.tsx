@@ -53,6 +53,7 @@ import { TimeGutter } from "./time-grid/time-gutter";
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
 const MAX_ALL_DAY_EVENTS = 2;
+const EMPTY_GOOGLE_EVENTS: GoogleEventWithSource[] = [];
 
 type PositionedGoogleEvent = GoogleEventWithSource & {
   start: Temporal.ZonedDateTime;
@@ -256,7 +257,7 @@ interface DaysViewProps {
  */
 export const DaysView = memo(function DaysViewComponent({
   tasks,
-  googleEvents = [],
+  googleEvents = EMPTY_GOOGLE_EVENTS,
   visibleDays,
 }: DaysViewProps) {
   return (
@@ -275,7 +276,7 @@ export const DaysView = memo(function DaysViewComponent({
  */
 const DaysViewInner = memo(function DaysViewInnerComponent({
   tasks,
-  googleEvents = [],
+  googleEvents = EMPTY_GOOGLE_EVENTS,
   visibleDays: visibleDaysProp,
 }: DaysViewProps) {
   const atomVisibleDays = useAtomValue(visibleDaysAtom);
@@ -751,28 +752,6 @@ function TimeGutterSynced({
       <TimeGutter />
     </div>
   );
-}
-
-/**
- * Calculate the vertical position and height of an event based on its time.
- * Returns CSS values for top and height.
- */
-export function calculateEventPosition(
-  startTime: Temporal.ZonedDateTime,
-  durationMinutes: number
-): { top: string; height: string } {
-  const startHour = minutesFromMidnight(startTime) / 60;
-  const durationHours = durationMinutes / 60;
-
-  // Grid starts at midnight (hour 0)
-  const top = startHour * PIXELS_PER_HOUR;
-  const height = durationHours * PIXELS_PER_HOUR;
-
-  return {
-    top: `${top}px`,
-    // Minimum height matches a 15-minute slot (20px).
-    height: `${Math.max(height, 20)}px`,
-  };
 }
 
 DaysView.displayName = "DaysView";

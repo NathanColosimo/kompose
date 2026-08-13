@@ -29,7 +29,7 @@ export function CommandBar() {
 
   return (
     <CommandDialog onOpenChange={handleOpenChange} open={open} size="lg">
-      {open ? <LazyCommandBarContent isOpen={open} size="lg" /> : null}
+      {open ? <LazyCommandBarContent size="lg" /> : null}
     </CommandDialog>
   );
 }

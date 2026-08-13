@@ -1,8 +1,5 @@
-import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
-import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
-import { useQueryClient } from "@tanstack/react-query";
 import { createURL } from "expo-linking";
 import { Unlink2 } from "lucide-react-native";
 import { useState } from "react";
@@ -18,11 +15,13 @@ import {
 } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
-import { clearSessionQueries, invalidateSessionQueries } from "@/utils/orpc";
+import {
+  clearAuthenticatedQueries,
+  invalidateAuthenticatedQueries,
+} from "@/utils/orpc";
 
 export default function SettingsScreen() {
   const { data: session } = authClient.useSession();
-  const queryClient = useQueryClient();
   const unlinkGoogleAccount = useUnlinkGoogleAccount();
   const [isLinking, setIsLinking] = useState(false);
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(
@@ -48,13 +47,7 @@ export default function SettingsScreen() {
         },
         {
           onSuccess: () => {
-            invalidateSessionQueries();
-            queryClient.invalidateQueries({
-              queryKey: LINKED_ACCOUNTS_QUERY_KEY,
-            });
-            queryClient.invalidateQueries({
-              queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
-            });
+            invalidateAuthenticatedQueries();
           },
         }
       );
@@ -74,7 +67,7 @@ export default function SettingsScreen() {
       await unlinkGoogleAccount.mutateAsync({
         accountId,
       });
-      invalidateSessionQueries();
+      invalidateAuthenticatedQueries();
     } catch (error) {
       RNAlert.alert(
         "Failed to unlink account",
@@ -85,6 +78,11 @@ export default function SettingsScreen() {
     } finally {
       setUnlinkingAccountId(null);
     }
+  };
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    clearAuthenticatedQueries();
   };
 
   return (
@@ -214,13 +212,7 @@ export default function SettingsScreen() {
                 Signed in as{" "}
                 <Text className="font-semibold">{session.user.name}</Text>
               </Text>
-              <Button
-                onPress={() => {
-                  authClient.signOut();
-                  clearSessionQueries();
-                }}
-                variant="destructive"
-              >
+              <Button onPress={handleSignOut} variant="destructive">
                 <Text className="text-destructive-foreground">Sign Out</Text>
               </Button>
             </CardContent>

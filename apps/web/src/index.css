@@ -212,6 +212,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  html:has([data-dashboard-layout]),
+  body:has([data-dashboard-layout]) {
+    overscroll-behavior-y: none;
+  }
+
   body {
     letter-spacing: var(--tracking-normal);
     @apply bg-background text-foreground;

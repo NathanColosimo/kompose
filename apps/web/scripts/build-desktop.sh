@@ -79,7 +79,20 @@ if [ "${NEXT_PUBLIC_DEPLOYMENT_ENV:-}" = "production" ]; then
   fi
 fi
 
+# Keep Next 16.3's Turbopack build cache while still removing stale build and
+# development output before the static export. The cache is intentionally not
+# part of Turbo's task artifact; it remains useful when the task itself runs.
+if [ -d ".next/cache" ]; then
+  mv ".next/cache" "$TEMP_DIR/next-build-cache"
+fi
+
 rm -rf .next out
+
+if [ -d "$TEMP_DIR/next-build-cache" ]; then
+  mkdir -p .next
+  mv "$TEMP_DIR/next-build-cache" ".next/cache"
+fi
+
 TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build
 
 # The desktop build intentionally generates route types while API/docs/legal

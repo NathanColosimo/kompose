@@ -22,9 +22,11 @@ const uiMessageSchema: z.ZodType<UIMessage> = z.custom<UIMessage>((value) => {
 const uiMessageChunkSchema: z.ZodType<UIMessageChunk> =
   z.custom<UIMessageChunk>();
 
+export type AiSessionOutput = z.infer<typeof aiSessionSelectSchema>;
+
 export const createAiSessionInputSchema = aiSessionInsertSchema.pick({
-  title: true,
   model: true,
+  title: true,
 });
 export type CreateAiSessionInput = z.infer<typeof createAiSessionInputSchema>;
 
@@ -39,8 +41,8 @@ export const listAiMessagesInputSchema = z.object({
 export type ListAiMessagesInput = z.infer<typeof listAiMessagesInputSchema>;
 
 export const sendAiStreamInputSchema = z.object({
-  sessionId: z.uuidv7(),
   messages: z.array(uiMessageSchema).min(1),
+  sessionId: z.uuidv7(),
   timeZone: z.string().trim().min(1).optional(),
 });
 export type SendAiStreamInput = z.infer<typeof sendAiStreamInputSchema>;
@@ -75,16 +77,16 @@ const reconnectStream = oc
   .output(eventIterator(uiMessageChunkSchema));
 
 export const aiContract = {
-  sessions: {
-    list: listSessions,
-    create: createSession,
-    delete: deleteSession,
-  },
   messages: {
     list: listMessages,
   },
+  sessions: {
+    create: createSession,
+    delete: deleteSession,
+    list: listSessions,
+  },
   stream: {
-    send: sendStream,
     reconnect: reconnectStream,
+    send: sendStream,
   },
 };

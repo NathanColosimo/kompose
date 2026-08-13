@@ -3,6 +3,7 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { Check } from "lucide-react";
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,11 +22,12 @@ interface TagPickerProps {
 export function TagPicker({ value, onChange }: TagPickerProps) {
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? [];
+  const selectedTagIds = useMemo(() => new Set(value), [value]);
 
-  const selectedTags = tags.filter((tag) => value.includes(tag.id));
+  const selectedTags = tags.filter((tag) => selectedTagIds.has(tag.id));
 
   const toggleTag = (tag: TagSelect) => {
-    if (value.includes(tag.id)) {
+    if (selectedTagIds.has(tag.id)) {
       onChange(value.filter((id) => id !== tag.id));
       return;
     }
@@ -65,7 +67,7 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
             <div className="space-y-1">
               {tags.map((tag) => {
                 const Icon = tagIconMap[tag.icon];
-                const isSelected = value.includes(tag.id);
+                const isSelected = selectedTagIds.has(tag.id);
                 return (
                   <button
                     className={cn(

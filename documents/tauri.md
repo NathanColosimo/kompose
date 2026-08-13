@@ -278,7 +278,8 @@ auto-updates.
     embedded in the signed desktop bundle.
   - Uses shell `trap` handlers to always restore moved directories on exit,
     including failure/interruption paths.
-  - Clears `.next` + `out`, then runs `TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build`.
+  - Clears stale `.next` + `out` build products while preserving `.next/cache`,
+    then runs `TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build`.
 
 - `apps/web/scripts/build-desktop-dev.sh`
   - Backs up `src-tauri/icons`, generates a temporary light icon set from

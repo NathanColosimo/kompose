@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../days-view";
+import { calculateEventPosition } from "../event-position";
 
 type ScheduledTask = TaskSelectDecoded & {
   startDate: Temporal.PlainDate;

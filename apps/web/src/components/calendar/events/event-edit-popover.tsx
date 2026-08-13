@@ -43,7 +43,7 @@ import {
   type ReactElement,
   type ReactNode,
   useCallback,
-  useEffect,
+  useImperativeHandle,
   useMemo,
   useReducer,
   useRef,
@@ -145,7 +145,26 @@ interface EventFormValues {
   summary: string;
 }
 
-type CloseSaveRequest =
+interface RecurrenceEditorValues {
+  byDay: string[];
+  count: number;
+  endType: RecurrenceEnd["type"];
+  freq: Frequency;
+  /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
+  untilRule: string;
+}
+
+function buildRecurrenceEnd(values: RecurrenceEditorValues): RecurrenceEnd {
+  if (values.endType === "until" && values.untilRule) {
+    return { date: values.untilRule, type: "until" };
+  }
+  if (values.endType === "count" && values.count > 0) {
+    return { count: values.count, type: "count" };
+  }
+  return { type: "none" };
+}
+
+export type CloseSaveRequest =
   | { type: "none" }
   | {
       type: "save";
@@ -237,11 +256,11 @@ function getSharedFieldsFromEventValues(
   }
 
   return {
-    title: values.summary,
     description: values.description,
+    durationMinutes,
     startDate,
     startTime: values.startTime,
-    durationMinutes,
+    title: values.summary,
   };
 }
 
@@ -259,78 +278,31 @@ function RecurrenceEditor({
     [recurrenceRule]
   );
 
-  interface RecurrenceEditorValues {
-    byDay: string[];
-    count: number;
-    endType: RecurrenceEnd["type"];
-    freq: Frequency;
-    /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
-    untilRule: string;
-  }
-
-  const defaultValues = useMemo<RecurrenceEditorValues>(() => {
+  const values = useMemo<RecurrenceEditorValues>(() => {
     const endType = parsedRecurrence.end.type;
     return {
-      freq: parsedRecurrence.freq,
       byDay: parsedRecurrence.byDay,
-      endType,
-      untilRule: endType === "until" ? parsedRecurrence.end.date : "",
       count: endType === "count" ? parsedRecurrence.end.count : 5,
+      endType,
+      freq: parsedRecurrence.freq,
+      untilRule: endType === "until" ? parsedRecurrence.end.date : "",
     };
   }, [parsedRecurrence.byDay, parsedRecurrence.end, parsedRecurrence.freq]);
 
-  const { control, reset, setValue } = useForm<RecurrenceEditorValues>({
-    defaultValues,
-  });
-  const watched = useWatch({ control }) as RecurrenceEditorValues | undefined;
-  // `useWatch` can briefly return undefined; fall back to stable defaults.
-  const values = watched ?? defaultValues;
-
-  const lastEmittedRuleRef = useRef<string | null>(null);
-
-  const buildEndFromValues = useCallback(
-    (v: RecurrenceEditorValues): RecurrenceEnd => {
-      if (v.endType === "none") {
-        return { type: "none" };
-      }
-      if (v.endType === "until") {
-        return v.untilRule
-          ? { type: "until", date: v.untilRule }
-          : { type: "none" };
-      }
-      if (v.endType === "count") {
-        return v.count > 0
-          ? { type: "count", count: v.count }
-          : { type: "none" };
-      }
-      return { type: "none" };
-    },
-    []
-  );
-
-  // Sync internal editor state when the upstream rule changes (e.g. switching events),
-  // but avoid resetting when the change was emitted by this editor itself.
-  useEffect(() => {
-    const upstream = recurrenceRule ?? null;
-    if (upstream === lastEmittedRuleRef.current) {
-      return;
-    }
-    reset(defaultValues);
-  }, [defaultValues, recurrenceRule, reset]);
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  useEffect(() => {
-    const end = buildEndFromValues(values);
-    const nextRule = buildRecurrenceRule(values.freq, values.byDay, end);
+  const emitChanges = (changes: Partial<RecurrenceEditorValues>) => {
+    const nextValues = { ...values, ...changes };
+    const end = buildRecurrenceEnd(nextValues);
+    const nextRule = buildRecurrenceRule(
+      nextValues.freq,
+      nextValues.byDay,
+      end
+    );
     const normalizedNext = nextRule ?? null;
-    if (normalizedNext === lastEmittedRuleRef.current) {
+    if (normalizedNext === (recurrenceRule ?? null)) {
       return;
     }
-    lastEmittedRuleRef.current = normalizedNext;
-    onChangeRef.current(nextRule);
-  }, [values, buildEndFromValues]);
+    onChange(nextRule);
+  };
 
   const untilDate = useMemo(
     () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
@@ -360,10 +332,10 @@ function RecurrenceEditor({
         <Select
           onValueChange={(v) => {
             const nextFreq = v as Frequency;
-            setValue("freq", nextFreq);
-            if (nextFreq !== "WEEKLY") {
-              setValue("byDay", []);
-            }
+            emitChanges({
+              byDay: nextFreq === "WEEKLY" ? values.byDay : [],
+              freq: nextFreq,
+            });
           }}
           value={values.freq}
         >
@@ -398,7 +370,7 @@ function RecurrenceEditor({
                     const next = active
                       ? current.filter((d) => d !== day.value)
                       : [...current, day.value];
-                    setValue("byDay", next);
+                    emitChanges({ byDay: next });
                   }}
                   size="icon"
                   type="button"
@@ -418,8 +390,7 @@ function RecurrenceEditor({
           <Button
             className="h-8 w-full justify-start text-xs"
             onClick={() => {
-              setValue("endType", "none");
-              setValue("untilRule", "");
+              emitChanges({ endType: "none", untilRule: "" });
             }}
             size="sm"
             type="button"
@@ -436,8 +407,7 @@ function RecurrenceEditor({
                   values.untilRule ||
                   dateToUntilRule(new Date()) ||
                   `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
-                setValue("endType", "until");
-                setValue("untilRule", fallback);
+                emitChanges({ endType: "until", untilRule: fallback });
               }}
               size="sm"
               type="button"
@@ -455,8 +425,8 @@ function RecurrenceEditor({
                     <CalendarIcon className="size-3" />
                     {untilDate
                       ? formatPlainDate(pickerDateToTemporal(untilDate), {
-                          month: "short",
                           day: "numeric",
+                          month: "short",
                           year: "numeric",
                         })
                       : "Select date"}
@@ -467,13 +437,12 @@ function RecurrenceEditor({
                     mode="single"
                     onSelect={(date) => {
                       if (!date) {
-                        setValue("untilRule", "");
-                        setValue("endType", "none");
+                        emitChanges({ endType: "none", untilRule: "" });
                         return;
                       }
                       const rule = dateToUntilRule(date);
                       if (rule) {
-                        setValue("untilRule", rule);
+                        emitChanges({ untilRule: rule });
                       }
                     }}
                     selected={untilDate ?? undefined}
@@ -487,13 +456,11 @@ function RecurrenceEditor({
             <Button
               className="h-8 shrink-0 text-xs"
               onClick={() => {
-                setValue("endType", "count");
-                setValue(
-                  "count",
+                const nextCount =
                   Number.isFinite(values.count) && values.count > 0
                     ? values.count
-                    : 5
-                );
+                    : 5;
+                emitChanges({ count: nextCount, endType: "count" });
               }}
               size="sm"
               type="button"
@@ -509,7 +476,7 @@ function RecurrenceEditor({
                   onChange={(e) => {
                     const parsed = Number.parseInt(e.target.value, 10);
                     if (Number.isFinite(parsed) && parsed > 0) {
-                      setValue("count", parsed);
+                      emitChanges({ count: parsed });
                     }
                   }}
                   type="number"
@@ -559,10 +526,10 @@ type EventEditDialogAction =
 const eventEditDialogInitialState: EventEditDialogState = {
   deleteDialogOpen: false,
   deleteScope: "this",
-  simpleDeleteConfirmOpen: false,
-  scopeDialogOpen: false,
   pendingSave: null,
+  scopeDialogOpen: false,
   selectedScope: "this",
+  simpleDeleteConfirmOpen: false,
 };
 
 function eventEditDialogReducer(
@@ -583,8 +550,8 @@ function eventEditDialogReducer(
     case "open-scope-dialog":
       return {
         ...state,
-        scopeDialogOpen: true,
         pendingSave: action.pendingSave,
+        scopeDialogOpen: true,
         selectedScope: action.scope,
       };
     case "set-scope-dialog-open":
@@ -672,8 +639,8 @@ export function EventEditPopover({
       await moveEvent.mutateAsync({
         accountId,
         calendarId,
-        eventId: event.id,
         destinationCalendarId: calendarChanged.destinationCalendarId,
+        eventId: event.id,
         scope: selectedScope,
       });
     }
@@ -699,7 +666,7 @@ export function EventEditPopover({
     setOpen(false);
     if (event.recurringEventId || event.recurrence?.length) {
       const defaultScope = event.recurringEventId ? "this" : "all";
-      dispatchDialog({ type: "open-recurring-delete", scope: defaultScope });
+      dispatchDialog({ scope: defaultScope, type: "open-recurring-delete" });
     } else {
       dispatchDialog({ type: "open-simple-delete" });
     }
@@ -758,14 +725,14 @@ export function EventEditPopover({
         const forceAll = Boolean(request.calendarChanged);
         const scope = forceAll ? "all" : request.defaultScope;
         dispatchDialog({
-          type: "open-scope-dialog",
           pendingSave: {
-            variables: request.variables,
+            calendarChanged: request.calendarChanged,
             defaultScope: scope,
             hasDataEdits: request.hasDataEdits,
-            calendarChanged: request.calendarChanged,
+            variables: request.variables,
           },
           scope,
+          type: "open-scope-dialog",
         });
         return;
       }
@@ -781,9 +748,9 @@ export function EventEditPopover({
           await moveEvent.mutateAsync({
             accountId,
             calendarId,
-            eventId: event.id,
             destinationCalendarId:
               request.calendarChanged.destinationCalendarId,
+            eventId: event.id,
             scope: "this",
           });
         }
@@ -843,14 +810,13 @@ export function EventEditPopover({
           <EventEditForm
             accountId={accountId}
             calendarId={calendarId}
+            closeSaveRequestRef={buildCloseSaveRequestRef}
             end={end}
             event={event}
+            key={event?.id ?? "create-event"}
             mode={mode}
             onCancel={handleCancel}
             onDelete={handleDelete}
-            onRegisterCloseSaveRequest={(fn) => {
-              buildCloseSaveRequestRef.current = fn;
-            }}
             onSave={handleSave}
             open={open}
             readOnly={readOnly}
@@ -869,7 +835,7 @@ export function EventEditPopover({
         }
         disabledScopes={
           pendingSave?.calendarChanged
-            ? { this: true, following: true }
+            ? { following: true, this: true }
             : undefined
         }
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
@@ -952,22 +918,22 @@ function buildCreatePayload(
   }
 
   return {
-    type: "create",
     payload: {
       accountId: values.selectedAccountId,
       calendarId: values.selectedCalendarId,
       event: {
-        summary: trimmedTitle,
-        description: values.description?.trim() || undefined,
-        location: values.location?.trim() || undefined,
         colorId: values.colorId ?? undefined,
+        conferenceData: conferenceData ?? undefined,
+        description: values.description?.trim() || undefined,
+        end: temporalPayload.endPayload,
+        location: values.location?.trim() || undefined,
         recurrence:
           values.recurrence?.length > 0 ? values.recurrence : undefined,
-        conferenceData: conferenceData ?? undefined,
         start: temporalPayload.startPayload,
-        end: temporalPayload.endPayload,
+        summary: trimmedTitle,
       },
     },
+    type: "create",
   };
 }
 
@@ -1021,36 +987,36 @@ function buildEditPayload(
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
     calendarId: ctx.calendarId,
-    eventId: ctx.event?.id ?? "",
     event: {
       ...ctx.event,
-      id: ctx.event?.id ?? "",
-      summary: values.summary.trim(),
-      description: values.description ?? "",
-      location: values.location ?? "",
       colorId: values.colorId ?? undefined,
-      recurrence: values.recurrence ?? ctx.event?.recurrence,
       conferenceData: ctx.conferenceData ?? undefined,
-      start: {
-        ...ctx.event?.start,
-        ...temporalPayload.startPayload,
-      },
+      description: values.description ?? "",
       end: {
         ...ctx.event?.end,
         ...temporalPayload.endPayload,
       },
+      id: ctx.event?.id ?? "",
+      location: values.location ?? "",
+      recurrence: values.recurrence ?? ctx.event?.recurrence,
+      start: {
+        ...ctx.event?.start,
+        ...temporalPayload.startPayload,
+      },
+      summary: values.summary.trim(),
     },
+    eventId: ctx.event?.id ?? "",
   };
 
   return {
-    type: "save",
-    variables,
-    isRecurring,
-    defaultScope,
-    hasDataEdits: ctx.hasEdits,
     calendarChanged: calendarChanged
       ? { destinationCalendarId: values.selectedCalendarId }
       : undefined,
+    defaultScope,
+    hasDataEdits: ctx.hasEdits,
+    isRecurring,
+    type: "save",
+    variables,
   };
 }
 
@@ -1397,18 +1363,18 @@ function EventLocationCombobox({
 
 function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   return {
-    summary: watched.summary ?? "",
-    description: watched.description ?? "",
-    location: watched.location ?? "",
     allDay: watched.allDay ?? false,
     colorId: watched.colorId,
-    startDate: watched.startDate,
+    description: watched.description ?? "",
     endDate: watched.endDate,
-    startTime: watched.startTime ?? "",
     endTime: watched.endTime ?? "",
+    location: watched.location ?? "",
     recurrence: watched.recurrence ?? [],
     selectedAccountId: watched.selectedAccountId ?? "",
     selectedCalendarId: watched.selectedCalendarId ?? "",
+    startDate: watched.startDate,
+    startTime: watched.startTime ?? "",
+    summary: watched.summary ?? "",
   };
 }
 
@@ -1463,7 +1429,7 @@ export function EventEditForm({
   start,
   end,
   mode,
-  onRegisterCloseSaveRequest,
+  closeSaveRequestRef,
   onSave,
   onCancel,
   onDelete,
@@ -1471,7 +1437,7 @@ export function EventEditForm({
   readOnly = false,
   readOnlyReason,
   headerContent,
-  onRegisterCreateInterop,
+  createInteropRef,
 }: {
   event?: GoogleEvent;
   accountId: string;
@@ -1479,7 +1445,7 @@ export function EventEditForm({
   start: Date;
   end: Date;
   mode: "create" | "edit";
-  onRegisterCloseSaveRequest: (fn: () => CloseSaveRequest) => void;
+  closeSaveRequestRef: React.Ref<() => CloseSaveRequest>;
   /** Trigger the save flow (builds close-save request and processes it). */
   onSave: () => void;
   /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
@@ -1489,7 +1455,7 @@ export function EventEditForm({
   readOnly?: boolean;
   readOnlyReason?: string | null;
   headerContent?: ReactNode;
-  onRegisterCreateInterop?: (interop: CalendarCreateFormInterop | null) => void;
+  createInteropRef?: React.Ref<CalendarCreateFormInterop>;
 }) {
   const isCreateMode = mode === "create";
   // Delete hotkey - only active when popover is open in edit mode, skips text inputs
@@ -1514,17 +1480,13 @@ export function EventEditForm({
    * The popover wrapper controls “save on close” and dialogs.
    */
   const hasUserEditedRef = useRef(false);
-  const onRegisterCloseSaveRequestRef = useRef(onRegisterCloseSaveRequest);
-  onRegisterCloseSaveRequestRef.current = onRegisterCloseSaveRequest;
-  const onRegisterCreateInteropRef = useRef(onRegisterCreateInterop);
-  onRegisterCreateInteropRef.current = onRegisterCreateInterop;
 
   // Only query for recurring event master in edit mode when event exists
   const masterQuery = useRecurringEventMaster({
     accountId,
     calendarId,
-    event: event ?? (null as GoogleEvent | null),
     enabled: open,
+    event: event ?? (null as GoogleEvent | null),
   });
 
   const isAllDay = Boolean(event?.start?.date);
@@ -1559,18 +1521,18 @@ export function EventEditForm({
 
   const initialValues = useMemo<EventFormValues>(
     () => ({
-      summary: event?.summary ?? "",
-      description: event?.description ?? "",
-      location: event?.location ?? "",
-      colorId: event?.colorId ?? undefined,
       allDay: isAllDay,
-      startDate: initialStartDate ?? null,
+      colorId: event?.colorId ?? undefined,
+      description: event?.description ?? "",
       endDate: initialEndDate ?? null,
-      startTime: isAllDay ? "" : formatTimeString(initialStartDate),
       endTime: isAllDay ? "" : formatTimeString(initialEndDate),
+      location: event?.location ?? "",
       recurrence: recurrenceSource,
       selectedAccountId: accountId,
       selectedCalendarId: calendarId,
+      startDate: initialStartDate ?? null,
+      startTime: isAllDay ? "" : formatTimeString(initialStartDate),
+      summary: event?.summary ?? "",
     }),
     [
       accountId,
@@ -1586,7 +1548,7 @@ export function EventEditForm({
     ]
   );
 
-  const { control, reset, setValue, getValues } = useForm<EventFormValues>({
+  const { control, setValue, getValues } = useForm<EventFormValues>({
     defaultValues: initialValues,
   });
   const [pendingConference, setPendingConference] = useState<
@@ -1596,15 +1558,6 @@ export function EventEditForm({
     null
   );
   const [locationOpen, setLocationOpen] = useState(false);
-
-  // Keep form synced if event changes underneath.
-  useEffect(() => {
-    // Reset “edited” tracking when the underlying event changes.
-    hasUserEditedRef.current = false;
-    pendingConferenceRef.current = null;
-    setPendingConference(null);
-    reset(initialValues, { keepDirty: false });
-  }, [initialValues, reset]);
 
   const rawWatched = useWatch({ control });
   const watchedValues = resolveWatchedDefaults(rawWatched);
@@ -1616,10 +1569,10 @@ export function EventEditForm({
   const meetingSource = useMemo(
     () => ({
       ...(event ?? {}),
-      location: watchedValues.location,
-      description: watchedValues.description,
       // Use pendingConference state (not ref) to ensure memo recomputes on changes
       conferenceData: pendingConference ?? event?.conferenceData,
+      description: watchedValues.description,
+      location: watchedValues.location,
     }),
     [
       event,
@@ -1668,8 +1621,8 @@ export function EventEditForm({
           acc.push({
             accountId: c.accountId,
             calendarId: c.calendar.id,
-            label: c.calendar.summary ?? "Calendar",
             color: pastelizeColor(c.calendar.backgroundColor),
+            label: c.calendar.summary ?? "Calendar",
           });
         }
         return acc;
@@ -1698,12 +1651,12 @@ export function EventEditForm({
   const clampToStartIfNeeded = useCallback(
     (nextStart: Date | null, nextEnd: Date | null) => {
       if (!(nextStart && nextEnd)) {
-        return { start: nextStart, end: nextEnd };
+        return { end: nextEnd, start: nextStart };
       }
       if (nextEnd < nextStart) {
-        return { start: nextStart, end: nextStart };
+        return { end: nextStart, start: nextStart };
       }
-      return { start: nextStart, end: nextEnd };
+      return { end: nextEnd, start: nextStart };
     },
     []
   );
@@ -1835,11 +1788,11 @@ export function EventEditForm({
     ]
   );
 
-  useEffect(() => {
-    onRegisterCloseSaveRequestRef.current(() =>
-      buildCloseSaveRequest(getValues())
-    );
-  }, [buildCloseSaveRequest, getValues]);
+  useImperativeHandle(
+    closeSaveRequestRef,
+    () => () => buildCloseSaveRequest(getValues()),
+    [buildCloseSaveRequest, getValues]
+  );
 
   const applySharedFields = useCallback(
     (fields: CalendarCreateSharedFields) => {
@@ -1873,20 +1826,11 @@ export function EventEditForm({
     [getValues]
   );
 
-  useEffect(() => {
-    if (!onRegisterCreateInteropRef.current) {
-      return;
-    }
-
-    onRegisterCreateInteropRef.current({
-      applySharedFields,
-      getSharedFields,
-    });
-
-    return () => {
-      onRegisterCreateInteropRef.current?.(null);
-    };
-  }, [applySharedFields, getSharedFields]);
+  useImperativeHandle(
+    createInteropRef,
+    () => ({ applySharedFields, getSharedFields }),
+    [applySharedFields, getSharedFields]
+  );
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
@@ -1988,8 +1932,8 @@ export function EventEditForm({
                   <CalendarIcon className="size-4" />
                   {field.value
                     ? formatPlainDate(pickerDateToTemporal(field.value), {
-                        month: "short",
                         day: "numeric",
+                        month: "short",
                       })
                     : "Start date"}
                 </Button>
@@ -2032,8 +1976,8 @@ export function EventEditForm({
                   <CalendarIcon className="size-4" />
                   {field.value
                     ? formatPlainDate(pickerDateToTemporal(field.value), {
-                        month: "short",
                         day: "numeric",
+                        month: "short",
                       })
                     : "End date"}
                 </Button>

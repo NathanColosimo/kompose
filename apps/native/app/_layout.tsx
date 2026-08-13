@@ -12,13 +12,11 @@ if (__DEV__) {
   };
 }
 
-import { sessionQueryAtom, sessionUserAtom } from "@kompose/state/config";
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useAtomValue } from "jotai";
 import React from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -42,8 +40,9 @@ export const unstable_settings = {
  */
 function RootLayoutContent() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
-  const sessionQuery = useAtomValue(sessionQueryAtom);
-  const sessionUser = useAtomValue(sessionUserAtom) as { id?: string } | null;
+  const { data: session, isPending: isSessionPending } =
+    authClient.useSession();
+  const sessionUser = session?.user;
   useNativeRealtimeSync(sessionUser?.id);
 
   // Update Android nav bar when color scheme changes
@@ -57,7 +56,7 @@ function RootLayoutContent() {
   const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
 
   // Wait for session to load
-  if (sessionQuery.status === "pending") {
+  if (isSessionPending) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
@@ -114,16 +113,13 @@ export default function RootLayout() {
   const storage = React.useMemo(() => createSecureStoreAdapter(), []);
   const stateAuthClient = React.useMemo(
     () => ({
-      getSession: async () => {
-        const result = await authClient.getSession();
-        if (!(result && "data" in result)) {
-          return null;
-        }
-        return { data: result.data };
-      },
       listAccounts: async () => {
         const result = await authClient.listAccounts();
-        if (!(result && "data" in result) || result.data == null) {
+        if (
+          !(result && "data" in result) ||
+          result.data === null ||
+          result.data === undefined
+        ) {
           return null;
         }
         return { data: result.data };

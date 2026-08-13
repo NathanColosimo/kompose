@@ -5,7 +5,7 @@ export const base = os.$context<Context>();
 
 export const requireAuth = base.middleware(({ context, next }) => {
   if (!context.user?.id) {
-    throw new ORPCError("UNAUTHORIZED User not found");
+    throw new ORPCError("UNAUTHORIZED", { message: "User not found" });
   }
 
   return next({

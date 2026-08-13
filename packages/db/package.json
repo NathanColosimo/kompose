@@ -24,7 +24,7 @@
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
-    "@types/pg": "^8.20.3",
+    "@types/pg": "^8.21.0",
     "drizzle-kit": "1.0.0-beta.23"
   },
   "dependencies": {
@@ -36,8 +36,7 @@
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "effect": "catalog:",
-    "pg": "^8.20.0",
-    "pg-types": "^4.1.0",
+    "pg": "^8.23.0",
     "postgres": "^3.4.9",
     "zod": "catalog:"
   }

@@ -49,7 +49,8 @@ The `transit` task creates dependency relationships without running anything (no
 
 ## outputs
 
-Glob patterns for files to cache. **If omitted, nothing is cached.**
+Glob patterns for file outputs to restore on a cache hit. If omitted, Turbo can
+still cache the task result and logs, but it will not restore generated files.
 
 ```json
 {
@@ -65,7 +66,7 @@ Glob patterns for files to cache. **If omitted, nothing is cached.**
 
 ```json
 // Next.js
-"outputs": [".next/**", "!.next/cache/**"]
+"outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
 
 // Vite
 "outputs": ["dist/**"]
@@ -78,6 +79,11 @@ Glob patterns for files to cache. **If omitted, nothing is cached.**
 ```
 
 Use `!` prefix to exclude patterns from caching.
+
+Keep Next.js's incremental `.next/cache/**` separate from Turbo task outputs.
+Persist it with the CI provider's framework cache (automatic on Vercel) or a
+dedicated CI cache. Turbo restores outputs only for an exact task-cache hit, so
+including this directory does not warm a changed build.
 
 ## inputs
 

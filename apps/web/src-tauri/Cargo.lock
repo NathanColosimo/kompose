@@ -2037,7 +2037,6 @@ version = "0.1.0"
 dependencies = [
  "log",
  "objc",
- "serde",
  "serde_json",
  "tauri",
  "tauri-build",

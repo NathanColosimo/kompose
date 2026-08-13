@@ -1,12 +1,15 @@
 "use client";
 
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
+import { focusManager } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtom } from "jotai";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
+import { useMountEffect } from "@/hooks/use-mount-effect";
+import { authClient } from "@/lib/auth-client";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 
 const COMMAND_BAR_MAX_HEIGHT = 520;
@@ -19,23 +22,33 @@ const COMMAND_BAR_MAX_HEIGHT = 520;
  */
 export default function DesktopCommandBarClient() {
   const [open, setOpen] = useAtom(commandBarOpenAtom);
+  const { data: session, isPending: isSessionPending } =
+    authClient.useSession();
+  const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
 
   // Open the command bar when the window gains focus.
-  useEffect(() => {
+  useMountEffect(() => {
     if (!isTauriRuntime()) {
       return;
     }
 
+    focusManager.setFocused(true);
     setOpen(true);
+    let disposed = false;
     let unlisten: (() => void) | null = null;
 
     getCurrentWindow()
       .onFocusChanged((event) => {
+        focusManager.setFocused(event.payload);
         if (event.payload) {
           setOpen(true);
         }
       })
       .then((fn) => {
+        if (disposed) {
+          fn();
+          return;
+        }
         unlisten = fn;
       })
       .catch((error) => {
@@ -43,9 +56,11 @@ export default function DesktopCommandBarClient() {
       });
 
     return () => {
+      disposed = true;
       unlisten?.();
+      focusManager.setFocused(undefined);
     };
-  }, [setOpen]);
+  });
 
   // Dismiss the command bar via Rust so the previous app is reactivated
   // before the window hides, avoiding a flicker of the main Kompose window.
@@ -79,17 +94,16 @@ export default function DesktopCommandBarClient() {
     }
 
     let disposed = false;
-    let cleanupRef: (() => void) | null = null;
 
-    const resizeWindowToContent = async (el: HTMLElement) => {
+    const resizeWindowToContent = async (surface: HTMLElement) => {
       if (disposed) {
         return;
       }
-      const rect = el.getBoundingClientRect();
+      const rect = surface.getBoundingClientRect();
       const width = Math.ceil(rect.width);
       const height = Math.min(
         COMMAND_BAR_MAX_HEIGHT,
-        Math.max(Math.ceil(rect.height), el.scrollHeight)
+        Math.max(Math.ceil(rect.height), surface.scrollHeight)
       );
       if (width <= 0 || height <= 0) {
         return;
@@ -99,34 +113,27 @@ export default function DesktopCommandBarClient() {
       await win.center();
     };
 
-    const startObserving = () => {
-      const el = document.querySelector<HTMLElement>(
-        "[data-command-bar-surface]"
-      );
-      if (!el) {
-        const frameId = requestAnimationFrame(startObserving);
-        cleanupRef = () => cancelAnimationFrame(frameId);
-        return;
-      }
+    const el = document.querySelector<HTMLElement>(
+      "[data-command-bar-surface]"
+    );
+    if (!el) {
+      return;
+    }
 
-      const observer = new ResizeObserver(() => {
-        resizeWindowToContent(el).catch((error) => {
-          console.warn("Failed to resize command bar window.", error);
-        });
-      });
-      observer.observe(el);
-      cleanupRef = () => observer.disconnect();
-
+    const observer = new ResizeObserver(() => {
       resizeWindowToContent(el).catch((error) => {
         console.warn("Failed to resize command bar window.", error);
       });
-    };
+    });
+    observer.observe(el);
 
-    startObserving();
+    resizeWindowToContent(el).catch((error) => {
+      console.warn("Failed to resize command bar window.", error);
+    });
 
     return () => {
       disposed = true;
-      cleanupRef?.();
+      observer.disconnect();
     };
   }, [open]);
 
@@ -134,7 +141,7 @@ export default function DesktopCommandBarClient() {
     return null;
   }
 
-  if (!open) {
+  if (!open || isSessionPending || !session?.user) {
     return null;
   }
 
@@ -143,14 +150,13 @@ export default function DesktopCommandBarClient() {
       className="inline-block"
       data-command-bar-surface
       style={{
-        width: "32rem",
         maxWidth: "100vw",
+        width: "32rem",
       }}
     >
       <CommandBarContent
         className="h-auto"
-        isOpen={open}
-        onRequestClose={() => setOpen(false)}
+        onRequestClose={handleRequestClose}
         selectionMode="desktop-popup"
         size="lg"
       />

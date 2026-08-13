@@ -23,7 +23,7 @@ import {
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../days-view";
+import { calculateEventPosition } from "../event-position";
 import { EventEditPopover } from "./event-edit-popover";
 
 interface GoogleCalendarEventProps {

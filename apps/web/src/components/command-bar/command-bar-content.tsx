@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Command, CommandInput, CommandList } from "@/components/ui/command";
 import { CommandBarCreateTask } from "./command-bar-create-task";
 import { CommandBarRoot } from "./command-bar-root";
@@ -14,53 +14,42 @@ import { CommandBarSearchTasks } from "./command-bar-search-tasks";
  */
 type CommandBarView = "root" | "search-tasks" | "create-task";
 
+interface CommandBarContentProps {
+  className?: string;
+  onRequestClose?: () => void;
+  selectionMode?: "desktop-popup" | "local";
+  size?: "sm" | "md" | "lg";
+}
+
+function activateCommandItem(
+  event: React.KeyboardEvent,
+  fallbackToFirst: boolean
+) {
+  const selected =
+    document.querySelector<HTMLElement>('[cmdk-item][data-selected="true"]') ??
+    (fallbackToFirst
+      ? document.querySelector<HTMLElement>("[cmdk-item]")
+      : null);
+  if (!selected) {
+    return;
+  }
+  event.preventDefault();
+  selected.click();
+}
+
 /**
  * Reusable command bar body shared by the dashboard dialog and the
  * desktop popup window. Renders the Command surface with input, list,
  * and view-switching logic.
  */
 export function CommandBarContent({
-  isOpen,
   onRequestClose,
   size = "lg",
   selectionMode = "local",
   className,
-}: {
-  isOpen: boolean;
-  onRequestClose?: () => void;
-  selectionMode?: "desktop-popup" | "local";
-  size?: "sm" | "md" | "lg";
-  className?: string;
-}) {
+}: CommandBarContentProps) {
   const [view, setView] = useState<CommandBarView>("root");
   const [search, setSearch] = useState("");
-
-  // Reset to root when the surrounding surface closes.
-  useEffect(() => {
-    if (isOpen) {
-      return;
-    }
-    setView("root");
-    setSearch("");
-  }, [isOpen]);
-
-  // Ensure the input is focused each time the surface opens.
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const focusTimer = window.requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLInputElement>(
-        '[data-slot="command-input"]'
-      );
-      input?.focus();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(focusTimer);
-    };
-  }, [isOpen]);
 
   // Handle keyboard events at the Command level.
   const handleKeyDown = useCallback(
@@ -77,32 +66,21 @@ export function CommandBarContent({
           e.preventDefault();
           onRequestClose();
         }
+        return;
       }
 
-      if (
-        e.key === "Enter" &&
-        selectionMode === "desktop-popup" &&
-        view !== "root"
-      ) {
-        const selected =
-          document.querySelector<HTMLElement>(
-            '[cmdk-item][data-selected="true"]'
-          ) ?? document.querySelector<HTMLElement>("[cmdk-item]");
-        if (selected) {
-          e.preventDefault();
-          selected.click();
-        }
+      if (view === "root") {
+        return;
+      }
+
+      if (e.key === "Enter" && selectionMode === "desktop-popup") {
+        activateCommandItem(e, true);
+        return;
       }
 
       // Tab auto-completes the currently highlighted item (e.g., tag selection).
       if (e.key === "Tab" && view === "create-task") {
-        const selected = document.querySelector<HTMLElement>(
-          '[cmdk-item][data-selected="true"]'
-        );
-        if (selected) {
-          e.preventDefault();
-          selected.click();
-        }
+        activateCommandItem(e, false);
       }
     },
     [onRequestClose, selectionMode, view]
@@ -113,6 +91,7 @@ export function CommandBarContent({
     setView(targetView);
     setSearch("");
   }, []);
+  const handleCreated = useCallback(() => setSearch(""), []);
 
   // Derive placeholder text directly from the active command-bar mode.
   let placeholder = "Type a command or search...";
@@ -130,6 +109,7 @@ export function CommandBarContent({
       size={size}
     >
       <CommandInput
+        autoFocus
         onValueChange={setSearch}
         placeholder={placeholder}
         value={search}
@@ -144,7 +124,7 @@ export function CommandBarContent({
         )}
         {view === "create-task" && (
           <CommandBarCreateTask
-            onCreated={() => setSearch("")}
+            onCreated={handleCreated}
             onUpdateSearch={setSearch}
             search={search}
           />

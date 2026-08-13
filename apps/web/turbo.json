@@ -21,6 +21,7 @@
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
+        ".env*",
         "!.next/**",
         "!out/**",
         "!src-tauri/**",
@@ -34,13 +35,14 @@
         "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
     "build:prod": {
-      "dependsOn": ["build:prod:desktop", "^build"],
+      "dependsOn": ["$TURBO_EXTENDS$", "build:prod:desktop", "^build"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
+        ".env*",
         "$TURBO_ROOT$/documents/privacy-policy.md",
         "$TURBO_ROOT$/documents/terms-of-service.md",
         "!.next/**",
@@ -59,6 +61,7 @@
       "outputs": [
         ".next/**",
         "!.next/cache/**",
+        "!.next/dev/**",
         "../../.vercel/output/**",
         "../../.vercel/project.json"
       ]
@@ -67,6 +70,7 @@
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
+        ".tauri.env",
         "!.next/**",
         "!out/**",
         "!src-tauri/target/**",
@@ -83,13 +87,16 @@
       ],
       "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
     },
+    "type-check": {
+      "outputs": [".next/types/**", "tsconfig.tsbuildinfo"]
+    },
     "submit:prod": {
       "dependsOn": ["build:prod"],
-      "cache": true
+      "cache": false
     },
     "submit:prod:desktop": {
       "dependsOn": ["build:prod:desktop"],
-      "cache": true
+      "cache": false
     }
   }
 }

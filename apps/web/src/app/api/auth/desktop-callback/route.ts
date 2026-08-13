@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       htmlPage(
         "Signed in!",
         "Returning to Kompose...",
-        `<script>window.location.href = ${JSON.stringify(deepLinkUrl)};</script>`
+        `<script>window.location.href = ${serializeForInlineScript(deepLinkUrl)};</script>`
       ),
       {
         status: 200,
@@ -68,6 +68,16 @@ export async function GET(request: NextRequest) {
       }
     );
   }
+}
+
+/** Escape JSON characters that can terminate an inline script or HTML context. */
+function serializeForInlineScript(value: string): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 /** Minimal HTML page template for browser feedback. */
