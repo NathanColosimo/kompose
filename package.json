@@ -8,9 +8,9 @@
       "packages/*"
     ],
     "catalog": {
-      "@better-auth/expo": "^1.6.27",
+      "@better-auth/expo": "^1.6.28",
       "@ai-sdk/openai": "^4.0.41",
-      "@ai-sdk/react": "^4.0.67",
+      "@ai-sdk/react": "^4.0.68",
       "@effect/platform": "^0.97.1",
       "@effect/sql": "^0.52.1",
       "@effect/sql-pg": "^0.53.0",
@@ -27,8 +27,8 @@
       "@types/node": "^26.2.0",
       "@types/react": "~19.2.18",
       "@types/react-dom": "~19.2.4",
-      "better-auth": "^1.6.27",
-      "ai": "^7.0.64",
+      "better-auth": "^1.6.28",
+      "ai": "^7.0.65",
       "dotenv": "^17.4.2",
       "drizzle-orm": "1.0.0-beta.23",
       "effect": "^3.22.1",
@@ -36,12 +36,12 @@
       "jotai-family": "^1.1.0",
       "jotai-tanstack-query": "^0.11.0",
       "react-hook-form": "^7.85.0",
-      "next": "16.3.0",
+      "next": "16.3.1",
       "react": "19.2.8",
       "react-dom": "19.2.8",
       "tailwindcss": "^4.3.3",
       "tailwind-merge": "^3.6.0",
-      "temporal-polyfill": "^1.0.3",
+      "temporal-polyfill": "^1.0.4",
       "typescript": "7.0.2",
       "resumable-stream": "^2.2.12",
       "uuidv7": "^1.2.1",
@@ -98,7 +98,7 @@
     "knip": "^6.32.2",
     "turbo": "^2.10.9",
     "typescript": "catalog:",
-    "ultracite": "^7.10.3"
+    "ultracite": "^7.10.4"
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {
