@@ -17,7 +17,12 @@
         "AXIOM_API_TOKEN",
         "AXIOM_DATASET",
         "APPLE_APP_BUNDLE_IDENTIFIER",
-        "OPENAI_API_KEY"
+        "OPENAI_API_KEY",
+        "SPOTIFY_CLIENT_ID",
+        "SPOTIFY_CLIENT_SECRET",
+        "YOUTUBE_API_KEY",
+        "WHOOP_CLIENT_ID",
+        "WHOOP_CLIENT_SECRET"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
