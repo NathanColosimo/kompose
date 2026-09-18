@@ -26,14 +26,16 @@ export async function POST(request: Request): Promise<Response> {
 
       try {
         const result = await Effect.runPromise(
-          WebhookService.handleGoogleNotification({
-            headers: request.headers,
-          }).pipe(
+          WebhookService.use((service) =>
+            service.handleGoogleNotification({
+              headers: request.headers,
+            })
+          ).pipe(
             Effect.catchTags({
-              WebhookValidationError: (error) =>
-                Effect.succeed(new Response(error.message, { status: 400 })),
               WebhookRepositoryError: (error) =>
                 Effect.succeed(new Response(error.message, { status: 202 })),
+              WebhookValidationError: (error) =>
+                Effect.succeed(new Response(error.message, { status: 400 })),
             }),
             Effect.provide(WebhookLive)
           )
@@ -48,10 +50,12 @@ export async function POST(request: Request): Promise<Response> {
         // Fire-and-forget webhook refresh when calendar list changes
         if (result.followUpRefresh) {
           Effect.runPromise(
-            WebhookService.refreshAll({
-              accountId: result.followUpRefresh.accountId,
-              userId: result.followUpRefresh.userId,
-            }).pipe(
+            WebhookService.use((service) =>
+              service.refreshAll({
+                accountId: result.followUpRefresh.accountId,
+                userId: result.followUpRefresh.userId,
+              })
+            ).pipe(
               Effect.tapError((error) =>
                 Effect.logError(
                   "GOOGLE_WEBHOOK_SETUP_FAILED_ON_CALENDAR_LIST_CHANGE",

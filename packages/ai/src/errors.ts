@@ -1,12 +1,12 @@
 import { Schema } from "effect";
 
-export const aiChatErrorCodeSchema = Schema.Literal(
+export const aiChatErrorCodeSchema = Schema.Literals([
   "UNAUTHORIZED",
   "NOT_FOUND",
   "BAD_REQUEST",
   "MODEL_NOT_CONFIGURED",
-  "INTERNAL"
-);
+  "INTERNAL",
+]);
 export type AiChatErrorCode = Schema.Schema.Type<typeof aiChatErrorCodeSchema>;
 
 /**

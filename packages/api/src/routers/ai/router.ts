@@ -18,16 +18,16 @@ import {
 import { aiToolApproval, createAiTools } from "./tools";
 
 const AiChatLive = Layer.mergeAll(
-  AiChatService.Default,
+  AiChatService.layer,
   DatabaseLive,
   TelemetryLive
 );
 
 function publishAiChatEvent(userId: string, sessionId: string) {
   return publishToUser(userId, {
-    type: "ai-chat",
     payload: { sessionId },
-  }).pipe(Effect.catchAll(() => Effect.void));
+    type: "ai-chat",
+  }).pipe(Effect.catch(() => Effect.void));
 }
 
 function emptyUiMessageChunkIterator() {
@@ -52,28 +52,28 @@ function handleError(error: AiChatError | EffectDrizzleQueryError): never {
   switch (error.code) {
     case "UNAUTHORIZED":
       throw new ORPCError("UNAUTHORIZED", {
-        message: error.message,
         data: errorData,
+        message: error.message,
       });
     case "NOT_FOUND":
       throw new ORPCError("NOT_FOUND", {
-        message: error.message,
         data: errorData,
+        message: error.message,
       });
     case "BAD_REQUEST":
       throw new ORPCError("BAD_REQUEST", {
-        message: error.message,
         data: errorData,
+        message: error.message,
       });
     case "MODEL_NOT_CONFIGURED":
       throw new ORPCError("SERVICE_UNAVAILABLE", {
-        message: error.message,
         data: errorData,
+        message: error.message,
       });
     default:
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message: error.message,
         data: errorData,
+        message: error.message,
       });
   }
 }
@@ -81,40 +81,44 @@ function handleError(error: AiChatError | EffectDrizzleQueryError): never {
 const os = implement(aiContract).use(requireAuth).use(globalRateLimit);
 
 export const aiRouter = os.router({
-  sessions: {
-    list: os.sessions.list.handler(({ context }) => {
-      const program = AiChatService.listSessions(context.user.id);
+  messages: {
+    list: os.messages.list.handler(({ input, context }) => {
+      const program = AiChatService.use((service) =>
+        service.listMessages(context.user.id, input.sessionId)
+      );
 
       return Effect.runPromise(
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       );
     }),
-
+  },
+  sessions: {
     create: os.sessions.create.handler(({ input, context }) => {
-      const program = AiChatService.createSession(context.user.id, input);
+      const program = AiChatService.use((service) =>
+        service.createSession(context.user.id, input)
+      );
 
       return Effect.runPromise(
         program.pipe(
           Effect.tap((value) => publishAiChatEvent(context.user.id, value.id)),
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       );
     }),
 
     delete: os.sessions.delete.handler(({ input, context }) => {
-      const program = AiChatService.deleteSession(
-        context.user.id,
-        input.sessionId
+      const program = AiChatService.use((service) =>
+        service.deleteSession(context.user.id, input.sessionId)
       );
 
       return Effect.runPromise(
@@ -124,27 +128,23 @@ export const aiRouter = os.router({
           ),
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: () => null,
             onFailure: handleError,
+            onSuccess: () => null,
           })
         )
       );
     }),
-  },
-
-  messages: {
-    list: os.messages.list.handler(({ input, context }) => {
-      const program = AiChatService.listMessages(
-        context.user.id,
-        input.sessionId
+    list: os.sessions.list.handler(({ context }) => {
+      const program = AiChatService.use((service) =>
+        service.listSessions(context.user.id)
       );
 
       return Effect.runPromise(
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       );
@@ -152,115 +152,10 @@ export const aiRouter = os.router({
   },
 
   stream: {
-    send: os.stream.send.handler(({ input, context, signal }) => {
-      const program = Effect.gen(function* () {
-        const tools = createAiTools(context.user);
-        const { originalMessages, streamResult, firstMessageText } =
-          yield* AiChatService.startStream({
-            userId: context.user.id,
-            sessionId: input.sessionId,
-            messages: input.messages,
-            timeZone: input.timeZone,
-            tools,
-            toolApproval: aiToolApproval,
-            abortSignal: signal,
-          });
-
-        if (firstMessageText) {
-          // Title generation is intentionally detached from stream startup.
-          // Any failure here should never impact assistant response delivery.
-          const titleGenerationProgram =
-            AiChatService.generateSessionTitleFromFirstMessage({
-              userId: context.user.id,
-              sessionId: input.sessionId,
-              firstMessageText,
-            }).pipe(
-              Effect.tap((didUpdate) =>
-                didUpdate
-                  ? publishAiChatEvent(context.user.id, input.sessionId)
-                  : Effect.void
-              ),
-              Effect.provide(AiChatLive),
-              Effect.match({
-                onSuccess: () => undefined,
-                onFailure: () => undefined,
-              })
-            );
-
-          yield* Effect.forkDaemon(titleGenerationProgram);
-        }
-
-        const uiChunkStream = toUIMessageStream({
-          stream: streamResult.stream,
-          originalMessages,
-          generateMessageId: () => uuidv7(),
-          onEnd: async ({ messages }) => {
-            await Effect.runPromise(
-              AiChatService.persistAssistantFromUiMessages({
-                userId: context.user.id,
-                sessionId: input.sessionId,
-                messages,
-              }).pipe(Effect.provide(AiChatLive))
-            );
-
-            await Effect.runPromise(
-              publishAiChatEvent(context.user.id, input.sessionId)
-            );
-          },
-        });
-
-        const sseStream = uiMessageChunkStreamToSseStringStream(uiChunkStream);
-        const streamId = generateId();
-        const resumableSseStream = yield* Effect.tryPromise({
-          try: () =>
-            chatResumableStreamContext.createNewResumableStream(
-              streamId,
-              () => sseStream
-            ),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to create resumable stream.",
-              code: "INTERNAL",
-            }),
-        });
-
-        if (!resumableSseStream) {
-          return yield* Effect.fail(
-            new AiChatError({
-              message: "Failed to create resumable stream.",
-              code: "INTERNAL",
-            })
-          );
-        }
-
-        yield* AiChatService.markActiveStream({
-          userId: context.user.id,
-          sessionId: input.sessionId,
-          streamId,
-        });
-        yield* publishAiChatEvent(context.user.id, input.sessionId);
-
-        return streamToEventIterator(
-          sseStringStreamToUiMessageChunkStream(resumableSseStream)
-        );
-      });
-
-      return Effect.runPromise(
-        program.pipe(
-          Effect.provide(AiChatLive),
-          Effect.match({
-            onSuccess: (value) => value,
-            onFailure: handleError,
-          })
-        )
-      );
-    }),
-
     reconnect: os.stream.reconnect.handler(({ input, context }) => {
       const program = Effect.gen(function* () {
-        const activeStreamId = yield* AiChatService.getActiveStreamId(
-          context.user.id,
-          input.sessionId
+        const activeStreamId = yield* AiChatService.use((service) =>
+          service.getActiveStreamId(context.user.id, input.sessionId)
         );
 
         if (!activeStreamId) {
@@ -269,13 +164,13 @@ export const aiRouter = os.router({
         }
 
         const resumedSseStream = yield* Effect.tryPromise({
-          try: () =>
-            chatResumableStreamContext.resumeExistingStream(activeStreamId),
           catch: () =>
             new AiChatError({
-              message: "Failed to resume chat stream.",
               code: "INTERNAL",
+              message: "Failed to resume chat stream.",
             }),
+          try: () =>
+            chatResumableStreamContext.resumeExistingStream(activeStreamId),
         }).pipe(
           // Reconnect is best-effort; treat resume failures as missing streams.
           Effect.catchTag("AiChatError", () => Effect.succeed(null))
@@ -298,8 +193,118 @@ export const aiRouter = os.router({
         program.pipe(
           Effect.provide(AiChatLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
+          })
+        )
+      );
+    }),
+    send: os.stream.send.handler(({ input, context, signal }) => {
+      const program = Effect.gen(function* () {
+        const tools = createAiTools(context.user);
+        const { originalMessages, streamResult, firstMessageText } =
+          yield* AiChatService.use((service) =>
+            service.startStream({
+              abortSignal: signal,
+              messages: input.messages,
+              sessionId: input.sessionId,
+              timeZone: input.timeZone,
+              toolApproval: aiToolApproval,
+              tools,
+              userId: context.user.id,
+            })
+          );
+
+        if (firstMessageText) {
+          // Title generation is intentionally detached from stream startup.
+          // Any failure here should never impact assistant response delivery.
+          const titleGenerationProgram = AiChatService.use((service) =>
+            service.generateSessionTitleFromFirstMessage({
+              firstMessageText,
+              sessionId: input.sessionId,
+              userId: context.user.id,
+            })
+          ).pipe(
+            Effect.tap((didUpdate) =>
+              didUpdate
+                ? publishAiChatEvent(context.user.id, input.sessionId)
+                : Effect.void
+            ),
+            Effect.provide(AiChatLive),
+            Effect.match({
+              onFailure: () => undefined,
+              onSuccess: () => undefined,
+            })
+          );
+
+          yield* Effect.forkDetach(titleGenerationProgram);
+        }
+
+        const uiChunkStream = toUIMessageStream({
+          generateMessageId: () => uuidv7(),
+          onEnd: async ({ messages }) => {
+            await Effect.runPromise(
+              AiChatService.use((service) =>
+                service.persistAssistantFromUiMessages({
+                  messages,
+                  sessionId: input.sessionId,
+                  userId: context.user.id,
+                })
+              ).pipe(Effect.provide(AiChatLive))
+            );
+
+            await Effect.runPromise(
+              publishAiChatEvent(context.user.id, input.sessionId)
+            );
+          },
+          originalMessages,
+          stream: streamResult.stream,
+        });
+
+        const sseStream = uiMessageChunkStreamToSseStringStream(uiChunkStream);
+        const streamId = generateId();
+        const resumableSseStream = yield* Effect.tryPromise({
+          catch: () =>
+            new AiChatError({
+              code: "INTERNAL",
+              message: "Failed to create resumable stream.",
+            }),
+          try: () =>
+            chatResumableStreamContext.createNewResumableStream(
+              streamId,
+              () => sseStream
+            ),
+        });
+
+        if (!resumableSseStream) {
+          return yield* Effect.fail(
+            new AiChatError({
+              code: "INTERNAL",
+              message: "Failed to create resumable stream.",
+            })
+          );
+        }
+
+        yield* AiChatService.use((service) =>
+          service.markActiveStream({
+            sessionId: input.sessionId,
+            streamId,
+            userId: context.user.id,
+          })
+        );
+        yield* publishAiChatEvent(context.user.id, input.sessionId);
+
+        return streamToEventIterator(
+          sseStringStreamToUiMessageChunkStream(resumableSseStream)
+        );
+      });
+
+      return Effect.runPromise(
+        program.pipe(
+          Effect.provide(AiChatLive),
+          Effect.match({
+            onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       );

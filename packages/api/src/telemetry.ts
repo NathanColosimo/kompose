@@ -1,4 +1,4 @@
-import { Resource, Tracer } from "@effect/opentelemetry";
+import { OtelTracer, Resource } from "@effect/opentelemetry";
 import { env } from "@kompose/env";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -46,11 +46,11 @@ function getExporterConfig(): OtlpExporterConfig | null {
   const dataset = env.AXIOM_DATASET;
   if (token !== undefined && dataset !== undefined) {
     return {
-      url: "https://api.axiom.co/v1/traces",
       headers: {
         Authorization: `Bearer ${token}`,
         "X-Axiom-Dataset": dataset,
       },
+      url: "https://api.axiom.co/v1/traces",
     };
   }
 
@@ -102,19 +102,19 @@ class SpanAttributeFilter implements SpanProcessor {
 
 if (exporterConfig) {
   const sdk = new NodeSDK({
-    serviceName: "kompose-api",
     autoDetectResources: false,
+    instrumentations: [new ORPCInstrumentation()],
+    serviceName: "kompose-api",
     spanProcessors: [
       new SpanAttributeFilter(
         new BatchSpanProcessor(
           new OTLPTraceExporter({
-            url: exporterConfig.url,
             headers: exporterConfig.headers,
+            url: exporterConfig.url,
           })
         )
       ),
     ],
-    instrumentations: [new ORPCInstrumentation()],
   });
   sdk.start();
 }
@@ -131,7 +131,7 @@ function buildTelemetryLayer(): Layer.Layer<never> {
   }
 
   const ResourceLive = Resource.layer({ serviceName: "kompose-api" });
-  return Tracer.layerGlobal.pipe(Layer.provide(ResourceLive));
+  return OtelTracer.layerGlobal.pipe(Layer.provide(ResourceLive));
 }
 
 export const TelemetryLive = buildTelemetryLayer();

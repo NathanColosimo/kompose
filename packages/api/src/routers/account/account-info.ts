@@ -13,7 +13,7 @@ export async function getAccountInfo(input: {
       query: {
         accountId: input.accountId,
         userId: input.userId,
-      } as Record<string, string>,
+      },
     });
     return {
       email: info?.user?.email ?? "",

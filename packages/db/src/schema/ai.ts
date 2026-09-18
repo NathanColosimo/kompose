@@ -11,7 +11,7 @@ import {
   createInsertSchema,
   createSelectSchema,
   createUpdateSchema,
-} from "drizzle-zod";
+} from "drizzle-orm/zod";
 import type { infer as ZodInfer } from "zod";
 import { user } from "./auth";
 
@@ -33,25 +33,25 @@ export const aiMessageRoleEnum = pgEnum("ai_message_role", [
 export const aiSessionTable = pgTable(
   "ai_session",
   {
-    id: uuid("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    title: text("title"),
-    /** Optional model identifier to preserve provider/model history per session. */
-    model: text("model"),
     /** Optional active stream pointer used for reconnect/resume lookup. */
     activeStreamId: text("active_stream_id"),
     createdAt: timestamp("created_at", { mode: "string" })
       .notNull()
       .defaultNow(),
+    id: uuid("id").primaryKey(),
+    lastMessageAt: timestamp("last_message_at", { mode: "string" })
+      .notNull()
+      .defaultNow(),
+    /** Optional model identifier to preserve provider/model history per session. */
+    model: text("model"),
+    title: text("title"),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date().toISOString()),
-    lastMessageAt: timestamp("last_message_at", { mode: "string" })
+    userId: text("user_id")
       .notNull()
-      .defaultNow(),
+      .references(() => user.id, { onDelete: "cascade" }),
   },
   (table) => [
     index("ai_session_user_id_idx").on(table.userId),
@@ -70,20 +70,20 @@ export const aiSessionTable = pgTable(
 export const aiMessageTable = pgTable(
   "ai_message",
   {
-    id: uuid("id").primaryKey(),
-    sessionId: uuid("session_id")
-      .notNull()
-      .references(() => aiSessionTable.id, { onDelete: "cascade" }),
-    role: aiMessageRoleEnum("role").notNull(),
     content: text("content").notNull(),
+    createdAt: timestamp("created_at", { mode: "string" })
+      .notNull()
+      .defaultNow(),
+    id: uuid("id").primaryKey(),
     /**
      * Provider-specific structured parts (e.g. AI SDK message parts, tool UI parts).
      * Keep this aligned with AI SDK UIMessage parts.
      */
     parts: jsonb("parts"),
-    createdAt: timestamp("created_at", { mode: "string" })
+    role: aiMessageRoleEnum("role").notNull(),
+    sessionId: uuid("session_id")
       .notNull()
-      .defaultNow(),
+      .references(() => aiSessionTable.id, { onDelete: "cascade" }),
   },
   (table) => [
     index("ai_message_session_created_idx").on(

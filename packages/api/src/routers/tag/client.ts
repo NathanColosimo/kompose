@@ -4,7 +4,7 @@ import type {
   TagInsertRow,
   TagUpdate,
 } from "@kompose/db/schema/tag";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
   dbDeleteTag,
@@ -20,10 +20,8 @@ import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
 // Service Definition (Effect.Service + Effect.fn pattern)
 // ============================================================================
 
-export class TagService extends Effect.Service<TagService>()("TagService", {
-  accessors: true,
-  dependencies: [DatabaseLive],
-  effect: Effect.gen(function* () {
+export class TagService extends Context.Service<TagService>()("TagService", {
+  make: Effect.gen(function* () {
     const listTags = Effect.fn("TagService.listTags")(function* (
       userId: string
     ) {
@@ -49,10 +47,10 @@ export class TagService extends Effect.Service<TagService>()("TagService", {
       }
 
       const insertRow: TagInsertRow = {
-        id: uuidv7(),
-        userId,
-        name,
         icon: input.icon,
+        id: uuidv7(),
+        name,
+        userId,
       };
 
       const [created] = yield* dbInsertTag([insertRow]);
@@ -107,8 +105,8 @@ export class TagService extends Effect.Service<TagService>()("TagService", {
       const nextIcon = input.icon ?? existing.icon;
 
       const [updated] = yield* dbUpdateTag(userId, tagId, {
-        name: nextName,
         icon: nextIcon,
+        name: nextName,
         updatedAt: new Date().toISOString(),
       });
 
@@ -131,6 +129,10 @@ export class TagService extends Effect.Service<TagService>()("TagService", {
       }
     });
 
-    return { listTags, createTag, updateTag, deleteTag };
+    return { createTag, deleteTag, listTags, updateTag };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(DatabaseLive)
+  );
+}

@@ -60,7 +60,8 @@
             "./assets/fonts/Sentient-Light.ttf"
           ]
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

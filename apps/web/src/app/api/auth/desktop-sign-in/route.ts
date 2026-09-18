@@ -3,10 +3,6 @@ import { desktopDeepLinkSchemeSchema, env } from "@kompose/env";
 import { type NextRequest, NextResponse } from "next/server";
 import { DESKTOP_DEEP_LINK_SCHEME_QUERY_PARAM } from "@/lib/desktop-deep-link";
 
-function isGenericOAuthProvider(provider: string) {
-  return provider === "whoop";
-}
-
 // POST: desktop opens this URL via the system browser. GET is required because
 // the browser navigates here directly (not via fetch). OAuth state parameters
 // and one-time link tokens protect against CSRF.
@@ -88,23 +84,14 @@ async function handleDesktopSignIn(request: NextRequest) {
       const callbackURL = `/api/auth/desktop-callback?${callbackParams.toString()}`;
 
       try {
-        const linkResult = isGenericOAuthProvider(provider)
-          ? await auth.api.oAuth2LinkAccount({
-              body: {
-                callbackURL,
-                providerId: provider,
-              },
-              headers: authHeaders,
-              returnHeaders: true,
-            })
-          : await auth.api.linkSocialAccount({
-              body: {
-                callbackURL,
-                provider,
-              },
-              headers: authHeaders,
-              returnHeaders: true,
-            });
+        const linkResult = await auth.api.linkSocialAccount({
+          body: {
+            callbackURL,
+            provider,
+          },
+          headers: authHeaders,
+          returnHeaders: true,
+        });
 
         if (!linkResult.response.url) {
           return NextResponse.json(

@@ -10,34 +10,31 @@
     }
   },
   "scripts": {
-    "type-check": "tsc --noEmit",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio --verbose --port 4984",
-    "redis:studio": "open -a 'Redis Insight'",
+    "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
     "db:start": "docker compose up -d",
-    "db:watch": "docker compose up",
     "db:stop": "docker compose stop",
-    "db:down": "docker compose down"
-  },
-  "devDependencies": {
-    "@kompose/config": "workspace:*",
-    "@types/node": "catalog:",
-    "@types/pg": "^8.21.0",
-    "drizzle-kit": "1.0.0-beta.23"
+    "db:studio": "drizzle-kit studio --verbose --port 4984",
+    "db:watch": "docker compose up",
+    "redis:studio": "open -a 'Redis Insight'",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform": "catalog:",
-    "@effect/sql": "catalog:",
     "@effect/sql-pg": "catalog:",
     "@kompose/env": "workspace:*",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
-    "drizzle-zod": "^0.8.3",
     "effect": "catalog:",
     "pg": "^8.23.0",
     "postgres": "^3.4.9",
     "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "1.0.0-rc.5-ab785fc"
   }
 }

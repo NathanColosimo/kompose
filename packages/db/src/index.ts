@@ -6,14 +6,13 @@ import {
 } from "drizzle-orm/effect-postgres";
 import { Context, Effect, Layer, Redacted } from "effect";
 import { types } from "pg";
-import { schema as dbSchema } from "./schema";
+import { relations as dbRelations } from "./schema/relations";
 
 const rawDateTimeTypeIds = new Set([
   1184, 1114, 1082, 1186, 1231, 1115, 1185, 1187, 1182,
 ]);
 
 export const PgClientLive = pgClientLayer({
-  url: Redacted.make(env.DATABASE_URL),
   types: {
     getTypeParser: (typeId: number, format: "text" | "binary" | undefined) => {
       if (rawDateTimeTypeIds.has(typeId)) {
@@ -22,16 +21,17 @@ export const PgClientLive = pgClientLayer({
       return types.getTypeParser(typeId, format);
     },
   },
+  url: Redacted.make(env.DATABASE_URL),
 });
 
-const databaseEffect = makePgDrizzle({ schema: dbSchema }).pipe(
+const databaseEffect = makePgDrizzle({ relations: dbRelations }).pipe(
   Effect.provide(DefaultServices)
 );
 
-export class Database extends Context.Tag("Database")<
+export class Database extends Context.Service<
   Database,
-  Effect.Effect.Success<typeof databaseEffect>
->() {}
+  Effect.Success<typeof databaseEffect>
+>()("Database") {}
 
 export const DatabaseLive = Layer.effect(Database, databaseEffect).pipe(
   Layer.provide(PgClientLive),

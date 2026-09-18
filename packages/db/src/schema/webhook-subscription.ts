@@ -12,7 +12,7 @@ import {
   createInsertSchema,
   createSelectSchema,
   createUpdateSchema,
-} from "drizzle-zod";
+} from "drizzle-orm/zod";
 import z from "zod";
 import { account, user } from "./auth";
 
@@ -20,8 +20,8 @@ export const webhookSubscriptionProviderSchema = z.enum(["google"]);
 
 const googleCalendarEventsWebhookConfigBaseSchema = z
   .object({
-    type: z.literal("google-calendar-events"),
     calendarId: z.string().min(1),
+    type: z.literal("google-calendar-events"),
   })
   .strict();
 
@@ -77,27 +77,27 @@ export type GoogleCalendarListWebhookConfig = z.infer<
 export const webhookSubscriptionTable = pgTable(
   "webhook_subscription",
   {
-    id: uuid("id").notNull().primaryKey(),
-    provider: text("provider").$type<WebhookSubscriptionProvider>().notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     accountId: text("account_id")
       .notNull()
       .references(() => account.id, { onDelete: "cascade" }),
-    providerAccountId: text("provider_account_id").notNull(),
-    config: jsonb("config").$type<WebhookSubscriptionConfig>().notNull(),
-    webhookToken: text("webhook_token"),
     active: boolean("active").notNull().default(true),
-    expiresAt: timestamp("expires_at", { mode: "string" }),
-    lastNotifiedAt: timestamp("last_notified_at", { mode: "string" }),
+    config: jsonb("config").$type<WebhookSubscriptionConfig>().notNull(),
     createdAt: timestamp("created_at", { mode: "string" })
       .notNull()
       .defaultNow(),
+    expiresAt: timestamp("expires_at", { mode: "string" }),
+    id: uuid("id").notNull().primaryKey(),
+    lastNotifiedAt: timestamp("last_notified_at", { mode: "string" }),
+    provider: text("provider").$type<WebhookSubscriptionProvider>().notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date().toISOString()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    webhookToken: text("webhook_token"),
   },
   (table) => [
     uniqueIndex("webhook_subscription_provider_user_account_config_unique").on(

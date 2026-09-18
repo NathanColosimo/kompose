@@ -37,7 +37,7 @@ export const listLinkedAccountsWithProfile = Effect.fn(
       Effect.tryPromise({
         try: async () => {
           const info = await getAccountInfo({
-            accountId: account.accountId,
+            accountId: account.id,
             userId,
           });
 

@@ -11,7 +11,7 @@ import {
   createInsertSchema,
   createSelectSchema,
   createUpdateSchema,
-} from "drizzle-zod";
+} from "drizzle-orm/zod";
 import type { infer as ZodInfer } from "zod";
 import { user } from "./auth";
 import { taskTable } from "./task";
@@ -19,20 +19,20 @@ import { taskTable } from "./task";
 export const tagTable = pgTable(
   "tag",
   {
-    id: uuid("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    /** Lucide icon name for the tag */
-    icon: text("icon").notNull(),
     createdAt: timestamp("created_at", { mode: "string" })
       .notNull()
       .defaultNow(),
+    /** Lucide icon name for the tag */
+    icon: text("icon").notNull(),
+    id: uuid("id").primaryKey(),
+    name: text("name").notNull(),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date().toISOString()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
   },
   (table) => [
     uniqueIndex("tag_user_name_unique").on(table.userId, table.name),
@@ -43,12 +43,12 @@ export const tagTable = pgTable(
 export const taskTagTable = pgTable(
   "task_tag",
   {
-    taskId: uuid("task_id")
-      .notNull()
-      .references(() => taskTable.id, { onDelete: "cascade" }),
     tagId: uuid("tag_id")
       .notNull()
       .references(() => tagTable.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
   },
   (table) => [
     primaryKey({ columns: [table.taskId, table.tagId] }),

@@ -1,5 +1,5 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { z } from "zod";
 import { LinkParseError, roundToNearest15Min } from "../types";
 
@@ -8,16 +8,15 @@ import { LinkParseError, roundToNearest15Min } from "../types";
 // ============================================================================
 
 const audioItemSchema = z.object({
-  post_id: z.number(),
-  voice_id: z.string(),
   audio_url: z.string().nullable(),
-  type: z.string(),
   duration: z.number().optional(),
+  post_id: z.number(),
+  type: z.string(),
+  voice_id: z.string(),
 });
 
 export const PublicationSchema = z.object({
-  id: z.number(),
-  subdomain: z.string(),
+  author_id: z.number(),
   custom_domain: z
     .preprocess((val) => {
       if (typeof val === "string") {
@@ -29,31 +28,32 @@ export const PublicationSchema = z.object({
       return val;
     }, z.url())
     .nullish(),
-  name: z.string(),
+  id: z.number(),
   logo_url: z.string().nullish(),
-  author_id: z.number(),
+  name: z.string(),
+  subdomain: z.string(),
 });
 
 const postSchema = z.object({
-  id: z.number(),
-  publication_id: z.number(),
-  title: z.string(),
-  slug: z.string(),
-  post_date: z.string(),
+  audio_items: z.array(audioItemSchema).optional(),
   canonical_url: z.string(),
+  comment_count: z.number(),
+  cover_image: z.string().nullable().optional(),
+  description: z.string(),
+  id: z.number(),
+  post_date: z.string(),
+  publication_id: z.number(),
+  reaction_count: z.number(),
+  slug: z.string(),
+  subtitle: z.string().nullable().optional(),
+  title: z.string(),
+  truncated_body_text: z.string().nullable().optional(),
   type: z.union([
     z.literal("newsletter"),
     z.literal("podcast"),
     z.literal("thread"),
   ]),
-  subtitle: z.string().nullable().optional(),
-  cover_image: z.string().nullable().optional(),
-  description: z.string(),
-  truncated_body_text: z.string().nullable().optional(),
   wordcount: z.number().optional(),
-  reaction_count: z.number(),
-  comment_count: z.number(),
-  audio_items: z.array(audioItemSchema).optional(),
 });
 
 const archiveResponseSchema = z.array(postSchema);
@@ -128,37 +128,37 @@ const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   postId: string
 ) {
   const response = yield* Effect.tryPromise({
-    try: () => fetch(`https://substack.com/api/v1/posts/by-id/${postId}`),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to fetch Substack post by ID",
         cause,
+        message: "Failed to fetch Substack post by ID",
+        url,
       }),
+    try: () => fetch(`https://substack.com/api/v1/posts/by-id/${postId}`),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url,
       message: `Substack post-by-id API returned ${response.status}`,
+      url,
     });
   }
 
   const json = yield* Effect.tryPromise({
-    try: () => response.json(),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to parse Substack post-by-id response",
         cause,
+        message: "Failed to parse Substack post-by-id response",
+        url,
       }),
+    try: () => response.json(),
   });
 
   const data = postByIdResponseSchema.safeParse(json);
   if (!data.success) {
     return yield* new LinkParseError({
-      url,
       message: `Invalid Substack post-by-id response: ${data.error.message}`,
+      url,
     });
   }
 
@@ -174,45 +174,45 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
   const apiUrl = `${baseUrl}/api/v1/archive?sort=top&search=${slug}&offset=0&limit=20`;
 
   const response = yield* Effect.tryPromise({
-    try: () => fetch(apiUrl),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to fetch Substack archive API",
         cause,
+        message: "Failed to fetch Substack archive API",
+        url,
       }),
+    try: () => fetch(apiUrl),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url,
       message: `Substack archive API returned ${response.status}`,
+      url,
     });
   }
 
   const json = yield* Effect.tryPromise({
-    try: () => response.json(),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to parse Substack archive response",
         cause,
+        message: "Failed to parse Substack archive response",
+        url,
       }),
+    try: () => response.json(),
   });
 
   const data = archiveResponseSchema.safeParse(json);
   if (!data.success) {
     return yield* new LinkParseError({
-      url,
       message: `Invalid Substack archive response: ${data.error.message}`,
+      url,
     });
   }
 
   const post = data.data.find((p) => p.slug === slug);
   if (!post) {
     return yield* new LinkParseError({
-      url,
       message: `Post with slug "${slug}" not found in archive results`,
+      url,
     });
   }
 
@@ -223,37 +223,37 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
 const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
   function* (url: string) {
     const response = yield* Effect.tryPromise({
-      try: () => fetch(url),
       catch: (cause) =>
         new LinkParseError({
-          url,
-          message: "Failed to fetch Substack post HTML",
           cause,
+          message: "Failed to fetch Substack post HTML",
+          url,
         }),
+      try: () => fetch(url),
     });
 
     if (!response.ok) {
       return yield* new LinkParseError({
-        url,
         message: `Substack post HTML returned ${response.status}`,
+        url,
       });
     }
 
     const html = yield* Effect.tryPromise({
-      try: () => response.text(),
       catch: (cause) =>
         new LinkParseError({
-          url,
-          message: "Failed to read Substack post HTML",
           cause,
+          message: "Failed to read Substack post HTML",
+          url,
         }),
+      try: () => response.text(),
     });
 
     const postId = extractHtmlPostId(html);
     if (!postId) {
       return yield* new LinkParseError({
-        url,
         message: "Could not extract Substack post ID from HTML",
+        url,
       });
     }
 
@@ -279,15 +279,15 @@ function postToLinkMeta(
   }
 
   return {
-    provider: "substack",
-    title: post.title,
+    authorName: publication?.name,
     description: post.description,
     durationSeconds,
-    wordCount,
-    thumbnailUrl: post.cover_image ?? undefined,
-    authorName: publication?.name,
-    url: post.canonical_url,
     fetchedAt: new Date().toISOString(),
+    provider: "substack",
+    thumbnailUrl: post.cover_image ?? undefined,
+    title: post.title,
+    url: post.canonical_url,
+    wordCount,
   };
 }
 
@@ -320,22 +320,22 @@ export const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
   const slug = extractSlug(url);
   if (!slug) {
     return yield* new LinkParseError({
-      url,
       message: "Could not extract post slug or ID from Substack URL",
+      url,
     });
   }
 
   const baseUrl = extractBaseUrl(url);
   if (!baseUrl) {
     return yield* new LinkParseError({
-      url,
       message: "Could not extract base URL from Substack URL",
+      url,
     });
   }
 
-  const slugResult = yield* Effect.either(fetchPostBySlug(url, baseUrl, slug));
-  if (slugResult._tag === "Right") {
-    return postToLinkMeta(slugResult.right.post);
+  const slugResult = yield* Effect.result(fetchPostBySlug(url, baseUrl, slug));
+  if (Result.isSuccess(slugResult)) {
+    return postToLinkMeta(slugResult.success.post);
   }
 
   const postId = yield* fetchPostIdFromHtml(url);

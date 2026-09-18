@@ -1,3 +1,5 @@
+import "zod/compile";
+
 /**
  * Next.js instrumentation hook — runs once at server startup, before any
  * request handling. By importing the backend telemetry module here we

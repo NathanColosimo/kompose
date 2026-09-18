@@ -13,16 +13,14 @@ import {
 } from "@kompose/db/schema/ai";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import { AiChatError } from "./errors";
 
-export class AiChatRepository extends Effect.Service<AiChatRepository>()(
+export class AiChatRepository extends Context.Service<AiChatRepository>()(
   "AiChatRepository",
   {
-    accessors: true,
-    dependencies: [DatabaseLive],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const db = yield* Database;
 
       const listSessions: (
@@ -49,12 +47,12 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       ) {
         yield* Effect.annotateCurrentSpan("userId", userId);
         const insert: AiSessionInsertRow = {
-          id: uuidv7(),
-          userId,
-          title: input.title ?? null,
-          model: input.model ?? null,
           activeStreamId: null,
+          id: uuidv7(),
           lastMessageAt: new Date().toISOString(),
+          model: input.model ?? null,
+          title: input.title ?? null,
+          userId,
         };
 
         const [row] = yield* db
@@ -64,8 +62,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
 
         if (!row) {
           return yield* new AiChatError({
-            message: "Failed to create chat session.",
             code: "INTERNAL",
+            message: "Failed to create chat session.",
           });
         }
         return row;
@@ -96,8 +94,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
         if (!row) {
           return yield* Effect.fail(
             new AiChatError({
-              message: "Chat session not found.",
               code: "NOT_FOUND",
+              message: "Chat session not found.",
             })
           );
         }
@@ -126,8 +124,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
 
           if (rows.length === 0) {
             return yield* new AiChatError({
-              message: "Chat session not found.",
               code: "NOT_FOUND",
+              message: "Chat session not found.",
             });
           }
         });
@@ -161,8 +159,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
         const parsedRows = aiMessageSelectSchema.array().safeParse(messages);
         if (!parsedRows.success) {
           return yield* new AiChatError({
-            message: "Failed to parse chat messages.",
             code: "INTERNAL",
+            message: "Failed to parse chat messages.",
           });
         }
 
@@ -182,11 +180,11 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       }) {
         yield* Effect.annotateCurrentSpan("sessionId", input.sessionId);
         const insert: AiMessageInsertRow = {
-          id: uuidv7(),
-          sessionId: input.sessionId,
-          role: input.role,
           content: input.content,
+          id: uuidv7(),
           parts: input.parts,
+          role: input.role,
+          sessionId: input.sessionId,
         };
 
         const [row] = yield* db
@@ -196,15 +194,15 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
 
         if (!row) {
           return yield* new AiChatError({
-            message: "Failed to create chat message.",
             code: "INTERNAL",
+            message: "Failed to create chat message.",
           });
         }
         const parsedRow = aiMessageSelectSchema.safeParse(row);
         if (!parsedRow.success) {
           return yield* new AiChatError({
-            message: "Failed to parse chat message.",
             code: "INTERNAL",
+            message: "Failed to parse chat message.",
           });
         }
 
@@ -230,8 +228,8 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
           .update(aiSessionTable)
           .set({
             activeStreamId: input.activeStreamId,
-            title: input.title,
             lastMessageAt: new Date().toISOString(),
+            title: input.title,
           })
           .where(
             and(
@@ -259,15 +257,19 @@ export class AiChatRepository extends Effect.Service<AiChatRepository>()(
       });
 
       return {
-        listSessions,
-        createSession,
-        getSession,
-        deleteSession,
-        listMessages,
         createMessage,
+        createSession,
+        deleteSession,
+        getSession,
+        listMessages,
+        listSessions,
         updateMessageContent,
         updateSessionActivity,
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(DatabaseLive)
+  );
+}

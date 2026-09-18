@@ -185,25 +185,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         return { data: result.data };
       },
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
-        const accountsResult = await authClient.listAccounts();
-        const accounts = accountsResult?.data ?? [];
-        const account = accounts.find(
-          (linkedAccount) => linkedAccount.accountId === accountId
-        );
-
-        if (!account) {
-          throw new Error("Account not found.");
-        }
-
         await new Promise<void>((resolve, reject) => {
           authClient
             .unlinkAccount(
+              { accountId },
               {
-                accountId,
-                providerId: account.providerId,
-              },
-              {
-                onError: (error) => {
+                onError: (error: {
+                  error?: { message?: string; statusText?: string };
+                }) => {
                   reject(
                     new Error(
                       error.error?.message ||

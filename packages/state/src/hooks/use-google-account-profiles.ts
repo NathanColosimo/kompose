@@ -31,7 +31,7 @@ export function useGoogleAccountProfiles({
       enabled,
       queryFn: async (): Promise<OAuth2UserInfo | null> => {
         try {
-          return await authClient.accountInfo(account.accountId);
+          return await authClient.accountInfo(account.id);
         } catch {
           return null;
         }

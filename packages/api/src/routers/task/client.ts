@@ -10,7 +10,7 @@ import type {
 import { taskTable } from "@kompose/db/schema/task";
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
@@ -61,7 +61,7 @@ const dbSelect = (userId: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
     const rows = yield* db
-      .select({ task: taskTable, tag: tagTable })
+      .select({ tag: tagTable, task: taskTable })
       .from(taskTable)
       .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
       .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
@@ -107,7 +107,7 @@ const dbSelectByIdsWithTags = (userId: string, taskIds: string[]) =>
 
     const db = yield* Database;
     const rows = yield* db
-      .select({ task: taskTable, tag: tagTable })
+      .select({ tag: tagTable, task: taskTable })
       .from(taskTable)
       .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
       .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
@@ -213,7 +213,7 @@ function buildTaskTagRows(
   tagIds: string[]
 ): TaskTagInsert[] {
   return taskIds.flatMap((taskId) =>
-    tagIds.map((tagId) => ({ taskId, tagId }))
+    tagIds.map((tagId) => ({ tagId, taskId }))
   );
 }
 
@@ -440,29 +440,29 @@ function getDateScaleContext(
   } else if (dueDateChanged) {
     if (nextStartDate && nextDueDate) {
       dueDateScaleBase = {
-        baseStartDate: nextStartDate,
         baseDueDate: nextDueDate,
+        baseStartDate: nextStartDate,
       };
     } else if (baseStartDate && nextDueDate) {
       dueDateScaleBase = {
-        baseStartDate,
         baseDueDate: nextDueDate,
+        baseStartDate,
       };
     }
   } else if (startDateChanged && baseStartDate && baseDueDate) {
-    dueDateScaleBase = { baseStartDate, baseDueDate };
+    dueDateScaleBase = { baseDueDate, baseStartDate };
   }
 
   return {
-    baseStartDate,
     baseDueDate,
-    nextStartDate,
-    nextDueDate,
-    startDateChanged,
+    baseStartDate,
     dueDateChanged,
-    startDateDelta,
-    shouldClearDueDate,
     dueDateScaleBase,
+    nextDueDate,
+    nextStartDate,
+    shouldClearDueDate,
+    startDateChanged,
+    startDateDelta,
   };
 }
 
@@ -501,8 +501,8 @@ function getTimeScaleContext(
     baseStartTime,
     nextStartTime,
     startTimeChanged,
-    startTimeMode,
     startTimeDelta,
+    startTimeMode,
   };
 }
 
@@ -545,8 +545,8 @@ function buildSeriesOccurrenceUpdate(
     update.dueDate = null;
   } else if (params.dateContext.dueDateScaleBase && effectiveStartDate) {
     update.dueDate = getDueDateForOccurrence({
-      baseStartDate: params.dateContext.dueDateScaleBase.baseStartDate,
       baseDueDate: params.dateContext.dueDateScaleBase.baseDueDate,
+      baseStartDate: params.dateContext.dueDateScaleBase.baseStartDate,
       occurrenceDate: effectiveStartDate,
     });
   }
@@ -590,18 +590,18 @@ function buildRecurringTaskRows(
     const id = index === 0 ? masterId : uuidv7();
     return {
       ...input,
-      id,
-      userId,
-      startDate: date.toString(),
       // Keep the due date offset aligned with each occurrence's start date.
       dueDate: getDueDateForOccurrence({
-        baseStartDate: parsedStartDate,
         baseDueDate: parsedDueDate,
+        baseStartDate: parsedStartDate,
         occurrenceDate: date,
       }),
-      seriesMasterId: masterId,
-      recurrence: index === 0 ? recurrence : null,
+      id,
       isException: false,
+      recurrence: index === 0 ? recurrence : null,
+      seriesMasterId: masterId,
+      startDate: date.toString(),
+      userId,
     };
   });
 }
@@ -623,23 +623,23 @@ function buildRegeneratedTaskRows(
   return occurrenceDates.map((date, index) => {
     const id = index === 0 ? newMasterId : uuidv7();
     return {
-      userId,
-      title: input.title ?? task.title,
       description: input.description ?? task.description,
-      status: input.status ?? task.status,
       dueDate: getDueDateForOccurrence({
-        baseStartDate: startDate,
         baseDueDate: parsedDueDate,
+        baseStartDate: startDate,
         occurrenceDate: date,
       }),
+      durationMinutes: input.durationMinutes ?? task.durationMinutes,
+      id,
+      isException: false,
+      links: input.links ?? task.links,
+      recurrence: index === 0 ? recurrence : null,
+      seriesMasterId: newMasterId,
       startDate: date.toString(),
       startTime: input.startTime ?? task.startTime,
-      durationMinutes: input.durationMinutes ?? task.durationMinutes,
-      links: input.links ?? task.links,
-      id,
-      seriesMasterId: newMasterId,
-      recurrence: index === 0 ? recurrence : null,
-      isException: false,
+      status: input.status ?? task.status,
+      title: input.title ?? task.title,
+      userId,
     };
   });
 }
@@ -712,11 +712,11 @@ const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
 
     for (const seriesTask of seriesTasks) {
       const update = buildSeriesOccurrenceUpdate({
-        seriesTask,
         baseUpdate,
         dateContext,
-        timeContext,
         inputStartTime: input.startTime,
+        seriesTask,
+        timeContext,
       });
 
       // Avoid issuing a no-op update.
@@ -767,8 +767,8 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   // Update the existing task to be the master
   const updatedMaster = yield* dbUpdate(userId, task.id, {
     ...input,
-    seriesMasterId: task.id,
     isException: false,
+    seriesMasterId: task.id,
   });
 
   // If only one occurrence (the master), we're done
@@ -778,23 +778,23 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
 
   // Build additional occurrence rows (skip first since that's the master)
   const additionalRows = occurrenceDates.slice(1).map((date) => ({
-    userId,
-    title: input.title ?? task.title,
     description: input.description ?? task.description,
-    status: input.status ?? task.status,
     dueDate: getDueDateForOccurrence({
-      baseStartDate: parsedStartDate,
       baseDueDate: parsedDueDate,
+      baseStartDate: parsedStartDate,
       occurrenceDate: date,
     }),
+    durationMinutes: input.durationMinutes ?? task.durationMinutes,
+    id: uuidv7(),
+    isException: false,
+    links: input.links ?? task.links,
+    recurrence: null,
+    seriesMasterId: task.id,
     startDate: date.toString(),
     startTime: input.startTime ?? task.startTime,
-    durationMinutes: input.durationMinutes ?? task.durationMinutes,
-    links: input.links ?? task.links,
-    id: uuidv7(),
-    seriesMasterId: task.id,
-    recurrence: null,
-    isException: false,
+    status: input.status ?? task.status,
+    title: input.title ?? task.title,
+    userId,
   }));
 
   const insertedOccurrences = yield* dbInsert(additionalRows);
@@ -872,10 +872,8 @@ const resolveUpdatedTasks = (
 // Service Definition (Effect.Service + Effect.fn pattern)
 // ============================================================================
 
-export class TaskService extends Effect.Service<TaskService>()("TaskService", {
-  accessors: true,
-  dependencies: [DatabaseLive],
-  effect: Effect.gen(function* () {
+export class TaskService extends Context.Service<TaskService>()("TaskService", {
+  make: Effect.gen(function* () {
     const listTasks = Effect.fn("TaskService.listTasks")(function* (
       userId: string
     ) {
@@ -946,8 +944,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
       yield* Effect.annotateCurrentSpan("taskId", taskId);
       yield* Effect.annotateCurrentSpan("scope", scope);
       // Get the task to check if it's recurring
-      const tasks = yield* dbSelectById(userId, taskId);
-      const task = tasks[0];
+      const [task] = yield* dbSelectById(userId, taskId);
 
       if (!task) {
         return yield* Effect.fail(new TaskNotFoundError({ taskId }));
@@ -1008,7 +1005,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 
       return yield* dbSelectByIdsWithTags(
         userId,
-        updatedTasks.map((task) => task.id)
+        updatedTasks.map((updatedTask) => updatedTask.id)
       );
     });
 
@@ -1021,8 +1018,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
       yield* Effect.annotateCurrentSpan("taskId", taskId);
       yield* Effect.annotateCurrentSpan("scope", scope);
       // Get the task to check if it's recurring
-      const tasks = yield* dbSelectById(userId, taskId);
-      const task = tasks[0];
+      const [task] = yield* dbSelectById(userId, taskId);
 
       // Task already deleted or doesn't exist
       if (!task) {
@@ -1042,10 +1038,13 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
           task.seriesMasterId,
           task.startDate
         );
-        return;
       }
     });
 
-    return { listTasks, createTask, updateTask, deleteTask };
+    return { createTask, deleteTask, listTasks, updateTask };
   }),
-}) {}
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(DatabaseLive)
+  );
+}

@@ -14,7 +14,6 @@ if (__DEV__) {
 
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Account } from "better-auth";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
@@ -131,23 +130,10 @@ export default function RootLayout() {
         return result?.data?.user ?? null;
       },
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
-        const accountsResult = await authClient.listAccounts();
-        const accounts = accountsResult?.data ?? [];
-        const account = accounts.find(
-          (linkedAccount: Account) => linkedAccount.accountId === accountId
-        );
-
-        if (!account) {
-          throw new Error("Account not found.");
-        }
-
         await new Promise<void>((resolve, reject) => {
           authClient
             .unlinkAccount(
-              {
-                providerId: account.providerId,
-                accountId,
-              },
+              { accountId },
               {
                 onSuccess: () => {
                   resolve();

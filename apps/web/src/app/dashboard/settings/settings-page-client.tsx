@@ -124,8 +124,8 @@ export default function SettingsPageClient() {
       const baseUrl = window.location.origin;
       const callbackURL = `${baseUrl}/dashboard/settings`;
       const errorCallbackURL = `${baseUrl}/dashboard/settings`;
-      const result = await authClient.oauth2.link({
-        providerId: "whoop",
+      const result = await authClient.linkSocial({
+        provider: "whoop",
         callbackURL,
         errorCallbackURL,
       });
@@ -176,10 +176,12 @@ export default function SettingsPageClient() {
     setUnlinkingAccountId(accountId);
 
     try {
-      await authClient.unlinkAccount({
+      const { error } = await authClient.unlinkAccount({
         accountId,
-        providerId: "whoop",
       });
+      if (error) {
+        throw new Error(error.message ?? "Failed to unlink WHOOP account.");
+      }
       toast.success("WHOOP account unlinked.");
       queryClient.invalidateQueries({
         queryKey: LINKED_ACCOUNTS_QUERY_KEY,
@@ -294,14 +296,12 @@ export default function SettingsPageClient() {
                           unlinkGoogleAccount.isPending ||
                           linkingProvider !== null
                         }
-                        onClick={() =>
-                          handleUnlinkGoogleAccount(account.accountId)
-                        }
+                        onClick={() => handleUnlinkGoogleAccount(account.id)}
                         size="sm"
                         type="button"
                         variant="destructive"
                       >
-                        {unlinkingAccountId === account.accountId
+                        {unlinkingAccountId === account.id
                           ? "Unlinking..."
                           : "Unlink"}
                       </Button>
@@ -374,14 +374,12 @@ export default function SettingsPageClient() {
                       disabled={
                         unlinkingAccountId !== null || linkingProvider !== null
                       }
-                      onClick={() =>
-                        handleUnlinkWhoopAccount(account.accountId)
-                      }
+                      onClick={() => handleUnlinkWhoopAccount(account.id)}
                       size="sm"
                       type="button"
                       variant="destructive"
                     >
-                      {unlinkingAccountId === account.accountId
+                      {unlinkingAccountId === account.id
                         ? "Unlinking..."
                         : "Unlink"}
                     </Button>

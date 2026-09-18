@@ -4,7 +4,7 @@ import { TelemetryLive } from "../telemetry";
 import { WebhookService } from "./webhook-service";
 
 export const WebhookLive = Layer.mergeAll(
-  WebhookService.Default,
+  WebhookService.layer,
   DatabaseLive,
   TelemetryLive
 );

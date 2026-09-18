@@ -12,9 +12,11 @@ const os = implement(syncContract).use(requireAuth).use(globalRateLimit);
 export const syncRouter = os.router({
   events: os.events.handler(({ context }) => {
     Effect.runPromise(
-      WebhookService.refreshAll({
-        userId: context.user.id,
-      }).pipe(
+      WebhookService.use((service) =>
+        service.refreshAll({
+          userId: context.user.id,
+        })
+      ).pipe(
         Effect.tapError((error) =>
           Effect.logError("GOOGLE_WEBHOOK_SETUP_FAILED_ON_REALTIME_CONNECT", {
             error,

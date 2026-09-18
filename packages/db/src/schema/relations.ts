@@ -1,34 +1,52 @@
-import { relations } from "drizzle-orm/_relations";
+import { defineRelations } from "drizzle-orm";
 import { aiMessageTable, aiSessionTable } from "./ai";
 import { tagTable, taskTagTable } from "./tag";
 import { taskTable } from "./task";
 
-export const taskRelations = relations(taskTable, ({ many }) => ({
-  taskTags: many(taskTagTable),
-}));
+const relationalSchema = {
+  aiMessageTable,
+  aiSessionTable,
+  tagTable,
+  taskTable,
+  taskTagTable,
+};
 
-export const tagRelations = relations(tagTable, ({ many }) => ({
-  taskTags: many(taskTagTable),
-}));
-
-export const taskTagRelations = relations(taskTagTable, ({ one }) => ({
-  task: one(taskTable, {
-    fields: [taskTagTable.taskId],
-    references: [taskTable.id],
-  }),
-  tag: one(tagTable, {
-    fields: [taskTagTable.tagId],
-    references: [tagTable.id],
-  }),
-}));
-
-export const aiSessionRelations = relations(aiSessionTable, ({ many }) => ({
-  messages: many(aiMessageTable),
-}));
-
-export const aiMessageRelations = relations(aiMessageTable, ({ one }) => ({
-  session: one(aiSessionTable, {
-    fields: [aiMessageTable.sessionId],
-    references: [aiSessionTable.id],
-  }),
+export const relations = defineRelations(relationalSchema, (r) => ({
+  aiMessageTable: {
+    session: r.one.aiSessionTable({
+      from: r.aiMessageTable.sessionId,
+      optional: false,
+      to: r.aiSessionTable.id,
+    }),
+  },
+  aiSessionTable: {
+    messages: r.many.aiMessageTable({
+      from: r.aiSessionTable.id,
+      to: r.aiMessageTable.sessionId,
+    }),
+  },
+  tagTable: {
+    taskTags: r.many.taskTagTable({
+      from: r.tagTable.id,
+      to: r.taskTagTable.tagId,
+    }),
+  },
+  taskTable: {
+    taskTags: r.many.taskTagTable({
+      from: r.taskTable.id,
+      to: r.taskTagTable.taskId,
+    }),
+  },
+  taskTagTable: {
+    tag: r.one.tagTable({
+      from: r.taskTagTable.tagId,
+      optional: false,
+      to: r.tagTable.id,
+    }),
+    task: r.one.taskTable({
+      from: r.taskTagTable.taskId,
+      optional: false,
+      to: r.taskTable.id,
+    }),
+  },
 }));

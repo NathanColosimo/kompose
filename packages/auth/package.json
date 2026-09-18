@@ -1,5 +1,6 @@
 {
   "name": "@kompose/auth",
+  "type": "module",
   "exports": {
     ".": {
       "default": "./src/index.ts"
@@ -8,22 +9,22 @@
       "default": "./src/*.ts"
     }
   },
-  "type": "module",
   "scripts": {
     "type-check": "tsc --noEmit"
   },
-  "devDependencies": {
-    "@kompose/config": "workspace:*",
-    "@types/node": "catalog:"
-  },
   "dependencies": {
-    "@better-auth/core": "^1.6.28",
-    "@better-auth/drizzle-adapter": "1.6.28",
+    "@better-auth/core": "^1.7.5",
+    "@better-auth/drizzle-adapter": "1.7.5",
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
+    "effect": "catalog:",
     "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   }
 }

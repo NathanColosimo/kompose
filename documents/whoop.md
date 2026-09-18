@@ -17,6 +17,26 @@ Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar w
 - `getUserInfo` callback fetches `/developer/v1/user/profile/basic` during the OAuth flow to populate the user's name and email
 - Configured in `packages/auth/src/index.ts` under `genericOAuth`
 
+Better Auth 1.7 uses `linkSocial({ provider: "whoop" })` and the shared social
+callback route. Register `https://kompose.dev/api/auth/callback/whoop` in the
+[WHOOP Developer Dashboard](https://developer.whoop.com/). For development, use
+`https://local.kompose.dev/api/auth/callback/whoop`. The previous
+`/api/auth/oauth2/callback/whoop` route is no longer used. PKCE stays enabled by
+default.
+
+The app's WHOOP RPC inputs and cache keys use the provider account ID
+(`account.accountId`). `getLinkedAccountId` resolves that ID to an account row
+owned by the current user before calling Better Auth. Better Auth token,
+profile, and unlink APIs require the local row ID (`account.id`).
+
+`packages/auth/src/whoop.ts` identifies WHOOP from the owned account row rather
+than a request `providerId`. It locks that row while refreshing and saving the
+rotated tokens, preserving the stored granted scopes. HTTP callers must have a
+current session; explicit `userId` is only a fallback for trusted server calls.
+The account-info hook also refreshes under this lock before Better Auth fetches
+the profile, because 1.7 can otherwise refresh internally without calling the
+token endpoint.
+
 ## Packages
 
 ```

@@ -10,7 +10,7 @@ import { env } from "@kompose/env";
 import { GoogleCalendar } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
 import { eq } from "drizzle-orm";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
   formatUnknownCause,
@@ -96,7 +96,6 @@ const upsertSub = (values: WebhookSubscriptionInsert) =>
       .insert(webhookSubscriptionTable)
       .values(values)
       .onConflictDoUpdate({
-        target: webhookSubscriptionTable.id,
         set: {
           active: values.active ?? true,
           config: values.config,
@@ -106,6 +105,7 @@ const upsertSub = (values: WebhookSubscriptionInsert) =>
           updatedAt: new Date().toISOString(),
           webhookToken: values.webhookToken,
         },
+        target: webhookSubscriptionTable.id,
       });
   });
 
@@ -120,12 +120,10 @@ const deactivateSubById = (params: { id: string }) =>
 
 // ── Service ──────────────────────────────────────────────────────────
 
-export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarWebhookService>()(
+export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendarWebhookService>()(
   "GoogleCalendarWebhookService",
   {
-    accessors: true,
-    dependencies: [DatabaseLive],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       // ── Shared stop-watch helper ──
 
       const stopWatch = Effect.fn("GoogleCalendarWebhookService.stopWatch")(
@@ -148,9 +146,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
               Effect.mapError(
                 (cause) =>
                   new WebhookProviderError({
+                    message: formatUnknownCause(cause),
                     operation: params.operation,
                     provider: GOOGLE_PROVIDER,
-                    message: formatUnknownCause(cause),
                   })
               )
             );
@@ -201,9 +199,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
             Effect.mapError(
               (cause) =>
                 new WebhookProviderError({
+                  message: formatUnknownCause(cause),
                   operation: "google-calendar-list-watch",
                   provider: GOOGLE_PROVIDER,
-                  message: formatUnknownCause(cause),
                 })
             )
           );
@@ -219,8 +217,8 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         yield* upsertSub({
           accountId: params.account.id,
           config: {
-            type: "google-calendar-list",
             resourceId: channel.resourceId,
+            type: "google-calendar-list",
           },
           expiresAt: computeExpiresAt(channel.expiration),
           id: subId,
@@ -281,9 +279,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
             Effect.mapError(
               (cause) =>
                 new WebhookProviderError({
+                  message: formatUnknownCause(cause),
                   operation: "google-calendar-events-watch",
                   provider: GOOGLE_PROVIDER,
-                  message: formatUnknownCause(cause),
                 })
             ),
             // Certain calendar types (e.g. holidays) don't support push notifications
@@ -317,9 +315,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
         yield* upsertSub({
           accountId: params.account.id,
           config: {
-            type: "google-calendar-events",
             calendarId: params.calendarId,
             resourceId: channel.resourceId,
+            type: "google-calendar-events",
           },
           expiresAt: computeExpiresAt(channel.expiration),
           id: subId,
@@ -366,9 +364,9 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
           Effect.mapError(
             (cause) =>
               new WebhookProviderError({
+                message: formatUnknownCause(cause),
                 operation: "google-calendar-events-list-calendars",
                 provider: GOOGLE_PROVIDER,
-                message: formatUnknownCause(cause),
               })
           )
         );
@@ -382,4 +380,8 @@ export class GoogleCalendarWebhookService extends Effect.Service<GoogleCalendarW
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(DatabaseLive)
+  );
+}

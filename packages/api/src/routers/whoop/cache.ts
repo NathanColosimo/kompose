@@ -4,7 +4,7 @@ import {
   whoopCachedDayRawSchema,
 } from "@kompose/whoop/schema";
 import { RedisClient } from "bun";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { WhoopCacheError } from "./errors";
 
 const KEY_PREFIX = "whoop";
@@ -39,15 +39,17 @@ export const logWhoopCacheErrorAndFallback =
       )
     );
 
-export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
+export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
   "WhoopCacheService",
   {
-    accessors: true,
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const scanAndDelete = async (prefix: string) => {
         let cursor = 0;
         do {
-          const result = (await redis.send("SCAN", [
+          // Redis SCAN cursors are sequential: each request needs the cursor
+          // returned by the previous request.
+          // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
+          const [nextCursor, keys] = (await redis.send("SCAN", [
             cursor.toString(),
             "MATCH",
             `${prefix}*`,
@@ -55,8 +57,7 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
             "100",
           ])) as [string, string[]];
 
-          cursor = Number(result[0]);
-          const keys = result[1];
+          cursor = Number(nextCursor);
 
           if (keys.length > 0) {
             await redis.send("DEL", keys);
@@ -69,12 +70,12 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           const raw = yield* Effect.tryPromise({
-            try: () => redis.get(dayKey(accountId, day)),
             catch: (cause) =>
               new WhoopCacheError({
-                operation: "getCachedDay",
                 message: String(cause),
+                operation: "getCachedDay",
               }),
+            try: () => redis.get(dayKey(accountId, day)),
           });
 
           if (raw === null) {
@@ -82,19 +83,19 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
           }
 
           const payload = yield* Effect.try({
-            try: () => JSON.parse(raw) as unknown,
             catch: (cause) =>
               new WhoopCacheError({
-                operation: "getCachedDay",
                 message: `Invalid cached JSON: ${String(cause)}`,
+                operation: "getCachedDay",
               }),
+            try: () => JSON.parse(raw) as unknown,
           });
 
           const parsed = whoopCachedDayRawSchema.safeParse(payload);
           if (!parsed.success) {
             return yield* new WhoopCacheError({
-              operation: "getCachedDay",
               message: `Invalid cached payload: ${parsed.error.message}`,
+              operation: "getCachedDay",
             });
           }
 
@@ -138,25 +139,25 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           const validatedPayload = yield* Effect.try({
-            try: () => whoopCachedDayRawSchema.parse(payload),
             catch: (cause) =>
               new WhoopCacheError({
-                operation: "setCachedDay",
                 message: `Invalid cache payload: ${String(cause)}`,
+                operation: "setCachedDay",
               }),
+            try: () => whoopCachedDayRawSchema.parse(payload),
           });
 
           yield* Effect.tryPromise({
+            catch: (cause) =>
+              new WhoopCacheError({
+                message: String(cause),
+                operation: "setCachedDay",
+              }),
             try: async () => {
               const key = dayKey(accountId, day);
               await redis.set(key, JSON.stringify(validatedPayload));
               await redis.expire(key, ttlSeconds);
             },
-            catch: (cause) =>
-              new WhoopCacheError({
-                operation: "setCachedDay",
-                message: String(cause),
-              }),
           });
         }
       );
@@ -166,12 +167,12 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           yield* Effect.tryPromise({
-            try: () => redis.del(dayKey(accountId, day)),
             catch: (cause) =>
               new WhoopCacheError({
-                operation: "invalidateDay",
                 message: String(cause),
+                operation: "invalidateDay",
               }),
+            try: () => redis.del(dayKey(accountId, day)),
           });
         }
       );
@@ -181,12 +182,12 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
       )(function* (accountId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.tryPromise({
-          try: () => scanAndDelete(accountDayPrefix(accountId)),
           catch: (cause) =>
             new WhoopCacheError({
-              operation: "invalidateAccount",
               message: String(cause),
+              operation: "invalidateAccount",
             }),
+          try: () => scanAndDelete(accountDayPrefix(accountId)),
         });
       });
 
@@ -199,4 +200,6 @@ export class WhoopCacheService extends Effect.Service<WhoopCacheService>()(
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

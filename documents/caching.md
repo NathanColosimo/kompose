@@ -190,6 +190,10 @@ yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
 
 Google Calendar cache keys use the Google provider account id (`account.account_id`),
 which is also the id used by client query keys and oRPC Google Calendar inputs.
+Better Auth 1.7 token, profile, and unlink selectors instead use the local
+`account.id`. Resolve the provider ID with `getLinkedAccountId` using the provider
+and current user before calling those APIs; keep provider IDs in calendar
+preferences, bootstrap `accountId` fields, cache keys, and realtime events.
 Webhook subscription rows additionally store the Better Auth internal account row
 id (`webhook_subscription.account_id`) for database relations, but webhook cache
 invalidation and realtime payloads must use `webhook_subscription.provider_account_id`

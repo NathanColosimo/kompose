@@ -11,7 +11,7 @@ import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
 import { and, eq } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
 import { publishToUser } from "../realtime/sync";
 import {
@@ -146,8 +146,8 @@ const findActiveSubById = (params: { id: string }) =>
 
     if (!rows[0]) {
       return yield* new WebhookRepositoryError({
-        operation: "find-active-sub-by-id",
         message: "No active subscription found",
+        operation: "find-active-sub-by-id",
       });
     }
 
@@ -165,16 +165,10 @@ const touchSubById = (params: { id: string; nowIso: string }) =>
 
 // ── Service ──────────────────────────────────────────────────────────
 
-export class WebhookService extends Effect.Service<WebhookService>()(
+export class WebhookService extends Context.Service<WebhookService>()(
   "WebhookService",
   {
-    accessors: true,
-    dependencies: [
-      DatabaseLive,
-      GoogleCalendarCacheService.Default,
-      GoogleCalendarWebhookService.Default,
-    ],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const cache = yield* GoogleCalendarCacheService;
       const googleCalWebhooks = yield* GoogleCalendarWebhookService;
 
@@ -188,18 +182,17 @@ export class WebhookService extends Effect.Service<WebhookService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
           const result = yield* Effect.tryPromise({
-            try: () =>
-              auth.api.getAccessToken({
-                body: {
-                  accountId: params.accountId,
-                  providerId: GOOGLE_PROVIDER,
-                  userId: params.userId,
-                },
-              }),
             catch: (cause) =>
               new WebhookAuthError({
                 accountId: params.accountId,
                 message: formatUnknownCause(cause),
+              }),
+            try: () =>
+              auth.api.getAccessToken({
+                body: {
+                  accountId: params.accountId,
+                  userId: params.userId,
+                },
               }),
           });
 
@@ -227,7 +220,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         yield* Effect.annotateCurrentSpan("accountId", params.account.id);
         yield* Effect.annotateCurrentSpan("userId", params.userId);
         const client = yield* createGoogleClient({
-          accountId: params.account.accountId,
+          accountId: params.account.id,
           userId: params.userId,
         });
 
@@ -344,7 +337,7 @@ export class WebhookService extends Effect.Service<WebhookService>()(
                   error,
                 })
               ),
-              Effect.catchAll(() => Effect.void)
+              Effect.catch(() => Effect.void)
             ),
           { concurrency: "unbounded", discard: true }
         );
@@ -394,9 +387,9 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         if (subscription.config.resourceId !== resourceId) {
           yield* Effect.log("WEBHOOK_STALE_RESOURCE_SKIPPED", {
             accountId: subscription.accountId,
-            userId: subscription.userId,
-            expectedResourceId: subscription.config.resourceId,
             actualResourceId: resourceId,
+            expectedResourceId: subscription.config.resourceId,
+            userId: subscription.userId,
           });
           return {};
         }
@@ -429,12 +422,12 @@ export class WebhookService extends Effect.Service<WebhookService>()(
             .pipe(logAndSwallowCacheError);
 
           yield* publishToUser(subscription.userId, {
-            type: "google-calendar",
             payload: {
               accountId: subscription.providerAccountId,
               calendarId: GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID,
             },
-          }).pipe(Effect.catchAll(() => Effect.void));
+            type: "google-calendar",
+          }).pipe(Effect.catch(() => Effect.void));
 
           return {
             followUpRefresh: {
@@ -447,9 +440,9 @@ export class WebhookService extends Effect.Service<WebhookService>()(
         if (isGoogleCalendarEventsSubscription(subscription)) {
           yield* Effect.log("WEBHOOK_CALENDAR_EVENTS_CHANGED", {
             accountId: subscription.accountId,
+            calendarId: subscription.config.calendarId,
             providerAccountId: subscription.providerAccountId,
             userId: subscription.userId,
-            calendarId: subscription.config.calendarId,
           });
 
           // Invalidate all cached events for this calendar (best effort).
@@ -462,12 +455,12 @@ export class WebhookService extends Effect.Service<WebhookService>()(
             .pipe(logAndSwallowCacheError);
 
           yield* publishToUser(subscription.userId, {
-            type: "google-calendar",
             payload: {
               accountId: subscription.providerAccountId,
               calendarId: subscription.config.calendarId,
             },
-          }).pipe(Effect.catchAll(() => Effect.void));
+            type: "google-calendar",
+          }).pipe(Effect.catch(() => Effect.void));
         }
 
         return {};
@@ -479,4 +472,14 @@ export class WebhookService extends Effect.Service<WebhookService>()(
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        DatabaseLive,
+        GoogleCalendarCacheService.layer,
+        GoogleCalendarWebhookService.layer
+      )
+    )
+  );
+}

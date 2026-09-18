@@ -1,6 +1,6 @@
 import dns from "node:dns/promises";
 import net from "node:net";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { detectProvider } from "./providers/detect";
 import { parseSpotifyLink } from "./providers/spotify";
 import { parseSubstackLink } from "./providers/substack";
@@ -50,13 +50,13 @@ const validateUrlTarget = Effect.fn("LinkParserService.validateUrl")(function* (
   try {
     parsed = new URL(url);
   } catch {
-    return yield* new LinkParseError({ url, message: "Invalid URL" });
+    return yield* new LinkParseError({ message: "Invalid URL", url });
   }
 
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     return yield* new LinkParseError({
-      url,
       message: "Only http/https URLs are supported",
+      url,
     });
   }
 
@@ -67,34 +67,34 @@ const validateUrlTarget = Effect.fn("LinkParserService.validateUrl")(function* (
     const raw = hostname.replace(/^\[|\]$/g, "");
     if (isPrivateIp(raw)) {
       return yield* new LinkParseError({
-        url,
         message: "URL targets a private/internal address",
+        url,
       });
     }
   }
 
   // Resolve hostname to IPs — fail closed if resolution fails
   const addresses = yield* Effect.tryPromise({
-    try: () => dns.resolve4(hostname),
     catch: () =>
       new LinkParseError({
-        url,
         message: "DNS resolution failed — cannot verify URL target",
+        url,
       }),
+    try: () => dns.resolve4(hostname),
   });
 
   if (addresses.length === 0) {
     return yield* new LinkParseError({
-      url,
       message: "DNS resolution returned no addresses",
+      url,
     });
   }
 
   for (const addr of addresses) {
     if (isPrivateIp(addr)) {
       return yield* new LinkParseError({
-        url,
         message: "URL targets a private/internal address",
+        url,
       });
     }
   }
@@ -122,16 +122,17 @@ const parseLink = Effect.fn("LinkParserService.parseLink")(function* (
       return normalizeLinkMetaText(yield* parseUnknownLink(url));
     default:
       return yield* new LinkParseError({
-        url,
         message: `Unsupported provider: ${provider as string}`,
+        url,
       });
   }
 });
 
-export class LinkParserService extends Effect.Service<LinkParserService>()(
+export class LinkParserService extends Context.Service<LinkParserService>()(
   "LinkParserService",
   {
-    accessors: true,
-    effect: Effect.succeed({ parseLink }),
+    make: Effect.succeed({ parseLink }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make);
+}

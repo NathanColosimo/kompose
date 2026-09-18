@@ -49,9 +49,9 @@ export const queryClient = new QueryClient({
 export const link = new RPCLink({
   url: `${env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
   plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
-  headers() {
+  async headers() {
     const headers = new Map<string, string>();
-    const cookies = authClient.getCookie();
+    const cookies = await authClient.getCookie();
     if (cookies) {
       headers.set("Cookie", cookies);
     }
@@ -64,7 +64,7 @@ export const link = new RPCLink({
   // React Native's built-in fetch does not support SSE / ReadableStream.
   // expo/fetch provides streaming support required for oRPC eventIterator.
   async fetch(request, init) {
-    return expoFetch(request.url, {
+    const response = await expoFetch(request.url, {
       body: await request.blob(),
       // Better Auth Expo already injects the session cookie manually.
       // On iOS, letting fetch use native cookie handling can interfere
@@ -75,6 +75,7 @@ export const link = new RPCLink({
       signal: request.signal,
       ...init,
     });
+    return response as unknown as Response;
   },
 });
 

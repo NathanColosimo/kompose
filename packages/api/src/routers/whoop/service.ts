@@ -1,4 +1,5 @@
 import { auth } from "@kompose/auth";
+import { getLinkedAccountId } from "@kompose/auth/accounts";
 import { createWhoopClient } from "@kompose/whoop/client";
 import type {
   WhoopCachedDayRaw,
@@ -7,7 +8,7 @@ import type {
   WhoopSleep,
   WhoopWorkout,
 } from "@kompose/whoop/schema";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import {
   logAndSwallowWhoopCacheError,
@@ -128,36 +129,36 @@ function toSummary(payload: WhoopCachedDayRaw): WhoopDaySummary {
   const primarySleep = selectPrimarySleep(payload);
 
   return whoopDaySummarySchema.parse({
-    day: payload.day,
     cycleId: payload.cycle?.id ?? null,
-    recoveryScore: payload.recovery?.score?.recovery_score ?? null,
-    strainScore: payload.cycle?.score?.strain ?? null,
+    day: payload.day,
     kilojoule: payload.cycle?.score?.kilojoule ?? null,
-    sleepPerformance: primarySleep?.score?.sleep_performance_percentage ?? null,
-    sleep: primarySleep
-      ? {
-          id: primarySleep.id,
-          start: primarySleep.start,
-          end: primarySleep.end,
-          totalSleepMilliseconds: totalSleepMilliseconds(primarySleep),
-        }
-      : null,
     naps: payload.sleeps
       .filter((sleep) => sleep.nap)
       .map((nap) => ({
+        end: nap.end,
         id: nap.id,
         start: nap.start,
-        end: nap.end,
         totalSleepMilliseconds: totalSleepMilliseconds(nap),
       })),
+    recoveryScore: payload.recovery?.score?.recovery_score ?? null,
+    sleep: primarySleep
+      ? {
+          end: primarySleep.end,
+          id: primarySleep.id,
+          start: primarySleep.start,
+          totalSleepMilliseconds: totalSleepMilliseconds(primarySleep),
+        }
+      : null,
+    sleepPerformance: primarySleep?.score?.sleep_performance_percentage ?? null,
+    strainScore: payload.cycle?.score?.strain ?? null,
     workouts: [...payload.workouts]
       .sort((left, right) => left.start.localeCompare(right.start))
       .map((workout) => ({
+        end: workout.end,
         id: workout.id,
         sportId: workout.sport_id ?? null,
         sportName: workout.sport_name || null,
         start: workout.start,
-        end: workout.end,
         strainScore: workout.score?.strain ?? null,
       })),
   });
@@ -165,8 +166,8 @@ function toSummary(payload: WhoopCachedDayRaw): WhoopDaySummary {
 
 function initializeDay(day: string): WhoopCachedDayRaw {
   return {
-    day,
     cycle: null,
+    day,
     recovery: null,
     sleeps: [],
     workouts: [],
@@ -337,27 +338,32 @@ const getLinkedWhoopAccessToken = Effect.fn("getLinkedWhoopAccessToken")(
     yield* Effect.annotateCurrentSpan("userId", params.userId);
     yield* Effect.annotateCurrentSpan("accountId", params.accountId);
     const token = yield* Effect.tryPromise({
-      try: async () => 
-         await auth.api.getAccessToken({
-          body: {
-            accountId: params.accountId,
-            providerId: "whoop",
-            userId: params.userId,
-          },
-        }),
       catch: (cause) =>
         new WhoopTokenUnavailableError({
           accountId: params.accountId,
-          message: "WHOOP token unavailable",
           cause,
+          message: "WHOOP token unavailable",
         }),
+      try: async () => {
+        const authAccountId = await getLinkedAccountId({
+          providerAccountId: params.accountId,
+          providerId: "whoop",
+          userId: params.userId,
+        });
+        return auth.api.getAccessToken({
+          body: {
+            accountId: authAccountId,
+            userId: params.userId,
+          },
+        });
+      },
     });
 
     if (!token.accessToken) {
       return yield* new WhoopTokenUnavailableError({
         accountId: params.accountId,
-        message: "WHOOP token not returned from Better Auth",
         cause: new Error("WHOOP token not returned from Better Auth"),
+        message: "WHOOP token not returned from Better Auth",
       });
     }
 
@@ -365,12 +371,10 @@ const getLinkedWhoopAccessToken = Effect.fn("getLinkedWhoopAccessToken")(
   }
 );
 
-export class WhoopService extends Effect.Service<WhoopService>()(
+export class WhoopService extends Context.Service<WhoopService>()(
   "WhoopService",
   {
-    accessors: true,
-    dependencies: [WhoopCacheService.Default],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const cache = yield* WhoopCacheService;
 
       const listDaySummaries = Effect.fn("WhoopService.listDaySummaries")(
@@ -414,7 +418,7 @@ export class WhoopService extends Effect.Service<WhoopService>()(
 
           if (missingDays.length > 0) {
             const client = createWhoopClient(accessToken);
-            const missingStart = missingDays[0];
+            const [missingStart] = missingDays;
             const missingEnd = missingDays.at(-1);
 
             if (!(missingStart && missingEnd)) {
@@ -433,24 +437,24 @@ export class WhoopService extends Effect.Service<WhoopService>()(
             // boundary and is excluded from narrow refetches.
             const fetchStart = Temporal.PlainDate.from(missingStart)
               .toZonedDateTime({
-                timeZone: params.timeZone,
                 plainTime: Temporal.PlainTime.from("00:00"),
+                timeZone: params.timeZone,
               })
               .subtract({ hours: 6 })
               .toInstant()
               .toString();
             const fetchEnd = Temporal.PlainDate.from(missingEnd)
               .toZonedDateTime({
-                timeZone: params.timeZone,
                 plainTime: Temporal.PlainTime.from("00:00"),
+                timeZone: params.timeZone,
               })
               .add({ days: 1 })
               .toInstant()
               .toString();
 
             const fetchParams = {
-              start: fetchStart,
               end: fetchEnd,
+              start: fetchStart,
             };
 
             const [cycles, recoveries, sleeps, workouts] = yield* Effect.all(
@@ -514,9 +518,9 @@ export class WhoopService extends Effect.Service<WhoopService>()(
           const profile = yield* client.getProfileBasic();
 
           return {
+            email: profile.email,
             firstName: profile.first_name,
             lastName: profile.last_name,
-            email: profile.email,
           } satisfies WhoopProfile;
         }
       );
@@ -527,4 +531,8 @@ export class WhoopService extends Effect.Service<WhoopService>()(
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(WhoopCacheService.layer)
+  );
+}

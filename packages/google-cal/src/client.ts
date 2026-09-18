@@ -309,10 +309,10 @@ export type GoogleCalendarService = {
   }) => Effect.Effect<void, GoogleApiError>;
 };
 
-export class GoogleCalendar extends Context.Tag("GoogleCalendar")<
+export class GoogleCalendar extends Context.Service<
   GoogleCalendar,
   GoogleCalendarService
->() {}
+>()("GoogleCalendar") {}
 
 // -- Errors --
 
@@ -765,7 +765,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           }),
         catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
       }).pipe(
-        Effect.catchAll(() => {
+        Effect.catch(() => {
           return Effect.succeed(undefined);
         }),
         Effect.asVoid
@@ -789,9 +789,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
           return new GoogleApiError({ cause });
         },
       }).pipe(
-        Effect.catchAll((createError) =>
+        Effect.catch((createError) =>
           // Restores master recurrence on error while returning the original error.
-          restoreMasterRecurrence.pipe(Effect.zipRight(Effect.fail(createError)))
+          restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
         )
       );
 
@@ -1111,7 +1111,7 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             }),
           catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
         }).pipe(
-          Effect.catchAll(() => {
+          Effect.catch(() => {
             return Effect.succeed(undefined);
           }),
           Effect.asVoid
@@ -1124,9 +1124,9 @@ function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
             return new GoogleApiError({ cause });
           },
         }).pipe(
-          Effect.catchAll((createError) =>
+          Effect.catch((createError) =>
             // Restores master recurrence on error while returning the original error.
-            restoreMasterRecurrence.pipe(Effect.zipRight(Effect.fail(createError)))
+            restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
           )
         );
 

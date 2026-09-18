@@ -12,7 +12,7 @@ import {
   validateUIMessages,
 } from "ai";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { extractText, toUiMessage } from "./ai-message-utils";
 import { AiChatError } from "./errors";
 import { resolveChatModel } from "./model";
@@ -53,12 +53,10 @@ type ChatToolApproval = ToolApprovalConfiguration<ToolSet, unknown>;
  * Chat service that centralizes persistence + model orchestration.
  * Route handlers should remain thin wrappers around this service.
  */
-export class AiChatService extends Effect.Service<AiChatService>()(
+export class AiChatService extends Context.Service<AiChatService>()(
   "AiChatService",
   {
-    accessors: true,
-    dependencies: [AiChatRepository.Default],
-    effect: Effect.gen(function* () {
+    make: Effect.gen(function* () {
       const repository = yield* AiChatRepository;
 
       const listSessions = Effect.fn("AiChatService.listSessions")(function* (
@@ -111,9 +109,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           streamId: string | null;
         }) {
           yield* repository.updateSessionActivity({
-            userId: input.userId,
-            sessionId: input.sessionId,
             activeStreamId: input.streamId,
+            sessionId: input.sessionId,
+            userId: input.userId,
           });
         }
       );
@@ -149,25 +147,25 @@ export class AiChatService extends Effect.Service<AiChatService>()(
 
           if (lastPersistedMessage?.role === "assistant") {
             yield* repository.updateMessageContent({
-              messageId: lastPersistedMessage.id,
               content,
+              messageId: lastPersistedMessage.id,
               parts: lastAssistantMessage.parts,
             });
           } else {
             yield* repository.createMessage({
-              sessionId: input.sessionId,
-              role: "assistant",
               content,
               parts: lastAssistantMessage.parts,
+              role: "assistant",
+              sessionId: input.sessionId,
             });
           }
         }
 
         // Always clear active stream metadata when a stream finishes/aborts.
         yield* repository.updateSessionActivity({
-          userId: input.userId,
-          sessionId: input.sessionId,
           activeStreamId: null,
+          sessionId: input.sessionId,
+          userId: input.userId,
         });
       });
 
@@ -197,9 +195,13 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         }
 
         const titleResult = yield* Effect.tryPromise({
+          catch: () =>
+            new AiChatError({
+              code: "INTERNAL",
+              message: "Failed to generate chat session title.",
+            }),
           try: () =>
             generateText({
-              model: resolveChatModel(SESSION_TITLE_MODEL),
               instructions: [
                 "Generate a concise chat title from the first user message.",
                 "Requirements:",
@@ -207,12 +209,8 @@ export class AiChatService extends Effect.Service<AiChatService>()(
                 "- Keep it under 8 words.",
                 "- Do not use quotes, prefixes, or trailing punctuation.",
               ].join("\n"),
+              model: resolveChatModel(SESSION_TITLE_MODEL),
               prompt: `First user message: ${firstMessageText}`,
-            }),
-          catch: () =>
-            new AiChatError({
-              message: "Failed to generate chat session title.",
-              code: "INTERNAL",
             }),
         });
 
@@ -222,9 +220,9 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         }
 
         yield* repository.updateSessionActivity({
-          userId: input.userId,
           sessionId: input.sessionId,
           title,
+          userId: input.userId,
         });
 
         return true;
@@ -257,10 +255,10 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         if (ctx.isFirstMessageForSession) {
           const text = buildChatSystemPrompt({ timeZone: ctx.timeZone });
           yield* repository.createMessage({
-            sessionId: ctx.sessionId,
-            role: "system",
             content: text,
-            parts: [{ type: "text", text }],
+            parts: [{ text, type: "text" }],
+            role: "system",
+            sessionId: ctx.sessionId,
           });
           return text;
         }
@@ -334,8 +332,8 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         if (!latestMessage) {
           return yield* Effect.fail(
             new AiChatError({
-              message: "Message content is required.",
               code: "BAD_REQUEST",
+              message: "Message content is required.",
             })
           );
         }
@@ -354,11 +352,11 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         );
 
         const systemPromptText = yield* resolveSystemPrompt({
-          sessionId: input.sessionId,
-          timeZone: input.timeZone,
           existingMessages,
           isFirstMessageForSession,
           persistedSystemMessage,
+          sessionId: input.sessionId,
+          timeZone: input.timeZone,
         });
 
         let firstMessageText: string | null = null;
@@ -367,8 +365,8 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           if (latestMessage.parts.length === 0) {
             return yield* Effect.fail(
               new AiChatError({
-                message: "Message content is required.",
                 code: "BAD_REQUEST",
+                message: "Message content is required.",
               })
             );
           }
@@ -382,30 +380,30 @@ export class AiChatService extends Effect.Service<AiChatService>()(
           firstMessageText = shouldGenerateTitle ? userText : null;
 
           yield* repository.createMessage({
-            sessionId: input.sessionId,
-            role: "user",
             content: getPersistedContent(
               latestMessage.parts,
               "[non-text user message]"
             ),
             parts: latestMessage.parts,
+            role: "user",
+            sessionId: input.sessionId,
           });
         }
 
         const validatedMessages = yield* Effect.tryPromise({
-          try: () => validateUIMessages({ messages: input.messages }),
           catch: (error) => {
             if (error instanceof TypeValidationError) {
               return new AiChatError({
-                message: "Stored chat messages failed validation.",
                 code: "BAD_REQUEST",
+                message: "Stored chat messages failed validation.",
               });
             }
             return new AiChatError({
-              message: "Failed to validate chat messages.",
               code: "INTERNAL",
+              message: "Failed to validate chat messages.",
             });
           },
+          try: () => validateUIMessages({ messages: input.messages }),
         });
 
         const canonicalMessages = buildCanonicalHistory(
@@ -416,47 +414,51 @@ export class AiChatService extends Effect.Service<AiChatService>()(
         const model = resolveChatModel(session.model ?? undefined);
         yield* Effect.annotateCurrentSpan("model", session.model ?? "default");
         const modelMessages = yield* Effect.tryPromise({
-          try: () => convertToModelMessages(canonicalMessages),
           catch: () =>
             new AiChatError({
-              message: "Failed to convert chat messages for model.",
               code: "INTERNAL",
+              message: "Failed to convert chat messages for model.",
             }),
+          try: () => convertToModelMessages(canonicalMessages),
         });
 
         const streamResult = streamText({
-          model,
+          abortSignal: input.abortSignal,
+          experimental_toolApprovalSecret: `kompose-ai-tool-approval:${env.BETTER_AUTH_SECRET}`,
           instructions: systemPromptText,
           messages: modelMessages,
-          stopWhen: isStepCount(20),
-          temperature: 0.8,
-          tools: input.tools,
-          toolApproval: input.toolApproval,
-          experimental_toolApprovalSecret: `kompose-ai-tool-approval:${env.BETTER_AUTH_SECRET}`,
-          abortSignal: input.abortSignal,
+          model,
           providerOptions: {
             openai: { reasoningSummary: "auto" },
           },
+          stopWhen: isStepCount(20),
+          temperature: 0.8,
+          toolApproval: input.toolApproval,
+          tools: input.tools,
         });
 
         return {
+          firstMessageText,
           originalMessages: validatedMessages,
           streamResult,
-          firstMessageText,
         };
       });
 
       return {
-        listSessions,
         createSession,
         deleteSession,
-        listMessages,
+        generateSessionTitleFromFirstMessage,
         getActiveStreamId,
+        listMessages,
+        listSessions,
         markActiveStream,
         persistAssistantFromUiMessages,
-        generateSessionTitleFromFirstMessage,
         startStream,
       };
     }),
   }
-) {}
+) {
+  static readonly layer = Layer.effect(this, this.make).pipe(
+    Layer.provide(AiChatRepository.layer)
+  );
+}

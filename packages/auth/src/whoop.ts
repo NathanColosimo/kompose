@@ -1,9 +1,15 @@
-import { db } from "@kompose/db/legacy";
+import { Database, DatabaseLive } from "@kompose/db";
 import { account as accountTable } from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";
 import type { BetterAuthPlugin } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthMiddleware,
+  getSessionFromCtx,
+  isStateful,
+} from "better-auth/api";
 import { and, eq } from "drizzle-orm";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { z } from "zod";
 
 const WHOOP_PROVIDER_ID = "whoop";
@@ -20,6 +26,24 @@ const whoopTokenResponseSchema = z.object({
 
 type WhoopTokenResponse = z.infer<typeof whoopTokenResponseSchema>;
 
+class WhoopTokenStateError extends Schema.TaggedError<WhoopTokenStateError>()(
+  "WhoopTokenStateError",
+  {
+    accountId: Schema.String,
+    message: Schema.String,
+  }
+) {}
+
+class WhoopTokenRefreshError extends Schema.TaggedError<WhoopTokenRefreshError>()(
+  "WhoopTokenRefreshError",
+  {
+    cause: Schema.Unknown,
+    message: Schema.String,
+    status: Schema.NullOr(Schema.Number),
+  }
+) {}
+
+/** accountId is the local Better Auth account row ID. */
 type WhoopTokenRequest =
   | {
       type: "accessToken";
@@ -32,64 +56,96 @@ type WhoopTokenRequest =
       userId: string;
     };
 
-interface WhoopTokenBody {
-  accountId: string;
-  providerId: typeof WHOOP_PROVIDER_ID;
-  userId: string;
-}
+const accountSelectionSchema = z.strictObject({
+  accountId: z.string(),
+  userId: z.string().optional(),
+});
 
-interface WhoopTokens {
-  accessToken: string;
-  accessTokenExpiresAt: Date;
-  refreshToken: string;
-  scope: string;
-}
-
-function isWhoopTokenBody(value: unknown): value is WhoopTokenBody {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    (value as Record<string, unknown>).providerId === WHOOP_PROVIDER_ID &&
-    typeof (value as Record<string, unknown>).accountId === "string" &&
-    typeof (value as Record<string, unknown>).userId === "string"
-  );
-}
+const whoopDatabaseRuntime = ManagedRuntime.make(DatabaseLive);
 
 function scopes(scope: string) {
   return scope.split(",");
 }
 
-async function refreshWhoopTokens(refreshToken: string): Promise<WhoopTokens> {
+const refreshWhoopTokens = Effect.fn("WhoopOAuth.refreshTokens")(function* (
+  refreshToken: string
+) {
   const clientId = env.WHOOP_CLIENT_ID;
   const clientSecret = env.WHOOP_CLIENT_SECRET;
 
   if (!clientId) {
-    throw new Error("WHOOP_CLIENT_ID is required");
+    return yield* Effect.fail(
+      new WhoopTokenRefreshError({
+        cause: new Error("WHOOP_CLIENT_ID is required"),
+        message: "WHOOP OAuth client ID is not configured",
+        status: null,
+      })
+    );
   }
 
   if (!clientSecret) {
-    throw new Error("WHOOP_CLIENT_SECRET is required");
+    return yield* Effect.fail(
+      new WhoopTokenRefreshError({
+        cause: new Error("WHOOP_CLIENT_SECRET is required"),
+        message: "WHOOP OAuth client secret is not configured",
+        status: null,
+      })
+    );
   }
 
-  const response = await fetch(WHOOP_TOKEN_URL, {
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      scope: "offline",
-    }),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    method: "POST",
+  const response = yield* Effect.tryPromise({
+    catch: (cause) =>
+      new WhoopTokenRefreshError({
+        cause,
+        message: "WHOOP token refresh request failed",
+        status: null,
+      }),
+    try: () =>
+      fetch(WHOOP_TOKEN_URL, {
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          scope: "offline",
+        }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        method: "POST",
+      }),
   });
 
   if (!response.ok) {
-    throw new Error(`WHOOP token refresh failed: ${response.status}`);
+    return yield* Effect.fail(
+      new WhoopTokenRefreshError({
+        cause: new Error(response.statusText),
+        message: `WHOOP token refresh failed: ${response.status}`,
+        status: response.status,
+      })
+    );
   }
 
-  const token: WhoopTokenResponse = whoopTokenResponseSchema.parse(
-    await response.json()
-  );
+  const payload = yield* Effect.tryPromise({
+    catch: (cause) =>
+      new WhoopTokenRefreshError({
+        cause,
+        message: "WHOOP token refresh response was not valid JSON",
+        status: response.status,
+      }),
+    try: () => response.json(),
+  });
+  const parsed = whoopTokenResponseSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return yield* Effect.fail(
+      new WhoopTokenRefreshError({
+        cause: parsed.error,
+        message: "WHOOP token refresh response was invalid",
+        status: response.status,
+      })
+    );
+  }
+
+  const token: WhoopTokenResponse = parsed.data;
 
   return {
     accessToken: token.access_token,
@@ -97,99 +153,171 @@ async function refreshWhoopTokens(refreshToken: string): Promise<WhoopTokens> {
     refreshToken: token.refresh_token,
     scope: token.scope.split(" ").join(","),
   };
-}
+});
+
+const getWhoopTokensEffect = Effect.fn("WhoopOAuth.getTokens")(function* (
+  request: WhoopTokenRequest
+) {
+  const db = yield* Database;
+
+  return yield* db.transaction((tx) =>
+    Effect.gen(function* () {
+      const [account] = yield* tx
+        .select()
+        .from(accountTable)
+        .where(
+          and(
+            eq(accountTable.id, request.accountId),
+            eq(accountTable.providerId, WHOOP_PROVIDER_ID),
+            eq(accountTable.userId, request.userId)
+          )
+        )
+        .for("update");
+
+      if (!account) {
+        return yield* Effect.fail(
+          new WhoopTokenStateError({
+            accountId: request.accountId,
+            message: "WHOOP account not linked",
+          })
+        );
+      }
+
+      if (!account.accessToken) {
+        return yield* Effect.fail(
+          new WhoopTokenStateError({
+            accountId: request.accountId,
+            message: "WHOOP access token missing",
+          })
+        );
+      }
+
+      if (!account.accessTokenExpiresAt) {
+        return yield* Effect.fail(
+          new WhoopTokenStateError({
+            accountId: request.accountId,
+            message: "WHOOP token expiry missing",
+          })
+        );
+      }
+
+      if (!account.refreshToken) {
+        return yield* Effect.fail(
+          new WhoopTokenStateError({
+            accountId: request.accountId,
+            message: "WHOOP refresh token missing",
+          })
+        );
+      }
+
+      if (!account.scope) {
+        return yield* Effect.fail(
+          new WhoopTokenStateError({
+            accountId: request.accountId,
+            message: "WHOOP token scope missing",
+          })
+        );
+      }
+
+      if (
+        request.type === "accessToken" &&
+        account.accessTokenExpiresAt.getTime() - Date.now() >
+          TOKEN_REFRESH_WINDOW_MS
+      ) {
+        return {
+          accessToken: account.accessToken,
+          accessTokenExpiresAt: account.accessTokenExpiresAt,
+          refreshToken: account.refreshToken,
+          scope: account.scope,
+        };
+      }
+
+      const token = yield* refreshWhoopTokens(account.refreshToken);
+
+      yield* tx
+        .update(accountTable)
+        .set({
+          accessToken: token.accessToken,
+          accessTokenExpiresAt: token.accessTokenExpiresAt,
+          refreshToken: token.refreshToken,
+          // A refresh response can contain fewer scopes than the original grant.
+          // Preserve the stored grant, matching Better Auth 1.7's refresh behavior.
+          scope: account.scope,
+          updatedAt: new Date(),
+        })
+        .where(eq(accountTable.id, account.id));
+
+      return { ...token, scope: account.scope };
+    })
+  );
+});
 
 export function getWhoopTokens(request: WhoopTokenRequest) {
-  return db.transaction(async (tx) => {
-    const [account] = await tx
-      .select()
-      .from(accountTable)
-      .where(
-        and(
-          eq(accountTable.accountId, request.accountId),
-          eq(accountTable.providerId, WHOOP_PROVIDER_ID),
-          eq(accountTable.userId, request.userId)
-        )
-      )
-      .for("update");
-
-    if (!account) {
-      throw new Error("WHOOP account not linked");
-    }
-
-    if (!account.accessToken) {
-      throw new Error("WHOOP access token missing");
-    }
-
-    if (!account.accessTokenExpiresAt) {
-      throw new Error("WHOOP token expiry missing");
-    }
-
-    if (!account.refreshToken) {
-      throw new Error("WHOOP refresh token missing");
-    }
-
-    if (!account.scope) {
-      throw new Error("WHOOP token scope missing");
-    }
-
-    if (
-      request.type === "accessToken" &&
-      account.accessTokenExpiresAt.getTime() - Date.now() >
-        TOKEN_REFRESH_WINDOW_MS
-    ) {
-      return {
-        accessToken: account.accessToken,
-        accessTokenExpiresAt: account.accessTokenExpiresAt,
-        refreshToken: account.refreshToken,
-        scope: account.scope,
-      };
-    }
-
-    const token = await refreshWhoopTokens(account.refreshToken);
-
-    await tx
-      .update(accountTable)
-      .set({
-        accessToken: token.accessToken,
-        accessTokenExpiresAt: token.accessTokenExpiresAt,
-        refreshToken: token.refreshToken,
-        scope: token.scope,
-        updatedAt: new Date(),
-      })
-      .where(eq(accountTable.id, account.id));
-
-    return token;
-  });
+  return whoopDatabaseRuntime.runPromise(getWhoopTokensEffect(request));
 }
 
 export function whoopOAuthTokens(): BetterAuthPlugin {
   return {
-    id: "whoop-oauth-tokens",
     hooks: {
       before: [
         {
-          matcher: (ctx) =>
-            (ctx.path === "/get-access-token" ||
-              ctx.path === "/refresh-token") &&
-            isWhoopTokenBody(ctx.body),
           handler: createAuthMiddleware(async (ctx) => {
-            if (!isWhoopTokenBody(ctx.body)) {
-              throw new Error("WHOOP token body missing");
+            const selection = accountSelectionSchema.safeParse(
+              ctx.path === "/account-info" ? ctx.query : ctx.body
+            );
+            if (!selection.success) {
+              return;
+            }
+
+            // Match Better Auth's token-route authorization: HTTP callers must
+            // have a current session; only trusted server calls may name a user.
+            const session = await getSessionFromCtx(ctx, {
+              disableCookieCache: isStateful(ctx),
+            });
+            if (!session && (ctx.request || ctx.headers)) {
+              throw new APIError("UNAUTHORIZED");
+            }
+            const userId = session?.user.id ?? selection.data.userId;
+            if (!userId) {
+              throw new APIError("BAD_REQUEST", {
+                code: "USER_ID_OR_SESSION_REQUIRED",
+                message: "Either userId or session is required",
+              });
+            }
+
+            const account = await ctx.context.adapter.findOne<{
+              providerId: string;
+            }>({
+              model: "account",
+              select: ["providerId"],
+              where: [
+                { field: "id", value: selection.data.accountId },
+                { field: "userId", value: userId },
+              ],
+            });
+            if (account?.providerId !== WHOOP_PROVIDER_ID) {
+              return;
             }
 
             const token = await getWhoopTokens({
+              accountId: selection.data.accountId,
               type:
                 ctx.path === "/refresh-token" ? "refreshToken" : "accessToken",
-              accountId: ctx.body.accountId,
-              userId: ctx.body.userId,
+              userId,
             });
+
+            // accountInfo refreshes tokens internally without invoking the token
+            // endpoint. Refresh under our row lock first, then let it fetch the
+            // profile using the newly persisted token.
+            if (ctx.path === "/account-info") {
+              return;
+            }
 
             if (ctx.path === "/refresh-token") {
               return ctx.json({
                 accessToken: token.accessToken,
                 accessTokenExpiresAt: token.accessTokenExpiresAt,
-                accountId: ctx.body.accountId,
+                accountId: selection.data.accountId,
                 providerId: WHOOP_PROVIDER_ID,
                 refreshToken: token.refreshToken,
                 scope: token.scope,
@@ -202,8 +330,13 @@ export function whoopOAuthTokens(): BetterAuthPlugin {
               scopes: scopes(token.scope),
             });
           }),
+          matcher: (ctx) =>
+            ctx.path === "/get-access-token" ||
+            ctx.path === "/refresh-token" ||
+            ctx.path === "/account-info",
         },
       ],
     },
+    id: "whoop-oauth-tokens",
   };
 }

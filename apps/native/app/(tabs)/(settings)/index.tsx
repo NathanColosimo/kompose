@@ -185,10 +185,8 @@ export default function SettingsScreen() {
                             unlinkingAccountId !== null
                           }
                           icon={Unlink2}
-                          loading={unlinkingAccountId === account.accountId}
-                          onPress={() =>
-                            handleUnlinkGoogleAccount(account.accountId)
-                          }
+                          loading={unlinkingAccountId === account.id}
+                          onPress={() => handleUnlinkGoogleAccount(account.id)}
                           size="icon"
                           variant="destructive"
                         />

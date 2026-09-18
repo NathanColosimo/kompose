@@ -9,8 +9,8 @@ import type { WhoopError } from "./errors";
 import { WhoopService } from "./service";
 
 const WhoopLive = Layer.mergeAll(
-  WhoopService.Default,
-  WhoopCacheService.Default,
+  WhoopService.layer,
+  WhoopCacheService.layer,
   TelemetryLive
 );
 
@@ -18,11 +18,11 @@ function handleError(error: WhoopError): never {
   switch (error._tag) {
     case "WhoopTokenUnavailableError":
       throw new ORPCError("SERVICE_UNAVAILABLE", {
-        message: error.message,
         data: {
           accountId: error.accountId,
           whoopErrorCode: "TOKEN_UNAVAILABLE",
         },
+        message: error.message,
       });
     case "WhoopInvalidRangeError":
       throw new ORPCError("BAD_REQUEST", {
@@ -30,20 +30,20 @@ function handleError(error: WhoopError): never {
       });
     case "WhoopParseError":
       throw new ORPCError("PARSE_ERROR", {
-        message: error.message,
         data: {
           cause: error.cause,
           operation: error.operation,
         },
+        message: error.message,
       });
     case "WhoopApiError":
       throw new ORPCError("SERVICE_UNAVAILABLE", {
-        message: error.message,
         data: {
           cause: error.cause,
           operation: error.operation,
           status: error.status,
         },
+        message: error.message,
       });
     default: {
       const unknownError: never = error;
@@ -58,17 +58,19 @@ export const whoopRouter = os.router({
   days: {
     list: os.days.list.handler(({ context, input }) =>
       Effect.runPromise(
-        WhoopService.listDaySummaries({
-          accountId: input.accountId,
-          endDate: input.endDate,
-          startDate: input.startDate,
-          timeZone: input.timeZone,
-          userId: context.user.id,
-        }).pipe(
+        WhoopService.use((service) =>
+          service.listDaySummaries({
+            accountId: input.accountId,
+            endDate: input.endDate,
+            startDate: input.startDate,
+            timeZone: input.timeZone,
+            userId: context.user.id,
+          })
+        ).pipe(
           Effect.provide(WhoopLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       )
@@ -77,14 +79,16 @@ export const whoopRouter = os.router({
   profile: {
     get: os.profile.get.handler(({ context, input }) =>
       Effect.runPromise(
-        WhoopService.getProfile({
-          accountId: input.accountId,
-          userId: context.user.id,
-        }).pipe(
+        WhoopService.use((service) =>
+          service.getProfile({
+            accountId: input.accountId,
+            userId: context.user.id,
+          })
+        ).pipe(
           Effect.provide(WhoopLive),
           Effect.match({
-            onSuccess: (value) => value,
             onFailure: handleError,
+            onSuccess: (value) => value,
           })
         )
       )
