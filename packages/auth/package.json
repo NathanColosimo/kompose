@@ -13,8 +13,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-auth/core": "^1.7.5",
-    "@better-auth/drizzle-adapter": "1.7.5",
+    "@better-auth/core": "^1.7.6",
+    "@better-auth/drizzle-adapter": "1.7.6",
     "@better-auth/expo": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",

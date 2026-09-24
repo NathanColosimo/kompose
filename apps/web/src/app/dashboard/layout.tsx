@@ -3,7 +3,7 @@
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { currentDateAtom } from "@kompose/state/atoms/current-date";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -50,7 +50,8 @@ export default function DashboardLayout({
     authClient.useSession();
   const sessionUser = session?.user;
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
+  const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarTaskOpenRequest = useSetAtom(
