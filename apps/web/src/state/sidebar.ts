@@ -1,3 +1,4 @@
+import { visibleDaysCountAtom } from "@kompose/state/atoms/current-date";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
@@ -35,7 +36,7 @@ export const SIDEBAR_RIGHT_WIDTH = "clamp(24rem, 30vw, 30rem)";
  */
 const SIDEBAR_LEFT_MIN_WIDTH_PX = 288; // 18rem
 const SIDEBAR_LEFT_ICON_WIDTH_PX = 48; // 3rem
-const SIDEBAR_RIGHT_MIN_WIDTH_PX = 352; // 24rem
+const SIDEBAR_RIGHT_MIN_WIDTH_PX = 384; // 24rem
 const CALENDAR_TIME_GUTTER_WIDTH_PX = 64; // w-16
 const CALENDAR_DAY_MIN_WIDTH_PX = 138;
 const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
@@ -77,8 +78,12 @@ export function computeDashboardResponsiveLayout(args: {
 
   const mainRegionWidth = Math.max(0, args.viewportWidth - leftSidebarWidth);
   const maxDaysWithoutRightSidebar = getCalendarDayCapacity(mainRegionWidth);
+  const rightSidebarWidth = Math.min(
+    480,
+    Math.max(SIDEBAR_RIGHT_MIN_WIDTH_PX, args.viewportWidth * 0.3)
+  );
   const maxDaysWithDockedRight = getCalendarDayCapacity(
-    mainRegionWidth - SIDEBAR_RIGHT_MIN_WIDTH_PX
+    mainRegionWidth - rightSidebarWidth
   );
 
   const canDockRightSidebar =
@@ -164,4 +169,15 @@ export const dashboardResponsiveLayoutAtom = atom((get) =>
     rightSidebarDockRequested: get(sidebarRightOpenAtom),
     viewportWidth: get(dashboardViewportWidthAtom),
   })
+);
+
+/** Rendered days and every period-navigation control must share this count. */
+export const effectiveVisibleDaysCountAtom = atom((get) =>
+  Math.max(
+    1,
+    Math.min(
+      get(visibleDaysCountAtom),
+      get(dashboardResponsiveLayoutAtom).maxDaysForCurrentLayout
+    )
+  )
 );

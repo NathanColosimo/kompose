@@ -79,6 +79,11 @@ References: [Better Auth Electron](https://better-auth.com/docs/integrations/ele
 - Calendar visibility preferences survive failed account reads and signed-out states.
 - Responsive day capacity uses the actual 64px gutter and clamped sidebar width.
   The time labels sync to an already-scrolled grid when they mount.
+- The toolbar wraps at the 720px minimum window width without clipping controls.
+  Toolbar buttons and arrow-key navigation use the same rendered day count, so
+  responsive layouts do not skip dates. Period buttons have accessible labels.
+- Failed session reads show a connection error and Retry in the dashboard, login
+  page, and popup. They no longer masquerade as a signed-out session.
 - Escape in Search/Create returns to the command bar root; Escape at the root closes it.
 - The desktop popup starts open without a mount-time dismiss race, resizes after
   session loading, and shows a useful sign-in state instead of an empty window.
@@ -101,6 +106,9 @@ the account identity, task creation/editing/scheduling/completion, task search,
 and the current-time line aligned with the time gutter. Task updates appeared in
 Chrome without reloading. Calendar visibility choices survived a Chrome reload.
 The local QA task was left completed; production tasks and events were not edited.
+During a second pass, dragging that task in Chrome moved it from 6:00 to 6:30 PM,
+and resizing extended it to 7:30 PM. Both changes survived a reload and appeared
+in Electron on focus.
 
 The native popup was checked for search, Create navigation, nested/root Escape,
 opening a task while the main window was on Settings, absence of traffic lights,
@@ -108,16 +116,29 @@ and dragging the empty top strip while preserving text input. Batch native popup
 actions in one focused Computer Use sequence: switching back to another app
 between actions correctly dismisses this blur-to-close panel.
 
-Automated validation covers 11 boundary/regression tests, all workspace type
-checks, the iOS export, the web production build, the static desktop build, and
-unsigned macOS packaging. The popup adjustment was rebuilt and packaged again.
+The second pass verified the dashboard at 720×640 in light and dark themes,
+empty/no-match command searches, empty Create input, and nested/root Escape.
+Stopping the local API reproduced a misleading sign-in prompt; the updated
+packaged app instead kept the dashboard URL and showed Retry in both windows.
+After restarting the API, Retry restored the existing account and calendars
+without another sign-in. With six days visible, both ArrowRight and Next period
+advanced from October 8 to October 14; ArrowLeft returned to October 8.
+
+Current automated validation covers 12 boundary/regression tests (47 assertions),
+all 11 workspace type checks, targeted Biome checks on changed source files, the
+static desktop build, and unsigned macOS packaging. The iOS export and web
+production build also passed during the initial port review. The second-pass
+fixes were rebuilt, packaged, and checked in the native Electron app.
 
 Remaining checks: signed/notarized distribution and update installation, linking
-another Google/WHOOP account, signed-out popup interaction, and calendar drag/resize
-persistence. A Computer Use task drag showed a preview but did not persist, so it
-is not counted as a passing check. The installed Tauri global popup was not
+another Google/WHOOP account, signed-out popup interaction, and native calendar
+drag/resize persistence. A native Computer Use drag showed a preview but did not
+persist; Chrome drag/resize passed, so native input remains inconclusive rather
+than a confirmed app defect. The installed Tauri global popup was not
 captured, so its comparison is limited to the in-window palette. A cold Bun/Next
 dev start after deleting `.next` also produced a transient `pg-types` resolution
 error; restarting after Next generated its external-package symlinks restored
 HTTP 200 and authenticated RPCs. The development command remains on Bun because
-the Redis adapter depends on it.
+the Redis adapter depends on it. Later Chrome requests to the local domain reached
+a Vercel 404 while the local proxy and native app still worked; final native QA
+continued, but that Chrome routing discrepancy remains unresolved.

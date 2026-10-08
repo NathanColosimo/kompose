@@ -6,8 +6,9 @@ import { focusManager } from "@tanstack/react-query";
 import { useAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useCallback, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
+import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
@@ -21,9 +22,18 @@ import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 export default function DesktopCommandBarClient() {
   useHydrateAtoms([[commandBarOpenAtom, true]]);
   const [open, setOpen] = useAtom(commandBarOpenAtom);
-  const { data: session, isPending: isSessionPending } =
-    authClient.useSession();
+  const {
+    data: session,
+    error: sessionError,
+    isPending: isSessionPending,
+    isRefetching,
+    refetch: refetchSession,
+  } = authClient.useSession();
   const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
+  const handleShowMainWindow = useCallback(
+    () => desktopBridge().showMainWindow(),
+    []
+  );
 
   // Open the command bar when the window gains focus.
   useMountEffect(() => {
@@ -73,15 +83,20 @@ export default function DesktopCommandBarClient() {
 
   // Loading/sign-in surfaces have no command input to handle Escape.
   useEffect(() => {
-    if (!open || (!isSessionPending && session?.user)) return;
+    if (!open || (!isSessionPending && session?.user)) {
+      return;
+    }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, isSessionPending, session?.user, setOpen]);
 
   // Auto-size the desktop window to exactly fit the dialog content.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reconnect when session loading replaces the popup content.
   useEffect(() => {
     if (!isDesktopRuntime()) {
       return;
@@ -150,16 +165,19 @@ export default function DesktopCommandBarClient() {
     >
       {isSessionPending || !session?.user ? (
         <div className="rounded-xl border bg-popover p-4 text-popover-foreground">
-          <p className="text-sm">
-            {isSessionPending
-              ? "Loading your workspace…"
-              : "Sign in to use quick actions."}
-          </p>
-          {!isSessionPending && (
-            <Button
-              className="mt-3"
-              onClick={() => desktopBridge().showMainWindow()}
-            >
+          {isSessionPending || sessionError ? (
+            <div className="text-sm">
+              <SessionFeedback
+                error={Boolean(sessionError)}
+                onRetry={refetchSession}
+                retrying={isRefetching}
+              />
+            </div>
+          ) : (
+            <p className="text-sm">Sign in to use quick actions.</p>
+          )}
+          {!(isSessionPending || sessionError) && (
+            <Button className="mt-3" onClick={handleShowMainWindow}>
               Open Kompose
             </Button>
           )}
