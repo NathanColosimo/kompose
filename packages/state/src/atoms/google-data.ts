@@ -4,7 +4,7 @@ import type {
 } from "@kompose/google-cal/schema";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
-import { atom, getDefaultStore } from "jotai";
+import { atom } from "jotai";
 import { atomFamily } from "jotai-family";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
@@ -26,10 +26,18 @@ const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
 
   return {
-    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
-    queryFn: async () => (await authClient.listAccounts())?.data ?? [],
-    staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const result = await authClient.listAccounts();
+      if (!result || result.error || !result.data) {
+        throw new Error(
+          result?.error?.message ?? "Could not load linked accounts"
+        );
+      }
+      return result.data;
+    },
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
+    staleTime: 1000 * 60 * 5,
   };
 });
 
@@ -55,19 +63,19 @@ const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
     const { orpc } = getStateConfig(get);
 
     return {
-      queryKey: getGoogleCalendarsQueryKey(accountId),
+      placeholderData: keepPreviousData,
       queryFn: async () => {
         const calendars = await orpc.googleCal.calendars.list({
           accountId,
         });
 
         return calendars.map((calendar) => ({
-          calendar,
           accountId,
+          calendar,
         }));
       },
+      queryKey: getGoogleCalendarsQueryKey(accountId),
       staleTime: 5 * 60 * 1000,
-      placeholderData: keepPreviousData,
     };
   })
 );
@@ -104,8 +112,7 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
     }
 
     const accountsQuery = get(linkedAccountsAtom);
-    const hasResolvedAccounts =
-      accountsQuery.data !== undefined || accountsQuery.error != null;
+    const hasResolvedAccounts = accountsQuery.isSuccess;
     if (!hasResolvedAccounts) {
       return stored;
     }
@@ -119,17 +126,12 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       linkedAccountIds.has(calendar.accountId)
     );
 
-    // Prune stale account ids from persisted storage so every platform
-    // converges after an unlink that may have happened elsewhere.
-    if (accountFiltered.length < stored.length) {
-      queueMicrotask(() => {
-        getDefaultStore().set(visibleCalendarsAtom, accountFiltered);
-      });
-    }
+    // Filter the live view without rewriting preferences. An empty account
+    // response during sign-out or a failed refresh must not erase saved choices.
 
     const allCalendarQueriesResolved = accounts.every((account) => {
       const query = get(googleCalendarsAtomFamily(account.accountId));
-      return query.data !== undefined || query.error != null;
+      return query.data !== undefined || query.isError;
     });
     if (!allCalendarQueriesResolved) {
       return accountFiltered;

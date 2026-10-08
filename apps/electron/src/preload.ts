@@ -33,5 +33,6 @@ const desktop: DesktopBridge = {
   resizeCommandBar: (height) =>
     ipcRenderer.invoke(invoke.resizeCommandBar, height),
   setShortcut: (id) => ipcRenderer.invoke(invoke.setShortcut, id),
+  showMainWindow: () => ipcRenderer.invoke(invoke.showMainWindow),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);

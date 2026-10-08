@@ -27,9 +27,22 @@ export function CommandBar() {
     [setOpen]
   );
 
+  const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
+  const handleEscapeKeyDown = useCallback((event: KeyboardEvent) => {
+    // The content owns Escape: nested modes go back; the root closes.
+    event.preventDefault();
+  }, []);
+
   return (
-    <CommandDialog onOpenChange={handleOpenChange} open={open} size="lg">
-      {open ? <LazyCommandBarContent size="lg" /> : null}
+    <CommandDialog
+      onEscapeKeyDown={handleEscapeKeyDown}
+      onOpenChange={handleOpenChange}
+      open={open}
+      size="lg"
+    >
+      {open ? (
+        <LazyCommandBarContent onRequestClose={handleRequestClose} size="lg" />
+      ) : null}
     </CommandDialog>
   );
 }

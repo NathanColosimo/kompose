@@ -1,13 +1,15 @@
 "use client";
 
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
+import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
+import { useAtomValue } from "jotai";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 
 interface DayHeaderProps {
   date: Temporal.PlainDate;
-  isTodayHighlight: boolean;
+  timeZone: string;
   whoopSummary?: WhoopDaySummary | null;
   width: string;
 }
@@ -25,10 +27,15 @@ function recoveryColor(score: number): string {
 
 export const DayHeader = memo(function DayHeaderInner({
   date,
-  isTodayHighlight,
+  timeZone,
   width,
   whoopSummary,
 }: DayHeaderProps) {
+  const now = useAtomValue(nowZonedDateTimeAtom);
+  const isTodayHighlight = now
+    .withTimeZone(timeZone)
+    .toPlainDate()
+    .equals(date);
   const hasWhoopData =
     whoopSummary &&
     (whoopSummary.recoveryScore !== null ||

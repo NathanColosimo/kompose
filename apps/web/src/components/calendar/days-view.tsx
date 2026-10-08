@@ -32,7 +32,6 @@ import {
 import { Temporal } from "temporal-polyfill";
 import {
   isoStringToZonedDateTime,
-  isToday,
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
@@ -555,7 +554,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                 return (
                   <DayHeader
                     date={day}
-                    isTodayHighlight={isToday(day, timeZone)}
+                    timeZone={timeZone}
                     key={dayKey}
                     whoopSummary={whoopSummaries.get(dayKey)}
                     width={dayColumnWidth}
@@ -743,6 +742,7 @@ function TimeGutterSynced({
       }
     };
 
+    handleScroll();
     scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollContainer.removeEventListener("scroll", handleScroll);
   }, [scrollRef]);

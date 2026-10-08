@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import {
+  DESKTOP_COMMAND_BAR_MAX_HEIGHT,
   DESKTOP_ORIGIN,
   type DesktopBridge,
   type DesktopCommandBarShortcutPresetId,
@@ -65,7 +66,7 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "frame-src 'none'",
 ].join("; ");
-const COMMAND_BAR = { height: 80, maxHeight: 600, minHeight: 56, width: 480 };
+const COMMAND_BAR = { height: 80, minHeight: 56, width: 480 };
 const AUTH_SESSION_CHANGE = /\/(electron\/token|sign-out)$/;
 const AUTH_PROXY_ROUTES = new Map<string, "GET" | "POST">([
   ["/get-session", "GET"],
@@ -242,7 +243,6 @@ function createCommandWindow() {
       width: COMMAND_BAR.width,
       ...(isMac
         ? {
-            titleBarStyle: "hiddenInset",
             transparent: true,
             type: "panel",
             vibrancy: "hud",
@@ -488,6 +488,10 @@ function setUpAutoUpdates() {
 
 function registerBridge() {
   handle("openExternal", (url) => openExternal(url));
+  handle("showMainWindow", () => {
+    hideCommandBar();
+    showMain();
+  });
   handle("getShortcut", () => settings.get("shortcut"));
   handle("setShortcut", (id) => applyShortcut(id));
   handle("dismissCommandBar", () => dismissCommandBar());
@@ -496,7 +500,7 @@ function registerBridge() {
       return;
     }
     const clamped = Math.min(
-      COMMAND_BAR.maxHeight,
+      DESKTOP_COMMAND_BAR_MAX_HEIGHT,
       Math.max(COMMAND_BAR.minHeight, height)
     );
     if (Number.isFinite(clamped)) {

@@ -50,6 +50,7 @@ export default function DashboardLayout({
   // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
   const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
   const viewportWidth = useAtomValueRawSync(dashboardViewportWidthAtom);
+  const { push } = useRouter();
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarTaskOpenRequest = useSetAtom(
@@ -104,6 +105,7 @@ export default function DashboardLayout({
 
     return desktopBridge().onOpenTask((payload) => {
       const request = deserializeCommandBarTaskOpenRequest(payload);
+      push("/dashboard");
       applyCommandBarTaskOpenRequest(request, {
         setCommandBarTaskOpenRequest,
         setCurrentDate,
@@ -112,6 +114,7 @@ export default function DashboardLayout({
       });
     });
   }, [
+    push,
     setCommandBarTaskOpenRequest,
     setCurrentDate,
     setSidebarLeftOpen,
