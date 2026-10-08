@@ -4,7 +4,6 @@ import {
   currentDateAtom,
   eventWindowAtom,
   timezoneAtom,
-  visibleDaysCountAtom,
 } from "@kompose/state/atoms/current-date";
 import {
   googleAccountsDataAtom,
@@ -33,7 +32,7 @@ import {
   temporalToPickerDate,
   todayPlainDate,
 } from "@/lib/temporal-utils";
-import { dashboardResponsiveLayoutAtom } from "@/state/sidebar";
+import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
 
 export default function Page() {
   return <DashboardPageContent />;
@@ -42,21 +41,11 @@ export default function Page() {
 function DashboardPageContent() {
   const [hydrated, setHydrated] = useState(false);
   const currentDate = useAtomValue(currentDateAtom);
-  const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const effectiveVisibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
 
   useMountEffect(() => {
     setHydrated(true);
   });
-
-  const effectiveVisibleDaysCount = useMemo(
-    () =>
-      Math.max(
-        1,
-        Math.min(visibleDaysCount, responsiveLayout.maxDaysForCurrentLayout)
-      ),
-    [responsiveLayout.maxDaysForCurrentLayout, visibleDaysCount]
-  );
 
   const effectiveVisibleDays = useMemo(
     () =>
@@ -85,10 +74,10 @@ function DashboardCalendarContent({
   hydrated: boolean;
 }) {
   return (
-    <div className="relative h-full">
+    <div className="flex h-full min-h-0 flex-col">
       <DashboardCalendarToolbar />
 
-      <main className="absolute inset-x-0 top-12 bottom-0">
+      <main className="min-h-0 flex-1">
         {!hydrated || effectiveVisibleDaysCount === 0 ? (
           <CalendarGridPlaceholder />
         ) : (
@@ -102,14 +91,9 @@ function DashboardCalendarContent({
 function DashboardCalendarToolbar() {
   const setCurrentDate = useSetAtom(currentDateAtom);
   const timeZone = useAtomValue(timezoneAtom);
-  const visibleDaysCount = useAtomValue(visibleDaysCountAtom);
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
-  const navigationStep = Math.max(
-    1,
-    Math.min(visibleDaysCount, responsiveLayout.maxDaysForCurrentLayout)
-  );
 
   // Keep toolbar navigation colocated with the toolbar itself.
   const goToPreviousPeriod = useCallback(() => {
@@ -125,12 +109,22 @@ function DashboardCalendarToolbar() {
   }, [setCurrentDate, timeZone]);
 
   return (
-    <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center gap-2 border-b bg-background px-4">
+    <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b bg-background px-4 py-2">
       <div className="flex items-center gap-1">
-        <Button onClick={goToPreviousPeriod} size="icon-lg" variant="ghost">
+        <Button
+          aria-label="Previous period"
+          onClick={goToPreviousPeriod}
+          size="icon-lg"
+          variant="ghost"
+        >
           <ChevronLeft className="size-4" />
         </Button>
-        <Button onClick={goToNextPeriod} size="icon-lg" variant="ghost">
+        <Button
+          aria-label="Next period"
+          onClick={goToNextPeriod}
+          size="icon-lg"
+          variant="ghost"
+        >
           <ChevronRight className="size-4" />
         </Button>
         <Button
