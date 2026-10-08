@@ -3,7 +3,6 @@
 import {
   currentDateAtom,
   eventWindowAtom,
-  timezoneAtom,
 } from "@kompose/state/atoms/current-date";
 import {
   googleAccountsDataAtom,
@@ -30,8 +29,9 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
-  todayPlainDate,
+  type todayPlainDate,
 } from "@/lib/temporal-utils";
+import { goToTodayAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
 
 export default function Page() {
@@ -90,7 +90,7 @@ function DashboardCalendarContent({
 
 function DashboardCalendarToolbar() {
   const setCurrentDate = useSetAtom(currentDateAtom);
-  const timeZone = useAtomValue(timezoneAtom);
+  const goToToday = useSetAtom(goToTodayAtom);
   const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
@@ -103,10 +103,6 @@ function DashboardCalendarToolbar() {
   const goToNextPeriod = useCallback(() => {
     setCurrentDate((prev) => prev.add({ days: navigationStep }));
   }, [navigationStep, setCurrentDate]);
-
-  const goToToday = useCallback(() => {
-    setCurrentDate(todayPlainDate(timeZone));
-  }, [setCurrentDate, timeZone]);
 
   return (
     <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b bg-background px-4 py-2">
