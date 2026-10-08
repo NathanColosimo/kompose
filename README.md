@@ -76,7 +76,6 @@ kompose/
 │   ├── native/      # iOS application (React Native, Expo)
 │   └── web/         # Web application and API (Next.js) + desktop shell (Tauri)
 ├── packages/
-│   ├── ai/          # Shared AI services
 │   ├── api/         # API layer and business logic
 │   ├── auth/        # Authentication configuration and logic
 │   ├── db/          # Database schema and queries
@@ -90,7 +89,7 @@ kompose/
 ## Available Scripts
 
 - `bun run dev`: Start all applications in development mode
-- `bun run dev:web`: Start the web app, database studio, and AI SDK DevTools
+- `bun run dev:web`: Start the web app and database studio
 - `bun run dev:native`: Start Expo Metro without clearing its cache
 - `bun run portless:proxy`: Start the local HTTPS proxy used by `local.kompose.dev`
 - `bun run build`: Build all applications

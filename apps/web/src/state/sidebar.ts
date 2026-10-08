@@ -18,8 +18,8 @@ type SidebarLeftViewSelection =
  * Default left-sidebar selection for first load and stale-storage fallback.
  */
 export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
-  type: "base",
   id: "inbox",
+  type: "base",
 };
 
 /**
@@ -27,7 +27,6 @@ export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
  * clamp(min, preferred viewport width, max) keeps layouts responsive.
  */
 export const SIDEBAR_LEFT_WIDTH = "clamp(18rem, 22vw, 22rem)";
-export const SIDEBAR_RIGHT_WIDTH = "clamp(24rem, 30vw, 30rem)";
 
 /**
  * Width-budget constants used for responsive layout calculations.
@@ -35,16 +34,11 @@ export const SIDEBAR_RIGHT_WIDTH = "clamp(24rem, 30vw, 30rem)";
  */
 const SIDEBAR_LEFT_MIN_WIDTH_PX = 288; // 18rem
 const SIDEBAR_LEFT_ICON_WIDTH_PX = 48; // 3rem
-const SIDEBAR_RIGHT_MIN_WIDTH_PX = 352; // 24rem
 const CALENDAR_TIME_GUTTER_WIDTH_PX = 48; // w-16
 const CALENDAR_DAY_MIN_WIDTH_PX = 138;
-const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
 
 interface DashboardResponsiveLayout {
-  canDockRightSidebar: boolean;
   maxDaysForCurrentLayout: number;
-  maxDaysWithDockedRight: number;
-  maxDaysWithoutRightSidebar: number;
 }
 
 function toNonNegativeInteger(value: number) {
@@ -61,11 +55,10 @@ function getCalendarDayCapacity(calendarRegionWidthPx: number) {
 
 /**
  * Compute calendar/day capacity from a viewport width budget.
- * The result drives day clamping and docked-vs-overlay right sidebar behavior.
+ * The result drives the number of visible calendar days.
  */
 function computeDashboardResponsiveLayout(args: {
   leftSidebarOpen: boolean;
-  rightSidebarDockRequested: boolean;
   viewportWidth: number;
 }): DashboardResponsiveLayout {
   const leftSidebarWidth = args.leftSidebarOpen
@@ -73,27 +66,11 @@ function computeDashboardResponsiveLayout(args: {
     : SIDEBAR_LEFT_ICON_WIDTH_PX;
 
   const mainRegionWidth = Math.max(0, args.viewportWidth - leftSidebarWidth);
-  const maxDaysWithoutRightSidebar = getCalendarDayCapacity(mainRegionWidth);
-  const maxDaysWithDockedRight = getCalendarDayCapacity(
-    mainRegionWidth - SIDEBAR_RIGHT_MIN_WIDTH_PX
-  );
-
-  const canDockRightSidebar =
-    maxDaysWithDockedRight >= MIN_DAYS_WHEN_RIGHT_DOCKED;
-  const isDockedRightSidebarActive =
-    args.rightSidebarDockRequested && canDockRightSidebar;
-  const maxDaysForCurrentLayout = Math.max(
-    1,
-    isDockedRightSidebarActive
-      ? maxDaysWithDockedRight
-      : maxDaysWithoutRightSidebar
-  );
-
   return {
-    canDockRightSidebar,
-    maxDaysWithDockedRight,
-    maxDaysWithoutRightSidebar,
-    maxDaysForCurrentLayout,
+    maxDaysForCurrentLayout: Math.max(
+      1,
+      getCalendarDayCapacity(mainRegionWidth)
+    ),
   };
 }
 
@@ -122,18 +99,6 @@ export const sidebarLeftViewSelectionAtom =
     { getOnInit: false }
   );
 
-/**
- * Right sidebar open/closed state persisted to localStorage.
- * Defaults to true (open) for new users.
- */
-export const sidebarRightOpenAtom = atomWithStorage<boolean>(
-  "sidebar-right-open",
-  true,
-  undefined,
-  // Keep the first client render aligned with SSR, then hydrate from storage.
-  { getOnInit: false }
-);
-
 function getInitialDashboardViewportWidth() {
   // Start from a deterministic SSR-safe width and measure after mount.
   return 0;
@@ -148,17 +113,11 @@ export const dashboardViewportWidthAtom = atom(
 );
 
 /**
- * Overlay-only open state for right chat in constrained widths.
- */
-export const sidebarRightOverlayOpenAtom = atom(false);
-
-/**
  * Derived responsive flags/capacity used across layout, page, and hotkeys.
  */
 export const dashboardResponsiveLayoutAtom = atom((get) =>
   computeDashboardResponsiveLayout({
     leftSidebarOpen: get(sidebarLeftOpenAtom),
-    rightSidebarDockRequested: get(sidebarRightOpenAtom),
     viewportWidth: get(dashboardViewportWidthAtom),
   })
 );

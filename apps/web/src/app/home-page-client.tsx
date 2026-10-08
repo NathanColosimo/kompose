@@ -16,16 +16,12 @@ const highlights = [
     title: "Calendar + tasks",
   },
   {
-    body: "Reschedule work, draft plans, or ask for status with plain language instead of menus.",
-    title: "AI assistant",
-  },
-  {
-    body: "Notion, Linear, and Google Calendar data live in one orchestration canvas.",
+    body: "Google Calendar and WHOOP data sit alongside your tasks.",
     title: "All your tools",
   },
   {
-    body: "Tauri and Expo apps stay fast offline, then reconcile instantly when you're back online.",
-    title: "Local-first sync",
+    body: "Desktop and mobile apps keep your calendar and tasks in sync.",
+    title: "Across your devices",
   },
 ];
 
@@ -83,11 +79,11 @@ function HomePageContent() {
           </p>
           <div className="space-y-6">
             <h1 className="font-serif text-4xl leading-tight sm:text-5xl lg:text-6xl">
-              One timeline for your calendar, tasks, and AI copilot.
+              One timeline for your calendar and tasks.
             </h1>
             <p className="text-lg text-muted-foreground sm:text-xl">
-              Kompose merges events, tasks, and natural-language automation so
-              you can plan a week in minutes and stay focused when plans change.
+              Kompose merges events, tasks, and connected accounts so you can
+              plan a week in minutes and stay focused when plans change.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">

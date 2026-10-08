@@ -26,9 +26,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "kompose — calendar, tasks, and AI copilot",
+  title: "kompose — calendar and tasks",
   description:
-    "Kompose merges your calendar, tasks, and integrations into one orchestration canvas with an AI copilot.",
+    "Kompose merges your calendar, tasks, and integrations into one orchestration canvas for planning your day.",
 };
 
 export default function RootLayout({

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
-import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/state/sidebar";
+import { sidebarLeftOpenAtom } from "@/state/sidebar";
 
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
@@ -89,11 +89,11 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // Use Jotai atoms for left and right sidebar state with localStorage persistence.
+  // Persist the task sidebar; auxiliary sidebars use local component state.
   const [leftOpenAtomValue, setLeftOpenAtomValue] =
     useAtom(sidebarLeftOpenAtom);
   const [rightOpenAtomValue, setRightOpenAtomValue] =
-    useAtom(sidebarRightOpenAtom);
+    React.useState(false);
 
   // Left sidebar state (controlled via openProp or atom)
   const leftOpen = openProp ?? leftOpenAtomValue;
@@ -109,7 +109,7 @@ function SidebarProvider({
     [setOpenProp, leftOpen, setLeftOpenAtomValue]
   );
 
-  // Right sidebar state (always uses atom)
+  // Optional right sidebar state
   const rightOpen = rightOpenAtomValue;
   const setRightOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {

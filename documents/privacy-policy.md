@@ -72,8 +72,6 @@ Affiliates: We may share personal information with affiliates that operate share
 
 Third Party Service Providers: We may provide personal information to third-party service providers that help us host, secure, analyze, support, and operate the Services.
 
-OpenAI: We use OpenAI to provide certain AI features in the Services. When you use AI features, we may send the prompts, messages, attachments, and related context needed to generate responses or other AI output to OpenAI for processing.
-You can view OpenAI's privacy policy here: https://openai.com/policies/privacy-policy/
 
 
 Professional Advisors: We may provide your personal information to our lawyers, accountants, bankers and other outside professional advisors in the course of the services they provide to us.
