@@ -1,0 +1,35 @@
+appId: com.nathancolosimo.kompose.electron
+productName: Kompose Electron
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - "!node_modules/**"
+extraResources:
+  - from: ../web/out
+    to: web
+asar: true
+protocols:
+  - name: Kompose Electron Authentication
+    schemes:
+      - com.nathancolosimo.kompose.electron
+mac:
+  category: public.app-category.productivity
+  icon: build/icons/icon.icns
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  notarize: true
+win:
+  icon: build/icons/icon.ico
+  target: nsis
+linux:
+  icon: build/icons/icon.png
+  target: AppImage
+publish:
+  provider: github
+  owner: nathancolosimo
+  repo: kompose
+  channel: electron

@@ -56,8 +56,6 @@ tmp
 temp
 .vercel
 
-# AI SDK DevTools
-.devtools
 
 # MCP
 .cursor/mcp.json

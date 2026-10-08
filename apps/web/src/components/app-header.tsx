@@ -56,16 +56,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { authClient } from "@/lib/auth-client";
-import { clearTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
+import { isDesktopRuntime } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 import {
   dashboardResponsiveLayoutAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
+import { useDesktopUpdater } from "./desktop-updater";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
-import { useTauriUpdater } from "./tauri-updater";
 
 /**
  * App-wide header bar with:
@@ -73,7 +73,7 @@ import { useTauriUpdater } from "./tauri-updater";
  * - Center: Search bar that opens command palette (cmd+k)
  * - Right: User avatar with dropdown menu
  *
- * The header is draggable in Tauri for window movement.
+ * The header is draggable in Electron for window movement.
  * On web, looks identical but without drag functionality.
  */
 export function AppHeader({ user }: { user: User | null }) {
@@ -84,7 +84,7 @@ export function AppHeader({ user }: { user: User | null }) {
   return (
     <header className="relative flex h-10 shrink-0 items-center border-b bg-background px-2">
       {/* Full-header drag layer; interactive controls are rendered above this. */}
-      <div aria-hidden className="absolute inset-0" data-tauri-drag-region />
+      <div aria-hidden className="absolute inset-0" data-desktop-drag-region />
       <div className="pointer-events-none relative z-10 flex w-full items-center">
         {/* Left: macOS traffic-light safe area stays non-interactive/draggable. */}
         <div className="w-[76px] shrink-0 select-none" />
@@ -197,7 +197,6 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
         throw new Error(error.message || "Failed to sign out.");
       }
 
-      clearTauriBearer();
       await refetchSession();
       queryClient.clear();
       replace("/login");
@@ -531,9 +530,9 @@ function CreateTagRow({
 }
 
 function UpdatePromptButton() {
-  const { checkForUpdates, installUpdate, status } = useTauriUpdater();
+  const { checkForUpdates, installUpdate, status } = useDesktopUpdater();
   const [open, setOpen] = useState(false);
-  const isDesktopUpdaterVisible = isTauriRuntime() && isProductionDeployment;
+  const isDesktopUpdaterVisible = isDesktopRuntime() && isProductionDeployment;
   const isBusy =
     status === "checking" ||
     status === "downloading" ||

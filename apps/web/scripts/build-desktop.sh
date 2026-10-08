@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Build helper for Tauri desktop export:
+# Build helper for Electron renderer export:
 # - Temporarily remove routes that should not be embedded in the desktop bundle.
 # - Always restore original files after build (success, failure, or interruption).
 
@@ -64,7 +64,7 @@ if [ -d "$DOCS_DIR" ]; then
 fi
 
 # Production desktop builds open the hosted legal pages in the system browser,
-# so the embedded Tauri bundle does not need to include those routes.
+# so the embedded desktop bundle does not need to include those routes.
 if [ "${NEXT_PUBLIC_DEPLOYMENT_ENV:-}" = "production" ]; then
   if [ -d "$PRIVACY_DIR" ]; then
     mv "$PRIVACY_DIR" "$TEMP_DIR/privacy"
@@ -93,10 +93,10 @@ if [ -d "$TEMP_DIR/next-build-cache" ]; then
   mv "$TEMP_DIR/next-build-cache" ".next/cache"
 fi
 
-TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next build
+DESKTOP_BUILD=1 bun ./node_modules/next/dist/bin/next build
 
 # The desktop build intentionally generates route types while API/docs/legal
 # routes are absent. Restore the source tree, then refresh typed routes so
 # follow-up `tsc --noEmit` runs see the normal app route set again.
 restore_removed_sources
-TAURI_BUILD=1 bun ./node_modules/next/dist/bin/next typegen
+DESKTOP_BUILD=1 bun ./node_modules/next/dist/bin/next typegen

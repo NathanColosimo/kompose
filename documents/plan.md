@@ -61,7 +61,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - `/terms` terms of service
     - `/login` (tab-based auth with Google sign-in/sign-up)
     - `/dashboard/*` (dashboard, settings, integrations)
-  - Data is **fetched client-side** via TanStack Query + RPC (no SSR data dependency, good for Tauri).
+  - Data is **fetched client-side** via TanStack Query + RPC (no SSR data dependency, shared with Electron).
 - **Routing**:
   - Next.js App Router for routes.
   - Inside `/app`, use client components with TanStack Query for state/data.
@@ -229,7 +229,7 @@ packages/
   state/        # Shared Jotai atoms, TanStack Query hooks, storage adapters (web + native)
 ```
 
-Note: Desktop (Tauri) app is implemented in `apps/web/src-tauri`.
+Desktop shell: `apps/electron`; renderer: the static export from `apps/web`.
 Production keeps the `Kompose` app identity (`com.nathancolosimo.kompose`,
 `kompose://`), while local bundled testing uses a separate `Kompose Dev`
 flavor (`com.nathancolosimo.kompose.dev`, `kompose-dev://`) so both can stay
@@ -410,97 +410,18 @@ installed side by side on macOS.
 - **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures `NodeSDK.start()` runs before Next.js creates root request spans.
 - See [`otel.md`](./otel.md) for full details.
 
-### 6.17 Production Build/Submit Orchestration
-- **Root commands** (all platforms):
-  - `bun run build:prod` — type-check → desktop → web + native
-  - `bun run submit:prod` — deploy web (Vercel) + desktop (GitHub)
-    + submit native (App Store Connect)
-- **Per-platform shortcuts**:
-  - `bun run build:prod:web` — type-check web deps → desktop → web
-  - `bun run build:prod:native` — type-check native deps → native
-  - `bun run submit:prod:web` — Vercel deploy + desktop release
-  - `bun run submit:prod:desktop` — desktop release only
-  - `bun run submit:prod:native` — App Store Connect only
-- **Package scripts** (self-contained, `cd ../..` for Vercel CLI):
-  - `web#build:prod`: `cd ../.. && vercel pull + vercel build --prod`
-    (runs from repo root so `rootDirectory: apps/web` resolves correctly).
-  - `web#build:prod:desktop`: signed/notarized Tauri build.
-  - Local bundled desktop testing uses `bun run --cwd apps/web desktop:build:dev`
-    to build the unsigned `Kompose Dev` flavor with its own icon and deep-link
-    scheme, leaving the installed production app untouched.
-  - `web#submit:prod`: `cd ../.. && vercel deploy --prebuilt --prod`
-    (Vercel deploy only, no desktop). Turbo wires it to depend on
-    `build:prod`, so deploy always runs against a prebuilt web artifact.
-  - `web#submit:prod:desktop`: `desktop:release` (GitHub release of DMG).
-    Cached by Turbo — if no source files changed since the last
-    successful release, the task is a cache hit and skipped entirely.
-  - `native#build:prod`: local EAS iOS production IPA build.
-  - `native#submit:prod`: submit IPA to App Store Connect.
-- **Desktop release idempotency**: `release-dmg.sh` checks if the
-  GitHub release tag already exists and exits 0 gracefully, so a
-  duplicate release attempt is a no-op rather than a failure.
-- **Turborepo configuration**:
-  - Root `turbo.json` contains only shared task definitions.
-  - `apps/web/turbo.json` and `apps/native/turbo.json` use
-    Package Configurations (`"extends": ["//"]`) for app-specific
-    task overrides (outputs, env vars, caching).
-  - `lint` and `type-check` use the **Transit Nodes** pattern
-    (`dependsOn: ["transit"]`) for parallel execution across packages
-    with correct cache invalidation.
-  - `DATABASE_URL` and `REDIS_URL` are declared in web's package-level
-    `env` (not `globalEnv`) so they only affect the web build cache.
-  - All root scripts use `turbo run` (not the `turbo` shorthand).
-- **Turbo cache outputs**:
-  - `native#build:prod`: caches `dist/**` (the IPA).
-  - `web#build:prod:desktop`: caches
-    `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
-    Inputs exclude `src/app/api/**`, `src/app/docs/**`,
-    `src/app/privacy/**`, `src/app/terms/**`, and
-    `src/instrumentation.ts` so backend-only and hosted-legal-page changes
-    don't invalidate the desktop build cache.
-  - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus
-    the repo-root Vercel prebuild artifact at `.vercel/output/**` and
-    `.vercel/project.json`, which `vercel deploy --prebuilt --prod` needs on
-    cached re-runs.
-  - `submit:prod` is cached (`cache: true`) for web, native, and
-    desktop. Each depends on its corresponding `build:prod` task, so
-    submissions are skipped when the build output hasn't changed.
-    Use `turbo run submit:prod --force` to force a re-deploy.
-  - Build tasks include `dependsOn: ["^build"]` so cache keys factor
-    in workspace dependency changes.
-- **Local build speed**:
-  - Native `build:prod` sets `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` and
-    `EAS_LOCAL_BUILD_WORKINGDIR=~/.eas-build-cache/native` to persist
-    the build working directory between runs, allowing `pod install` to
-    reuse previously downloaded pods.
-  - `eas build --local` still runs `expo prebuild` and full
-    `xcodebuild` each time; EAS local builds do not support cloud
-    caching features (pod cache, compiler ccache).
-- **Important**: Always invoke builds from the repo root via `bun run
-  build:prod[:web|:native]`. Running `bun run build:prod` directly
-  inside a package directory bypasses Turbo (no caching, no dependency
-  graph).
+### 6.17 Production and desktop builds
 
-### 6.18 Desktop Global Shortcut Command Bar
-- **Dedicated popup window**: Tauri now creates a hidden `command-bar`
-  window that loads `/desktop/command-bar` instead of opening the command
-  palette inside the main dashboard window.
-- **Global shortcut toggle**: `tauri-plugin-global-shortcut` registers a
-  command-bar shortcut and toggles only the popup window.
-- **Dismiss behavior**:
-  - Second shortcut press hides the popup.
-  - Focus loss (click-away) hides the popup automatically.
-- **Popup shell**: On macOS, the dedicated `command-bar` window now uses a
-  rounded native HUD vibrancy treatment so the frameless popup keeps softer
-  corners instead of a square shell.
-- **Preset configuration**:
-  - Settings page now exposes 5 preset options:
-    `CommandOrControl+K`, `CommandOrControl+Shift+K`,
-    `CommandOrControl+Space`, `Alt+Space`, `CommandOrControl+J`.
-  - Selection is persisted in Tauri Store (`desktop-settings.json`) and
-    re-applied at app startup via desktop bootstrap.
-- **UI sizing**: Popup route uses a resize observer to keep window height
-  tight to command-bar content (no extra reserved space).
+Web and native builds keep their package-level Turbo tasks. Electron builds the
+shared static renderer with `web#build:desktop`, then bundles main/preload through
+`electron-vite`. Packaging and signing run through `electron-builder`. See
+[`electron-port.md`](./electron-port.md) for commands and auth configuration.
+
+### 6.18 Desktop command bar
+
+The shared command bar runs in a lazily created Electron popup. Main owns global
+shortcuts, window sizing, focus restoration, and settings persistence. See
+[`command-bar.md`](./command-bar.md) for keyboard behavior.
 
 ### 6.20 WHOOP Integration
 - **OAuth**: WHOOP linked via Better Auth `genericOAuth` plugin with `read:profile`, `read:sleep`, `read:workout`, `read:recovery`, `read:cycles`, `offline` scopes. Limited to one account per user.

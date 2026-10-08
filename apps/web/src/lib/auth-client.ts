@@ -1,53 +1,43 @@
+import { electronProxyClient } from "@better-auth/electron/proxy";
 import type { auth } from "@kompose/auth";
+import {
+  ELECTRON_AUTH_CLIENT_ID,
+  ELECTRON_AUTH_SCHEME,
+} from "@kompose/desktop";
 import { env } from "@kompose/env";
 import {
   inferAdditionalFields,
   lastLoginMethodClient,
-  oneTimeTokenClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import {
-  getTauriBearer,
-  isTauriRuntime,
-  setTauriBearer,
-} from "./tauri-desktop";
+import { desktopFetch, isDesktopRuntime } from "./desktop";
 
-const tauri = isTauriRuntime();
-
-// Explicitly set baseURL so the auth client works inside Tauri,
-// where window.location.origin is "tauri://localhost".
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   fetchOptions: {
-    // In Tauri, authenticate via bearer token instead of cookies.
-    // WKWebView ITP blocks cross-origin Set-Cookie, so cookies never work
-    // in production. Bearer tokens are sent as Authorization headers which
-    // are unaffected by ITP.
-    ...(tauri
-      ? {
-          auth: {
-            token: getTauriBearer,
-            type: "Bearer" as const,
-          },
-        }
-      : {}),
-    onSuccess(context) {
-      if (!tauri) {
-        return;
-      }
-      // Capture the bearer token from the server's `set-auth-token` header
-      // (provided by Better Auth's bearer plugin) and persist it.
-      const authToken = context.response.headers.get("set-auth-token");
-      if (authToken) {
-        setTauriBearer(authToken);
-      }
-    },
+    ...(isDesktopRuntime() ? { customFetchImpl: desktopFetch } : {}),
   },
   plugins: [
     inferAdditionalFields<typeof auth>(),
-    lastLoginMethodClient({
-      cookieName: "kompose.last_used_login_method",
+    lastLoginMethodClient({ cookieName: "kompose.last_used_login_method" }),
+    electronProxyClient({
+      clientID: ELECTRON_AUTH_CLIENT_ID,
+      cookiePrefix: "kompose",
+      protocol: { scheme: ELECTRON_AUTH_SCHEME },
     }),
-    oneTimeTokenClient(),
   ],
 });
+
+/** Only forward Better Auth's Electron PKCE parameters from browser sign-in pages. */
+export function getElectronAuthQuery() {
+  if (typeof window === "undefined" || isDesktopRuntime()) {
+    return null;
+  }
+  const query = new URLSearchParams(window.location.search);
+  const client_id = query.get("client_id");
+  const state = query.get("state");
+  const code_challenge = query.get("code_challenge");
+  return client_id === ELECTRON_AUTH_CLIENT_ID && state && code_challenge
+    ? { client_id, code_challenge, state }
+    : null;
+}

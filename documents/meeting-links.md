@@ -45,11 +45,11 @@ When `conferenceData` is present, the Google Calendar client automatically sets 
 - Web event popover: `apps/web/src/components/calendar/events/event-edit-popover.tsx`
 - Native calendar modal: `apps/native/app/(tabs)/calendar.tsx`
 
-## Desktop (Tauri) behavior
+## Desktop (Electron) behavior
 - In desktop runtime, external meeting URLs are handled by a global click
   interceptor in `apps/web/src/components/providers.tsx`.
-- External `http/https` links are opened via `@tauri-apps/plugin-opener`
+- External `http/https` links are opened via Electron’s `shell.openExternal`
   so they launch in the system browser instead of being handled inside the
-  app WebView.
+  app window.
 - Internal same-origin links remain in-app and are not intercepted.
 

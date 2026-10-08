@@ -343,16 +343,12 @@ Production task configuration uses **Package Configurations**
 
 - `native#build:prod`: caches `dist/**` (the IPA). Its explicit shared-package
   inputs make changes such as `@kompose/state` part of the cache key.
-- `web#build:prod:desktop`: caches the Tauri bundle at
-  `src-tauri/target/aarch64-apple-darwin/release/bundle/**`.
+- Electron packaging is configured separately in `apps/electron/turbo.json`.
 - `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus the
   repo-root Vercel prebuild artifact at `.vercel/output/**` and
   `.vercel/project.json`.
 - `web#submit:prod`: depends on `build:prod`, so Turbo can reuse the web
   prebuild before running `vercel deploy --prebuilt --prod`.
-- `web#submit:prod:desktop`: cached turbo task that depends on
-  `build:prod:desktop`. If no source files changed since the last
-  successful release, the task is a cache hit and skipped entirely.
   The release script (`release-dmg.sh`) is also idempotent — it
   gracefully skips if the GitHub release tag already exists.
 

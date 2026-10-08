@@ -1,14 +1,9 @@
 "use client";
 
-import { env } from "@kompose/env";
 import { useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/lib/auth-client";
-import {
-  extractAuthErrorMessage,
-  isTauriRuntime,
-  openDesktopOAuth,
-} from "@/lib/tauri-desktop";
+import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
+import { extractAuthErrorMessage, isDesktopRuntime } from "@/lib/desktop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
@@ -20,20 +15,20 @@ interface SocialAccountButtonsProps {
 
 const copyByMode = {
   "sign-in": {
-    successMessage: "Signed in. Redirecting to your workspace.",
-    googleLabel: "Continue with Google",
     appleLabel: "Continue with Apple",
-    googlePendingLabel: "Connecting to Google...",
     applePendingLabel: "Connecting to Apple...",
     desktopPendingLabel: "Opening browser...",
+    googleLabel: "Continue with Google",
+    googlePendingLabel: "Connecting to Google...",
+    successMessage: "Signed in. Redirecting to your workspace.",
   },
   "sign-up": {
-    successMessage: "You're in! Redirecting to your timeline.",
-    googleLabel: "Create with Google",
     appleLabel: "Create with Apple",
-    googlePendingLabel: "Contacting Google...",
     applePendingLabel: "Contacting Apple...",
     desktopPendingLabel: "Opening browser...",
+    googleLabel: "Create with Google",
+    googlePendingLabel: "Contacting Google...",
+    successMessage: "You're in! Redirecting to your timeline.",
   },
 } as const;
 
@@ -61,14 +56,10 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
-      // On Tauri desktop, open the system browser for OAuth instead of
-      // running the flow inside the webview. The DeepLinkHandler component
-      // handles the active desktop deep-link callback and completes the
-      // session exchange.
-      if (isTauriRuntime()) {
-        await openDesktopOAuth(provider, "sign-in", env.NEXT_PUBLIC_WEB_URL);
-        // Don't clear activeProvider yet — the deep link handler will
-        // navigate away once the callback arrives.
+      // Better Auth owns PKCE and the session exchange in the main process.
+      if (isDesktopRuntime()) {
+        await window.requestAuth({ provider });
+        // The official plugin reports completion through onAuthenticated.
         return;
       }
 
@@ -76,8 +67,10 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
       const { callbackURL, errorCallbackURL, newUserCallbackURL } =
         buildSocialAuthUrls();
 
+      const query = getElectronAuthQuery();
       const result = await authClient.signIn.social({
         provider,
+        ...(query ? { fetchOptions: { query } } : {}),
         callbackURL,
         errorCallbackURL,
         ...(mode === "sign-up" ? { newUserCallbackURL } : {}),
