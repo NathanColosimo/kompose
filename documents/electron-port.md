@@ -18,6 +18,9 @@ Run `bun run build:desktop`, then `bun run dev:desktop`. The API defaults to
 reload, also set `KOMPOSE_RENDERER_URL` to the local web server. Packaged API targets
 use `MAIN_VITE_SERVER_URL` at build time. Set `NEXT_PUBLIC_WEB_URL` to the same API
 when building the renderer. The server must include this branch's Electron plugin.
+For local HTTPS, launch the executable with
+`NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem"` so Electron's Node requests trust
+the already-installed development CA as well as Chromium.
 
 `bun run package:desktop` creates an unpacked application. For unsigned local macOS
 packaging, use `cd apps/electron && bunx electron-builder --dir --publish never
@@ -55,6 +58,11 @@ and external navigation through the system browser.
 
 The command popup is created on first use and released after 60 seconds hidden.
 It is available from the global shortcut and File → Open Command Bar.
+The existing main-process settings store remembers both windows' bounds and the
+main window's maximized state. Bounds are saved after movement/resizing and
+flushed on hide/close. Restoring clamps them to an available display's work area.
+The popup retains its position while its height continues to follow its content;
+expansion near a screen edge keeps the entire popup reachable.
 App-specific IPC covers the window/shortcut/update operations and query refresh
 notifications. The dashboard renderer is shared with the web app.
 
@@ -82,6 +90,9 @@ References: [Better Auth Electron](https://better-auth.com/docs/integrations/ele
 - The toolbar wraps at the 720px minimum window width without clipping controls.
   Toolbar buttons and arrow-key navigation use the same rendered day count, so
   responsive layouts do not skip dates. Period buttons have accessible labels.
+- Today and the `T` shortcut return to today's date and immediately scroll the
+  current-time line into view, including when today is already selected. The
+  scroll request is consumed once, so later manual scrolling is left alone.
 - Failed session reads show a connection error and Retry in the dashboard, login
   page, and popup. They no longer masquerade as a signed-out session.
 - Escape in Search/Create returns to the command bar root; Escape at the root closes it.
@@ -124,11 +135,22 @@ After restarting the API, Retry restored the existing account and calendars
 without another sign-in. With six days visible, both ArrowRight and Next period
 advanced from October 8 to October 14; ArrowLeft returned to October 8.
 
-Current automated validation covers 12 boundary/regression tests (47 assertions),
+Current automated validation covers 16 boundary/regression tests (58 assertions),
 all 11 workspace type checks, targeted Biome checks on changed source files, the
 static desktop build, and unsigned macOS packaging. The iOS export and web
 production build also passed during the initial port review. The second-pass
 fixes were rebuilt, packaged, and checked in the native Electron app.
+
+The window/Today follow-up was also rebuilt and packaged. Computer Use verified
+Today from an already-selected date, `T` after navigating to another period,
+maximized-state restoration across quit/relaunch, and return to the prior normal
+size. Moving the main window between displays updated its saved position. A
+non-default settings fixture restored a 1100×700 main window at (200,120) and a
+480×198 popup at (300,150); the popup retained those bounds after opening and
+hiding instead of recentering. Native drag automation did not move the windows
+reliably in this pass, so drag-specific persistence is not counted separately.
+Bounds tests cover disconnected displays, negative monitor coordinates, invalid
+saved bounds, and popup expansion near a work-area edge.
 
 Remaining checks: signed/notarized distribution and update installation, linking
 another Google/WHOOP account, signed-out popup interaction, and native calendar

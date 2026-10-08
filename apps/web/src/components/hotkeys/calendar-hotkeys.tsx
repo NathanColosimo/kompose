@@ -3,12 +3,11 @@
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import {
   currentDateAtom,
-  timezoneAtom,
   visibleDaysCountAtom,
 } from "@kompose/state/atoms/current-date";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
-import { todayPlainDate } from "@/lib/temporal-utils";
+import { goToTodayAtom } from "@/state/calendar-navigation";
 import {
   dashboardResponsiveLayoutAtom,
   effectiveVisibleDaysCountAtom,
@@ -52,7 +51,7 @@ export function CalendarHotkeys() {
   const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
-  const timeZone = useAtomValue(timezoneAtom);
+  const goToToday = useSetAtom(goToTodayAtom);
 
   // "meta+k" (cmd+k on Mac) to open command bar
   useHotkeys(
@@ -81,11 +80,11 @@ export function CalendarHotkeys() {
   useHotkeys(
     "t",
     () => {
-      setCurrentDate(todayPlainDate(timeZone));
+      goToToday();
       setSidebarLeftViewSelection({ id: "today", type: "base" });
     },
     hotkeyOptions,
-    [timeZone, setCurrentDate, setSidebarLeftViewSelection]
+    [goToToday, setSidebarLeftViewSelection]
   );
 
   // "i" to focus the Inbox task view.

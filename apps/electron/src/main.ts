@@ -4,8 +4,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import {
-  DESKTOP_ORIGIN,
   DESKTOP_COMMAND_BAR_MAX_HEIGHT,
+  DESKTOP_ORIGIN,
   type DesktopCommandBarShortcutPresetId,
   type DesktopTaskSelection,
   type DesktopUpdateState,
@@ -34,6 +34,11 @@ import {
   resolveAsset,
   sanitizeSession,
 } from "./protocol";
+import {
+  fitWindowBounds,
+  isWindowBounds,
+  type SavedWindowState,
+} from "./window-state";
 
 const AUTH_SESSION_CHANGE = /\/(electron\/token|sign-out)$/;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +62,11 @@ let mainWasFocused = false;
 let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingTask: DesktopTaskSelection | null = null;
 let updateState: DesktopUpdateState = { status: "idle" };
-const settings = new Conf<{ shortcut: DesktopCommandBarShortcutPresetId }>({
+const settings = new Conf<{
+  shortcut: DesktopCommandBarShortcutPresetId;
+  mainWindow?: SavedWindowState;
+  commandWindow?: SavedWindowState;
+}>({
   configName: "settings",
   cwd: app.getPath("userData"),
   defaults: { shortcut: "cmd_or_ctrl_shift_k" },
@@ -117,34 +126,56 @@ function showMain() {
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
+  keepWindowOnScreen(mainWindow, false);
   mainWindow.show();
   mainWindow.focus();
 }
 
 function createWindow(command: boolean) {
+  const savedState = settings.get(command ? "commandWindow" : "mainWindow");
+  const savedBounds = isWindowBounds(savedState?.bounds)
+    ? savedState.bounds
+    : undefined;
+  const defaultDisplay = command
+    ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    : screen.getPrimaryDisplay();
+  const { workArea } = savedBounds
+    ? screen.getDisplayMatching(savedBounds)
+    : defaultDisplay;
+  const minimum = windowMinimum(command);
+  const width = command ? 480 : 1280;
+  const height = command ? 80 : 840;
+  const bounds = fitWindowBounds(
+    savedBounds ?? {
+      height,
+      width,
+      x: workArea.x + (workArea.width - width) / 2,
+      y:
+        workArea.y +
+        (command ? workArea.height * 0.25 : (workArea.height - height) / 2),
+    },
+    workArea,
+    minimum
+  );
   const window = new BrowserWindow({
+    ...bounds,
     alwaysOnTop: command,
     frame: !command,
-    height: command ? 80 : 840,
-    minHeight: command ? 56 : 480,
-    minWidth: command ? 480 : 720,
+    minHeight: Math.min(minimum.height, workArea.height),
+    minWidth: Math.min(minimum.width, workArea.width),
     resizable: !command,
     show: false,
     skipTaskbar: command,
     title: command ? "Kompose Command Bar" : "Kompose Electron",
-    width: command ? 480 : 1280,
-    ...(process.platform === "darwin"
+    // hiddenInset retains macOS traffic lights, even on a frameless panel.
+    titleBarStyle:
+      process.platform === "darwin" && !command ? "hiddenInset" : "default",
+    ...(process.platform === "darwin" && command
       ? {
-          // hiddenInset retains macOS traffic lights, even on a frameless panel.
-          titleBarStyle: command ? ("default" as const) : ("hiddenInset" as const),
-          ...(command
-            ? {
-                transparent: true,
-                type: "panel" as const,
-                vibrancy: "hud" as const,
-                visualEffectState: "active" as const,
-              }
-            : {}),
+          transparent: true,
+          type: "panel" as const,
+          vibrancy: "hud" as const,
+          visualEffectState: "active" as const,
         }
       : {}),
     webPreferences: {
@@ -156,6 +187,10 @@ function createWindow(command: boolean) {
       webSecurity: true,
     },
   });
+  rememberWindow(window, command);
+  if (!command && savedState?.maximized) {
+    window.maximize();
+  }
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       shell.openExternal(externalURL(url));
@@ -222,6 +257,51 @@ function createWindow(command: boolean) {
   return window;
 }
 
+function windowMinimum(command: boolean) {
+  return command ? { height: 56, width: 480 } : { height: 480, width: 720 };
+}
+
+function keepWindowOnScreen(window: BrowserWindow, command: boolean) {
+  if (window.isMaximized() || window.isFullScreen()) {
+    return;
+  }
+  const bounds = window.getBounds();
+  const { workArea } = screen.getDisplayMatching(bounds);
+  const minimum = windowMinimum(command);
+  window.setMinimumSize(
+    Math.min(minimum.width, workArea.width),
+    Math.min(minimum.height, workArea.height)
+  );
+  window.setBounds(fitWindowBounds(bounds, workArea, minimum));
+}
+
+function rememberWindow(window: BrowserWindow, command: boolean) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = () => {
+    clearTimeout(timer);
+    if (window.isDestroyed()) {
+      return;
+    }
+    settings.set(command ? "commandWindow" : "mainWindow", {
+      bounds: window.getNormalBounds(),
+      maximized: window.isMaximized(),
+    });
+  };
+  const scheduleSave = () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, 250);
+    timer.unref();
+  };
+  window.on("move", scheduleSave);
+  window.on("resize", scheduleSave);
+  window.on("maximize", scheduleSave);
+  window.on("unmaximize", scheduleSave);
+  // Flush before hiding/closing, including the popup's idle destruction.
+  window.on("hide", save);
+  window.on("close", save);
+  window.on("closed", () => clearTimeout(timer));
+}
+
 function hideCommandBar() {
   commandWindow?.hide();
   clearTimeout(commandIdleTimer);
@@ -243,12 +323,7 @@ function toggleCommandBar() {
   if (!commandWindow || commandWindow.isDestroyed()) {
     commandWindow = createWindow(true);
   }
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const { x, y, width, height } = display.workArea;
-  commandWindow.setPosition(
-    Math.round(x + (width - 480) / 2),
-    Math.round(y + height * 0.25)
-  );
+  keepWindowOnScreen(commandWindow, true);
   if (!commandWindow.webContents.isLoading()) {
     commandWindow.show();
     commandWindow.focus();
@@ -453,10 +528,19 @@ app
       if (window !== commandWindow || !Number.isFinite(height)) {
         return;
       }
-      window.setSize(
-        480,
-        Math.round(
-          Math.min(DESKTOP_COMMAND_BAR_MAX_HEIGHT, Math.max(56, height))
+      const bounds = window.getBounds();
+      window.setBounds(
+        fitWindowBounds(
+          {
+            ...bounds,
+            height: Math.min(
+              DESKTOP_COMMAND_BAR_MAX_HEIGHT,
+              Math.max(56, height)
+            ),
+            width: 480,
+          },
+          screen.getDisplayMatching(bounds).workArea,
+          windowMinimum(true)
         )
       );
     });
@@ -514,7 +598,7 @@ app
         {
           label: "File",
           submenu: [
-            { label: "Open Command Bar", click: toggleCommandBar },
+            { click: toggleCommandBar, label: "Open Command Bar" },
             { type: "separator" },
             { role: "close" },
           ],
