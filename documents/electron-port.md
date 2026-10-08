@@ -47,11 +47,14 @@ removed.
 Renderer API requests go through `kompose-app://app/api/...`. Main attaches the
 plugin's cookie to a fixed API origin and strips credentials from responses.
 Session responses omit tokens, IP addresses, and user agents. oRPC subscriptions
-stream without buffering. Static assets use a registered secure app protocol.
+stream without buffering. The upstream RPC request uses Node fetch in main so
+Chromium does not issue a renderer CORS preflight or drop the plugin cookie.
+Static assets use a registered secure app protocol.
 Windows use context isolation, sandboxing, no Node integration, restricted IPC,
 and external navigation through the system browser.
 
 The command popup is created on first use and released after 60 seconds hidden.
+It is available from the global shortcut and File → Open Command Bar.
 App-specific IPC covers the window/shortcut/update operations and query refresh
 notifications. The dashboard renderer is shared with the web app.
 
@@ -60,8 +63,61 @@ notifications. The dashboard renderer is shared with the web app.
 Boundary tests cover asset traversal, trusted origins, external URL schemes,
 session redaction, and response header filtering. Run `bun run type-check`,
 `cd apps/electron && bun run test`, and `bun run build:desktop`.
-A packaged browser sign-in/account-link round trip and signed update install need
-separate end-to-end verification; a renderer build alone does not verify them.
+A packaged browser sign-in round trip was verified against the local server.
+Account linking and signed update installation still need separate end-to-end
+verification; a renderer build alone does not verify them.
 
 References: [Better Auth Electron](https://better-auth.com/docs/integrations/electron),
 [Electron security](https://www.electronjs.org/docs/latest/tutorial/security).
+
+## UI review checklist
+
+- Google palettes stay cached for 24 hours, including while a calendar is unmounted;
+  normalization reuses the same objects instead of rebuilding colors on query updates.
+- The red now line uses the displayed timezone, changes columns at midnight, and
+  refreshes on returning to the app. The highlighted date follows the same clock.
+- Calendar visibility preferences survive failed account reads and signed-out states.
+- Responsive day capacity uses the actual 64px gutter and clamped sidebar width.
+  The time labels sync to an already-scrolled grid when they mount.
+- Escape in Search/Create returns to the command bar root; Escape at the root closes it.
+- The desktop popup starts open without a mount-time dismiss race, resizes after
+  session loading, and shows a useful sign-in state instead of an empty window.
+- Selecting a task in the desktop popup returns the main window to the dashboard,
+  including when it was showing Settings.
+- The popup has no macOS traffic lights. Its empty top area drags the native
+  window; the search field and scrollable results remain interactive.
+
+## Authenticated local QA (2026-10-08)
+
+Computer Use inspected the installed Tauri dashboard, Settings, and in-window
+command palette, then exercised the unsigned Electron package. Chrome was used
+for local web development and browser OAuth. OrbStack Postgres and Redis and the
+trusted `https://local.kompose.dev` proxy served the local API. Google sign-in used
+the requested account's existing permissions and the official Electron deep-link
+and token exchange. The session survived application restarts.
+
+Verified in Electron: nine real Google calendars and their events, Settings with
+the account identity, task creation/editing/scheduling/completion, task search,
+and the current-time line aligned with the time gutter. Task updates appeared in
+Chrome without reloading. Calendar visibility choices survived a Chrome reload.
+The local QA task was left completed; production tasks and events were not edited.
+
+The native popup was checked for search, Create navigation, nested/root Escape,
+opening a task while the main window was on Settings, absence of traffic lights,
+and dragging the empty top strip while preserving text input. Batch native popup
+actions in one focused Computer Use sequence: switching back to another app
+between actions correctly dismisses this blur-to-close panel.
+
+Automated validation covers 11 boundary/regression tests, all workspace type
+checks, the iOS export, the web production build, the static desktop build, and
+unsigned macOS packaging. The popup adjustment was rebuilt and packaged again.
+
+Remaining checks: signed/notarized distribution and update installation, linking
+another Google/WHOOP account, signed-out popup interaction, and calendar drag/resize
+persistence. A Computer Use task drag showed a preview but did not persist, so it
+is not counted as a passing check. The installed Tauri global popup was not
+captured, so its comparison is limited to the in-window palette. A cold Bun/Next
+dev start after deleting `.next` also produced a transient `pg-types` resolution
+error; restarting after Next generated its external-package symlinks restored
+HTTP 200 and authenticated RPCs. The development command remains on Bun because
+the Redis adapter depends on it.

@@ -1,15 +1,16 @@
 "use client";
 
+import { DESKTOP_COMMAND_BAR_MAX_HEIGHT } from "@kompose/desktop";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { focusManager } from "@tanstack/react-query";
 import { useAtom } from "jotai";
+import { useHydrateAtoms } from "jotai/utils";
 import { useCallback, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
-
-const COMMAND_BAR_MAX_HEIGHT = 520;
 
 /**
  * Dedicated command bar page for the desktop popup window.
@@ -18,6 +19,7 @@ const COMMAND_BAR_MAX_HEIGHT = 520;
  * native window and should size directly to the command surface.
  */
 export default function DesktopCommandBarClient() {
+  useHydrateAtoms([[commandBarOpenAtom, true]]);
   const [open, setOpen] = useAtom(commandBarOpenAtom);
   const { data: session, isPending: isSessionPending } =
     authClient.useSession();
@@ -69,6 +71,16 @@ export default function DesktopCommandBarClient() {
     };
   }, [open]);
 
+  // Loading/sign-in surfaces have no command input to handle Escape.
+  useEffect(() => {
+    if (!open || (!isSessionPending && session?.user)) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, isSessionPending, session?.user, setOpen]);
+
   // Auto-size the desktop window to exactly fit the dialog content.
   useEffect(() => {
     if (!isDesktopRuntime()) {
@@ -86,7 +98,7 @@ export default function DesktopCommandBarClient() {
       const rect = surface.getBoundingClientRect();
       const width = Math.ceil(rect.width);
       const height = Math.min(
-        COMMAND_BAR_MAX_HEIGHT,
+        DESKTOP_COMMAND_BAR_MAX_HEIGHT,
         Math.max(Math.ceil(rect.height), surface.scrollHeight)
       );
       if (width <= 0 || height <= 0) {
@@ -117,13 +129,13 @@ export default function DesktopCommandBarClient() {
       disposed = true;
       observer.disconnect();
     };
-  }, [open]);
+  }, [open, isSessionPending, session?.user?.id]);
 
   if (!isDesktopRuntime()) {
     return null;
   }
 
-  if (!open || isSessionPending || !session?.user) {
+  if (!open) {
     return null;
   }
 
@@ -136,12 +148,30 @@ export default function DesktopCommandBarClient() {
         width: "32rem",
       }}
     >
-      <CommandBarContent
-        className="h-auto"
-        onRequestClose={handleRequestClose}
-        selectionMode="desktop-popup"
-        size="lg"
-      />
+      {isSessionPending || !session?.user ? (
+        <div className="rounded-xl border bg-popover p-4 text-popover-foreground">
+          <p className="text-sm">
+            {isSessionPending
+              ? "Loading your workspace…"
+              : "Sign in to use quick actions."}
+          </p>
+          {!isSessionPending && (
+            <Button
+              className="mt-3"
+              onClick={() => desktopBridge().showMainWindow()}
+            >
+              Open Kompose
+            </Button>
+          )}
+        </div>
+      ) : (
+        <CommandBarContent
+          className="h-auto"
+          onRequestClose={handleRequestClose}
+          selectionMode="desktop-popup"
+          size="lg"
+        />
+      )}
     </div>
   );
 }

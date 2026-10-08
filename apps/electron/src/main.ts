@@ -5,6 +5,7 @@ import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import {
   DESKTOP_ORIGIN,
+  DESKTOP_COMMAND_BAR_MAX_HEIGHT,
   type DesktopCommandBarShortcutPresetId,
   type DesktopTaskSelection,
   type DesktopUpdateState,
@@ -134,7 +135,8 @@ function createWindow(command: boolean) {
     width: command ? 480 : 1280,
     ...(process.platform === "darwin"
       ? {
-          titleBarStyle: "hiddenInset" as const,
+          // hiddenInset retains macOS traffic lights, even on a frameless panel.
+          titleBarStyle: command ? ("default" as const) : ("hiddenInset" as const),
           ...(command
             ? {
                 transparent: true,
@@ -438,6 +440,10 @@ app
     handle<string>("open-external", (url) =>
       shell.openExternal(externalURL(url))
     );
+    handle("show-main-window", () => {
+      hideCommandBar();
+      showMain();
+    });
     handle("get-shortcut", () => settings.get("shortcut"));
     handle<DesktopCommandBarShortcutPresetId>("set-shortcut", (id) =>
       applyShortcut(id)
@@ -447,7 +453,12 @@ app
       if (window !== commandWindow || !Number.isFinite(height)) {
         return;
       }
-      window.setSize(480, Math.round(Math.min(600, Math.max(56, height))));
+      window.setSize(
+        480,
+        Math.round(
+          Math.min(DESKTOP_COMMAND_BAR_MAX_HEIGHT, Math.max(56, height))
+        )
+      );
     });
     handle<DesktopTaskSelection>("open-task", (selection) => {
       if (

@@ -28,6 +28,7 @@ const desktop: DesktopBridge = {
     subscribe<DesktopUpdateState>("desktop:update-state", callback),
   onWindowFocus: (callback) =>
     subscribe<boolean>("desktop:window-focus", callback),
+  showMainWindow: () => ipcRenderer.invoke("desktop:show-main-window"),
   openExternal: (url) => ipcRenderer.invoke("desktop:open-external", url),
   openTask: (selection) => ipcRenderer.invoke("desktop:open-task", selection),
   platform: process.platform,
