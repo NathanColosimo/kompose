@@ -6,15 +6,17 @@ import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
-import { useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   LogOut,
+  PanelRight,
   Plus,
   RotateCw,
   Search,
   Settings,
   Tag as TagIcon,
   Trash2,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
@@ -56,6 +58,11 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { clearTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
 import { cn } from "@/lib/utils";
+import {
+  dashboardResponsiveLayoutAtom,
+  sidebarRightOpenAtom,
+  sidebarRightOverlayOpenAtom,
+} from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
 import { useTauriUpdater } from "./tauri-updater";
@@ -87,6 +94,7 @@ export function AppHeader({ user }: { user: User | null }) {
         </div>
 
         <div className="pointer-events-auto flex shrink-0 items-center justify-end gap-2 pr-1">
+          <RightSidebarToggleButton />
           <UpdatePromptButton />
           <TagsMenu />
           {user ? (
@@ -105,6 +113,49 @@ function SignedOutAvatar() {
     <Avatar className="size-7">
       <AvatarFallback className="text-xs">?</AvatarFallback>
     </Avatar>
+  );
+}
+
+function RightSidebarToggleButton() {
+  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
+  const [rightOverlayOpen, setRightOverlayOpen] = useAtom(
+    sidebarRightOverlayOpenAtom
+  );
+
+  const isOpen = responsiveLayout.canDockRightSidebar
+    ? rightSidebarOpen
+    : rightOverlayOpen;
+
+  const toggleRightSidebar = useCallback(() => {
+    if (responsiveLayout.canDockRightSidebar) {
+      setRightSidebarOpen((prev) => !prev);
+      return;
+    }
+    setRightOverlayOpen((prev) => !prev);
+  }, [
+    responsiveLayout.canDockRightSidebar,
+    setRightSidebarOpen,
+    setRightOverlayOpen,
+  ]);
+
+  return (
+    <Button
+      className="size-7"
+      onClick={toggleRightSidebar}
+      size="icon"
+      type="button"
+      variant={isOpen ? "secondary" : "outline"}
+    >
+      {isOpen ? (
+        <X className="size-3.5" />
+      ) : (
+        <PanelRight className="size-3.5" />
+      )}
+      <span className="sr-only">
+        {isOpen ? "Close right sidebar" : "Open right sidebar"}
+      </span>
+    </Button>
   );
 }
 

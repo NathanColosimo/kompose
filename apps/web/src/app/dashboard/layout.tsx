@@ -3,7 +3,7 @@
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { currentDateAtom } from "@kompose/state/atoms/current-date";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import { useSetAtom } from "jotai";
+import { useAtom, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -11,6 +11,7 @@ import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
 import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
+import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
@@ -21,10 +22,13 @@ import {
 } from "@/lib/command-bar-task-routing";
 import { isTauriRuntime } from "@/lib/tauri-desktop";
 import {
+  dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
   sidebarLeftOpenAtom,
   sidebarLeftViewSelectionAtom,
+  sidebarRightOpenAtom,
+  sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
 function LoginRedirect() {
@@ -45,7 +49,11 @@ export default function DashboardLayout({
   const { data: session, isPending: isSessionPending } =
     authClient.useSession();
   const sessionUser = session?.user;
+  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
+  // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
+  const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
+  const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarTaskOpenRequest = useSetAtom(
     commandBarTaskOpenRequestAtom
   );
@@ -64,6 +72,26 @@ export default function DashboardLayout({
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
+
+  // Constrained widths use overlay mode for right sidebar, so docked open must reset.
+  useEffect(() => {
+    if (responsiveLayout.canDockRightSidebar || !rightSidebarOpen) {
+      return;
+    }
+    setRightSidebarOpen(false);
+  }, [
+    responsiveLayout.canDockRightSidebar,
+    rightSidebarOpen,
+    setRightSidebarOpen,
+  ]);
+
+  // When dock mode becomes available again, close overlay-only right sidebar.
+  useEffect(() => {
+    if (!responsiveLayout.canDockRightSidebar) {
+      return;
+    }
+    setRightSidebarOverlayOpen(false);
+  }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -156,6 +184,7 @@ export default function DashboardLayout({
           <CommandBar />
           <SidebarLeft />
           <SidebarInset>{children}</SidebarInset>
+          <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>
     </div>
