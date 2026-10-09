@@ -11,11 +11,6 @@ import {
   GOOGLE_EVENTS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
 } from "../google-calendar-query-keys";
-import {
-  AI_CHAT_QUERY_ROOT,
-  AI_CHAT_SESSIONS_QUERY_KEY,
-  getAiChatMessagesQueryKey,
-} from "./use-ai-chat";
 
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -109,49 +104,12 @@ export function useRealtimeSync({
     [queryClient]
   );
 
-  const invalidateAiChatQueries = React.useCallback(
-    async (event: Extract<SyncEvent, { type: "ai-chat" }>) => {
-      // Force immediate session refetch so activeStreamId updates quickly.
-      await queryClient.refetchQueries({
-        queryKey: AI_CHAT_SESSIONS_QUERY_KEY,
-      });
-
-      const targetMessagesQueryKey = getAiChatMessagesQueryKey(
-        event.payload.sessionId
-      );
-      const sessions =
-        queryClient.getQueryData<Array<{ id: string }>>(
-          AI_CHAT_SESSIONS_QUERY_KEY
-        ) ?? [];
-      const sessionStillExists = sessions.some(
-        (session) => session.id === event.payload.sessionId
-      );
-
-      if (sessionStillExists) {
-        // Refetch the affected message thread for faster cross-device updates.
-        await queryClient.refetchQueries({
-          queryKey: targetMessagesQueryKey,
-        });
-        return;
-      }
-
-      await queryClient.cancelQueries({
-        queryKey: targetMessagesQueryKey,
-      });
-      queryClient.removeQueries({
-        queryKey: targetMessagesQueryKey,
-      });
-    },
-    [queryClient]
-  );
-
   const invalidateCriticalQueries = React.useCallback(() => {
     return Promise.all([
       invalidateTaskQueries(),
       // Calendars use atomWithQuery — need refetch, not just invalidate
       queryClient.refetchQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY }),
-      queryClient.invalidateQueries({ queryKey: AI_CHAT_QUERY_ROOT }),
     ]);
   }, [invalidateTaskQueries, queryClient]);
 
@@ -164,10 +122,6 @@ export function useRealtimeSync({
         }
         case "tasks": {
           invalidateTaskQueries();
-          return;
-        }
-        case "ai-chat": {
-          invalidateAiChatQueries(event);
           return;
         }
         case "reconnect": {
@@ -184,7 +138,6 @@ export function useRealtimeSync({
     },
     [
       invalidateCriticalQueries,
-      invalidateAiChatQueries,
       invalidateGoogleCalendarQueries,
       invalidateTaskQueries,
     ]

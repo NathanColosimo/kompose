@@ -1,17 +1,5 @@
 import "../global.css";
 
-// Suppress noisy streamdown-rn debug logs in dev mode.
-declare const __DEV__: boolean;
-if (__DEV__) {
-  const originalLog = console.log;
-  console.log = (...args: unknown[]) => {
-    if (typeof args[0] === "string" && args[0] === "[streamdown-rn]") {
-      return;
-    }
-    originalLog(...args);
-  };
-}
-
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";

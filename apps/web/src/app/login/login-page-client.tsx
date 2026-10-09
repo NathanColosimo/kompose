@@ -58,8 +58,8 @@ export default function LoginPageClient() {
               Your calendar and tasks, orchestrated together.
             </h1>
             <p className="text-lg text-muted-foreground">
-              Schedule backlog work by drag-and-drop, keep integrations synced,
-              and ask the AI assistant to reshuffle.
+              Schedule backlog work by drag-and-drop and keep your connected
+              calendars in sync.
             </p>
           </div>
           <div className="space-y-3">
@@ -69,8 +69,8 @@ export default function LoginPageClient() {
               </p>
               <ul className="mt-3 list-disc space-y-2 pl-5 text-sm">
                 <li>Shared task + calendar source of truth</li>
-                <li>Natural-language automations with guardrails</li>
-                <li>Local-first desktop + mobile apps</li>
+                <li>Recurring tasks and flexible scheduling</li>
+                <li>Desktop + mobile apps</li>
               </ul>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">

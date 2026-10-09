@@ -1,5 +1,6 @@
 {
   "name": "@kompose/api",
+  "type": "module",
   "exports": {
     ".": {
       "default": "./src/index.ts"
@@ -8,17 +9,11 @@
       "default": "./src/*.ts"
     }
   },
-  "type": "module",
   "scripts": {
     "type-check": "tsc --noEmit"
   },
-  "devDependencies": {
-    "@kompose/config": "workspace:*",
-    "@types/node": "catalog:"
-  },
   "dependencies": {
     "@effect/opentelemetry": "catalog:",
-    "@kompose/ai": "workspace:*",
     "@kompose/auth": "workspace:*",
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
@@ -28,19 +23,20 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@orpc/ai-sdk": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/experimental-ratelimit": "catalog:",
     "@orpc/otel": "catalog:",
     "@orpc/server": "catalog:",
-    "ai": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "next": "catalog:",
-    "resumable-stream": "catalog:",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:",
     "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:"
   }
 }

@@ -6,7 +6,6 @@ Kompose is a **calendar + task orchestration app** with:
 
 - Calendar + tasks in one unified timeline.
 - Ability to **drag tasks onto the calendar** (turn backlog items into scheduled time blocks).
-- **AI assistant** that can create/update/delete events and tasks from natural language ("Block 2 hours tomorrow afternoon to work on Kompose sync engine", "Move my Linear bugfix task to Friday morning", etc.).
 - Integrations with tools like **Notion**, **Linear**, etc. for auto-syncing tasks/issues.
 - **Global fuzzy search** (command palette style) over:
   - Events
@@ -22,16 +21,12 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 1. **Time- and task-centric, not app-centric**
    - Users should manage their day from Kompose instead of bouncing between calendar, todo apps, Linear, Notion, etc.
 
-2. **Natural language control via AI**
-   - "Make time for X", "Reschedule that", "Show me my deep work tasks this week".
-   - AI acts as a *personal ops assistant* over your schedule & tasks.
-
-3. **Composable integrations**
+2. **Composable integrations**
    - Integrations are first-class, not one-off hacks.
    - Same internal model for "task" whether it comes from Kompose, Notion, Linear, etc.
 
-4. **Command palette everything**
-   - Fuzzy search + actions: open things, run actions, trigger AI, navigate views.
+3. **Command palette everything**
+   - Fuzzy search + actions: open things, run actions, navigate views.
 
 ---
 
@@ -49,7 +44,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **Auth**: Better Auth + Drizzle (Postgres only).
 - **Redis**: Caching (Google Calendar data), rate limiting, pub/sub (SSE realtime events).
 - **Observability**: OpenTelemetry (server-side only) → Axiom / Jaeger. See [`otel.md`](./otel.md).
-- **Background jobs**: worker(s) for sync, integrations, and AI tasks (planned).
+- **Background jobs**: worker(s) for sync and integrations (planned).
 - **Search index**: server-side search engine (e.g., Meilisearch/Typesense or Postgres FTS) (planned).
 
 ---
@@ -111,9 +106,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - Last login method tracking is persisted in DB and exposed in client
     plugins for UI hints.
   - Tokens stored securely via `expo-secure-store`.
-- **AI & Commands** (planned):
+- **Commands** (planned):
   - Command palette UI with fuzzy search and action execution.
-  - "Ask Kompose AI" text input that calls backend AI endpoint.
 
 ---
 
@@ -159,7 +153,6 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
     - `calendarsPG`
     - `task_sourcesPG` (e.g., "kompose", "notion", "linear")
     - `integration_accountsPG` (per-user OAuth tokens & metadata)
-    - `ai_sessionsPG` / `ai_logsPG` (optional)
 ### 4.5 Auth & Security
 
 - **Auth provider**: Better Auth
@@ -174,32 +167,6 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **Client-side**:
   - Web: Next.js + Better Auth client helpers.
   - Mobile: tokens stored via `expo-secure-store`.
-
----
-
-### 4.6 AI Integration (planned)
-
-- **AI Provider**: (e.g., OpenAI API or similar, via backend only)
-- **Pattern**:
-  - Client calls `ai.command` with:
-    - `inputText`
-    - context (current time, view, maybe partial user data)
-  - Backend:
-    - Runs LLM with a tool-calling / structured output prompt that maps text → structured operations:
-      - create/update/delete events
-      - create/update/delete tasks
-      - move/reschedule time blocks
-    - Executes those operations by calling into the same repositories used by normal UI.
-    - Returns:
-      - success/failure
-      - a list of changes (for UI)
-- **LLM Tools / Functions**:
-  - `createEvent`, `updateEvent`, `deleteEvent`
-  - `createTask`, `updateTask`, `deleteTask`
-  - `scheduleTask`, `rescheduleBlock`
-- **Safety**:
-  - Validate all AI-suggested changes before applying.
-  - Optionally present a "preview" diff to the user for confirmation (especially for bulk changes).
 
 ---
 
@@ -234,15 +201,12 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
       - Events (title, description, location)
       - Tasks (title, description, source metadata)
       - Integration items (Notion pages, Linear issues)
-      - Possibly AI summaries of projects.
   - Clients:
     - Input → call search RPC → results with typed objects + types.
 - **Command Palette**:
   - Unified UI in all clients:
     - quick open item
     - run actions (e.g., "create task", "schedule task", "jump to date").
-  - AI search:
-    - free-form text goes to AI endpoint that can combine search + actions.
 
 ---
 
@@ -412,8 +376,7 @@ installed side by side on macOS.
 ### 6.12 SSE Realtime Sync
 - **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
 - **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
-- **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `ai-chat` (session/stream lifecycle), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
-- **AI chat events**: `ai-chat` events carry `{ sessionId }` and are emitted for AI session create/delete and stream lifecycle updates so clients can invalidate targeted session/message caches.
+- **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
 - **Keepalive**: Server sends `keepalive` events every 10 seconds. Client resets an inactivity timer (30s) on every event; if the timer fires (no events received), the connection is assumed dead and force-closed to trigger a reconnect.
 - **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.

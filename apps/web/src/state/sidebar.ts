@@ -18,8 +18,8 @@ type SidebarLeftViewSelection =
  * Default left-sidebar selection for first load and stale-storage fallback.
  */
 export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
-  type: "base",
   id: "inbox",
+  type: "base",
 };
 
 /**
@@ -91,9 +91,9 @@ function computeDashboardResponsiveLayout(args: {
 
   return {
     canDockRightSidebar,
+    maxDaysForCurrentLayout,
     maxDaysWithDockedRight,
     maxDaysWithoutRightSidebar,
-    maxDaysForCurrentLayout,
   };
 }
 
@@ -148,7 +148,7 @@ export const dashboardViewportWidthAtom = atom(
 );
 
 /**
- * Overlay-only open state for right chat in constrained widths.
+ * Overlay-only open state for right sidebar in constrained widths.
  */
 export const sidebarRightOverlayOpenAtom = atom(false);
 

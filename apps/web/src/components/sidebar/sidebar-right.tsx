@@ -1,35 +1,20 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import dynamic from "next/dynamic";
 import type * as React from "react";
 import { Sidebar, SidebarRail } from "@/components/ui/sidebar";
 import {
   dashboardResponsiveLayoutAtom,
   SIDEBAR_RIGHT_WIDTH,
-  sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
-
-const LazySidebarRightChat = dynamic(
-  () =>
-    import("./sidebar-right-chat").then((mod) => ({
-      default: mod.SidebarRightChat,
-    })),
-  { ssr: false }
-);
 
 export function SidebarRight({
   style,
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
-  const rightSidebarOpen = useAtomValue(sidebarRightOpenAtom);
   const overlayOpen = useAtomValue(sidebarRightOverlayOpenAtom);
-  const shouldRenderChat = responsiveLayout.canDockRightSidebar
-    ? rightSidebarOpen
-    : overlayOpen;
-
   if (!responsiveLayout.canDockRightSidebar) {
     return (
       <div
@@ -40,9 +25,7 @@ export function SidebarRight({
           transform: overlayOpen ? "translateX(0%)" : "translateX(100%)",
         }}
       >
-        <div className="flex h-full min-h-0 flex-col">
-          {shouldRenderChat ? <LazySidebarRightChat /> : null}
-        </div>
+        <div className="flex h-full min-h-0 flex-col" />
       </div>
     );
   }
@@ -61,7 +44,6 @@ export function SidebarRight({
       variant="sidebar"
       {...props}
     >
-      {shouldRenderChat ? <LazySidebarRightChat /> : null}
       <SidebarRail />
     </Sidebar>
   );

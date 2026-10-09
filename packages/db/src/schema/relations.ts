@@ -1,30 +1,14 @@
 import { defineRelations } from "drizzle-orm";
-import { aiMessageTable, aiSessionTable } from "./ai";
 import { tagTable, taskTagTable } from "./tag";
 import { taskTable } from "./task";
 
 const relationalSchema = {
-  aiMessageTable,
-  aiSessionTable,
   tagTable,
   taskTable,
   taskTagTable,
 };
 
 export const relations = defineRelations(relationalSchema, (r) => ({
-  aiMessageTable: {
-    session: r.one.aiSessionTable({
-      from: r.aiMessageTable.sessionId,
-      optional: false,
-      to: r.aiSessionTable.id,
-    }),
-  },
-  aiSessionTable: {
-    messages: r.many.aiMessageTable({
-      from: r.aiSessionTable.id,
-      to: r.aiMessageTable.sessionId,
-    }),
-  },
   tagTable: {
     taskTags: r.many.taskTagTable({
       from: r.tagTable.id,

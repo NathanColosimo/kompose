@@ -7,7 +7,6 @@ import {
   GOOGLE_COLORS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
-import { AI_CHAT_QUERY_ROOT } from "@kompose/state/hooks/use-ai-chat";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
@@ -88,8 +87,6 @@ export function invalidateAuthenticatedQueries() {
   queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
-  // Invalidate all AI chat queries after auth changes.
-  queryClient.invalidateQueries({ queryKey: AI_CHAT_QUERY_ROOT });
 }
 
 export function clearAuthenticatedQueries() {
@@ -99,6 +96,4 @@ export function clearAuthenticatedQueries() {
   queryClient.removeQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
-  // Remove all AI chat cache entries on sign-out.
-  queryClient.removeQueries({ queryKey: AI_CHAT_QUERY_ROOT });
 }

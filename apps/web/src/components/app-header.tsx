@@ -9,7 +9,7 @@ import type { User } from "better-auth";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   LogOut,
-  MessageSquareIcon,
+  PanelRight,
   Plus,
   RotateCw,
   Search,
@@ -94,7 +94,7 @@ export function AppHeader({ user }: { user: User | null }) {
         </div>
 
         <div className="pointer-events-auto flex shrink-0 items-center justify-end gap-2 pr-1">
-          <ChatToggleButton />
+          <RightSidebarToggleButton />
           <UpdatePromptButton />
           <TagsMenu />
           {user ? (
@@ -116,7 +116,7 @@ function SignedOutAvatar() {
   );
 }
 
-function ChatToggleButton() {
+function RightSidebarToggleButton() {
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   const [rightOverlayOpen, setRightOverlayOpen] = useAtom(
@@ -127,16 +127,22 @@ function ChatToggleButton() {
     ? rightSidebarOpen
     : rightOverlayOpen;
 
+  const toggleRightSidebar = useCallback(() => {
+    if (responsiveLayout.canDockRightSidebar) {
+      setRightSidebarOpen((prev) => !prev);
+      return;
+    }
+    setRightOverlayOpen((prev) => !prev);
+  }, [
+    responsiveLayout.canDockRightSidebar,
+    setRightSidebarOpen,
+    setRightOverlayOpen,
+  ]);
+
   return (
     <Button
       className="size-7"
-      onClick={() => {
-        if (responsiveLayout.canDockRightSidebar) {
-          setRightSidebarOpen((prev) => !prev);
-          return;
-        }
-        setRightOverlayOpen((prev) => !prev);
-      }}
+      onClick={toggleRightSidebar}
       size="icon"
       type="button"
       variant={isOpen ? "secondary" : "outline"}
@@ -144,9 +150,11 @@ function ChatToggleButton() {
       {isOpen ? (
         <X className="size-3.5" />
       ) : (
-        <MessageSquareIcon className="size-3.5" />
+        <PanelRight className="size-3.5" />
       )}
-      <span className="sr-only">{isOpen ? "Close chat" : "Open chat"}</span>
+      <span className="sr-only">
+        {isOpen ? "Close right sidebar" : "Open right sidebar"}
+      </span>
     </Button>
   );
 }

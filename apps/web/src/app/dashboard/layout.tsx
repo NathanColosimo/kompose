@@ -52,6 +52,7 @@ export default function DashboardLayout({
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
   const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
+  const viewportWidth = useAtomValueRawSync(dashboardViewportWidthAtom);
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarTaskOpenRequest = useSetAtom(
@@ -73,9 +74,14 @@ export default function DashboardLayout({
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
 
-  // Constrained widths use overlay mode for right chat, so docked open must reset.
+  // Constrained widths use overlay mode for right sidebar, so docked open must reset.
   useEffect(() => {
-    if (responsiveLayout.canDockRightSidebar || !rightSidebarOpen) {
+    // Do not clear the saved preference before the first viewport measurement.
+    if (
+      viewportWidth === 0 ||
+      responsiveLayout.canDockRightSidebar ||
+      !rightSidebarOpen
+    ) {
       return;
     }
     setRightSidebarOpen(false);
@@ -83,9 +89,10 @@ export default function DashboardLayout({
     responsiveLayout.canDockRightSidebar,
     rightSidebarOpen,
     setRightSidebarOpen,
+    viewportWidth,
   ]);
 
-  // When dock mode becomes available again, close overlay-only right chat.
+  // When dock mode becomes available again, close overlay-only right sidebar.
   useEffect(() => {
     if (!responsiveLayout.canDockRightSidebar) {
       return;

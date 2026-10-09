@@ -80,7 +80,7 @@ export function CalendarHotkeys() {
     "t",
     () => {
       setCurrentDate(todayPlainDate(timeZone));
-      setSidebarLeftViewSelection({ type: "base", id: "today" });
+      setSidebarLeftViewSelection({ id: "today", type: "base" });
     },
     hotkeyOptions,
     [timeZone, setCurrentDate, setSidebarLeftViewSelection]
@@ -89,7 +89,7 @@ export function CalendarHotkeys() {
   // "i" to focus the Inbox task view.
   useHotkeys(
     "i",
-    () => setSidebarLeftViewSelection({ type: "base", id: "inbox" }),
+    () => setSidebarLeftViewSelection({ id: "inbox", type: "base" }),
     hotkeyOptions,
     [setSidebarLeftViewSelection]
   );

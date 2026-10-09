@@ -19,7 +19,6 @@ export const env = createEnv({
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
     GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
     GOOGLE_MAPS_API_KEY: z.string().min(1),
-    OPENAI_API_KEY: z.string().min(1).optional(),
     // Link parsing provider keys (optional — parsing degrades gracefully when missing)
     SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
     SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),

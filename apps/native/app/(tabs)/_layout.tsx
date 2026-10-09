@@ -1,5 +1,7 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
+export const unstable_settings = { initialRouteName: "(tasks)" };
+
 /**
  * Tab layout using NativeTabs for native iOS/Android tab bar experience.
  * Uses SF Symbols for icons on iOS, with automatic Material 3 styling on Android.
@@ -8,10 +10,6 @@ import { NativeTabs } from "expo-router/unstable-native-tabs";
 export default function TabLayout() {
   return (
     <NativeTabs>
-      <NativeTabs.Trigger name="(chat)">
-        <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right" />
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(tasks)">
         <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="checkmark.square" />
