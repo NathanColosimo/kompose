@@ -1,0 +1,31 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["web#build:desktop"],
+      "env": ["MAIN_VITE_SERVER_URL"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["KOMPOSE_SERVER_URL", "KOMPOSE_RENDERER_URL"]
+    },
+    "package": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "dist": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": [
+        "CSC_LINK",
+        "CSC_KEY_PASSWORD",
+        "APPLE_ID",
+        "APPLE_APP_SPECIFIC_PASSWORD",
+        "APPLE_TEAM_ID",
+        "GH_TOKEN"
+      ]
+    }
+  }
+}

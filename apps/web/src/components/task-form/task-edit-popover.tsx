@@ -69,7 +69,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
-import { openUrlInDesktopBrowser } from "@/lib/tauri-desktop";
+import { openUrlInDesktopBrowser } from "@/lib/desktop";
 import {
   formatPlainDate,
   pickerDateToTemporal,

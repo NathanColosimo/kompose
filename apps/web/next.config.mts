@@ -1,13 +1,13 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
-// When building for Tauri, use static export (no server routes).
-const isTauriBuild = process.env.TAURI_BUILD === "1";
+// When building for desktop, use static export (no server routes).
+const isDesktopBuild = process.env.DESKTOP_BUILD === "1";
 const workspaceRoot = path.resolve(import.meta.dirname, "../..");
 
-// Validate env at build time for web deploys only (Tauri builds
+// Validate env at build time for web deploys only (desktop builds
 // don't have server env vars like DATABASE_URL).
-if (!isTauriBuild) {
+if (!isDesktopBuild) {
   await import("@kompose/env");
 }
 
@@ -16,52 +16,24 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackRustReactCompiler: true,
   },
+  // pg-cursor imports pg internals; keep their CommonJS resolution in the runtime.
+  serverExternalPackages: ["pg-cursor"],
   reactCompiler: true,
   reactStrictMode: true,
   turbopack: {
     root: workspaceRoot,
   },
   typedRoutes: true,
-  // Tauri requires static export; the Next.js Image component needs
+  // desktop requires static export; the Next.js Image component needs
   // unoptimized mode because there is no server to optimize images.
-  ...(isTauriBuild && {
+  ...(isDesktopBuild && {
     images: { unoptimized: true },
     output: "export" as const,
-  }),
-  // The deployed Next.js server needs these headers for requests from the
-  // Tauri webview. Static exports cannot apply server response headers.
-  ...(!isTauriBuild && {
-    async headers() {
-      return [
-        {
-          headers: [
-            {
-              key: "Access-Control-Allow-Origin",
-              value: "tauri://localhost",
-            },
-            {
-              key: "Access-Control-Allow-Methods",
-              value: "GET, POST, PUT, DELETE, OPTIONS",
-            },
-            {
-              key: "Access-Control-Allow-Headers",
-              value:
-                "Content-Type, Authorization, X-Requested-With, x-request-start",
-            },
-            {
-              key: "Access-Control-Allow-Credentials",
-              value: "true",
-            },
-          ],
-          source: "/api/:path*",
-        },
-      ];
-    },
   }),
 };
 
 // Load Fumadocs MDX only for web builds. Desktop builds exclude docs routes.
-const withMDX = isTauriBuild
+const withMDX = isDesktopBuild
   ? (config: NextConfig) => config
   : (await import("fumadocs-mdx/next")).createMDX();
 

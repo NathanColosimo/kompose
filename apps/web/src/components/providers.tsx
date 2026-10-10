@@ -4,7 +4,7 @@ import { env } from "@kompose/env";
 import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
-import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Analytics } from "@vercel/analytics/next";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
@@ -14,15 +14,13 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import {
   getExternalHttpUrl,
-  initTauriBearer,
-  isTauriRuntime,
+  isDesktopRuntime,
   openUrlInDesktopBrowser,
-  syncDesktopCommandBarShortcutPreset,
-} from "@/lib/tauri-desktop";
+} from "@/lib/desktop";
 import { isToastSuppressedPath } from "@/lib/toast-suppression";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
-import { DeepLinkHandler } from "./deep-link-handler";
-import { TauriUpdaterProvider } from "./tauri-updater";
+import { DesktopAuth } from "./desktop-auth";
+import { DesktopUpdaterProvider } from "./desktop-updater";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
@@ -53,64 +51,15 @@ const ReactQueryDevtools = dynamic(
 );
 
 function VercelAnalytics() {
-  if (isTauriRuntime()) {
+  if (isDesktopRuntime()) {
     return null;
   }
   return <Analytics />;
 }
 
-/**
- * Loads the bearer token from Tauri Store into memory before rendering
- * children. This ensures the first getSession / ORPC call already has
- * the token available. On web (non-Tauri) this is a no-op pass-through.
- *
- * Must be rendered inside QueryClientProvider so it can clear any query
- * results that fired during the brief initial render (before the token
- * was available). The idle state preserves the server/static-export render;
- * Tauri switches to loading after mount, then remounts children once the
- * bearer token is available.
- */
-function TauriBearerInit({ children }: { children: React.ReactNode }) {
-  const [bearerState, setBearerState] = useState<"idle" | "loading" | "ready">(
-    "idle"
-  );
-  const qc = useQueryClient();
-
+function DesktopBridgeBootstrap() {
   useMountEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
-    setBearerState("loading");
-    initTauriBearer().then(() => {
-      qc.clear();
-      setBearerState("ready");
-    });
-  });
-
-  if (bearerState === "loading") {
-    return null;
-  }
-
-  return children;
-}
-
-function TauriDesktopBridgeBootstrap() {
-  useMountEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
-    syncDesktopCommandBarShortcutPreset().catch((error) => {
-      console.warn(
-        "Failed to sync desktop command bar shortcut preset.",
-        error
-      );
-    });
-  });
-
-  useMountEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isDesktopRuntime()) {
       return;
     }
 
@@ -241,8 +190,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       storage={storage}
       subscribeToResume={webSubscribeToResume}
     >
-      <TauriDesktopBridgeBootstrap />
-      {isCommandBarRoute ? null : <DeepLinkHandler />}
+      <DesktopBridgeBootstrap />
+      <DesktopAuth />
       {children}
     </StateProvider>
   );
@@ -255,14 +204,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
     >
       <QueryClientProvider client={queryClient}>
-        <TauriBearerInit>
-          {/* Keep updater ownership in the main desktop window only. */}
-          {isCommandBarRoute ? (
-            appProviders
-          ) : (
-            <TauriUpdaterProvider>{appProviders}</TauriUpdaterProvider>
-          )}
-        </TauriBearerInit>
+        {/* Keep updater ownership in the main desktop window only. */}
+        {isCommandBarRoute ? (
+          appProviders
+        ) : (
+          <DesktopUpdaterProvider>{appProviders}</DesktopUpdaterProvider>
+        )}
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>
       {isCommandBarRoute ? null : <Toaster richColors />}

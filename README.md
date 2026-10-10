@@ -14,7 +14,7 @@ Kompose is a calendar and task manager with web, iOS, and macOS clients.
 - **Drizzle** - TypeScript-first ORM
 - **PostgreSQL** - Database engine
 - **Authentication** - Better Auth
-- **Tauri** - Build native desktop applications
+- **Electron** - Build native desktop applications
 - **Turborepo** - Optimized monorepo build system
 
 ## Getting Started
@@ -74,7 +74,8 @@ install it with `bun run --cwd apps/native ios`, then start Metro with
 kompose/
 ├── apps/
 │   ├── native/      # iOS application (React Native, Expo)
-│   └── web/         # Web application and API (Next.js) + desktop shell (Tauri)
+│   ├── electron/    # Desktop shell (Electron)
+│   └── web/         # Web application and API (Next.js)
 ├── packages/
 │   ├── api/         # API layer and business logic
 │   ├── auth/        # Authentication configuration and logic
@@ -97,5 +98,5 @@ kompose/
 - `bun run fix`: Format and lint the repository with Biome
 - `bun run db:push`: Push schema changes to database
 - `bun run db:studio`: Open database studio UI
-- `cd apps/web && bun run desktop:dev`: Start Tauri desktop app in development
-- `cd apps/web && bun run desktop:build`: Build Tauri desktop app
+- `bun run dev:desktop`: Start the Electron desktop app
+- `bun run build:desktop`: Build the Electron shell and renderer

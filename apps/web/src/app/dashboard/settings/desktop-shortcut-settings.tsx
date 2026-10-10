@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  type DesktopCommandBarShortcutPresetId,
+  desktopCommandBarShortcutPresets,
+} from "@kompose/desktop";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -14,11 +18,8 @@ import {
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
   applyDesktopCommandBarShortcutPreset,
-  type DesktopCommandBarShortcutPresetId,
-  desktopCommandBarShortcutPresets,
   getDesktopCommandBarShortcutPresetId,
-  setDesktopCommandBarShortcutPresetId,
-} from "@/lib/tauri-desktop";
+} from "@/lib/desktop";
 
 interface DesktopShortcutFormValues {
   presetId: DesktopCommandBarShortcutPresetId;
@@ -66,7 +67,6 @@ export function DesktopShortcutSettings() {
 
   const applyForm = form.handleSubmit(async ({ presetId }) => {
     await applyDesktopCommandBarShortcutPreset(presetId);
-    await setDesktopCommandBarShortcutPresetId(presetId);
     toast.success("Desktop command bar shortcut updated.");
   });
 

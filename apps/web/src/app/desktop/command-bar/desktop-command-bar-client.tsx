@@ -2,15 +2,12 @@
 
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { focusManager } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import { LogicalSize } from "@tauri-apps/api/dpi";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtom } from "jotai";
 import { useCallback, useEffect } from "react";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
-import { isTauriRuntime } from "@/lib/tauri-desktop";
+import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 
 const COMMAND_BAR_MAX_HEIGHT = 520;
 
@@ -28,44 +25,30 @@ export default function DesktopCommandBarClient() {
 
   // Open the command bar when the window gains focus.
   useMountEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isDesktopRuntime()) {
       return;
     }
 
     focusManager.setFocused(true);
     setOpen(true);
-    let disposed = false;
     let unlisten: (() => void) | null = null;
 
-    getCurrentWindow()
-      .onFocusChanged((event) => {
-        focusManager.setFocused(event.payload);
-        if (event.payload) {
-          setOpen(true);
-        }
-      })
-      .then((fn) => {
-        if (disposed) {
-          fn();
-          return;
-        }
-        unlisten = fn;
-      })
-      .catch((error) => {
-        console.warn("Failed to register command bar focus listener.", error);
-      });
-
+    unlisten = desktopBridge().onWindowFocus((focused) => {
+      focusManager.setFocused(focused);
+      if (focused) {
+        setOpen(true);
+      }
+    });
     return () => {
-      disposed = true;
       unlisten?.();
       focusManager.setFocused(undefined);
     };
   });
 
-  // Dismiss the command bar via Rust so the previous app is reactivated
+  // Dismiss the command bar through the main process so the previous app is reactivated
   // before the window hides, avoiding a flicker of the main Kompose window.
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isDesktopRuntime()) {
       return;
     }
     if (open) {
@@ -73,20 +56,22 @@ export default function DesktopCommandBarClient() {
     }
 
     let cancelled = false;
-    invoke("dismiss_command_bar").catch((error) => {
-      if (!cancelled) {
-        console.warn("Failed to dismiss command bar window.", error);
-      }
-    });
+    desktopBridge()
+      .dismissCommandBar()
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("Failed to dismiss command bar window.", error);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
   }, [open]);
 
-  // Auto-size the Tauri window to exactly fit the dialog content.
+  // Auto-size the desktop window to exactly fit the dialog content.
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isDesktopRuntime()) {
       return;
     }
     if (!open) {
@@ -94,7 +79,6 @@ export default function DesktopCommandBarClient() {
     }
 
     let disposed = false;
-
     const resizeWindowToContent = async (surface: HTMLElement) => {
       if (disposed) {
         return;
@@ -108,9 +92,7 @@ export default function DesktopCommandBarClient() {
       if (width <= 0 || height <= 0) {
         return;
       }
-      const win = getCurrentWindow();
-      await win.setSize(new LogicalSize(width, height));
-      await win.center();
+      await desktopBridge().resizeCommandBar(height);
     };
 
     const el = document.querySelector<HTMLElement>(
@@ -137,7 +119,7 @@ export default function DesktopCommandBarClient() {
     };
   }, [open]);
 
-  if (!isTauriRuntime()) {
+  if (!isDesktopRuntime()) {
     return null;
   }
 

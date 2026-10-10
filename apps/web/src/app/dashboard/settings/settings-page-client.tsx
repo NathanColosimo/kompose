@@ -31,10 +31,11 @@ import {
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import {
+  desktopBridge,
   extractAuthErrorMessage,
-  isTauriRuntime,
-  openDesktopOAuth,
-} from "@/lib/tauri-desktop";
+  isDesktopRuntime,
+  openUrlInDesktopBrowser,
+} from "@/lib/desktop";
 import { orpc } from "@/utils/orpc";
 import { DesktopShortcutSettings } from "./desktop-shortcut-settings";
 
@@ -44,7 +45,7 @@ export default function SettingsPageClient() {
   const [linkingProvider, setLinkingProvider] = useState<
     "google" | "whoop" | null
   >(null);
-  const [isDesktopRuntime, setIsDesktopRuntime] = useState(false);
+  const [isDesktop, setIsDesktopRuntime] = useState(false);
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(
     null
   );
@@ -55,14 +56,22 @@ export default function SettingsPageClient() {
 
   const whoopProfileQueries = useQueries({
     queries: whoopAccounts.map((account) => ({
-      queryKey: ["whoop-profile", account.accountId] as const,
       queryFn: () => orpc.whoop.profile.get({ accountId: account.accountId }),
+      queryKey: ["whoop-profile", account.accountId] as const,
       staleTime: 15 * 60 * 1000,
     })),
   });
 
   useMountEffect(() => {
-    setIsDesktopRuntime(isTauriRuntime());
+    setIsDesktopRuntime(isDesktopRuntime());
+    if (!isDesktopRuntime()) return;
+    return desktopBridge().onWindowFocus((focused) => {
+      if (!focused) return;
+      queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
+      queryClient.invalidateQueries({
+        queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
+      });
+    });
   });
 
   const handleLinkAnotherGoogleAccount = async () => {
@@ -72,11 +81,10 @@ export default function SettingsPageClient() {
 
     setLinkingProvider("google");
     try {
-      // On Tauri desktop, open the system browser for account linking.
-      // The deep link handler will navigate back once the flow completes.
-      if (isTauriRuntime()) {
-        await openDesktopOAuth("google", "link", env.NEXT_PUBLIC_WEB_URL);
-        // Don't reset linkingProvider — the deep link handler handles completion.
+      if (isDesktopRuntime()) {
+        await openUrlInDesktopBrowser(
+          `${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`
+        );
         return;
       }
 
@@ -85,9 +93,9 @@ export default function SettingsPageClient() {
       const callbackURL = `${baseUrl}/dashboard/settings`;
       const errorCallbackURL = `${baseUrl}/dashboard/settings`;
       const result = await authClient.linkSocial({
-        provider: "google",
         callbackURL,
         errorCallbackURL,
+        provider: "google",
       });
 
       const authError = extractAuthErrorMessage(result);
@@ -116,8 +124,10 @@ export default function SettingsPageClient() {
     setLinkingProvider("whoop");
 
     try {
-      if (isTauriRuntime()) {
-        await openDesktopOAuth("whoop", "link", env.NEXT_PUBLIC_WEB_URL);
+      if (isDesktopRuntime()) {
+        await openUrlInDesktopBrowser(
+          `${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`
+        );
         return;
       }
 
@@ -125,9 +135,9 @@ export default function SettingsPageClient() {
       const callbackURL = `${baseUrl}/dashboard/settings`;
       const errorCallbackURL = `${baseUrl}/dashboard/settings`;
       const result = await authClient.linkSocial({
-        provider: "whoop",
         callbackURL,
         errorCallbackURL,
+        provider: "whoop",
       });
 
       const authError = extractAuthErrorMessage(result);
@@ -197,7 +207,9 @@ export default function SettingsPageClient() {
     }
   };
 
-  let whoopLinkButtonLabel = "Link WHOOP account";
+  let whoopLinkButtonLabel = isDesktop
+    ? "Link WHOOP in browser"
+    : "Link WHOOP account";
   if (linkingProvider === "whoop") {
     whoopLinkButtonLabel = "Linking...";
   } else if (whoopAccounts.length >= 1) {
@@ -227,6 +239,9 @@ export default function SettingsPageClient() {
           <h1 className="font-semibold text-2xl">Settings</h1>
           <p className="text-muted-foreground">
             Link and manage your Google and WHOOP accounts.
+            {isDesktop
+              ? " Link accounts in your browser using the same Kompose account, then return here."
+              : null}
           </p>
         </div>
 
@@ -245,7 +260,9 @@ export default function SettingsPageClient() {
               >
                 {linkingProvider === "google"
                   ? "Linking..."
-                  : "Link another Google account"}
+                  : isDesktop
+                    ? "Link Google in browser"
+                    : "Link another Google account"}
               </Button>
             </div>
           </CardHeader>
@@ -390,7 +407,7 @@ export default function SettingsPageClient() {
           </CardContent>
         </Card>
 
-        {isDesktopRuntime ? <DesktopShortcutSettings /> : null}
+        {isDesktop ? <DesktopShortcutSettings /> : null}
       </div>
     </>
   );

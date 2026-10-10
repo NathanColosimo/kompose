@@ -234,3 +234,7 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Electron implements drag regions in Chromium; interactive children remain clickable. */
+[data-desktop-runtime="electron"] [data-desktop-drag-region] { -webkit-app-region: drag; }
+[data-desktop-runtime="electron"] :is(button, input, textarea, select, a, [role="button"]) { -webkit-app-region: no-drag; }

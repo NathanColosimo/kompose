@@ -7,7 +7,6 @@
         "REDIS_URL",
         "BETTER_AUTH_SECRET",
         "NEXT_PUBLIC_WEB_URL",
-        "NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
         "GOOGLE_WEBHOOK_TOKEN",
@@ -28,21 +27,13 @@
         ".env*",
         "!.next/**",
         "!out/**",
-        "!src-tauri/**",
         "!scripts/**",
-        "!release-dmg.sh",
-        "!src/app/desktop/**",
-        "!src/components/tauri-updater.tsx",
-        "!src/components/deep-link-handler.tsx",
-        "!src/lib/tauri-desktop.ts",
-        "!src/lib/desktop-deep-link.ts",
-        "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
     "build:prod": {
-      "dependsOn": ["$TURBO_EXTENDS$", "build:prod:desktop", "^build"],
+      "dependsOn": ["$TURBO_EXTENDS$", "^build"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -51,15 +42,7 @@
         "$TURBO_ROOT$/documents/terms-of-service.md",
         "!.next/**",
         "!out/**",
-        "!src-tauri/**",
         "!scripts/**",
-        "!release-dmg.sh",
-        "!src/app/desktop/**",
-        "!src/components/tauri-updater.tsx",
-        "!src/components/deep-link-handler.tsx",
-        "!src/lib/tauri-desktop.ts",
-        "!src/lib/desktop-deep-link.ts",
-        "!src/app/dashboard/settings/desktop-shortcut-settings.tsx",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [
@@ -70,36 +53,11 @@
         "../../.vercel/project.json"
       ]
     },
-    "build:prod:desktop": {
-      "cache": true,
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".tauri.env",
-        "!.next/**",
-        "!out/**",
-        "!src-tauri/target/**",
-        "!$TURBO_ROOT$/.vercel/**",
-        "!src/app/api/**",
-        "!src/app/docs/**",
-        "!src/app/privacy/**",
-        "!src/app/terms/**",
-        "!src/instrumentation.ts",
-        "$TURBO_ROOT$/packages/*/src/**",
-        "!$TURBO_ROOT$/packages/api/src/**",
-        "!$TURBO_ROOT$/packages/db/src/**",
-        "!$TURBO_ROOT$/packages/whoop/src/**"
-      ],
-      "outputs": ["src-tauri/target/aarch64-apple-darwin/release/bundle/**"]
-    },
     "type-check": {
       "outputs": [".next/types/**", "tsconfig.tsbuildinfo"]
     },
     "submit:prod": {
       "dependsOn": ["build:prod"],
-      "cache": false
-    },
-    "submit:prod:desktop": {
-      "dependsOn": ["build:prod:desktop"],
       "cache": false
     }
   }

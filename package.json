@@ -8,7 +8,7 @@
       "packages/*"
     ],
     "catalog": {
-      "@better-auth/expo": "^1.7.6",
+      "@better-auth/expo": "^1.7.7",
       "@effect/sql-pg": "4.0.0-rc.112",
       "@orpc/client": "^1.15.4",
       "@orpc/contract": "^1.15.4",
@@ -23,7 +23,7 @@
       "@types/node": "^26.6.2",
       "@types/react": "~19.2.18",
       "@types/react-dom": "~19.2.5",
-      "better-auth": "^1.7.6",
+      "better-auth": "^1.7.7",
       "dotenv": "^17.4.2",
       "drizzle-orm": "1.0.0-rc.5-169397b",
       "effect": "4.0.0-rc.112",
@@ -50,6 +50,7 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "build:desktop": "turbo run build --filter=@kompose/electron",
     "build:prod": "turbo run build:prod --filter=web --filter=native",
     "build:prod:native": "turbo run build:prod --filter=native",
     "build:prod:web": "turbo run build:prod --filter=web",
@@ -62,15 +63,17 @@
     "db:studio": "turbo run db:studio -F @kompose/db",
     "db:watch": "turbo run db:watch -F @kompose/db",
     "dev": "turbo run dev db:studio",
+    "dev:desktop": "turbo run dev --filter=@kompose/electron",
     "dev:native": "turbo run dev -F native",
     "dev:web": "turbo run dev db:studio -F web -F @kompose/db",
     "fix": "biome check --write .",
     "knip": "knip",
+    "package:desktop": "turbo run package --filter=@kompose/electron",
     "portless:proxy": "sudo portless proxy start --https --tld dev",
-    "submit:prod": "turbo run submit:prod submit:prod:desktop --filter=web --filter=native",
-    "submit:prod:desktop": "turbo run submit:prod:desktop --filter=web",
+    "submit:prod": "turbo run submit:prod --filter=web --filter=native",
+    "submit:prod:desktop": "turbo run dist --filter=@kompose/electron",
     "submit:prod:native": "turbo run submit:prod --filter=native",
-    "submit:prod:web": "turbo run submit:prod submit:prod:desktop --filter=web",
+    "submit:prod:web": "turbo run submit:prod --filter=web",
     "type-check": "turbo run type-check"
   },
   "overrides": {
@@ -91,5 +94,8 @@
     "typescript": "catalog:",
     "ultracite": "^7.12.0"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "trustedDependencies": [
+    "electron"
+  ]
 }

@@ -20,13 +20,7 @@
       "dependsOn": ["type-check"],
       "cache": false
     },
-    "build:prod:desktop": {
-      "cache": false
-    },
     "submit:prod": {
-      "cache": false
-    },
-    "submit:prod:desktop": {
       "cache": false
     },
     "dev": {
@@ -68,6 +62,20 @@
     "db:down": {
       "cache": false,
       "persistent": true
+    },
+    "build:desktop": {
+      "dependsOn": ["^build"],
+      "outputs": ["out/**"],
+      "env": ["NEXT_PUBLIC_*", "DESKTOP_BUILD"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
+    },
+    "package": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "dist": {
+      "dependsOn": ["build"],
+      "cache": false
     }
   }
 }
