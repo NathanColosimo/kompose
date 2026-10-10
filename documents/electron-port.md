@@ -19,6 +19,12 @@ reload, also set `KOMPOSE_RENDERER_URL` to the local web server. Packaged API ta
 use `MAIN_VITE_SERVER_URL` at build time. Set `NEXT_PUBLIC_WEB_URL` to the same API
 when building the renderer. The server must include this branch's Electron plugin.
 
+Desktop export builds a temporary sibling copy of the web app, excluding server
+and docs routes there (the build helper requires Bash and rsync). Its generated
+files and incremental cache are separate
+from the web build, so it can run alongside `next dev` or the normal web build.
+Successful exports replace `apps/web/out`; failed builds keep the previous export.
+
 `bun run package:desktop` creates an unpacked application. For unsigned local macOS
 packaging, use `cd apps/electron && bunx electron-builder --dir --publish never
 -c.mac.identity=null -c.mac.notarize=false` (one command). Release builds require

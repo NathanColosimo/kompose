@@ -4,6 +4,7 @@ node_modules
 .pnp.js
 
 # Build outputs
+/apps/.kompose-desktop-*/
 dist
 build
 *.tsbuildinfo

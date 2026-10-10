@@ -2,101 +2,61 @@
 
 set -euo pipefail
 
-# Build helper for Electron renderer export:
-# - Temporarily remove routes that should not be embedded in the desktop bundle.
-# - Always restore original files after build (success, failure, or interruption).
-
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
-
-TEMP_DIR="$(mktemp -d)"
-API_DIR="src/app/api"
-DOCS_DIR="src/app/docs"
-PRIVACY_DIR="src/app/privacy"
-TERMS_DIR="src/app/terms"
-LEGAL_COMPONENTS_DIR="src/components/legal"
-
-restore_removed_sources() {
-  set +e
-
-  if [ -d "$TEMP_DIR/api" ]; then
-    rm -rf "$API_DIR"
-    mv "$TEMP_DIR/api" "$API_DIR"
-  fi
-
-  if [ -d "$TEMP_DIR/docs" ]; then
-    rm -rf "$DOCS_DIR"
-    mv "$TEMP_DIR/docs" "$DOCS_DIR"
-  fi
-
-  if [ -d "$TEMP_DIR/privacy" ]; then
-    rm -rf "$PRIVACY_DIR"
-    mv "$TEMP_DIR/privacy" "$PRIVACY_DIR"
-  fi
-
-  if [ -d "$TEMP_DIR/terms" ]; then
-    rm -rf "$TERMS_DIR"
-    mv "$TEMP_DIR/terms" "$TERMS_DIR"
-  fi
-
-  if [ -d "$TEMP_DIR/legal-components" ]; then
-    rm -rf "$LEGAL_COMPONENTS_DIR"
-    mv "$TEMP_DIR/legal-components" "$LEGAL_COMPONENTS_DIR"
-  fi
-}
+WEB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# A sibling app preserves ../../packages imports and the Next.js workspace root.
+# Copy sources rather than linking them: Next also writes generated types/config.
+BUILD_DIR="$(mktemp -d "$WEB_DIR/../.kompose-desktop-XXXXXX")"
+CACHE_DIR="$WEB_DIR/.cache/desktop-next"
 
 cleanup() {
   exit_code=$?
-  restore_removed_sources
-
-  rm -rf "$TEMP_DIR"
+  set +e
+  if [ -d "$BUILD_DIR/.next/cache" ]; then
+    mkdir -p "$CACHE_DIR"
+    rsync -a --delete "$BUILD_DIR/.next/cache/" "$CACHE_DIR/"
+  fi
+  rm -rf "$BUILD_DIR"
   exit "$exit_code"
 }
 
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-if [ -d "$API_DIR" ]; then
-  mv "$API_DIR" "$TEMP_DIR/api"
-fi
+# Web builds and next dev continue using the original source tree and .next.
+rsync -a \
+  --exclude='/node_modules/' \
+  --exclude='/.next/' \
+  --exclude='/out/' \
+  --exclude='/.cache/' \
+  --exclude='/.turbo/' \
+  --exclude='/.source/' \
+  --exclude='/.vercel/' \
+  --exclude='/build/' \
+  --exclude='/dist/' \
+  --exclude='/*.tsbuildinfo' \
+  --exclude='/src/app/api/' \
+  --exclude='/src/app/docs/' \
+  --exclude='/src/lib/source.ts' \
+  "$WEB_DIR/" "$BUILD_DIR/"
+ln -s "$WEB_DIR/node_modules" "$BUILD_DIR/node_modules"
 
-if [ -d "$DOCS_DIR" ]; then
-  mv "$DOCS_DIR" "$TEMP_DIR/docs"
-fi
-
-# Production desktop builds open the hosted legal pages in the system browser,
-# so the embedded desktop bundle does not need to include those routes.
+# Production desktop builds open hosted legal pages in the system browser.
 if [ "${NEXT_PUBLIC_DEPLOYMENT_ENV:-}" = "production" ]; then
-  if [ -d "$PRIVACY_DIR" ]; then
-    mv "$PRIVACY_DIR" "$TEMP_DIR/privacy"
-  fi
-
-  if [ -d "$TERMS_DIR" ]; then
-    mv "$TERMS_DIR" "$TEMP_DIR/terms"
-  fi
-
-  if [ -d "$LEGAL_COMPONENTS_DIR" ]; then
-    mv "$LEGAL_COMPONENTS_DIR" "$TEMP_DIR/legal-components"
-  fi
+  rm -rf "$BUILD_DIR/src/app/privacy" "$BUILD_DIR/src/app/terms" \
+    "$BUILD_DIR/src/components/legal"
 fi
 
-# Keep Next 16.3's Turbopack build cache while still removing stale build and
-# development output before the static export. The cache is intentionally not
-# part of Turbo's task artifact; it remains useful when the task itself runs.
-if [ -d ".next/cache" ]; then
-  mv ".next/cache" "$TEMP_DIR/next-build-cache"
+if [ -d "$CACHE_DIR" ]; then
+  mkdir -p "$BUILD_DIR/.next/cache"
+  rsync -a "$CACHE_DIR/" "$BUILD_DIR/.next/cache/"
 fi
 
-rm -rf .next out
-
-if [ -d "$TEMP_DIR/next-build-cache" ]; then
-  mkdir -p .next
-  mv "$TEMP_DIR/next-build-cache" ".next/cache"
-fi
-
+cd "$BUILD_DIR"
 DESKTOP_BUILD=1 bun ./node_modules/next/dist/bin/next build
 
-# The desktop build intentionally generates route types while API/docs/legal
-# routes are absent. Restore the source tree, then refresh typed routes so
-# follow-up `tsc --noEmit` runs see the normal app route set again.
-restore_removed_sources
-DESKTOP_BUILD=1 bun ./node_modules/next/dist/bin/next typegen
+# Keep the last successful export if compilation fails. Packaging still reads
+# apps/web/out; no web source, route types, config, or .next output is replaced.
+test -d "$BUILD_DIR/out"
+rm -rf "$WEB_DIR/out"
+mv "$BUILD_DIR/out" "$WEB_DIR/out"
