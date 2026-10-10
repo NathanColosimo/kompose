@@ -12,7 +12,10 @@ export interface UnlinkAccountInput {
 export interface AuthClient {
   /** Select a local Better Auth account row by its ID. */
   accountInfo: (accountId: string) => Promise<OAuth2UserInfo | null>;
-  listAccounts: () => Promise<{ data?: Account[] } | null>;
+  listAccounts: () => Promise<{
+    data?: Account[];
+    error?: { message?: string } | null;
+  } | null>;
   unlinkAccount: (input: UnlinkAccountInput) => Promise<void>;
 }
 

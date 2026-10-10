@@ -19,7 +19,7 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import {
   memo,
   useCallback,
@@ -32,10 +32,10 @@ import {
 import { Temporal } from "temporal-polyfill";
 import {
   isoStringToZonedDateTime,
-  isToday,
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
+import { calendarScrollTargetAtom } from "@/state/calendar-navigation";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
@@ -284,6 +284,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTarget, setScrollTarget] = useAtom(calendarScrollTargetAtom);
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
 
@@ -326,6 +327,18 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
     }
   }, []);
+
+  useLayoutEffect(() => {
+    const grid = scrollRef.current;
+    if (!(grid && scrollTarget)) {
+      return;
+    }
+    const position =
+      (scrollTarget.hour + scrollTarget.minute / 60) * PIXELS_PER_HOUR;
+    // Instant for both the toolbar and keyboard; keep time visible near the center.
+    grid.scrollTop = Math.max(0, position - grid.clientHeight / 2);
+    setScrollTarget(null);
+  }, [scrollTarget, setScrollTarget]);
 
   // Track header height (dates + all-day row) to align the gutter corner
   useLayoutEffect(() => {
@@ -555,7 +568,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                 return (
                   <DayHeader
                     date={day}
-                    isTodayHighlight={isToday(day, timeZone)}
+                    timeZone={timeZone}
                     key={dayKey}
                     whoopSummary={whoopSummaries.get(dayKey)}
                     width={dayColumnWidth}
@@ -743,6 +756,7 @@ function TimeGutterSynced({
       }
     };
 
+    handleScroll();
     scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollContainer.removeEventListener("scroll", handleScroll);
   }, [scrollRef]);

@@ -2,6 +2,7 @@
 export const ELECTRON_AUTH_SCHEME = "com.nathancolosimo.kompose.electron";
 export const ELECTRON_AUTH_CLIENT_ID = "kompose-electron";
 export const DESKTOP_ORIGIN = "kompose-app://app";
+export const DESKTOP_COMMAND_BAR_MAX_HEIGHT = 520;
 export const desktopCommandBarShortcutPresets = [
   {
     accelerator: "CommandOrControl+Shift+K",
@@ -44,6 +45,7 @@ export interface DesktopBridge {
   onSessionChanged: (callback: () => void) => () => void;
   onUpdateState: (callback: (state: DesktopUpdateState) => void) => () => void;
   onWindowFocus: (callback: (focused: boolean) => void) => () => void;
+  showMainWindow: () => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   openTask: (selection: DesktopTaskSelection) => Promise<void>;
   platform: string;

@@ -1,9 +1,11 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
-import { Temporal } from "temporal-polyfill";
-import { isToday } from "@/lib/temporal-utils";
+import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
+import { useAtomValue } from "jotai";
+import { memo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { PIXELS_PER_HOUR } from "../constants";
+import { currentTimePosition } from "./current-time-position";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
@@ -38,13 +40,12 @@ export const DayColumn = memo(function DayColumnInner({
   onSlotMouseUp,
 }: DayColumnProps) {
   const hours = getHoursRange();
-  const isTodayColumn = isToday(date);
 
   return (
     <div
       className="relative flex shrink-0 flex-col border-border border-r last:border-r-0"
       data-day-column
-      style={{ width, scrollSnapAlign: "start" }}
+      style={{ scrollSnapAlign: "start", width }}
     >
       {hours.map((hour) => (
         <div className="relative" key={hour}>
@@ -66,21 +67,20 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <div className="pointer-events-none absolute inset-0">{children}</div>
-      {isTodayColumn ? <CurrentTimeIndicator /> : null}
+      <CurrentTimeIndicator date={date} timeZone={timeZone} />
     </div>
   );
 });
 
-function CurrentTimeIndicator() {
-  const [topPosition, setTopPosition] = useState(() => calculateTimePosition());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTopPosition(calculateTimePosition());
-    }, 60_000);
-
-    return () => clearInterval(interval);
-  }, []);
+function CurrentTimeIndicator({
+  date,
+  timeZone,
+}: Pick<DayColumnProps, "date" | "timeZone">) {
+  const now = useAtomValue(nowZonedDateTimeAtom);
+  const topPosition = currentTimePosition(date, timeZone, now, PIXELS_PER_HOUR);
+  if (topPosition === null) {
+    return null;
+  }
 
   return (
     <div
@@ -91,10 +91,4 @@ function CurrentTimeIndicator() {
       <div className="h-0.5 flex-1 bg-red-500" />
     </div>
   );
-}
-
-/** Calculate the current time indicator position in pixels from top */
-function calculateTimePosition(): number {
-  const now = Temporal.Now.zonedDateTimeISO();
-  return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }

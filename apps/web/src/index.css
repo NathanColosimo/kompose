@@ -238,3 +238,12 @@
 /* Electron implements drag regions in Chromium; interactive children remain clickable. */
 [data-desktop-runtime="electron"] [data-desktop-drag-region] { -webkit-app-region: drag; }
 [data-desktop-runtime="electron"] :is(button, input, textarea, select, a, [role="button"]) { -webkit-app-region: no-drag; }
+
+/* The popup's empty chrome drags the native window; its input and scrolling
+   results keep normal pointer behavior in every command-bar view. */
+[data-desktop-runtime="electron"] [data-command-bar-surface] {
+  -webkit-app-region: drag;
+}
+[data-desktop-runtime="electron"] [data-command-bar-surface] :is([data-slot="input-group"], [data-slot="command-list"]) {
+  -webkit-app-region: no-drag;
+}

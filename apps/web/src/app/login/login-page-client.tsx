@@ -3,6 +3,7 @@
 import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { SessionFeedback } from "@/components/auth/session-feedback";
 import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,7 +38,13 @@ function DashboardRedirect() {
 }
 
 export default function LoginPageClient() {
-  const { data: session, isPending } = authClient.useSession();
+  const {
+    data: session,
+    error,
+    isPending,
+    isRefetching,
+    refetch,
+  } = authClient.useSession();
   const privacyHref =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
@@ -46,8 +53,16 @@ export default function LoginPageClient() {
     env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
       ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
       : "/terms";
-  if (isPending) {
-    return null;
+  if (isPending || (!session?.user && error)) {
+    return (
+      <main className="flex min-h-svh items-center justify-center p-6 text-center text-sm">
+        <SessionFeedback
+          error={Boolean(error)}
+          onRetry={refetch}
+          retrying={isRefetching}
+        />
+      </main>
+    );
   }
 
   if (session?.user) {
