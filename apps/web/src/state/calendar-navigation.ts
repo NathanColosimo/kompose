@@ -1,20 +1,19 @@
 import {
   currentDateAtom,
-  timezoneAtom,
+  todayPlainDateAtom,
   todayTickAtom,
 } from "@kompose/state/atoms/current-date";
 import { atom } from "jotai";
-import { Temporal } from "temporal-polyfill";
 
-/** One-shot scroll target, consumed once the calendar grid has rendered. */
-export const calendarScrollTargetAtom = atom<Temporal.ZonedDateTime | null>(
-  null
-);
+/**
+ * One-shot request, consumed by the calendar grid once rendered. It holds no
+ * time, so a request consumed later still scrolls to the actual current time.
+ */
+export const scrollToNowRequestedAtom = atom(false);
 
 export const goToTodayAtom = atom(null, (get, set) => {
-  const now = Temporal.Now.zonedDateTimeISO(get(timezoneAtom));
-  set(currentDateAtom, now.toPlainDate());
   set(todayTickAtom, (tick) => tick + 1);
+  set(currentDateAtom, get(todayPlainDateAtom));
   // A fresh request also scrolls when today is already selected.
-  set(calendarScrollTargetAtom, now);
+  set(scrollToNowRequestedAtom, true);
 });

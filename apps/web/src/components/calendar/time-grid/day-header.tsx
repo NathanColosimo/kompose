@@ -1,7 +1,7 @@
 "use client";
 
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
-import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
+import { todayPlainDateAtom } from "@kompose/state/atoms/current-date";
 import { useAtomValue } from "jotai";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 
 interface DayHeaderProps {
   date: Temporal.PlainDate;
-  timeZone: string;
   whoopSummary?: WhoopDaySummary | null;
   width: string;
 }
@@ -27,15 +26,10 @@ function recoveryColor(score: number): string {
 
 export const DayHeader = memo(function DayHeaderInner({
   date,
-  timeZone,
   width,
   whoopSummary,
 }: DayHeaderProps) {
-  const now = useAtomValue(nowZonedDateTimeAtom);
-  const isTodayHighlight = now
-    .withTimeZone(timeZone)
-    .toPlainDate()
-    .equals(date);
+  const isTodayHighlight = useAtomValue(todayPlainDateAtom).equals(date);
   const hasWhoopData =
     whoopSummary &&
     (whoopSummary.recoveryScore !== null ||
@@ -55,7 +49,7 @@ export const DayHeader = memo(function DayHeaderInner({
         hasWhoopData ? "gap-0.5 py-1.5" : "h-12",
         isTodayHighlight ? "bg-primary/5" : ""
       )}
-      style={{ width, scrollSnapAlign: "start" }}
+      style={{ scrollSnapAlign: "start", width }}
     >
       <div className="flex items-center gap-2">
         <span className="font-medium text-muted-foreground text-xs uppercase">

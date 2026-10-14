@@ -14,6 +14,7 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -29,7 +30,6 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
-  type todayPlainDate,
 } from "@/lib/temporal-utils";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
@@ -70,7 +70,7 @@ function DashboardCalendarContent({
   hydrated,
 }: {
   effectiveVisibleDaysCount: number;
-  effectiveVisibleDays: ReturnType<typeof todayPlainDate>[];
+  effectiveVisibleDays: Temporal.PlainDate[];
   hydrated: boolean;
 }) {
   return (
@@ -149,7 +149,7 @@ function DashboardCalendarToolbar() {
 function DashboardCalendarGrid({
   effectiveVisibleDays,
 }: {
-  effectiveVisibleDays: ReturnType<typeof todayPlainDate>[];
+  effectiveVisibleDays: Temporal.PlainDate[];
 }) {
   const window = useAtomValue(eventWindowAtom);
   const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);

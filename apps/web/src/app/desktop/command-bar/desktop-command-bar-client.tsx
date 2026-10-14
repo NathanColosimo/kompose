@@ -34,6 +34,12 @@ export default function DesktopCommandBarClient() {
     () => desktopBridge().showMainWindow(),
     []
   );
+  let view: "content" | "feedback" | "signed-out" = "signed-out";
+  if (isSessionPending || sessionError) {
+    view = "feedback";
+  } else if (session?.user) {
+    view = "content";
+  }
 
   // Open the command bar when the window gains focus.
   useMountEffect(() => {
@@ -43,16 +49,14 @@ export default function DesktopCommandBarClient() {
 
     focusManager.setFocused(true);
     setOpen(true);
-    let unlisten: (() => void) | null = null;
-
-    unlisten = desktopBridge().onWindowFocus((focused) => {
+    const unsubscribe = desktopBridge().onWindowFocus((focused) => {
       focusManager.setFocused(focused);
       if (focused) {
         setOpen(true);
       }
     });
     return () => {
-      unlisten?.();
+      unsubscribe();
       focusManager.setFocused(undefined);
     };
   });
@@ -60,30 +64,19 @@ export default function DesktopCommandBarClient() {
   // Dismiss the command bar through the main process so the previous app is reactivated
   // before the window hides, avoiding a flicker of the main Kompose window.
   useEffect(() => {
-    if (!isDesktopRuntime()) {
+    if (!isDesktopRuntime() || open) {
       return;
     }
-    if (open) {
-      return;
-    }
-
-    let cancelled = false;
     desktopBridge()
       .dismissCommandBar()
       .catch((error) => {
-        if (!cancelled) {
-          console.warn("Failed to dismiss command bar window.", error);
-        }
+        console.warn("Failed to dismiss command bar window.", error);
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [open]);
 
   // Loading/sign-in surfaces have no command input to handle Escape.
   useEffect(() => {
-    if (!open || (!isSessionPending && session?.user)) {
+    if (!open || view === "content") {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -93,64 +86,34 @@ export default function DesktopCommandBarClient() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, isSessionPending, session?.user, setOpen]);
+  }, [open, view, setOpen]);
 
-  // Auto-size the desktop window to exactly fit the dialog content.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Reconnect when session loading replaces the popup content.
-  useEffect(() => {
-    if (!isDesktopRuntime()) {
+  // Size the native window to the surface whenever it mounts or its content changes.
+  const surfaceRef = useCallback((surface: HTMLDivElement | null) => {
+    if (!surface) {
       return;
     }
-    if (!open) {
-      return;
-    }
-
-    let disposed = false;
-    const resizeWindowToContent = async (surface: HTMLElement) => {
-      if (disposed) {
-        return;
-      }
+    const observer = new ResizeObserver(() => {
       const rect = surface.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
       const height = Math.min(
         DESKTOP_COMMAND_BAR_MAX_HEIGHT,
         Math.max(Math.ceil(rect.height), surface.scrollHeight)
       );
-      if (width <= 0 || height <= 0) {
+      if (rect.width <= 0 || height <= 0) {
         return;
       }
-      await desktopBridge().resizeCommandBar(height);
-    };
-
-    const el = document.querySelector<HTMLElement>(
-      "[data-command-bar-surface]"
-    );
-    if (!el) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      resizeWindowToContent(el).catch((error) => {
-        console.warn("Failed to resize command bar window.", error);
-      });
+      desktopBridge()
+        .resizeCommandBar(height)
+        .catch((error) => {
+          console.warn("Failed to resize command bar window.", error);
+        });
     });
-    observer.observe(el);
+    // Observing reports the initial size, too.
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
 
-    resizeWindowToContent(el).catch((error) => {
-      console.warn("Failed to resize command bar window.", error);
-    });
-
-    return () => {
-      disposed = true;
-      observer.disconnect();
-    };
-  }, [open, isSessionPending, session?.user?.id]);
-
-  if (!isDesktopRuntime()) {
-    return null;
-  }
-
-  if (!open) {
+  if (!(isDesktopRuntime() && open)) {
     return null;
   }
 
@@ -158,14 +121,22 @@ export default function DesktopCommandBarClient() {
     <div
       className="inline-block"
       data-command-bar-surface
+      ref={surfaceRef}
       style={{
         maxWidth: "100vw",
         width: "32rem",
       }}
     >
-      {isSessionPending || !session?.user ? (
+      {view === "content" ? (
+        <CommandBarContent
+          className="h-auto"
+          onRequestClose={handleRequestClose}
+          selectionMode="desktop-popup"
+          size="lg"
+        />
+      ) : (
         <div className="rounded-xl border bg-popover p-4 text-popover-foreground">
-          {isSessionPending || sessionError ? (
+          {view === "feedback" ? (
             <div className="text-sm">
               <SessionFeedback
                 error={Boolean(sessionError)}
@@ -174,21 +145,14 @@ export default function DesktopCommandBarClient() {
               />
             </div>
           ) : (
-            <p className="text-sm">Sign in to use quick actions.</p>
-          )}
-          {!(isSessionPending || sessionError) && (
-            <Button className="mt-3" onClick={handleShowMainWindow}>
-              Open Kompose
-            </Button>
+            <>
+              <p className="text-sm">Sign in to use quick actions.</p>
+              <Button className="mt-3" onClick={handleShowMainWindow}>
+                Open Kompose
+              </Button>
+            </>
           )}
         </div>
-      ) : (
-        <CommandBarContent
-          className="h-auto"
-          onRequestClose={handleRequestClose}
-          selectionMode="desktop-popup"
-          size="lg"
-        />
       )}
     </div>
   );

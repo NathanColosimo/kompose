@@ -35,7 +35,7 @@ import {
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
-import { calendarScrollTargetAtom } from "@/state/calendar-navigation";
+import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
@@ -80,7 +80,7 @@ function parseDateOnlyLocal(dateStr: string): Temporal.PlainDate {
   if (!(year && month && day)) {
     throw new Error(`Invalid date string: ${dateStr}`);
   }
-  return Temporal.PlainDate.from({ year, month, day });
+  return Temporal.PlainDate.from({ day, month, year });
 }
 
 /**
@@ -93,8 +93,8 @@ function clampEventToDay(
   timeZone: string
 ): PositionedGoogleEvent | null {
   const dayStart = day.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
   const dayEnd = dayStart.add({ days: 1 });
 
@@ -112,7 +112,7 @@ function clampEventToDay(
   const clampedEnd =
     Temporal.ZonedDateTime.compare(event.end, dayEnd) > 0 ? dayEnd : event.end;
 
-  return { ...event, start: clampedStart, end: clampedEnd };
+  return { ...event, end: clampedEnd, start: clampedStart };
 }
 
 function buildGoogleEventMaps({
@@ -177,7 +177,7 @@ function buildGoogleEventMaps({
     }
   }
 
-  return { timedEventsByDay: timed, allDayEventsByDay: allDay };
+  return { allDayEventsByDay: allDay, timedEventsByDay: timed };
 }
 
 function toPositionedGoogleEvent(
@@ -195,7 +195,7 @@ function toPositionedGoogleEvent(
   try {
     const start = isoStringToZonedDateTime(startStr, timeZone);
     const end = isoStringToZonedDateTime(endStr, timeZone);
-    return { ...sourceEvent, start, end };
+    return { ...sourceEvent, end, start };
   } catch {
     return null;
   }
@@ -211,13 +211,13 @@ function clampTaskToDay(
   timeZone: string
 ): PositionedTaskSegment | null {
   const start = task.startDate.toZonedDateTime({
-    timeZone,
     plainTime: task.startTime,
+    timeZone,
   });
   const end = start.add({ minutes: task.durationMinutes });
   const dayStart = day.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
   const dayEnd = dayStart.add({ days: 1 });
 
@@ -234,11 +234,11 @@ function clampTaskToDay(
     Temporal.ZonedDateTime.compare(end, dayEnd) > 0 ? dayEnd : end;
 
   return {
-    task,
-    start: clampedStart,
     end: clampedEnd,
     isFirstSegment: Temporal.ZonedDateTime.compare(clampedStart, start) === 0,
     isLastSegment: Temporal.ZonedDateTime.compare(clampedEnd, end) === 0,
+    start: clampedStart,
+    task,
   };
 }
 
@@ -284,7 +284,9 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollTarget, setScrollTarget] = useAtom(calendarScrollTargetAtom);
+  const [scrollToNowRequested, setScrollToNowRequested] = useAtom(
+    scrollToNowRequestedAtom
+  );
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(49);
 
@@ -330,15 +332,15 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
   useLayoutEffect(() => {
     const grid = scrollRef.current;
-    if (!(grid && scrollTarget)) {
+    if (!(grid && scrollToNowRequested)) {
       return;
     }
-    const position =
-      (scrollTarget.hour + scrollTarget.minute / 60) * PIXELS_PER_HOUR;
+    const now = Temporal.Now.zonedDateTimeISO(timeZone);
+    const position = (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
     // Instant for both the toolbar and keyboard; keep time visible near the center.
     grid.scrollTop = Math.max(0, position - grid.clientHeight / 2);
-    setScrollTarget(null);
-  }, [scrollTarget, setScrollTarget]);
+    setScrollToNowRequested(false);
+  }, [scrollToNowRequested, setScrollToNowRequested, timeZone]);
 
   // Track header height (dates + all-day row) to align the gutter corner
   useLayoutEffect(() => {
@@ -410,19 +412,19 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     for (const summary of whoopSummaries.values()) {
       if (summary.sleep) {
         blocks.push({
+          end: summary.sleep.end,
           id: summary.sleep.id,
           isNap: false,
           start: summary.sleep.start,
-          end: summary.sleep.end,
           totalSleepMilliseconds: summary.sleep.totalSleepMilliseconds,
         });
       }
       for (const nap of summary.naps) {
         blocks.push({
+          end: nap.end,
           id: nap.id,
           isNap: true,
           start: nap.start,
-          end: nap.end,
           totalSleepMilliseconds: nap.totalSleepMilliseconds,
         });
       }
@@ -443,11 +445,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     for (const summary of whoopSummaries.values()) {
       for (const workout of summary.workouts) {
         workouts.push({
+          end: workout.end,
           id: workout.id,
           sportName: workout.sportName,
-          strainScore: workout.strainScore,
           start: workout.start,
-          end: workout.end,
+          strainScore: workout.strainScore,
         });
       }
     }
@@ -475,10 +477,10 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
             ? 1440
             : rawEndMinutes;
         return {
-          id: `task-${segment.task.id}`,
-          type: "task" as const,
-          startMinutes,
           endMinutes,
+          id: `task-${segment.task.id}`,
+          startMinutes,
+          type: "task" as const,
         };
       });
 
@@ -491,11 +493,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         const endMinutes =
           rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
         return {
-          id: `google-${ge.accountId}-${ge.calendarId}-${ge.event.id}`,
-          type: "google-event" as const,
-          startMinutes,
           endMinutes:
             endMinutes > startMinutes ? endMinutes : startMinutes + 30,
+          id: `google-${ge.accountId}-${ge.calendarId}-${ge.event.id}`,
+          startMinutes,
+          type: "google-event" as const,
         };
       });
 
@@ -503,8 +505,8 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       // Uses allWorkouts (collected from all summaries) so workouts that
       // cross midnight appear in both day columns.
       const dayStart = day.toZonedDateTime({
-        timeZone,
         plainTime: Temporal.PlainTime.from("00:00"),
+        timeZone,
       });
       const dayEndZdt = dayStart.add({ days: 1 });
 
@@ -521,10 +523,10 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         const rawEndMin = minutesFromMidnight(clampedEnd);
         const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
         return {
-          id: `whoop-workout-${workout.id}`,
-          type: "whoop-workout" as const,
-          startMinutes: startMin,
           endMinutes: Math.max(endMin, startMin + 15),
+          id: `whoop-workout-${workout.id}`,
+          startMinutes: startMin,
+          type: "whoop-workout" as const,
         };
       });
 
@@ -568,7 +570,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                 return (
                   <DayHeader
                     date={day}
-                    timeZone={timeZone}
                     key={dayKey}
                     whoopSummary={whoopSummaries.get(dayKey)}
                     width={dayColumnWidth}
@@ -788,10 +789,10 @@ function AllDayEventChip({
 
   const { background: backgroundColor, foreground: foregroundColor } =
     resolveGoogleEventColors({
-      colorId: item.event.colorId,
-      palette: normalizedPalette?.event,
       calendarBackgroundColor: calendar?.calendar.backgroundColor,
       calendarForegroundColor: calendar?.calendar.foregroundColor,
+      colorId: item.event.colorId,
+      palette: normalizedPalette?.event,
     });
 
   const endDate =
@@ -799,12 +800,12 @@ function AllDayEventChip({
       ? parseDateOnlyLocal(item.event.end.date)
       : item.date.add({ days: 1 });
   const startZdt = item.date.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
   const endZdt = endDate.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
 
   return (

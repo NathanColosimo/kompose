@@ -29,8 +29,14 @@ export function CommandBar() {
 
   const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
   const handleEscapeKeyDown = useCallback((event: KeyboardEvent) => {
-    // The content owns Escape: nested modes go back; the root closes.
-    event.preventDefault();
+    // Loaded content owns Escape: nested modes go back; the root closes. Until
+    // the lazy chunk arrives, nothing else handles it, so the dialog closes.
+    if (
+      event.target instanceof Element &&
+      event.target.closest("[cmdk-root]")
+    ) {
+      event.preventDefault();
+    }
   }, []);
 
   return (
