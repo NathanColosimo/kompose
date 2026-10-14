@@ -32,6 +32,26 @@ export interface DesktopTaskSelection {
   target: "calendar" | "sidebar";
   taskId: string;
 }
+/** Renderer → main requests, keyed by the bridge method that sends them. */
+export const desktopInvokeChannels = {
+  checkForUpdates: "desktop:check-for-updates",
+  dismissCommandBar: "desktop:dismiss-command-bar",
+  getShortcut: "desktop:get-shortcut",
+  getUpdateState: "desktop:get-update-state",
+  installUpdate: "desktop:install-update",
+  openExternal: "desktop:open-external",
+  openTask: "desktop:open-task",
+  resizeCommandBar: "desktop:resize-command-bar",
+  setShortcut: "desktop:set-shortcut",
+} as const satisfies Partial<Record<keyof DesktopBridge, string>>;
+export type DesktopInvokeMethod = keyof typeof desktopInvokeChannels;
+/** Main → renderer notifications. */
+export const desktopEventChannels = {
+  openTask: "desktop:task-opened",
+  sessionChanged: "desktop:session-changed",
+  updateState: "desktop:update-state",
+  windowFocus: "desktop:window-focus",
+} as const;
 export interface DesktopBridge {
   checkForUpdates: () => Promise<void>;
   dismissCommandBar: () => Promise<void>;

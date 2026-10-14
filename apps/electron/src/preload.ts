@@ -1,38 +1,37 @@
 import { setupRenderer } from "@better-auth/electron/preload";
-import type {
-  DesktopBridge,
-  DesktopTaskSelection,
-  DesktopUpdateState,
+import {
+  type DesktopBridge,
+  desktopEventChannels,
+  desktopInvokeChannels,
 } from "@kompose/desktop";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 
 // Bundled into CommonJS so this preload works with Electron's sandbox enabled.
 setupRenderer();
 function subscribe<T>(channel: string, callback: (value: T) => void) {
-  const listener = (_event: Electron.IpcRendererEvent, value: T) =>
-    callback(value);
+  const listener = (_event: IpcRendererEvent, value: T) => callback(value);
   ipcRenderer.on(channel, listener);
-  return () => ipcRenderer.removeListener(channel, listener);
+  return () => {
+    ipcRenderer.removeListener(channel, listener);
+  };
 }
+const invoke = desktopInvokeChannels;
+const events = desktopEventChannels;
 const desktop: DesktopBridge = {
-  checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
-  dismissCommandBar: () => ipcRenderer.invoke("desktop:dismiss-command-bar"),
-  getShortcut: () => ipcRenderer.invoke("desktop:get-shortcut"),
-  getUpdateState: () => ipcRenderer.invoke("desktop:update-state"),
-  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
-  onOpenTask: (callback) =>
-    subscribe<DesktopTaskSelection>("desktop:open-task", callback),
-  onSessionChanged: (callback) =>
-    subscribe("desktop:session-changed", callback),
-  onUpdateState: (callback) =>
-    subscribe<DesktopUpdateState>("desktop:update-state", callback),
-  onWindowFocus: (callback) =>
-    subscribe<boolean>("desktop:window-focus", callback),
-  openExternal: (url) => ipcRenderer.invoke("desktop:open-external", url),
-  openTask: (selection) => ipcRenderer.invoke("desktop:open-task", selection),
+  checkForUpdates: () => ipcRenderer.invoke(invoke.checkForUpdates),
+  dismissCommandBar: () => ipcRenderer.invoke(invoke.dismissCommandBar),
+  getShortcut: () => ipcRenderer.invoke(invoke.getShortcut),
+  getUpdateState: () => ipcRenderer.invoke(invoke.getUpdateState),
+  installUpdate: () => ipcRenderer.invoke(invoke.installUpdate),
+  onOpenTask: (callback) => subscribe(events.openTask, callback),
+  onSessionChanged: (callback) => subscribe(events.sessionChanged, callback),
+  onUpdateState: (callback) => subscribe(events.updateState, callback),
+  onWindowFocus: (callback) => subscribe(events.windowFocus, callback),
+  openExternal: (url) => ipcRenderer.invoke(invoke.openExternal, url),
+  openTask: (selection) => ipcRenderer.invoke(invoke.openTask, selection),
   platform: process.platform,
   resizeCommandBar: (height) =>
-    ipcRenderer.invoke("desktop:resize-command-bar", height),
-  setShortcut: (id) => ipcRenderer.invoke("desktop:set-shortcut", id),
+    ipcRenderer.invoke(invoke.resizeCommandBar, height),
+  setShortcut: (id) => ipcRenderer.invoke(invoke.setShortcut, id),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);

@@ -62,6 +62,8 @@ function DesktopBridgeBootstrap() {
     if (!isDesktopRuntime()) {
       return;
     }
+    // Enables the Electron drag-region styles in index.css.
+    document.documentElement.dataset.desktopRuntime = "electron";
 
     const handleDocumentClickCapture = async (event: MouseEvent) => {
       if (

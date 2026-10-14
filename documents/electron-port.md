@@ -59,7 +59,8 @@ and external navigation through the system browser.
 
 The command popup is created on first use and released after 60 seconds hidden.
 App-specific IPC covers the window/shortcut/update operations and query refresh
-notifications. The dashboard renderer is shared with the web app.
+notifications. Channel names live in `packages/desktop`, and main validates every
+renderer-supplied argument before acting on it. The dashboard renderer is shared with the web app.
 
 ## Validation
 

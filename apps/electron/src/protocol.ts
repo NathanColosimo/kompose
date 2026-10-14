@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { DESKTOP_ORIGIN } from "@kompose/desktop";
+import { DESKTOP_ORIGIN, type DesktopTaskSelection } from "@kompose/desktop";
 
 export function isTrustedRenderer(url: string, devURL?: string): boolean {
   try {
@@ -95,4 +95,32 @@ export function publicResponseHeaders(headers: Headers): Headers {
   }
   result.set("Cache-Control", "no-store");
   return result;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** IPC payloads come from a renderer, so validate them before main acts on them. */
+export function parseTaskSelection(value: unknown): DesktopTaskSelection {
+  const { date, requestId, sidebarView, target, taskId } = (value ??
+    {}) as Record<string, unknown>;
+  if (
+    typeof requestId !== "string" ||
+    typeof taskId !== "string" ||
+    (target !== "calendar" && target !== "sidebar")
+  ) {
+    throw new Error("Invalid task selection");
+  }
+  if (
+    date !== undefined &&
+    !(typeof date === "string" && ISO_DATE.test(date))
+  ) {
+    throw new Error("Invalid task date");
+  }
+  if (
+    sidebarView !== undefined &&
+    sidebarView !== "inbox" &&
+    sidebarView !== "today"
+  ) {
+    throw new Error("Invalid sidebar view");
+  }
+  return { date, requestId, sidebarView, target, taskId };
 }

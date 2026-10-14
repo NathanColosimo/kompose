@@ -14,7 +14,6 @@ export function DesktopAuth() {
       const timer = authClient.ensureElectronRedirect();
       return () => clearInterval(timer);
     }
-    document.documentElement.dataset.desktopRuntime = "electron";
     const refresh = () => {
       queryClient.clear();
       refetch();

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   externalURL,
   isTrustedRenderer,
+  parseTaskSelection,
   publicResponseHeaders,
   resolveAsset,
   sanitizeSession,
@@ -96,4 +97,25 @@ test("session secrets and transport credential headers never enter the renderer"
   expect(headers.get("set-auth-token")).toBeNull();
   expect(headers.get("content-length")).toBeNull();
   expect(headers.get("content-type")).toBe("text/event-stream");
+});
+
+test("task selections from the renderer are validated before main forwards them", () => {
+  const selection = {
+    date: "2026-10-14",
+    requestId: "request",
+    sidebarView: "today",
+    target: "sidebar",
+    taskId: "task",
+  } as const;
+  expect(parseTaskSelection({ ...selection, extra: true })).toEqual(selection);
+  for (const value of [
+    null,
+    "task",
+    { ...selection, taskId: 1 },
+    { ...selection, target: "window" },
+    { ...selection, date: "tomorrow" },
+    { ...selection, sidebarView: "archive" },
+  ]) {
+    expect(() => parseTaskSelection(value)).toThrow();
+  }
 });

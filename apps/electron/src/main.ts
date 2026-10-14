@@ -5,10 +5,14 @@ import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import {
   DESKTOP_ORIGIN,
+  type DesktopBridge,
   type DesktopCommandBarShortcutPresetId,
+  type DesktopInvokeMethod,
   type DesktopTaskSelection,
   type DesktopUpdateState,
   desktopCommandBarShortcutPresets,
+  desktopEventChannels,
+  desktopInvokeChannels,
   ELECTRON_AUTH_CLIENT_ID,
   ELECTRON_AUTH_SCHEME,
 } from "@kompose/desktop";
@@ -17,24 +21,27 @@ import Conf from "conf";
 import {
   app,
   BrowserWindow,
+  type BrowserWindowConstructorOptions,
   globalShortcut,
   ipcMain,
   Menu,
   net,
   protocol,
   screen,
+  session,
   shell,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import {
   externalURL,
   isTrustedRenderer,
+  parseTaskSelection,
   publicResponseHeaders,
   resolveAsset,
   sanitizeSession,
 } from "./protocol";
 
-const AUTH_SESSION_CHANGE = /\/(electron\/token|sign-out)$/;
+const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
 const serverURL =
   process.env.KOMPOSE_SERVER_URL ??
@@ -44,7 +51,36 @@ const devURL = app.isPackaged ? undefined : process.env.KOMPOSE_RENDERER_URL;
 const assetRoot = app.isPackaged
   ? join(process.resourcesPath, "web")
   : join(here, "../../../web/out");
-const serverOrigin = new URL(serverURL).origin;
+const updatesEnabled =
+  app.isPackaged && existsSync(join(process.resourcesPath, "app-update.yml"));
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  // user-image: is Better Auth's proxied avatar scheme.
+  "img-src 'self' data: blob: https: user-image:",
+  "font-src 'self' data:",
+  `connect-src 'self' ${new URL(serverURL).origin}`,
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-src 'none'",
+].join("; ");
+const COMMAND_BAR = { height: 80, maxHeight: 600, minHeight: 56, width: 480 };
+const AUTH_SESSION_CHANGE = /\/(electron\/token|sign-out)$/;
+const AUTH_PROXY_ROUTES = new Map<string, "GET" | "POST">([
+  ["/get-session", "GET"],
+  ["/list-accounts", "GET"],
+  ["/account-info", "GET"],
+  ["/unlink-account", "POST"],
+  ["/sign-out", "POST"],
+]);
+const RPC_FORWARDED_HEADERS = [
+  "content-type",
+  "accept",
+  "last-event-id",
+  "x-request-start",
+];
+
 app.setName("Kompose Electron");
 // Use a stable Electron profile, separate from the previous desktop app.
 app.setPath("userData", join(app.getPath("appData"), "Kompose Electron"));
@@ -70,12 +106,14 @@ function broadcast(channel: string, payload?: unknown) {
 const authClient = createAuthClient({
   baseURL: serverURL,
   fetchOptions: {
-    onSuccess(context) {
-      if (AUTH_SESSION_CHANGE.test(context.request.url.toString())) {
-        broadcast("desktop:session-changed");
-        if (!context.request.url.toString().endsWith("/sign-out")) {
-          showMain();
-        }
+    onSuccess({ request }) {
+      const url = request.url.toString();
+      if (!AUTH_SESSION_CHANGE.test(url)) {
+        return;
+      }
+      broadcast(desktopEventChannels.sessionChanged);
+      if (url.endsWith("/electron/token")) {
+        showMain();
       }
     },
   },
@@ -89,7 +127,8 @@ const authClient = createAuthClient({
     }),
   ],
 });
-// Register before readiness, as required by Better Auth and Electron.
+// Register before readiness, as required by Better Auth and Electron. This also
+// takes the single-instance lock and handles auth deep links.
 authClient.setupMain({
   bridges: true,
   csp: false,
@@ -109,115 +148,132 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+/** Open http(s)/mailto links in the system browser; anything else is dropped. */
+function openExternal(url: unknown) {
+  try {
+    shell.openExternal(externalURL(url)).catch(() => undefined);
+  } catch {
+    /* Unsupported schemes stay blocked. */
+  }
+}
+
+// Every renderer, including ones we never create directly, stays on the app origin.
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: "deny" };
+  });
+  contents.on("will-navigate", (event, url) => {
+    if (!isTrustedRenderer(url, devURL)) {
+      event.preventDefault();
+      openExternal(url);
+    }
+  });
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+});
+
+function createAppWindow(
+  options: BrowserWindowConstructorOptions,
+  route: string
+) {
+  const window = new BrowserWindow({
+    ...options,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: join(here, "../preload/index.cjs"),
+      sandbox: true,
+    },
+  });
+  window.on("focus", () =>
+    window.webContents.send(desktopEventChannels.windowFocus, true)
+  );
+  window.on("blur", () =>
+    window.webContents.send(desktopEventChannels.windowFocus, false)
+  );
+  window.loadURL(`${devURL ?? DESKTOP_ORIGIN}${route}`);
+  return window;
+}
+
+function createMainWindow() {
+  const window = createAppWindow(
+    {
+      height: 840,
+      minHeight: 480,
+      minWidth: 720,
+      title: "Kompose Electron",
+      width: 1280,
+      ...(isMac ? { titleBarStyle: "hiddenInset" } : {}),
+    },
+    "/dashboard"
+  );
+  window.once("ready-to-show", () => window.show());
+  // macOS keeps the app running when its window closes.
+  window.on("close", (event) => {
+    if (isMac && !quitting) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
+  window.on("closed", () => {
+    mainWindow = null;
+  });
+  window.webContents.on("did-finish-load", () => {
+    if (pendingTask) {
+      window.webContents.send(desktopEventChannels.openTask, pendingTask);
+      pendingTask = null;
+    }
+  });
+  return window;
+}
+
+function createCommandWindow() {
+  const window = createAppWindow(
+    {
+      alwaysOnTop: true,
+      frame: false,
+      height: COMMAND_BAR.height,
+      minHeight: COMMAND_BAR.minHeight,
+      minWidth: COMMAND_BAR.width,
+      resizable: false,
+      skipTaskbar: true,
+      title: "Kompose Command Bar",
+      width: COMMAND_BAR.width,
+      ...(isMac
+        ? {
+            titleBarStyle: "hiddenInset",
+            transparent: true,
+            type: "panel",
+            vibrancy: "hud",
+            visualEffectState: "active",
+          }
+        : {}),
+    },
+    "/desktop/command-bar"
+  );
+  window.once("ready-to-show", () => {
+    window.show();
+    window.focus();
+  });
+  window.on("blur", hideCommandBar);
+  window.on("closed", () => {
+    commandWindow = null;
+  });
+  return window;
+}
+
 function showMain() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createWindow(false);
+  if (!mainWindow) {
+    // Shown on ready-to-show, avoiding a blank frame.
+    mainWindow = createMainWindow();
+    return;
   }
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
   mainWindow.show();
   mainWindow.focus();
-}
-
-function createWindow(command: boolean) {
-  const window = new BrowserWindow({
-    alwaysOnTop: command,
-    frame: !command,
-    height: command ? 80 : 840,
-    minHeight: command ? 56 : 480,
-    minWidth: command ? 480 : 720,
-    resizable: !command,
-    show: false,
-    skipTaskbar: command,
-    title: command ? "Kompose Command Bar" : "Kompose Electron",
-    width: command ? 480 : 1280,
-    ...(process.platform === "darwin"
-      ? {
-          titleBarStyle: "hiddenInset" as const,
-          ...(command
-            ? {
-                transparent: true,
-                type: "panel" as const,
-                vibrancy: "hud" as const,
-                visualEffectState: "active" as const,
-              }
-            : {}),
-        }
-      : {}),
-    webPreferences: {
-      backgroundThrottling: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: join(here, "../preload/index.cjs"),
-      sandbox: true,
-      webSecurity: true,
-    },
-  });
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      shell.openExternal(externalURL(url));
-    } catch {
-      /* Unsupported schemes stay blocked. */
-    }
-    return { action: "deny" };
-  });
-  window.webContents.on("will-navigate", (event, url) => {
-    if (isTrustedRenderer(url, devURL)) {
-      return;
-    }
-    event.preventDefault();
-    try {
-      shell.openExternal(externalURL(url));
-    } catch {
-      /* Never navigate privileged windows away. */
-    }
-  });
-  window.webContents.on("will-attach-webview", (event) =>
-    event.preventDefault()
-  );
-  window.webContents.session.setPermissionRequestHandler(
-    (_contents, _permission, callback) => callback(false)
-  );
-  window.on("focus", () =>
-    window.webContents.send("desktop:window-focus", true)
-  );
-  window.on("blur", () => {
-    window.webContents.send("desktop:window-focus", false);
-    if (command) {
-      hideCommandBar();
-    }
-  });
-  window.on("closed", () => {
-    if (command) {
-      commandWindow = null;
-    } else {
-      mainWindow = null;
-    }
-  });
-  if (!command) {
-    window.on("close", (event) => {
-      if (process.platform === "darwin" && !quitting) {
-        event.preventDefault();
-        window.hide();
-      }
-    });
-    window.webContents.on("did-finish-load", () => {
-      if (pendingTask) {
-        window.webContents.send("desktop:open-task", pendingTask);
-        pendingTask = null;
-      }
-    });
-  }
-  const route = command ? "/desktop/command-bar" : "/dashboard";
-  window.loadURL(`${devURL ?? DESKTOP_ORIGIN}${route}`);
-  window.once("ready-to-show", () => {
-    window.show();
-    if (command) {
-      window.focus();
-    }
-  });
-  return window;
 }
 
 function hideCommandBar() {
@@ -238,13 +294,12 @@ function toggleCommandBar() {
   }
   clearTimeout(commandIdleTimer);
   mainWasFocused = mainWindow?.isFocused() ?? false;
-  if (!commandWindow || commandWindow.isDestroyed()) {
-    commandWindow = createWindow(true);
-  }
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const { x, y, width, height } = display.workArea;
+  commandWindow ??= createCommandWindow();
+  const { x, y, width, height } = screen.getDisplayNearestPoint(
+    screen.getCursorScreenPoint()
+  ).workArea;
   commandWindow.setPosition(
-    Math.round(x + (width - 480) / 2),
+    Math.round(x + (width - COMMAND_BAR.width) / 2),
     Math.round(y + height * 0.25)
   );
   if (!commandWindow.webContents.isLoading()) {
@@ -256,40 +311,48 @@ function dismissCommandBar() {
   hideCommandBar();
   if (mainWasFocused) {
     showMain();
-  } else if (process.platform === "darwin") {
+  } else if (isMac) {
     app.hide();
   }
 }
-function applyShortcut(id: DesktopCommandBarShortcutPresetId) {
+
+function applyShortcut(id: unknown) {
   const preset = desktopCommandBarShortcutPresets.find(
     (entry) => entry.id === id
   );
   if (!preset) {
     throw new Error("Unknown shortcut preset");
   }
-  const previous = desktopCommandBarShortcutPresets.find(
-    (entry) => entry.id === settings.get("shortcut")
-  );
-  if (previous?.id === id && globalShortcut.isRegistered(preset.accelerator)) {
+  if (globalShortcut.isRegistered(preset.accelerator)) {
     return;
   }
   if (!globalShortcut.register(preset.accelerator, toggleCommandBar)) {
     throw new Error("This shortcut is already in use by another app.");
   }
-  if (previous && previous.id !== id) {
-    globalShortcut.unregister(previous.accelerator);
+  // Only this app's registrations are affected; the others are no-ops.
+  for (const other of desktopCommandBarShortcutPresets) {
+    if (other.id !== preset.id) {
+      globalShortcut.unregister(other.accelerator);
+    }
   }
-  settings.set("shortcut", id);
+  settings.set("shortcut", preset.id);
 }
 
-function handle<T>(
-  channel: string,
-  callback: (value: T, window: BrowserWindow) => unknown
+type BridgeResult<K extends DesktopInvokeMethod> = Awaited<
+  ReturnType<DesktopBridge[K]>
+>;
+/** Register a bridge method; its argument is untrusted and must be validated. */
+function handle<K extends DesktopInvokeMethod>(
+  method: K,
+  callback: (
+    value: unknown,
+    window: BrowserWindow
+  ) => BridgeResult<K> | Promise<BridgeResult<K>>
 ) {
-  ipcMain.handle(`desktop:${channel}`, (event, value: T) => {
+  ipcMain.handle(desktopInvokeChannels[method], (event, value: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (
-      !window ||
+      !(window && event.senderFrame) ||
       event.senderFrame !== event.sender.mainFrame ||
       !isTrustedRenderer(event.senderFrame.url, devURL)
     ) {
@@ -299,48 +362,34 @@ function handle<T>(
   });
 }
 
-const allowedAuth = new Map([
-  ["/get-session", "GET"],
-  ["/list-accounts", "GET"],
-  ["/account-info", "GET"],
-  ["/unlink-account", "POST"],
-  ["/sign-out", "POST"],
-]);
-async function proxyAPI(request: Request, url: URL): Promise<Response> {
-  if (url.pathname.startsWith("/api/auth/")) {
-    const path = url.pathname.slice("/api/auth".length);
-    if (allowedAuth.get(path) !== request.method) {
-      return new Response("Not found", { status: 404 });
-    }
-    const result = await authClient.$fetch(path, {
-      method: request.method as "GET" | "POST",
-      query: Object.fromEntries(url.searchParams),
-      ...(request.method === "POST" ? { body: await request.json() } : {}),
-    });
-    return Response.json(
-      path === "/get-session"
-        ? sanitizeSession(result.data)
-        : (result.error ?? result.data),
-      {
-        headers: { "Cache-Control": "no-store" },
-        status: result.error?.status ?? 200,
-      }
-    );
-  }
-  if (!url.pathname.startsWith("/api/rpc/")) {
+async function proxyAuth(request: Request, url: URL): Promise<Response> {
+  const path = url.pathname.slice("/api/auth".length);
+  const method = AUTH_PROXY_ROUTES.get(path);
+  if (!method || method !== request.method) {
     return new Response("Not found", { status: 404 });
   }
+  const result = await authClient.$fetch(path, {
+    method,
+    query: Object.fromEntries(url.searchParams),
+    ...(method === "POST" ? { body: await request.json() } : {}),
+  });
+  return Response.json(
+    path === "/get-session"
+      ? sanitizeSession(result.data)
+      : (result.error ?? result.data),
+    {
+      headers: { "Cache-Control": "no-store" },
+      status: result.error?.status ?? 200,
+    }
+  );
+}
+async function proxyRPC(request: Request, url: URL): Promise<Response> {
   // The destination is fixed. Renderer-supplied cookies, auth, and origins are ignored.
   const headers = new Headers({
     cookie: authClient.getCookie(),
     origin: `${ELECTRON_AUTH_SCHEME}:/`,
   });
-  for (const name of [
-    "content-type",
-    "accept",
-    "last-event-id",
-    "x-request-start",
-  ]) {
+  for (const name of RPC_FORWARDED_HEADERS) {
     const value = request.headers.get(name);
     if (value) {
       headers.set(name, value);
@@ -348,15 +397,14 @@ async function proxyAPI(request: Request, url: URL): Promise<Response> {
   }
   // This authenticated request belongs to main, not Chromium's renderer network
   // context. Node fetch preserves the plugin cookie without a browser CORS preflight.
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const response = await fetch(`${serverURL}${url.pathname}${url.search}`, {
+    body: hasBody ? await request.arrayBuffer() : undefined,
     credentials: "omit",
     headers,
     method: request.method,
     redirect: "error",
     signal: request.signal,
-    ...(request.method !== "GET" && request.method !== "HEAD"
-      ? { body: await request.arrayBuffer() }
-      : {}),
   });
   // Forward oRPC subscriptions without buffering.
   return new Response(response.body, {
@@ -364,66 +412,144 @@ async function proxyAPI(request: Request, url: URL): Promise<Response> {
     status: response.status,
   });
 }
+async function serveAsset(url: URL): Promise<Response> {
+  const path = await resolveAsset(assetRoot, url);
+  if (!path) {
+    return new Response("Not found", { status: 404 });
+  }
+  const response = await net.fetch(pathToFileURL(path).toString());
+  response.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+  return response;
+}
+async function handleAppRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.host !== "app") {
+    return new Response("Not found", { status: 404 });
+  }
+  if (url.pathname.startsWith("/api/auth/")) {
+    return withDevCors(await proxyAuth(request, url));
+  }
+  if (url.pathname.startsWith("/api/rpc/")) {
+    return withDevCors(await proxyRPC(request, url));
+  }
+  if (url.pathname.startsWith("/api/")) {
+    return new Response("Not found", { status: 404 });
+  }
+  return serveAsset(url);
+}
+/** The hot-reload renderer runs on its own origin; packaged builds never need CORS. */
+function withDevCors(response: Response) {
+  if (devURL) {
+    response.headers.set("Access-Control-Allow-Origin", new URL(devURL).origin);
+  }
+  return response;
+}
 
 function setUpdateState(state: DesktopUpdateState) {
   updateState = state;
-  broadcast("desktop:update-state", state);
+  broadcast(desktopEventChannels.updateState, state);
 }
-async function checkUpdates() {
-  if (
-    !(
-      app.isPackaged &&
-      existsSync(join(process.resourcesPath, "app-update.yml"))
-    )
-  ) {
+async function checkForUpdates() {
+  if (!updatesEnabled) {
     throw new Error("This build does not include automatic updates.");
   }
-  if (updateState.status !== "idle") {
-    return;
+  if (updateState.status === "idle") {
+    await autoUpdater.checkForUpdates();
   }
-  await autoUpdater.checkForUpdates();
+}
+function setUpAutoUpdates() {
+  autoUpdater.channel = "electron";
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.on("checking-for-update", () =>
+    setUpdateState({ status: "checking" })
+  );
+  autoUpdater.on("update-not-available", () =>
+    setUpdateState({ status: "idle" })
+  );
+  autoUpdater.on("update-available", (info) =>
+    setUpdateState({ status: "downloading", version: info.version })
+  );
+  autoUpdater.on("download-progress", (progress) =>
+    setUpdateState({ ...updateState, percent: progress.percent })
+  );
+  autoUpdater.on("update-downloaded", (info) =>
+    setUpdateState({ status: "ready", version: info.version })
+  );
+  autoUpdater.on("error", (error) =>
+    setUpdateState({ error: error.message, status: "idle" })
+  );
+  if (updatesEnabled) {
+    // Failures are reported through the "error" event above.
+    const backgroundCheck = () => checkForUpdates().catch(() => undefined);
+    backgroundCheck();
+    setInterval(backgroundCheck, 30 * 60_000).unref();
+  }
 }
 
-async function backgroundUpdateCheck() {
-  try {
-    await checkUpdates();
-  } catch (error) {
-    setUpdateState({
-      error: error instanceof Error ? error.message : "Update check failed.",
-      status: "idle",
-    });
-  }
+function registerBridge() {
+  handle("openExternal", (url) => openExternal(url));
+  handle("getShortcut", () => settings.get("shortcut"));
+  handle("setShortcut", (id) => applyShortcut(id));
+  handle("dismissCommandBar", () => dismissCommandBar());
+  handle("resizeCommandBar", (height, window) => {
+    if (window !== commandWindow || typeof height !== "number") {
+      return;
+    }
+    const clamped = Math.min(
+      COMMAND_BAR.maxHeight,
+      Math.max(COMMAND_BAR.minHeight, height)
+    );
+    if (Number.isFinite(clamped)) {
+      window.setSize(COMMAND_BAR.width, Math.round(clamped));
+    }
+  });
+  handle("openTask", (value) => {
+    const selection = parseTaskSelection(value);
+    hideCommandBar();
+    showMain();
+    if (mainWindow?.webContents.isLoading()) {
+      pendingTask = selection;
+    } else {
+      mainWindow?.webContents.send(desktopEventChannels.openTask, selection);
+    }
+  });
+  handle("getUpdateState", () => updateState);
+  handle("checkForUpdates", () => checkForUpdates());
+  handle("installUpdate", () => {
+    if (updateState.status !== "ready") {
+      return;
+    }
+    setUpdateState({ ...updateState, status: "installing" });
+    quitting = true;
+    autoUpdater.quitAndInstall();
+  });
+}
+
+function setUpMenu() {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(isMac ? [{ role: "appMenu" as const }] : []),
+      {
+        label: "File",
+        submenu: [
+          { click: toggleCommandBar, label: "Open Command Bar" },
+          { type: "separator" },
+          { role: "close" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ])
+  );
 }
 
 app
   .whenReady()
   .then(() => {
     protocol.handle("kompose-app", async (request) => {
-      const url = new URL(request.url);
-      if (url.host !== "app") {
-        return new Response("Not found", { status: 404 });
-      }
       try {
-        if (url.pathname.startsWith("/api/")) {
-          const response = await proxyAPI(request, url);
-          if (devURL) {
-            response.headers.set(
-              "Access-Control-Allow-Origin",
-              new URL(devURL).origin
-            );
-          }
-          return response;
-        }
-        const path = await resolveAsset(assetRoot, url);
-        if (!path) {
-          return new Response("Not found", { status: 404 });
-        }
-        const response = await net.fetch(pathToFileURL(path).toString());
-        response.headers.set(
-          "Content-Security-Policy",
-          `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: user-image:; font-src 'self' data:; connect-src 'self' ${serverOrigin}; object-src 'none'; base-uri 'self'; frame-src 'none'`
-        );
-        return response;
+        return await handleAppRequest(request);
       } catch (error) {
         console.error(
           "Desktop request failed",
@@ -435,99 +561,20 @@ app
         );
       }
     });
-    handle<string>("open-external", (url) =>
-      shell.openExternal(externalURL(url))
+    session.defaultSession.setPermissionRequestHandler(
+      (_contents, _permission, callback) => callback(false)
     );
-    handle("get-shortcut", () => settings.get("shortcut"));
-    handle<DesktopCommandBarShortcutPresetId>("set-shortcut", (id) =>
-      applyShortcut(id)
-    );
-    handle("dismiss-command-bar", () => dismissCommandBar());
-    handle<number>("resize-command-bar", (height, window) => {
-      if (window !== commandWindow || !Number.isFinite(height)) {
-        return;
-      }
-      window.setSize(480, Math.round(Math.min(600, Math.max(56, height))));
-    });
-    handle<DesktopTaskSelection>("open-task", (selection) => {
-      if (
-        !selection ||
-        typeof selection.taskId !== "string" ||
-        !["calendar", "sidebar"].includes(selection.target)
-      ) {
-        throw new Error("Invalid task selection");
-      }
-      hideCommandBar();
-      showMain();
-      if (mainWindow?.webContents.isLoading()) {
-        pendingTask = selection;
-      } else {
-        mainWindow?.webContents.send("desktop:open-task", selection);
-      }
-    });
-    handle("update-state", () => updateState);
-    handle("check-updates", () => checkUpdates());
-    handle("install-update", () => {
-      if (updateState.status !== "ready") {
-        return;
-      }
-      setUpdateState({ ...updateState, status: "installing" });
-      quitting = true;
-      autoUpdater.quitAndInstall();
-    });
-    autoUpdater.channel = "electron";
-    autoUpdater.allowDowngrade = false;
-    autoUpdater.on("checking-for-update", () =>
-      setUpdateState({ status: "checking" })
-    );
-    autoUpdater.on("update-not-available", () =>
-      setUpdateState({ status: "idle" })
-    );
-    autoUpdater.on("update-available", (info) =>
-      setUpdateState({ status: "downloading", version: info.version })
-    );
-    autoUpdater.on("download-progress", (progress) =>
-      setUpdateState({ ...updateState, percent: progress.percent })
-    );
-    autoUpdater.on("update-downloaded", (info) =>
-      setUpdateState({ status: "ready", version: info.version })
-    );
-    autoUpdater.on("error", (error) =>
-      setUpdateState({ error: error.message, status: "idle" })
-    );
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        ...(process.platform === "darwin"
-          ? [{ role: "appMenu" as const }]
-          : []),
-        {
-          label: "File",
-          submenu: [
-            { label: "Open Command Bar", click: toggleCommandBar },
-            { type: "separator" },
-            { role: "close" },
-          ],
-        },
-        { role: "editMenu" },
-        { role: "viewMenu" },
-        { role: "windowMenu" },
-      ])
-    );
+    registerBridge();
+    setUpMenu();
     showMain();
     try {
       applyShortcut(settings.get("shortcut"));
     } catch (error) {
       console.warn(String(error));
     }
-    if (
-      app.isPackaged &&
-      existsSync(join(process.resourcesPath, "app-update.yml"))
-    ) {
-      backgroundUpdateCheck();
-      setInterval(backgroundUpdateCheck, 30 * 60_000).unref();
-    }
+    setUpAutoUpdates();
   })
-  .catch((error) => {
+  .catch((error: unknown) => {
     console.error(error);
     app.exit(1);
   });
@@ -538,7 +585,7 @@ app.on("before-quit", () => {
 });
 app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (!isMac) {
     app.quit();
   }
 });

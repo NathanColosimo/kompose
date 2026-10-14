@@ -45,7 +45,7 @@ export default function SettingsPageClient() {
   const [linkingProvider, setLinkingProvider] = useState<
     "google" | "whoop" | null
   >(null);
-  const [isDesktop, setIsDesktopRuntime] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(
     null
   );
@@ -63,10 +63,15 @@ export default function SettingsPageClient() {
   });
 
   useMountEffect(() => {
-    setIsDesktopRuntime(isDesktopRuntime());
-    if (!isDesktopRuntime()) return;
+    setIsDesktop(isDesktopRuntime());
+    if (!isDesktopRuntime()) {
+      return;
+    }
+    // Accounts are linked in the system browser; refresh when the user returns.
     return desktopBridge().onWindowFocus((focused) => {
-      if (!focused) return;
+      if (!focused) {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
       queryClient.invalidateQueries({
         queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
@@ -207,6 +212,12 @@ export default function SettingsPageClient() {
     }
   };
 
+  let googleLinkButtonLabel = isDesktop
+    ? "Link Google in browser"
+    : "Link another Google account";
+  if (linkingProvider === "google") {
+    googleLinkButtonLabel = "Linking...";
+  }
   let whoopLinkButtonLabel = isDesktop
     ? "Link WHOOP in browser"
     : "Link WHOOP account";
@@ -258,11 +269,7 @@ export default function SettingsPageClient() {
                 disabled={linkingProvider !== null}
                 onClick={handleLinkAnotherGoogleAccount}
               >
-                {linkingProvider === "google"
-                  ? "Linking..."
-                  : isDesktop
-                    ? "Link Google in browser"
-                    : "Link another Google account"}
+                {googleLinkButtonLabel}
               </Button>
             </div>
           </CardHeader>
