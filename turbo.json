@@ -72,10 +72,6 @@
     "package": {
       "dependsOn": ["build"],
       "cache": false
-    },
-    "dist": {
-      "dependsOn": ["build"],
-      "cache": false
     }
   }
 }

@@ -100,3 +100,5 @@ kompose/
 - `bun run db:studio`: Open database studio UI
 - `bun run dev:desktop`: Start the Electron desktop app
 - `bun run build:desktop`: Build the Electron shell and renderer
+- `bun run package:desktop`: Package an unsigned local desktop app
+- `bun run submit:prod:desktop`: Sign, notarize, and publish a desktop release (see `documents/electron-port.md`)

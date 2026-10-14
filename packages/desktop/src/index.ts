@@ -1,5 +1,5 @@
 /** Shared, serializable contract for the sandboxed desktop renderer. */
-export const ELECTRON_AUTH_SCHEME = "com.nathancolosimo.kompose.electron";
+export const ELECTRON_AUTH_SCHEME = "com.nathancolosimo.kompose";
 export const ELECTRON_AUTH_CLIENT_ID = "kompose-electron";
 export const DESKTOP_ORIGIN = "kompose-app://app";
 export const DESKTOP_COMMAND_BAR_MAX_HEIGHT = 520;

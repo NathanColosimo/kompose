@@ -28,11 +28,57 @@ files and incremental cache are separate
 from the web build, so it can run alongside `next dev` or the normal web build.
 Successful exports replace `apps/web/out`; failed builds keep the previous export.
 
-`bun run package:desktop` creates an unpacked application. For unsigned local macOS
-packaging, use `cd apps/electron && bunx electron-builder --dir --publish never
--c.mac.identity=null -c.mac.notarize=false` (one command). Release builds require
-signing/notarization credentials. The Electron app has its own application ID,
-auth profile, and update channel; it does not overwrite the previous app's session.
+`bun run package:desktop` creates an unsigned, unpacked Apple Silicon app in
+`apps/electron/release/mac-arm64` for local testing. Development runs use a
+separate `Kompose Dev` profile, so they never share a session with a release.
+
+## Releases
+
+Releases ship as **Kompose** with the Tauri app's bundle ID
+(`com.nathancolosimo.kompose`): installing the DMG replaces the Tauri app in
+`/Applications`. Users sign in once, because the Electron auth profile is new.
+Existing Tauri installs do not auto-update to Electron; they need the new DMG.
+Builds are Apple Silicon (arm64) only.
+
+Policy:
+
+- Releases are built on your Apple Silicon Mac from a clean `main` that matches
+  `origin/main`, never from CI.
+- Every release bumps `version` in `apps/electron/package.json`; tags are
+  `v<version>` and continue the Tauri numbering (the last Tauri release is
+  `v0.1.121`).
+- A release publishes immediately and becomes GitHub's **Latest** release.
+  Installed apps poll it every 30 minutes (electron-updater, `latest-mac.yml`),
+  so a published release reaches every user. Downgrades are disabled.
+
+Setup (once):
+
+1. Keep the `Developer ID Application: Nathan Colosimo (B8R99NL6HM)`
+   certificate in your login keychain.
+2. Copy `apps/electron/.env.release.example` to `.env.release`. The variables
+   from the old `apps/web/.tauri.env` map as follows:
+
+   | Tauri (`.tauri.env`)                  | Electron (`.env.release`)    |
+   | ------------------------------------- | ---------------------------- |
+   | `APPLE_API_KEY_PATH`                  | `APPLE_API_KEY` (`.p8` path) |
+   | `APPLE_API_KEY` (key ID)              | `APPLE_API_KEY_ID`           |
+   | `APPLE_API_ISSUER`                    | `APPLE_API_ISSUER`           |
+   | `NEXT_PUBLIC_WEB_URL`                 | `KOMPOSE_RELEASE_SERVER_URL` |
+   | `NEXT_PUBLIC_DEPLOYMENT_ENV`          | always `production`          |
+   | `NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME`| removed                      |
+   | `TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`| removed (macOS code signing) |
+
+3. `gh auth login` with push access to `NathanColosimo/kompose`.
+
+Release: bump the version, merge to `main`, deploy the web server first (the
+desktop app needs its auth plugin), then run `bun run submit:prod:desktop`. The
+script checks everything before building; it builds the renderer and main
+process against `KOMPOSE_RELEASE_SERVER_URL`. It then signs, notarizes, and
+staples the app, verifies it with `codesign`, `stapler`, and Gatekeeper, and
+only then pushes the tag and creates the release. The release uploads the DMG,
+the update zip and its blockmap, and `latest-mac.yml`. If the upload fails after the tag is
+pushed, delete the partial release and tag (`gh release delete vX --cleanup-tag`)
+and rerun.
 
 ## Authentication
 

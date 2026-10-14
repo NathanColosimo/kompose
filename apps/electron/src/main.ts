@@ -94,9 +94,12 @@ const RPC_FORWARDED_HEADERS = [
   "x-request-start",
 ];
 
-app.setName("Kompose Electron");
-// Use a stable Electron profile, separate from the previous desktop app.
-app.setPath("userData", join(app.getPath("appData"), "Kompose Electron"));
+app.setName("Kompose");
+// Development builds keep their own profile so they never touch release sessions.
+app.setPath(
+  "userData",
+  join(app.getPath("appData"), app.isPackaged ? "Kompose" : "Kompose Dev")
+);
 
 let mainWindow: BrowserWindow | null = null;
 let commandWindow: BrowserWindow | null = null;
@@ -238,7 +241,7 @@ function createMainWindow() {
       // Small displays may be below the usual minimum.
       minHeight: Math.min(MAIN_WINDOW_MINIMUM.height, workArea.height),
       minWidth: Math.min(MAIN_WINDOW_MINIMUM.width, workArea.width),
-      title: "Kompose Electron",
+      title: "Kompose",
       ...(isMac ? { titleBarStyle: "hiddenInset" } : {}),
     },
     "/dashboard"
@@ -567,7 +570,6 @@ async function checkForUpdates() {
   }
 }
 function setUpAutoUpdates() {
-  autoUpdater.channel = "electron";
   autoUpdater.allowDowngrade = false;
   autoUpdater.on("checking-for-update", () =>
     setUpdateState({ status: "checking" })
