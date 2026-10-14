@@ -1,14 +1,14 @@
 {
   "name": "@kompose/electron",
-  "version": "0.1.121",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "electron-vite build",
     "dev": "electron-vite dev",
-    "dist": "electron-builder",
-    "package": "electron-builder --dir",
+    "package": "electron-builder --mac --arm64 --dir -c.mac.identity=null -c.mac.notarize=false",
+    "release": "bash ./scripts/release.sh",
     "test": "bun test src/*.test.ts",
     "type-check": "tsc --noEmit"
   },

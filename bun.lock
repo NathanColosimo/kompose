@@ -16,7 +16,7 @@
     },
     "apps/electron": {
       "name": "@kompose/electron",
-      "version": "0.1.121",
+      "version": "0.2.0",
       "dependencies": {
         "@better-auth/electron": "1.7.7",
         "@kompose/desktop": "workspace:*",
