@@ -51,6 +51,7 @@ function CommandDialog({
   showCloseButton = false,
   size = "md",
   overlayClassName,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
@@ -59,6 +60,7 @@ function CommandDialog({
   showCloseButton?: boolean;
   size?: CommandSize;
   overlayClassName?: string;
+  onEscapeKeyDown?: React.ComponentProps<typeof DialogContent>["onEscapeKeyDown"];
 }) {
   const isLarge = size === "lg";
 
@@ -74,6 +76,7 @@ function CommandDialog({
           isLarge && "sm:max-w-md!",
           className
         )}
+        onEscapeKeyDown={onEscapeKeyDown}
         overlayClassName={overlayClassName}
         showCloseButton={showCloseButton}
       >

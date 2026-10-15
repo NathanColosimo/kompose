@@ -5,7 +5,7 @@ import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig } from "../config";
 import { getGoogleColorsQueryKey } from "../google-calendar-query-keys";
 
-const TWENTY_MINUTES_MS = 20 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const PASTEL_MAX_SATURATION = 0.55;
 const PASTEL_MIN_LIGHTNESS = 0.78;
@@ -18,46 +18,55 @@ const googleColorsAtomFamily = atomFamily((accountId: string) =>
     const { orpc } = getStateConfig(get);
 
     return {
-      queryFn: async () =>
-        await orpc.googleCal.colors.list({
-          accountId,
-        }),
+      // Palettes change rarely; keep them through unmounted calendar views.
+      gcTime: ONE_DAY_MS,
+      queryFn: () => orpc.googleCal.colors.list({ accountId }),
       queryKey: getGoogleColorsQueryKey(accountId),
-      staleTime: TWENTY_MINUTES_MS,
+      staleTime: ONE_DAY_MS,
     };
   })
 );
+
+// Query state updates recompute the derived atom; reuse the normalized palette
+// for the same data so consumers keep stable references.
+const normalizedPalettes = new WeakMap<Colors, Colors>();
+
+function normalizeGoogleColors(data: Colors): Colors {
+  const cached = normalizedPalettes.get(data);
+  if (cached) {
+    return cached;
+  }
+
+  const normalizeRecord = (
+    record?: Record<string, { background?: string; foreground?: string }>
+  ) => {
+    if (!record) {
+      return;
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([id, color]) => [
+        id,
+        {
+          background: pastelizeColor(color.background),
+          foreground: color.foreground ?? "#1d1d1d",
+        },
+      ])
+    );
+  };
+  const normalized: Colors = {
+    ...data,
+    calendar: normalizeRecord(data.calendar),
+    event: normalizeRecord(data.event),
+  };
+  normalizedPalettes.set(data, normalized);
+  return normalized;
+}
 
 export const normalizedGoogleColorsAtomFamily = atomFamily(
   (accountId: string) =>
     atom((get) => {
       const { data } = get(googleColorsAtomFamily(accountId));
-      if (!data) {
-        return data;
-      }
-
-      const normalizeRecord = (
-        record?: Record<string, { background?: string; foreground?: string }>
-      ) => {
-        if (!record) {
-          return record;
-        }
-        const next: typeof record = {};
-        for (const [key, value] of Object.entries(record)) {
-          next[key] = {
-            background: pastelizeColor(value.background),
-            foreground: value.foreground ?? "#1d1d1d",
-          };
-        }
-        return next;
-      };
-
-      const normalized: Colors = {
-        ...data,
-        calendar: normalizeRecord(data.calendar),
-        event: normalizeRecord(data.event),
-      };
-      return normalized;
+      return data ? normalizeGoogleColors(data) : data;
     })
 );
 

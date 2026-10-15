@@ -33,6 +33,7 @@ const desktop: DesktopBridge = {
   openTask: (selection) => invoke("openTask", selection),
   resizeCommandBar: (height) => invoke("resizeCommandBar", height),
   setShortcut: (id) => invoke("setShortcut", id),
+  showMainWindow: () => invoke("showMainWindow"),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);
 // Enables the Electron drag-region styles in the web app's index.css.

@@ -1,6 +1,7 @@
 /** Contract between the Electron main process and the hosted web app. */
 export const ELECTRON_AUTH_SCHEME = "com.nathancolosimo.kompose";
 export const ELECTRON_AUTH_CLIENT_ID = "kompose-electron";
+export const DESKTOP_COMMAND_BAR_MAX_HEIGHT = 520;
 export const desktopCommandBarShortcutPresets = [
   {
     accelerator: "CommandOrControl+Shift+K",
@@ -37,6 +38,7 @@ export interface DesktopBridge {
   openTask: (selection: DesktopTaskSelection) => Promise<void>;
   resizeCommandBar: (height: number) => Promise<void>;
   setShortcut: (id: DesktopCommandBarShortcutPresetId) => Promise<void>;
+  showMainWindow: () => Promise<void>;
 }
 export type DesktopInvokeMethod = {
   [K in keyof DesktopBridge]: K extends `on${string}` ? never : K;
