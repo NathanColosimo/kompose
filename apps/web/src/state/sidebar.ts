@@ -85,7 +85,7 @@ function getCalendarDayCapacity(calendarRegionWidthPx: number) {
  * Compute calendar/day capacity from a viewport width budget.
  * The result drives day clamping and docked-vs-overlay right sidebar behavior.
  */
-export function computeDashboardResponsiveLayout(args: {
+function computeDashboardResponsiveLayout(args: {
   leftSidebarOpen: boolean;
   rightSidebarDockRequested: boolean;
   viewportWidth: number;

@@ -136,18 +136,16 @@ export default function DesktopCommandBarClient() {
           size="lg"
         />
       ) : (
-        <div className="rounded-xl border bg-popover p-4 text-popover-foreground">
+        <div className="rounded-xl border bg-popover p-4 text-popover-foreground text-sm">
           {view === "feedback" ? (
-            <div className="text-sm">
-              <SessionFeedback
-                error={Boolean(sessionError)}
-                onRetry={refetchSession}
-                retrying={isRefetching}
-              />
-            </div>
+            <SessionFeedback
+              error={Boolean(sessionError)}
+              onRetry={refetchSession}
+              retrying={isRefetching}
+            />
           ) : (
             <>
-              <p className="text-sm">Sign in to use quick actions.</p>
+              <p>Sign in to use quick actions.</p>
               <Button className="mt-3" onClick={handleShowMainWindow}>
                 Open Kompose
               </Button>

@@ -5,7 +5,6 @@ import { useAtomValue } from "jotai";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { PIXELS_PER_HOUR } from "../constants";
-import { currentTimePosition } from "./current-time-position";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
@@ -67,20 +66,18 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <div className="pointer-events-none absolute inset-0">{children}</div>
-      <CurrentTimeIndicator date={date} timeZone={timeZone} />
+      <CurrentTimeIndicator date={date} />
     </div>
   );
 });
 
-function CurrentTimeIndicator({
-  date,
-  timeZone,
-}: Pick<DayColumnProps, "date" | "timeZone">) {
+/** The now line, in the displayed time zone; it moves columns at midnight. */
+function CurrentTimeIndicator({ date }: { date: Temporal.PlainDate }) {
   const now = useAtomValue(nowZonedDateTimeAtom);
-  const topPosition = currentTimePosition(date, timeZone, now, PIXELS_PER_HOUR);
-  if (topPosition === null) {
+  if (!now.toPlainDate().equals(date)) {
     return null;
   }
+  const topPosition = (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 
   return (
     <div

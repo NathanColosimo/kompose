@@ -105,35 +105,7 @@ are denied.
 
 The command popup is created on first use and released after 60 seconds hidden.
 It is available from the global shortcut and File → Open Command Bar.
-The main-process settings store remembers the main window's normal bounds and
-maximized state (saved after movement/resizing and on close) and where the user
-last dragged the popup. Restoring clamps bounds to an available display's work
-area. The popup opens on the display under the cursor, at its remembered spot
-when that spot is on this display. Its height follows its content; growth near
-the bottom edge shifts it up temporarily, and it returns to its anchor when it
-shrinks.
-
-## UI review checklist
-
-- Google palettes stay cached for 24 hours, including while a calendar is unmounted;
-  normalization reuses the same objects instead of rebuilding colors on query updates.
-- The red now line uses the displayed timezone, changes columns at midnight, and
-  refreshes on returning to the app. The highlighted date follows the same clock.
-- Calendar visibility preferences survive failed account reads and signed-out states.
-- Responsive day capacity uses the actual 64px gutter and clamped sidebar width.
-  The time labels sync to an already-scrolled grid when they mount.
-- The toolbar wraps at the 720px minimum window width without clipping controls.
-  Toolbar buttons and arrow-key navigation use the same rendered day count, so
-  responsive layouts do not skip dates. Period buttons have accessible labels.
-- Today and the `T` shortcut return to today's date and immediately scroll the
-  current-time line into view, including when today is already selected. The
-  scroll request is consumed once, so later manual scrolling is left alone.
-- Failed session reads show a connection error and Retry in the dashboard, login
-  page, and popup. They no longer masquerade as a signed-out session.
-- Escape in Search/Create returns to the command bar root; Escape at the root closes it.
-- The desktop popup starts open without a mount-time dismiss race, resizes after
-  session loading, and shows a useful sign-in state instead of an empty window.
-- Selecting a task in the desktop popup returns the main window to the dashboard,
-  including when it was showing Settings.
-- The popup has no macOS traffic lights. Its empty top area drags the native
-  window; the search field and scrollable results remain interactive.
+The main window reopens where it was last closed, and the popup reopens where it
+was last dragged when that spot is on the display under the cursor. Both are
+clamped into the display's work area. The popup's height follows its content;
+growth near the bottom edge shifts it up until it shrinks again.

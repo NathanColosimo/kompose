@@ -7,19 +7,6 @@ import { getGoogleColorsQueryKey } from "../google-calendar-query-keys";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Palette definitions change rarely; retain them through unmounted calendar views. */
-export function googleColorsQueryOptions(
-  accountId: string,
-  load: (input: { accountId: string }) => Promise<Colors>
-) {
-  return {
-    gcTime: ONE_DAY_MS,
-    queryFn: () => load({ accountId }),
-    queryKey: getGoogleColorsQueryKey(accountId),
-    staleTime: ONE_DAY_MS,
-  };
-}
-
 const PASTEL_MAX_SATURATION = 0.55;
 const PASTEL_MIN_LIGHTNESS = 0.78;
 
@@ -30,13 +17,21 @@ const googleColorsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<Colors>((get) => {
     const { orpc } = getStateConfig(get);
 
-    return googleColorsQueryOptions(accountId, orpc.googleCal.colors.list);
+    return {
+      // Palettes change rarely; keep them through unmounted calendar views.
+      gcTime: ONE_DAY_MS,
+      queryFn: () => orpc.googleCal.colors.list({ accountId }),
+      queryKey: getGoogleColorsQueryKey(accountId),
+      staleTime: ONE_DAY_MS,
+    };
   })
 );
 
+// Query state updates recompute the derived atom; reuse the normalized palette
+// for the same data so consumers keep stable references.
 const normalizedPalettes = new WeakMap<Colors, Colors>();
 
-export function normalizeGoogleColors(data: Colors): Colors {
+function normalizeGoogleColors(data: Colors): Colors {
   const cached = normalizedPalettes.get(data);
   if (cached) {
     return cached;
