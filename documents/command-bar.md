@@ -66,7 +66,7 @@ The task input parser extracts all URLs from the title portion of the input into
   vibrancy treatment so the dedicated popup keeps soft corners instead of a
   square frameless shell.
 - The popup auto-sizes to exactly fit the dialog content via a
-  `ResizeObserver` (up to a max height of 600px).
+  `ResizeObserver` (up to a max height of 520px).
 - A global shortcut toggles the popup:
   - First press shows and focuses only the popup window.
   - Second press hides the popup.

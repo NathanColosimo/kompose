@@ -3,14 +3,14 @@
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import {
   currentDateAtom,
-  timezoneAtom,
   visibleDaysCountAtom,
 } from "@kompose/state/atoms/current-date";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
-import { todayPlainDate } from "@/lib/temporal-utils";
+import { goToTodayAtom } from "@/state/calendar-navigation";
 import {
   dashboardResponsiveLayoutAtom,
+  effectiveVisibleDaysCountAtom,
   sidebarLeftOpenAtom,
   sidebarLeftViewSelectionAtom,
   sidebarRightOpenAtom,
@@ -40,17 +40,18 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  * Note: All hotkeys are disabled when focus is on form inputs.
  */
 export function CalendarHotkeys() {
-  const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
-  const [visibleDaysCount, setVisibleDaysCount] = useAtom(visibleDaysCountAtom);
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
   const [sidebarRightOpen, setSidebarRightOpen] = useAtom(sidebarRightOpenAtom);
   const [sidebarRightOverlayOpen, setSidebarRightOverlayOpen] = useAtom(
     sidebarRightOverlayOpenAtom
   );
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const setCurrentDate = useSetAtom(currentDateAtom);
+  const setVisibleDaysCount = useSetAtom(visibleDaysCountAtom);
+  const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
-  const timeZone = useAtomValue(timezoneAtom);
+  const goToToday = useSetAtom(goToTodayAtom);
 
   // "meta+k" (cmd+k on Mac) to open command bar
   useHotkeys(
@@ -79,11 +80,11 @@ export function CalendarHotkeys() {
   useHotkeys(
     "t",
     () => {
-      setCurrentDate(todayPlainDate(timeZone));
+      goToToday();
       setSidebarLeftViewSelection({ id: "today", type: "base" });
     },
     hotkeyOptions,
-    [timeZone, setCurrentDate, setSidebarLeftViewSelection]
+    [goToToday, setSidebarLeftViewSelection]
   );
 
   // "i" to focus the Inbox task view.
@@ -148,31 +149,31 @@ export function CalendarHotkeys() {
   // Arrow keys to navigate by visible days count
   useHotkeys(
     "ArrowLeft",
-    () => setCurrentDate(currentDate.subtract({ days: visibleDaysCount })),
+    () => setCurrentDate((date) => date.subtract({ days: navigationStep })),
     hotkeyOptions,
-    [currentDate, visibleDaysCount, setCurrentDate]
+    [navigationStep, setCurrentDate]
   );
 
   useHotkeys(
     "ArrowRight",
-    () => setCurrentDate(currentDate.add({ days: visibleDaysCount })),
+    () => setCurrentDate((date) => date.add({ days: navigationStep })),
     hotkeyOptions,
-    [currentDate, visibleDaysCount, setCurrentDate]
+    [navigationStep, setCurrentDate]
   );
 
   // Shift+Arrow keys to navigate by exactly 1 day
   useHotkeys(
     "shift+ArrowLeft",
-    () => setCurrentDate(currentDate.subtract({ days: 1 })),
+    () => setCurrentDate((date) => date.subtract({ days: 1 })),
     hotkeyOptions,
-    [currentDate, setCurrentDate]
+    [setCurrentDate]
   );
 
   useHotkeys(
     "shift+ArrowRight",
-    () => setCurrentDate(currentDate.add({ days: 1 })),
+    () => setCurrentDate((date) => date.add({ days: 1 })),
     hotkeyOptions,
-    [currentDate, setCurrentDate]
+    [setCurrentDate]
   );
 
   // This component only registers hotkeys, renders nothing

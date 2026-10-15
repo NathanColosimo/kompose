@@ -16,7 +16,9 @@ bridge (`window.komposeDesktop`) that the web app uses for them.
 Start the web app as usual (`bun run portless:proxy`, `bun run db:start`,
 `bun run dev:web`), then `bun run dev:desktop`. Development windows load
 `https://local.kompose.dev` with hot reload; set `KOMPOSE_SERVER_URL` to use
-another server. Packaged builds always load `https://kompose.dev`.
+another server. Packaged builds always load `https://kompose.dev`. Sign-in's
+token exchange runs in main's Node runtime, so for local HTTPS launch with
+`NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem"` to trust the development CA.
 
 `bun run package:desktop` creates an unsigned, unpacked Apple Silicon app in
 `apps/electron/release/mac-arm64` for local testing. Development runs use a
@@ -102,3 +104,36 @@ and every new window, opens in the system browser instead. Permission requests
 are denied.
 
 The command popup is created on first use and released after 60 seconds hidden.
+It is available from the global shortcut and File → Open Command Bar.
+The main-process settings store remembers the main window's normal bounds and
+maximized state (saved after movement/resizing and on close) and where the user
+last dragged the popup. Restoring clamps bounds to an available display's work
+area. The popup opens on the display under the cursor, at its remembered spot
+when that spot is on this display. Its height follows its content; growth near
+the bottom edge shifts it up temporarily, and it returns to its anchor when it
+shrinks.
+
+## UI review checklist
+
+- Google palettes stay cached for 24 hours, including while a calendar is unmounted;
+  normalization reuses the same objects instead of rebuilding colors on query updates.
+- The red now line uses the displayed timezone, changes columns at midnight, and
+  refreshes on returning to the app. The highlighted date follows the same clock.
+- Calendar visibility preferences survive failed account reads and signed-out states.
+- Responsive day capacity uses the actual 64px gutter and clamped sidebar width.
+  The time labels sync to an already-scrolled grid when they mount.
+- The toolbar wraps at the 720px minimum window width without clipping controls.
+  Toolbar buttons and arrow-key navigation use the same rendered day count, so
+  responsive layouts do not skip dates. Period buttons have accessible labels.
+- Today and the `T` shortcut return to today's date and immediately scroll the
+  current-time line into view, including when today is already selected. The
+  scroll request is consumed once, so later manual scrolling is left alone.
+- Failed session reads show a connection error and Retry in the dashboard, login
+  page, and popup. They no longer masquerade as a signed-out session.
+- Escape in Search/Create returns to the command bar root; Escape at the root closes it.
+- The desktop popup starts open without a mount-time dismiss race, resizes after
+  session loading, and shows a useful sign-in state instead of an empty window.
+- Selecting a task in the desktop popup returns the main window to the dashboard,
+  including when it was showing Settings.
+- The popup has no macOS traffic lights. Its empty top area drags the native
+  window; the search field and scrollable results remain interactive.

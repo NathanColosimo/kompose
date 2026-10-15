@@ -9,6 +9,7 @@
     "dev": "electron-vite dev",
     "package": "electron-builder --mac --arm64 --dir -c.mac.identity=null -c.mac.notarize=false",
     "release": "bash ./scripts/release.sh",
+    "test": "bun test src/*.test.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

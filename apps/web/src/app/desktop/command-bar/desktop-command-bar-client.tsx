@@ -1,15 +1,17 @@
 "use client";
 
+import { DESKTOP_COMMAND_BAR_MAX_HEIGHT } from "@kompose/desktop";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { focusManager } from "@tanstack/react-query";
 import { useAtom } from "jotai";
+import { useHydrateAtoms } from "jotai/utils";
 import { useCallback, useEffect } from "react";
+import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
+import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
-
-const COMMAND_BAR_MAX_HEIGHT = 520;
 
 /**
  * Dedicated command bar page for the desktop popup window.
@@ -18,10 +20,26 @@ const COMMAND_BAR_MAX_HEIGHT = 520;
  * native window and should size directly to the command surface.
  */
 export default function DesktopCommandBarClient() {
+  useHydrateAtoms([[commandBarOpenAtom, true]]);
   const [open, setOpen] = useAtom(commandBarOpenAtom);
-  const { data: session, isPending: isSessionPending } =
-    authClient.useSession();
+  const {
+    data: session,
+    error: sessionError,
+    isPending: isSessionPending,
+    isRefetching,
+    refetch: refetchSession,
+  } = authClient.useSession();
   const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
+  const handleShowMainWindow = useCallback(
+    () => desktopBridge().showMainWindow(),
+    []
+  );
+  let view: "content" | "feedback" | "signed-out" = "signed-out";
+  if (isSessionPending || sessionError) {
+    view = "feedback";
+  } else if (session?.user) {
+    view = "content";
+  }
 
   // Open the command bar when the window gains focus.
   useMountEffect(() => {
@@ -47,82 +65,56 @@ export default function DesktopCommandBarClient() {
   // Dismiss the command bar through the main process so the previous app is reactivated
   // before the window hides, avoiding a flicker of the main Kompose window.
   useEffect(() => {
-    if (!isDesktopRuntime()) {
+    if (!isDesktopRuntime() || open) {
       return;
     }
-    if (open) {
-      return;
-    }
-
-    let cancelled = false;
     desktopBridge()
       .dismissCommandBar()
       .catch((error) => {
-        if (!cancelled) {
-          console.warn("Failed to dismiss command bar window.", error);
-        }
+        console.warn("Failed to dismiss command bar window.", error);
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [open]);
 
-  // Auto-size the desktop window to exactly fit the dialog content.
+  // Loading/sign-in surfaces have no command input to handle Escape.
   useEffect(() => {
-    if (!isDesktopRuntime()) {
+    if (!open || view === "content") {
       return;
     }
-    if (!open) {
-      return;
-    }
-
-    let disposed = false;
-    const resizeWindowToContent = async (surface: HTMLElement) => {
-      if (disposed) {
-        return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
       }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, view, setOpen]);
+
+  // Size the native window to the surface whenever it mounts or its content changes.
+  const surfaceRef = useCallback((surface: HTMLDivElement | null) => {
+    if (!surface) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
       const rect = surface.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
       const height = Math.min(
-        COMMAND_BAR_MAX_HEIGHT,
+        DESKTOP_COMMAND_BAR_MAX_HEIGHT,
         Math.max(Math.ceil(rect.height), surface.scrollHeight)
       );
-      if (width <= 0 || height <= 0) {
+      if (rect.width <= 0 || height <= 0) {
         return;
       }
-      await desktopBridge().resizeCommandBar(height);
-    };
-
-    const el = document.querySelector<HTMLElement>(
-      "[data-command-bar-surface]"
-    );
-    if (!el) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      resizeWindowToContent(el).catch((error) => {
-        console.warn("Failed to resize command bar window.", error);
-      });
+      desktopBridge()
+        .resizeCommandBar(height)
+        .catch((error) => {
+          console.warn("Failed to resize command bar window.", error);
+        });
     });
-    observer.observe(el);
+    // Observing reports the initial size, too.
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
 
-    resizeWindowToContent(el).catch((error) => {
-      console.warn("Failed to resize command bar window.", error);
-    });
-
-    return () => {
-      disposed = true;
-      observer.disconnect();
-    };
-  }, [open]);
-
-  if (!isDesktopRuntime()) {
-    return null;
-  }
-
-  if (!open || isSessionPending || !session?.user) {
+  if (!(isDesktopRuntime() && open)) {
     return null;
   }
 
@@ -130,17 +122,39 @@ export default function DesktopCommandBarClient() {
     <div
       className="inline-block"
       data-command-bar-surface
+      ref={surfaceRef}
       style={{
         maxWidth: "100vw",
         width: "32rem",
       }}
     >
-      <CommandBarContent
-        className="h-auto"
-        onRequestClose={handleRequestClose}
-        selectionMode="desktop-popup"
-        size="lg"
-      />
+      {view === "content" ? (
+        <CommandBarContent
+          className="h-auto"
+          onRequestClose={handleRequestClose}
+          selectionMode="desktop-popup"
+          size="lg"
+        />
+      ) : (
+        <div className="rounded-xl border bg-popover p-4 text-popover-foreground">
+          {view === "feedback" ? (
+            <div className="text-sm">
+              <SessionFeedback
+                error={Boolean(sessionError)}
+                onRetry={refetchSession}
+                retrying={isRefetching}
+              />
+            </div>
+          ) : (
+            <>
+              <p className="text-sm">Sign in to use quick actions.</p>
+              <Button className="mt-3" onClick={handleShowMainWindow}>
+                Open Kompose
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
