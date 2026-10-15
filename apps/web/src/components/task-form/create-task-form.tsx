@@ -46,14 +46,14 @@ const buildDefaultValues = (
     : todayPlainDate();
 
   return {
-    title: "",
     description: "",
+    dueDate: startDate.add({ days: 1 }),
+    durationMinutes: 30,
+    recurrence: null,
     startDate,
     startTime: null,
-    durationMinutes: 30,
-    dueDate: startDate.add({ days: 1 }),
-    recurrence: null,
     tagIds,
+    title: "",
   };
 };
 

@@ -51,8 +51,8 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
   const sleepEnd = isoStringToZonedDateTime(end, timeZone);
 
   const dayStart = columnDate.toZonedDateTime({
-    timeZone,
     plainTime: { hour: 0, minute: 0, second: 0 },
+    timeZone,
   });
   const dayEnd = dayStart.add({ days: 1 });
 
@@ -98,8 +98,8 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
     <div
       className="pointer-events-none absolute inset-x-0 rounded-sm bg-whoop-sleep/8 dark:bg-whoop-sleep/15"
       style={{
-        top: `${top}px`,
         height: `${height}px`,
+        top: `${top}px`,
         zIndex: 0,
       }}
     >

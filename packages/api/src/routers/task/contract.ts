@@ -45,9 +45,9 @@ const taskUpdateSchemaWithTagIds = taskUpdateSchema.extend({
 });
 
 const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
-  userId: true,
   createdAt: true,
   updatedAt: true,
+  userId: true,
 });
 
 const clientTaskUpdateSchema = taskUpdateSchemaWithTagIds.omit({
@@ -65,10 +65,10 @@ const clientTaskUpdateSchema = taskUpdateSchemaWithTagIds.omit({
  * Note: recurrence stays as-is (already typed correctly from schema)
  */
 export const taskSelectCodec = taskSelectSchemaWithTags.extend({
+  createdAt: instantCodec,
   dueDate: plainDateCodec.nullable(),
   startDate: plainDateCodec.nullable(),
   startTime: plainTimeCodec.nullable(),
-  createdAt: instantCodec,
   updatedAt: instantCodec,
   // seriesMasterId, recurrence, isException are already correctly typed from schema
 });
@@ -131,20 +131,9 @@ export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 // ============================================================================
 
 export const listTasksParamsSchema = z.object({
-  query: z
-    .string()
-    .trim()
-    .describe("Text filter for task title or description.")
-    .nullable()
-    .optional(),
-  startDateMin: z.iso
+  dueDateMax: z.iso
     .date()
-    .describe("Minimum task start date (YYYY-MM-DD).")
-    .nullable()
-    .optional(),
-  startDateMax: z.iso
-    .date()
-    .describe("Maximum task start date (YYYY-MM-DD).")
+    .describe("Maximum task due date (YYYY-MM-DD).")
     .nullable()
     .optional(),
   dueDateMin: z.iso
@@ -152,9 +141,20 @@ export const listTasksParamsSchema = z.object({
     .describe("Minimum task due date (YYYY-MM-DD).")
     .nullable()
     .optional(),
-  dueDateMax: z.iso
+  query: z
+    .string()
+    .trim()
+    .describe("Text filter for task title or description.")
+    .nullable()
+    .optional(),
+  startDateMax: z.iso
     .date()
-    .describe("Maximum task due date (YYYY-MM-DD).")
+    .describe("Maximum task start date (YYYY-MM-DD).")
+    .nullable()
+    .optional(),
+  startDateMin: z.iso
+    .date()
+    .describe("Minimum task start date (YYYY-MM-DD).")
     .nullable()
     .optional(),
 });
@@ -178,9 +178,9 @@ export const updateTask = oc
   .input(
     z.object({
       id: z.uuidv7(),
-      task: clientTaskUpdateSchema,
       /** Scope for recurring tasks: this (single), following (this + future) */
       scope: updateScopeSchema,
+      task: clientTaskUpdateSchema,
     })
   )
   .output(z.array(taskSelectSchemaWithTags)); // Returns array since "following" can update multiple
@@ -200,11 +200,11 @@ export const parseLink = oc
   .output(linkMetaSchema);
 
 export const taskContract = {
-  list: listTasks,
   create: createTask,
-  update: updateTask,
   delete: deleteTask,
+  list: listTasks,
   parseLink,
+  update: updateTask,
 };
 
 export type TaskListParams = z.infer<typeof listTasksParamsSchema>;

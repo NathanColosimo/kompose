@@ -2,12 +2,12 @@ import { oc } from "@orpc/contract";
 import { z } from "zod";
 
 export const linkedAccountSchema = z.object({
-  id: z.string(),
   accountId: z.string(),
-  providerId: z.string(),
   email: z.string(),
+  id: z.string(),
   image: z.string().nullable(),
   name: z.string(),
+  providerId: z.string(),
 });
 
 export const listLinkedAccounts = oc

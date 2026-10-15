@@ -26,10 +26,10 @@ const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
 
   return {
-    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
-    queryFn: async () => (await authClient.listAccounts())?.data ?? [],
-    staleTime: 1000 * 60 * 5,
     placeholderData: keepPreviousData,
+    queryFn: async () => (await authClient.listAccounts())?.data ?? [],
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
+    staleTime: 1000 * 60 * 5,
   };
 });
 
@@ -55,19 +55,19 @@ const googleCalendarsAtomFamily = atomFamily((accountId: string) =>
     const { orpc } = getStateConfig(get);
 
     return {
-      queryKey: getGoogleCalendarsQueryKey(accountId),
+      placeholderData: keepPreviousData,
       queryFn: async () => {
         const calendars = await orpc.googleCal.calendars.list({
           accountId,
         });
 
         return calendars.map((calendar) => ({
-          calendar,
           accountId,
+          calendar,
         }));
       },
+      queryKey: getGoogleCalendarsQueryKey(accountId),
       staleTime: 5 * 60 * 1000,
-      placeholderData: keepPreviousData,
     };
   })
 );

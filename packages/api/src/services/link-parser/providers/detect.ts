@@ -82,8 +82,8 @@ export function parseSpotifyUrl(url: string): {
     return null;
   }
   return {
-    resourceType: match[1] as "track" | "episode" | "show" | "album",
     id: match[2],
+    resourceType: match[1] as "track" | "episode" | "show" | "album",
   };
 }
 

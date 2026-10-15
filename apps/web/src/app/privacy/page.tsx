@@ -4,8 +4,8 @@ import type { Metadata } from "next";
 import { LegalShell } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy",
   description: "Privacy policy for Kompose.",
+  title: "Privacy Policy",
 };
 
 const SECTION_HEADING_LINE_REGEX = /\n(?=\d+\.\s)/g;

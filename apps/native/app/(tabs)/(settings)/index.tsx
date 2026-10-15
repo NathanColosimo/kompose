@@ -42,8 +42,8 @@ export default function SettingsScreen() {
     try {
       await authClient.linkSocial(
         {
-          provider: "google",
           callbackURL,
+          provider: "google",
         },
         {
           onSuccess: () => {
@@ -152,7 +152,7 @@ export default function SettingsScreen() {
                         {avatarSrc ? (
                           <Image
                             source={{ uri: avatarSrc }}
-                            style={{ height: 40, width: 40, borderRadius: 20 }}
+                            style={{ borderRadius: 20, height: 40, width: 40 }}
                           />
                         ) : (
                           <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">

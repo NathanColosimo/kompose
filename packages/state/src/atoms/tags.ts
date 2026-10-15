@@ -12,11 +12,11 @@ export const tagsQueryAtom = atomWithQuery<TagSelect[]>((get) => {
   const { orpc } = getStateConfig(get);
 
   return {
-    queryKey: TAGS_QUERY_KEY,
     queryFn: async () => {
       const tags = await orpc.tags.list();
       return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));
     },
+    queryKey: TAGS_QUERY_KEY,
     staleTime: 1000 * 60 * 5,
   };
 });

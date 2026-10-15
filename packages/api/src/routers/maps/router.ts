@@ -13,14 +13,15 @@ const MIN_QUERY_LENGTH = 2;
 
 /** Zod schema for Google Places Autocomplete API response */
 const PlacesAutocompleteResponseSchema = z.object({
+  error: z.object({ message: z.string().optional() }).optional(),
+  message: z.string().optional(),
   suggestions: z
     .array(
       z.object({
         placePrediction: z
           .object({
-            placeId: z.string().optional(),
             place: z.string().optional(),
-            text: z.object({ text: z.string().optional() }).optional(),
+            placeId: z.string().optional(),
             structuredFormat: z
               .object({
                 mainText: z.object({ text: z.string().optional() }).optional(),
@@ -29,13 +30,12 @@ const PlacesAutocompleteResponseSchema = z.object({
                   .optional(),
               })
               .optional(),
+            text: z.object({ text: z.string().optional() }).optional(),
           })
           .optional(),
       })
     )
     .optional(),
-  error: z.object({ message: z.string().optional() }).optional(),
-  message: z.string().optional(),
 });
 
 /** Map raw Places API suggestions into LocationSuggestion objects */
@@ -93,7 +93,7 @@ function fetchAutocomplete(query: string) {
     span.setAttribute("query", query);
     try {
       const res = await fetch(AUTOCOMPLETE_URL, {
-        method: "POST",
+        body: JSON.stringify({ input: query }),
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": env.GOOGLE_MAPS_API_KEY,
@@ -105,7 +105,7 @@ function fetchAutocomplete(query: string) {
             "suggestions.placePrediction.structuredFormat.secondaryText.text",
           ].join(","),
         },
-        body: JSON.stringify({ input: query }),
+        method: "POST",
       });
 
       span.setAttribute("http.status_code", res.status);

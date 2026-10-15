@@ -4,8 +4,8 @@ import type { Metadata } from "next";
 import { LegalShell } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
-  title: "Terms of Service",
   description: "Terms of Service for Kompose.",
+  title: "Terms of Service",
 };
 
 // Read the source legal doc at build time so the public page stays in sync.

@@ -16,14 +16,14 @@ export function buildTaskMoveUpdate(
 ): { id: string; task: object; scope: UpdateScope } {
   return {
     id: task.id,
+    // Dragging always updates just this occurrence
+    scope: "this",
     task: {
+      durationMinutes: task.durationMinutes,
       // Separate date and time for new schema
       startDate: targetDateTime.toPlainDate(),
       startTime: targetDateTime.toPlainTime(),
-      durationMinutes: task.durationMinutes,
     },
-    // Dragging always updates just this occurrence
-    scope: "this",
   };
 }
 
@@ -46,8 +46,8 @@ export function buildTaskResizeUpdate({
 
   // Combine startDate + startTime into ZonedDateTime
   const originalStart = task.startDate.toZonedDateTime({
-    timeZone,
     plainTime: task.startTime,
+    timeZone,
   });
   const originalEnd = originalStart.add({ minutes: task.durationMinutes });
 
@@ -64,14 +64,14 @@ export function buildTaskResizeUpdate({
     const newDuration = durationInMinutes(newStart, originalEnd);
     return {
       id: task.id,
+      // Resizing always updates just this occurrence
+      scope: "this",
       task: {
+        durationMinutes: newDuration,
         // Separate date and time for new schema
         startDate: newStart.toPlainDate(),
         startTime: newStart.toPlainTime(),
-        durationMinutes: newDuration,
       },
-      // Resizing always updates just this occurrence
-      scope: "this",
     };
   }
 
@@ -79,14 +79,14 @@ export function buildTaskResizeUpdate({
   const newDuration = durationInMinutes(originalStart, newEnd);
   return {
     id: task.id,
+    // Resizing always updates just this occurrence
+    scope: "this",
     task: {
+      durationMinutes: newDuration,
       // Separate date and time for new schema (date unchanged for end resize)
       startDate: originalStart.toPlainDate(),
       startTime: originalStart.toPlainTime(),
-      durationMinutes: newDuration,
     },
-    // Resizing always updates just this occurrence
-    scope: "this",
   };
 }
 
@@ -113,15 +113,15 @@ function buildGoogleUpdatePayload(
   return {
     id: event.event.id,
     ...rest,
-    start: {
-      dateTime: toGoogleDateTime(start),
-      date: undefined,
-      timeZone: start.timeZoneId,
-    },
     end: {
-      dateTime: toGoogleDateTime(end),
       date: undefined,
+      dateTime: toGoogleDateTime(end),
       timeZone: end.timeZoneId,
+    },
+    start: {
+      date: undefined,
+      dateTime: toGoogleDateTime(start),
+      timeZone: start.timeZoneId,
     },
   };
 }
@@ -140,8 +140,8 @@ export function buildGoogleMoveUpdate(
   return {
     accountId: data.accountId,
     calendarId: data.calendarId,
-    eventId: data.event.id,
     event,
+    eventId: data.event.id,
   };
 }
 
@@ -170,8 +170,8 @@ export function buildGoogleResizeUpdate({
     return {
       accountId: data.accountId,
       calendarId: data.calendarId,
-      eventId: data.event.id,
       event,
+      eventId: data.event.id,
     };
   }
 
@@ -180,7 +180,7 @@ export function buildGoogleResizeUpdate({
   return {
     accountId: data.accountId,
     calendarId: data.calendarId,
-    eventId: data.event.id,
     event,
+    eventId: data.event.id,
   };
 }

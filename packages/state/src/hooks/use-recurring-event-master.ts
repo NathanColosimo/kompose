@@ -37,13 +37,13 @@ export function recurringEventMasterQueryOptions(params: {
   const { orpc } = getStateConfigFromStore();
 
   return {
-    queryKey: recurringEventMasterQueryKey(params),
     queryFn: () =>
       orpc.googleCal.events.get({
         accountId: params.accountId,
         calendarId: params.calendarId,
         eventId: params.recurringEventId,
       }),
+    queryKey: recurringEventMasterQueryKey(params),
     staleTime: 5 * 60 * 1000,
   };
 }
@@ -86,7 +86,7 @@ export function useRecurringEventMaster(params: {
       ] as const);
 
   return useQuery({
-    queryKey,
+    enabled,
     queryFn: () => {
       if (!recurringEventId) {
         throw new Error("Recurring master query is disabled");
@@ -97,7 +97,7 @@ export function useRecurringEventMaster(params: {
         eventId: recurringEventId,
       });
     },
-    enabled,
+    queryKey,
     staleTime: 5 * 60 * 1000,
   });
 }

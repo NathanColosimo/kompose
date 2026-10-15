@@ -7,9 +7,9 @@ export type LinkProvider = LinkMeta["provider"];
 export class LinkParseError extends Schema.TaggedError<LinkParseError>()(
   "LinkParseError",
   {
-    url: Schema.String,
-    message: Schema.String,
     cause: Schema.optional(Schema.Unknown),
+    message: Schema.String,
+    url: Schema.String,
   }
 ) {}
 
@@ -19,16 +19,16 @@ const HTML_ENTITY_MAP: Record<string, string> = {
   amp: "&",
   apos: "'",
   gt: ">",
+  hellip: "...",
+  ldquo: '"',
+  lsquo: "'",
   lt: "<",
+  mdash: "--",
   nbsp: " ",
   ndash: "-",
-  mdash: "--",
   quot: '"',
-  rsquo: "'",
-  lsquo: "'",
   rdquo: '"',
-  ldquo: '"',
-  hellip: "...",
+  rsquo: "'",
 };
 
 function decodeEntity(entity: string): string {
@@ -62,8 +62,8 @@ function decodeOptionalString(value: string | undefined): string | undefined {
 export function normalizeLinkMetaText<T extends LinkMeta>(meta: T): T {
   const normalized = {
     ...meta,
-    title: decodeOptionalString(meta.title),
     description: decodeOptionalString(meta.description),
+    title: decodeOptionalString(meta.title),
   };
 
   if ("artistName" in normalized) {

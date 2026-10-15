@@ -56,9 +56,9 @@ function buildTaskDataFromParsed(
         return linkMetaMap[url];
       }
       return {
+        fetchedAt: new Date().toISOString(),
         provider: "unknown" as const,
         url,
-        fetchedAt: new Date().toISOString(),
       };
     })
   );
@@ -84,12 +84,12 @@ function buildTaskDataFromParsed(
   }
 
   return {
-    title,
-    durationMinutes,
     dueDate: parsed.dueDate ?? undefined,
-    startDate: parsed.startDate ?? undefined,
+    durationMinutes,
     links,
+    startDate: parsed.startDate ?? undefined,
     tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
+    title,
   };
 }
 
@@ -148,15 +148,15 @@ export function CommandBarCreateTask({
       for (const url of newUrls) {
         setPendingUrls((prev) => new Set([...prev, url]));
         parseLinkMutate(url, {
-          onSuccess: (meta) => {
-            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
+          onError: () => {
             setPendingUrls((prev) => {
               const next = new Set(prev);
               next.delete(url);
               return next;
             });
           },
-          onError: () => {
+          onSuccess: (meta) => {
+            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
             setPendingUrls((prev) => {
               const next = new Set(prev);
               next.delete(url);
@@ -312,10 +312,7 @@ export function CommandBarCreateTask({
       {isValid && (
         <>
           <CommandGroup heading="Create Task">
-            <CommandItem
-              onSelect={handleCreate}
-              value={createItemValue}
-            >
+            <CommandItem onSelect={handleCreate} value={createItemValue}>
               <CheckIcon className="text-muted-foreground" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="truncate font-medium">{createItemLabel}</span>
@@ -337,8 +334,8 @@ export function CommandBarCreateTask({
                     >
                       <CalendarIcon className="size-3.5" />
                       {formatPlainDate(parsed.dueDate, {
-                        month: "short",
                         day: "numeric",
+                        month: "short",
                       })}
                     </Badge>
                   )}
@@ -370,8 +367,8 @@ export function CommandBarCreateTask({
                     >
                       <PlayCircleIcon className="size-3.5" />
                       {formatPlainDate(parsed.startDate, {
-                        month: "short",
                         day: "numeric",
+                        month: "short",
                       })}
                     </Badge>
                   )}

@@ -47,12 +47,12 @@ export const TimeSlot = memo(function TimeSlotInner({
   const dateTime = useMemo(
     () =>
       Temporal.ZonedDateTime.from({
-        year: date.year,
-        month: date.month,
         day: date.day,
         hour,
         minute: minutes,
+        month: date.month,
         timeZone,
+        year: date.year,
       }),
     [date, hour, minutes, timeZone]
   );
@@ -60,9 +60,9 @@ export const TimeSlot = memo(function TimeSlotInner({
   const slotData: SlotData = useMemo(() => ({ dateTime }), [dateTime]);
 
   const { setNodeRef, isOver } = useDroppable({
-    id: slotId,
     data: slotData,
     disabled: droppableDisabled,
+    id: slotId,
   });
 
   const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
@@ -91,12 +91,12 @@ export const TimeSlot = memo(function TimeSlotInner({
       const hour = Math.floor(clampedMinutes / 60);
       const minute = clampedMinutes % 60;
       return Temporal.ZonedDateTime.from({
-        year: date.year,
-        month: date.month,
         day: date.day,
         hour,
         minute,
+        month: date.month,
         timeZone,
+        year: date.year,
       });
     },
     [date, timeZone, dateTime]

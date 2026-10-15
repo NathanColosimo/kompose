@@ -68,9 +68,9 @@ function parseDuration(durationStr: string): number | null {
  */
 function dateToPlainDate(date: Date): Temporal.PlainDate {
   return Temporal.PlainDate.from({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
     day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
   });
 }
 
@@ -113,16 +113,16 @@ export function parseTaskInput(
   referenceDate?: Date
 ): ParsedTaskInput {
   const result: ParsedTaskInput = {
-    title: "",
-    durationMinutes: null,
     dueDate: null,
+    dueDateRaw: null,
+    durationMinutes: null,
+    durationRaw: null,
     links: [],
     startDate: null,
-    tagNames: [],
-    durationRaw: null,
-    dueDateRaw: null,
     startDateRaw: null,
+    tagNames: [],
     tagNamesRaw: [],
+    title: "",
   };
 
   // Find the first special token to extract the title

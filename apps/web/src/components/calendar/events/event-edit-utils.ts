@@ -105,10 +105,10 @@ export function buildTemporalPayload(
       };
 
   return {
-    startPayload,
     endPayload,
-    startDateTime,
     isAllDay: isAllDayEvent,
     occurrenceStart: startDateTime ?? startDate,
+    startDateTime,
+    startPayload,
   };
 }

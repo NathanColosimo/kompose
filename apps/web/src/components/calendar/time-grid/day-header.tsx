@@ -48,7 +48,7 @@ export const DayHeader = memo(function DayHeaderInner({
         hasWhoopData ? "gap-0.5 py-1.5" : "h-12",
         isTodayHighlight ? "bg-primary/5" : ""
       )}
-      style={{ width, scrollSnapAlign: "start" }}
+      style={{ scrollSnapAlign: "start", width }}
     >
       <div className="flex items-center gap-2">
         <span className="font-medium text-muted-foreground text-xs uppercase">

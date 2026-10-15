@@ -16,11 +16,11 @@ export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
   const { orpc } = getStateConfig(get);
 
   return {
-    queryKey: TASKS_QUERY_KEY,
     queryFn: async () => {
       const tasks = await orpc.tasks.list();
       return tasks.map((task) => taskSelectCodec.parse(task));
     },
+    queryKey: TASKS_QUERY_KEY,
     staleTime: 1000 * 60 * 5,
   };
 });

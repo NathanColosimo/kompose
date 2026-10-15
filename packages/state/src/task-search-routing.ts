@@ -57,7 +57,7 @@ function isOverdueTask(
     task.startTime !== null &&
     Temporal.ZonedDateTime.compare(
       task.startDate
-        .toZonedDateTime({ timeZone, plainTime: task.startTime })
+        .toZonedDateTime({ plainTime: task.startTime, timeZone })
         .add({ minutes: task.durationMinutes }),
       now
     ) < 0;
@@ -114,8 +114,8 @@ export function resolveTaskSearchDestination(
 ): TaskSearchDestination {
   if (isTaskScheduledOnCalendar(task) && task.startDate) {
     return {
-      kind: "calendar",
       date: task.startDate,
+      kind: "calendar",
     };
   }
 
@@ -128,9 +128,9 @@ export function resolveTaskSearchDestination(
 
   if (isDatedUnplannedTask(task) && task.startDate) {
     return {
+      date: task.startDate,
       kind: "sidebar",
       view: "today",
-      date: task.startDate,
     };
   }
 
@@ -157,19 +157,19 @@ export function createCommandBarTaskOpenRequest(args: {
 }): CommandBarTaskOpenRequest {
   if (args.destination.kind === "calendar") {
     return {
-      requestId: uuidv7(),
-      taskId: args.taskId,
-      target: "calendar",
       date: args.destination.date,
+      requestId: uuidv7(),
+      target: "calendar",
+      taskId: args.taskId,
     };
   }
 
   return {
-    requestId: uuidv7(),
-    taskId: args.taskId,
-    target: "sidebar",
-    sidebarView: args.destination.view,
     date: args.destination.date,
+    requestId: uuidv7(),
+    sidebarView: args.destination.view,
+    target: "sidebar",
+    taskId: args.taskId,
   };
 }
 

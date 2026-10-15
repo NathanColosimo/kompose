@@ -80,7 +80,7 @@ function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {
     timeZone
   );
 
-  return { start, end };
+  return { end, start };
 }
 
 /**
@@ -93,8 +93,8 @@ export const eventWindowAtom = atom<{ timeMin: string; timeMax: string }>(
       get(timezoneAtom)
     );
     return {
-      timeMin: start.toInstant().toString(),
       timeMax: end.toInstant().toString(),
+      timeMin: start.toInstant().toString(),
     };
   }
 );

@@ -27,7 +27,6 @@ export function useGoogleAccountProfiles({
 
   const profileQueries = useQueries({
     queries: googleAccounts.map((account) => ({
-      queryKey: getGoogleAccountInfoQueryKey(account.accountId),
       enabled,
       queryFn: async (): Promise<OAuth2UserInfo | null> => {
         try {
@@ -36,6 +35,7 @@ export function useGoogleAccountProfiles({
           return null;
         }
       },
+      queryKey: getGoogleAccountInfoQueryKey(account.accountId),
       staleTime: 5 * 60 * 1000,
     })),
   });
@@ -46,16 +46,16 @@ export function useGoogleAccountProfiles({
         const query = profileQueries[index];
         return {
           account,
-          profile: query?.data ?? null,
           isLoading: Boolean(query?.isLoading),
+          profile: query?.data ?? null,
         };
       }),
     [googleAccounts, profileQueries]
   );
 
   return {
-    profiles,
     isLoading:
       enabled && (isAccountsLoading || profileQueries.some((q) => q.isLoading)),
+    profiles,
   };
 }

@@ -24,8 +24,8 @@ export function startOfDayZoned(
   timeZone: string
 ): Temporal.ZonedDateTime {
   return date.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
 }
 
@@ -37,6 +37,6 @@ export function endOfDayZoned(
   timeZone: string
 ): Temporal.ZonedDateTime {
   return date
-    .toZonedDateTime({ timeZone, plainTime: Temporal.PlainTime.from("00:00") })
+    .toZonedDateTime({ plainTime: Temporal.PlainTime.from("00:00"), timeZone })
     .add({ days: 1 });
 }

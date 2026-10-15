@@ -8,5 +8,5 @@ import { visibleCalendarsAtom } from "../atoms/visible-calendars";
  */
 export function useVisibleCalendars() {
   const [visibleCalendars, setVisibleCalendars] = useAtom(visibleCalendarsAtom);
-  return { visibleCalendars, setVisibleCalendars };
+  return { setVisibleCalendars, visibleCalendars };
 }

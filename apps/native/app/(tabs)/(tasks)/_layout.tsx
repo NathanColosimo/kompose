@@ -12,19 +12,19 @@ export default function TasksLayout() {
   return (
     <Stack
       screenOptions={{
-        headerTransparent: false,
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: "minimal",
-        headerTintColor: textColor,
-        headerStyle: {
-          backgroundColor,
-        },
         contentStyle: {
           backgroundColor,
         },
+        headerBackButtonDisplayMode: "minimal",
+        headerShadowVisible: false,
+        headerStyle: {
+          backgroundColor,
+        },
+        headerTintColor: textColor,
         headerTitleStyle: {
           color: textColor,
         },
+        headerTransparent: false,
       }}
     >
       <Stack.Screen name="index" options={{ title: "Tasks" }} />

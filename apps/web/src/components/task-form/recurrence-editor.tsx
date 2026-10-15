@@ -156,7 +156,7 @@ function RecurrenceForm({
         <Label className="text-muted-foreground text-xs">Repeat</Label>
         <Select
           onValueChange={(v) =>
-            dispatch({ type: "set-freq", freq: v as TaskRecurrenceFrequency })
+            dispatch({ freq: v as TaskRecurrenceFrequency, type: "set-freq" })
           }
           value={freq}
         >
@@ -185,8 +185,8 @@ function RecurrenceForm({
           min={1}
           onChange={(event) =>
             dispatch({
-              type: "set-interval",
               interval: Number.parseInt(event.target.value, 10) || 1,
+              type: "set-interval",
             })
           }
           type="number"
@@ -208,7 +208,7 @@ function RecurrenceForm({
                   className="size-8 rounded-full p-0 text-xs"
                   key={day.value}
                   onClick={() =>
-                    dispatch({ type: "toggle-day", day: day.value })
+                    dispatch({ day: day.value, type: "toggle-day" })
                   }
                   size="icon"
                   type="button"
@@ -237,8 +237,8 @@ function RecurrenceForm({
             min={1}
             onChange={(event) =>
               dispatch({
-                type: "set-month-day",
                 byMonthDay: Number.parseInt(event.target.value, 10) || 1,
+                type: "set-month-day",
               })
             }
             type="number"
@@ -253,7 +253,7 @@ function RecurrenceForm({
         <div className="space-y-2">
           <Button
             className="h-8 w-full justify-start text-xs"
-            onClick={() => dispatch({ type: "set-end-type", endType: "never" })}
+            onClick={() => dispatch({ endType: "never", type: "set-end-type" })}
             size="sm"
             type="button"
             variant={endType === "never" ? "default" : "outline"}
@@ -265,7 +265,7 @@ function RecurrenceForm({
             <Button
               className="h-8 shrink-0 text-xs"
               onClick={() =>
-                dispatch({ type: "set-end-type", endType: "until" })
+                dispatch({ endType: "until", type: "set-end-type" })
               }
               size="sm"
               type="button"
@@ -283,8 +283,8 @@ function RecurrenceForm({
                     <CalendarIcon className="size-3" />
                     {until
                       ? formatPlainDate(until, {
-                          month: "short",
                           day: "numeric",
+                          month: "short",
                         })
                       : "Select"}
                   </Button>
@@ -309,7 +309,7 @@ function RecurrenceForm({
             <Button
               className="h-8 shrink-0 text-xs"
               onClick={() =>
-                dispatch({ type: "set-end-type", endType: "count" })
+                dispatch({ endType: "count", type: "set-end-type" })
               }
               size="sm"
               type="button"
@@ -324,8 +324,8 @@ function RecurrenceForm({
                   min={1}
                   onChange={(event) =>
                     dispatch({
-                      type: "set-count",
                       count: Number.parseInt(event.target.value, 10) || 1,
+                      type: "set-count",
                     })
                   }
                   type="number"

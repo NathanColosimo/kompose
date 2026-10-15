@@ -2,9 +2,9 @@ import type { LinkMeta } from "@kompose/api/routers/task/contract";
 
 const PROVIDER_LABELS: Record<string, string> = {
   spotify: "Spotify",
-  youtube: "YouTube",
   substack: "Substack",
   unknown: "Link",
+  youtube: "YouTube",
 };
 
 export function getProviderLabel(provider: string): string {

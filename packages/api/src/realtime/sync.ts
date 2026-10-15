@@ -75,19 +75,19 @@ export const publishToUser = Effect.fn("sync.publish")(function* (
   yield* Effect.annotateCurrentSpan("eventType", event.type);
 
   const payload = yield* Effect.try({
-    try: () => syncEventSchema.parse(event),
     catch: (error) =>
       error instanceof Error ? error : new Error(String(error)),
+    try: () => syncEventSchema.parse(event),
   });
 
   yield* Effect.tryPromise({
+    catch: (error) =>
+      error instanceof Error ? error : new Error(String(error)),
     try: () =>
       redisPublisher.publish(
         getUserSyncChannel(userId),
         JSON.stringify(payload)
       ),
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
   });
 });
 
@@ -147,13 +147,13 @@ export async function* createUserSyncEventIterator(
     connectionSpan.addEvent("sync.subscribed");
 
     keepaliveTimer = setInterval(() => {
-      queue.push({ type: "keepalive", payload: {} });
+      queue.push({ payload: {}, type: "keepalive" });
     }, KEEPALIVE_INTERVAL_MS);
 
     reconnectTimer = setTimeout(() => {
       queue.push({
-        type: "reconnect",
         payload: {},
+        type: "reconnect",
       });
       closeQueue();
     }, RECONNECT_EVENT_AFTER_MS);

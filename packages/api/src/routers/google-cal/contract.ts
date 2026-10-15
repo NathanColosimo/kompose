@@ -48,8 +48,8 @@ export const createCalendar = oc
 
 export const UpdateCalendarInputSchema = z.object({
   accountId: z.string(),
-  calendarId: z.string(),
   calendar: CreateCalendarInputSchema,
+  calendarId: z.string(),
 });
 export type UpdateCalendarInput = z.infer<typeof UpdateCalendarInputSchema>;
 
@@ -82,12 +82,12 @@ export const listEventsParamsSchema = z.object({
     .describe("Text filter for title, description, or location.")
     .nullable()
     .optional(),
-  timeMin: z.iso
-    .datetime({ offset: true })
-    .describe("Start of time window (ISO datetime with offset)."),
   timeMax: z.iso
     .datetime({ offset: true })
     .describe("End of time window (ISO datetime with offset)."),
+  timeMin: z.iso
+    .datetime({ offset: true })
+    .describe("Start of time window (ISO datetime with offset)."),
 });
 
 export const ListEventsInputSchema = z.object({
@@ -124,8 +124,8 @@ export const createEvent = oc
 export const UpdateEventInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
-  eventId: z.string(),
   event: CreateEventInputSchema,
+  eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
 export type UpdateEventInput = z.infer<typeof UpdateEventInputSchema>;
@@ -135,8 +135,8 @@ export const updateEvent = oc.input(UpdateEventInputSchema).output(EventSchema);
 export const MoveEventInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
-  eventId: z.string(),
   destinationCalendarId: z.string(),
+  eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
 export type MoveEventInput = z.infer<typeof MoveEventInputSchema>;
@@ -161,21 +161,21 @@ export const listColors = oc
 
 export const googleCalContract = {
   calendars: {
-    list: listCalendars,
-    get: getCalendar,
     create: createCalendar,
-    update: updateCalendar,
     delete: deleteCalendar,
+    get: getCalendar,
+    list: listCalendars,
+    update: updateCalendar,
   },
   colors: {
     list: listColors,
   },
   events: {
-    list: listEvents,
-    get: getEvent,
     create: createEvent,
-    update: updateEvent,
-    move: moveEvent,
     delete: deleteEvent,
+    get: getEvent,
+    list: listEvents,
+    move: moveEvent,
+    update: updateEvent,
   },
 };

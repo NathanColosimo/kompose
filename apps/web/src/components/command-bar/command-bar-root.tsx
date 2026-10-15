@@ -26,15 +26,15 @@ interface Action {
  */
 const actions: Action[] = [
   {
+    icon: ListTodoIcon,
     id: "search-tasks",
     label: "Search Tasks",
-    icon: ListTodoIcon,
     view: "search-tasks",
   },
   {
+    icon: PlusCircleIcon,
     id: "create-task",
     label: "Create Task",
-    icon: PlusCircleIcon,
     view: "create-task",
   },
 ];

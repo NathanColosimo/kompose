@@ -62,16 +62,16 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const editBlockedReason = getGoogleEventEditBlockReason(event);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}`,
     data: {
-      type: "google-event",
-      event,
       accountId,
       calendarId,
-      start,
       end,
+      event,
+      start,
+      type: "google-event",
     },
+    disabled: !isEditable,
+    id: `google-event-${calendarId}-${event.id}`,
   });
 
   const {
@@ -79,17 +79,17 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: startListeners,
     setNodeRef: setStartHandleRef,
   } = useDraggable({
-    disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}-resize-start`,
     data: {
-      type: "google-event-resize",
-      event,
       accountId,
       calendarId,
-      start,
-      end,
       direction: "start",
+      end,
+      event,
+      start,
+      type: "google-event-resize",
     },
+    disabled: !isEditable,
+    id: `google-event-${calendarId}-${event.id}-resize-start`,
   });
 
   const {
@@ -97,17 +97,17 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     listeners: endListeners,
     setNodeRef: setEndHandleRef,
   } = useDraggable({
-    disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}-resize-end`,
     data: {
-      type: "google-event-resize",
-      event,
       accountId,
       calendarId,
-      start,
-      end,
       direction: "end",
+      end,
+      event,
+      start,
+      type: "google-event-resize",
     },
+    disabled: !isEditable,
+    id: `google-event-${calendarId}-${event.id}-resize-end`,
   });
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
@@ -124,10 +124,10 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const { background: backgroundColor, foreground: foregroundColor } =
     resolveGoogleEventColors({
-      colorId: event.colorId,
-      palette: normalizedPalette?.event,
       calendarBackgroundColor: calendar?.calendar.backgroundColor,
       calendarForegroundColor: calendar?.calendar.foregroundColor,
+      colorId: event.colorId,
+      palette: normalizedPalette?.event,
     });
 
   // Calculate horizontal positioning based on collision layout
@@ -137,11 +137,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const leftPercent = columnIndex * singleColumnWidth;
 
   const style: React.CSSProperties = {
-    position: "absolute",
-    top,
     height,
     // Horizontal positioning: divide available width by totalColumns
     left: `calc(${leftPercent}% + 2px)`,
+    position: "absolute",
+    top,
     width: `calc(${columnWidth}% - 4px)`,
     zIndex,
   };
@@ -257,10 +257,10 @@ export const GoogleCalendarEventPreview = memo(
     );
     const { background: backgroundColor, foreground: foregroundColor } =
       resolveGoogleEventColors({
-        colorId: event.colorId,
-        palette: normalizedPalette?.event,
         calendarBackgroundColor: calendar?.calendar.backgroundColor,
         calendarForegroundColor: calendar?.calendar.foregroundColor,
+        colorId: event.colorId,
+        palette: normalizedPalette?.event,
       });
     const durationMinutes = Math.max(
       1,

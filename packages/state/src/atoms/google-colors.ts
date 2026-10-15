@@ -18,11 +18,11 @@ const googleColorsAtomFamily = atomFamily((accountId: string) =>
     const { orpc } = getStateConfig(get);
 
     return {
-      queryKey: getGoogleColorsQueryKey(accountId),
       queryFn: async () =>
         await orpc.googleCal.colors.list({
           accountId,
         }),
+      queryKey: getGoogleColorsQueryKey(accountId),
       staleTime: TWENTY_MINUTES_MS,
     };
   })
@@ -96,7 +96,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   if ([r, g, b].some((value) => Number.isNaN(value))) {
     return null;
   }
-  return { r, g, b };
+  return { b, g, r };
 }
 
 function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
@@ -137,7 +137,7 @@ function rgbToHsl({ r, g, b }: { r: number; g: number; b: number }) {
   const l = (max + min) / 2;
   const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
 
-  return { h, s, l };
+  return { h, l, s };
 }
 
 function hslToRgb({ h, s, l }: { h: number; s: number; l: number }): {
@@ -173,9 +173,9 @@ function hslToRgb({ h, s, l }: { h: number; s: number; l: number }): {
   }
 
   return {
-    r: (rN + m) * 255,
-    g: (gN + m) * 255,
     b: (bN + m) * 255,
+    g: (gN + m) * 255,
+    r: (rN + m) * 255,
   };
 }
 
@@ -190,6 +190,6 @@ export function pastelizeColor(hex?: string | null): string | undefined {
   const hsl = rgbToHsl(rgb);
   const s = Math.min(hsl.s, PASTEL_MAX_SATURATION);
   const l = Math.max(hsl.l, PASTEL_MIN_LIGHTNESS);
-  const pastelRgb = hslToRgb({ h: hsl.h, s, l });
+  const pastelRgb = hslToRgb({ h: hsl.h, l, s });
   return rgbToHex(pastelRgb);
 }

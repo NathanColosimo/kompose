@@ -54,10 +54,10 @@ const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
   label: string;
 }> = [
-  { value: "none", label: "None" },
-  { value: "DAILY", label: "Daily" },
-  { value: "WEEKLY", label: "Weekly" },
-  { value: "MONTHLY", label: "Monthly" },
+  { label: "None", value: "none" },
+  { label: "Daily", value: "DAILY" },
+  { label: "Weekly", value: "WEEKLY" },
+  { label: "Monthly", value: "MONTHLY" },
 ];
 
 interface EventEditorFormValues {
@@ -80,18 +80,18 @@ interface EventEditorFormValues {
 
 function toFormValues(draft: EventDraft): EventEditorFormValues {
   return {
-    summary: draft.summary,
-    description: draft.description,
-    location: draft.location,
-    colorId: draft.colorId ?? null,
-    calendar: draft.calendar,
     allDay: draft.allDay,
-    startDate: draft.startDate,
-    endDate: draft.endDate,
-    startTime: draft.startTime,
-    endTime: draft.endTime,
-    recurrence: draft.recurrence,
+    calendar: draft.calendar,
+    colorId: draft.colorId ?? null,
     conferenceData: draft.conferenceData ?? null,
+    description: draft.description,
+    endDate: draft.endDate,
+    endTime: draft.endTime,
+    location: draft.location,
+    recurrence: draft.recurrence,
+    startDate: draft.startDate,
+    startTime: draft.startTime,
+    summary: draft.summary,
   };
 }
 
@@ -101,26 +101,26 @@ function applyFormValuesToDraft(
 ): EventDraft {
   return {
     ...draft,
-    summary: values.summary,
-    description: values.description,
-    location: values.location,
-    colorId: values.colorId,
-    calendar: values.calendar,
     allDay: values.allDay,
-    startDate: values.startDate,
-    endDate: values.endDate,
-    startTime: values.startTime,
-    endTime: values.endTime,
-    recurrence: values.recurrence,
+    calendar: values.calendar,
+    colorId: values.colorId,
     conferenceData: values.conferenceData,
+    description: values.description,
+    endDate: values.endDate,
+    endTime: values.endTime,
+    location: values.location,
+    recurrence: values.recurrence,
+    startDate: values.startDate,
+    startTime: values.startTime,
+    summary: values.summary,
   };
 }
 
 function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
   return Temporal.PlainDate.from({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
     day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
   });
 }
 
@@ -144,8 +144,8 @@ function plainTimeToPickerDate(time: Temporal.PlainTime): Date {
 
 function formatPlainDateCompact(date: Temporal.PlainDate): string {
   return new Intl.DateTimeFormat(undefined, {
-    month: "short",
     day: "numeric",
+    month: "short",
   }).format(plainDateToPickerDate(date));
 }
 
@@ -214,7 +214,7 @@ function RecurrenceEditorSection({
                       ? parsedRecurrence.byDay
                       : ["MO"];
                 }
-                updateRecurrence({ freq: frequency.value, byDay });
+                updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
               variant={active ? "default" : "outline"}
@@ -289,7 +289,7 @@ function RecurrenceEndSection({
                 : (dateToUntilRule(new Date()) ?? undefined);
             updateRecurrence({
               end: fallbackUntil
-                ? { type: "until", date: fallbackUntil }
+                ? { date: fallbackUntil, type: "until" }
                 : { type: "none" },
             });
           }}
@@ -304,11 +304,11 @@ function RecurrenceEndSection({
           onPress={() =>
             updateRecurrence({
               end: {
-                type: "count",
                 count:
                   parsedRecurrence.end.type === "count"
                     ? parsedRecurrence.end.count
                     : 5,
+                type: "count",
               },
             })
           }
@@ -333,7 +333,7 @@ function RecurrenceEndSection({
               const untilRule = dateToUntilRule(date);
               updateRecurrence({
                 end: untilRule
-                  ? { type: "until", date: untilRule }
+                  ? { date: untilRule, type: "until" }
                   : { type: "none" },
               });
             }}
@@ -353,9 +353,9 @@ function RecurrenceEndSection({
               const nextCount = Number.parseInt(value, 10);
               updateRecurrence({
                 end: {
-                  type: "count",
                   count:
                     Number.isFinite(nextCount) && nextCount > 0 ? nextCount : 1,
+                  type: "count",
                 },
               });
             }}
@@ -507,14 +507,14 @@ function EventColorPicker({
         <Pressable
           accessibilityLabel="Pick color"
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 999,
-            borderWidth: 2,
+            backgroundColor: selectedColorBackground ?? "transparent",
             borderColor: selectedColorBackground
               ? selectedColorBorder
               : borderColor,
-            backgroundColor: selectedColorBackground ?? "transparent",
+            borderRadius: 999,
+            borderWidth: 2,
+            height: 32,
+            width: 32,
           }}
         />
       </PopoverTrigger>
@@ -528,13 +528,13 @@ function EventColorPicker({
                 key={colorKey}
                 onPress={() => onSelectColor(colorKey)}
                 style={{
-                  width: 28,
-                  height: 28,
+                  backgroundColor: palette.background ?? "transparent",
+                  borderColor: palette.foreground ?? borderColor,
                   borderRadius: 999,
                   borderWidth: 2,
-                  borderColor: palette.foreground ?? borderColor,
-                  backgroundColor: palette.background ?? "transparent",
+                  height: 28,
                   opacity: isSelected ? 1 : 0.85,
+                  width: 28,
                 }}
               />
             );
@@ -799,22 +799,22 @@ function useEventDatePickerValues(
   );
 
   return {
-    startDate,
     endDate,
-    startDatePickerValue,
     endDatePickerValue,
-    startTimePickerValue,
     endTimePickerValue,
+    startDate,
+    startDatePickerValue,
+    startTimePickerValue,
   };
 }
 
 function resolveFormDefaults(values: EventEditorFormValues) {
   return {
-    summary: values.summary ?? "",
+    allDay: Boolean(values.allDay),
     description: values.description ?? "",
     location: values.location ?? "",
     recurrence: values.recurrence ?? [],
-    allDay: Boolean(values.allDay),
+    summary: values.summary ?? "",
   };
 }
 
@@ -827,9 +827,9 @@ function useEventMeeting(ctx: {
   const meetingSource = React.useMemo(
     () => ({
       ...(ctx.sourceEvent ?? {}),
-      location: ctx.location,
-      description: ctx.description,
       conferenceData: ctx.conferenceData ?? ctx.sourceEvent?.conferenceData,
+      description: ctx.description,
+      location: ctx.location,
     }),
     [ctx.description, ctx.location, ctx.sourceEvent, ctx.conferenceData]
   );
@@ -840,7 +840,7 @@ function useEventMeeting(ctx: {
   const isConferencePending = Boolean(
     ctx.conferenceData?.createRequest && !meetingLink
   );
-  return { meetingLink, isConferencePending };
+  return { isConferencePending, meetingLink };
 }
 
 interface EventEditorSheetProps {

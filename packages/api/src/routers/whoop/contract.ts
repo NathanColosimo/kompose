@@ -4,44 +4,44 @@ import z from "zod";
 const plainDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const whoopSleepSummarySchema = z.object({
+  end: z.iso.datetime({ offset: true }),
   id: z.uuid(),
   start: z.iso.datetime({ offset: true }),
-  end: z.iso.datetime({ offset: true }),
   totalSleepMilliseconds: z.number().int().nonnegative(),
 });
 
 export const whoopWorkoutSummarySchema = z.object({
+  end: z.iso.datetime({ offset: true }),
   id: z.uuid(),
   sportId: z.number().int().nullable(),
   sportName: z.string().nullable(),
   start: z.iso.datetime({ offset: true }),
-  end: z.iso.datetime({ offset: true }),
   strainScore: z.number().nullable(),
 });
 
 export const whoopDaySummarySchema = z.object({
-  day: plainDateSchema,
   cycleId: z.number().int().nullable(),
-  recoveryScore: z.number().int().nullable(),
-  strainScore: z.number().nullable(),
+  day: plainDateSchema,
   kilojoule: z.number().nullable(),
-  sleepPerformance: z.number().int().nullable(),
-  sleep: whoopSleepSummarySchema.nullable(),
   naps: z.array(whoopSleepSummarySchema),
+  recoveryScore: z.number().int().nullable(),
+  sleep: whoopSleepSummarySchema.nullable(),
+  sleepPerformance: z.number().int().nullable(),
+  strainScore: z.number().nullable(),
   workouts: z.array(whoopWorkoutSummarySchema),
 });
 
 export const whoopDaysListInputSchema = z.object({
   accountId: z.string().min(1),
-  startDate: plainDateSchema,
   endDate: plainDateSchema,
+  startDate: plainDateSchema,
   timeZone: z.string().min(1),
 });
 
 export const whoopProfileOutputSchema = z.object({
+  email: z.string(),
   firstName: z.string(),
   lastName: z.string(),
-  email: z.string(),
 });
 
 export type WhoopProfile = z.infer<typeof whoopProfileOutputSchema>;

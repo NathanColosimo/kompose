@@ -23,8 +23,8 @@ const getOverdueAt = (
   if (task.dueDate) {
     candidates.push(
       task.dueDate.toZonedDateTime({
-        timeZone,
         plainTime: Temporal.PlainTime.from("00:00"),
+        timeZone,
       })
     );
   }
@@ -32,8 +32,8 @@ const getOverdueAt = (
   if (task.startDate && task.startTime) {
     candidates.push(
       task.startDate.toZonedDateTime({
-        timeZone,
         plainTime: task.startTime,
+        timeZone,
       })
     );
   }
@@ -73,7 +73,7 @@ export function useTagTaskSections(tagId: string | null) {
   const { overdueTasks, todoTasks, doneTasks } = useMemo(() => {
     const tasks = tasksQuery.data ?? [];
     if (!tagId || tasks.length === 0) {
-      return { overdueTasks: [], todoTasks: [], doneTasks: [] };
+      return { doneTasks: [], overdueTasks: [], todoTasks: [] };
     }
 
     const taggedTasks = tasks.filter(
@@ -118,15 +118,15 @@ export function useTagTaskSections(tagId: string | null) {
       .filter((task) => task.status === "done")
       .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
 
-    return { overdueTasks: overdue, todoTasks: todo, doneTasks: done };
+    return { doneTasks: done, overdueTasks: overdue, todoTasks: todo };
   }, [nowZdt, tagId, tasksQuery.data, timeZone, today]);
 
   return {
-    tasksQuery,
-    updateTask,
     deleteTask,
-    overdueTasks,
-    todoTasks,
     doneTasks,
+    overdueTasks,
+    tasksQuery,
+    todoTasks,
+    updateTask,
   };
 }

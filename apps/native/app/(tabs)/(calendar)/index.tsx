@@ -121,7 +121,7 @@ function combineDateTime(
   time: Temporal.PlainTime,
   timeZone: string
 ): Temporal.ZonedDateTime {
-  return date.toZonedDateTime({ timeZone, plainTime: time });
+  return date.toZonedDateTime({ plainTime: time, timeZone });
 }
 
 function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
@@ -138,7 +138,7 @@ function formatDayHeader(date: Temporal.PlainDate): {
   dayNumber: number;
 } {
   const weekday = date.toLocaleString(undefined, { weekday: "short" });
-  return { weekday, dayNumber: date.day };
+  return { dayNumber: date.day, weekday };
 }
 
 function calculateTimePosition(timeZone: string): number {
@@ -230,17 +230,17 @@ function buildDraftFromTask(
   recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
 ): TaskDraft {
   return {
-    title: task.title,
     description: task.description ?? "",
-    tagIds: task.tags.map((tag) => tag.id),
-    durationMinutes: task.durationMinutes,
-    status: task.status,
     dueDate: task.dueDate,
-    startDate: task.startDate,
-    startTime: task.startTime,
+    durationMinutes: task.durationMinutes,
     linkInput: "",
     links: task.links ?? [],
     recurrence: recurrence ?? null,
+    startDate: task.startDate,
+    startTime: task.startTime,
+    status: task.status,
+    tagIds: task.tags.map((tag) => tag.id),
+    title: task.title,
   };
 }
 
@@ -251,21 +251,21 @@ function buildCreateTaskDraftFromSlot(
   const snapped = snapMinutes(minutes);
 
   return {
-    title: "",
     description: "",
-    tagIds: [],
-    durationMinutes: 30,
-    status: "todo",
     dueDate: null,
+    durationMinutes: 30,
+    linkInput: "",
+    links: [],
+    recurrence: null,
     startDate: day,
     startTime: Temporal.PlainTime.from({
       hour: Math.floor(snapped / 60),
       minute: snapped % 60,
       second: 0,
     }),
-    linkInput: "",
-    links: [],
-    recurrence: null,
+    status: "todo",
+    tagIds: [],
+    title: "",
   };
 }
 
@@ -284,12 +284,12 @@ function AllDayEventChip({
       ? palette.calendar[item.source.calendarColorId]
       : undefined;
   const { background, foreground } = resolveGoogleEventColors({
-    colorId: item.source.event.colorId,
-    palette: palette?.event,
     calendarBackgroundColor:
       item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
     calendarForegroundColor:
       item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
+    colorId: item.source.event.colorId,
+    palette: palette?.event,
   });
 
   return (
@@ -343,12 +343,12 @@ function TimedGoogleEventBlock({
       ? palette.calendar[item.source.calendarColorId]
       : undefined;
   const { background, foreground } = resolveGoogleEventColors({
-    colorId: item.source.event.colorId,
-    palette: palette?.event,
     calendarBackgroundColor:
       item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
     calendarForegroundColor:
       item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
+    colorId: item.source.event.colorId,
+    palette: palette?.event,
   });
 
   // Calculate horizontal positioning based on collision layout.
@@ -365,15 +365,15 @@ function TimedGoogleEventBlock({
         onPress();
       }}
       style={{
-        top,
-        height,
-        left: `${leftPercent}%`,
-        width: `${columnWidthPercent}%`,
-        zIndex,
         backgroundColor: background,
         borderColor: EVENT_OUTLINE_COLOR,
         borderRadius: 6,
         borderWidth: EVENT_OUTLINE_WIDTH_PX,
+        height,
+        left: `${leftPercent}%`,
+        top,
+        width: `${columnWidthPercent}%`,
+        zIndex,
       }}
     >
       <Text
@@ -441,8 +441,8 @@ function CalendarTabContent() {
 
     for (const entry of googleCalendars) {
       metadata.set(calendarLookupKey(entry.accountId, entry.calendar.id), {
-        colorId: entry.calendar.colorId ?? null,
         backgroundColor: entry.calendar.backgroundColor ?? null,
+        colorId: entry.calendar.colorId ?? null,
         foregroundColor: entry.calendar.foregroundColor ?? null,
       });
     }
@@ -486,11 +486,11 @@ function CalendarTabContent() {
       );
       const source = {
         accountId: item.accountId,
+        calendarBackgroundColor: calendarMetadata?.backgroundColor ?? null,
+        calendarColorId: calendarMetadata?.colorId ?? null,
+        calendarForegroundColor: calendarMetadata?.foregroundColor ?? null,
         calendarId: item.calendarId,
         event: item.event,
-        calendarColorId: calendarMetadata?.colorId ?? null,
-        calendarBackgroundColor: calendarMetadata?.backgroundColor ?? null,
-        calendarForegroundColor: calendarMetadata?.foregroundColor ?? null,
       };
       const startDate = item.event.start.date;
       const startDateTime = item.event.start.dateTime;
@@ -500,7 +500,7 @@ function CalendarTabContent() {
         const date = Temporal.PlainDate.from(startDate);
         const bucket = allDay.get(date.toString());
         if (bucket) {
-          bucket.push({ source, date });
+          bucket.push({ date, source });
         }
         continue;
       }
@@ -520,14 +520,14 @@ function CalendarTabContent() {
         const dayKey = start.toPlainDate().toString();
         const bucket = timed.get(dayKey);
         if (bucket) {
-          bucket.push({ source, start, end });
+          bucket.push({ end, source, start });
         }
       } catch {
         // Skip unparseable events.
       }
     }
 
-    return { timedEventsByDay: timed, allDayEventsByDay: allDay };
+    return { allDayEventsByDay: allDay, timedEventsByDay: timed };
   }, [calendarMetadataByKey, googleEvents, timeZone, visibleDays]);
 
   const tasksByDay = useMemo(() => {
@@ -566,18 +566,18 @@ function CalendarTabContent() {
         .filter((task) => task.startDate !== null && task.startTime !== null)
         .map((task) => {
           const start = task.startDate?.toZonedDateTime({
-            timeZone,
             plainTime:
               task.startTime ??
               Temporal.PlainTime.from({ hour: 0, minute: 0, second: 0 }),
+            timeZone,
           });
           const startMinutes = start ? minutesFromMidnight(start) : 0;
           const endMinutes = startMinutes + (task.durationMinutes || 30);
           return {
-            id: task.id,
-            type: "task" as const,
-            startMinutes,
             endMinutes,
+            id: task.id,
+            startMinutes,
+            type: "task" as const,
           };
         });
 
@@ -586,10 +586,10 @@ function CalendarTabContent() {
         const startMinutes = minutesFromMidnight(ge.start);
         const endMinutes = minutesFromMidnight(ge.end);
         return {
-          id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
-          type: "google-event" as const,
-          startMinutes,
           endMinutes,
+          id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
+          startMinutes,
+          type: "google-event" as const,
         };
       });
 
@@ -608,8 +608,8 @@ function CalendarTabContent() {
   const recurringMasterEvent = useRecurringEventMaster({
     accountId: editingEventDraft?.sourceCalendar.accountId ?? "",
     calendarId: editingEventDraft?.sourceCalendar.calendarId ?? "",
-    event: editingEventDraft?.sourceEvent ?? null,
     enabled: Boolean(editingEventDraft),
+    event: editingEventDraft?.sourceEvent ?? null,
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
   const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
@@ -760,22 +760,22 @@ function CalendarTabContent() {
       });
       const endTime = startTime.add({ minutes: 30 });
       const createDraft: CreateEventDraft = {
-        mode: "create",
-        summary: "",
-        description: "",
-        location: "",
-        colorId: null,
+        allDay: false,
         calendar: {
           accountId: defaultCalendar.accountId,
           calendarId: defaultCalendar.calendarId,
         },
-        allDay: false,
-        startDate: day,
-        endDate: day,
-        startTime,
-        endTime,
-        recurrence: [],
+        colorId: null,
         conferenceData: null,
+        description: "",
+        endDate: day,
+        endTime,
+        location: "",
+        mode: "create",
+        recurrence: [],
+        startDate: day,
+        startTime,
+        summary: "",
       };
       setIsEventSaveScopeDialogVisible(false);
       setIsEventDeleteScopeDialogVisible(false);
@@ -839,28 +839,28 @@ function CalendarTabContent() {
 
   const openEditTimedEvent = useCallback((item: PositionedGoogleEvent) => {
     const editDraft: EditEventDraft = {
-      mode: "edit",
-      eventId: item.source.event.id,
-      summary: item.source.event.summary ?? "",
-      description: item.source.event.description ?? "",
-      location: item.source.event.location ?? "",
-      colorId: item.source.event.colorId ?? null,
+      allDay: false,
       calendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
+      colorId: item.source.event.colorId ?? null,
+      conferenceData: item.source.event.conferenceData ?? null,
+      description: item.source.event.description ?? "",
+      endDate: item.end.toPlainDate(),
+      endTime: item.end.toPlainTime(),
+      eventId: item.source.event.id,
+      location: item.source.event.location ?? "",
+      mode: "edit",
+      recurrence: item.source.event.recurrence ?? [],
       sourceCalendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
-      allDay: false,
-      startDate: item.start.toPlainDate(),
-      endDate: item.end.toPlainDate(),
-      startTime: item.start.toPlainTime(),
-      endTime: item.end.toPlainTime(),
-      recurrence: item.source.event.recurrence ?? [],
-      conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
+      startDate: item.start.toPlainDate(),
+      startTime: item.start.toPlainTime(),
+      summary: item.source.event.summary ?? "",
     };
     setIsEventSaveScopeDialogVisible(false);
     setIsEventDeleteScopeDialogVisible(false);
@@ -885,28 +885,28 @@ function CalendarTabContent() {
         : rawEndDate;
 
     const editDraft: EditEventDraft = {
-      mode: "edit",
-      eventId: item.source.event.id,
-      summary: item.source.event.summary ?? "",
-      description: item.source.event.description ?? "",
-      location: item.source.event.location ?? "",
-      colorId: item.source.event.colorId ?? null,
+      allDay: true,
       calendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
+      colorId: item.source.event.colorId ?? null,
+      conferenceData: item.source.event.conferenceData ?? null,
+      description: item.source.event.description ?? "",
+      endDate,
+      endTime: null,
+      eventId: item.source.event.id,
+      location: item.source.event.location ?? "",
+      mode: "edit",
+      recurrence: item.source.event.recurrence ?? [],
       sourceCalendar: {
         accountId: item.source.accountId,
         calendarId: item.source.calendarId,
       },
-      allDay: true,
-      startDate,
-      endDate,
-      startTime: null,
-      endTime: null,
-      recurrence: item.source.event.recurrence ?? [],
-      conferenceData: item.source.event.conferenceData ?? null,
       sourceEvent: item.source.event,
+      startDate,
+      startTime: null,
+      summary: item.source.event.summary ?? "",
     };
     setIsEventSaveScopeDialogVisible(false);
     setIsEventDeleteScopeDialogVisible(false);
@@ -955,17 +955,17 @@ function CalendarTabContent() {
       }
 
       return {
-        summary: currentDraft.summary.trim(),
-        description: currentDraft.description.trim() || undefined,
-        location: currentDraft.location.trim() || undefined,
         colorId: currentDraft.colorId ?? undefined,
         conferenceData: currentDraft.conferenceData ?? undefined,
+        description: currentDraft.description.trim() || undefined,
+        end: endPayload,
+        location: currentDraft.location.trim() || undefined,
         recurrence:
           currentDraft.recurrence.length > 0
             ? currentDraft.recurrence
             : undefined,
         start: startPayload,
-        end: endPayload,
+        summary: currentDraft.summary.trim(),
       };
     },
     [timeZone]
@@ -986,28 +986,28 @@ function CalendarTabContent() {
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
-        eventId: draft.eventId,
-        recurrenceScope: scope,
         event: {
           ...draft.sourceEvent,
           ...eventPayload,
-          start: {
-            ...draft.sourceEvent.start,
-            ...eventPayload.start,
-          },
           end: {
             ...draft.sourceEvent.end,
             ...eventPayload.end,
           },
+          start: {
+            ...draft.sourceEvent.start,
+            ...eventPayload.start,
+          },
         },
+        eventId: draft.eventId,
+        recurrenceScope: scope,
       });
 
       if (destinationCalendarId) {
         await moveEvent.mutateAsync({
           accountId: sourceCalendar.accountId,
           calendarId: sourceCalendar.calendarId,
-          eventId: draft.eventId,
           destinationCalendarId,
+          eventId: draft.eventId,
           scope,
         });
       }
@@ -1071,28 +1071,28 @@ function CalendarTabContent() {
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
-        eventId: draft.eventId,
-        recurrenceScope: "this",
         event: {
           ...draft.sourceEvent,
           ...eventPayload,
-          start: {
-            ...draft.sourceEvent.start,
-            ...eventPayload.start,
-          },
           end: {
             ...draft.sourceEvent.end,
             ...eventPayload.end,
           },
+          start: {
+            ...draft.sourceEvent.start,
+            ...eventPayload.start,
+          },
         },
+        eventId: draft.eventId,
+        recurrenceScope: "this",
       });
 
       if (destinationCalendarId) {
         await moveEvent.mutateAsync({
           accountId: sourceCalendar.accountId,
           calendarId: sourceCalendar.calendarId,
-          eventId: draft.eventId,
           destinationCalendarId,
+          eventId: draft.eventId,
           scope: "this",
         });
       }
@@ -1207,17 +1207,17 @@ function CalendarTabContent() {
         id: editingTask.id,
         scope,
         task: {
-          title: nextDraft.title.trim(),
           description: nextDraft.description.trim()
             ? nextDraft.description.trim()
             : null,
-          tagIds: nextDraft.tagIds,
-          durationMinutes: nextDraft.durationMinutes,
           dueDate: nextDraft.dueDate,
-          startDate: nextDraft.startDate,
-          startTime: nextDraft.startTime,
+          durationMinutes: nextDraft.durationMinutes,
           links: nextDraft.links,
           recurrence: nextDraft.recurrence,
+          startDate: nextDraft.startDate,
+          startTime: nextDraft.startTime,
+          tagIds: nextDraft.tagIds,
+          title: nextDraft.title.trim(),
         },
       });
     },
@@ -1243,52 +1243,52 @@ function CalendarTabContent() {
       }
 
       createTask.mutate({
-        title,
         description: taskDraft.description.trim()
           ? taskDraft.description.trim()
           : null,
-        tagIds: taskDraft.tagIds,
-        durationMinutes: taskDraft.durationMinutes,
         dueDate: taskDraft.dueDate,
-        startDate: taskDraft.startDate,
-        startTime: taskDraft.startTime,
+        durationMinutes: taskDraft.durationMinutes,
+        isException: false,
         links: taskDraft.links,
-        status: "todo",
         recurrence: taskDraft.recurrence,
         seriesMasterId: null,
-        isException: false,
+        startDate: taskDraft.startDate,
+        startTime: taskDraft.startTime,
+        status: "todo",
+        tagIds: taskDraft.tagIds,
+        title,
       });
       closeTaskModal();
       return;
     }
 
     const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      previous: {
-        title: editingTask.title,
-        description: editingTask.description,
-        durationMinutes: editingTask.durationMinutes,
-        dueDate: editingTask.dueDate,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-      },
       next: {
-        title: taskDraft.title,
         description: taskDraft.description,
-        durationMinutes: taskDraft.durationMinutes,
         dueDate: taskDraft.dueDate,
+        durationMinutes: taskDraft.durationMinutes,
         startDate: taskDraft.startDate,
         startTime: taskDraft.startTime,
+        title: taskDraft.title,
+      },
+      previous: {
+        description: editingTask.description,
+        dueDate: editingTask.dueDate,
+        durationMinutes: editingTask.durationMinutes,
+        startDate: editingTask.startDate,
+        startTime: editingTask.startTime,
+        title: editingTask.title,
       },
     });
 
     const decision = getTaskUpdateScopeDecision({
+      hasCoreFieldChanges,
       isRecurring: editingTask.seriesMasterId !== null,
       isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      hasCoreFieldChanges,
-      previousRecurrence: editingTask.recurrence,
       nextRecurrence: taskDraft.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
       nextTagIds: taskDraft.tagIds,
+      previousRecurrence: editingTask.recurrence,
+      previousTagIds: editingTask.tags.map((tag) => tag.id),
     });
 
     if (decision.action === "prompt") {
@@ -1405,8 +1405,8 @@ function CalendarTabContent() {
     if (isRefreshingRef.current && !isRefreshing) {
       setIsPullRefreshing(false);
       scrollRef.current?.scrollTo({
-        y: scrollOffsetRef.current,
         animated: false,
+        y: scrollOffsetRef.current,
       });
     }
     isRefreshingRef.current = isRefreshing;
@@ -1417,8 +1417,8 @@ function CalendarTabContent() {
   useEffect(() => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
-        y: scrollOffsetRef.current,
         animated: false,
+        y: scrollOffsetRef.current,
       });
     });
   }, []);
@@ -1428,7 +1428,6 @@ function CalendarTabContent() {
       {/* Configure header options via Stack.Screen */}
       <Stack.Screen
         options={{
-          title: "Calendar",
           headerLeft: () => (
             <View className="flex-row items-center gap-1.5 pl-2">
               <Pressable
@@ -1485,6 +1484,7 @@ function CalendarTabContent() {
               </Pressable>
             </View>
           ),
+          title: "Calendar",
         }}
       />
 
@@ -1669,8 +1669,8 @@ function CalendarTabContent() {
                         }
                         const layout = dayLayouts?.get(task.id);
                         const start = task.startDate.toZonedDateTime({
-                          timeZone,
                           plainTime: task.startTime,
+                          timeZone,
                         });
                         const startMinutes = minutesFromMidnight(start);
                         const durationMinutes = Math.max(
@@ -1709,14 +1709,14 @@ function CalendarTabContent() {
                               openEditTask(task);
                             }}
                             style={{
-                              top: adjustedTop,
-                              height: adjustedHeight,
-                              left: `${leftPercent}%`,
-                              width: `${columnWidthPercent}%`,
-                              zIndex: zIndexValue,
                               borderColor: EVENT_OUTLINE_COLOR,
                               borderRadius: 6,
                               borderWidth: EVENT_OUTLINE_WIDTH_PX,
+                              height: adjustedHeight,
+                              left: `${leftPercent}%`,
+                              top: adjustedTop,
+                              width: `${columnWidthPercent}%`,
+                              zIndex: zIndexValue,
                             }}
                           >
                             <Text
@@ -1808,8 +1808,8 @@ function CalendarTabContent() {
                 return;
               }
               setPendingCreateAction({
-                kind: "event",
                 day: createSlotSelection.day,
+                kind: "event",
                 minutes: createSlotSelection.minutes,
               });
               closeCreateChooser();
@@ -1824,8 +1824,8 @@ function CalendarTabContent() {
                 return;
               }
               setPendingCreateAction({
-                kind: "task",
                 day: createSlotSelection.day,
+                kind: "task",
                 minutes: createSlotSelection.minutes,
               });
               closeCreateChooser();
@@ -1895,9 +1895,9 @@ function CalendarTabContent() {
                 isMoving &&
                 (option.value === "this" || option.value === "following");
               return {
-                value: option.value,
-                label: option.label,
                 disabled,
+                label: option.label,
+                value: option.value,
               };
             })}
             value={eventSaveScope}
@@ -1924,8 +1924,8 @@ function CalendarTabContent() {
               setEventDeleteScope(value as RecurrenceScope)
             }
             options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
               label: option.label,
+              value: option.value,
             }))}
             value={eventDeleteScope}
           />
@@ -1959,8 +1959,8 @@ function CalendarTabContent() {
           <RadioGroup
             onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
             options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
               label: option.label,
+              value: option.value,
             }))}
             value={taskSaveScope}
           />
@@ -1979,8 +1979,8 @@ function CalendarTabContent() {
           <RadioGroup
             onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
             options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
               label: option.label,
+              value: option.value,
             }))}
             value={taskDeleteScope}
           />

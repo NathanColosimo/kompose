@@ -44,7 +44,7 @@ export const DayColumn = memo(function DayColumnInner({
     <div
       className="relative flex shrink-0 flex-col border-border border-r last:border-r-0"
       data-day-column
-      style={{ width, scrollSnapAlign: "start" }}
+      style={{ scrollSnapAlign: "start", width }}
     >
       {hours.map((hour) => (
         <div className="relative" key={hour}>

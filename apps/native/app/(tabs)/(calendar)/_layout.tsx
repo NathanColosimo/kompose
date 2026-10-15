@@ -12,16 +12,16 @@ export default function CalendarLayout() {
   return (
     <Stack
       screenOptions={{
-        headerTransparent: false,
-        headerShadowVisible: false,
         headerBackButtonDisplayMode: "minimal",
-        headerTintColor: textColor,
+        headerShadowVisible: false,
         headerStyle: {
           backgroundColor,
         },
+        headerTintColor: textColor,
         headerTitleStyle: {
           color: textColor,
         },
+        headerTransparent: false,
       }}
     >
       <Stack.Screen name="index" options={{ title: "Calendar" }} />

@@ -82,11 +82,11 @@ const RECURRENCE_FREQUENCIES: Array<{
   value: TaskRecurrenceFrequency | "NONE";
   label: string;
 }> = [
-  { value: "NONE", label: "None" },
-  { value: "DAILY", label: "Daily" },
-  { value: "WEEKLY", label: "Weekly" },
-  { value: "MONTHLY", label: "Monthly" },
-  { value: "YEARLY", label: "Yearly" },
+  { label: "None", value: "NONE" },
+  { label: "Daily", value: "DAILY" },
+  { label: "Weekly", value: "WEEKLY" },
+  { label: "Monthly", value: "MONTHLY" },
+  { label: "Yearly", value: "YEARLY" },
 ];
 
 function plainDateToDate(plainDate: Temporal.PlainDate): Date {
@@ -101,9 +101,9 @@ function plainTimeToDate(plainTime: Temporal.PlainTime): Date {
 
 function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
   return Temporal.PlainDate.from({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
     day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
   });
 }
 
@@ -120,8 +120,8 @@ function formatPlainDateShort(date: Temporal.PlainDate | null): string {
     return "Not set";
   }
   return new Intl.DateTimeFormat(undefined, {
-    month: "short",
     day: "numeric",
+    month: "short",
   }).format(plainDateToDate(date));
 }
 
@@ -186,12 +186,12 @@ function TaskRecurrenceEndSection({
         <Button
           onPress={() =>
             updateRecurrence({
-              endType: "count",
               count:
                 Number.isFinite(recurrenceState.count) &&
                 recurrenceState.count > 0
                   ? recurrenceState.count
                   : 10,
+              endType: "count",
             })
           }
           size="sm"
@@ -806,15 +806,15 @@ export function TaskEditorSheet({
           // Insert placeholder immediately so the link survives a quick save
           setDraft((current) => ({
             ...current,
+            linkInput: "",
             links: dedupeLinks([
               ...current.links,
               {
+                fetchedAt: new Date().toISOString(),
                 provider: "unknown" as const,
                 url,
-                fetchedAt: new Date().toISOString(),
               },
             ]),
-            linkInput: "",
           }));
 
           // Upgrade the placeholder in-place when metadata arrives
@@ -896,7 +896,7 @@ function NativeLinkListEditor({
             <Pressable onPress={() => Linking.openURL(meta.url)}>
               <Image
                 source={{ uri: meta.thumbnailUrl }}
-                style={{ width: 40, height: 40, borderRadius: 4 }}
+                style={{ borderRadius: 4, height: 40, width: 40 }}
               />
             </Pressable>
           ) : null}
@@ -933,7 +933,7 @@ function NativeLinkListEditor({
 
       <View className="mb-2.5 flex-row items-center gap-2">
         <Pressable
-          style={{ width: 36, alignItems: "center", justifyContent: "center" }}
+          style={{ alignItems: "center", justifyContent: "center", width: 36 }}
         >
           {isParsing ? (
             <Icon as={Loader2} className="text-muted-foreground" size={16} />

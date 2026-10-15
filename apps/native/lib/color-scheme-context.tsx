@@ -111,11 +111,11 @@ export function useColorScheme() {
     colorScheme,
     /** Whether dark mode is active */
     isDarkColorScheme: colorScheme === "dark",
-    /** User's preference ("light", "dark", or "system") */
-    userPreference,
     /** Set color scheme with persistence */
     setColorScheme,
     /** Toggle between light and dark */
     toggleColorScheme,
+    /** User's preference ("light", "dark", or "system") */
+    userPreference,
   };
 }

@@ -24,14 +24,14 @@ export function useLocationSearch(query: string) {
   }, [trimmed]);
 
   return useQuery<LocationSuggestion[]>({
-    queryKey: ["maps-search", debounced],
+    enabled: debounced.length >= MIN_QUERY_LENGTH,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData,
     queryFn: async () =>
       await orpc.maps.search({
         query: debounced,
       }),
-    enabled: debounced.length >= MIN_QUERY_LENGTH,
+    queryKey: ["maps-search", debounced],
     staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    placeholderData: keepPreviousData,
   });
 }

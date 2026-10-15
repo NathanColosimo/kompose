@@ -35,6 +35,8 @@ export const listLinkedAccountsWithProfile = Effect.fn(
     accounts,
     (account) =>
       Effect.tryPromise({
+        catch: (cause) =>
+          new Error("Failed to enrich linked account profile", { cause }),
         try: async () => {
           const info = await getAccountInfo({
             accountId: account.id,
@@ -42,16 +44,14 @@ export const listLinkedAccountsWithProfile = Effect.fn(
           });
 
           return {
-            id: account.id,
             accountId: account.accountId,
-            providerId: account.providerId,
             email: info.email,
-            name: info.name,
+            id: account.id,
             image: info.image,
+            name: info.name,
+            providerId: account.providerId,
           };
         },
-        catch: (cause) =>
-          new Error("Failed to enrich linked account profile", { cause }),
       }),
     { concurrency: "unbounded" }
   );
