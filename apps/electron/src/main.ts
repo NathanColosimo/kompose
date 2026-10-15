@@ -1,18 +1,13 @@
-import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { electronClient } from "@better-auth/electron/client";
-import { storage } from "@better-auth/electron/storage";
 import {
-  DESKTOP_ORIGIN,
   type DesktopBridge,
   type DesktopCommandBarShortcutPresetId,
   type DesktopInvokeMethod,
   type DesktopTaskSelection,
-  type DesktopUpdateState,
+  desktopChannel,
   desktopCommandBarShortcutPresets,
-  desktopEventChannels,
-  desktopInvokeChannels,
   ELECTRON_AUTH_CLIENT_ID,
   ELECTRON_AUTH_SCHEME,
 } from "@kompose/desktop";
@@ -25,61 +20,20 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
-  net,
-  protocol,
   screen,
   session,
   shell,
 } from "electron";
 import { autoUpdater } from "electron-updater";
-import {
-  externalURL,
-  isTrustedRenderer,
-  parseTaskSelection,
-  publicResponseHeaders,
-  resolveAsset,
-  sanitizeSession,
-} from "./protocol";
 
 const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
-const serverURL =
-  process.env.KOMPOSE_SERVER_URL ??
-  import.meta.env.MAIN_VITE_SERVER_URL ??
-  "https://kompose.dev";
-const devURL = app.isPackaged ? undefined : process.env.KOMPOSE_RENDERER_URL;
-const assetRoot = app.isPackaged
-  ? join(process.resourcesPath, "web")
-  : join(here, "../../../web/out");
-const updatesEnabled =
-  app.isPackaged && existsSync(join(process.resourcesPath, "app-update.yml"));
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  // user-image: is Better Auth's proxied avatar scheme.
-  "img-src 'self' data: blob: https: user-image:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${new URL(serverURL).origin}`,
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-src 'none'",
-].join("; ");
+// Windows load the hosted web app; development points at the local Next server.
+const serverURL = app.isPackaged
+  ? "https://kompose.dev"
+  : (process.env.KOMPOSE_SERVER_URL ?? "https://local.kompose.dev");
+const serverOrigin = new URL(serverURL).origin;
 const COMMAND_BAR = { height: 80, maxHeight: 600, minHeight: 56, width: 480 };
-const AUTH_SESSION_CHANGE = /\/(electron\/token|sign-out)$/;
-const AUTH_PROXY_ROUTES = new Map<string, "GET" | "POST">([
-  ["/get-session", "GET"],
-  ["/list-accounts", "GET"],
-  ["/account-info", "GET"],
-  ["/unlink-account", "POST"],
-  ["/sign-out", "POST"],
-]);
-const RPC_FORWARDED_HEADERS = [
-  "content-type",
-  "accept",
-  "last-event-id",
-  "x-request-start",
-];
 
 app.setName("Kompose");
 // Development builds keep their own profile so they never touch release sessions.
@@ -94,86 +48,140 @@ let quitting = false;
 let mainWasFocused = false;
 let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingTask: DesktopTaskSelection | null = null;
-let updateState: DesktopUpdateState = { status: "idle" };
+let readyUpdate: string | null = null;
 const settings = new Conf<{ shortcut: DesktopCommandBarShortcutPresetId }>({
   configName: "settings",
   cwd: app.getPath("userData"),
   defaults: { shortcut: "cmd_or_ctrl_shift_k" },
 });
 
-function broadcast(channel: string, payload?: unknown) {
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send(channel, payload);
+function appURL(route: string) {
+  return `${serverURL}${route}`;
+}
+function isAppURL(url: string) {
+  return URL.parse(url)?.origin === serverOrigin;
+}
+
+/** Copy the session from Better Auth's token exchange into the windows' cookie store. */
+async function adoptSessionCookies(response: Response) {
+  for (const header of response.headers.getSetCookie()) {
+    const [pair = "", ...parts] = header.split(";");
+    const separator = pair.indexOf("=");
+    const attributes = new Map(
+      parts.map((part) => {
+        const [key = "", ...value] = part.trim().split("=");
+        return [key.toLowerCase(), value.join("=")];
+      })
+    );
+    const maxAge = attributes.get("max-age");
+    const expires = attributes.get("expires");
+    let expirationDate: number | undefined;
+    if (maxAge) {
+      expirationDate = Date.now() / 1000 + Number(maxAge);
+    } else if (expires) {
+      expirationDate = Date.parse(expires) / 1000;
+    }
+    // biome-ignore lint/performance/noAwaitInLoops: A handful of auth cookies.
+    await session.defaultSession.cookies.set({
+      expirationDate,
+      httpOnly: attributes.has("httponly"),
+      name: pair.slice(0, separator).trim(),
+      path: attributes.get("path") || "/",
+      sameSite: "lax",
+      secure: attributes.has("secure"),
+      url: serverURL,
+      value: pair.slice(separator + 1).trim(),
+    });
   }
 }
-const authClient = createAuthClient({
+
+// The browser signs in and hands back a PKCE code through the auth URL scheme;
+// the plugin exchanges it here. Registered before readiness, as Better Auth
+// requires. This also takes the single-instance lock.
+createAuthClient({
   baseURL: serverURL,
-  fetchOptions: {
-    onSuccess({ request }) {
-      const url = request.url.toString();
-      if (!AUTH_SESSION_CHANGE.test(url)) {
-        return;
-      }
-      broadcast(desktopEventChannels.sessionChanged);
-      if (url.endsWith("/electron/token")) {
-        showMain();
-      }
-    },
-  },
   plugins: [
     electronClient({
       clientID: ELECTRON_AUTH_CLIENT_ID,
       cookiePrefix: "kompose",
       protocol: { scheme: ELECTRON_AUTH_SCHEME },
-      signInURL: `${serverURL}/login`,
-      storage: storage({ configName: "auth" }),
+      signInURL: appURL("/login"),
+      // The session lives in Chromium's cookie store, not the plugin's.
+      storage: { getItem: () => null, setItem: () => undefined },
+      userImageProxy: { enabled: false },
     }),
+    {
+      fetchPlugins: [
+        {
+          hooks: {
+            async onSuccess({ request, response }) {
+              if (!request.url.toString().endsWith("/electron/token")) {
+                return;
+              }
+              await adoptSessionCookies(response);
+              commandWindow?.destroy();
+              mainWindow?.loadURL(appURL("/dashboard"));
+              showMain();
+            },
+          },
+          id: "kompose-session",
+          name: "Kompose session",
+        },
+      ],
+      id: "kompose-session",
+    },
   ],
-});
-// Register before readiness, as required by Better Auth and Electron. This also
-// takes the single-instance lock and handles auth deep links.
-authClient.setupMain({
+}).setupMain({
   bridges: true,
   csp: false,
   getWindow: () => mainWindow,
   scheme: true,
 });
-protocol.registerSchemesAsPrivileged([
-  {
-    privileges: {
-      corsEnabled: true,
-      secure: true,
-      standard: true,
-      stream: true,
-      supportFetchAPI: true,
-    },
-    scheme: "kompose-app",
-  },
-]);
 
 /** Open http(s)/mailto links in the system browser; anything else is dropped. */
-function openExternal(url: unknown) {
-  try {
-    shell.openExternal(externalURL(url)).catch(() => undefined);
-  } catch {
-    /* Unsupported schemes stay blocked. */
+function openExternal(url: string) {
+  const parsed = URL.parse(url);
+  if (
+    parsed &&
+    ["https:", "http:", "mailto:"].includes(parsed.protocol) &&
+    !(parsed.username || parsed.password)
+  ) {
+    shell.openExternal(parsed.toString()).catch(() => undefined);
   }
 }
 
-// Every renderer, including ones we never create directly, stays on the app origin.
+// Windows stay on the app origin; new windows and other sites open in the browser.
 app.on("web-contents-created", (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
     openExternal(url);
     return { action: "deny" };
   });
   contents.on("will-navigate", (event, url) => {
-    if (!isTrustedRenderer(url, devURL)) {
+    if (!isAppURL(url)) {
       event.preventDefault();
       openExternal(url);
     }
   });
   contents.on("will-attach-webview", (event) => event.preventDefault());
+  contents.on(
+    "did-fail-load",
+    (_event, code, description, url, isMainFrame) => {
+      // -3 is an aborted load, such as a navigation replacing another.
+      if (isMainFrame && code !== -3 && isAppURL(url)) {
+        contents.loadURL(offlinePage(url, description));
+      }
+    }
+  );
 });
+
+function offlinePage(retryURL: string, reason: string) {
+  const html = `<!doctype html><meta charset="utf-8"><title>Kompose</title>
+<style>body{font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0;color:#666}button{font:inherit;margin-top:8px}</style>
+<div style="text-align:center"><p>Kompose can't reach the server (${reason}).</p>
+<button onclick="location.replace(${JSON.stringify(retryURL)})">Try again</button></div>
+<script>addEventListener("online", () => location.replace(${JSON.stringify(retryURL)}))</script>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
 
 function createAppWindow(
   options: BrowserWindowConstructorOptions,
@@ -189,13 +197,7 @@ function createAppWindow(
       sandbox: true,
     },
   });
-  window.on("focus", () =>
-    window.webContents.send(desktopEventChannels.windowFocus, true)
-  );
-  window.on("blur", () =>
-    window.webContents.send(desktopEventChannels.windowFocus, false)
-  );
-  window.loadURL(`${devURL ?? DESKTOP_ORIGIN}${route}`);
+  window.loadURL(appURL(route));
   return window;
 }
 
@@ -224,8 +226,11 @@ function createMainWindow() {
   });
   window.webContents.on("did-finish-load", () => {
     if (pendingTask) {
-      window.webContents.send(desktopEventChannels.openTask, pendingTask);
+      send(window, "onOpenTask", pendingTask);
       pendingTask = null;
+    }
+    if (readyUpdate) {
+      send(window, "onUpdateReady", readyUpdate);
     }
   });
   return window;
@@ -341,23 +346,33 @@ function applyShortcut(id: unknown) {
   settings.set("shortcut", preset.id);
 }
 
-type BridgeResult<K extends DesktopInvokeMethod> = Awaited<
-  ReturnType<DesktopBridge[K]>
->;
-/** Register a bridge method; its argument is untrusted and must be validated. */
+type DesktopEvent = Exclude<keyof DesktopBridge, DesktopInvokeMethod>;
+type DesktopEventPayload<K extends DesktopEvent> = DesktopBridge[K] extends (
+  callback: (value: infer T) => void
+) => unknown
+  ? T
+  : never;
+function send<K extends DesktopEvent>(
+  window: BrowserWindow,
+  event: K,
+  value: DesktopEventPayload<K>
+) {
+  window.webContents.send(desktopChannel(event), value);
+}
+/** Register a bridge method for app pages; its argument is untrusted. */
 function handle<K extends DesktopInvokeMethod>(
   method: K,
   callback: (
     value: unknown,
     window: BrowserWindow
-  ) => BridgeResult<K> | Promise<BridgeResult<K>>
+  ) => Awaited<ReturnType<DesktopBridge[K]>>
 ) {
-  ipcMain.handle(desktopInvokeChannels[method], (event, value: unknown) => {
+  ipcMain.handle(desktopChannel(method), (event, value: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (
       !(window && event.senderFrame) ||
       event.senderFrame !== event.sender.mainFrame ||
-      !isTrustedRenderer(event.senderFrame.url, devURL)
+      !isAppURL(event.senderFrame.url)
     ) {
       throw new Error("Untrusted desktop request");
     }
@@ -365,131 +380,7 @@ function handle<K extends DesktopInvokeMethod>(
   });
 }
 
-async function proxyAuth(request: Request, url: URL): Promise<Response> {
-  const path = url.pathname.slice("/api/auth".length);
-  const method = AUTH_PROXY_ROUTES.get(path);
-  if (!method || method !== request.method) {
-    return new Response("Not found", { status: 404 });
-  }
-  const result = await authClient.$fetch(path, {
-    method,
-    query: Object.fromEntries(url.searchParams),
-    ...(method === "POST" ? { body: await request.json() } : {}),
-  });
-  return Response.json(
-    path === "/get-session"
-      ? sanitizeSession(result.data)
-      : (result.error ?? result.data),
-    {
-      headers: { "Cache-Control": "no-store" },
-      status: result.error?.status ?? 200,
-    }
-  );
-}
-async function proxyRPC(request: Request, url: URL): Promise<Response> {
-  // The destination is fixed. Renderer-supplied cookies, auth, and origins are ignored.
-  const headers = new Headers({
-    cookie: authClient.getCookie(),
-    origin: `${ELECTRON_AUTH_SCHEME}:/`,
-  });
-  for (const name of RPC_FORWARDED_HEADERS) {
-    const value = request.headers.get(name);
-    if (value) {
-      headers.set(name, value);
-    }
-  }
-  // This authenticated request belongs to main, not Chromium's renderer network
-  // context. Node fetch preserves the plugin cookie without a browser CORS preflight.
-  const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const response = await fetch(`${serverURL}${url.pathname}${url.search}`, {
-    body: hasBody ? await request.arrayBuffer() : undefined,
-    credentials: "omit",
-    headers,
-    method: request.method,
-    redirect: "error",
-    signal: request.signal,
-  });
-  // Forward oRPC subscriptions without buffering.
-  return new Response(response.body, {
-    headers: publicResponseHeaders(response.headers),
-    status: response.status,
-  });
-}
-async function serveAsset(url: URL): Promise<Response> {
-  const path = await resolveAsset(assetRoot, url);
-  if (!path) {
-    return new Response("Not found", { status: 404 });
-  }
-  const response = await net.fetch(pathToFileURL(path).toString());
-  response.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
-  return response;
-}
-async function handleAppRequest(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  if (url.host !== "app") {
-    return new Response("Not found", { status: 404 });
-  }
-  if (url.pathname.startsWith("/api/auth/")) {
-    return withDevCors(await proxyAuth(request, url));
-  }
-  if (url.pathname.startsWith("/api/rpc/")) {
-    return withDevCors(await proxyRPC(request, url));
-  }
-  if (url.pathname.startsWith("/api/")) {
-    return new Response("Not found", { status: 404 });
-  }
-  return serveAsset(url);
-}
-/** The hot-reload renderer runs on its own origin; packaged builds never need CORS. */
-function withDevCors(response: Response) {
-  if (devURL) {
-    response.headers.set("Access-Control-Allow-Origin", new URL(devURL).origin);
-  }
-  return response;
-}
-
-function setUpdateState(state: DesktopUpdateState) {
-  updateState = state;
-  broadcast(desktopEventChannels.updateState, state);
-}
-async function checkForUpdates() {
-  if (!updatesEnabled) {
-    throw new Error("This build does not include automatic updates.");
-  }
-  if (updateState.status === "idle") {
-    await autoUpdater.checkForUpdates();
-  }
-}
-function setUpAutoUpdates() {
-  autoUpdater.allowDowngrade = false;
-  autoUpdater.on("checking-for-update", () =>
-    setUpdateState({ status: "checking" })
-  );
-  autoUpdater.on("update-not-available", () =>
-    setUpdateState({ status: "idle" })
-  );
-  autoUpdater.on("update-available", (info) =>
-    setUpdateState({ status: "downloading", version: info.version })
-  );
-  autoUpdater.on("download-progress", (progress) =>
-    setUpdateState({ ...updateState, percent: progress.percent })
-  );
-  autoUpdater.on("update-downloaded", (info) =>
-    setUpdateState({ status: "ready", version: info.version })
-  );
-  autoUpdater.on("error", (error) =>
-    setUpdateState({ error: error.message, status: "idle" })
-  );
-  if (updatesEnabled) {
-    // Failures are reported through the "error" event above.
-    const backgroundCheck = () => checkForUpdates().catch(() => undefined);
-    backgroundCheck();
-    setInterval(backgroundCheck, 30 * 60_000).unref();
-  }
-}
-
 function registerBridge() {
-  handle("openExternal", (url) => openExternal(url));
   handle("getShortcut", () => settings.get("shortcut"));
   handle("setShortcut", (id) => applyShortcut(id));
   handle("dismissCommandBar", () => dismissCommandBar());
@@ -505,26 +396,41 @@ function registerBridge() {
       window.setSize(COMMAND_BAR.width, Math.round(clamped));
     }
   });
-  handle("openTask", (value) => {
-    const selection = parseTaskSelection(value);
+  // Both windows run our own pages, so the selection is passed through as is.
+  handle("openTask", (selection) => {
     hideCommandBar();
     showMain();
-    if (mainWindow?.webContents.isLoading()) {
-      pendingTask = selection;
+    if (!mainWindow || mainWindow.webContents.isLoading()) {
+      pendingTask = selection as DesktopTaskSelection;
     } else {
-      mainWindow?.webContents.send(desktopEventChannels.openTask, selection);
+      send(mainWindow, "onOpenTask", selection as DesktopTaskSelection);
     }
   });
-  handle("getUpdateState", () => updateState);
-  handle("checkForUpdates", () => checkForUpdates());
   handle("installUpdate", () => {
-    if (updateState.status !== "ready") {
-      return;
+    if (readyUpdate) {
+      quitting = true;
+      autoUpdater.quitAndInstall();
     }
-    setUpdateState({ ...updateState, status: "installing" });
-    quitting = true;
-    autoUpdater.quitAndInstall();
   });
+}
+
+/** Updates download in the background; the web app offers a restart once ready. */
+function setUpAutoUpdates() {
+  if (!app.isPackaged) {
+    return;
+  }
+  autoUpdater.on("update-downloaded", ({ version }) => {
+    readyUpdate = version;
+    if (mainWindow) {
+      send(mainWindow, "onUpdateReady", version);
+    }
+  });
+  autoUpdater.on("error", (error) =>
+    console.warn("Update check failed", error.message)
+  );
+  const check = () => autoUpdater.checkForUpdates().catch(() => undefined);
+  check();
+  setInterval(check, 30 * 60_000).unref();
 }
 
 function setUpMenu() {
@@ -549,20 +455,6 @@ function setUpMenu() {
 app
   .whenReady()
   .then(() => {
-    protocol.handle("kompose-app", async (request) => {
-      try {
-        return await handleAppRequest(request);
-      } catch (error) {
-        console.error(
-          "Desktop request failed",
-          error instanceof Error ? error.message : "Unknown error"
-        );
-        return Response.json(
-          { message: "Request failed. Please try again." },
-          { status: 502 }
-        );
-      }
-    });
     session.defaultSession.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false)
     );

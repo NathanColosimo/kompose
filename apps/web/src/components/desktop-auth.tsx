@@ -1,31 +1,21 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { toast } from "sonner";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
-import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
+import { isDesktopRuntime } from "@/lib/desktop";
 
+/**
+ * In the browser, return to the desktop app once its sign-in completes. In the
+ * app, the main process stores the session and reloads the window itself.
+ */
 export function DesktopAuth() {
-  const queryClient = useQueryClient();
-  const { refetch } = authClient.useSession();
-  useEffect(() => {
-    if (!isDesktopRuntime()) {
-      const timer = authClient.ensureElectronRedirect();
-      return () => clearInterval(timer);
+  useMountEffect(() => {
+    if (isDesktopRuntime()) {
+      return window.onAuthError((error) => toast.error(error.message));
     }
-    const refresh = () => {
-      queryClient.clear();
-      refetch();
-    };
-    const unsubscribe = desktopBridge().onSessionChanged(refresh);
-    const authenticated = window.onAuthenticated(refresh);
-    const authError = window.onAuthError((error) => toast.error(error.message));
-    return () => {
-      unsubscribe();
-      authenticated();
-      authError();
-    };
-  }, [queryClient, refetch]);
+    const timer = authClient.ensureElectronRedirect();
+    return () => clearInterval(timer);
+  });
   return null;
 }

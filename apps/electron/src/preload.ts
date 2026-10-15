@@ -1,37 +1,41 @@
 import { setupRenderer } from "@better-auth/electron/preload";
 import {
   type DesktopBridge,
-  desktopEventChannels,
-  desktopInvokeChannels,
+  type DesktopInvokeMethod,
+  desktopChannel,
 } from "@kompose/desktop";
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 
 // Bundled into CommonJS so this preload works with Electron's sandbox enabled.
 setupRenderer();
-function subscribe<T>(channel: string, callback: (value: T) => void) {
+
+function invoke(method: DesktopInvokeMethod, value?: unknown) {
+  return ipcRenderer.invoke(desktopChannel(method), value);
+}
+function subscribe<T>(
+  member: keyof DesktopBridge,
+  callback: (value: T) => void
+) {
+  const channel = desktopChannel(member);
   const listener = (_event: IpcRendererEvent, value: T) => callback(value);
   ipcRenderer.on(channel, listener);
   return () => {
     ipcRenderer.removeListener(channel, listener);
   };
 }
-const invoke = desktopInvokeChannels;
-const events = desktopEventChannels;
+
 const desktop: DesktopBridge = {
-  checkForUpdates: () => ipcRenderer.invoke(invoke.checkForUpdates),
-  dismissCommandBar: () => ipcRenderer.invoke(invoke.dismissCommandBar),
-  getShortcut: () => ipcRenderer.invoke(invoke.getShortcut),
-  getUpdateState: () => ipcRenderer.invoke(invoke.getUpdateState),
-  installUpdate: () => ipcRenderer.invoke(invoke.installUpdate),
-  onOpenTask: (callback) => subscribe(events.openTask, callback),
-  onSessionChanged: (callback) => subscribe(events.sessionChanged, callback),
-  onUpdateState: (callback) => subscribe(events.updateState, callback),
-  onWindowFocus: (callback) => subscribe(events.windowFocus, callback),
-  openExternal: (url) => ipcRenderer.invoke(invoke.openExternal, url),
-  openTask: (selection) => ipcRenderer.invoke(invoke.openTask, selection),
-  platform: process.platform,
-  resizeCommandBar: (height) =>
-    ipcRenderer.invoke(invoke.resizeCommandBar, height),
-  setShortcut: (id) => ipcRenderer.invoke(invoke.setShortcut, id),
+  dismissCommandBar: () => invoke("dismissCommandBar"),
+  getShortcut: () => invoke("getShortcut"),
+  installUpdate: () => invoke("installUpdate"),
+  onOpenTask: (callback) => subscribe("onOpenTask", callback),
+  onUpdateReady: (callback) => subscribe("onUpdateReady", callback),
+  openTask: (selection) => invoke("openTask", selection),
+  resizeCommandBar: (height) => invoke("resizeCommandBar", height),
+  setShortcut: (id) => invoke("setShortcut", id),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);
+// Enables the Electron drag-region styles in the web app's index.css.
+window.addEventListener("DOMContentLoaded", () => {
+  document.documentElement.dataset.desktopRuntime = "electron";
+});

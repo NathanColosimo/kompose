@@ -29,18 +29,17 @@ export default function DesktopCommandBarClient() {
       return;
     }
 
-    focusManager.setFocused(true);
-    setOpen(true);
-    let unlisten: (() => void) | null = null;
-
-    unlisten = desktopBridge().onWindowFocus((focused) => {
-      focusManager.setFocused(focused);
-      if (focused) {
-        setOpen(true);
-      }
-    });
+    const handleFocus = () => {
+      focusManager.setFocused(true);
+      setOpen(true);
+    };
+    const handleBlur = () => focusManager.setFocused(false);
+    handleFocus();
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
     return () => {
-      unlisten?.();
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
       focusManager.setFocused(undefined);
     };
   });

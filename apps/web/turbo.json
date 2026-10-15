@@ -26,8 +26,6 @@
         "$TURBO_DEFAULT$",
         ".env*",
         "!.next/**",
-        "!out/**",
-        "!scripts/**",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
@@ -41,8 +39,6 @@
         "$TURBO_ROOT$/documents/privacy-policy.md",
         "$TURBO_ROOT$/documents/terms-of-service.md",
         "!.next/**",
-        "!out/**",
-        "!scripts/**",
         "!$TURBO_ROOT$/.vercel/**"
       ],
       "outputs": [

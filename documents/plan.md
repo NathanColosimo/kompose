@@ -229,11 +229,9 @@ packages/
   state/        # Shared Jotai atoms, TanStack Query hooks, storage adapters (web + native)
 ```
 
-Desktop shell: `apps/electron`; renderer: the static export from `apps/web`.
-Production keeps the `Kompose` app identity (`com.nathancolosimo.kompose`,
-`kompose://`), while local bundled testing uses a separate `Kompose Dev`
-flavor (`com.nathancolosimo.kompose.dev`, `kompose-dev://`) so both can stay
-installed side by side on macOS.
+Desktop shell: `apps/electron`, whose windows load the hosted web app. It keeps
+the `Kompose` app identity (`com.nathancolosimo.kompose`); development runs use a
+separate `Kompose Dev` profile.
 
 ---
 
@@ -412,9 +410,9 @@ installed side by side on macOS.
 
 ### 6.17 Production and desktop builds
 
-Web and native builds keep their package-level Turbo tasks. Electron builds the
-shared static renderer with `web#build:desktop`, then bundles main/preload through
-`electron-vite`. Packaging and signing run through `electron-builder`. See
+Web and native builds keep their package-level Turbo tasks. Electron bundles
+only its main process and preload through `electron-vite`; the UI is the hosted
+web app. Packaging and signing run through `electron-builder`. See
 [`electron-port.md`](./electron-port.md) for commands and auth configuration.
 
 ### 6.18 Desktop command bar

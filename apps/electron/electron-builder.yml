@@ -8,9 +8,6 @@ files:
   - dist/**
   - package.json
   - "!node_modules/**"
-extraResources:
-  - from: ../web/out
-    to: web
 asar: true
 protocols:
   - name: Kompose Authentication

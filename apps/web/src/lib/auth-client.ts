@@ -10,13 +10,10 @@ import {
   lastLoginMethodClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { desktopFetch, isDesktopRuntime } from "./desktop";
+import { isDesktopRuntime } from "./desktop";
 
 export const authClient = createAuthClient({
   baseURL: env.NEXT_PUBLIC_WEB_URL,
-  fetchOptions: {
-    ...(isDesktopRuntime() ? { customFetchImpl: desktopFetch } : {}),
-  },
   plugins: [
     inferAdditionalFields<typeof auth>(),
     lastLoginMethodClient({ cookieName: "kompose.last_used_login_method" }),
@@ -40,4 +37,15 @@ export function getElectronAuthQuery() {
   return client_id === ELECTRON_AUTH_CLIENT_ID && state && code_challenge
     ? { client_id, code_challenge, state }
     : null;
+}
+
+export function extractAuthErrorMessage(result: unknown) {
+  if (!result || typeof result !== "object" || !("error" in result)) {
+    return null;
+  }
+  const error = result.error as {
+    message?: string;
+    statusText?: string;
+  } | null;
+  return error?.message || error?.statusText || null;
 }

@@ -63,12 +63,6 @@
       "cache": false,
       "persistent": true
     },
-    "build:desktop": {
-      "dependsOn": ["^build"],
-      "outputs": ["out/**"],
-      "env": ["NEXT_PUBLIC_*", "DESKTOP_BUILD"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"]
-    },
     "package": {
       "dependsOn": ["build"],
       "cache": false

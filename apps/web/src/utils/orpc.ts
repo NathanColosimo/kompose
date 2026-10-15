@@ -5,7 +5,6 @@ import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { desktopFetch, isDesktopRuntime } from "@/lib/desktop";
 
 interface CreateAppQueryClientOptions {
   suppressToasts: boolean;
@@ -40,7 +39,7 @@ export function createAppQueryClient({
 
 const link = new RPCLink({
   fetch(_url, options) {
-    return (isDesktopRuntime() ? desktopFetch : fetch)(_url, {
+    return fetch(_url, {
       ...options,
       credentials: "include",
     });

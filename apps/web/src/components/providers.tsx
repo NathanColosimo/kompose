@@ -10,17 +10,11 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
-import {
-  getExternalHttpUrl,
-  isDesktopRuntime,
-  openUrlInDesktopBrowser,
-} from "@/lib/desktop";
+import { isDesktopRuntime } from "@/lib/desktop";
 import { isToastSuppressedPath } from "@/lib/toast-suppression";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
 import { DesktopAuth } from "./desktop-auth";
-import { DesktopUpdaterProvider } from "./desktop-updater";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
@@ -55,58 +49,6 @@ function VercelAnalytics() {
     return null;
   }
   return <Analytics />;
-}
-
-function DesktopBridgeBootstrap() {
-  useMountEffect(() => {
-    if (!isDesktopRuntime()) {
-      return;
-    }
-    // Enables the Electron drag-region styles in index.css.
-    document.documentElement.dataset.desktopRuntime = "electron";
-
-    const handleDocumentClickCapture = async (event: MouseEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      if (!(event.target instanceof Element)) {
-        return;
-      }
-
-      const anchor = event.target.closest("a[href]");
-      if (!(anchor instanceof HTMLAnchorElement)) {
-        return;
-      }
-
-      const href = anchor.getAttribute("href");
-      if (!href) {
-        return;
-      }
-
-      const externalUrl = getExternalHttpUrl(href, window.location.origin);
-      if (!externalUrl) {
-        return;
-      }
-
-      event.preventDefault();
-      await openUrlInDesktopBrowser(externalUrl);
-    };
-
-    document.addEventListener("click", handleDocumentClickCapture, true);
-
-    return () => {
-      document.removeEventListener("click", handleDocumentClickCapture, true);
-    };
-  });
-
-  return null;
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -186,17 +128,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const isCommandBarRoute = suppressToasts;
   const showReactQueryDevtools =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
-  const appProviders = (
-    <StateProvider
-      config={config}
-      storage={storage}
-      subscribeToResume={webSubscribeToResume}
-    >
-      <DesktopBridgeBootstrap />
-      <DesktopAuth />
-      {children}
-    </StateProvider>
-  );
 
   return (
     <ThemeProvider
@@ -206,12 +137,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
     >
       <QueryClientProvider client={queryClient}>
-        {/* Keep updater ownership in the main desktop window only. */}
-        {isCommandBarRoute ? (
-          appProviders
-        ) : (
-          <DesktopUpdaterProvider>{appProviders}</DesktopUpdaterProvider>
-        )}
+        <StateProvider
+          config={config}
+          storage={storage}
+          subscribeToResume={webSubscribeToResume}
+        >
+          <DesktopAuth />
+          {children}
+        </StateProvider>
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>
       {isCommandBarRoute ? null : <Toaster richColors />}

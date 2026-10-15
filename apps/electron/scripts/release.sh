@@ -25,12 +25,10 @@ set -a
 # shellcheck source=/dev/null
 . "$ENV_FILE"
 set +a
-for name in KOMPOSE_RELEASE_SERVER_URL APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
   [[ -n "${!name:-}" ]] || fail "$name is not set in $ENV_FILE."
 done
 [[ -f "$APPLE_API_KEY" ]] || fail "APPLE_API_KEY must be the path to the .p8 key."
-[[ "$KOMPOSE_RELEASE_SERVER_URL" == https://* ]] ||
-  fail "KOMPOSE_RELEASE_SERVER_URL must be an https URL."
 security find-identity -v -p codesigning | grep -qF "$SIGNING_IDENTITY" ||
   fail "Signing identity not in keychain: $SIGNING_IDENTITY"
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required."
@@ -50,10 +48,6 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null ||
   gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   fail "$TAG already exists. Bump the version in apps/electron/package.json."
 fi
-
-export NEXT_PUBLIC_WEB_URL="$KOMPOSE_RELEASE_SERVER_URL"
-export NEXT_PUBLIC_DEPLOYMENT_ENV="production"
-export MAIN_VITE_SERVER_URL="$KOMPOSE_RELEASE_SERVER_URL"
 
 rm -rf "$ELECTRON_DIR/release"
 bun run build:desktop

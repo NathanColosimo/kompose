@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
-import { extractAuthErrorMessage, isDesktopRuntime } from "@/lib/desktop";
+import {
+  authClient,
+  extractAuthErrorMessage,
+  getElectronAuthQuery,
+} from "@/lib/auth-client";
+import { isDesktopRuntime } from "@/lib/desktop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
@@ -59,7 +63,7 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
       // Better Auth owns PKCE and the session exchange in the main process.
       if (isDesktopRuntime()) {
         await window.requestAuth({ provider });
-        // The official plugin reports completion through onAuthenticated.
+        // The main process reloads this window once the session arrives.
         return;
       }
 

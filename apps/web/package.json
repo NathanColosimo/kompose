@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "build": "bun run --bun next build",
-    "build:desktop": "bash ./scripts/build-desktop.sh",
     "build:prod": "(cd ../.. && vercel pull --yes --environment=production && vercel build --prod)",
     "dev": "PORTLESS_PORT=443 PORTLESS_APP_PORT=3000 PORTLESS_TLD=dev PORTLESS_HTTPS=1 portless local.kompose bun run --bun next dev",
     "start": "bun run --bun next start",

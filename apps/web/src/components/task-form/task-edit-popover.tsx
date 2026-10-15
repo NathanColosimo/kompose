@@ -69,7 +69,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
-import { openUrlInDesktopBrowser } from "@/lib/desktop";
 import {
   formatPlainDate,
   pickerDateToTemporal,
@@ -916,9 +915,7 @@ function LinkMetaPreview({
       )}
       <button
         className="min-w-0 flex-1 cursor-pointer space-y-0.5 text-left"
-        onClick={async () => {
-          await openUrlInDesktopBrowser(meta.url);
-        }}
+        onClick={() => window.open(meta.url, "_blank", "noopener,noreferrer")}
         type="button"
       >
         <p className="truncate font-medium text-xs">

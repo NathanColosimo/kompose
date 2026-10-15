@@ -1,7 +1,6 @@
-/** Shared, serializable contract for the sandboxed desktop renderer. */
+/** Contract between the Electron main process and the hosted web app. */
 export const ELECTRON_AUTH_SCHEME = "com.nathancolosimo.kompose";
 export const ELECTRON_AUTH_CLIENT_ID = "kompose-electron";
-export const DESKTOP_ORIGIN = "kompose-app://app";
 export const desktopCommandBarShortcutPresets = [
   {
     accelerator: "CommandOrControl+Shift+K",
@@ -13,18 +12,6 @@ export const desktopCommandBarShortcutPresets = [
 ] as const;
 export type DesktopCommandBarShortcutPresetId =
   (typeof desktopCommandBarShortcutPresets)[number]["id"];
-export type DesktopUpdateStatus =
-  | "idle"
-  | "checking"
-  | "downloading"
-  | "ready"
-  | "installing";
-export interface DesktopUpdateState {
-  error?: string;
-  percent?: number;
-  status: DesktopUpdateStatus;
-  version?: string;
-}
 export interface DesktopTaskSelection {
   date?: string;
   requestId: string;
@@ -32,41 +19,28 @@ export interface DesktopTaskSelection {
   target: "calendar" | "sidebar";
   taskId: string;
 }
-/** Renderer → main requests, keyed by the bridge method that sends them. */
-export const desktopInvokeChannels = {
-  checkForUpdates: "desktop:check-for-updates",
-  dismissCommandBar: "desktop:dismiss-command-bar",
-  getShortcut: "desktop:get-shortcut",
-  getUpdateState: "desktop:get-update-state",
-  installUpdate: "desktop:install-update",
-  openExternal: "desktop:open-external",
-  openTask: "desktop:open-task",
-  resizeCommandBar: "desktop:resize-command-bar",
-  setShortcut: "desktop:set-shortcut",
-} as const satisfies Partial<Record<keyof DesktopBridge, string>>;
-export type DesktopInvokeMethod = keyof typeof desktopInvokeChannels;
-/** Main → renderer notifications. */
-export const desktopEventChannels = {
-  openTask: "desktop:task-opened",
-  sessionChanged: "desktop:session-changed",
-  updateState: "desktop:update-state",
-  windowFocus: "desktop:window-focus",
-} as const;
+
+/**
+ * Installed apps keep their bridge until they update, while the web app always
+ * ships the latest code. Only add members; feature-detect new ones in the web app.
+ */
 export interface DesktopBridge {
-  checkForUpdates: () => Promise<void>;
   dismissCommandBar: () => Promise<void>;
   getShortcut: () => Promise<DesktopCommandBarShortcutPresetId>;
-  getUpdateState: () => Promise<DesktopUpdateState>;
   installUpdate: () => Promise<void>;
+  /** Delivers a command bar selection to the main window. */
   onOpenTask: (
     callback: (selection: DesktopTaskSelection) => void
   ) => () => void;
-  onSessionChanged: (callback: () => void) => () => void;
-  onUpdateState: (callback: (state: DesktopUpdateState) => void) => () => void;
-  onWindowFocus: (callback: (focused: boolean) => void) => () => void;
-  openExternal: (url: string) => Promise<void>;
+  /** Called with the version once an update has downloaded. */
+  onUpdateReady: (callback: (version: string) => void) => () => void;
   openTask: (selection: DesktopTaskSelection) => Promise<void>;
-  platform: string;
   resizeCommandBar: (height: number) => Promise<void>;
   setShortcut: (id: DesktopCommandBarShortcutPresetId) => Promise<void>;
 }
+export type DesktopInvokeMethod = {
+  [K in keyof DesktopBridge]: K extends `on${string}` ? never : K;
+}[keyof DesktopBridge];
+/** IPC channel for a bridge member, e.g. `desktop:openTask`. */
+export const desktopChannel = (member: keyof DesktopBridge) =>
+  `desktop:${member}`;

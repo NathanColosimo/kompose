@@ -29,13 +29,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useMountEffect } from "@/hooks/use-mount-effect";
-import { authClient } from "@/lib/auth-client";
-import {
-  desktopBridge,
-  extractAuthErrorMessage,
-  isDesktopRuntime,
-  openUrlInDesktopBrowser,
-} from "@/lib/desktop";
+import { authClient, extractAuthErrorMessage } from "@/lib/auth-client";
+import { isDesktopRuntime } from "@/lib/desktop";
 import { orpc } from "@/utils/orpc";
 import { DesktopShortcutSettings } from "./desktop-shortcut-settings";
 
@@ -64,19 +59,15 @@ export default function SettingsPageClient() {
 
   useMountEffect(() => {
     setIsDesktop(isDesktopRuntime());
-    if (!isDesktopRuntime()) {
-      return;
-    }
-    // Accounts are linked in the system browser; refresh when the user returns.
-    return desktopBridge().onWindowFocus((focused) => {
-      if (!focused) {
-        return;
-      }
+    // The desktop app links accounts in the system browser; refresh on return.
+    const refreshAccounts = () => {
       queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
       queryClient.invalidateQueries({
         queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY,
       });
-    });
+    };
+    window.addEventListener("focus", refreshAccounts);
+    return () => window.removeEventListener("focus", refreshAccounts);
   });
 
   const handleLinkAnotherGoogleAccount = async () => {
@@ -87,9 +78,7 @@ export default function SettingsPageClient() {
     setLinkingProvider("google");
     try {
       if (isDesktopRuntime()) {
-        await openUrlInDesktopBrowser(
-          `${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`
-        );
+        window.open(`${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
         return;
       }
 
@@ -130,9 +119,7 @@ export default function SettingsPageClient() {
 
     try {
       if (isDesktopRuntime()) {
-        await openUrlInDesktopBrowser(
-          `${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`
-        );
+        window.open(`${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
         return;
       }
 
