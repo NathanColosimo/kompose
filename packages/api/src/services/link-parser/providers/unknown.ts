@@ -17,47 +17,47 @@ export const parseUnknownLink = Effect.fn("Unknown.parseLink")(function* (
   url: string
 ) {
   const response = yield* Effect.tryPromise({
+    catch: (cause) =>
+      new LinkParseError({
+        cause,
+        message: "Failed to fetch page for OG metadata",
+        url,
+      }),
     try: () =>
       fetch(url, {
         headers: {
+          Accept: "text/html",
           "User-Agent":
             "Mozilla/5.0 (compatible; KomposeBot/1.0; +https://kompose.app)",
-          Accept: "text/html",
         },
         redirect: "follow",
-      }),
-    catch: (cause) =>
-      new LinkParseError({
-        url,
-        message: "Failed to fetch page for OG metadata",
-        cause,
       }),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url,
       message: `Page returned ${response.status}`,
+      url,
     });
   }
 
   const html = yield* Effect.tryPromise({
-    try: () => response.text(),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to read response body",
         cause,
+        message: "Failed to read response body",
+        url,
       }),
+    try: () => response.text(),
   });
 
   const result: LinkMeta & { provider: "unknown" } = {
-    provider: "unknown",
-    title: extractMeta(html, "og:title"),
     description: extractMeta(html, "og:description"),
-    thumbnailUrl: extractMeta(html, "og:image"),
-    url,
     fetchedAt: new Date().toISOString(),
+    provider: "unknown",
+    thumbnailUrl: extractMeta(html, "og:image"),
+    title: extractMeta(html, "og:title"),
+    url,
   };
 
   return result;

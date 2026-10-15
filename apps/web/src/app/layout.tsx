@@ -5,30 +5,30 @@ import Providers from "@/components/providers";
 
 // Preload the custom font trio so the CSS variables resolve immediately.
 const libreBaskerville = Libre_Baskerville({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-sans",
   display: "swap",
+  subsets: ["latin"],
+  variable: "--font-sans",
+  weight: ["400", "700"],
 });
 
 const lora = Lora({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-serif",
   display: "swap",
+  subsets: ["latin"],
+  variable: "--font-serif",
+  weight: ["400", "500", "600", "700"],
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono",
   display: "swap",
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "kompose — calendar and tasks",
   description:
     "Kompose merges your calendar, tasks, and integrations into one orchestration canvas for planning your day.",
+  title: "kompose — calendar and tasks",
 };
 
 export default function RootLayout({

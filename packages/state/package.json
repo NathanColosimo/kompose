@@ -1,5 +1,6 @@
 {
   "name": "@kompose/state",
+  "type": "module",
   "exports": {
     "./atoms/*": {
       "default": "./src/atoms/*.ts"
@@ -14,14 +15,8 @@
       "default": "./src/*.ts"
     }
   },
-  "type": "module",
   "scripts": {
     "type-check": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@kompose/config": "workspace:*",
-    "@types/node": "catalog:",
-    "@types/react": "catalog:"
   },
   "dependencies": {
     "@kompose/api": "workspace:*",
@@ -35,5 +30,10 @@
     "react": "catalog:",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:"
   }
 }

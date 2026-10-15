@@ -229,8 +229,8 @@ export function calculateCollisionLayout(
       // No collisions — single item takes full width
       result.set(item.id, {
         columnIndex: 0,
-        totalColumns: 1,
         columnSpan: 1,
+        totalColumns: 1,
         zIndex: 1,
       });
       continue;
@@ -263,8 +263,8 @@ export function calculateCollisionLayout(
       if (assignment) {
         result.set(clusterItem.id, {
           columnIndex: assignment.columnIndex,
-          totalColumns,
           columnSpan: columnSpans.get(clusterItem.id) ?? 1,
+          totalColumns,
           zIndex: assignment.zIndex,
         });
       }

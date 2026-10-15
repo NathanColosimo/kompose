@@ -41,8 +41,8 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
   const workoutEnd = isoStringToZonedDateTime(end, timeZone);
 
   const dayStart = columnDate.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
   const dayEnd = dayStart.add({ days: 1 });
 
@@ -84,9 +84,9 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
     <div
       className="pointer-events-auto absolute rounded-md bg-background p-px shadow-sm"
       style={{
-        top: `${top}px`,
         height: `${height}px`,
         left: `calc(${leftPercent}% + 2px)`,
+        top: `${top}px`,
         width: `calc(${columnWidth}% - 4px)`,
         zIndex,
       }}

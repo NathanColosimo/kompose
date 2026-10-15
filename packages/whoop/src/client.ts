@@ -40,54 +40,54 @@ function fetchPage<T>(
 ): Effect.Effect<T, WhoopApiError | WhoopParseError> {
   return Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
+      catch: (cause) =>
+        new WhoopApiError({
+          cause,
+          message: `Network error during ${operation}`,
+          operation,
+          status: null,
+        }),
       try: () =>
         fetch(buildUrl(path, params), {
           headers: { Authorization: `Bearer ${accessToken}` },
-        }),
-      catch: (cause) =>
-        new WhoopApiError({
-          operation,
-          message: `Network error during ${operation}`,
-          status: null,
-          cause,
         }),
     });
 
     if (!response.ok) {
       const body = yield* Effect.tryPromise({
-        try: () => response.text(),
         catch: () =>
           new WhoopApiError({
-            operation,
-            message: `Failed to read error body during ${operation}`,
-            status: response.status,
             cause: null,
+            message: `Failed to read error body during ${operation}`,
+            operation,
+            status: response.status,
           }),
+        try: () => response.text(),
       });
       return yield* new WhoopApiError({
-        operation,
-        message: `WHOOP API error during ${operation}: ${response.status}`,
-        status: response.status,
         cause: body,
+        message: `WHOOP API error during ${operation}: ${response.status}`,
+        operation,
+        status: response.status,
       });
     }
 
     const json = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<unknown>,
       catch: (cause) =>
         new WhoopParseError({
-          operation,
-          message: `Failed to parse JSON during ${operation}`,
           cause,
+          message: `Failed to parse JSON during ${operation}`,
+          operation,
         }),
+      try: () => response.json() as Promise<unknown>,
     });
 
     const parsed = schema.safeParse(json);
     if (!parsed.success) {
       return yield* new WhoopParseError({
-        operation,
-        message: `Schema validation failed during ${operation}`,
         cause: parsed.error.flatten(),
+        message: `Schema validation failed during ${operation}`,
+        operation,
       });
     }
 

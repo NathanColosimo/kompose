@@ -13,19 +13,19 @@ const spotifyTokenResponse = z.object({
 });
 
 const spotifyResourceResponse = z.object({
-  name: z.string(),
+  artists: z.array(z.object({ name: z.string() })).optional(),
   description: z.string().optional(),
   duration_ms: z.number(),
   images: z.array(z.object({ url: z.string() })).optional(),
-  artists: z.array(z.object({ name: z.string() })).optional(),
-  show: z.object({ name: z.string() }).optional(),
+  name: z.string(),
   publisher: z.string().optional(),
+  show: z.object({ name: z.string() }).optional(),
 });
 
 const spotifyAlbumResponse = z.object({
-  name: z.string(),
-  images: z.array(z.object({ url: z.string() })).optional(),
   artists: z.array(z.object({ name: z.string() })).optional(),
+  images: z.array(z.object({ url: z.string() })).optional(),
+  name: z.string(),
   tracks: z.object({
     items: z.array(z.object({ duration_ms: z.number() })),
   }),
@@ -43,57 +43,57 @@ const getSpotifyAccessToken = Effect.fn("Spotify.getAccessToken")(function* () {
 
   if (!clientId) {
     return yield* new LinkParseError({
-      url: "",
       message: "Spotify API credentials not configured",
+      url: "",
     });
   }
   if (!clientSecret) {
     return yield* new LinkParseError({
-      url: "",
       message: "Spotify API credentials not configured",
+      url: "",
     });
   }
 
   const response = yield* Effect.tryPromise({
-    try: () =>
-      fetch("https://accounts.spotify.com/api/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-        },
-        body: "grant_type=client_credentials",
-      }),
     catch: (cause) =>
       new LinkParseError({
-        url: "",
-        message: "Failed to fetch Spotify access token",
         cause,
+        message: "Failed to fetch Spotify access token",
+        url: "",
+      }),
+    try: () =>
+      fetch("https://accounts.spotify.com/api/token", {
+        body: "grant_type=client_credentials",
+        headers: {
+          Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method: "POST",
       }),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url: "",
       message: `Spotify token request failed: ${response.status}`,
+      url: "",
     });
   }
 
   const json = yield* Effect.tryPromise({
-    try: () => response.json(),
     catch: (cause) =>
       new LinkParseError({
-        url: "",
-        message: "Failed to parse Spotify token response",
         cause,
+        message: "Failed to parse Spotify token response",
+        url: "",
       }),
+    try: () => response.json(),
   });
 
   const parsed = spotifyTokenResponse.safeParse(json);
   if (!parsed.success) {
     return yield* new LinkParseError({
-      url: "",
       message: `Invalid Spotify token response: ${parsed.error.message}`,
+      url: "",
     });
   }
 
@@ -107,57 +107,57 @@ export const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
   const parsed = parseSpotifyUrl(url);
   if (!parsed) {
     return yield* new LinkParseError({
-      url,
       message: "Could not parse Spotify URL",
+      url,
     });
   }
 
   const accessToken = yield* getSpotifyAccessToken();
 
   const apiPathMap = {
-    show: `shows/${parsed.id}`,
-    episode: `episodes/${parsed.id}`,
-    track: `tracks/${parsed.id}`,
     album: `albums/${parsed.id}`,
+    episode: `episodes/${parsed.id}`,
+    show: `shows/${parsed.id}`,
+    track: `tracks/${parsed.id}`,
   } as const;
   const apiPath = apiPathMap[parsed.resourceType];
 
   const response = yield* Effect.tryPromise({
+    catch: (cause) =>
+      new LinkParseError({
+        cause,
+        message: "Failed to fetch Spotify metadata",
+        url,
+      }),
     try: () =>
       fetch(`https://api.spotify.com/v1/${apiPath}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
-      }),
-    catch: (cause) =>
-      new LinkParseError({
-        url,
-        message: "Failed to fetch Spotify metadata",
-        cause,
       }),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url,
       message: `Spotify API returned ${response.status}`,
+      url,
     });
   }
 
   const json = yield* Effect.tryPromise({
-    try: () => response.json(),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to parse Spotify response",
         cause,
+        message: "Failed to parse Spotify response",
+        url,
       }),
+    try: () => response.json(),
   });
 
   if (parsed.resourceType === "album") {
     const data = spotifyAlbumResponse.safeParse(json);
     if (!data.success) {
       return yield* new LinkParseError({
-        url,
         message: `Invalid Spotify album response: ${data.error.message}`,
+        url,
       });
     }
 
@@ -167,23 +167,23 @@ export const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
     );
 
     return {
-      provider: "spotify" as const,
-      resourceType: "album" as const,
-      title: data.data.name,
+      artistName: data.data.artists?.[0]?.name,
       description: undefined,
       durationSeconds: roundToNearest15Min(Math.round(totalMs / 1000)),
-      thumbnailUrl: data.data.images?.[0]?.url,
-      artistName: data.data.artists?.[0]?.name,
-      url,
       fetchedAt: new Date().toISOString(),
+      provider: "spotify" as const,
+      resourceType: "album" as const,
+      thumbnailUrl: data.data.images?.[0]?.url,
+      title: data.data.name,
+      url,
     };
   }
 
   const data = spotifyResourceResponse.safeParse(json);
   if (!data.success) {
     return yield* new LinkParseError({
-      url,
       message: `Invalid Spotify resource response: ${data.error.message}`,
+      url,
     });
   }
 
@@ -191,16 +191,16 @@ export const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
     data.data.artists?.[0]?.name ?? data.data.show?.name ?? data.data.publisher;
 
   return {
-    provider: "spotify" as const,
-    resourceType: parsed.resourceType,
-    title: data.data.name,
+    artistName,
     description: data.data.description,
     durationSeconds: roundToNearest15Min(
       Math.round(data.data.duration_ms / 1000)
     ),
-    thumbnailUrl: data.data.images?.[0]?.url,
-    artistName,
-    url,
     fetchedAt: new Date().toISOString(),
+    provider: "spotify" as const,
+    resourceType: parsed.resourceType,
+    thumbnailUrl: data.data.images?.[0]?.url,
+    title: data.data.name,
+    url,
   };
 });

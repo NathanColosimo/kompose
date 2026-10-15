@@ -84,7 +84,7 @@ export function TagManagerPopover({
       return;
     }
     createTag.mutate(
-      { name: trimmed, icon },
+      { icon, name: trimmed },
       {
         onSuccess: () => {
           setName("");
@@ -132,7 +132,7 @@ export function TagManagerPopover({
       return;
     }
     updateTag.mutate(
-      { id: tag.id, name: trimmed, icon: nextIcon },
+      { icon: nextIcon, id: tag.id, name: trimmed },
       {
         onSuccess: () => {
           setTagDrafts((previous) => ({

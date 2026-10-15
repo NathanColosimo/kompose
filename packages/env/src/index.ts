@@ -1,49 +1,42 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
-export const desktopDeepLinkSchemes = ["kompose", "kompose-dev"] as const;
-export const desktopDeepLinkSchemeSchema = z.enum(desktopDeepLinkSchemes);
-export type DesktopDeepLinkScheme = z.infer<typeof desktopDeepLinkSchemeSchema>;
-
 export const env = createEnv({
-  server: {
-    DATABASE_URL: z.string().min(1),
-    REDIS_URL: z.string().min(1),
-    BETTER_AUTH_SECRET: z.string().min(1),
-    GOOGLE_CLIENT_ID: z.string().min(1),
-    GOOGLE_CLIENT_SECRET: z.string().min(1),
-    WHOOP_CLIENT_ID: z.string().min(1).optional(),
-    WHOOP_CLIENT_SECRET: z.string().min(1).optional(),
-    APPLE_CLIENT_ID: z.string().min(1),
-    APPLE_CLIENT_SECRET: z.string().min(1),
-    APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
-    GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
-    GOOGLE_MAPS_API_KEY: z.string().min(1),
-    // Link parsing provider keys (optional — parsing degrades gracefully when missing)
-    SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
-    SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
-    YOUTUBE_API_KEY: z.string().min(1).optional(),
-    // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
-    // Takes priority over Axiom when set
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
-    // Optional -- tracing disabled when not set (server-only)
-    AXIOM_API_TOKEN: z.string().min(1).optional(),
-    AXIOM_DATASET: z.string().min(1).optional(),
-  },
   client: {
+    NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "preview", "production"]),
     NEXT_PUBLIC_WEB_URL: z
       .string()
       .min(1)
       .regex(/^https?:\/\//),
-    NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "preview", "production"]),
-    NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME: desktopDeepLinkSchemeSchema,
   },
 
   experimental__runtimeEnv: {
-    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
     NEXT_PUBLIC_DEPLOYMENT_ENV: process.env.NEXT_PUBLIC_DEPLOYMENT_ENV,
-    NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME:
-      process.env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME,
+    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
+  },
+  server: {
+    APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
+    APPLE_CLIENT_ID: z.string().min(1),
+    APPLE_CLIENT_SECRET: z.string().min(1),
+    // Optional -- tracing disabled when not set (server-only)
+    AXIOM_API_TOKEN: z.string().min(1).optional(),
+    AXIOM_DATASET: z.string().min(1).optional(),
+    BETTER_AUTH_SECRET: z.string().min(1),
+    DATABASE_URL: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_MAPS_API_KEY: z.string().min(1),
+    GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
+    // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
+    // Takes priority over Axiom when set
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+    REDIS_URL: z.string().min(1),
+    // Link parsing provider keys (optional — parsing degrades gracefully when missing)
+    SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
+    SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
+    WHOOP_CLIENT_ID: z.string().min(1).optional(),
+    WHOOP_CLIENT_SECRET: z.string().min(1).optional(),
+    YOUTUBE_API_KEY: z.string().min(1).optional(),
   },
 });
 

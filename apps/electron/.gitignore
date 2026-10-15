@@ -1,0 +1,4 @@
+release/
+.env.release
+# Packaging resources, despite the root build/ ignore.
+!/build/

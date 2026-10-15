@@ -40,8 +40,8 @@ function getSystemTimeZone(): string {
 
 function formatPlainDateLong(date: Temporal.PlainDate): string {
   return new Intl.DateTimeFormat(undefined, {
-    month: "short",
     day: "numeric",
+    month: "short",
     year: "numeric",
   }).format(plainDateToDate(date));
 }
@@ -72,16 +72,16 @@ function buildTodaySections(
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
-    sections.push({ title: "Overdue", data: overdueTasks });
+    sections.push({ data: overdueTasks, title: "Overdue" });
   }
   if (unplannedTasks.length > 0) {
-    sections.push({ title: "Unplanned", data: unplannedTasks });
+    sections.push({ data: unplannedTasks, title: "Unplanned" });
   }
   if (plannedTasks.length > 0) {
-    sections.push({ title: "Planned", data: plannedTasks });
+    sections.push({ data: plannedTasks, title: "Planned" });
   }
   if (doneTasks.length > 0) {
-    sections.push({ title: "Done", data: doneTasks });
+    sections.push({ data: doneTasks, title: "Done" });
   }
   return sections;
 }
@@ -93,13 +93,13 @@ function buildTagSections(
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
-    sections.push({ title: "Overdue", data: overdueTasks });
+    sections.push({ data: overdueTasks, title: "Overdue" });
   }
   if (todoTasks.length > 0) {
-    sections.push({ title: "Todo", data: todoTasks });
+    sections.push({ data: todoTasks, title: "Todo" });
   }
   if (doneTasks.length > 0) {
-    sections.push({ title: "Done", data: doneTasks });
+    sections.push({ data: doneTasks, title: "Done" });
   }
   return sections;
 }
@@ -110,9 +110,9 @@ function buildTodayItems(sections: TaskSection[]): TaskListItem[] {
     if (section.data.length === 0) {
       continue;
     }
-    items.push({ type: "header", title: section.title });
+    items.push({ title: section.title, type: "header" });
     for (const task of section.data) {
-      items.push({ type: "task", task });
+      items.push({ task, type: "task" });
     }
   }
   return items;
@@ -219,7 +219,7 @@ function TaskList({
   if (mode === "Inbox") {
     return (
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
         contentInsetAdjustmentBehavior="automatic"
         data={inboxTasks}
         keyExtractor={(t) => t.id}
@@ -266,7 +266,7 @@ function TaskList({
 
   return (
     <FlatList
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+      contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
       contentInsetAdjustmentBehavior="automatic"
       data={sectionItems}
       keyExtractor={(item) =>
@@ -312,17 +312,17 @@ function buildDraftFromTask(
   recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
 ): TaskDraft {
   return {
-    title: task.title,
     description: task.description ?? "",
-    tagIds: task.tags.map((tag) => tag.id),
-    durationMinutes: task.durationMinutes,
-    status: task.status,
     dueDate: task.dueDate,
-    startDate: task.startDate,
-    startTime: task.startTime,
+    durationMinutes: task.durationMinutes,
     linkInput: "",
     links: task.links ?? [],
     recurrence: recurrence ?? null,
+    startDate: task.startDate,
+    startTime: task.startTime,
+    status: task.status,
+    tagIds: task.tags.map((tag) => tag.id),
+    title: task.title,
   };
 }
 
@@ -331,17 +331,17 @@ function buildEmptyDraft(timeZone: string): TaskDraft {
   const tomorrow = today.add({ days: 1 });
 
   return {
-    title: "",
     description: "",
-    tagIds: [],
-    durationMinutes: 30,
-    status: "todo",
     dueDate: tomorrow,
-    startDate: today,
-    startTime: null,
+    durationMinutes: 30,
     linkInput: "",
     links: [],
     recurrence: null,
+    startDate: today,
+    startTime: null,
+    status: "todo",
+    tagIds: [],
+    title: "",
   };
 }
 
@@ -451,17 +451,17 @@ export default function TasksScreen() {
       id: editingTask.id,
       scope,
       task: {
-        title: nextDraft.title.trim(),
         description: nextDraft.description.trim()
           ? nextDraft.description.trim()
           : null,
-        tagIds: nextDraft.tagIds,
-        durationMinutes: nextDraft.durationMinutes,
         dueDate: nextDraft.dueDate,
-        startDate: nextDraft.startDate,
-        startTime: nextDraft.startTime,
+        durationMinutes: nextDraft.durationMinutes,
         links: nextDraft.links,
         recurrence: nextDraft.recurrence,
+        startDate: nextDraft.startDate,
+        startTime: nextDraft.startTime,
+        tagIds: nextDraft.tagIds,
+        title: nextDraft.title.trim(),
       },
     });
   }
@@ -476,32 +476,32 @@ export default function TasksScreen() {
 
     if (editingTask) {
       const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-        previous: {
-          title: editingTask.title,
-          description: editingTask.description,
-          durationMinutes: editingTask.durationMinutes,
-          dueDate: editingTask.dueDate,
-          startDate: editingTask.startDate,
-          startTime: editingTask.startTime,
-        },
         next: {
-          title: draft.title,
           description: draft.description,
-          durationMinutes: draft.durationMinutes,
           dueDate: draft.dueDate,
+          durationMinutes: draft.durationMinutes,
           startDate: draft.startDate,
           startTime: draft.startTime,
+          title: draft.title,
+        },
+        previous: {
+          description: editingTask.description,
+          dueDate: editingTask.dueDate,
+          durationMinutes: editingTask.durationMinutes,
+          startDate: editingTask.startDate,
+          startTime: editingTask.startTime,
+          title: editingTask.title,
         },
       });
 
       const decision = getTaskUpdateScopeDecision({
+        hasCoreFieldChanges,
         isRecurring: editingTask.seriesMasterId !== null,
         isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-        hasCoreFieldChanges,
-        previousRecurrence: editingTask.recurrence,
         nextRecurrence: draft.recurrence,
-        previousTagIds: editingTask.tags.map((tag) => tag.id),
         nextTagIds: draft.tagIds,
+        previousRecurrence: editingTask.recurrence,
+        previousTagIds: editingTask.tags.map((tag) => tag.id),
       });
 
       if (decision.action === "prompt") {
@@ -522,18 +522,18 @@ export default function TasksScreen() {
       }
 
       createTask.mutate({
-        title,
         description: draft.description.trim() ? draft.description.trim() : null,
-        tagIds: draft.tagIds,
-        durationMinutes: draft.durationMinutes,
         dueDate: draft.dueDate,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
+        durationMinutes: draft.durationMinutes,
+        isException: false,
         links: draft.links,
-        status: "todo",
         recurrence: draft.recurrence,
         seriesMasterId: null,
-        isException: false,
+        startDate: draft.startDate,
+        startTime: draft.startTime,
+        status: "todo",
+        tagIds: draft.tagIds,
+        title,
       });
     }
 
@@ -597,8 +597,8 @@ export default function TasksScreen() {
       const newStatus = task.status === "done" ? "todo" : "done";
       updateTask.mutate({
         id: task.id,
-        task: { status: newStatus },
         scope: "this",
+        task: { status: newStatus },
       });
     },
     [updateTask]
@@ -619,7 +619,6 @@ export default function TasksScreen() {
       {/* Configure header options via Stack.Screen */}
       <Stack.Screen
         options={{
-          title: "Tasks",
           headerLeft: () => (
             <Pressable
               accessibilityLabel="Manage tags"
@@ -679,6 +678,7 @@ export default function TasksScreen() {
               </Pressable>
             </View>
           ),
+          title: "Tasks",
         }}
       />
 
@@ -722,8 +722,8 @@ export default function TasksScreen() {
           <RadioGroup
             onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
             options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
               label: option.label,
+              value: option.value,
             }))}
             value={taskSaveScope}
           />
@@ -742,8 +742,8 @@ export default function TasksScreen() {
           <RadioGroup
             onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
             options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
-              value: option.value,
               label: option.label,
+              value: option.value,
             }))}
             value={taskDeleteScope}
           />

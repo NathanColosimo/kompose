@@ -34,11 +34,8 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import {
-  applyCommandBarTaskOpenRequest,
-  COMMAND_BAR_TASK_OPEN_EVENT,
-} from "@/lib/command-bar-task-routing";
-import { isTauriRuntime } from "@/lib/tauri-desktop";
+import { applyCommandBarTaskOpenRequest } from "@/lib/command-bar-task-routing";
+import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import {
   sidebarLeftOpenAtom,
@@ -228,19 +225,10 @@ export function CommandBarSearchTasks({
               taskId: task.id,
             });
 
-      if (selectionMode === "desktop-popup" && isTauriRuntime()) {
-        const [{ emit }, { invoke }] = await Promise.all([
-          import("@tauri-apps/api/event"),
-          import("@tauri-apps/api/core"),
-        ]);
-
-        await Promise.all([
-          emit(
-            COMMAND_BAR_TASK_OPEN_EVENT,
-            serializeCommandBarTaskOpenRequest(request)
-          ),
-          invoke("focus_main_window_for_command_bar_selection"),
-        ]);
+      if (selectionMode === "desktop-popup" && isDesktopRuntime()) {
+        await desktopBridge().openTask(
+          serializeCommandBarTaskOpenRequest(request)
+        );
         return;
       }
 

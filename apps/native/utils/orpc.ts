@@ -30,36 +30,22 @@ function generateTraceparent(): string {
 }
 
 export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      retry: 1,
+      staleTime: 1000 * 60,
+    },
+  },
   queryCache: new QueryCache({
     onError: (error) => {
       console.log(error);
     },
   }),
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60,
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      retry: 1,
-    },
-  },
 });
 
 export const link = new RPCLink({
-  url: `${env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
-  plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
-  async headers() {
-    const headers = new Map<string, string>();
-    const cookies = await authClient.getCookie();
-    if (cookies) {
-      headers.set("Cookie", cookies);
-    }
-    // Inject traceparent for distributed tracing correlation
-    headers.set("traceparent", generateTraceparent());
-    // Client timestamp for network latency measurement on the server
-    headers.set("x-request-start", Date.now().toString());
-    return Object.fromEntries(headers);
-  },
   // React Native's built-in fetch does not support SSE / ReadableStream.
   // expo/fetch provides streaming support required for oRPC eventIterator.
   async fetch(request, init) {
@@ -76,6 +62,20 @@ export const link = new RPCLink({
     });
     return response as unknown as Response;
   },
+  async headers() {
+    const headers = new Map<string, string>();
+    const cookies = await authClient.getCookie();
+    if (cookies) {
+      headers.set("Cookie", cookies);
+    }
+    // Inject traceparent for distributed tracing correlation
+    headers.set("traceparent", generateTraceparent());
+    // Client timestamp for network latency measurement on the server
+    headers.set("x-request-start", Date.now().toString());
+    return Object.fromEntries(headers);
+  },
+  plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
+  url: `${env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
 });
 
 export const orpc: AppRouterClient = createORPCClient(link);

@@ -36,9 +36,9 @@ export const CreationPreview = memo(function CreationPreviewComponent({
         return null;
       }
       return {
-        type: "creating" as const,
-        start: startDateTime,
         end: endDateTime,
+        start: startDateTime,
+        type: "creating" as const,
       };
     }
 
@@ -49,9 +49,9 @@ export const CreationPreview = memo(function CreationPreviewComponent({
         return null;
       }
       return {
-        type: "creating" as const,
-        start: popoverTimes.start,
         end: popoverTimes.end,
+        start: popoverTimes.start,
+        type: "creating" as const,
       };
     }
 
@@ -64,9 +64,9 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       // Offset start by half duration to center preview on cursor
       const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
       return {
-        type: "hover" as const,
-        start: hoverDateTime.subtract({ minutes: halfDuration }),
         end: hoverDateTime.add({ minutes: halfDuration }),
+        start: hoverDateTime.subtract({ minutes: halfDuration }),
+        type: "hover" as const,
       };
     }
 
@@ -122,8 +122,8 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       )}
       ref={previewRef}
       style={{
-        top: `${top}px`,
         height: `${height}px`,
+        top: `${top}px`,
       }}
     />
   );

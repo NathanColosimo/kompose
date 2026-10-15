@@ -56,5 +56,5 @@ export async function generateMetadata(props: {
   if (!page) {
     notFound();
   }
-  return { title: page.data.title, description: page.data.description };
+  return { description: page.data.description, title: page.data.title };
 }

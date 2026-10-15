@@ -19,9 +19,9 @@ export function useGoogleCalendars(accountIds: string[]) {
 
   const queries = useQueries({
     queries: accountIds.map((accountId) => ({
-      queryKey: getGoogleCalendarsQueryKey(accountId),
-      queryFn: async () => await orpc.googleCal.calendars.list({ accountId }),
       placeholderData: keepPreviousData,
+      queryFn: async () => await orpc.googleCal.calendars.list({ accountId }),
+      queryKey: getGoogleCalendarsQueryKey(accountId),
       staleTime: 5 * 60 * 1000,
     })),
   });
@@ -42,5 +42,5 @@ export function useGoogleCalendars(accountIds: string[]) {
   const isLoading = queries.some((q) => q.isLoading);
   const isFetching = queries.some((q) => q.isFetching);
 
-  return { calendars, isLoading, isFetching };
+  return { calendars, isFetching, isLoading };
 }

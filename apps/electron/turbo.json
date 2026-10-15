@@ -1,0 +1,10 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "passThroughEnv": ["KOMPOSE_SERVER_URL"],
+      "persistent": true
+    }
+  }
+}

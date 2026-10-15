@@ -76,15 +76,15 @@ function RootLayoutContent() {
       <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
       <Stack
         screenOptions={{
+          contentStyle: { backgroundColor: theme.colors.background },
           headerStyle: { backgroundColor: theme.colors.background },
           headerTintColor: theme.colors.text,
-          contentStyle: { backgroundColor: theme.colors.background },
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="modal"
-          options={{ title: "Modal", presentation: "modal" }}
+          options={{ presentation: "modal", title: "Modal" }}
         />
       </Stack>
     </View>
@@ -100,6 +100,12 @@ export default function RootLayout() {
   const storage = React.useMemo(() => createSecureStoreAdapter(), []);
   const stateAuthClient = React.useMemo(
     () => ({
+      accountInfo: async (accountId: string) => {
+        const result = await authClient.accountInfo({
+          query: { accountId },
+        });
+        return result?.data?.user ?? null;
+      },
       listAccounts: async () => {
         const result = await authClient.listAccounts();
         if (
@@ -111,27 +117,21 @@ export default function RootLayout() {
         }
         return { data: result.data };
       },
-      accountInfo: async (accountId: string) => {
-        const result = await authClient.accountInfo({
-          query: { accountId },
-        });
-        return result?.data?.user ?? null;
-      },
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
         await new Promise<void>((resolve, reject) => {
           authClient
             .unlinkAccount(
               { accountId },
               {
-                onSuccess: () => {
-                  resolve();
-                },
                 onError: (error: unknown) => {
                   reject(
                     error instanceof Error
                       ? error
                       : new Error("Failed to unlink account.")
                   );
+                },
+                onSuccess: () => {
+                  resolve();
                 },
               }
             )
@@ -149,11 +149,11 @@ export default function RootLayout() {
   );
   const config = React.useMemo(
     () => ({
-      orpc,
       authClient: stateAuthClient,
       notifyError: (error: Error) => {
         console.log(error);
       },
+      orpc,
     }),
     [stateAuthClient]
   );

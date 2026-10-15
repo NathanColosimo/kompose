@@ -53,11 +53,11 @@ export const TaskEvent = memo(function TaskEventInner({
   const timeZone = useAtomValue(timezoneAtom);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `event-${task.id}-${segmentStart.toString()}`,
     data: {
-      type: "task",
       task,
+      type: "task",
     },
+    id: `event-${task.id}-${segmentStart.toString()}`,
   });
 
   const {
@@ -65,12 +65,12 @@ export const TaskEvent = memo(function TaskEventInner({
     listeners: startListeners,
     setNodeRef: setStartHandleRef,
   } = useDraggable({
-    id: `event-${task.id}-resize-start`,
     data: {
-      type: "task-resize",
-      task,
       direction: "start",
+      task,
+      type: "task-resize",
     },
+    id: `event-${task.id}-resize-start`,
   });
 
   const {
@@ -78,12 +78,12 @@ export const TaskEvent = memo(function TaskEventInner({
     listeners: endListeners,
     setNodeRef: setEndHandleRef,
   } = useDraggable({
-    id: `event-${task.id}-resize-end`,
     data: {
-      type: "task-resize",
-      task,
       direction: "end",
+      task,
+      type: "task-resize",
     },
+    id: `event-${task.id}-resize-end`,
   });
 
   const { updateTask } = useTasks();
@@ -94,8 +94,8 @@ export const TaskEvent = memo(function TaskEventInner({
       const newStatus = task.status === "done" ? "todo" : "done";
       updateTask.mutate({
         id: task.id,
-        task: { status: newStatus },
         scope: "this",
+        task: { status: newStatus },
       });
     },
     [task.id, task.status, updateTask]
@@ -106,8 +106,8 @@ export const TaskEvent = memo(function TaskEventInner({
     segmentEnd.since(segmentStart).total({ unit: "minutes" })
   );
   const taskStart = task.startDate.toZonedDateTime({
-    timeZone,
     plainTime: task.startTime,
+    timeZone,
   });
   const taskEnd = taskStart.add({ minutes: durationMinutes });
 
@@ -126,11 +126,11 @@ export const TaskEvent = memo(function TaskEventInner({
   const leftPercent = columnIndex * singleColumnWidth;
 
   const style: React.CSSProperties = {
-    position: "absolute",
-    top,
     height,
     // Horizontal positioning: divide available width by totalColumns
     left: `calc(${leftPercent}% + 2px)`,
+    position: "absolute",
+    top,
     width: `calc(${columnWidth}% - 4px)`,
     zIndex,
   };
@@ -209,7 +209,7 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   // Combine startDate + startTime if both exist for time display
   const startZdt =
     task.startDate && task.startTime
-      ? task.startDate.toZonedDateTime({ timeZone, plainTime: task.startTime })
+      ? task.startDate.toZonedDateTime({ plainTime: task.startTime, timeZone })
       : null;
 
   return (

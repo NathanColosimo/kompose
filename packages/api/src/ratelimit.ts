@@ -15,8 +15,8 @@ const globalLimiter = new RedisRatelimiter({
   eval: async (script, numKeys, ...rest) =>
     redisClient.send("EVAL", [script, numKeys.toString(), ...rest.map(String)]),
   maxRequests: 200,
-  window: 60_000,
   prefix: "orpc:ratelimit:global:",
+  window: 60_000,
 });
 
 /**
@@ -28,18 +28,18 @@ const mapsLimiter = new RedisRatelimiter({
   eval: async (script, numKeys, ...rest) =>
     redisClient.send("EVAL", [script, numKeys.toString(), ...rest.map(String)]),
   maxRequests: 20,
-  window: 60_000,
   prefix: "orpc:ratelimit:maps:",
+  window: 60_000,
 });
 
 /** Global rate limit middleware — apply after requireAuth on all routers */
 export const globalRateLimit = createRatelimitMiddleware({
-  limiter: () => globalLimiter,
   key: ({ context }) => (context as { user: { id: string } }).user.id,
+  limiter: () => globalLimiter,
 });
 
 /** Maps-specific rate limit middleware — apply on the maps router only */
 export const mapsRateLimit = createRatelimitMiddleware({
-  limiter: () => mapsLimiter,
   key: ({ context }) => (context as { user: { id: string } }).user.id,
+  limiter: () => mapsLimiter,
 });

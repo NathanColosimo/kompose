@@ -33,8 +33,8 @@ export function applyCommandBarTaskOpenRequest(
   if (request.target === "sidebar" && request.sidebarView) {
     setSidebarLeftOpen(true);
     setSidebarLeftViewSelection({
-      type: "base",
       id: request.sidebarView,
+      type: "base",
     });
   }
 

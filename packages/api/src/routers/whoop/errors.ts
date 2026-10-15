@@ -5,8 +5,8 @@ export class WhoopTokenUnavailableError extends Schema.TaggedError<WhoopTokenUna
   "WhoopTokenUnavailableError",
   {
     accountId: Schema.String,
-    message: Schema.String,
     cause: Schema.Unknown,
+    message: Schema.String,
   }
 ) {}
 

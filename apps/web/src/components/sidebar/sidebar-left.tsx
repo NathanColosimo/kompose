@@ -51,15 +51,15 @@ interface SidebarNavItem {
 
 const navMain: SidebarNavItem[] = [
   {
+    icon: Inbox,
     id: "inbox",
     title: "Inbox",
-    icon: Inbox,
     type: "base",
   },
   {
+    icon: CalendarClock,
     id: "today",
     title: "Today",
-    icon: CalendarClock,
     type: "base",
   },
 ];
@@ -76,10 +76,10 @@ function getBaseSidebarNavItem(
 
 function getSidebarSelectionFromNavItem(item: SidebarNavItem) {
   if (item.type === "tag" && item.tagId) {
-    return { type: "tag" as const, tagId: item.tagId };
+    return { tagId: item.tagId, type: "tag" as const };
   }
 
-  return { type: "base" as const, id: item.id as SidebarLeftBaseViewId };
+  return { id: item.id as SidebarLeftBaseViewId, type: "base" as const };
 }
 
 function formatDateSidebarTitle(
@@ -104,8 +104,8 @@ function formatDateSidebarTitle(
   return formatPlainDate(
     date,
     date.year === today.year
-      ? { month: "short", day: "numeric" }
-      : { month: "short", day: "numeric", year: "numeric" }
+      ? { day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" }
   );
 }
 
@@ -319,9 +319,9 @@ function getSidebarContent({
 
   if (activeItem.type === "tag") {
     return renderTagContent({
+      doneTasks: tagDoneTasks,
       overdueTasks: tagOverdueTasks,
       todoTasks: tagTodoTasks,
-      doneTasks: tagDoneTasks,
     });
   }
 
@@ -375,11 +375,11 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     );
     const tagItems =
       tagsQuery.data?.map((tag) => ({
-        id: `tag-${tag.id}`,
-        title: tag.name,
         icon: tagIconMap[tag.icon],
-        type: "tag" as const,
+        id: `tag-${tag.id}`,
         tagId: tag.id,
+        title: tag.name,
+        type: "tag" as const,
       })) ?? [];
 
     return [...baseItems, ...tagItems];
@@ -417,8 +417,8 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
 
   // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
-    id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
     data: {
+      activeTab: activeItem?.title ?? "Inbox",
       sidebarTargetDate:
         activeViewSelection.type === "base" &&
         activeViewSelection.id === "today"
@@ -428,8 +428,8 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         activeViewSelection.type === "base"
           ? activeViewSelection.id
           : undefined,
-      activeTab: activeItem?.title ?? "Inbox",
     },
+    id: SIDEBAR_TASK_LIST_DROPPABLE_ID,
   });
 
   const content = useMemo(

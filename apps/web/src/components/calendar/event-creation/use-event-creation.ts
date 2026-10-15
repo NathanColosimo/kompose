@@ -73,14 +73,14 @@ interface EventCreationContextValue {
 }
 
 const initialState: EventCreationState = {
-  isCreating: false,
-  startDateTime: null,
+  accountId: null,
+  calendarId: null,
   endDateTime: null,
   hoverDateTime: null,
-  calendarId: null,
-  accountId: null,
-  showPopover: false,
+  isCreating: false,
   previewElement: null,
+  showPopover: false,
+  startDateTime: null,
 };
 
 export const EventCreationContext =
@@ -187,17 +187,17 @@ export function useEventCreationState(): EventCreationContextValue {
         // Dragging forward: original start stays, end moves
         return {
           ...prev,
-          startDateTime: dragStartDateTime,
           endDateTime: slotEnd,
+          startDateTime: dragStartDateTime,
         };
       }
       // Dragging backward: start moves, original drag range stays anchored.
       return {
         ...prev,
-        startDateTime: dateTime,
         endDateTime: dragStartDateTime.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
+        startDateTime: dateTime,
       };
     });
   }, []);
@@ -233,15 +233,15 @@ export function useEventCreationState(): EventCreationContextValue {
 
       setState((prev) => ({
         ...prev,
-        isCreating: true,
-        startDateTime: centeredStart,
+        accountId: defaultCalendar.accountId,
+        calendarId: defaultCalendar.calendarId,
         endDateTime: centeredStart.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
         hoverDateTime: null,
-        calendarId: defaultCalendar.calendarId,
-        accountId: defaultCalendar.accountId,
+        isCreating: true,
         showPopover: false,
+        startDateTime: centeredStart,
       }));
 
       const handleDocumentMouseMove = (e: MouseEvent) => {
@@ -277,12 +277,12 @@ export function useEventCreationState(): EventCreationContextValue {
         );
 
         const snapped = Temporal.ZonedDateTime.from({
-          year: start.year,
-          month: start.month,
           day: start.day,
           hour: Math.floor(clampedMinutes / 60),
           minute: clampedMinutes % 60,
+          month: start.month,
           timeZone: start.timeZoneId,
+          year: start.year,
         });
 
         onSlotDragMove(snapped);
@@ -326,13 +326,13 @@ export function useEventCreationState(): EventCreationContextValue {
 
   const actions: EventCreationActions = useMemo(
     () => ({
+      cancelCreation,
+      closePopover,
+      onSlotDragMove,
       onSlotHover,
       onSlotLeave,
       onSlotMouseDown,
-      onSlotDragMove,
       onSlotMouseUp,
-      cancelCreation,
-      closePopover,
       setPreviewElement,
     }),
     [
@@ -361,14 +361,14 @@ export function useEventCreationState(): EventCreationContextValue {
       end = start.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES });
     }
 
-    return { start, end };
+    return { end, start };
   }, [state.startDateTime, state.endDateTime]);
 
   return useMemo(
     () => ({
-      state,
       actions,
       popoverTimes,
+      state,
     }),
     [state, actions, popoverTimes]
   );

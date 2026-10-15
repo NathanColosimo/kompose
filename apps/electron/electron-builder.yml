@@ -1,0 +1,39 @@
+appId: com.nathancolosimo.kompose
+productName: Kompose
+# Same bundle ID as the Tauri app, so a release replaces /Applications/Kompose.app.
+artifactName: ${productName}-${version}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - "!node_modules/**"
+asar: true
+protocols:
+  - name: Kompose Authentication
+    schemes:
+      - com.nathancolosimo.kompose
+mac:
+  category: public.app-category.productivity
+  icon: build/icons/icon.icns
+  # Apple Silicon only. The zip is what electron-updater downloads; the DMG is
+  # for first installs.
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  identity: Nathan Colosimo (B8R99NL6HM)
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Uses APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER.
+  notarize: true
+dmg:
+  writeUpdateInfo: false
+# Read by electron-updater (app-update.yml). scripts/release.sh uploads the
+# artifacts and publishes the release itself, after the build is verified.
+publish:
+  provider: github
+  owner: NathanColosimo
+  repo: kompose

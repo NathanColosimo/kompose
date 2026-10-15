@@ -76,8 +76,8 @@ interface DragState {
 }
 
 const initialDragState: DragState = {
-  activeTask: null,
   activeGoogleEvent: null,
+  activeTask: null,
   isResizing: false,
   previewRect: null,
 };
@@ -154,7 +154,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
-    dispatch({ type: "set-preview", rect: null });
+    dispatch({ rect: null, type: "set-preview" });
   }, []);
 
   const resetDragState = useCallback(() => {
@@ -199,12 +199,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
         updateTask.mutate({
           id: task.id,
+          scope: "this",
           task: {
+            durationMinutes: task.durationMinutes,
             startDate: targetDate,
             startTime: null,
-            durationMinutes: task.durationMinutes,
           },
-          scope: "this",
         });
         return;
       }
@@ -212,13 +212,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       // Default behavior: clear both startDate and startTime (move to inbox)
       updateTask.mutate({
         id: task.id,
-        task: {
-          startDate: null,
-          startTime: null,
-          durationMinutes: task.durationMinutes,
-        },
         // Unscheduling affects just this occurrence
         scope: "this",
+        task: {
+          durationMinutes: task.durationMinutes,
+          startDate: null,
+          startTime: null,
+        },
       });
     },
     [updateTask, timeZone]
@@ -284,18 +284,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
     if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
       dispatch({
-        type: "start-task",
-        task: data.task,
         resizing: data.type === "task-resize",
+        task: data.task,
+        type: "start-task",
       });
       return;
     }
 
     if (data?.type === "google-event" || data?.type === "google-event-resize") {
       dispatch({
-        type: "start-google-event",
         data,
         resizing: data.type === "google-event-resize",
+        type: "start-google-event",
       });
     }
   }, []);
@@ -330,9 +330,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           return;
         case "task-resize":
           handleTaskResizeDrop({
-            task: data.task,
-            targetDateTime: targetDateTimeAdjusted,
             direction: data.direction,
+            targetDateTime: targetDateTimeAdjusted,
+            task: data.task,
           });
           return;
         case "google-event":
@@ -413,10 +413,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const height = Math.max((duration / 60) * PIXELS_PER_HOUR, 20);
 
       return {
-        top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
-        left: overRect.left,
-        width: overRect.width,
         height,
+        left: overRect.left,
+        top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
+        width: overRect.width,
       };
     },
     []
@@ -432,10 +432,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const duration = data.task.durationMinutes;
       const end = targetDateTime.add({ minutes: duration });
       return buildPreviewRect({
-        start: targetDateTime,
-        end,
         columnTop,
+        end,
         overRect,
+        start: targetDateTime,
       });
     },
     [buildPreviewRect]
@@ -456,8 +456,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       // Combine startDate + startTime into ZonedDateTime
       const originalStart: Temporal.ZonedDateTime =
         data.task.startDate.toZonedDateTime({
-          timeZone,
           plainTime: data.task.startTime,
+          timeZone,
         });
       const originalEnd: Temporal.ZonedDateTime = originalStart.add({
         minutes: data.task.durationMinutes,
@@ -474,19 +474,19 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          start: newStart,
-          end: originalEnd,
           columnTop,
+          end: originalEnd,
           overRect,
+          start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        start: originalStart,
-        end: newEnd,
         columnTop,
+        end: newEnd,
         overRect,
+        start: originalStart,
       });
     },
     [buildPreviewRect, timeZone]
@@ -502,11 +502,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
       const end = targetDateTime.add({ minutes: eventDurationMinutes });
       return buildPreviewRect({
-        start: targetDateTime,
-        end,
         columnTop,
-        overRect,
+        end,
         minimum: 1,
+        overRect,
+        start: targetDateTime,
       });
     },
     [buildPreviewRect]
@@ -533,21 +533,21 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          start: newStart,
-          end: originalEnd,
           columnTop,
-          overRect,
+          end: originalEnd,
           minimum: 1,
+          overRect,
+          start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        start: originalStart,
-        end: newEnd,
         columnTop,
-        overRect,
+        end: newEnd,
         minimum: 1,
+        overRect,
+        start: originalStart,
       });
     },
     [buildPreviewRect]
@@ -659,7 +659,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (previewFrameRef.current === null) {
         previewFrameRef.current = requestAnimationFrame(() => {
           previewFrameRef.current = null;
-          dispatch({ type: "set-preview", rect: pendingPreviewRef.current });
+          dispatch({ rect: pendingPreviewRef.current, type: "set-preview" });
           pendingPreviewRef.current = null;
         });
       }
@@ -675,8 +675,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
       updateTask.mutate({
         id: pendingUpdate.id,
-        task: pendingUpdate.task,
         scope,
+        task: pendingUpdate.task,
       });
       setPendingUpdate(null);
     },
@@ -706,10 +706,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
             aria-hidden
             className="pointer-events-none fixed z-30 rounded-md border-2 border-primary/70 bg-primary/10"
             style={{
-              top: previewRect.top,
-              left: previewRect.left,
-              width: previewRect.width,
               height: previewRect.height,
+              left: previewRect.left,
+              top: previewRect.top,
+              width: previewRect.width,
             }}
           />
         ) : null}

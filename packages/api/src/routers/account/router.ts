@@ -35,12 +35,12 @@ export const accountRouter = os.router({
         throw cause;
       }
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message: "Failed to list linked accounts",
         data: {
+          causeMessage: getCauseMessage(cause),
           operation: "account.list",
           userId: context.user.id,
-          causeMessage: getCauseMessage(cause),
         },
+        message: "Failed to list linked accounts",
       });
     }
   }),

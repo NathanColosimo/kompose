@@ -25,17 +25,17 @@ export function formatUnknownCause(cause: unknown): string {
 export class WebhookRepositoryError extends Schema.TaggedError<WebhookRepositoryError>()(
   "WebhookRepositoryError",
   {
-    operation: Schema.String,
     message: Schema.String,
+    operation: Schema.String,
   }
 ) {}
 
 export class WebhookProviderError extends Schema.TaggedError<WebhookProviderError>()(
   "WebhookProviderError",
   {
+    message: Schema.String,
     operation: Schema.String,
     provider: Schema.String,
-    message: Schema.String,
   }
 ) {
   declare readonly provider: WebhookSubscriptionProvider;

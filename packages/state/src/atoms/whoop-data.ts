@@ -38,7 +38,7 @@ const whoopWindowAtom = atom((get) => {
     .with({ day: currentDate.daysInMonth })
     .add({ days: 7 })
     .toString();
-  return { startDate, endDate };
+  return { endDate, startDate };
 });
 
 const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
@@ -48,21 +48,21 @@ const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
   const { startDate, endDate } = get(whoopWindowAtom);
 
   return {
-    queryKey: [...WHOOP_DAYS_QUERY_KEY, accountId, startDate, endDate] as const,
     enabled: Boolean(accountId),
+    placeholderData: keepPreviousData,
     queryFn: () => {
       if (!accountId) {
         throw new Error("No WHOOP account linked");
       }
       return orpc.whoop.days.list({
         accountId,
-        startDate,
         endDate,
+        startDate,
         timeZone,
       });
     },
+    queryKey: [...WHOOP_DAYS_QUERY_KEY, accountId, startDate, endDate] as const,
     staleTime: 10 * 60 * 1000,
-    placeholderData: keepPreviousData,
   };
 });
 

@@ -14,12 +14,12 @@ export const authClient = createAuthClient({
     expoClient({
       cookiePrefix: Constants.expoConfig?.scheme as string,
       scheme: Constants.expoConfig?.scheme as string,
-      storagePrefix: Constants.expoConfig?.scheme as string,
       storage: SecureStore,
+      storagePrefix: Constants.expoConfig?.scheme as string,
     }),
     lastLoginMethodClient({
-      storagePrefix: Constants.expoConfig?.scheme as string,
       storage: SecureStore,
+      storagePrefix: Constants.expoConfig?.scheme as string,
     }),
     inferAdditionalFields<typeof auth>(),
   ],

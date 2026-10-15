@@ -24,8 +24,8 @@ function startOfDayZoned(
   timeZone: string
 ): Temporal.ZonedDateTime {
   return date.toZonedDateTime({
-    timeZone,
     plainTime: Temporal.PlainTime.from("00:00"),
+    timeZone,
   });
 }
 
@@ -121,7 +121,7 @@ export function getDayBoundsZoned(
 ): { dayStart: Temporal.ZonedDateTime; dayEnd: Temporal.ZonedDateTime } {
   const dayStart = startOfDayZoned(date, timeZone);
   const dayEnd = dayStart.add({ days: 1 });
-  return { dayStart, dayEnd };
+  return { dayEnd, dayStart };
 }
 
 /** Clamp a ZonedDateTime between min and max */
@@ -173,9 +173,9 @@ export function temporalToPickerDate(date: Temporal.PlainDate): Date {
  */
 export function pickerDateToTemporal(date: Date): Temporal.PlainDate {
   return Temporal.PlainDate.from({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
     day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
   });
 }
 

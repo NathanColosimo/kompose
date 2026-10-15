@@ -16,10 +16,10 @@ export interface MeetingLink {
 
 const PROVIDER_LABELS: Record<MeetingProvider, string> = {
   "google-meet": "Google Meet",
-  zoom: "Zoom",
+  other: "Meeting link",
   teams: "Microsoft Teams",
   webex: "Webex",
-  other: "Meeting link",
+  zoom: "Zoom",
 };
 
 const PROVIDER_PRIORITY: MeetingProvider[] = [
@@ -70,10 +70,10 @@ export function buildGoogleMeetConferenceData(): NonNullable<
 > {
   return {
     createRequest: {
-      requestId: uuidv7(),
       conferenceSolutionKey: {
         type: "hangoutsMeet",
       },
+      requestId: uuidv7(),
     },
   };
 }
@@ -115,7 +115,7 @@ export function extractMeetingLink(
       try {
         const url = new URL(value);
         const provider = providerFromHost(url.hostname);
-        return { url: value, provider };
+        return { provider, url: value };
       } catch {
         return null;
       }
@@ -136,8 +136,8 @@ export function extractMeetingLink(
   }
 
   return {
-    url: chosen.url,
-    provider: chosen.provider,
     label: PROVIDER_LABELS[chosen.provider],
+    provider: chosen.provider,
+    url: chosen.url,
   };
 }

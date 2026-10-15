@@ -49,7 +49,7 @@ The task input parser extracts all URLs from the title portion of the input into
 | `↵` | Select item / create task |
 | `Esc` | Go back to root view, or close |
 
-## Desktop Global Shortcut (Tauri)
+## Desktop Global Shortcut (Electron)
 
 - Desktop uses a dedicated `command-bar` popup window (separate from the main
   dashboard window). The popup renders the exact same `CommandBarContent`
@@ -66,7 +66,7 @@ The task input parser extracts all URLs from the title portion of the input into
   vibrancy treatment so the dedicated popup keeps soft corners instead of a
   square frameless shell.
 - The popup auto-sizes to exactly fit the dialog content via a
-  `ResizeObserver` (up to a max height of 520px).
+  `ResizeObserver` (up to a max height of 600px).
 - A global shortcut toggles the popup:
   - First press shows and focuses only the popup window.
   - Second press hides the popup.
@@ -75,14 +75,10 @@ The task input parser extracts all URLs from the title portion of the input into
   list. Pressing Esc from the root view dismisses the popup. On macOS,
   dismissal restores focus to the app that was active before the popup
   opened (e.g. browser) without flickering the main Kompose window.
-- The `command-bar` window must be listed in `capabilities/default.json` so
-  it has access to the Tauri Store (auth bearer token), core APIs, etc.
-- Preset shortcuts (selectable in Settings):
-  - `CommandOrControl+K`
-  - `CommandOrControl+Shift+K` (default)
-  - `CommandOrControl+Space`
-  - `Alt+Space`
-  - `CommandOrControl+J`
+- Electron creates the popup on first use and releases it after 60 seconds hidden.
+- Preset shortcuts in Settings: `CommandOrControl+Shift+K` (default),
+  `Control+Space`, and `Alt+Space`. Electron's `globalShortcut` registers them;
+  `conf` persists the selection. A failed registration preserves the old shortcut.
 
 ## Implementation
 
@@ -96,4 +92,4 @@ The task input parser extracts all URLs from the title portion of the input into
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
 - **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`
 - **Desktop shortcut settings:** `apps/web/src/app/dashboard/settings/desktop-shortcut-settings.tsx`
-- **Desktop shortcut config/helpers:** `apps/web/src/lib/tauri-desktop.ts`
+- **Desktop shortcut config/helpers:** `packages/desktop/src/index.ts`

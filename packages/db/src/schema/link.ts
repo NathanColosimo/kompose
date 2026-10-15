@@ -5,47 +5,47 @@ import { z } from "zod";
 // ============================================================================
 
 const spotifyLinkMeta = z.object({
-  provider: z.literal("spotify"),
-  resourceType: z.enum(["track", "episode", "show", "album"]),
-  title: z.string(),
+  artistName: z.string().optional(),
   description: z.string().optional(),
   durationSeconds: z.number(),
-  thumbnailUrl: z.url().optional(),
-  artistName: z.string().optional(),
-  url: z.url(),
   fetchedAt: z.string(),
+  provider: z.literal("spotify"),
+  resourceType: z.enum(["track", "episode", "show", "album"]),
+  thumbnailUrl: z.url().optional(),
+  title: z.string(),
+  url: z.url(),
 });
 
 const youtubeLinkMeta = z.object({
-  provider: z.literal("youtube"),
-  title: z.string(),
+  channelName: z.string().optional(),
   description: z.string().optional(),
   durationSeconds: z.number(),
-  thumbnailUrl: z.url().optional(),
-  channelName: z.string().optional(),
-  url: z.url(),
   fetchedAt: z.string(),
+  provider: z.literal("youtube"),
+  thumbnailUrl: z.url().optional(),
+  title: z.string(),
+  url: z.url(),
 });
 
 const substackLinkMeta = z.object({
-  provider: z.literal("substack"),
-  title: z.string(),
+  authorName: z.string().optional(),
   description: z.string().optional(),
   durationSeconds: z.number(),
-  wordCount: z.number(),
-  thumbnailUrl: z.url().optional(),
-  authorName: z.string().optional(),
-  url: z.url(),
   fetchedAt: z.string(),
+  provider: z.literal("substack"),
+  thumbnailUrl: z.url().optional(),
+  title: z.string(),
+  url: z.url(),
+  wordCount: z.number(),
 });
 
 const unknownLinkMeta = z.object({
-  provider: z.literal("unknown"),
-  title: z.string().optional(),
   description: z.string().optional(),
-  thumbnailUrl: z.url().optional(),
-  url: z.url(),
   fetchedAt: z.string(),
+  provider: z.literal("unknown"),
+  thumbnailUrl: z.url().optional(),
+  title: z.string().optional(),
+  url: z.url(),
 });
 
 /** Link metadata - discriminated union by provider type */

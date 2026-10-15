@@ -16,11 +16,8 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
-import {
-  applyCommandBarTaskOpenRequest,
-  COMMAND_BAR_TASK_OPEN_EVENT,
-} from "@/lib/command-bar-task-routing";
-import { isTauriRuntime } from "@/lib/tauri-desktop";
+import { applyCommandBarTaskOpenRequest } from "@/lib/command-bar-task-routing";
+import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
@@ -101,50 +98,19 @@ export default function DashboardLayout({
   }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isDesktopRuntime()) {
       return;
     }
 
-    let disposed = false;
-    let cleanup: (() => void) | null = null;
-
-    import("@tauri-apps/api/event")
-      .then(async ({ listen }) => {
-        const unlisten = await listen(COMMAND_BAR_TASK_OPEN_EVENT, (event) => {
-          if (!event.payload || typeof event.payload !== "object") {
-            return;
-          }
-
-          const request = deserializeCommandBarTaskOpenRequest(
-            event.payload as Parameters<
-              typeof deserializeCommandBarTaskOpenRequest
-            >[0]
-          );
-
-          applyCommandBarTaskOpenRequest(request, {
-            setCommandBarTaskOpenRequest,
-            setCurrentDate,
-            setSidebarLeftOpen,
-            setSidebarLeftViewSelection,
-          });
-        });
-        if (disposed) {
-          unlisten();
-          return;
-        }
-        cleanup = unlisten;
-      })
-      .catch((error) => {
-        console.warn(
-          "Failed to listen for command bar task open events.",
-          error
-        );
+    return desktopBridge().onOpenTask((payload) => {
+      const request = deserializeCommandBarTaskOpenRequest(payload);
+      applyCommandBarTaskOpenRequest(request, {
+        setCommandBarTaskOpenRequest,
+        setCurrentDate,
+        setSidebarLeftOpen,
+        setSidebarLeftViewSelection,
       });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
+    });
   }, [
     setCommandBarTaskOpenRequest,
     setCurrentDate,

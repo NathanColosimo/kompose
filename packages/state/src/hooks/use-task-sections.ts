@@ -29,7 +29,7 @@ export const isOverdue = (
     task.startTime !== null &&
     Temporal.ZonedDateTime.compare(
       task.startDate
-        .toZonedDateTime({ timeZone, plainTime: task.startTime })
+        .toZonedDateTime({ plainTime: task.startTime, timeZone })
         .add({ minutes: task.durationMinutes }),
       nowZdt
     ) < 0;
@@ -126,11 +126,11 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
       const tasks = tasksQuery.data ?? [];
       if (tasks.length === 0) {
         return {
+          doneTasks: [],
           inboxTasks: [],
           overdueTasks: [],
           plannedTasks: [],
           unplannedTasks: [],
-          doneTasks: [],
         };
       }
 
@@ -162,23 +162,23 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
       );
 
       return {
+        doneTasks: done,
         inboxTasks: inbox,
         overdueTasks: overdue,
         plannedTasks: planned,
         unplannedTasks: unplanned,
-        doneTasks: done,
       };
     }, [tasksQuery.data, timeZone, targetDate, today, nowZdt]);
 
   return {
-    tasksQuery,
     createTask,
-    updateTask,
     deleteTask,
+    doneTasks,
     inboxTasks,
     overdueTasks,
     plannedTasks,
+    tasksQuery,
     unplannedTasks,
-    doneTasks,
+    updateTask,
   };
 }

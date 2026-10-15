@@ -42,11 +42,11 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `task-${task.id}`,
     data: {
-      type: "task",
       task,
+      type: "task",
     },
+    id: `task-${task.id}`,
   });
 
   const { updateTask } = useTasks();
@@ -57,8 +57,8 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
       const newStatus = task.status === "done" ? "todo" : "done";
       updateTask.mutate({
         id: task.id,
-        task: { status: newStatus },
         scope: "this",
+        task: { status: newStatus },
       });
     },
     [task.id, task.status, updateTask]
@@ -67,7 +67,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
   // Combine startDate + startTime into ZonedDateTime for display
   const scheduledZdt =
     task.startDate && task.startTime
-      ? task.startDate.toZonedDateTime({ timeZone, plainTime: task.startTime })
+      ? task.startDate.toZonedDateTime({ plainTime: task.startTime, timeZone })
       : null;
 
   const isDone = task.status === "done";
@@ -117,8 +117,8 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
                 <CalendarDays className="size-3" />
                 {formatPlainDate(task.dueDate, {
-                  month: "short",
                   day: "numeric",
+                  month: "short",
                 })}
               </Badge>
             ) : null}
@@ -128,9 +128,9 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
                 <CalendarClock className="size-3" />
                 {formatTime(scheduledZdt, {
-                  weekday: "short",
                   hour: "numeric",
                   minute: "2-digit",
+                  weekday: "short",
                 })}
               </Badge>
             ) : null}

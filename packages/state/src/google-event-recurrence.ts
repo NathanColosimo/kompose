@@ -11,13 +11,13 @@ export type EventRecurrenceEnd =
   | { type: "count"; count: number };
 
 export const GOOGLE_EVENT_WEEKDAYS: Array<{ value: string; label: string }> = [
-  { value: "MO", label: "Mon" },
-  { value: "TU", label: "Tue" },
-  { value: "WE", label: "Wed" },
-  { value: "TH", label: "Thu" },
-  { value: "FR", label: "Fri" },
-  { value: "SA", label: "Sat" },
-  { value: "SU", label: "Sun" },
+  { label: "Mon", value: "MO" },
+  { label: "Tue", value: "TU" },
+  { label: "Wed", value: "WE" },
+  { label: "Thu", value: "TH" },
+  { label: "Fri", value: "FR" },
+  { label: "Sat", value: "SA" },
+  { label: "Sun", value: "SU" },
 ];
 
 const UNTIL_RULE_REGEX_DATEONLY = /^(\d{4})(\d{2})(\d{2})$/;
@@ -93,10 +93,10 @@ function resolveEnd(
   count: number | null
 ): EventRecurrenceEnd {
   if (until !== null) {
-    return { type: "until", date: until };
+    return { date: until, type: "until" };
   }
   if (count !== null) {
-    return { type: "count", count };
+    return { count, type: "count" };
   }
   return { type: "none" };
 }
@@ -107,7 +107,7 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
   end: EventRecurrenceEnd;
 } {
   if (!rule?.startsWith("RRULE:")) {
-    return { freq: "none", byDay: [], end: { type: "none" } };
+    return { byDay: [], end: { type: "none" }, freq: "none" };
   }
 
   const body = rule.replace("RRULE:", "");
@@ -148,7 +148,7 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
     }
   }
 
-  return { freq, byDay, end: resolveEnd(until, count) };
+  return { byDay, end: resolveEnd(until, count), freq };
 }
 
 export function buildGoogleEventRecurrenceRule(

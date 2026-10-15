@@ -7,16 +7,33 @@ import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
-import { authClient } from "@/lib/auth-client";
+import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
 
 function DashboardRedirect() {
   const { replace } = useRouter();
 
   useMountEffect(() => {
-    replace("/dashboard");
+    const query = getElectronAuthQuery();
+    if (query) {
+      authClient.electron
+        .transferUser({ fetchOptions: { query } })
+        .then(({ error }) => {
+          if (error) {
+            console.error("Electron authorization failed", error.message);
+          } else {
+            authClient.ensureElectronRedirect();
+          }
+        });
+    } else {
+      replace("/dashboard");
+    }
   });
 
-  return null;
+  return (
+    <p className="p-8 text-center text-muted-foreground">
+      Opening your workspace…
+    </p>
+  );
 }
 
 export default function LoginPageClient() {
@@ -39,11 +56,11 @@ export default function LoginPageClient() {
 
   return (
     <main className="bg-background text-foreground">
-      {/* Keep login/signup screens draggable in the Tauri desktop window. */}
+      {/* Keep login/signup screens draggable in the desktop window. */}
       <div
         aria-hidden
         className="fixed inset-x-0 top-0 z-50 h-8 select-none"
-        data-tauri-drag-region
+        data-desktop-drag-region
       />
       <div className="grid min-h-svh gap-12 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="relative hidden flex-col justify-between overflow-hidden border-border/50 bg-linear-to-br from-primary/15 via-background to-background p-10 text-left lg:flex">

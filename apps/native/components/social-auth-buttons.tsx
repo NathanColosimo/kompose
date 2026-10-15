@@ -19,16 +19,16 @@ interface SocialAuthButtonsProps {
 
 const copyByMode = {
   "sign-in": {
-    errorTitle: "Sign in failed",
     action: "sign in",
-    googleLabel: "Continue with Google",
     appleLabel: "Continue with Apple",
+    errorTitle: "Sign in failed",
+    googleLabel: "Continue with Google",
   },
   "sign-up": {
-    errorTitle: "Sign up failed",
     action: "sign up",
-    googleLabel: "Create with Google",
     appleLabel: "Create with Apple",
+    errorTitle: "Sign up failed",
+    googleLabel: "Create with Google",
   },
 } as const;
 
@@ -55,9 +55,9 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
     try {
       await authClient.signIn.social(
         {
-          provider,
           callbackURL,
           errorCallbackURL,
+          provider,
           ...(mode === "sign-up" ? { newUserCallbackURL: callbackURL } : {}),
         },
         {
@@ -69,11 +69,11 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
             );
             setActiveProvider(null);
           },
-          onSuccess() {
-            invalidateAuthenticatedQueries();
-          },
           onFinished() {
             setActiveProvider(null);
+          },
+          onSuccess() {
+            invalidateAuthenticatedQueries();
           },
         }
       );

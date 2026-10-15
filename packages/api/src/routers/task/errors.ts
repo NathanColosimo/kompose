@@ -3,8 +3,8 @@ import { Schema } from "effect";
 export class TaskNotFoundError extends Schema.TaggedError<TaskNotFoundError>()(
   "TaskNotFoundError",
   {
-    taskId: Schema.String,
     message: Schema.optional(Schema.String),
+    taskId: Schema.String,
   }
 ) {}
 

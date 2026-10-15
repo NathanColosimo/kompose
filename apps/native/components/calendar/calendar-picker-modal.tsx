@@ -85,8 +85,8 @@ export function CalendarPickerModal({
     >();
     for (const accountProfile of googleAccountProfiles) {
       map.set(accountProfile.account.accountId, {
-        profile: accountProfile.profile,
         isLoading: accountProfile.isLoading,
+        profile: accountProfile.profile,
       });
     }
     return map;
@@ -240,8 +240,8 @@ function CalendarAccountSection({
               <View
                 className="h-5 w-5 items-center justify-center rounded border"
                 style={{
-                  borderColor: checked ? primaryColor : borderColor,
                   backgroundColor: checked ? primaryColor : "transparent",
+                  borderColor: checked ? primaryColor : borderColor,
                 }}
               >
                 {checked ? (
@@ -255,8 +255,8 @@ function CalendarAccountSection({
               <View
                 className="h-2.5 w-2.5 rounded-full border"
                 style={{
-                  borderColor: calendarColor ?? borderColor,
                   backgroundColor: calendarColor ?? "transparent",
+                  borderColor: calendarColor ?? borderColor,
                 }}
               />
               <Text

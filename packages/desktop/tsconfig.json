@@ -1,0 +1,5 @@
+{
+  "extends": "@kompose/config/tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": [] },
+  "include": ["src/**/*.ts"]
+}

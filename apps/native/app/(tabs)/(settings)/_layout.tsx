@@ -13,16 +13,16 @@ export default function SettingsLayout() {
   return (
     <Stack
       screenOptions={{
-        headerTransparent: true,
+        headerBackButtonDisplayMode: "minimal",
         headerBlurEffect: isDarkColorScheme
           ? "systemMaterialDark"
           : "systemMaterial",
         headerShadowVisible: false,
-        headerBackButtonDisplayMode: "minimal",
         headerTintColor: textColor,
         headerTitleStyle: {
           color: textColor,
         },
+        headerTransparent: true,
       }}
     >
       <Stack.Screen name="index" options={{ title: "Settings" }} />

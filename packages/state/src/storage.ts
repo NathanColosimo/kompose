@@ -107,11 +107,11 @@ export function createWebStorageAdapter(): StorageAdapter {
 
   return {
     getItem: (key) => (localStorage ? localStorage.getItem(key) : null),
-    setItem: (key, value) => {
-      localStorage?.setItem(key, value);
-    },
     removeItem: (key) => {
       localStorage?.removeItem(key);
+    },
+    setItem: (key, value) => {
+      localStorage?.setItem(key, value);
     },
   };
 }

@@ -12,9 +12,9 @@ export function useGoogleAccounts() {
   const { authClient } = useStateConfig();
 
   return useQuery({
-    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     queryFn: async (): Promise<Account[]> =>
       (await authClient.listAccounts())?.data ?? [],
+    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     select: (accounts) =>
       accounts.filter((account) => account.providerId === "google"),
     staleTime: 5 * 60 * 1000,

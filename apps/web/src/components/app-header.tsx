@@ -1,7 +1,6 @@
 "use client";
 
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
-import { isProductionDeployment } from "@kompose/env";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,6 +29,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
-import { clearTauriBearer, isTauriRuntime } from "@/lib/tauri-desktop";
+import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 import {
   dashboardResponsiveLayoutAtom,
@@ -65,7 +66,6 @@ import {
 } from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
-import { useTauriUpdater } from "./tauri-updater";
 
 /**
  * App-wide header bar with:
@@ -73,7 +73,7 @@ import { useTauriUpdater } from "./tauri-updater";
  * - Center: Search bar that opens command palette (cmd+k)
  * - Right: User avatar with dropdown menu
  *
- * The header is draggable in Tauri for window movement.
+ * The header is draggable in Electron for window movement.
  * On web, looks identical but without drag functionality.
  */
 export function AppHeader({ user }: { user: User | null }) {
@@ -84,7 +84,7 @@ export function AppHeader({ user }: { user: User | null }) {
   return (
     <header className="relative flex h-10 shrink-0 items-center border-b bg-background px-2">
       {/* Full-header drag layer; interactive controls are rendered above this. */}
-      <div aria-hidden className="absolute inset-0" data-tauri-drag-region />
+      <div aria-hidden className="absolute inset-0" data-desktop-drag-region />
       <div className="pointer-events-none relative z-10 flex w-full items-center">
         {/* Left: macOS traffic-light safe area stays non-interactive/draggable. */}
         <div className="w-[76px] shrink-0 select-none" />
@@ -197,7 +197,6 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
         throw new Error(error.message || "Failed to sign out.");
       }
 
-      clearTauriBearer();
       await refetchSession();
       queryClient.clear();
       replace("/login");
@@ -530,94 +529,52 @@ function CreateTagRow({
   );
 }
 
+/** Shown once the desktop app has downloaded an update. */
 function UpdatePromptButton() {
-  const { checkForUpdates, installUpdate, status } = useTauriUpdater();
-  const [open, setOpen] = useState(false);
-  const isDesktopUpdaterVisible = isTauriRuntime() && isProductionDeployment;
-  const isBusy =
-    status === "checking" ||
-    status === "downloading" ||
-    status === "installing";
+  const [readyVersion, setReadyVersion] = useState<string | null>(null);
+  useMountEffect(() =>
+    isDesktopRuntime()
+      ? desktopBridge().onUpdateReady(setReadyVersion)
+      : undefined
+  );
 
-  if (!isDesktopUpdaterVisible) {
+  if (!readyVersion) {
     return null;
   }
 
-  let buttonLabel = "Check for updates";
-  if (status === "ready") {
-    buttonLabel = "Restart to apply update";
-  } else if (status === "installing") {
-    buttonLabel = "Installing update";
-  } else if (status === "downloading") {
-    buttonLabel = "Downloading update";
-  } else if (status === "checking") {
-    buttonLabel = "Checking for updates";
-  }
-
-  let tooltipLabel = "Click to check for updates";
-  if (status === "ready") {
-    tooltipLabel = "Click to restart and update";
-  } else if (status === "installing") {
-    tooltipLabel = "Currently installing update";
-  } else if (status === "downloading") {
-    tooltipLabel = "Currently downloading update";
-  } else if (status === "checking") {
-    tooltipLabel = "Currently checking for updates";
-  }
-
   return (
-    <AlertDialog onOpenChange={setOpen} open={open}>
+    <AlertDialog>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span>
+          <AlertDialogTrigger asChild>
             <Button
-              aria-label={buttonLabel}
+              aria-label="Restart to apply update"
               className="relative"
-              disabled={isBusy}
-              onClick={async () => {
-                if (status === "ready") {
-                  setOpen(true);
-                  return;
-                }
-
-                await checkForUpdates();
-              }}
               size="icon"
               type="button"
               variant="ghost"
             >
-              <RotateCw className={cn("size-4", isBusy && "animate-spin")} />
-              {status === "ready" ? (
-                <span className="absolute top-1 right-1 size-2 rounded-full bg-destructive" />
-              ) : null}
-              <span className="sr-only">{buttonLabel}</span>
+              <RotateCw className="size-4" />
+              <span className="absolute top-1 right-1 size-2 rounded-full bg-destructive" />
             </Button>
-          </span>
+          </AlertDialogTrigger>
         </TooltipTrigger>
         <TooltipContent>
-          <p>{tooltipLabel}</p>
+          <p>Restart to update to {readyVersion}</p>
         </TooltipContent>
       </Tooltip>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Update ready</AlertDialogTitle>
           <AlertDialogDescription>
-            A new version has been downloaded. Restart Kompose to apply the
-            update now.
+            Kompose {readyVersion} has been downloaded. Restart to apply it now,
+            or it installs the next time you quit.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={status === "installing"}>
-            Later
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={status === "installing"}
-            onClick={async () => {
-              setOpen(false);
-              await installUpdate();
-            }}
-          >
-            {status === "installing" ? "Installing…" : "Restart now"}
+          <AlertDialogCancel>Later</AlertDialogCancel>
+          <AlertDialogAction onClick={() => desktopBridge().installUpdate()}>
+            Restart now
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

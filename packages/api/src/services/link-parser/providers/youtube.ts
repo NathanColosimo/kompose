@@ -10,17 +10,17 @@ import { parseYoutubeVideoId } from "./detect";
 // ============================================================================
 
 const youtubeVideoItem = z.object({
-  snippet: z.object({
-    title: z.string(),
-    description: z.string(),
-    thumbnails: z.object({
-      high: z.object({ url: z.string() }).optional(),
-      default: z.object({ url: z.string() }).optional(),
-    }),
-    channelTitle: z.string(),
-  }),
   contentDetails: z.object({
     duration: z.string(),
+  }),
+  snippet: z.object({
+    channelTitle: z.string(),
+    description: z.string(),
+    thumbnails: z.object({
+      default: z.object({ url: z.string() }).optional(),
+      high: z.object({ url: z.string() }).optional(),
+    }),
+    title: z.string(),
   }),
 });
 
@@ -51,76 +51,76 @@ export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
   const videoId = parseYoutubeVideoId(url);
   if (!videoId) {
     return yield* new LinkParseError({
-      url,
       message: "Could not extract YouTube video ID",
+      url,
     });
   }
 
   const apiKey = env.YOUTUBE_API_KEY;
   if (!apiKey) {
     return yield* new LinkParseError({
-      url,
       message: "YouTube API key not configured",
+      url,
     });
   }
 
   const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${apiKey}`;
 
   const response = yield* Effect.tryPromise({
-    try: () => fetch(apiUrl),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to fetch YouTube metadata",
         cause,
+        message: "Failed to fetch YouTube metadata",
+        url,
       }),
+    try: () => fetch(apiUrl),
   });
 
   if (!response.ok) {
     return yield* new LinkParseError({
-      url,
       message: `YouTube API returned ${response.status}`,
+      url,
     });
   }
 
   const json = yield* Effect.tryPromise({
-    try: () => response.json(),
     catch: (cause) =>
       new LinkParseError({
-        url,
-        message: "Failed to parse YouTube response",
         cause,
+        message: "Failed to parse YouTube response",
+        url,
       }),
+    try: () => response.json(),
   });
 
   const data = youtubeVideosResponse.safeParse(json);
   if (!data.success) {
     return yield* new LinkParseError({
-      url,
       message: `Invalid YouTube API response: ${data.error.message}`,
+      url,
     });
   }
 
   const item = data.data.items[0];
   if (!item) {
     return yield* new LinkParseError({
-      url,
       message: "YouTube video not found",
+      url,
     });
   }
 
   const result: LinkMeta & { provider: "youtube" } = {
-    provider: "youtube",
-    title: item.snippet.title,
+    channelName: item.snippet.channelTitle,
     description: item.snippet.description,
     durationSeconds: roundToNearest15Min(
       parseIsoDuration(item.contentDetails.duration)
     ),
+    fetchedAt: new Date().toISOString(),
+    provider: "youtube",
     thumbnailUrl:
       item.snippet.thumbnails.high?.url ?? item.snippet.thumbnails.default?.url,
-    channelName: item.snippet.channelTitle,
+    title: item.snippet.title,
     url,
-    fetchedAt: new Date().toISOString(),
   };
 
   return result;

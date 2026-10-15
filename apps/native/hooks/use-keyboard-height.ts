@@ -72,8 +72,8 @@ export function useKeyboardHeight(): UseKeyboardHeightReturn {
   }, [isKeyboardVisible]);
 
   return {
-    keyboardHeight,
     isKeyboardVisible,
     keyboardAnimationDuration,
+    keyboardHeight,
   };
 }

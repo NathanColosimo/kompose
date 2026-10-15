@@ -16,8 +16,8 @@ const apiHandler = new OpenAPIHandler(appRouter, {
 async function handleRequest(req: NextRequest) {
   const context = await createContext(req);
   const result = await apiHandler.handle(req, {
-    prefix: "/api/rpc/api-reference",
     context,
+    prefix: "/api/rpc/api-reference",
   });
 
   return result.response ?? new Response("Not found", { status: 404 });

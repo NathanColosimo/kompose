@@ -80,8 +80,8 @@ export function GoogleAccountsDropdown({
         return {
           ...account,
           email: query?.profile?.email ?? undefined,
-          name: query?.profile?.name,
           isLoading: query?.isLoading,
+          name: query?.profile?.name,
         };
       }),
     [accountProfilesById, googleAccounts]

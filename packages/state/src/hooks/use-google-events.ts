@@ -26,17 +26,17 @@ export function useGoogleEvents({
 
   const queries = useQueries({
     queries: visibleCalendars.map((calendar) => ({
-      queryKey: getGoogleEventsQueryKey(calendar, window),
+      placeholderData: keepPreviousData,
       queryFn: async () =>
         await orpc.googleCal.events.list({
           accountId: calendar.accountId,
           calendarId: calendar.calendarId,
           params: {
-            timeMin: window.timeMin,
             timeMax: window.timeMax,
+            timeMin: window.timeMin,
           },
         }),
-      placeholderData: keepPreviousData,
+      queryKey: getGoogleEventsQueryKey(calendar, window),
       staleTime: 60_000,
     })),
   });
@@ -47,14 +47,14 @@ export function useGoogleEvents({
       return [];
     }
     return query.data.map((event) => ({
-      event,
       accountId: calendar.accountId,
       calendarId: calendar.calendarId,
+      event,
     }));
   });
 
   const isLoading = queries.some((q) => q.isLoading);
   const isFetching = queries.some((q) => q.isFetching);
 
-  return { events, isLoading, isFetching };
+  return { events, isFetching, isLoading };
 }

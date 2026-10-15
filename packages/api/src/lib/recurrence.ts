@@ -3,13 +3,13 @@ import { Temporal } from "temporal-polyfill";
 
 /** Map of RRULE day abbreviations to Temporal dayOfWeek (1=Monday, 7=Sunday) */
 const DAY_MAP: Record<string, number> = {
-  MO: 1,
-  TU: 2,
-  WE: 3,
-  TH: 4,
   FR: 5,
+  MO: 1,
   SA: 6,
   SU: 7,
+  TH: 4,
+  TU: 2,
+  WE: 3,
 };
 
 /** Safety cap: max occurrences to generate if recurrence has no count/until */

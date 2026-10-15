@@ -5,13 +5,13 @@ import type {
 import { Temporal } from "temporal-polyfill";
 
 export const TASK_RECURRENCE_DAYS = [
-  { value: "MO", label: "Mon", shortLabel: "M" },
-  { value: "TU", label: "Tue", shortLabel: "T" },
-  { value: "WE", label: "Wed", shortLabel: "W" },
-  { value: "TH", label: "Thu", shortLabel: "T" },
-  { value: "FR", label: "Fri", shortLabel: "F" },
-  { value: "SA", label: "Sat", shortLabel: "S" },
-  { value: "SU", label: "Sun", shortLabel: "S" },
+  { label: "Mon", shortLabel: "M", value: "MO" },
+  { label: "Tue", shortLabel: "T", value: "TU" },
+  { label: "Wed", shortLabel: "W", value: "WE" },
+  { label: "Thu", shortLabel: "T", value: "TH" },
+  { label: "Fri", shortLabel: "F", value: "FR" },
+  { label: "Sat", shortLabel: "S", value: "SA" },
+  { label: "Sun", shortLabel: "S", value: "SU" },
 ] as const;
 
 export type TaskRecurrenceDayCode =
@@ -83,8 +83,6 @@ export function getTaskRecurrenceEditorState(
   }
 
   return {
-    freq: (value?.freq ?? "WEEKLY") as TaskRecurrenceFrequency,
-    interval: normalizePositiveInt(value?.interval, 1),
     byDay:
       value?.freq === "WEEKLY"
         ? normalizeByDay(value.byDay)
@@ -93,9 +91,11 @@ export function getTaskRecurrenceEditorState(
       value?.freq === "MONTHLY"
         ? clampMonthDay(value.byMonthDay)
         : clampMonthDay(referenceDate?.day ?? 1),
-    endType,
-    until: value?.until ? Temporal.PlainDate.from(value.until) : null,
     count: normalizePositiveInt(value?.count, 10),
+    endType,
+    freq: (value?.freq ?? "WEEKLY") as TaskRecurrenceFrequency,
+    interval: normalizePositiveInt(value?.interval, 1),
+    until: value?.until ? Temporal.PlainDate.from(value.until) : null,
   };
 }
 
@@ -114,18 +114,18 @@ export function buildTaskRecurrence(
 
   if (value.freq === "WEEKLY") {
     return {
+      byDay: normalizeByDay(value.byDay),
       freq: "WEEKLY",
       interval,
-      byDay: normalizeByDay(value.byDay),
       ...end,
     };
   }
 
   if (value.freq === "MONTHLY") {
     return {
+      byMonthDay: clampMonthDay(value.byMonthDay),
       freq: "MONTHLY",
       interval,
-      byMonthDay: clampMonthDay(value.byMonthDay),
       ...end,
     };
   }
@@ -151,8 +151,8 @@ export function getTaskRecurrenceIntervalLabel(
 ): string {
   const labelMap: Record<TaskRecurrenceFrequency, [string, string]> = {
     DAILY: ["day", "days"],
-    WEEKLY: ["week", "weeks"],
     MONTHLY: ["month", "months"],
+    WEEKLY: ["week", "weeks"],
     YEARLY: ["year", "years"],
   };
   return normalizePositiveInt(interval, 1) === 1
