@@ -47,8 +47,19 @@
   ],
   "linter": {
     "rules": {
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "warn"
+      },
       "performance": {
         "noJsxPropsBind": "off"
+      },
+      "style": {
+        "useDestructuring": "off"
+      },
+      "suspicious": {
+        "noEqualsToNull": "off",
+        "noLeakedRender": "off",
+        "noUnnecessaryConditions": "off"
       }
     }
   }

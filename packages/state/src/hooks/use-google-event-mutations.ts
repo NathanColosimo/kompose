@@ -153,11 +153,11 @@ export function useGoogleEventMutations() {
       });
 
       if (scope === "this") {
-        for (const [queryKey, data] of previousQueries) {
-          if (Array.isArray(data)) {
+        for (const [cachedKey, cachedEvents] of previousQueries) {
+          if (Array.isArray(cachedEvents)) {
             queryClient.setQueryData<Event[]>(
-              queryKey,
-              data.map((event) =>
+              cachedKey,
+              cachedEvents.map((event) =>
                 event.id === variables.eventId ? variables.event : event
               )
             );
@@ -211,11 +211,11 @@ export function useGoogleEventMutations() {
         queryKey,
       });
 
-      for (const [queryKey, data] of previousQueries) {
-        if (Array.isArray(data)) {
+      for (const [cachedKey, cachedEvents] of previousQueries) {
+        if (Array.isArray(cachedEvents)) {
           queryClient.setQueryData<Event[]>(
-            queryKey,
-            data.filter((event) => event.id !== variables.eventId)
+            cachedKey,
+            cachedEvents.filter((event) => event.id !== variables.eventId)
           );
         }
       }

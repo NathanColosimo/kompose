@@ -35,6 +35,7 @@ export const accountRouter = os.router({
         throw cause;
       }
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        cause,
         data: {
           causeMessage: getCauseMessage(cause),
           operation: "account.list",

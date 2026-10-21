@@ -10,7 +10,7 @@ import {
 } from "@kompose/state/atoms/google-data";
 import {
   type CalendarIdentifier,
-  isCalendarVisible,
+  isCalendarVisible as isCalendarInSelection,
   toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
@@ -117,7 +117,7 @@ export function GoogleAccountsDropdown({
 
   const isResolvedCalendarVisible = useCallback(
     (accountId: string, calendarId: string) =>
-      isCalendarVisible(resolvedVisibleCalendars, accountId, calendarId),
+      isCalendarInSelection(resolvedVisibleCalendars, accountId, calendarId),
     [resolvedVisibleCalendars]
   );
 

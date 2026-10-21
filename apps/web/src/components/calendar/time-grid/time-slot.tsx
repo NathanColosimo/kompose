@@ -88,12 +88,12 @@ export const TimeSlot = memo(function TimeSlotInner({
         Math.max(snappedMinutes, 0),
         24 * 60 - MINUTES_STEP
       );
-      const hour = Math.floor(clampedMinutes / 60);
-      const minute = clampedMinutes % 60;
+      const snappedHour = Math.floor(clampedMinutes / 60);
+      const snappedMinute = clampedMinutes % 60;
       return Temporal.ZonedDateTime.from({
         day: date.day,
-        hour,
-        minute,
+        hour: snappedHour,
+        minute: snappedMinute,
         month: date.month,
         timeZone,
         year: date.year,
