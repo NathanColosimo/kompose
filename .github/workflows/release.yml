@@ -1,0 +1,247 @@
+name: Release
+
+# main is the stable channel. Each push ships whatever changed since that
+# target last shipped: migrations and web first, then mobile and desktop.
+on:
+  push:
+    branches: [main]
+  # Retry a failed run. Targets only ship what changed since their last
+  # successful release, so rerunning is always safe.
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Identity for the annotated shipped/* tags.
+  GIT_COMMITTER_NAME: github-actions[bot]
+  GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.affected.outputs.web }}
+      mobile: ${{ steps.affected.outputs.mobile }}
+      desktop: ${{ steps.desktop.outputs.changed }}
+      desktop-fingerprint: ${{ steps.desktop.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # shipped/<target> marks the commit each target last released, so a
+      # failed or skipped run never loses changes.
+      - id: affected
+        run: |
+          # turbo exits 0 when unaffected; affected, errors, and a missing tag all ship.
+          affected() {
+            if bunx turbo query affected --packages "$1" --base "$2" --head HEAD --exit-code >/dev/null 2>&1; then
+              echo false
+            else
+              echo true
+            fi
+          }
+          echo "web=$(affected web shipped/web)" >> "$GITHUB_OUTPUT"
+          echo "mobile=$(affected native shipped/mobile)" >> "$GITHUB_OUTPUT"
+      # The desktop app loads https://kompose.dev, so only shell changes need
+      # a new binary. Turbo's per-task file inputs and locked dependency
+      # versions for the Electron build (and the workspace packages it bundles)
+      # leave out its global hash, so root tooling bumps don't ship a release.
+      # A rollback to an older shell differs from the last release, so it ships.
+      - id: desktop
+        run: |
+          fingerprint=$(bunx turbo run build --filter=@kompose/electron --dry=json \
+            | jq -c '[.tasks[] | {taskId, inputs, hashOfExternalDependencies}]' \
+            | shasum -a 256 | cut -c1-16)
+          shipped=$(git tag -l --format='%(contents:subject)' shipped/desktop)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          if [[ "$fingerprint" == "$shipped" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  web:
+    name: Web + migrations
+    permissions:
+      contents: write
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Vercel builds it, but --skip-domain keeps traffic on the current
+      # deployment until migrations succeed.
+      - name: Stage production deployment
+        id: deploy
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          url=$(bunx vercel@65.0.0 deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Staged $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Migrate database
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bunx drizzle-kit migrate
+      - name: Promote to production
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bunx vercel@65.0.0 promote "$URL" --yes --token "$VERCEL_TOKEN"
+      - name: Mark web shipped
+        run: |
+          git tag -f shipped/web "$GITHUB_SHA"
+          git push -f origin refs/tags/shipped/web
+
+  # Clients must never be ahead of the API, so mobile and desktop wait for web.
+  # They still run when web was skipped, but not when it failed.
+  mobile:
+    name: Mobile
+    permissions:
+      contents: write
+    needs: [changes, web]
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.mobile == 'true' }}
+    runs-on: macos-26
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Same value as the app's runtimeVersion (policy: fingerprint). An OTA
+      # update only reaches binaries with the same runtime, so it must match
+      # the latest submitted binary (shipped/ios-binary), not any older one.
+      - id: fingerprint
+        working-directory: apps/native
+        run: |
+          fingerprint=$(bunx expo-updates runtimeversion:resolve --platform ios | jq -r .runtimeVersion)
+          shipped=$(git tag -l --format='%(contents:subject)' shipped/ios-binary)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          if [[ "$fingerprint" == "$shipped" ]]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish OTA update
+        if: steps.fingerprint.outputs.build == 'false'
+        working-directory: apps/native
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          bunx eas-cli@25.3.0 update --channel production --environment production --platform ios \
+            --message "$(git log -1 --format=%s)" --non-interactive
+      # Newest Xcode on the macos-26 image. Expo's SDK 58 build image uses
+      # Xcode 27; move to it once the runner image ships it.
+      - if: steps.fingerprint.outputs.build == 'true'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.6"
+      # --local builds on this runner instead of EAS's paid build queue;
+      # signing credentials and the build number still come from EAS.
+      - name: Build and submit
+        if: steps.fingerprint.outputs.build == 'true'
+        working-directory: apps/native
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.fingerprint }}
+        run: |
+          bunx eas-cli@25.3.0 build -p ios --profile production --local --non-interactive \
+            --output "$RUNNER_TEMP/kompose.ipa"
+          bunx eas-cli@25.3.0 submit -p ios --profile production --path "$RUNNER_TEMP/kompose.ipa" \
+            --non-interactive --wait
+          git tag -fa shipped/ios-binary -m "$FINGERPRINT" "$GITHUB_SHA"
+          git push -f origin refs/tags/shipped/ios-binary
+      - name: Mark mobile shipped
+        run: |
+          git tag -f shipped/mobile "$GITHUB_SHA"
+          git push -f origin refs/tags/shipped/mobile
+
+  desktop:
+    name: Desktop
+    permissions:
+      contents: write
+    needs: [changes, web]
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.desktop == 'true' }}
+    runs-on: macos-26
+    environment: production
+    env:
+      FINGERPRINT: ${{ needs.changes.outputs.desktop-fingerprint }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Versions come from releases, so they never need a version-bump commit.
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh release view --json tagName --jq .tagName)
+          echo "version=$(bunx semver@7.8.5 --increment patch "$latest")" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+        run: bun run build:desktop
+      # electron-builder uploads every artifact electron-updater needs to a
+      # draft release, which users can't see until the next steps publish it.
+      - name: Package, sign, notarize, and upload a draft release
+        working-directory: apps/electron
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # electron-builder's notarize step takes the key as a file path.
+          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
+          bunx electron-builder --mac --arm64 --publish always -c.extraMetadata.version="$VERSION"
+      # Gatekeeper must accept the app before anyone can download it.
+      - name: Verify
+        working-directory: apps/electron/release/mac-arm64
+        run: |
+          codesign --verify --deep --strict Kompose.app
+          xcrun stapler validate Kompose.app
+          spctl --assess --type execute Kompose.app
+      # Publishing as Latest is what installed apps auto-update from.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes=$(gh api "repos/{owner}/{repo}/releases/generate-notes" \
+            -f tag_name="v$VERSION" -f target_commitish="$GITHUB_SHA" --jq .body)
+          gh release edit "v$VERSION" --draft=false --latest \
+            --target "$GITHUB_SHA" --title "Kompose $VERSION" --notes "$notes"
+      - name: Mark desktop shipped
+        run: |
+          git tag -fa shipped/desktop -m "$FINGERPRINT" "$GITHUB_SHA"
+          git push -f origin refs/tags/shipped/desktop

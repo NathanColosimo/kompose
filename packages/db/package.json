@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "db:check": "drizzle-kit check --output json | jq -e '.status == \"ok\" and (.warnings // []) == []' > /dev/null || (drizzle-kit check; exit 1)",
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

@@ -193,7 +193,7 @@ app.on("web-contents-created", (_event, contents) => {
   contents.on("will-attach-webview", (event) => event.preventDefault());
   contents.on(
     "did-fail-load",
-    (_event, code, description, url, isMainFrame) => {
+    (_loadEvent, code, description, url, isMainFrame) => {
       // -3 is an aborted load, such as a navigation replacing another.
       if (isMainFrame && code !== -3 && isAppURL(url)) {
         contents.loadURL(offlinePage(url, description));

@@ -295,6 +295,7 @@ export function useRealtimeSync({
       let reconnectRequested = false;
 
       while (!cancelled) {
+        // biome-ignore lint/performance/noAwaitInLoops: sequential async iterator
         const next = await iterator.next();
         if (next.done) {
           break;

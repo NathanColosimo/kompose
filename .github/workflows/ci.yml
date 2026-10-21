@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Type-check and builds run without production secrets.
+  SKIP_ENV_VALIDATION: "1"
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx biome ci .
+
+  check:
+    name: Type-check and build
+    runs-on: ubuntu-latest
+    # Remote cache only; fork PRs get no secrets and run without it.
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # --affected compares against the PR base or the previous push.
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Type-check
+        run: bunx turbo run type-check --affected
+      # Web is built by Vercel with production env. The native export
+      # includes the Hermes bytecode compile, which catches syntax the
+      # engine rejects before it reaches a release build.
+      - name: Build iOS bundle and desktop shell
+        run: bunx turbo run build --affected --filter=native --filter=@kompose/electron
+        env:
+          EXPO_PUBLIC_SERVER_URL: https://kompose.dev
+      # Native dependency versions must match the installed Expo SDK. Offline
+      # mode checks against that SDK rather than the newest patch release, so
+      # an Expo release alone can't fail CI.
+      - name: Expo doctor
+        working-directory: apps/native
+        env:
+          EXPO_OFFLINE: "1"
+        run: bunx expo-doctor
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    env:
+      # drizzle-kit check never connects to the database.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run db:check

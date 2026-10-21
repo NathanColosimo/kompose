@@ -299,42 +299,25 @@ bun run --cwd apps/native ios
 
 ## Production release flow (iOS)
 
-Native production scripts are:
+Releases run in CI on every merge to `main` (`.github/workflows/release.yml`,
+see `documents/ci-cd.md`). The workflow compares the app's fingerprint
+(`runtimeVersion` policy `fingerprint`) with the latest submitted binary:
 
-- `bun run --cwd apps/native build:prod`
-  - Creates `apps/native/dist/kompose.ipa` using the EAS `production`
-    profile with `--local` (builds on your machine, not EAS cloud).
-  - Runs with `--non-interactive` so EAS does not prompt in terminal
-    automation.
-  - Sets `EAS_LOCAL_BUILD_SKIP_CLEANUP=1` and
-    `EAS_LOCAL_BUILD_WORKINGDIR=~/.eas-build-cache/native` to persist the
-    build working directory between runs. This allows `pod install` to
-    reuse previously downloaded pods instead of fetching from scratch.
-- `bun run --cwd apps/native submit:prod`
-  - Submits the existing IPA to App Store Connect and waits for status.
-  - Runs with `--non-interactive` to avoid interactive prompts.
+- **Same fingerprint**: only JS changed, so it publishes an OTA update with
+  `eas update --channel production --environment production`. Installed
+  binaries with that runtime version pick it up on next launch.
+- **New fingerprint**: native code, config plugins, or native dependencies
+  changed, so a GitHub macOS runner builds the IPA with
+  `eas build --profile production --local` and uploads it with `eas submit`.
+  Signing credentials and the build number (`autoIncrement`, remote app
+  version source) still come from EAS, but the build itself does not use
+  EAS cloud build minutes. Releasing the build to the App Store after
+  review is still done in App Store Connect.
 
-Root shortcuts run these package scripts directly (no Turbo caching, so a
-release always rebuilds and never re-submits a cached artifact):
+`EXPO_PUBLIC_SERVER_URL` comes from the EAS `production` environment for both
+paths.
 
-- `bun run submit:prod:native` — builds the IPA, then submits it.
-- `bun run submit:prod:web` — `vercel pull` + `vercel build --prod`, then
-  `vercel deploy --prebuilt --prod`.
-- `bun run submit:prod` — web, then native.
-- `bun run submit:prod:desktop` — desktop GitHub release only.
-- **Important**: Always run from repo root.
-
-These manual scripts are a stopgap until releases move to CI on merge to
-`main`.
-
-### Why local iOS builds are slow
-
-`eas build --local` always creates a fresh temp directory, runs
-`expo prebuild` (regenerates `ios/`), runs `pod install`, and does a full
-`xcodebuild` compilation. Local builds do not support EAS's cloud caching
-features (pod cache, compiler ccache). The persistent working directory
-env vars mitigate this by keeping downloaded pods across runs, but
-prebuild still regenerates `ios/` each time.
+To build locally (e.g. a dev client), use `bun run --cwd apps/native ios`.
 
 ## Notes / limitations (v1)
 

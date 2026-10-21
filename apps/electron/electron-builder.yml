@@ -31,9 +31,10 @@ mac:
   notarize: true
 dmg:
   writeUpdateInfo: false
-# Read by electron-updater (app-update.yml). scripts/release.sh uploads the
-# artifacts and publishes the release itself, after the build is verified.
+# Read by electron-updater (app-update.yml). The release workflow uploads to a
+# draft, verifies the app with Gatekeeper, then publishes it as Latest.
 publish:
   provider: github
   owner: NathanColosimo
   repo: kompose
+  releaseType: draft
