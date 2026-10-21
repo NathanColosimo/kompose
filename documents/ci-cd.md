@@ -12,7 +12,7 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | --- | --- |
 | Lint and format | `biome ci .` |
 | Type-check and build | `turbo run type-check --affected`, then the iOS bundle (`expo export`, including the Hermes bytecode compile) and the Electron main/preload build, both `--affected` |
-| Migrations | `bun run db:check`: `drizzle-kit check` passes and `drizzle-kit generate` produces no new migration |
+| Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
 Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
 work done in CI, on Vercel, or locally (if logged in) is not repeated. Web is
@@ -91,8 +91,9 @@ To remove or tighten something:
 2. Once no shipped client depends on it, ship the destructive migration in its
    own PR.
 
-CI runs `bun run db:check`, which fails when `drizzle-kit check` finds a
-problem or the schema changed without a committed migration.
+CI runs `bun run db:check`. It fails when `drizzle-kit check` reports a problem
+or warns that the schema differs from the committed migrations (run
+`bun run db:generate` and commit the result).
 
 `DATABASE_URL` for the migration step should be a direct connection or
 Supabase's session pooler (port 5432), not the transaction pooler (port 6543).

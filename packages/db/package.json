@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "db:check": "bash scripts/check-migrations.sh",
+    "db:check": "drizzle-kit check && drizzle-kit check --output json | jq -e '(.warnings // []) == []' > /dev/null",
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
