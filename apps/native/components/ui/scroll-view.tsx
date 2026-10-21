@@ -1,7 +1,11 @@
 import { forwardRef } from "react";
-import { ScrollView as RNScrollView, type ScrollViewProps } from "react-native";
+import {
+  ScrollView as RNScrollView,
+  type ScrollViewInstance,
+  type ScrollViewProps,
+} from "react-native";
 
-export const ScrollView = forwardRef<RNScrollView, ScrollViewProps>(
+export const ScrollView = forwardRef<ScrollViewInstance, ScrollViewProps>(
   ({ style, ...otherProps }, ref) => {
     return (
       <RNScrollView

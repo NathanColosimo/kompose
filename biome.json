@@ -29,11 +29,14 @@
   "extends": [
     "ultracite/biome/core",
     "ultracite/biome/next",
-    "ultracite/biome/react"
+    "ultracite/biome/react",
+    "ultracite/biome/tanstack"
   ],
   "overrides": [
     {
-      "includes": ["**/global.css"],
+      "includes": [
+        "**/global.css"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
@@ -42,5 +45,13 @@
         }
       }
     }
-  ]
+  ],
+  "linter": {
+    "rules": {
+      "performance": {
+        // React Compiler (enabled in web and native) memoizes inline callbacks.
+        "noJsxPropsBind": "off"
+      }
+    }
+  }
 }

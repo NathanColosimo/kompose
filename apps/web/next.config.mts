@@ -14,8 +14,6 @@ const nextConfig: NextConfig = {
   },
   reactCompiler: true,
   reactStrictMode: true,
-  // pg-cursor imports pg internals; keep their CommonJS resolution in the runtime.
-  serverExternalPackages: ["pg-cursor"],
   turbopack: {
     root: workspaceRoot,
   },

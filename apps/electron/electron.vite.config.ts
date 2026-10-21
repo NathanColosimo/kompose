@@ -6,7 +6,7 @@ export default defineConfig({
     build: {
       externalizeDeps: false,
       outDir: "dist/main",
-      rollupOptions: {
+      rolldownOptions: {
         input: resolve("src/main.ts"),
         output: { entryFileNames: "index.js" },
       },
@@ -16,7 +16,7 @@ export default defineConfig({
     build: {
       externalizeDeps: false,
       outDir: "dist/preload",
-      rollupOptions: {
+      rolldownOptions: {
         input: resolve("src/preload.ts"),
         output: { entryFileNames: "index.cjs", format: "cjs" },
       },

@@ -12,19 +12,19 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-auth/electron": "1.7.7",
+    "@better-auth/electron": "catalog:",
     "@kompose/desktop": "workspace:*",
     "better-auth": "catalog:",
-    "conf": "^15.0.2",
-    "electron-updater": "^6.8.3"
+    "conf": "^16.0.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
-    "electron": "44.7.0",
+    "electron": "45.0.0",
     "electron-builder": "26.15.3",
-    "electron-vite": "5.0.0",
+    "electron-vite": "6.0.0",
     "typescript": "catalog:",
-    "vite": "^7.1.10"
+    "vite": "^8.3.5"
   }
 }

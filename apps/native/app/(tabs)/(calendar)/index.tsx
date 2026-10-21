@@ -68,6 +68,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  type ScrollViewInstance,
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -1358,7 +1359,7 @@ function CalendarTabContent() {
   );
 
   const totalHeight = 24 * PIXELS_PER_HOUR;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   // Track scroll position so we can restore it after a pull-to-refresh.
   const scrollOffsetRef = useRef(DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR);

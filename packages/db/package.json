@@ -24,17 +24,14 @@
   "dependencies": {
     "@effect/sql-pg": "catalog:",
     "@kompose/env": "workspace:*",
-    "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "pg": "^8.23.0",
     "postgres": "^3.4.9",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
-    "@types/pg": "^8.23.1",
-    "drizzle-kit": "1.0.0-rc.5-ab785fc"
+    "drizzle-kit": "catalog:"
   }
 }

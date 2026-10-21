@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   TextInput,
+  type TextInputInstance,
   type TextInputProps,
   type TextStyle,
   TouchableOpacity,
@@ -44,7 +45,7 @@ export function SearchBar({
 }: SearchBarProps) {
   const [internalValue, setInternalValue] = useState(value || "");
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
 
   // Theme colors
   const cardColor = useColor("card");
