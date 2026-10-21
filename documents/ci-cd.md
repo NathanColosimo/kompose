@@ -52,21 +52,24 @@ last *successful* release, not the previous commit.
 | Target | Ships when | Marker tags |
 | --- | --- | --- |
 | Web + migrations | `turbo query affected --packages web` since `shipped/web` | `shipped/web` |
-| Mobile | `turbo query affected --packages native` since `shipped/mobile` | `shipped/mobile`, `ios-fp/<fingerprint>` per shipped binary |
-| Desktop | the desktop fingerprint has no `desktop-fp/<hash>` tag | `shipped/desktop`, `desktop-fp/<hash>` per release, `v<version>` |
+| Mobile | `turbo query affected --packages native` since `shipped/mobile` | `shipped/mobile`; `shipped/ios-binary` (message: the latest binary's fingerprint) |
+| Desktop | the desktop fingerprint differs from the one in `shipped/desktop` | `shipped/desktop` (message: the released fingerprint), `v<version>` |
 
 - **Mobile fingerprint**: `expo-updates runtimeversion:resolve`, the same value
   as the app's `runtimeVersion` (policy `fingerprint`). It changes with native
-  dependencies, config plugins, and app config, not with JS. A matching
-  `ios-fp/` tag means a binary with that runtime is already out, so an OTA
-  update reaches it. Server-only changes can also mark `native` as affected
+  dependencies, config plugins, and app config, not with JS. If it matches the
+  latest submitted binary (`shipped/ios-binary`), an OTA update reaches it;
+  otherwise a new binary is built, including when a revert returns to an older
+  fingerprint, since OTA updates only reach binaries with the same runtime. Server-only changes can also mark `native` as affected
   (it imports `@kompose/api` for types); that just publishes an identical OTA
   update.
-- **Desktop fingerprint**: Turbo's task hash for `@kompose/electron#build`
-  (`turbo run build --filter=@kompose/electron --dry=json`). It changes with
-  the Electron sources, `packages/desktop`, `electron-builder.yml`, `build/`,
-  and the locked Electron package versions. The UI is the hosted web app, so
-  web changes never need a new binary.
+- **Desktop fingerprint**: a hash of the per-task file inputs and locked
+  dependency versions that `turbo run build --filter=@kompose/electron
+  --dry=json` reports for the Electron build and the workspace packages it
+  bundles. It changes with the Electron sources, `packages/desktop`,
+  `electron-builder.yml`, `build/`, and Electron's dependencies, but not with
+  root tooling bumps. The UI is the hosted web app, so web changes never need
+  a new binary. A rollback to an earlier shell ships as a new patch release.
 - **Desktop version**: the next patch after the latest GitHub release
   (`semver --increment patch`), injected with `-c.extraMetadata.version`. No
   version-bump commits.
@@ -79,8 +82,8 @@ last *successful* release, not the previous commit.
 
 Rerun the failed jobs, or run the workflow from the Actions tab
 (`workflow_dispatch`). Targets that already shipped are skipped because their
-markers moved. If a desktop upload failed after its tag was pushed, delete the
-leftover draft first: `gh release delete vX.Y.Z`.
+markers moved. A desktop run that fails after uploading leaves a draft release;
+the rerun reuses it under the same version.
 
 ## Migrations: expand only
 
@@ -167,17 +170,21 @@ workflow later), tag what is already live before the first run:
 ```bash
 git fetch origin --tags
 LIVE=<sha of the commit currently deployed>
-for target in web mobile desktop; do git tag -f "shipped/$target" "$LIVE"; done
-git push -f origin refs/tags/shipped/web refs/tags/shipped/mobile refs/tags/shipped/desktop
+git checkout "$LIVE"
+git tag -f shipped/web "$LIVE" && git tag -f shipped/mobile "$LIVE"
 
 # The binary in the App Store: its runtime version is its fingerprint.
 FP=$(cd apps/native && bunx expo-updates runtimeversion:resolve --platform ios | jq -r .runtimeVersion)
-git tag "ios-fp/$FP" "$LIVE" && git push origin "refs/tags/ios-fp/$FP"
+git tag -fa shipped/ios-binary -m "$FP" "$LIVE"
 
 # The latest desktop release (run on the commit it was built from).
 DFP=$(bunx turbo run build --filter=@kompose/electron --dry=json \
-  | jq -r '.tasks[] | select(.taskId == "@kompose/electron#build") | .hash')
-git tag "desktop-fp/$DFP" "$LIVE" && git push origin "refs/tags/desktop-fp/$DFP"
+  | jq -c '[.tasks[] | {taskId, inputs, hashOfExternalDependencies}]' \
+  | shasum -a 256 | cut -c1-16)
+git tag -fa shipped/desktop -m "$DFP" "$LIVE"
+
+git push -f origin refs/tags/shipped/web refs/tags/shipped/mobile \
+  refs/tags/shipped/ios-binary refs/tags/shipped/desktop
 ```
 
 ## Xcode version

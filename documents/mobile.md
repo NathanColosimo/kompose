@@ -301,7 +301,7 @@ bun run --cwd apps/native ios
 
 Releases run in CI on every merge to `main` (`.github/workflows/release.yml`,
 see `documents/ci-cd.md`). The workflow compares the app's fingerprint
-(`runtimeVersion` policy `fingerprint`) with the binaries already shipped:
+(`runtimeVersion` policy `fingerprint`) with the latest submitted binary:
 
 - **Same fingerprint**: only JS changed, so it publishes an OTA update with
   `eas update --channel production --environment production`. Installed

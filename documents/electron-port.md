@@ -47,10 +47,10 @@ Policy:
 - Releases run in CI (`.github/workflows/release.yml`, see
   `documents/ci-cd.md`) after the web deploy, because the desktop app needs the
   server's auth plugin.
-- A release is only built when the shell changed: the workflow takes Turbo's
-  hash of the Electron build task (sources, `packages/desktop`,
-  `electron-builder.yml`, `build/`, locked Electron versions) and skips the
-  release if a `desktop-fp/<hash>` tag already exists. Web-only changes reach desktop users without a new binary.
+- A release is only built when the shell changed: the workflow fingerprints the
+  Electron build's inputs from Turbo (sources, `packages/desktop`,
+  `electron-builder.yml`, `build/`, locked dependency versions) and skips the
+  release when it matches the last release's fingerprint (`shipped/desktop`). Web-only changes reach desktop users without a new binary.
 - The version is the next patch after the latest GitHub release (tags continue
   the Tauri numbering; the last Tauri release is `v0.1.121`). It is injected at
   build time, so `version` in `apps/electron/package.json` is not bumped.
@@ -63,10 +63,9 @@ Policy:
 The workflow signs with the `Developer ID Application: Nathan Colosimo
 (B8R99NL6HM)` certificate (`CSC_LINK`), notarizes with an App Store Connect API
 key, staples the app, and verifies it with `codesign`, `stapler`, and
-Gatekeeper before it pushes the tag and creates the release with the DMG, the
-update zip and its blockmap, and `latest-mac.yml`. If the upload fails after the
-tag is pushed, delete the partial release and tag
-(`gh release delete vX --cleanup-tag`) and rerun the workflow.
+Gatekeeper before it publishes the draft release (DMG, update zip and its
+blockmap, `latest-mac.yml`) and creates the tag. If a run fails after the
+upload, rerun it: electron-builder reuses the draft under the same version.
 
 To check packaging locally without signing, run `bun run package:desktop`.
 
