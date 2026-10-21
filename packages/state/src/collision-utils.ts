@@ -173,7 +173,7 @@ function calculateColumnSpans(
     // Check consecutive columns to the right. A column blocks expansion only
     // if it contains an item that truly competes for the same visual space,
     // i.e. overlaps AND started within the threshold (side-by-side territory).
-    for (let col = assignment.columnIndex + 1; col < totalColumns; col++) {
+    for (let col = assignment.columnIndex + 1; col < totalColumns; col += 1) {
       const colItems = itemsByColumn.get(col) ?? [];
       const hasBlockingItem = colItems.some((other) => {
         if (!itemsOverlap(item, other)) {
@@ -187,7 +187,7 @@ function calculateColumnSpans(
       if (hasBlockingItem) {
         break;
       }
-      span++;
+      span += 1;
     }
 
     spans.set(item.id, span);

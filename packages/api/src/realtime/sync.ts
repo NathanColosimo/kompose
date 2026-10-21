@@ -125,7 +125,7 @@ export async function* createUserSyncEventIterator(
       if (!parsed.success) {
         return;
       }
-      messagesReceived++;
+      messagesReceived += 1;
       connectionSpan.addEvent("sync.message_received", {
         eventType: parsed.data.type,
         messageNumber: messagesReceived,
@@ -159,6 +159,8 @@ export async function* createUserSyncEventIterator(
     }, RECONNECT_EVENT_AFTER_MS);
 
     while (true) {
+      // Events must be yielded in order, one at a time.
+      // biome-ignore lint/performance/noAwaitInLoops: sequential async iterator
       const next = await queue.next();
       if (next.done) {
         return;

@@ -277,7 +277,7 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 function normalizeTemporalLike(
-  value: { toString(): string } | string | null | undefined
+  value: { toString: () => string } | string | null | undefined
 ): string | null {
   if (!value) {
     return null;
@@ -287,10 +287,10 @@ function normalizeTemporalLike(
 
 export interface TaskScopeComparableFields {
   description: string | null | undefined;
-  dueDate: { toString(): string } | string | null | undefined;
+  dueDate: { toString: () => string } | string | null | undefined;
   durationMinutes: number | null | undefined;
-  startDate: { toString(): string } | string | null | undefined;
-  startTime: { toString(): string } | string | null | undefined;
+  startDate: { toString: () => string } | string | null | undefined;
+  startTime: { toString: () => string } | string | null | undefined;
   title: string | null | undefined;
 }
 
