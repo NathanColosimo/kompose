@@ -5,7 +5,7 @@ import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { focusManager } from "@tanstack/react-query";
 import { useAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CommandBarContent } from "@/components/command-bar/command-bar-content";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,10 @@ import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
  */
 export default function DesktopCommandBarClient() {
   useHydrateAtoms([[commandBarOpenAtom, true]]);
+  // Read after mount: rendering the surface during hydration would mismatch
+  // the server HTML, and React's client re-render drops the preload's
+  // data-desktop-runtime attribute that enables the drag styles.
+  const [isDesktop, setIsDesktop] = useState(false);
   const [open, setOpen] = useAtom(commandBarOpenAtom);
   const {
     data: session,
@@ -35,7 +39,8 @@ export default function DesktopCommandBarClient() {
     []
   );
   let view: "content" | "feedback" | "signed-out" = "signed-out";
-  if (isSessionPending || sessionError) {
+  // A failed refresh keeps the signed-in session; only show it without one.
+  if (isSessionPending || (!session?.user && sessionError)) {
     view = "feedback";
   } else if (session?.user) {
     view = "content";
@@ -46,6 +51,7 @@ export default function DesktopCommandBarClient() {
     if (!isDesktopRuntime()) {
       return;
     }
+    setIsDesktop(true);
 
     const handleFocus = () => {
       focusManager.setFocused(true);
@@ -114,7 +120,7 @@ export default function DesktopCommandBarClient() {
     return () => observer.disconnect();
   }, []);
 
-  if (!(isDesktopRuntime() && open)) {
+  if (!(isDesktop && open)) {
     return null;
   }
 

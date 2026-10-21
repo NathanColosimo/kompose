@@ -242,8 +242,18 @@
   -webkit-app-region: drag;
 }
 [data-desktop-runtime="electron"]
-  [data-desktop-drag-region]
+  :is([data-desktop-drag-region], [data-command-bar-surface])
   :is(button, input, textarea, select, a, [role="button"]) {
+  -webkit-app-region: no-drag;
+}
+/* Open overlays are portaled above the header; keep them clickable there. */
+[data-desktop-runtime="electron"]
+:is(
+  [data-radix-popper-content-wrapper],
+  [role="dialog"],
+  [role="alertdialog"],
+  [data-slot$="-overlay"]
+) {
   -webkit-app-region: no-drag;
 }
 
