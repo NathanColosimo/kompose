@@ -235,11 +235,14 @@
   }
 }
 
-/* Electron implements drag regions in Chromium; interactive children remain clickable. */
+/* Electron implements drag regions in Chromium; interactive children remain
+   clickable. Only opt out controls inside a drag region: Electron subtracts
+   every no-drag box, including content scrolled out of view behind the header. */
 [data-desktop-runtime="electron"] [data-desktop-drag-region] {
   -webkit-app-region: drag;
 }
 [data-desktop-runtime="electron"]
+  [data-desktop-drag-region]
   :is(button, input, textarea, select, a, [role="button"]) {
   -webkit-app-region: no-drag;
 }
