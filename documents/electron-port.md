@@ -51,10 +51,11 @@ Policy:
   hash of the Electron build task (sources, `packages/desktop`,
   `electron-builder.yml`, `build/`, locked Electron versions) and skips the
   release if a `desktop-fp/<hash>` tag already exists. Web-only changes reach desktop users without a new binary.
-- The version is the next patch after the latest `v*` tag (tags continue the
-  Tauri numbering; the last Tauri release is `v0.1.121`). It is injected at
+- The version is the next patch after the latest GitHub release (tags continue
+  the Tauri numbering; the last Tauri release is `v0.1.121`). It is injected at
   build time, so `version` in `apps/electron/package.json` is not bumped.
-- A release publishes immediately and becomes GitHub's **Latest** release.
+- electron-builder uploads the artifacts to a draft release; once Gatekeeper
+  accepts the app, the workflow publishes it as GitHub's **Latest** release.
   Installed apps check it every 30 minutes (electron-updater, `latest-mac.yml`)
   and download updates in the background. The web app then offers a restart;
   otherwise the update installs on the next quit.

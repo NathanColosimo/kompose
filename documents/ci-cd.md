@@ -67,15 +67,20 @@ last *successful* release, not the previous commit.
   the Electron sources, `packages/desktop`, `electron-builder.yml`, `build/`,
   and the locked Electron package versions. The UI is the hosted web app, so
   web changes never need a new binary.
-- **Desktop version**: the next patch after the latest `v*` tag, injected with
-  `-c.extraMetadata.version`. No version-bump commits.
+- **Desktop version**: the next patch after the latest GitHub release
+  (`semver --increment patch`), injected with `-c.extraMetadata.version`. No
+  version-bump commits.
+- **Desktop publishing**: `electron-builder --publish always` uploads every
+  artifact electron-updater needs to a draft release. After Gatekeeper accepts
+  the app, `gh release edit --draft=false --latest` publishes it on the
+  released commit.
 
 ### Retrying
 
 Rerun the failed jobs, or run the workflow from the Actions tab
 (`workflow_dispatch`). Targets that already shipped are skipped because their
 markers moved. If a desktop upload failed after its tag was pushed, delete the
-partial release first: `gh release delete vX.Y.Z --cleanup-tag`.
+leftover draft first: `gh release delete vX.Y.Z`.
 
 ## Migrations: expand only
 

@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -82,6 +82,8 @@ jobs:
 
   web:
     name: Web + migrations
+    permissions:
+      contents: write
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -110,7 +112,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bunx drizzle-kit migrate
       - name: Promote to production
-        run: bunx vercel@65 promote "${{ steps.deploy.outputs.url }}" --yes --token "$VERCEL_TOKEN"
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: bunx vercel@65 promote "$URL" --yes --token "$VERCEL_TOKEN"
       - name: Mark web shipped
         run: |
           git tag -f shipped/web "$GITHUB_SHA"
@@ -120,6 +124,8 @@ jobs:
   # They still run when web was skipped, but not when it failed.
   mobile:
     name: Mobile (fingerprint + OTA)
+    permissions:
+      contents: write
     needs: [changes, web]
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
@@ -166,6 +172,8 @@ jobs:
 
   mobile-build:
     name: Mobile (iOS build + submit)
+    permissions:
+      contents: write
     needs: mobile
     if: needs.mobile.outputs.build == 'true'
     runs-on: macos-26
@@ -209,6 +217,8 @@ jobs:
 
   desktop:
     name: Desktop
+    permissions:
+      contents: write
     needs: [changes, web]
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.desktop == 'true' }}
     runs-on: macos-26
@@ -223,18 +233,21 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # Versions come from tags, so releases never need a version-bump commit.
+      # Versions come from releases, so they never need a version-bump commit.
       - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          IFS=. read -r major minor patch <<< "${latest:-v0.0.0}"
-          major=${major#v}
-          echo "version=$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
+          latest=$(gh release view --json tagName --jq .tagName)
+          echo "version=$(bunx semver --increment patch "$latest")" >> "$GITHUB_OUTPUT"
       - name: Build
         run: bun run build:desktop
-      - name: Package, sign, and notarize
+      # electron-builder uploads every artifact electron-updater needs to a
+      # draft release, which users can't see until the next steps publish it.
+      - name: Package, sign, notarize, and upload a draft release
         working-directory: apps/electron
         env:
+          GH_TOKEN: ${{ github.token }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -245,41 +258,22 @@ jobs:
           # electron-builder's notarize step takes the key as a file path.
           export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
           printf '%s' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
-          bunx electron-builder --mac --arm64 --publish never -c.extraMetadata.version="$VERSION"
+          bunx electron-builder --mac --arm64 --publish always -c.extraMetadata.version="$VERSION"
       # Gatekeeper must accept the app before anyone can download it.
       - name: Verify
-        working-directory: apps/electron/release
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+        working-directory: apps/electron/release/mac-arm64
         run: |
-          app="mac-arm64/Kompose.app"
-          for artifact in "$app" "Kompose-$VERSION-arm64.dmg" "Kompose-$VERSION-arm64.zip" \
-            "Kompose-$VERSION-arm64.zip.blockmap" latest-mac.yml; do
-            [[ -e "$artifact" ]] || { echo "::error::Missing build artifact: $artifact"; exit 1; }
-          done
-          codesign --verify --deep --strict "$app"
-          xcrun stapler validate "$app"
-          spctl --assess --type execute "$app"
+          codesign --verify --deep --strict Kompose.app
+          xcrun stapler validate Kompose.app
+          spctl --assess --type execute Kompose.app
       # Publishing as Latest is what installed apps auto-update from.
       - name: Publish release
-        working-directory: apps/electron/release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "Kompose $VERSION" "$GITHUB_SHA"
-          git push origin "refs/tags/v$VERSION"
-          gh release create "v$VERSION" \
-            --verify-tag \
-            --latest \
-            --title "Kompose $VERSION" \
-            --generate-notes \
-            "Kompose-$VERSION-arm64.dmg" \
-            "Kompose-$VERSION-arm64.zip" \
-            "Kompose-$VERSION-arm64.zip.blockmap" \
-            latest-mac.yml
+          gh release edit "v$VERSION" --draft=false --latest \
+            --target "$GITHUB_SHA" --title "Kompose $VERSION"
       - name: Mark desktop shipped
         run: |
           git tag "desktop-fp/$FINGERPRINT" "$GITHUB_SHA"

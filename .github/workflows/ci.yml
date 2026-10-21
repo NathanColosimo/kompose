@@ -51,6 +51,14 @@ jobs:
         run: bunx turbo run build --affected --filter=native --filter=@kompose/electron
         env:
           EXPO_PUBLIC_SERVER_URL: https://kompose.dev
+      # Native dependency versions must match the installed Expo SDK. Offline
+      # mode checks against that SDK rather than the newest patch release, so
+      # an Expo release alone can't fail CI.
+      - name: Expo doctor
+        working-directory: apps/native
+        env:
+          EXPO_OFFLINE: "1"
+        run: bunx expo-doctor
 
   migrations:
     name: Migrations
