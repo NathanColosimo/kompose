@@ -393,10 +393,11 @@ function toggleCommandBar() {
 }
 function dismissCommandBar() {
   hideCommandBar();
+  // On macOS the panel never activates the app, so focus returns to the
+  // previous app by itself. Hiding the app here would also hide the main
+  // window, and showing the panel again would unhide it.
   if (mainWasFocused) {
     showMain();
-  } else if (isMac) {
-    app.hide();
   }
 }
 
