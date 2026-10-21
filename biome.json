@@ -49,7 +49,6 @@
   "linter": {
     "rules": {
       "performance": {
-        // React Compiler (enabled in web and native) memoizes inline callbacks.
         "noJsxPropsBind": "off"
       }
     }
