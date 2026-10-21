@@ -6,14 +6,10 @@
   "scripts": {
     "android": "expo run:android",
     "build": "expo export --platform ios",
-    "build:prod": "mkdir -p dist && rm -rf \"$HOME/.eas-build-cache/native\" && EAS_LOCAL_BUILD_SKIP_CLEANUP=1 EAS_LOCAL_BUILD_WORKINGDIR=\"$HOME/.eas-build-cache/native\" eas build -p ios --profile production --local --non-interactive --output ./dist/kompose.ipa",
     "dev": "expo start",
     "ios": "expo run:ios",
     "prebuild:native": "expo prebuild",
-    "submit:prod": "eas submit -p ios --profile production --non-interactive --path ./dist/kompose.ipa --no-wait",
     "type-check": "tsc --noEmit",
-    "update:preview": "eas update --channel preview --environment preview --platform ios --auto",
-    "update:prod": "eas update --channel production --environment production --platform ios --auto",
     "web": "expo start --web"
   },
   "dependencies": {

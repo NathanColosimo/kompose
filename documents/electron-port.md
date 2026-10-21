@@ -44,41 +44,30 @@ Builds are Apple Silicon (arm64) only.
 
 Policy:
 
-- Releases are built on your Apple Silicon Mac from a clean `main` that matches
-  `origin/main`, never from CI.
-- Every release bumps `version` in `apps/electron/package.json`; tags are
-  `v<version>` and continue the Tauri numbering (the last Tauri release is
-  `v0.1.121`).
+- Releases run in CI (`.github/workflows/release.yml`, see
+  `documents/ci-cd.md`) after the web deploy, because the desktop app needs the
+  server's auth plugin.
+- A release is only built when the shell changed: the workflow hashes the built
+  main/preload bundles, `electron-builder.yml`, `build/`, and the Electron
+  package versions, and skips the release if a `desktop-fp/<hash>` tag already
+  exists. Web-only changes reach desktop users without a new binary.
+- The version is the next patch after the latest `v*` tag (tags continue the
+  Tauri numbering; the last Tauri release is `v0.1.121`). It is injected at
+  build time, so `version` in `apps/electron/package.json` is not bumped.
 - A release publishes immediately and becomes GitHub's **Latest** release.
   Installed apps check it every 30 minutes (electron-updater, `latest-mac.yml`)
   and download updates in the background. The web app then offers a restart;
   otherwise the update installs on the next quit.
 
-Setup (once):
+The workflow signs with the `Developer ID Application: Nathan Colosimo
+(B8R99NL6HM)` certificate (`CSC_LINK`), notarizes with an App Store Connect API
+key, staples the app, and verifies it with `codesign`, `stapler`, and
+Gatekeeper before it pushes the tag and creates the release with the DMG, the
+update zip and its blockmap, and `latest-mac.yml`. If the upload fails after the
+tag is pushed, delete the partial release and tag
+(`gh release delete vX --cleanup-tag`) and rerun the workflow.
 
-1. Keep the `Developer ID Application: Nathan Colosimo (B8R99NL6HM)`
-   certificate in your login keychain.
-2. Copy `apps/electron/.env.release.example` to `.env.release`. The variables
-   from the old `apps/web/.tauri.env` map as follows:
-
-   | Tauri (`.tauri.env`)                   | Electron (`.env.release`)    |
-   | -------------------------------------- | ---------------------------- |
-   | `APPLE_API_KEY_PATH`                   | `APPLE_API_KEY` (`.p8` path) |
-   | `APPLE_API_KEY` (key ID)               | `APPLE_API_KEY_ID`           |
-   | `APPLE_API_ISSUER`                     | `APPLE_API_ISSUER`           |
-   | `NEXT_PUBLIC_*`                        | removed (UI is hosted)       |
-   | `TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]` | removed (macOS code signing) |
-
-3. `gh auth login` with push access to `NathanColosimo/kompose`.
-
-Release: bump the version, merge to `main`, deploy the web server first (the
-desktop app needs its auth plugin), then run `bun run submit:prod:desktop`. The
-script checks everything before building, then builds, signs, notarizes, and
-staples the app. It verifies the result with `codesign`, `stapler`, and
-Gatekeeper, and only then pushes the tag and creates the release with the DMG,
-the update zip and its blockmap, and `latest-mac.yml`. If the upload fails after
-the tag is pushed, delete the partial release and tag
-(`gh release delete vX --cleanup-tag`) and rerun.
+To check packaging locally without signing, run `bun run package:desktop`.
 
 ## Authentication
 
