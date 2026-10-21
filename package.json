@@ -70,10 +70,6 @@
     "knip": "knip",
     "package:desktop": "turbo run package --filter=@kompose/electron",
     "portless:proxy": "sudo portless proxy start --https --tld dev",
-    "submit:prod": "bun run submit:prod:web && bun run submit:prod:native",
-    "submit:prod:desktop": "bun run --cwd apps/electron release",
-    "submit:prod:native": "bun run --cwd apps/native build:prod && bun run --cwd apps/native submit:prod",
-    "submit:prod:web": "bun run --cwd apps/web build:prod && bun run --cwd apps/web submit:prod",
     "type-check": "turbo run type-check"
   },
   "overrides": {
