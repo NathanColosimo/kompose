@@ -1,11 +1,7 @@
-# Keeps the SHA-pinned actions and the pinned CI tools current.
+# Keeps the SHA-pinned actions current.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-  - package-ecosystem: bun
-    directory: /.github/tools
     schedule:
       interval: weekly

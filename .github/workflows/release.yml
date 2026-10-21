@@ -17,9 +17,6 @@ permissions:
   contents: read
 
 env:
-  # Newest Xcode on GitHub's macOS 26 image. Expo's own SDK 58 image uses
-  # Xcode 27; move to it once the runner image ships it.
-  XCODE_VERSION: "26.6"
   # Identity for the annotated shipped/* tags.
   GIT_COMMITTER_NAME: github-actions[bot]
   GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
@@ -72,15 +69,6 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Summary
-        run: |
-          {
-            echo "| Target | Ships |"
-            echo "| --- | --- |"
-            echo "| Web + migrations | ${{ steps.affected.outputs.web }} |"
-            echo "| Mobile | ${{ steps.affected.outputs.mobile }} |"
-            echo "| Desktop | ${{ steps.desktop.outputs.changed }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
 
   web:
     name: Web + migrations
@@ -96,11 +84,6 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # vercel, eas-cli, and semver, pinned by .github/tools/bun.lock.
-      - name: Install CI tools
-        run: |
-          bun install --frozen-lockfile --cwd .github/tools
-          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
       # Vercel builds it, but --skip-domain keeps traffic on the current
       # deployment until migrations succeed.
       - name: Stage production deployment
@@ -110,7 +93,7 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          url=$(vercel deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")
+          url=$(bunx vercel@65.0.0 deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Staged $url" >> "$GITHUB_STEP_SUMMARY"
       - name: Migrate database
@@ -124,7 +107,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel promote "$URL" --yes --token "$VERCEL_TOKEN"
+        run: bunx vercel@65.0.0 promote "$URL" --yes --token "$VERCEL_TOKEN"
       - name: Mark web shipped
         run: |
           git tag -f shipped/web "$GITHUB_SHA"
@@ -133,16 +116,13 @@ jobs:
   # Clients must never be ahead of the API, so mobile and desktop wait for web.
   # They still run when web was skipped, but not when it failed.
   mobile:
-    name: Mobile (fingerprint + OTA)
+    name: Mobile
     permissions:
       contents: write
     needs: [changes, web]
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.mobile == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     environment: production
-    outputs:
-      build: ${{ steps.fingerprint.outputs.build }}
-      fingerprint: ${{ steps.fingerprint.outputs.fingerprint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -151,11 +131,6 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # vercel, eas-cli, and semver, pinned by .github/tools/bun.lock.
-      - name: Install CI tools
-        run: |
-          bun install --frozen-lockfile --cwd .github/tools
-          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
       # Same value as the app's runtimeVersion (policy: fingerprint). An OTA
       # update only reaches binaries with the same runtime, so it must match
       # the latest submitted binary (shipped/ios-binary), not any older one.
@@ -167,10 +142,8 @@ jobs:
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
           if [[ "$fingerprint" == "$shipped" ]]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "Fingerprint $fingerprint matches the latest binary: publishing an OTA update." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
-            echo "Fingerprint $fingerprint differs from the latest binary: building and submitting one." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Publish OTA update
         if: steps.fingerprint.outputs.build == 'false'
@@ -178,60 +151,33 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas update --channel production --environment production --platform ios \
+          bunx eas-cli@25.3.0 update --channel production --environment production --platform ios \
             --message "$(git log -1 --format=%s)" --non-interactive
+      # Newest Xcode on the macos-26 image. Expo's SDK 58 build image uses
+      # Xcode 27; move to it once the runner image ships it.
+      - if: steps.fingerprint.outputs.build == 'true'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.6"
+      # --local builds on this runner instead of EAS's paid build queue;
+      # signing credentials and the build number still come from EAS.
+      - name: Build and submit
+        if: steps.fingerprint.outputs.build == 'true'
+        working-directory: apps/native
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.fingerprint }}
+        run: |
+          bunx eas-cli@25.3.0 build -p ios --profile production --local --non-interactive \
+            --output "$RUNNER_TEMP/kompose.ipa"
+          bunx eas-cli@25.3.0 submit -p ios --profile production --path "$RUNNER_TEMP/kompose.ipa" \
+            --non-interactive --wait
+          git tag -fa shipped/ios-binary -m "$FINGERPRINT" "$GITHUB_SHA"
+          git push -f origin refs/tags/shipped/ios-binary
       - name: Mark mobile shipped
-        if: steps.fingerprint.outputs.build == 'false'
         run: |
           git tag -f shipped/mobile "$GITHUB_SHA"
           git push -f origin refs/tags/shipped/mobile
-
-  mobile-build:
-    name: Mobile (iOS build + submit)
-    permissions:
-      contents: write
-    needs: mobile
-    # Without a status function, a skipped web job (an ancestor) skips this too.
-    if: ${{ !failure() && !cancelled() && needs.mobile.outputs.build == 'true' }}
-    runs-on: macos-26
-    environment: production
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-      # vercel, eas-cli, and semver, pinned by .github/tools/bun.lock.
-      - name: Install CI tools
-        run: |
-          bun install --frozen-lockfile --cwd .github/tools
-          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
-      # --local builds on this runner instead of EAS's paid build queue;
-      # signing credentials and the build number still come from EAS.
-      - name: Build
-        working-directory: apps/native
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          eas build -p ios --profile production --local --non-interactive \
-            --output "$RUNNER_TEMP/kompose.ipa"
-      - name: Submit to App Store Connect
-        working-directory: apps/native
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          eas submit -p ios --profile production --path "$RUNNER_TEMP/kompose.ipa" \
-            --non-interactive --wait
-      - name: Mark binary and mobile shipped
-        env:
-          FINGERPRINT: ${{ needs.mobile.outputs.fingerprint }}
-        run: |
-          git tag -fa shipped/ios-binary -m "$FINGERPRINT" "$GITHUB_SHA"
-          git tag -f shipped/mobile "$GITHUB_SHA"
-          git push -f origin refs/tags/shipped/ios-binary refs/tags/shipped/mobile
 
   desktop:
     name: Desktop
@@ -249,18 +195,13 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # semver, pinned by .github/tools/bun.lock.
-      - name: Install CI tools
-        run: |
-          bun install --frozen-lockfile --cwd .github/tools
-          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
       # Versions come from releases, so they never need a version-bump commit.
       - id: version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           latest=$(gh release view --json tagName --jq .tagName)
-          echo "version=$(semver --increment patch "$latest")" >> "$GITHUB_OUTPUT"
+          echo "version=$(bunx semver@7.8.5 --increment patch "$latest")" >> "$GITHUB_OUTPUT"
       - name: Build
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}

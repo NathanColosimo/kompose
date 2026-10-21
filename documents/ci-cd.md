@@ -117,9 +117,9 @@ Supabase's session pooler (port 5432), not the transaction pooler (port 6543).
 - **Supply chain:** every action is pinned to a commit SHA. The repo setting
   requires this, and only GitHub-owned actions, `oven-sh/setup-bun`, and
   `maxim-lobanov/setup-xcode` are allowed. CLIs that receive secrets (vercel,
-  eas-cli, semver) come from `.github/tools/bun.lock`. Everything else runs from
-  the main lockfile, and Bun skips untrusted install scripts. Dependabot keeps
-  both pin sets current.
+  eas-cli, semver) run at exact versions. Everything else runs from the main
+  lockfile, and Bun skips untrusted install scripts. Dependabot keeps the
+  action pins current.
 - **Least privilege:** workflows default to `contents: read`; only the release
   jobs that push tags or releases get `contents: write`. Each secret is set
   only on the steps that use it.
@@ -209,8 +209,8 @@ git push -f origin refs/tags/shipped/web refs/tags/shipped/mobile \
 
 ## Xcode version
 
-iOS builds run on GitHub's `macos-26` runner with the Xcode set by
-`XCODE_VERSION` in `release.yml` (26.6, the newest on that image). Expo's own
-SDK 58 build image uses Xcode 27; if a build needs it, bump `XCODE_VERSION`
-once GitHub's runner image includes it
+iOS builds run on GitHub's `macos-26` runner with the Xcode pinned by the
+`setup-xcode` step in `release.yml` (26.6, the newest on that image). Expo's own
+SDK 58 build image uses Xcode 27; if a build needs it, bump that version once
+GitHub's runner image includes it
 ([runner images](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)).
