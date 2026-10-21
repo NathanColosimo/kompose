@@ -3,6 +3,7 @@ import React, { forwardRef, type ReactElement, useState } from "react";
 import {
   Pressable,
   TextInput,
+  type TextInputInstance,
   type TextInputProps,
   type TextStyle,
   View,
@@ -32,7 +33,7 @@ export interface InputProps extends Omit<TextInputProps, "style"> {
   compact?: boolean;
 }
 
-export const Input = forwardRef<TextInput, InputProps>(
+export const Input = forwardRef<TextInputInstance, InputProps>(
   (
     {
       label,
@@ -400,7 +401,7 @@ export interface GroupedInputItemProps extends Omit<TextInputProps, "style"> {
   rows?: number; // Only used when type="textarea"
 }
 
-export const GroupedInputItem = forwardRef<TextInput, GroupedInputItemProps>(
+export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemProps>(
   (
     {
       label,

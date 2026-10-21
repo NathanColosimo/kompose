@@ -13,7 +13,7 @@ type ColorSchemePreference = "light" | "dark" | "system";
 function resolveEffectiveColorScheme(
   theme: string,
   hasAdaptiveThemes: boolean,
-  systemColorScheme: ColorSchemeName
+  systemColorScheme: ColorSchemeName | null
 ): "light" | "dark" {
   // Adaptive mode follows system appearance.
   if (hasAdaptiveThemes || theme === "system") {

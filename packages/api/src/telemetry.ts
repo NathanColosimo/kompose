@@ -1,4 +1,4 @@
-import { OtelTracer, Resource } from "@effect/opentelemetry";
+import { OtelTracer } from "@effect/opentelemetry";
 import { env } from "@kompose/env";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -123,15 +123,15 @@ if (exporterConfig) {
 //    Tracer.layerGlobal reads the global TracerProvider (registered by
 //    the NodeSDK above) instead of creating a separate provider.
 //    This means Effect.fn spans are exported through the same exporter
-//    as oRPC spans, keeping parent-child links intact.
+//    as oRPC spans, keeping parent-child links intact. The service name
+//    comes from the NodeSDK resource.
 
 function buildTelemetryLayer(): Layer.Layer<never> {
   if (!exporterConfig) {
     return Layer.empty;
   }
 
-  const ResourceLive = Resource.layer({ serviceName: "kompose-api" });
-  return OtelTracer.layerGlobal.pipe(Layer.provide(ResourceLive));
+  return OtelTracer.layerGlobal;
 }
 
 export const TelemetryLive = buildTelemetryLayer();

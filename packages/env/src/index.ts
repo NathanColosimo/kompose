@@ -38,6 +38,8 @@ export const env = createEnv({
     WHOOP_CLIENT_SECRET: z.string().min(1).optional(),
     YOUTUBE_API_KEY: z.string().min(1).optional(),
   },
+  // CI type-check and lint jobs run without secrets.
+  skipValidation: Boolean(process.env.SKIP_ENV_VALIDATION),
 });
 
 /**

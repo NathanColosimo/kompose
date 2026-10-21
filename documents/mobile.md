@@ -314,43 +314,18 @@ Native production scripts are:
   - Submits the existing IPA to App Store Connect and waits for status.
   - Runs with `--non-interactive` to avoid interactive prompts.
 
-Root orchestration uses Turborepo with per-platform shortcuts:
+Root shortcuts run these package scripts directly (no Turbo caching, so a
+release always rebuilds and never re-submits a cached artifact):
 
-- `bun run build:prod` — builds everything (type-check → desktop →
-  web + native).
-- `bun run build:prod:native` — builds only native (type-check native
-  deps → native IPA).
-- `bun run submit:prod:native` — submits just the native IPA.
-- `bun run build:prod:web` / `bun run submit:prod:web` — web-only
-  equivalents (Vercel deploy + desktop release).
+- `bun run submit:prod:native` — builds the IPA, then submits it.
+- `bun run submit:prod:web` — `vercel pull` + `vercel build --prod`, then
+  `vercel deploy --prebuilt --prod`.
+- `bun run submit:prod` — web, then native.
 - `bun run submit:prod:desktop` — desktop GitHub release only.
-- Submission tasks are intentionally cached, so unchanged artifacts are not
-  submitted twice.
-- `web#submit:prod` depends on `build:prod`, so web deploys use a prebuilt
-  artifact.
-- `submit:prod:desktop` has `cache: true` with
-  `dependsOn: ["build:prod:desktop"]` — skipped when no client-side
-  changes occurred since the last release.
-- **Important**: Always run from repo root. Running `bun run build:prod`
-  directly inside `apps/native/` bypasses Turbo (no caching).
+- **Important**: Always run from repo root.
 
-### Turbo caching for production tasks
-
-Production task configuration uses **Package Configurations**
-(`apps/web/turbo.json` and `apps/native/turbo.json` with
-`"extends": ["//"]`) instead of `package#task` overrides in the root
-`turbo.json`.
-
-- `native#build:prod`: caches `dist/**` (the IPA). Its explicit shared-package
-  inputs make changes such as `@kompose/state` part of the cache key.
-- Electron packaging is configured separately in `apps/electron/turbo.json`.
-- `web#build:prod`: caches `.next/**` (excluding `.next/cache/**`) plus the
-  repo-root Vercel prebuild artifact at `.vercel/output/**` and
-  `.vercel/project.json`.
-- `web#submit:prod`: depends on `build:prod`, so Turbo can reuse the web
-  prebuild before running `vercel deploy --prebuilt --prod`.
-  The release script (`release-dmg.sh`) is also idempotent — it
-  gracefully skips if the GitHub release tag already exists.
+These manual scripts are a stopgap until releases move to CI on merge to
+`main`.
 
 ### Why local iOS builds are slow
 

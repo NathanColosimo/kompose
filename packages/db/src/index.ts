@@ -5,22 +5,13 @@ import {
   make as makePgDrizzle,
 } from "drizzle-orm/effect-postgres";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { types } from "pg";
 import { relations as dbRelations } from "./schema/relations";
 
-const rawDateTimeTypeIds = new Set([
-  1184, 1114, 1082, 1186, 1231, 1115, 1185, 1187, 1182,
-]);
-
 export const PgClientLive = pgClientLayer({
-  types: {
-    getTypeParser: (typeId: number, format: "text" | "binary" | undefined) => {
-      if (rawDateTimeTypeIds.has(typeId)) {
-        return (value: string) => value;
-      }
-      return types.getTypeParser(typeId, format);
-    },
-  },
+  // Production connects through Supabase's transaction-mode pooler, which
+  // can't keep named prepared statements across transactions. The previous
+  // pg-based client never named its statements either.
+  prepare: false,
   url: Redacted.make(env.DATABASE_URL),
 });
 

@@ -9,7 +9,12 @@ import {
   Clock,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type TextStyle, TouchableOpacity, type ViewStyle } from "react-native";
+import {
+  type ScrollViewInstance,
+  type TextStyle,
+  TouchableOpacity,
+  type ViewStyle,
+} from "react-native";
 import { BottomSheet, useBottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -137,9 +142,9 @@ export function DatePicker(props: DatePickerProps) {
   );
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
-  const hoursScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const minutesScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const yearScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const hoursScrollRef = useRef<ScrollViewInstance>(null);
+  const minutesScrollRef = useRef<ScrollViewInstance>(null);
+  const yearScrollRef = useRef<ScrollViewInstance>(null);
 
   // Range selection state for temporary storage during selection
   const [tempRange, setTempRange] = useState<DateRange>(() =>
@@ -367,7 +372,7 @@ export function DatePicker(props: DatePickerProps) {
 
   const scrollToIndex = useCallback(
     (
-      ref: React.RefObject<React.ComponentRef<typeof ScrollView> | null>,
+      ref: React.RefObject<ScrollViewInstance | null>,
       index: number,
       itemExtent: number
     ) => {

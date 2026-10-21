@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.v2.json",
   "ui": "tui",
+  "globalPassThroughEnv": ["SKIP_ENV_VALIDATION"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -15,13 +16,6 @@
     },
     "type-check": {
       "dependsOn": ["transit"]
-    },
-    "build:prod": {
-      "dependsOn": ["type-check"],
-      "cache": false
-    },
-    "submit:prod": {
-      "cache": false
     },
     "dev": {
       "cache": false,

@@ -23,13 +23,15 @@
       "!packages/google-cal/src",
       "!**/components/ui",
       "!**/components/ai-elements",
-      "!**/uniwind-types.d.ts"
+      "!**/uniwind-types.d.ts",
+      "!packages/db/src/migrations"
     ]
   },
   "extends": [
     "ultracite/biome/core",
     "ultracite/biome/next",
-    "ultracite/biome/react"
+    "ultracite/biome/react",
+    "ultracite/biome/tanstack"
   ],
   "overrides": [
     {
@@ -42,5 +44,12 @@
         }
       }
     }
-  ]
+  ],
+  "linter": {
+    "rules": {
+      "performance": {
+        "noJsxPropsBind": "off"
+      }
+    }
+  }
 }

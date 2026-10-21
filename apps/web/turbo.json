@@ -22,39 +22,11 @@
         "WHOOP_CLIENT_ID",
         "WHOOP_CLIENT_SECRET"
       ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "!.next/**",
-        "!$TURBO_ROOT$/.vercel/**"
-      ],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "!.next/**"],
       "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
-    },
-    "build:prod": {
-      "dependsOn": ["$TURBO_EXTENDS$", "^build"],
-      "cache": true,
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "$TURBO_ROOT$/documents/privacy-policy.md",
-        "$TURBO_ROOT$/documents/terms-of-service.md",
-        "!.next/**",
-        "!$TURBO_ROOT$/.vercel/**"
-      ],
-      "outputs": [
-        ".next/**",
-        "!.next/cache/**",
-        "!.next/dev/**",
-        "../../.vercel/output/**",
-        "../../.vercel/project.json"
-      ]
     },
     "type-check": {
       "outputs": [".next/types/**", "tsconfig.tsbuildinfo"]
-    },
-    "submit:prod": {
-      "dependsOn": ["build:prod"],
-      "cache": false
     }
   }
 }
