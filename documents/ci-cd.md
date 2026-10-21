@@ -106,6 +106,26 @@ or warns that the schema differs from the committed migrations (run
 `DATABASE_URL` for the migration step should be a direct connection or
 Supabase's session pooler (port 5432), not the transaction pooler (port 6543).
 
+## Security (public repo)
+
+- **Fork PRs:** they run `ci.yml` (the only workflow they can trigger) with a
+  read-only `GITHUB_TOKEN` and no secrets. Workflows from anyone outside the
+  repo need approval before they run. No workflow uses `pull_request_target`
+  or `workflow_run`, the triggers that hand secrets to fork code.
+- **Production secrets:** the `production` environment only deploys from
+  `main`, and `main` requires a PR with passing CI.
+- **Supply chain:** every action is pinned to a commit SHA. The repo setting
+  requires this, and only GitHub-owned actions, `oven-sh/setup-bun`, and
+  `maxim-lobanov/setup-xcode` are allowed. CLIs that receive secrets (vercel,
+  eas-cli, semver) come from `.github/tools/bun.lock`. Everything else runs from
+  the main lockfile, and Bun skips untrusted install scripts. Dependabot keeps
+  both pin sets current.
+- **Least privilege:** workflows default to `contents: read`; only the release
+  jobs that push tags or releases get `contents: write`. Each secret is set
+  only on the steps that use it.
+- **Detection:** secret scanning with push protection, Dependabot alerts, and
+  private vulnerability reporting are enabled.
+
 ## One-time setup
 
 ### GitHub environment and secrets
