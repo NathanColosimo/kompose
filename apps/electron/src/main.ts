@@ -59,6 +59,8 @@ let mainWindow: BrowserWindow | null = null;
 let commandWindow: BrowserWindow | null = null;
 let quitting = false;
 let mainWasFocused = false;
+// Set when the popup opened over a hidden app and kept the main window out.
+let restoreMainOnActivate = false;
 let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
@@ -343,6 +345,7 @@ function placeCommandBar(window: BrowserWindow, height: number) {
 }
 
 function showMain() {
+  restoreMainOnActivate = false;
   if (!mainWindow) {
     // Shown on ready-to-show, avoiding a blank frame.
     mainWindow = createMainWindow();
@@ -373,6 +376,13 @@ function toggleCommandBar() {
   }
   clearTimeout(commandIdleTimer);
   mainWasFocused = mainWindow?.isFocused() ?? false;
+  // Showing the panel unhides an app hidden with Cmd+H, which would bring the
+  // main window back over the current app. Keep it out until Kompose is
+  // activated.
+  if (isMac && app.isHidden() && mainWindow) {
+    mainWindow.hide();
+    restoreMainOnActivate = true;
+  }
   commandWindow ??= createCommandWindow();
   // Open on the display under the cursor, at the remembered spot when it is there.
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -553,6 +563,11 @@ app
   });
 
 app.on("activate", () => showMain());
+app.on("did-become-active", () => {
+  if (restoreMainOnActivate) {
+    showMain();
+  }
+});
 app.on("before-quit", () => {
   quitting = true;
 });
