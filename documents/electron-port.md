@@ -47,10 +47,10 @@ Policy:
 - Releases run in CI (`.github/workflows/release.yml`, see
   `documents/ci-cd.md`) after the web deploy, because the desktop app needs the
   server's auth plugin.
-- A release is only built when the shell changed: the workflow hashes the built
-  main/preload bundles, `electron-builder.yml`, `build/`, and the Electron
-  package versions, and skips the release if a `desktop-fp/<hash>` tag already
-  exists. Web-only changes reach desktop users without a new binary.
+- A release is only built when the shell changed: the workflow takes Turbo's
+  hash of the Electron build task (sources, `packages/desktop`,
+  `electron-builder.yml`, `build/`, locked Electron versions) and skips the
+  release if a `desktop-fp/<hash>` tag already exists. Web-only changes reach desktop users without a new binary.
 - The version is the next patch after the latest `v*` tag (tags continue the
   Tauri numbering; the last Tauri release is `v0.1.121`). It is injected at
   build time, so `version` in `apps/electron/package.json` is not bumped.

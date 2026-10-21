@@ -57,12 +57,13 @@ jobs:
           echo "web=$(affected web shipped/web)" >> "$GITHUB_OUTPUT"
           echo "mobile=$(affected native shipped/mobile)" >> "$GITHUB_OUTPUT"
       # The desktop app loads https://kompose.dev, so only shell changes need
-      # a new binary. Root config edits mark every package as affected, so
-      # compare what actually ships instead.
+      # a new binary. Turbo's hash of the Electron build task covers its
+      # sources, workspace deps, locked package versions, and packaging
+      # config, and ignores root-config noise that marks every package affected.
       - id: desktop
         run: |
-          bun run build:desktop
-          fingerprint=$(.github/scripts/desktop-fingerprint.sh)
+          fingerprint=$(bunx turbo run build --filter=@kompose/electron --dry=json \
+            | jq -r '.tasks[] | select(.taskId == "@kompose/electron#build") | .hash')
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/desktop-fp/$fingerprint" >/dev/null; then
             echo "changed=false" >> "$GITHUB_OUTPUT"

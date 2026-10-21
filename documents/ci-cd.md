@@ -62,10 +62,11 @@ last *successful* release, not the previous commit.
   update reaches it. Server-only changes can also mark `native` as affected
   (it imports `@kompose/api` for types); that just publishes an identical OTA
   update.
-- **Desktop fingerprint**: `.github/scripts/desktop-fingerprint.sh` hashes the
-  built main/preload bundles, `electron-builder.yml`, `build/`, and the
-  Electron package versions. The UI is the hosted web app, so web changes
-  never need a new binary.
+- **Desktop fingerprint**: Turbo's task hash for `@kompose/electron#build`
+  (`turbo run build --filter=@kompose/electron --dry=json`). It changes with
+  the Electron sources, `packages/desktop`, `electron-builder.yml`, `build/`,
+  and the locked Electron package versions. The UI is the hosted web app, so
+  web changes never need a new binary.
 - **Desktop version**: the next patch after the latest `v*` tag, injected with
   `-c.extraMetadata.version`. No version-bump commits.
 
@@ -168,8 +169,8 @@ FP=$(cd apps/native && bunx expo-updates runtimeversion:resolve --platform ios |
 git tag "ios-fp/$FP" "$LIVE" && git push origin "refs/tags/ios-fp/$FP"
 
 # The latest desktop release (run on the commit it was built from).
-bun run build:desktop
-DFP=$(.github/scripts/desktop-fingerprint.sh)
+DFP=$(bunx turbo run build --filter=@kompose/electron --dry=json \
+  | jq -r '.tasks[] | select(.taskId == "@kompose/electron#build") | .hash')
 git tag "desktop-fp/$DFP" "$LIVE" && git push origin "refs/tags/desktop-fp/$DFP"
 ```
 
