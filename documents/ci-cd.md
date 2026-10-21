@@ -12,7 +12,7 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | --- | --- |
 | Lint and format | `biome ci .` |
 | Type-check and build | `turbo run type-check --affected`, then the iOS bundle (`expo export`, including the Hermes bytecode compile) and the Electron main/preload build, both `--affected` |
-| Migrations | `drizzle-kit check`; `drizzle-kit generate` produces no new files; new migrations only expand the schema (see below) |
+| Migrations | `bun run db:check`: `drizzle-kit check` passes and `drizzle-kit generate` produces no new migration |
 
 Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
 work done in CI, on Vercel, or locally (if logged in) is not repeated. Web is
@@ -80,19 +80,21 @@ partial release first: `gh release delete vX.Y.Z --cleanup-tag`.
 
 Migrations run before the new web deployment takes traffic, and the previous
 deployment, older iOS binaries, and older desktop shells keep calling the API.
-So a PR may only expand the schema: add tables, nullable or defaulted columns,
-indexes. CI fails a PR whose new migration contains `DROP TABLE/COLUMN/TYPE`,
-`RENAME`, a column type change, or `SET NOT NULL`.
+So a PR should only expand the schema: add tables, nullable or defaulted
+columns, indexes.
 
 To remove or tighten something:
 
 1. Ship the code that stops using the old shape (and, for NOT NULL, the
    backfill).
-2. Once no shipped client depends on it, open a PR with the destructive
-   migration and add the `db-contract` label.
+2. Once no shipped client depends on it, ship the destructive migration in its
+   own PR.
 
-`DATABASE_URL` for the migration step should be a direct (non-pooled)
-connection.
+CI runs `bun run db:check`, which fails when `drizzle-kit check` finds a
+problem or the schema changed without a committed migration.
+
+`DATABASE_URL` for the migration step should be a direct connection or
+Supabase's session pooler (port 5432), not the transaction pooler (port 6543).
 
 ## One-time setup
 
@@ -106,7 +108,7 @@ required reviewers there if you ever want to approve releases by hand.
 | `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens |
 | `VERCEL_ORG_ID` | `orgId` in `.vercel/project.json` (after `vercel link`) |
 | `VERCEL_PROJECT_ID` | `projectId` in `.vercel/project.json` |
-| `DATABASE_URL` | Production Postgres, direct (non-pooled) connection string |
+| `DATABASE_URL` | Production Postgres: direct connection or Supabase session pooler (port 5432) |
 | `EXPO_TOKEN` | expo.dev → Account Settings → Access Tokens (a robot user token is best) |
 | `CSC_LINK` | Export "Developer ID Application: Nathan Colosimo (B8R99NL6HM)" with its private key from Keychain Access as a `.p12`, then `base64 -i cert.p12 \| pbcopy` |
 | `CSC_KEY_PASSWORD` | The password you set when exporting the `.p12` |

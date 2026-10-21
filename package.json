@@ -54,6 +54,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:desktop": "turbo run build --filter=@kompose/electron",
+    "db:check": "bun run --cwd packages/db db:check",
     "db:down": "turbo run db:down -F @kompose/db",
     "db:generate": "turbo run db:generate -F @kompose/db",
     "db:migrate": "turbo run db:migrate -F @kompose/db",
@@ -91,7 +92,7 @@
     "typescript": "catalog:",
     "ultracite": "^8.0.1"
   },
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.3",
   "trustedDependencies": [
     "electron"
   ]

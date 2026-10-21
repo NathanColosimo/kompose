@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "db:check": "bash scripts/check-migrations.sh",
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
