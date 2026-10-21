@@ -1,3 +1,4 @@
+import { visibleDaysCountAtom } from "@kompose/state/atoms/current-date";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
@@ -24,19 +25,40 @@ export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
 
 /**
  * Shared desktop widths for the dashboard sidebars.
- * clamp(min, preferred viewport width, max) keeps layouts responsive.
+ * clamp(min, preferred viewport width, max) keeps layouts responsive. The CSS
+ * value and the layout budget below are both derived from these definitions.
  */
-export const SIDEBAR_LEFT_WIDTH = "clamp(18rem, 22vw, 22rem)";
-export const SIDEBAR_RIGHT_WIDTH = "clamp(24rem, 30vw, 30rem)";
+interface ClampedWidth {
+  maxRem: number;
+  minRem: number;
+  vw: number;
+}
+const SIDEBAR_LEFT: ClampedWidth = { maxRem: 22, minRem: 18, vw: 22 };
+const SIDEBAR_RIGHT: ClampedWidth = { maxRem: 30, minRem: 24, vw: 30 };
+const REM_PX = 16;
+
+function toCssClamp({ maxRem, minRem, vw }: ClampedWidth) {
+  return `clamp(${minRem}rem, ${vw}vw, ${maxRem}rem)`;
+}
+function resolveClampPx(
+  { maxRem, minRem, vw }: ClampedWidth,
+  viewportWidth: number
+) {
+  return Math.min(
+    maxRem * REM_PX,
+    Math.max(minRem * REM_PX, (viewportWidth * vw) / 100)
+  );
+}
+
+export const SIDEBAR_LEFT_WIDTH = toCssClamp(SIDEBAR_LEFT);
+export const SIDEBAR_RIGHT_WIDTH = toCssClamp(SIDEBAR_RIGHT);
 
 /**
  * Width-budget constants used for responsive layout calculations.
  * Keep these in px so breakpoints are deterministic.
  */
-const SIDEBAR_LEFT_MIN_WIDTH_PX = 288; // 18rem
 const SIDEBAR_LEFT_ICON_WIDTH_PX = 48; // 3rem
-const SIDEBAR_RIGHT_MIN_WIDTH_PX = 352; // 24rem
-const CALENDAR_TIME_GUTTER_WIDTH_PX = 48; // w-16
+const CALENDAR_TIME_GUTTER_WIDTH_PX = 64; // w-16
 const CALENDAR_DAY_MIN_WIDTH_PX = 138;
 const MIN_DAYS_WHEN_RIGHT_DOCKED = 3;
 
@@ -69,13 +91,14 @@ function computeDashboardResponsiveLayout(args: {
   viewportWidth: number;
 }): DashboardResponsiveLayout {
   const leftSidebarWidth = args.leftSidebarOpen
-    ? SIDEBAR_LEFT_MIN_WIDTH_PX
+    ? resolveClampPx(SIDEBAR_LEFT, args.viewportWidth)
     : SIDEBAR_LEFT_ICON_WIDTH_PX;
 
   const mainRegionWidth = Math.max(0, args.viewportWidth - leftSidebarWidth);
   const maxDaysWithoutRightSidebar = getCalendarDayCapacity(mainRegionWidth);
+  const rightSidebarWidth = resolveClampPx(SIDEBAR_RIGHT, args.viewportWidth);
   const maxDaysWithDockedRight = getCalendarDayCapacity(
-    mainRegionWidth - SIDEBAR_RIGHT_MIN_WIDTH_PX
+    mainRegionWidth - rightSidebarWidth
   );
 
   const canDockRightSidebar =
@@ -161,4 +184,15 @@ export const dashboardResponsiveLayoutAtom = atom((get) =>
     rightSidebarDockRequested: get(sidebarRightOpenAtom),
     viewportWidth: get(dashboardViewportWidthAtom),
   })
+);
+
+/** Rendered days and every period-navigation control must share this count. */
+export const effectiveVisibleDaysCountAtom = atom((get) =>
+  Math.max(
+    1,
+    Math.min(
+      get(visibleDaysCountAtom),
+      get(dashboardResponsiveLayoutAtom).maxDaysForCurrentLayout
+    )
+  )
 );

@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
-import { Temporal } from "temporal-polyfill";
-import { isToday } from "@/lib/temporal-utils";
+import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
+import { useAtomValue } from "jotai";
+import { memo } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { PIXELS_PER_HOUR } from "../constants";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
@@ -38,7 +39,6 @@ export const DayColumn = memo(function DayColumnInner({
   onSlotMouseUp,
 }: DayColumnProps) {
   const hours = getHoursRange();
-  const isTodayColumn = isToday(date);
 
   return (
     <div
@@ -66,21 +66,18 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <div className="pointer-events-none absolute inset-0">{children}</div>
-      {isTodayColumn ? <CurrentTimeIndicator /> : null}
+      <CurrentTimeIndicator date={date} />
     </div>
   );
 });
 
-function CurrentTimeIndicator() {
-  const [topPosition, setTopPosition] = useState(() => calculateTimePosition());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTopPosition(calculateTimePosition());
-    }, 60_000);
-
-    return () => clearInterval(interval);
-  }, []);
+/** The now line, in the displayed time zone; it moves columns at midnight. */
+function CurrentTimeIndicator({ date }: { date: Temporal.PlainDate }) {
+  const now = useAtomValue(nowZonedDateTimeAtom);
+  if (!now.toPlainDate().equals(date)) {
+    return null;
+  }
+  const topPosition = (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 
   return (
     <div
@@ -91,10 +88,4 @@ function CurrentTimeIndicator() {
       <div className="h-0.5 flex-1 bg-red-500" />
     </div>
   );
-}
-
-/** Calculate the current time indicator position in pixels from top */
-function calculateTimePosition(): number {
-  const now = Temporal.Now.zonedDateTimeISO();
-  return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }

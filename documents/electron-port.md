@@ -16,7 +16,9 @@ bridge (`window.komposeDesktop`) that the web app uses for them.
 Start the web app as usual (`bun run portless:proxy`, `bun run db:start`,
 `bun run dev:web`), then `bun run dev:desktop`. Development windows load
 `https://local.kompose.dev` with hot reload; set `KOMPOSE_SERVER_URL` to use
-another server. Packaged builds always load `https://kompose.dev`.
+another server. Packaged builds always load `https://kompose.dev`. Main
+trusts the macOS keychain in addition to Node's CA list, so the portless
+development certificate works without extra setup.
 
 `bun run package:desktop` creates an unsigned, unpacked Apple Silicon app in
 `apps/electron/release/mac-arm64` for local testing. Development runs use a
@@ -102,3 +104,8 @@ and every new window, opens in the system browser instead. Permission requests
 are denied.
 
 The command popup is created on first use and released after 60 seconds hidden.
+It is available from the global shortcut and File → Open Command Bar.
+The main window reopens where it was last closed, and the popup reopens where it
+was last dragged when that spot is on the display under the cursor. Both are
+clamped into the display's work area. The popup's height follows its content;
+growth near the bottom edge shifts it up until it shrinks again.

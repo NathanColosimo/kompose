@@ -7,7 +7,6 @@ import {
   extractAuthErrorMessage,
   getElectronAuthQuery,
 } from "@/lib/auth-client";
-import { isDesktopRuntime } from "@/lib/desktop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
@@ -21,7 +20,6 @@ const copyByMode = {
   "sign-in": {
     appleLabel: "Continue with Apple",
     applePendingLabel: "Connecting to Apple...",
-    desktopPendingLabel: "Opening browser...",
     googleLabel: "Continue with Google",
     googlePendingLabel: "Connecting to Google...",
     successMessage: "Signed in. Redirecting to your workspace.",
@@ -29,7 +27,6 @@ const copyByMode = {
   "sign-up": {
     appleLabel: "Create with Apple",
     applePendingLabel: "Contacting Apple...",
-    desktopPendingLabel: "Opening browser...",
     googleLabel: "Create with Google",
     googlePendingLabel: "Contacting Google...",
     successMessage: "You're in! Redirecting to your timeline.",
@@ -60,14 +57,8 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     setActiveProvider(provider);
 
     try {
-      // Better Auth owns PKCE and the session exchange in the main process.
-      if (isDesktopRuntime()) {
-        await window.requestAuth({ provider });
-        // The main process reloads this window once the session arrives.
-        return;
-      }
-
-      // Web flow: runs OAuth inside the browser tab via Better Auth client.
+      // Runs OAuth in this browser tab. A desktop sign-in request in the URL
+      // is forwarded so the app receives the session afterwards.
       const { callbackURL, errorCallbackURL, newUserCallbackURL } =
         buildSocialAuthUrls();
 

@@ -7,6 +7,7 @@ import { useAtom, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
+import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
 import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
@@ -43,13 +44,19 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session, isPending: isSessionPending } =
-    authClient.useSession();
+  const {
+    data: session,
+    error: sessionError,
+    isPending: isSessionPending,
+    isRefetching,
+    refetch: refetchSession,
+  } = authClient.useSession();
   const sessionUser = session?.user;
   const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
   // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
   const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
   const viewportWidth = useAtomValueRawSync(dashboardViewportWidthAtom);
+  const { push } = useRouter();
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const setCommandBarTaskOpenRequest = useSetAtom(
@@ -104,6 +111,7 @@ export default function DashboardLayout({
 
     return desktopBridge().onOpenTask((payload) => {
       const request = deserializeCommandBarTaskOpenRequest(payload);
+      push("/dashboard");
       applyCommandBarTaskOpenRequest(request, {
         setCommandBarTaskOpenRequest,
         setCurrentDate,
@@ -112,14 +120,23 @@ export default function DashboardLayout({
       });
     });
   }, [
+    push,
     setCommandBarTaskOpenRequest,
     setCurrentDate,
     setSidebarLeftOpen,
     setSidebarLeftViewSelection,
   ]);
 
-  if (isSessionPending) {
-    return null;
+  if (isSessionPending || (!sessionUser && sessionError)) {
+    return (
+      <main className="flex min-h-svh items-center justify-center p-6 text-center text-sm">
+        <SessionFeedback
+          error={Boolean(sessionError)}
+          onRetry={refetchSession}
+          retrying={isRefetching}
+        />
+      </main>
+    );
   }
 
   if (!sessionUser) {

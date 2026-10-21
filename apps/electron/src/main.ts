@@ -1,7 +1,9 @@
 import { dirname, join } from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import { electronClient } from "@better-auth/electron/client";
 import {
+  DESKTOP_COMMAND_BAR_MAX_HEIGHT,
   type DesktopBridge,
   type DesktopCommandBarShortcutPresetId,
   type DesktopInvokeMethod,
@@ -20,11 +22,21 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  type Point,
+  type Rectangle,
   screen,
   session,
   shell,
 } from "electron";
 import { autoUpdater } from "electron-updater";
+
+// Main's requests (the sign-in token exchange) use Node's TLS, which only knows
+// its bundled CA list. Also trust the macOS keychain, as the windows do, so
+// locally trusted and organization-installed CAs work the same in both.
+tls.setDefaultCACertificates([
+  ...tls.getCACertificates("default"),
+  ...tls.getCACertificates("system"),
+]);
 
 const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +45,8 @@ const serverURL = app.isPackaged
   ? "https://kompose.dev"
   : (process.env.KOMPOSE_SERVER_URL ?? "https://local.kompose.dev");
 const serverOrigin = new URL(serverURL).origin;
-const COMMAND_BAR = { height: 80, maxHeight: 600, minHeight: 56, width: 480 };
+const MAIN_WINDOW = { height: 840, minHeight: 480, minWidth: 720, width: 1280 };
+const COMMAND_BAR = { height: 80, minHeight: 56, width: 480 };
 
 app.setName("Kompose");
 // Development builds keep their own profile so they never touch release sessions.
@@ -49,7 +62,17 @@ let mainWasFocused = false;
 let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
-const settings = new Conf<{ shortcut: DesktopCommandBarShortcutPresetId }>({
+// Where the popup's top-left belongs while shown. Growing near the bottom of
+// the display shifts the window up without moving this anchor.
+let commandBarAnchor: Point | undefined;
+// Where main last placed the popup, so a user drag can be told apart.
+let commandBarPlaced: Point | undefined;
+let commandBarDragged = false;
+const settings = new Conf<{
+  commandBarPosition?: Point;
+  mainWindow?: { bounds: Rectangle; maximized: boolean };
+  shortcut: DesktopCommandBarShortcutPresetId;
+}>({
   configName: "settings",
   cwd: app.getPath("userData"),
   defaults: { shortcut: "cmd_or_ctrl_shift_k" },
@@ -201,21 +224,47 @@ function createAppWindow(
   return window;
 }
 
+/** Clamp bounds into the nearest display's work area so no window is lost offscreen. */
+function fitOnScreen(bounds: Rectangle, minHeight: number, minWidth: number) {
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const width = Math.min(area.width, Math.max(minWidth, bounds.width));
+  const height = Math.min(area.height, Math.max(minHeight, bounds.height));
+  const clamp = (value: number, start: number, free: number) =>
+    Math.round(Math.max(start, Math.min(value, start + free)));
+  return {
+    height: Math.round(height),
+    width: Math.round(width),
+    x: clamp(bounds.x, area.x, area.width - width),
+    y: clamp(bounds.y, area.y, area.height - height),
+  };
+}
+
 function createMainWindow() {
+  const saved = settings.get("mainWindow");
   const window = createAppWindow(
     {
-      height: 840,
-      minHeight: 480,
-      minWidth: 720,
+      ...MAIN_WINDOW,
+      ...(saved
+        ? fitOnScreen(saved.bounds, MAIN_WINDOW.minHeight, MAIN_WINDOW.minWidth)
+        : {}),
       title: "Kompose",
-      width: 1280,
       ...(isMac ? { titleBarStyle: "hiddenInset" } : {}),
     },
     "/dashboard"
   );
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => {
+    // maximize() also shows the window, so it waits for the first paint too.
+    if (saved?.maximized) {
+      window.maximize();
+    }
+    window.show();
+  });
   // macOS keeps the app running when its window closes.
   window.on("close", (event) => {
+    settings.set("mainWindow", {
+      bounds: window.getNormalBounds(),
+      maximized: window.isMaximized(),
+    });
     if (isMac && !quitting) {
       event.preventDefault();
       window.hide();
@@ -241,16 +290,12 @@ function createCommandWindow() {
     {
       alwaysOnTop: true,
       frame: false,
-      height: COMMAND_BAR.height,
-      minHeight: COMMAND_BAR.minHeight,
-      minWidth: COMMAND_BAR.width,
+      ...COMMAND_BAR,
       resizable: false,
       skipTaskbar: true,
       title: "Kompose Command Bar",
-      width: COMMAND_BAR.width,
       ...(isMac
         ? {
-            titleBarStyle: "hiddenInset",
             transparent: true,
             type: "panel",
             vibrancy: "hud",
@@ -265,10 +310,36 @@ function createCommandWindow() {
     window.focus();
   });
   window.on("blur", hideCommandBar);
+  window.on("move", () => {
+    const { x, y } = window.getBounds();
+    if (x !== commandBarPlaced?.x || y !== commandBarPlaced.y) {
+      commandBarAnchor = { x, y };
+      commandBarDragged = true;
+    }
+  });
+  window.on("hide", () => {
+    if (commandBarDragged && commandBarAnchor) {
+      settings.set("commandBarPosition", commandBarAnchor);
+      commandBarDragged = false;
+    }
+  });
   window.on("closed", () => {
     commandWindow = null;
   });
   return window;
+}
+
+/** Place the popup at its anchor, sized to its content. */
+function placeCommandBar(window: BrowserWindow, height: number) {
+  if (!commandBarAnchor) {
+    return;
+  }
+  commandBarPlaced = fitOnScreen(
+    { ...commandBarAnchor, height, width: COMMAND_BAR.width },
+    COMMAND_BAR.minHeight,
+    COMMAND_BAR.width
+  );
+  window.setBounds(commandBarPlaced);
 }
 
 function showMain() {
@@ -303,13 +374,18 @@ function toggleCommandBar() {
   clearTimeout(commandIdleTimer);
   mainWasFocused = mainWindow?.isFocused() ?? false;
   commandWindow ??= createCommandWindow();
-  const { x, y, width, height } = screen.getDisplayNearestPoint(
-    screen.getCursorScreenPoint()
-  ).workArea;
-  commandWindow.setPosition(
-    Math.round(x + (width - COMMAND_BAR.width) / 2),
-    Math.round(y + height * 0.25)
-  );
+  // Open on the display under the cursor, at the remembered spot when it is there.
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const { workArea } = display;
+  const saved = settings.get("commandBarPosition");
+  commandBarAnchor =
+    saved && screen.getDisplayNearestPoint(saved).id === display.id
+      ? saved
+      : {
+          x: workArea.x + (workArea.width - COMMAND_BAR.width) / 2,
+          y: workArea.y + workArea.height * 0.25,
+        };
+  placeCommandBar(commandWindow, commandWindow.getBounds().height);
   if (!commandWindow.webContents.isLoading()) {
     commandWindow.show();
     commandWindow.focus();
@@ -381,20 +457,22 @@ function handle<K extends DesktopInvokeMethod>(
 }
 
 function registerBridge() {
+  handle("showMainWindow", () => {
+    hideCommandBar();
+    showMain();
+  });
   handle("getShortcut", () => settings.get("shortcut"));
   handle("setShortcut", (id) => applyShortcut(id));
   handle("dismissCommandBar", () => dismissCommandBar());
   handle("resizeCommandBar", (height, window) => {
-    if (window !== commandWindow || typeof height !== "number") {
+    if (
+      window !== commandWindow ||
+      typeof height !== "number" ||
+      !Number.isFinite(height)
+    ) {
       return;
     }
-    const clamped = Math.min(
-      COMMAND_BAR.maxHeight,
-      Math.max(COMMAND_BAR.minHeight, height)
-    );
-    if (Number.isFinite(clamped)) {
-      window.setSize(COMMAND_BAR.width, Math.round(clamped));
-    }
+    placeCommandBar(window, Math.min(DESKTOP_COMMAND_BAR_MAX_HEIGHT, height));
   });
   // Both windows run our own pages, so the selection is passed through as is.
   handle("openTask", (selection) => {
