@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+    # labeled/unlabeled re-run the migration guard when `db-contract` changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Type-check and builds run without production secrets.
+  SKIP_ENV_VALIDATION: "1"
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx biome ci .
+
+  check:
+    name: Type-check and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # --affected compares against the PR base or the previous push.
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Type-check
+        run: bunx turbo run type-check --affected
+      # Web is built by Vercel with production env. The native export
+      # includes the Hermes bytecode compile, which catches syntax the
+      # engine rejects before it reaches a release build.
+      - name: Build iOS bundle and desktop shell
+        run: bunx turbo run build --affected --filter=native --filter=@kompose/electron
+        env:
+          EXPO_PUBLIC_SERVER_URL: https://kompose.dev
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/db
+    env:
+      # generate and check never connect to the database.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx drizzle-kit check
+      - name: Schema and migrations are in sync
+        run: |
+          bunx drizzle-kit generate
+          if [[ -n "$(git status --porcelain src/migrations)" ]]; then
+            git status --porcelain src/migrations
+            echo "::error::The schema has changes without a migration. Run bun run db:generate and commit the result."
+            exit 1
+          fi
+      # Migrations run before the new web deployment goes live, and older
+      # app builds keep calling the API, so a PR may only expand the schema.
+      # Destructive changes ship in a later PR labeled db-contract.
+      - name: Expand-only migrations
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'db-contract')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          added=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- 'src/migrations/*/migration.sql')
+          [[ -z "$added" ]] && exit 0
+          pattern='DROP[[:space:]]+(TABLE|COLUMN|TYPE)|RENAME|ALTER[[:space:]]+COLUMN[^;]*[[:space:]]TYPE[[:space:]]|SET[[:space:]]+NOT[[:space:]]+NULL'
+          status=0
+          for file in $added; do
+            if grep -nEi "$pattern" "../../$file"; then
+              echo "::error file=$file::Destructive statement in a new migration. Split it into a later PR and add the db-contract label."
+              status=1
+            fi
+          done
+          exit $status
