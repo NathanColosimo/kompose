@@ -61,7 +61,10 @@ let quitting = false;
 let mainWasFocused = false;
 // Set when the popup opened over a hidden app and kept the main window out.
 let restoreMainOnActivate = false;
-let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
+// The popup loads hidden at startup; a shortcut press before its first paint
+// shows it once painted.
+let commandBarReady = false;
+let commandBarRequested = false;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
@@ -144,7 +147,7 @@ createAuthClient({
                 return;
               }
               await adoptSessionCookies(response);
-              commandWindow?.destroy();
+              commandWindow?.reload();
               mainWindow?.loadURL(appURL("/dashboard"));
               showMain();
             },
@@ -307,9 +310,14 @@ function createCommandWindow() {
     },
     "/desktop/command-bar"
   );
+  commandBarReady = false;
   window.once("ready-to-show", () => {
-    window.show();
-    window.focus();
+    commandBarReady = true;
+    if (commandBarRequested) {
+      commandBarRequested = false;
+      window.show();
+      window.focus();
+    }
   });
   window.on("blur", hideCommandBar);
   window.on("move", () => {
@@ -334,6 +342,8 @@ function createCommandWindow() {
 /** Place the popup at its anchor, sized to its content. */
 function placeCommandBar(window: BrowserWindow, height: number) {
   if (!commandBarAnchor) {
+    // Not opened yet; keep the size so the first open fits its content.
+    window.setSize(COMMAND_BAR.width, Math.max(COMMAND_BAR.minHeight, height));
     return;
   }
   commandBarPlaced = fitOnScreen(
@@ -360,21 +370,12 @@ function showMain() {
 
 function hideCommandBar() {
   commandWindow?.hide();
-  clearTimeout(commandIdleTimer);
-  // Retain a warm popup briefly, then release the renderer and its query cache.
-  commandIdleTimer = setTimeout(() => {
-    if (commandWindow && !commandWindow.isVisible()) {
-      commandWindow.destroy();
-    }
-  }, 60_000);
-  commandIdleTimer.unref();
 }
 function toggleCommandBar() {
   if (commandWindow?.isVisible()) {
     dismissCommandBar();
     return;
   }
-  clearTimeout(commandIdleTimer);
   mainWasFocused = mainWindow?.isFocused() ?? false;
   // Showing the panel unhides an app hidden with Cmd+H, which would bring the
   // main window back over the current app. Keep it out until Kompose is
@@ -396,9 +397,11 @@ function toggleCommandBar() {
           y: workArea.y + workArea.height * 0.25,
         };
   placeCommandBar(commandWindow, commandWindow.getBounds().height);
-  if (!commandWindow.webContents.isLoading()) {
+  if (commandBarReady) {
     commandWindow.show();
     commandWindow.focus();
+  } else {
+    commandBarRequested = true;
   }
 }
 function dismissCommandBar() {
@@ -550,6 +553,8 @@ app
     registerBridge();
     setUpMenu();
     showMain();
+    // Kept loaded and hidden so the shortcut opens it instantly.
+    commandWindow = createCommandWindow();
     try {
       applyShortcut(settings.get("shortcut"));
     } catch (error) {

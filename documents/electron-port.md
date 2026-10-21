@@ -103,7 +103,7 @@ are accepted only from the app origin's main frame. Navigation to other origins,
 and every new window, opens in the system browser instead. Permission requests
 are denied.
 
-The command popup is created on first use and released after 60 seconds hidden.
+The command popup loads hidden at startup and stays loaded, so the shortcut opens it instantly.
 It is available from the global shortcut and File → Open Command Bar.
 The main window reopens where it was last closed, and the popup reopens where it
 was last dragged when that spot is on the display under the cursor. Both are
