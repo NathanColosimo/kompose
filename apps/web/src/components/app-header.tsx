@@ -82,18 +82,21 @@ export function AppHeader({ user }: { user: User | null }) {
   const avatarSrc = user?.image || "";
 
   return (
-    <header className="relative flex h-10 shrink-0 items-center border-b bg-background px-2">
-      {/* Full-header drag layer; interactive controls are rendered above this. */}
-      <div aria-hidden className="absolute inset-0" data-desktop-drag-region />
-      <div className="pointer-events-none relative z-10 flex w-full items-center">
-        {/* Left: macOS traffic-light safe area stays non-interactive/draggable. */}
+    // The whole header drags the window; app-region is inherited, and the
+    // index.css rule opts buttons and other controls out.
+    <header
+      className="flex h-10 shrink-0 items-center border-b bg-background px-2"
+      data-desktop-drag-region
+    >
+      <div className="flex w-full items-center">
+        {/* Left: macOS traffic-light safe area. */}
         <div className="w-[76px] shrink-0 select-none" />
 
         <div className="flex flex-1 justify-center">
           <SearchButton />
         </div>
 
-        <div className="pointer-events-auto flex shrink-0 items-center justify-end gap-2 pr-1">
+        <div className="flex shrink-0 items-center justify-end gap-2 pr-1">
           <RightSidebarToggleButton />
           <UpdatePromptButton />
           <TagsMenu />
@@ -169,7 +172,7 @@ function SearchButton() {
   return (
     <button
       className={cn(
-        "pointer-events-auto flex h-7 w-full max-w-md items-center gap-2 rounded-md border bg-muted/50 px-3 text-muted-foreground text-sm transition-colors",
+        "flex h-7 w-full max-w-md items-center gap-2 rounded-md border bg-muted/50 px-3 text-muted-foreground text-sm transition-colors",
         "hover:bg-muted hover:text-foreground"
       )}
       onClick={() => setCommandBarOpen(true)}
