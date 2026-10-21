@@ -59,7 +59,12 @@ let mainWindow: BrowserWindow | null = null;
 let commandWindow: BrowserWindow | null = null;
 let quitting = false;
 let mainWasFocused = false;
-let commandIdleTimer: ReturnType<typeof setTimeout> | undefined;
+// Set when the popup opened over a hidden app and kept the main window out.
+let restoreMainOnActivate = false;
+// The popup loads hidden at startup; a shortcut press before its first paint
+// shows it once painted.
+let commandBarReady = false;
+let commandBarRequested = false;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
@@ -142,7 +147,7 @@ createAuthClient({
                 return;
               }
               await adoptSessionCookies(response);
-              commandWindow?.destroy();
+              commandWindow?.reload();
               mainWindow?.loadURL(appURL("/dashboard"));
               showMain();
             },
@@ -305,9 +310,14 @@ function createCommandWindow() {
     },
     "/desktop/command-bar"
   );
+  commandBarReady = false;
   window.once("ready-to-show", () => {
-    window.show();
-    window.focus();
+    commandBarReady = true;
+    if (commandBarRequested) {
+      commandBarRequested = false;
+      window.show();
+      window.focus();
+    }
   });
   window.on("blur", hideCommandBar);
   window.on("move", () => {
@@ -332,6 +342,8 @@ function createCommandWindow() {
 /** Place the popup at its anchor, sized to its content. */
 function placeCommandBar(window: BrowserWindow, height: number) {
   if (!commandBarAnchor) {
+    // Not opened yet; keep the size so the first open fits its content.
+    window.setSize(COMMAND_BAR.width, Math.max(COMMAND_BAR.minHeight, height));
     return;
   }
   commandBarPlaced = fitOnScreen(
@@ -343,6 +355,7 @@ function placeCommandBar(window: BrowserWindow, height: number) {
 }
 
 function showMain() {
+  restoreMainOnActivate = false;
   if (!mainWindow) {
     // Shown on ready-to-show, avoiding a blank frame.
     mainWindow = createMainWindow();
@@ -357,22 +370,20 @@ function showMain() {
 
 function hideCommandBar() {
   commandWindow?.hide();
-  clearTimeout(commandIdleTimer);
-  // Retain a warm popup briefly, then release the renderer and its query cache.
-  commandIdleTimer = setTimeout(() => {
-    if (commandWindow && !commandWindow.isVisible()) {
-      commandWindow.destroy();
-    }
-  }, 60_000);
-  commandIdleTimer.unref();
 }
 function toggleCommandBar() {
   if (commandWindow?.isVisible()) {
     dismissCommandBar();
     return;
   }
-  clearTimeout(commandIdleTimer);
   mainWasFocused = mainWindow?.isFocused() ?? false;
+  // Showing the panel unhides an app hidden with Cmd+H, which would bring the
+  // main window back over the current app. Keep it out until Kompose is
+  // activated.
+  if (isMac && app.isHidden() && mainWindow) {
+    mainWindow.hide();
+    restoreMainOnActivate = true;
+  }
   commandWindow ??= createCommandWindow();
   // Open on the display under the cursor, at the remembered spot when it is there.
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -386,17 +397,20 @@ function toggleCommandBar() {
           y: workArea.y + workArea.height * 0.25,
         };
   placeCommandBar(commandWindow, commandWindow.getBounds().height);
-  if (!commandWindow.webContents.isLoading()) {
+  if (commandBarReady) {
     commandWindow.show();
     commandWindow.focus();
+  } else {
+    commandBarRequested = true;
   }
 }
 function dismissCommandBar() {
   hideCommandBar();
+  // On macOS the panel never activates the app, so focus returns to the
+  // previous app by itself. Hiding the app here would also hide the main
+  // window, and showing the panel again would unhide it.
   if (mainWasFocused) {
     showMain();
-  } else if (isMac) {
-    app.hide();
   }
 }
 
@@ -539,6 +553,8 @@ app
     registerBridge();
     setUpMenu();
     showMain();
+    // Kept loaded and hidden so the shortcut opens it instantly.
+    commandWindow = createCommandWindow();
     try {
       applyShortcut(settings.get("shortcut"));
     } catch (error) {
@@ -552,6 +568,11 @@ app
   });
 
 app.on("activate", () => showMain());
+app.on("did-become-active", () => {
+  if (restoreMainOnActivate) {
+    showMain();
+  }
+});
 app.on("before-quit", () => {
   quitting = true;
 });
