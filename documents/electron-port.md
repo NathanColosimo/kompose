@@ -16,9 +16,9 @@ bridge (`window.komposeDesktop`) that the web app uses for them.
 Start the web app as usual (`bun run portless:proxy`, `bun run db:start`,
 `bun run dev:web`), then `bun run dev:desktop`. Development windows load
 `https://local.kompose.dev` with hot reload; set `KOMPOSE_SERVER_URL` to use
-another server. Packaged builds always load `https://kompose.dev`. Sign-in's
-token exchange runs in main's Node runtime, so for local HTTPS launch with
-`NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem"` to trust the development CA.
+another server. Packaged builds always load `https://kompose.dev`. Main
+trusts the macOS keychain in addition to Node's CA list, so the portless
+development certificate works without extra setup.
 
 `bun run package:desktop` creates an unsigned, unpacked Apple Silicon app in
 `apps/electron/release/mac-arm64` for local testing. Development runs use a

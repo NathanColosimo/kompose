@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import { electronClient } from "@better-auth/electron/client";
 import {
@@ -28,6 +29,14 @@ import {
   shell,
 } from "electron";
 import { autoUpdater } from "electron-updater";
+
+// Main's requests (the sign-in token exchange) use Node's TLS, which only knows
+// its bundled CA list. Also trust the macOS keychain, as the windows do, so
+// locally trusted and organization-installed CAs work the same in both.
+tls.setDefaultCACertificates([
+  ...tls.getCACertificates("default"),
+  ...tls.getCACertificates("system"),
+]);
 
 const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
