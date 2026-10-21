@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "build": {
       "env": [
@@ -24,22 +22,11 @@
         "WHOOP_CLIENT_ID",
         "WHOOP_CLIENT_SECRET"
       ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "!.next/**"
-      ],
-      "outputs": [
-        ".next/**",
-        "!.next/cache/**",
-        "!.next/dev/**"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "!.next/**"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
     "type-check": {
-      "outputs": [
-        ".next/types/**",
-        "tsconfig.tsbuildinfo"
-      ]
+      "outputs": [".next/types/**", "tsconfig.tsbuildinfo"]
     }
   }
 }

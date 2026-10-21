@@ -23,7 +23,8 @@
       "!packages/google-cal/src",
       "!**/components/ui",
       "!**/components/ai-elements",
-      "!**/uniwind-types.d.ts"
+      "!**/uniwind-types.d.ts",
+      "!packages/db/src/migrations"
     ]
   },
   "extends": [
@@ -34,9 +35,7 @@
   ],
   "overrides": [
     {
-      "includes": [
-        "**/global.css"
-      ],
+      "includes": ["**/global.css"],
       "linter": {
         "rules": {
           "suspicious": {

@@ -1,36 +1,21 @@
 {
   "$schema": "https://turborepo.dev/schema.v2.json",
   "ui": "tui",
-  "globalPassThroughEnv": [
-    "SKIP_ENV_VALIDATION"
-  ],
+  "globalPassThroughEnv": ["SKIP_ENV_VALIDATION"],
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**"]
     },
     "transit": {
-      "dependsOn": [
-        "^transit"
-      ]
+      "dependsOn": ["^transit"]
     },
     "lint": {
-      "dependsOn": [
-        "transit"
-      ]
+      "dependsOn": ["transit"]
     },
     "type-check": {
-      "dependsOn": [
-        "transit"
-      ]
+      "dependsOn": ["transit"]
     },
     "dev": {
       "cache": false,
@@ -50,9 +35,7 @@
     },
     "db:migrate": {
       "cache": false,
-      "env": [
-        "DATABASE_URL"
-      ]
+      "env": ["DATABASE_URL"]
     },
     "db:generate": {
       "cache": false,
@@ -75,9 +58,7 @@
       "persistent": true
     },
     "package": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }
