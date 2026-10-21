@@ -21,7 +21,7 @@
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
     "electron": "45.0.0",
-    "electron-builder": "26.15.3",
+    "electron-builder": "26.18.0",
     "electron-vite": "6.0.0",
     "typescript": "catalog:",
     "vite": "^8.3.5"
