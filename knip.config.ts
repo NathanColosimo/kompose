@@ -2,7 +2,7 @@ import type { KnipConfig } from "knip";
 
 const config: KnipConfig = {
   ignore: [".agents/**"],
-  ignoreBinaries: ["portless"],
+  ignoreBinaries: ["portless", "jq"],
   workspaces: {
     "packages/google-cal": {
       ignore: ["src/api-client/**"],

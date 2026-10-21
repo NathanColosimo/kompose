@@ -89,6 +89,7 @@
       "devDependencies": {
         "@types/node": "catalog:",
         "@types/react": "catalog:",
+        "expo-doctor": "1.21.5",
         "typescript": "catalog:",
       },
     },
@@ -1882,6 +1883,8 @@
     "expo-dev-menu": ["expo-dev-menu@58.0.11", "", { "dependencies": { "expo-dev-menu-interface": "~58.0.1" }, "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-kOqJ2wGsmM+tYf96mEy06WSBbX/cOx2KgmaouuqQX24/zpBPKlcLUQGgV75iGBXIxS6sczBO7qBp/MifFOud3w=="],
 
     "expo-dev-menu-interface": ["expo-dev-menu-interface@58.0.1", "", { "peerDependencies": { "expo": "*" } }, "sha512-XdjO3ZZhEq1dXm15GVtzQ0SXxSTPguJIDZib3Z8tAf2jLxfPUlQObgO/0hdnw7ssEBhTT2jQo2HAfnOSGUfj8w=="],
+
+    "expo-doctor": ["expo-doctor@1.21.5", "", { "bin": { "expo-doctor": "./bin/expo-doctor.js" } }, "sha512-VH/G2zHnc0kNrvfx/kYOD1QaCr2DC3cLaAPw7MzySypPhAb6nsIKJurNDyasbhU3KknK931Kedc2zRLkfdMisA=="],
 
     "expo-eas-client": ["expo-eas-client@58.0.2", "", {}, "sha512-mhRYnE35MzGxR1Xnl9FAg7/yHaocy4xoVzgsDmS9cbK+1wM6l74/I/73/E4Kr6wChdVZfeS6S+Tv4I1qYbGY2g=="],
 

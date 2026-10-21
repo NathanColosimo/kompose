@@ -1,0 +1,10 @@
+{
+  "name": "kompose-ci-tools",
+  "private": true,
+  "description": "CLIs used by the workflows, pinned by this lockfile instead of downloaded on each run.",
+  "devDependencies": {
+    "eas-cli": "25.3.0",
+    "semver": "7.8.5",
+    "vercel": "65.0.0"
+  }
+}
