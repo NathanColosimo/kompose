@@ -3,12 +3,15 @@
 import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import SignInForm from "@/components/auth/sign-in-form";
 import SignUpForm from "@/components/auth/sign-up-form";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
+import { isDesktopRuntime } from "@/lib/desktop";
 
 function DashboardRedirect() {
   const { replace } = useRouter();
@@ -37,7 +40,45 @@ function DashboardRedirect() {
   );
 }
 
+/**
+ * The desktop app signs in through the system browser. Without a provider,
+ * Better Auth opens this login page there, so a browser that is already signed
+ * in hands its session over (DashboardRedirect) instead of repeating OAuth.
+ */
+function requestBrowserSignIn() {
+  window.requestAuth();
+}
+
+function DesktopSignIn() {
+  return (
+    <section className="space-y-6 rounded-3xl border border-border/60 bg-card/80 p-8 text-center shadow-lg">
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-xs uppercase tracking-[0.35em]">
+          Sign in
+        </p>
+        <h2 className="font-serif text-3xl">Welcome back</h2>
+        <p className="text-muted-foreground text-sm">
+          Continue in your browser. If you're already signed in there, you'll
+          come straight back.
+        </p>
+      </div>
+      <Button
+        className="w-full"
+        onClick={requestBrowserSignIn}
+        size="lg"
+        type="button"
+      >
+        Continue in browser
+      </Button>
+    </section>
+  );
+}
+
 export default function LoginPageClient() {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useMountEffect(() => {
+    setIsDesktop(isDesktopRuntime());
+  });
   const {
     data: session,
     error,
@@ -123,28 +164,32 @@ export default function LoginPageClient() {
         </section>
         <section className="flex items-center justify-center px-6 pt-12 pb-20">
           <div className="w-full max-w-md">
-            <Tabs className="space-y-6" defaultValue="sign-in">
-              <TabsList className="w-full border border-border/60 bg-linear-to-r from-primary/15 via-secondary/15 to-accent/15 shadow-sm">
-                <TabsTrigger
-                  className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
-                  value="sign-in"
-                >
-                  Sign in
-                </TabsTrigger>
-                <TabsTrigger
-                  className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
-                  value="sign-up"
-                >
-                  Sign up
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="sign-in">
-                <SignInForm />
-              </TabsContent>
-              <TabsContent value="sign-up">
-                <SignUpForm />
-              </TabsContent>
-            </Tabs>
+            {isDesktop ? (
+              <DesktopSignIn />
+            ) : (
+              <Tabs className="space-y-6" defaultValue="sign-in">
+                <TabsList className="w-full border border-border/60 bg-linear-to-r from-primary/15 via-secondary/15 to-accent/15 shadow-sm">
+                  <TabsTrigger
+                    className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
+                    value="sign-in"
+                  >
+                    Sign in
+                  </TabsTrigger>
+                  <TabsTrigger
+                    className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
+                    value="sign-up"
+                  >
+                    Sign up
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="sign-in">
+                  <SignInForm />
+                </TabsContent>
+                <TabsContent value="sign-up">
+                  <SignUpForm />
+                </TabsContent>
+              </Tabs>
+            )}
           </div>
         </section>
       </div>
