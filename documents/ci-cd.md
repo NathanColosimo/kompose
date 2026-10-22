@@ -63,6 +63,13 @@ last *successful* release, not the previous commit.
   fingerprint, since OTA updates only reach binaries with the same runtime. Server-only changes can also mark `native` as affected
   (it imports `@kompose/api` for types); that just publishes an identical OTA
   update.
+- **Native build cache**: a cold iOS build takes about 20 minutes, mostly
+  Xcode compiling the third-party native modules (React Native core is
+  prebuilt). The build runs with ccache (`USE_CCACHE=1`), and `actions/cache`
+  restores its objects from the last native build, so C/C++/Objective-C files
+  that didn't change aren't recompiled. Swift isn't cached. GitHub evicts
+  caches unused for 7 days, and Expo/React Native upgrades change most inputs,
+  so those builds stay cold.
 - **Desktop fingerprint**: a hash of the per-task file inputs and locked
   dependency versions that `turbo run build --filter=@kompose/electron
   --dry=json` reports for the Electron build and the workspace packages it
