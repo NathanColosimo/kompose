@@ -124,7 +124,8 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          bunx vercel@65.0.0 curl "$URL/api/rpc/tags/list" --token "$VERCEL_TOKEN" -- \
+          # vercel curl forwards its flags to curl; the CLI reads VERCEL_TOKEN.
+          bunx vercel@65.0.0 curl "$URL/api/rpc/tags/list" -- \
             --silent --show-error --output "$RUNNER_TEMP/smoke.json" \
             --request POST --header "content-type: application/json" --data "{}"
           if ! jq -e '.json.code == "UNAUTHORIZED"' "$RUNNER_TEMP/smoke.json" > /dev/null; then
