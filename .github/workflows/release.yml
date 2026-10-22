@@ -159,17 +159,35 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "26.6"
+      # ccache reuses C/C++/Objective-C objects from the last native build, so
+      # only files that changed recompile. Swift is not cached.
+      - if: steps.fingerprint.outputs.build == 'true'
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ccache
+      - if: steps.fingerprint.outputs.build == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-ios-${{ github.sha }}
+          restore-keys: ccache-ios-
       # --local builds on this runner instead of EAS's paid build queue;
       # signing credentials and the build number still come from EAS.
+      # USE_CCACHE turns on React Native's ccache wrapper in pod install, and a
+      # fixed working directory keeps compiler paths stable for cache hits.
       - name: Build and submit
         if: steps.fingerprint.outputs.build == 'true'
         working-directory: apps/native
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.fingerprint }}
+          USE_CCACHE: "1"
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+          CCACHE_MAXSIZE: 2G
+          EAS_LOCAL_BUILD_WORKINGDIR: ${{ runner.temp }}/eas-build
         run: |
+          ccache --zero-stats
           bunx eas-cli@25.3.0 build -p ios --profile production --local --non-interactive \
             --output "$RUNNER_TEMP/kompose.ipa"
+          ccache --show-stats
           bunx eas-cli@25.3.0 submit -p ios --profile production --path "$RUNNER_TEMP/kompose.ipa" \
             --non-interactive --wait
           git tag -fa shipped/ios-binary -m "$FINGERPRINT" "$GITHUB_SHA"
