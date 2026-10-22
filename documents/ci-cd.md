@@ -45,6 +45,10 @@ push to main
   Vercel with the project's production env vars and turbo remote cache, but
   serves no traffic until `vercel promote`. A failed migration leaves the
   current deployment live.
+- Before migrating, `vercel curl` POSTs to `/api/rpc/tags/list` on the staged
+  deployment with no session and expects oRPC's `UNAUTHORIZED` error. That
+  proves the route, auth context, and API code load. It doesn't touch the
+  database, so it works before migrations run.
 - Vercel's Git integration stays off (`apps/web/vercel.json`), so there are no
   preview deployments. `buildCommand` in `vercel.json` is `turbo run build`;
   migrations only run in the workflow, never in a Vercel build.
