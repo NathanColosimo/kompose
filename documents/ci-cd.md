@@ -25,7 +25,7 @@ not built in CI: it needs production env vars, and Vercel builds it on deploy.
 push to main
  └─ changes: what changed since each target last shipped?
      └─ web (if changed): Vercel builds a staged production deployment
-         → smoke test → drizzle-kit migrate → vercel promote (traffic switches here)
+         → drizzle-kit migrate → vercel promote (traffic switches here)
          ├─ mobile (if changed): same fingerprint → eas update (OTA)
          │                       new fingerprint → macOS runner: eas build --local → eas submit
          └─ desktop (if the shell changed): macOS runner: build, sign, notarize,
