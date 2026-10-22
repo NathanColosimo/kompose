@@ -15,8 +15,10 @@ import {
   Link2Icon,
   Loader2Icon,
   PlayCircleIcon,
+  SparklesIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,12 +26,14 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
+import type { SmartTaskInput } from "@/lib/smart-task-input";
 import {
   formatDuration,
   type ParsedTaskInput,
   parseTaskInput,
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
+import { useSmartTaskInput } from "@/lib/use-smart-task-input";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
 const EMPTY_TAGS: TagSelect[] = [];
@@ -41,6 +45,35 @@ function fallbackTitle(link: string): string {
   } catch {
     return link;
   }
+}
+
+/** True when the input uses any explicit token (=, >, ~, #). */
+function hasExplicitTokens(parsed: ParsedTaskInput) {
+  return (
+    parsed.durationRaw !== null ||
+    parsed.dueDateRaw !== null ||
+    parsed.startDateRaw !== null ||
+    parsed.tagNamesRaw.length > 0
+  );
+}
+
+/** Fill fields from on-device parsing; only used when no tokens were typed. */
+function withSmartInput(
+  parsed: ParsedTaskInput,
+  smart: SmartTaskInput | null
+): ParsedTaskInput {
+  if (!smart) {
+    return parsed;
+  }
+  return {
+    ...parsed,
+    dueDate: smart.dueDate,
+    durationMinutes: smart.durationMinutes,
+    startDate: smart.startDate,
+    startTime: smart.startTime,
+    tagNames: smart.tagNames,
+    title: smart.title,
+  };
 }
 
 /** Build task data from parsed input and resolved link metadata */
@@ -88,9 +121,57 @@ function buildTaskDataFromParsed(
     durationMinutes,
     links,
     startDate: parsed.startDate ?? undefined,
+    startTime: parsed.startTime ?? undefined,
     tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
     title,
   };
+}
+
+/** Marks a preview filled (or being filled) by the on-device model. */
+function OnDeviceBadge({
+  parsed,
+  pending,
+}: {
+  parsed: boolean;
+  pending: boolean;
+}) {
+  if (!(parsed || pending)) {
+    return null;
+  }
+  return (
+    <Badge
+      className="h-6 gap-1.5 px-2 text-[11px]"
+      title="Parsed on this device"
+      variant="secondary"
+    >
+      {pending ? (
+        <Loader2Icon className="size-3.5 animate-spin" />
+      ) : (
+        <SparklesIcon className="size-3.5" />
+      )}
+      On-device
+    </Badge>
+  );
+}
+
+function StartBadge({
+  date,
+  time,
+}: {
+  date: Temporal.PlainDate;
+  time: Temporal.PlainTime | null;
+}) {
+  return (
+    <Badge className="h-6 gap-1.5 px-2 text-[11px]" variant="secondary">
+      <PlayCircleIcon className="size-3.5" />
+      {formatPlainDate(date, { day: "numeric", month: "short" })}
+      {time &&
+        ` ${time.toLocaleString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`}
+    </Badge>
+  );
 }
 
 interface CommandBarCreateTaskProps {
@@ -122,10 +203,20 @@ export function CommandBarCreateTask({
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
   // Parse the input into structured task data
-  const parsed: ParsedTaskInput = useMemo(
+  const typed: ParsedTaskInput = useMemo(
     () => parseTaskInput(search),
     [search]
   );
+
+  // Free-form input (no tokens) also goes to the on-device model, when the
+  // browser has one. Its result replaces the preview once it arrives.
+  const tagNames = useMemo(() => tags.map((tag) => tag.name), [tags]);
+  const smartInput = useSmartTaskInput(
+    hasExplicitTokens(typed) || typed.title.length < 3 ? null : typed.title,
+    tagNames
+  );
+  const parsed = withSmartInput(typed, smartInput.result);
+  const [resolving, setResolving] = useState(false);
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
@@ -223,14 +314,22 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  const handleCreate = () => {
-    if (!isValid || createTask.isPending) {
+  const handleCreate = async () => {
+    if (!isValid || createTask.isPending || resolving) {
       return;
+    }
+
+    // Enter can beat the debounced parse; wait briefly for the model.
+    let input = parsed;
+    if (smartInput.pending) {
+      setResolving(true);
+      input = withSmartInput(typed, await smartInput.resolve());
+      setResolving(false);
     }
 
     const matchedTagIds = Array.from(
       new Set(
-        parsed.tagNames.flatMap((name) => {
+        input.tagNames.flatMap((name) => {
           const id = tags.find((tag) => tag.name === name)?.id;
           return id ? [id] : [];
         })
@@ -238,7 +337,7 @@ export function CommandBarCreateTask({
     );
 
     const taskData = buildTaskDataFromParsed(
-      parsed,
+      input,
       linkMetaMap,
       firstLinkMeta,
       matchedTagIds
@@ -264,8 +363,7 @@ export function CommandBarCreateTask({
 
   // Keep the command item value stable across async link parsing so cmdk does
   // not drop selection when the preview label changes after metadata resolves.
-  const createItemValue =
-    parsed.title || parsed.links.join(" ") || "create-task";
+  const createItemValue = typed.title || typed.links.join(" ") || "create-task";
 
   return (
     <>
@@ -317,6 +415,11 @@ export function CommandBarCreateTask({
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="truncate font-medium">{createItemLabel}</span>
                 <div className="flex flex-wrap items-center gap-1.5">
+                  <OnDeviceBadge
+                    parsed={smartInput.result !== null}
+                    pending={smartInput.pending || resolving}
+                  />
+
                   {effectiveDuration !== null && (
                     <Badge
                       className="h-6 gap-1.5 px-2 text-[11px]"
@@ -361,16 +464,10 @@ export function CommandBarCreateTask({
                   })}
 
                   {parsed.startDate && (
-                    <Badge
-                      className="h-6 gap-1.5 px-2 text-[11px]"
-                      variant="secondary"
-                    >
-                      <PlayCircleIcon className="size-3.5" />
-                      {formatPlainDate(parsed.startDate, {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </Badge>
+                    <StartBadge
+                      date={parsed.startDate}
+                      time={parsed.startTime}
+                    />
                   )}
 
                   {parsed.tagNames.map((name) => {

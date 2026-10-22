@@ -5,8 +5,9 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "electron-vite build",
-    "dev": "electron-vite dev",
+    "build": "bun run build:native && electron-vite build",
+    "build:native": "[ \"$(uname)\" != Darwin ] || (mkdir -p native-build && swiftc -O -target arm64-apple-macos26.0 native/foundation-models/main.swift -o native-build/kompose-fm)",
+    "dev": "bun run build:native && electron-vite dev",
     "package": "electron-builder --mac --arm64 --dir -c.mac.identity=null -c.mac.notarize=false",
     "type-check": "tsc --noEmit"
   },

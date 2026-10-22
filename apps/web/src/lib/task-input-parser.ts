@@ -19,6 +19,8 @@ export interface ParsedTaskInput {
   startDate: Temporal.PlainDate | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
   startDateRaw: string | null;
+  /** Start time; only on-device parsing fills it (see smart-task-input.ts) */
+  startTime: Temporal.PlainTime | null;
   /** Tag names parsed from #tag tokens */
   tagNames: string[];
   /** Raw tag strings for display (e.g., "design", "client work") */
@@ -120,6 +122,7 @@ export function parseTaskInput(
     links: [],
     startDate: null,
     startDateRaw: null,
+    startTime: null,
     tagNames: [],
     tagNamesRaw: [],
     title: "",

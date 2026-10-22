@@ -236,6 +236,12 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
         if: steps.fresh.outputs.ship == 'true'
+      # The Foundation Models helper (apps/electron/native) needs the macOS 26.4+
+      # SDK. Same Xcode as the iOS build.
+      - if: steps.fresh.outputs.ship == 'true'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.6"
       # Versions come from releases, so they never need a version-bump commit.
       - id: version
         if: steps.fresh.outputs.ship == 'true'
