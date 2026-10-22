@@ -25,7 +25,7 @@ not built in CI: it needs production env vars, and Vercel builds it on deploy.
 push to main
  └─ changes: what changed since each target last shipped?
      └─ web (if changed): Vercel builds a staged production deployment
-         → drizzle-kit migrate → vercel promote (traffic switches here)
+         → smoke test → drizzle-kit migrate → vercel promote (traffic switches here)
          ├─ mobile (if changed): same fingerprint → eas update (OTA)
          │                       new fingerprint → macOS runner: eas build --local → eas submit
          └─ desktop (if the shell changed): macOS runner: build, sign, notarize,
@@ -45,6 +45,10 @@ push to main
   Vercel with the project's production env vars and turbo remote cache, but
   serves no traffic until `vercel promote`. A failed migration leaves the
   current deployment live.
+- Before migrating, `vercel curl` POSTs to `/api/rpc/tags/list` on the staged
+  deployment with no session and expects oRPC's `UNAUTHORIZED` error. That
+  proves the route, auth context, and API code load. It doesn't touch the
+  database, so it works before migrations run.
 - Vercel's Git integration stays off (`apps/web/vercel.json`), so there are no
   preview deployments. `buildCommand` in `vercel.json` is `turbo run build`;
   migrations only run in the workflow, never in a Vercel build.

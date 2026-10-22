@@ -98,6 +98,24 @@ jobs:
           url=$(bunx vercel@65.0.0 deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Staged $url" >> "$GITHUB_STEP_SUMMARY"
+      # Calls a real API procedure without a session: it must load the API code
+      # and answer UNAUTHORIZED. Catches a deploy that builds but can't serve
+      # requests before it migrates or takes traffic. `vercel curl` gets past
+      # Deployment Protection with the project's automation bypass secret.
+      - name: Smoke-test staged deployment
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          bunx vercel@65.0.0 curl "$URL/api/rpc/tags/list" --token "$VERCEL_TOKEN" -- \
+            --silent --show-error --output "$RUNNER_TEMP/smoke.json" \
+            --request POST --header "content-type: application/json" --data "{}"
+          if ! jq -e '.json.code == "UNAUTHORIZED"' "$RUNNER_TEMP/smoke.json" > /dev/null; then
+            cat "$RUNNER_TEMP/smoke.json"
+            exit 1
+          fi
       - name: Migrate database
         working-directory: packages/db
         env:
