@@ -9,10 +9,6 @@ on:
   # successful release, so rerunning is always safe.
   workflow_dispatch:
 
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
@@ -78,6 +74,12 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     environment: production
+    # Each target releases one run at a time, so a slow native build never
+    # holds up a web deploy. A newer run replaces a waiting one; it ships
+    # everything since the target's last shipped tag.
+    concurrency:
+      group: release-web
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -113,16 +115,20 @@ jobs:
           git tag -f shipped/web "$GITHUB_SHA"
           git push -f origin refs/tags/shipped/web
 
-  # Clients must never be ahead of the API, so mobile and desktop wait for web.
-  # They still run when web was skipped, but not when it failed.
+  # Clients must never be ahead of the API, so mobile and desktop wait for
+  # their own run's web job. They still run when web was skipped, but not when
+  # it failed or a newer run replaced it.
   mobile:
     name: Mobile
     permissions:
       contents: write
     needs: [changes, web]
-    if: ${{ !failure() && !cancelled() && needs.changes.outputs.mobile == 'true' }}
+    if: ${{ !cancelled() && (needs.web.result == 'success' || needs.web.result == 'skipped') && needs.changes.outputs.mobile == 'true' }}
     runs-on: macos-26
     environment: production
+    concurrency:
+      group: release-mobile
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -202,25 +208,44 @@ jobs:
     permissions:
       contents: write
     needs: [changes, web]
-    if: ${{ !failure() && !cancelled() && needs.changes.outputs.desktop == 'true' }}
+    if: ${{ !cancelled() && (needs.web.result == 'success' || needs.web.result == 'skipped') && needs.changes.outputs.desktop == 'true' }}
     runs-on: macos-26
     environment: production
+    concurrency:
+      group: release-desktop
+      cancel-in-progress: false
     env:
       FINGERPRINT: ${{ needs.changes.outputs.desktop-fingerprint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true
+      # An earlier run may have shipped this fingerprint while this job waited
+      # its turn; don't publish an identical release.
+      - id: fresh
+        run: |
+          shipped=$(git tag -l --format='%(contents:subject)' shipped/desktop)
+          if [[ "$FINGERPRINT" == "$shipped" ]]; then
+            echo "ship=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.fresh.outputs.ship == 'true'
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+        if: steps.fresh.outputs.ship == 'true'
       # Versions come from releases, so they never need a version-bump commit.
       - id: version
+        if: steps.fresh.outputs.ship == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           latest=$(gh release view --json tagName --jq .tagName)
           echo "version=$(bunx semver@7.8.5 --increment patch "$latest")" >> "$GITHUB_OUTPUT"
       - name: Build
+        if: steps.fresh.outputs.ship == 'true'
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ vars.TURBO_TEAM }}
@@ -228,6 +253,7 @@ jobs:
       # electron-builder uploads every artifact electron-updater needs to a
       # draft release, which users can't see until the next steps publish it.
       - name: Package, sign, notarize, and upload a draft release
+        if: steps.fresh.outputs.ship == 'true'
         working-directory: apps/electron
         env:
           GH_TOKEN: ${{ github.token }}
@@ -244,6 +270,7 @@ jobs:
           bunx electron-builder --mac --arm64 --publish always -c.extraMetadata.version="$VERSION"
       # Gatekeeper must accept the app before anyone can download it.
       - name: Verify
+        if: steps.fresh.outputs.ship == 'true'
         working-directory: apps/electron/release/mac-arm64
         run: |
           codesign --verify --deep --strict Kompose.app
@@ -251,6 +278,7 @@ jobs:
           spctl --assess --type execute Kompose.app
       # Publishing as Latest is what installed apps auto-update from.
       - name: Publish release
+        if: steps.fresh.outputs.ship == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -260,6 +288,7 @@ jobs:
           gh release edit "v$VERSION" --draft=false --latest \
             --target "$GITHUB_SHA" --title "Kompose $VERSION" --notes "$notes"
       - name: Mark desktop shipped
+        if: steps.fresh.outputs.ship == 'true'
         run: |
           git tag -fa shipped/desktop -m "$FINGERPRINT" "$GITHUB_SHA"
           git push -f origin refs/tags/shipped/desktop

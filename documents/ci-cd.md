@@ -35,6 +35,12 @@ push to main
 - Mobile and desktop wait for web. If web or the migration fails, they don't
   run; if web had no changes, they run right away. Clients are never ahead of
   the API they call.
+- Each target releases one run at a time (job-level `concurrency`), so a
+  20-minute native iOS build never holds up a web deploy. A newer run replaces
+  one that's still waiting and ships everything since that target's last
+  shipped tag. Desktop rechecks `shipped/desktop` once its turn comes, so an
+  earlier run that already shipped the same shell doesn't produce a duplicate
+  release.
 - The staged deployment (`vercel deploy --prod --skip-domain`) is built on
   Vercel with the project's production env vars and turbo remote cache, but
   serves no traffic until `vercel promote`. A failed migration leaves the
