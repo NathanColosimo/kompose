@@ -26,7 +26,7 @@ push to main
  └─ changes: what changed since each target last shipped?
      └─ web (if changed): Vercel builds a staged production deployment
          → drizzle-kit migrate → vercel promote (traffic switches here)
-         ├─ mobile (if changed): same fingerprint → eas update (OTA)
+         ├─ mobile (if changed): same fingerprint → Linux runner: eas update (OTA)
          │                       new fingerprint → macOS runner: eas build --local → eas submit
          └─ desktop (if the shell changed): macOS runner: build, sign, notarize,
                                             verify, GitHub release (Latest)
@@ -69,6 +69,10 @@ last *successful* release, not the previous commit.
   fingerprint, since OTA updates only reach binaries with the same runtime. Server-only changes can also mark `native` as affected
   (it imports `@kompose/api` for types); that just publishes an identical OTA
   update.
+- **Submitting**: `eas submit --no-wait` ends the job once EAS accepts the
+  upload instead of waiting ~20 minutes for App Store Connect processing.
+  Expo and Apple email if processing fails; `shipped/ios-binary` has already
+  moved by then, so rebuild by retagging it (or with the next native change).
 - **Native build cache**: a cold iOS build takes about 20 minutes, mostly
   Xcode compiling the third-party native modules (React Native core is
   prebuilt). The build runs with ccache (`USE_CCACHE=1`), and `actions/cache`
