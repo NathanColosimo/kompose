@@ -1,75 +1,88 @@
 import { implement, ORPCError } from "@orpc/server";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
+import { Match } from "effect";
 import { mapErrors, requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { TagService } from "./client";
 import type { TagSelect } from "./contract";
 import { tagContract, tagSelectSchemaWithIcon } from "./contract";
-import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
+import type { TagError } from "./errors";
 
-function toORPCError(error: unknown) {
-  if (error instanceof InvalidTagError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof TagConflictError) {
-    return new ORPCError("CONFLICT", {
-      cause: error,
-      message: `Tag name already exists: ${error.name}`,
-    });
-  }
-  if (error instanceof TagNotFoundError) {
-    return new ORPCError("NOT_FOUND", {
-      cause: error,
-      message: `Tag not found: ${error.tagId}`,
-    });
-  }
-  return error;
+function toORPCError(error: TagError | EffectDrizzleQueryError) {
+  return Match.valueTags(error, {
+    EffectDrizzleQueryError: (e) =>
+      new ORPCError("INTERNAL_SERVER_ERROR", { cause: e }),
+    InvalidTagError: (e) =>
+      new ORPCError("BAD_REQUEST", {
+        cause: e,
+        message: e.message,
+      }),
+    TagConflictError: (e) =>
+      new ORPCError("CONFLICT", {
+        cause: e,
+        message: `Tag name already exists: ${e.name}`,
+      }),
+    TagNotFoundError: (e) =>
+      new ORPCError("NOT_FOUND", {
+        cause: e,
+        message: `Tag not found: ${e.tagId}`,
+      }),
+  });
 }
+
+const handler = mapErrors(toORPCError);
 
 const os = implement(tagContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 export const tagRouter = os.router({
-  create: os.create.effect(function* ({ input, context }) {
-    const tag = yield* TagService.use((service) =>
-      service.createTag(context.user.id, {
-        ...input,
-        userId: context.user.id,
-      })
-    );
-    const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
-    return parsedTag;
-  }),
+  create: os.create.effect(
+    handler(function* ({ input, context }) {
+      const tag = yield* TagService.use((service) =>
+        service.createTag(context.user.id, {
+          ...input,
+          userId: context.user.id,
+        })
+      );
+      const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
+      return parsedTag;
+    })
+  ),
 
-  delete: os.delete.effect(function* ({ input, context }) {
-    yield* TagService.use((service) =>
-      service.deleteTag(context.user.id, input.id)
-    );
-    return null;
-  }),
+  delete: os.delete.effect(
+    handler(function* ({ input, context }) {
+      yield* TagService.use((service) =>
+        service.deleteTag(context.user.id, input.id)
+      );
+      return null;
+    })
+  ),
 
-  list: os.list.effect(function* ({ context }) {
-    const tags = yield* TagService.use((service) =>
-      service.listTags(context.user.id)
-    );
-    const parsedTags: TagSelect[] = tagSelectSchemaWithIcon.array().parse(tags);
-    return parsedTags;
-  }),
+  list: os.list.effect(
+    handler(function* ({ context }) {
+      const tags = yield* TagService.use((service) =>
+        service.listTags(context.user.id)
+      );
+      const parsedTags: TagSelect[] = tagSelectSchemaWithIcon
+        .array()
+        .parse(tags);
+      return parsedTags;
+    })
+  ),
 
-  update: os.update.effect(function* ({ input, context }) {
-    const tag = yield* TagService.use((service) =>
-      service.updateTag(context.user.id, input.id, {
-        icon: input.icon,
-        name: input.name,
-      })
-    );
-    const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
-    return parsedTag;
-  }),
+  update: os.update.effect(
+    handler(function* ({ input, context }) {
+      const tag = yield* TagService.use((service) =>
+        service.updateTag(context.user.id, input.id, {
+          icon: input.icon,
+          name: input.name,
+        })
+      );
+      const parsedTag: TagSelect = tagSelectSchemaWithIcon.parse(tag);
+      return parsedTag;
+    })
+  ),
 });

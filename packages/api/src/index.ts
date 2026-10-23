@@ -18,17 +18,22 @@ export const requireAuth = base.middleware(({ context, next }) => {
 });
 
 /**
- * Runs every Effect failure from a router's handlers through `toORPCError`.
- * Return an `ORPCError` for errors the router knows about and the error
- * itself for the rest; oRPC sends those as a generic 500.
+ * Wraps an `.effect(...)` handler so its failures go through `toORPCError`.
+ * The handler may only fail with errors `toORPCError` accepts, so a new
+ * service error is a compile error until the router maps it.
  */
-export function mapErrors(toORPCError: (error: unknown) => unknown) {
-  return base.middleware(({ next }) =>
-    next({
-      context: {
-        "effect/wrap": <A>(effect: Effect.Effect<A, unknown>) =>
-          effect.pipe(Effect.mapError(toORPCError)),
-      },
-    })
-  );
+export function mapErrors<E>(
+  toORPCError: (error: E) => ORPCError<string, unknown>
+) {
+  return <Opts, Y extends Effect.Effect<unknown, E, unknown>, A>(
+    handler: (opts: Opts) => Generator<Y, A, never>
+  ) =>
+    function* (opts: Opts) {
+      const program = Effect.gen(() => handler(opts)) as Effect.Effect<
+        A,
+        E,
+        Effect.Services<Y>
+      >;
+      return yield* program.pipe(Effect.mapError(toORPCError));
+    };
 }

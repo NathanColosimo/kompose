@@ -1,3 +1,4 @@
+import type { WhoopApiError, WhoopParseError } from "@kompose/whoop/errors";
 import { Schema } from "effect";
 
 export class WhoopTokenUnavailableError extends Schema.TaggedError<WhoopTokenUnavailableError>()(
@@ -23,3 +24,9 @@ export class WhoopCacheError extends Schema.TaggedError<WhoopCacheError>()(
     operation: Schema.String,
   }
 ) {}
+
+export type WhoopError =
+  | WhoopApiError
+  | WhoopInvalidRangeError
+  | WhoopTokenUnavailableError
+  | WhoopParseError;
