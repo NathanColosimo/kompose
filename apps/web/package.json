@@ -6,6 +6,7 @@
     "build": "bun run --bun next build",
     "dev": "PORTLESS_PORT=443 PORTLESS_APP_PORT=3000 PORTLESS_TLD=dev PORTLESS_HTTPS=1 portless local.kompose bun run --bun next dev",
     "start": "bun run --bun next start",
+    "test": "bun test",
     "type-check": "SKIP_ENV_VALIDATION=1 bun run --bun next typegen && tsc --noEmit"
   },
   "dependencies": {
@@ -28,7 +29,6 @@
     "@tanstack/react-query": "catalog:",
     "@vercel/analytics": "^2.0.1",
     "better-auth": "catalog:",
-    "chrono-node": "^2.10.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -36,6 +36,7 @@
     "fumadocs-core": "^16.17.7",
     "fumadocs-mdx": "^15.4.9",
     "fumadocs-ui": "^16.17.7",
+    "gpu-time": "0.5.0",
     "jotai": "catalog:",
     "lucide-react": "^1.61.0",
     "next": "catalog:",

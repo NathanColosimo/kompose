@@ -1,11 +1,11 @@
-import { parseDate } from "chrono-node";
 import { Temporal } from "temporal-polyfill";
+import { resolveWhen } from "@/lib/resolve-when";
 
 /**
  * Result of parsing a task input string with NLP syntax.
  */
 export interface ParsedTaskInput {
-  /** Due date, parsed from >date token (e.g., >monday, >tomorrow) */
+  /** Due date from the >date token; filled by `resolveTokenDates` */
   dueDate: Temporal.PlainDate | null;
   /** Raw due date string for display (e.g., "monday", "tomorrow") */
   dueDateRaw: string | null;
@@ -15,10 +15,12 @@ export interface ParsedTaskInput {
   durationRaw: string | null;
   /** URLs detected in the title text */
   links: string[];
-  /** Start date, parsed from ~date token (e.g., ~friday, ~next week) */
+  /** Start date from the ~date token; filled by `resolveTokenDates` */
   startDate: Temporal.PlainDate | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
   startDateRaw: string | null;
+  /** Start time from the ~date token ("~fri 3pm") or on-device parsing */
+  startTime: Temporal.PlainTime | null;
   /** Tag names parsed from #tag tokens */
   tagNames: string[];
   /** Raw tag strings for display (e.g., "design", "client work") */
@@ -64,35 +66,6 @@ function parseDuration(durationStr: string): number | null {
 }
 
 /**
- * Convert a JavaScript Date to a Temporal.PlainDate.
- */
-function dateToPlainDate(date: Date): Temporal.PlainDate {
-  return Temporal.PlainDate.from({
-    day: date.getDate(),
-    month: date.getMonth() + 1,
-    year: date.getFullYear(),
-  });
-}
-
-/**
- * Parse a natural language date string using chrono-node.
- *
- * @param dateStr - The date string (e.g., "monday", "tomorrow", "jan 15")
- * @param referenceDate - The reference date for relative parsing (defaults to now)
- * @returns Temporal.PlainDate or null if parsing fails
- */
-function parseNaturalDate(
-  dateStr: string,
-  referenceDate?: Date
-): Temporal.PlainDate | null {
-  const parsed = parseDate(dateStr.trim(), referenceDate);
-  if (!parsed) {
-    return null;
-  }
-  return dateToPlainDate(parsed);
-}
-
-/**
  * Parse a task input string with NLP-style syntax.
  *
  * Syntax:
@@ -102,16 +75,15 @@ function parseNaturalDate(
  * - ~date: start date (e.g., ~friday, ~next week)
  *
  * Example: "Read that book =2h >monday ~tmrw"
- * Result: { title: "Read that book", durationMinutes: 120, dueDate: Monday, startDate: Tomorrow }
+ * Result: { title: "Read that book", durationMinutes: 120, dueDateRaw: "monday", startDateRaw: "tmrw" }
+ *
+ * Runs on every keystroke, so it stays synchronous; date tokens are only
+ * captured here, and `resolveTokenDates` turns them into dates.
  *
  * @param input - The raw input string from the command bar
- * @param referenceDate - Reference date for parsing relative dates (defaults to now)
- * @returns Parsed task input with title, duration, and dates
+ * @returns Parsed task input with title, duration, and raw date tokens
  */
-export function parseTaskInput(
-  input: string,
-  referenceDate?: Date
-): ParsedTaskInput {
+export function parseTaskInput(input: string): ParsedTaskInput {
   const result: ParsedTaskInput = {
     dueDate: null,
     dueDateRaw: null,
@@ -120,6 +92,7 @@ export function parseTaskInput(
     links: [],
     startDate: null,
     startDateRaw: null,
+    startTime: null,
     tagNames: [],
     tagNamesRaw: [],
     title: "",
@@ -170,12 +143,10 @@ export function parseTaskInput(
       case ">":
         // Due date token
         result.dueDateRaw = trimmedValue;
-        result.dueDate = parseNaturalDate(trimmedValue, referenceDate);
         break;
       case "~":
         // Start date token
         result.startDateRaw = trimmedValue;
-        result.startDate = parseNaturalDate(trimmedValue, referenceDate);
         break;
       case "#":
         result.tagNamesRaw.push(trimmedValue);
@@ -189,6 +160,27 @@ export function parseTaskInput(
   }
 
   return result;
+}
+
+/** The dates named by the >due and ~start tokens. */
+export async function resolveTokenDates(
+  {
+    dueDateRaw,
+    startDateRaw,
+  }: Pick<ParsedTaskInput, "dueDateRaw" | "startDateRaw">,
+  {
+    now = Temporal.Now.zonedDateTimeISO(),
+  }: { now?: Temporal.ZonedDateTime } = {}
+): Promise<Pick<ParsedTaskInput, "dueDate" | "startDate" | "startTime">> {
+  const [due, start] = await Promise.all([
+    dueDateRaw ? resolveWhen(dueDateRaw, { now }) : null,
+    startDateRaw ? resolveWhen(startDateRaw, { now }) : null,
+  ]);
+  return {
+    dueDate: due?.date ?? null,
+    startDate: start?.date ?? null,
+    startTime: start?.time ?? null,
+  };
 }
 
 export function formatDuration(minutes: number): string {

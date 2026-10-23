@@ -7,8 +7,11 @@ export default defineConfig({
       externalizeDeps: false,
       outDir: "dist/main",
       rolldownOptions: {
-        input: resolve("src/main.ts"),
-        output: { entryFileNames: "index.js" },
+        input: {
+          index: resolve("src/main.ts"),
+          "local-ai": resolve("src/local-ai.ts"),
+        },
+        output: { entryFileNames: "[name].js" },
       },
     },
   },

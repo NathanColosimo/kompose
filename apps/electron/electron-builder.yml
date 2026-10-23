@@ -9,6 +9,10 @@ files:
   - package.json
   - "!node_modules/**"
 asar: true
+# Apple's on-device model helper (native/foundation-models), run by local-ai.ts.
+extraResources:
+  - from: native-build/kompose-fm
+    to: kompose-fm
 protocols:
   - name: Kompose Authentication
     schemes:
