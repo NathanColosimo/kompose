@@ -13,6 +13,8 @@ export interface ResolvedWhen {
   time: Temporal.PlainTime | null;
 }
 
+const MINUTES_PATTERN = /^:\d{2}/;
+
 // Day parts land on times a task would plausibly start.
 const DAY_PARTS = {
   afternoon: ["13:00", "17:00"],
@@ -44,25 +46,48 @@ export async function resolveWhen(
     return null;
   }
   const { parse } = await loadParser();
-  const result = await parse(trimmed, context(now));
+  let result = await parse(trimmed, context(now));
+  // "at 4" means the afternoon for a task, not 4am. Saying so and parsing
+  // again keeps gpu-time's choice of day right ("at 4" at 10am is today).
+  const afternoon = afternoonReading(trimmed, result.diagnostics);
+  if (afternoon) {
+    result = await parse(afternoon, context(now));
+  }
   const [first] = result.occurrences;
   if (!first) {
     return null;
   }
   // gpu-time gives local times with an offset; the offset is dropped here.
   const start = Temporal.PlainDateTime.from(first.start);
-  if (first.allDay) {
-    return { date: start.toPlainDate(), time: null };
+  return {
+    date: start.toPlainDate(),
+    time: first.allDay ? null : start.toPlainTime(),
+  };
+}
+
+/**
+ * `text` with "pm" after each hour from 1 to 7 that gpu-time found without
+ * am/pm, or null when there is none.
+ */
+function afternoonReading(
+  text: string,
+  diagnostics: { code: string; end: number; start: number }[]
+) {
+  let result = text;
+  // Right to left, so earlier offsets stay valid.
+  const ambiguous = diagnostics
+    .filter((diagnostic) => diagnostic.code === "ambiguous-meridiem")
+    .toSorted((a, b) => b.end - a.end);
+  for (const { end: hourEnd, start } of ambiguous) {
+    const hour = Number.parseInt(text.slice(start, hourEnd), 10);
+    // The flagged range is only the hour of "4:30".
+    const end =
+      hourEnd + (MINUTES_PATTERN.exec(text.slice(hourEnd))?.[0].length ?? 0);
+    if (hour >= 1 && hour <= 7) {
+      result = `${result.slice(0, end)}pm${result.slice(end)}`;
+    }
   }
-  let time = start.toPlainTime();
-  // "at 4" means the afternoon for a task, not 4am.
-  const ambiguous = result.diagnostics.some(
-    (diagnostic) => diagnostic.code === "ambiguous-meridiem"
-  );
-  if (ambiguous && time.hour >= 1 && time.hour <= 7) {
-    time = time.add({ hours: 12 });
-  }
-  return { date: start.toPlainDate(), time };
+  return result === text ? null : result;
 }
 
 /** The text of every date expression gpu-time finds in `text`. */

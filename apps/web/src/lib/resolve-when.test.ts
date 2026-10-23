@@ -30,12 +30,23 @@ describe("resolveWhen", () => {
   });
 
   test.each([
-    ["tomorrow at 4", "2026-10-24"],
-    ["in 2 days at 4", "2026-10-25"],
-  ])("reads a bare low hour in %p as the afternoon", async (phrase, date) => {
-    const when = await resolveWhen(phrase, { now });
-    expect(when?.date.toString()).toBe(date);
-    expect(when?.time?.toString()).toBe("16:00:00");
+    ["at 4", "2026-10-23", "16:00:00"],
+    ["4:30", "2026-10-23", "16:30:00"],
+    ["from 3 to 5", "2026-10-23", "15:00:00"],
+    ["tomorrow at 4", "2026-10-24", "16:00:00"],
+    ["in 2 days at 4", "2026-10-25", "16:00:00"],
+  ])(
+    "reads a bare low hour in %p as the afternoon",
+    async (phrase, date, time) => {
+      const when = await resolveWhen(phrase, { now });
+      expect(when?.date.toString()).toBe(date);
+      expect(when?.time?.toString()).toBe(time);
+    }
+  );
+
+  test("keeps an ambiguous morning hour in the morning", async () => {
+    const when = await resolveWhen("tomorrow at 9:30", { now });
+    expect(when?.time?.toString()).toBe("09:30:00");
   });
 
   test("starts a day part at a plausible time", async () => {
