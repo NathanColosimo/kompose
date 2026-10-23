@@ -3,6 +3,7 @@ import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { implement, ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { requireAuth } from "../..";
+import type { Context } from "../../context";
 import { globalRateLimit, mapsRateLimit } from "../../ratelimit";
 import { type LocationSuggestion, mapsContract } from "./contract";
 
@@ -144,6 +145,7 @@ function fetchAutocomplete(query: string) {
 }
 
 export const os = implement(mapsContract)
+  .$context<Context>()
   .use(requireAuth)
   .use(globalRateLimit)
   .use(mapsRateLimit);

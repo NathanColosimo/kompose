@@ -1,13 +1,5 @@
 import { Schema } from "effect";
 
-export class TagRepositoryError extends Schema.TaggedError<TagRepositoryError>()(
-  "TagRepositoryError",
-  {
-    cause: Schema.Unknown,
-    message: Schema.optional(Schema.String),
-  }
-) {}
-
 export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
   "TagConflictError",
   {
@@ -28,9 +20,3 @@ export class InvalidTagError extends Schema.TaggedError<InvalidTagError>()(
     message: Schema.String,
   }
 ) {}
-
-export type TagError =
-  | TagRepositoryError
-  | TagConflictError
-  | TagNotFoundError
-  | InvalidTagError;
