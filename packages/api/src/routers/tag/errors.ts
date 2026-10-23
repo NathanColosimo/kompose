@@ -20,5 +20,3 @@ export class InvalidTagError extends Schema.TaggedError<InvalidTagError>()(
     message: Schema.String,
   }
 ) {}
-
-export type TagError = TagConflictError | TagNotFoundError | InvalidTagError;
