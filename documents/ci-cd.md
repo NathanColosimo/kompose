@@ -84,8 +84,7 @@ last *successful* release, not the previous commit.
   restores its objects from the last native build, so C/C++/Objective-C files
   that didn't change aren't recompiled. Swift isn't cached. GitHub evicts
   caches unused for 7 days, and Expo/React Native upgrades change most inputs,
-  so those builds stay cold. After shipping, the job fails if no compile went
-  through ccache, which happens when a template change drops the wrapper.
+  so those builds stay cold.
 - **Desktop fingerprint**: a hash of the per-task file inputs and locked
   dependency versions that `turbo run build --filter=@kompose/electron
   --dry=json` reports for the Electron build and the workspace packages it
