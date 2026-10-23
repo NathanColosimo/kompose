@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# unit-for: Map the UCUM/OTel unit of an MPL Statistic's result to the
+# unit fields of the chart.
+#
+# Usage:
+#   unit-for <unit-string>
+#
+# Emits a JSON object on stdout suitable for splicing into a Statistic chart
+# config alongside `name` and `query`. Two output shapes:
+#
+#   {}                         # the Console already formats this unit
+#   {"customUnits":"<suffix>"} # the Console appends the suffix verbatim
+#
+# chart-add also writes `set custom_unit="<unit>";` into the query. The
+# Console then formats the result with that unit, also after `map` or a
+# rate: USD gets a "$" prefix, "s" and "By" get scaled, "%" gets the sign.
+# A customUnits suffix on such a unit doubles it ("$1.03K$"), so this
+# script drops it.
+#
+# Empty input, missing input, and "1" (OTel dimensionless) return {}.
+# A currency symbol ($, €, £) is an error: pass the code (USD, EUR, GBP).
+#
+# Every other unit ("Cel", "kW.h", "m", "B") passes through verbatim as
+# customUnits. Also encode the unit in the chart name (e.g. "Latency (ms)")
+# so the header is self-describing.
+# See reference/chart-config.md § Units.
+#
+# Examples:
+#   unit-for "s"       # -> {}
+#   unit-for "By"      # -> {}
+#   unit-for "USD"     # -> {}
+#   unit-for "%"       # -> {}
+#   unit-for "Cel"     # -> {"customUnits":"Cel"}
+#   unit-for "kW.h"    # -> {"customUnits":"kW.h"}
+#   unit-for ""        # -> {}
+#   unit-for "1"       # -> {}
+
+set -euo pipefail
+
+UNIT="${1-}"
+
+case "$UNIT" in
+    '$'|'€'|'£')
+        echo "Error: unit '$UNIT' is a symbol. Pass the currency code (USD, EUR, GBP): the Console adds the symbol." >&2
+        exit 1
+        ;;
+esac
+
+# Units whose Console formatter already supplies the unit. Keep the SI byte
+# and rate families too: MBy -> MB, By/s -> B/s, bit/s -> bps.
+# Evidence: reference/metrics-mpl.md, Unit Handling. Named counts such as
+# {requests} keep their label: the Console's short formatter only
+# abbreviates the number.
+jq -n --arg u "$UNIT" '
+  [
+    "USD", "GBP", "EUR", "BTC",
+    "%",
+    "ns", "us", "ms", "s", "min", "h", "d",
+    "Hz",
+    "By", "KiBy", "MiBy", "GiBy", "TiBy", "PiBy",
+    "kBy", "MBy", "GBy", "TBy", "PBy",
+    "By/s", "kBy/s", "MBy/s", "GBy/s", "TBy/s", "PBy/s",
+    "bit/s", "kbit/s", "Mbit/s", "Gbit/s", "Tbit/s", "Pbit/s",
+    "{packets}/s", "{requests}/s", "{operations}/s"
+  ] as $formatted
+  # mapOtelUnitToFormatId also tries an unmapped unit lowercased as a
+  # formatter ID. Only lowercase IDs can match that fallback (e.g. bytes,
+  # not KBs). none/short do not supply a unit; preserve their custom label.
+  | [
+    "percent100", "percent", "curusd", "curgbp", "cureur", "curbtc",
+    "bits", "bytes", "kbytes", "mbytes", "gbytes", "tbytes", "pbytes",
+    "decbits", "decbytes", "deckbytes", "decmbytes", "decgbytes", "dectbytes", "decpbytes",
+    "pps", "bps", "datetimeiso", "hertz", "ns", "µs", "ms",
+    "secs", "mins", "hours", "days", "ago",
+    "cps", "ops", "reqps", "rps", "wps", "iops", "cpm", "opm", "reqpm", "rpm", "wpm"
+  ] as $format_ids
+  | if $u == "" or $u == "1"
+       or ($formatted | any(. == $u))
+       or ($format_ids | any(. == ($u | ascii_downcase))) then {}
+    else {customUnits: $u}
+    end
+'
