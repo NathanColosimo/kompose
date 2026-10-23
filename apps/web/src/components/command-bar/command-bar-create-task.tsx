@@ -42,6 +42,7 @@ import {
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { type SmartParse, useSmartTaskInput } from "@/lib/use-smart-task-input";
+import { useTokenDates } from "@/lib/use-token-dates";
 import { cn } from "@/lib/utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
@@ -277,7 +278,8 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || typed.title.length < 3 ? null : typed.title,
     tagNames
   );
-  const parsed = previewInput(typed, smartInput.parse);
+  const tokenDates = useTokenDates(typed);
+  const parsed = previewInput(tokenDates.parsed, smartInput.parse);
   const smartClassName = smartFieldClassName(smartInput.parse);
   const [resolving, startResolving] = useTransition();
 
@@ -401,14 +403,19 @@ export function CommandBarCreateTask({
     if (!isValid || createTask.isPending || resolving) {
       return;
     }
-    if (smartInput.parse.status !== "reading") {
+    const reading = smartInput.parse.status === "reading";
+    if (!(reading || tokenDates.pending)) {
       createFrom(parsed);
       return;
     }
-    // Enter can beat the debounced parse; wait briefly for the model.
+    // Enter can beat the debounced parse; wait briefly for the model. Typed
+    // tokens and the model never both apply, so only one of these waits.
     startResolving(async () => {
-      const smart = await smartInput.resolve();
-      createFrom(withSmartInput(typed, smart));
+      createFrom(
+        reading
+          ? withSmartInput(typed, await smartInput.resolve())
+          : await tokenDates.resolve()
+      );
     });
   };
 

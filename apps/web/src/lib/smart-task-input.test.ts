@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import {
-  checkPhrases,
-  parseDurationText,
-  resolveWhen,
-} from "@/lib/smart-task-input";
+import { Temporal } from "temporal-polyfill";
+import { checkPhrases, parseDurationText } from "@/lib/smart-task-input";
 
-// Thursday, Oct 23 2026, 10:00 local time.
-const referenceDate = new Date(2026, 9, 23, 10);
+// Friday, Oct 23 2026, 10:00 in New York.
+const now = Temporal.ZonedDateTime.from(
+  "2026-10-23T10:00:00-04:00[America/New_York]"
+);
 
 describe("parseDurationText", () => {
   test.each([
@@ -21,53 +20,23 @@ describe("parseDurationText", () => {
   });
 });
 
-describe("resolveWhen", () => {
-  test("keeps a date without a time", () => {
-    const when = resolveWhen("tomorrow", referenceDate);
-    expect(when?.date.toString()).toBe("2026-10-24");
-    expect(when?.time).toBeNull();
-  });
-
-  test("reads a bare low hour as the afternoon", () => {
-    expect(resolveWhen("tomorrow at 4", referenceDate)?.time?.toString()).toBe(
-      "16:00:00"
-    );
-  });
-
-  test("keeps an explicit morning time", () => {
-    expect(
-      resolveWhen("tomorrow at 4am", referenceDate)?.time?.toString()
-    ).toBe("04:00:00");
-  });
-
-  test("resolves weekdays forward", () => {
-    expect(resolveWhen("next tue 3pm", referenceDate)?.date.toString()).toBe(
-      "2026-10-27"
-    );
-  });
-
-  test("returns null without a date", () => {
-    expect(resolveWhen("groceries", referenceDate)).toBeNull();
-  });
-});
-
 describe("checkPhrases", () => {
-  test("drops phrases the input doesn't contain", () => {
+  test("drops phrases the input doesn't contain", async () => {
     const input = "call mom";
-    const phrases = checkPhrases({
+    const phrases = await checkPhrases({
       extraction: { title: "call mom", whenText: "next tue 3pm" },
       input,
-      referenceDate,
+      now,
     });
     expect(phrases.when).toBeUndefined();
   });
 
-  test("moves a deadline phrase out of the start", () => {
+  test("moves a deadline phrase out of the start", async () => {
     const input = "taxes before end of month";
-    const phrases = checkPhrases({
+    const phrases = await checkPhrases({
       extraction: { title: "taxes", whenText: "before end of month" },
       input,
-      referenceDate,
+      now,
     });
     expect(phrases).toEqual({
       deadline: "end of month",
@@ -76,24 +45,39 @@ describe("checkPhrases", () => {
     });
   });
 
-  test("drops a start that repeats the deadline", () => {
+  test("drops a start that repeats the deadline", async () => {
     const input = "report due nov 1";
-    const phrases = checkPhrases({
+    const phrases = await checkPhrases({
       extraction: { deadlineText: "nov 1", title: "report", whenText: "nov 1" },
       input,
-      referenceDate,
+      now,
     });
     expect(phrases.when).toBeUndefined();
     expect(phrases.deadline).toBe("nov 1");
   });
 
-  test("widens a clipped start to the whole date expression", () => {
+  test("widens a clipped start to the whole date expression", async () => {
     const input = "dentist in 2 days at 4";
-    const phrases = checkPhrases({
+    const phrases = await checkPhrases({
       extraction: { title: "dentist", whenText: "in 2 days" },
       input,
-      referenceDate,
+      now,
     });
     expect(phrases.when).toBe("in 2 days at 4");
+  });
+
+  test("widens past a duration in the same sentence", async () => {
+    const input = "call mom tomorrow at 4 for 30m";
+    const phrases = await checkPhrases({
+      extraction: {
+        durationText: "for 30m",
+        title: "call mom",
+        whenText: "tomorrow",
+      },
+      input,
+      now,
+    });
+    expect(phrases.when).toBe("tomorrow at 4");
+    expect(phrases.duration).toBe("for 30m");
   });
 });

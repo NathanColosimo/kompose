@@ -1,7 +1,7 @@
 "use client";
 
-import { parse } from "chrono-node";
 import { Temporal } from "temporal-polyfill";
+import { findWhenPhrases, resolveWhen } from "@/lib/resolve-when";
 import type { ParsedTaskInput } from "@/lib/task-input-parser";
 
 /**
@@ -10,7 +10,7 @@ import type { ParsedTaskInput } from "@/lib/task-input-parser";
  * answers it with Apple's Foundation Models (apps/electron/src/local-ai.ts).
  *
  * The model only copies phrases out of the input. Date math stays in
- * chrono-node, which small models get wrong.
+ * gpu-time (resolve-when.ts), since small language models get it wrong.
  */
 
 /** The subset of the Prompt API used here. */
@@ -124,37 +124,6 @@ export function parseDurationText(text: string): number | null {
   return minutes > 0 ? Math.round(minutes) : null;
 }
 
-function toPlainDate(date: Date) {
-  return Temporal.PlainDate.from({
-    day: date.getDate(),
-    month: date.getMonth() + 1,
-    year: date.getFullYear(),
-  });
-}
-
-/** Resolve a date phrase with chrono-node; the time only when one was said. */
-export function resolveWhen(text: string, referenceDate: Date) {
-  const [result] = parse(text, referenceDate, { forwardDate: true });
-  if (!result) {
-    return null;
-  }
-  const { start } = result;
-  const date = toPlainDate(start.date());
-  if (!start.isCertain("hour")) {
-    return { date, time: null };
-  }
-  let hour = start.get("hour") ?? 0;
-  // "at 4" means the afternoon for a task, not 4am.
-  if (!start.isCertain("meridiem") && hour >= 1 && hour <= 7) {
-    hour += 12;
-  }
-  const time = Temporal.PlainTime.from({
-    hour,
-    minute: start.get("minute") ?? 0,
-  });
-  return { date, time };
-}
-
 /** The phrase if it really occurs in the input; models echo prompt examples. */
 function verbatim(phrase: string | undefined, input: string) {
   const trimmed = phrase?.trim();
@@ -164,34 +133,38 @@ function verbatim(phrase: string | undefined, input: string) {
 }
 
 /**
- * Widen a phrase to the whole date expression chrono finds around it, since
- * the model sometimes clips one ("in 2 days" of "in 2 days at 4").
+ * Widen a phrase to the whole date expression found around it, since the
+ * model sometimes clips one ("in 2 days" of "in 2 days at 4"). The duration
+ * phrase is blanked first; gpu-time can drop a sentence that mixes both.
  */
-function widen({
+async function widen({
+  duration,
   input,
+  now,
   phrase,
-  referenceDate,
 }: {
+  duration: string | undefined;
   input: string;
+  now: Temporal.ZonedDateTime;
   phrase: string;
-  referenceDate: Date;
 }) {
+  const text = duration
+    ? input.replace(duration, " ".repeat(duration.length))
+    : input;
   const lower = phrase.toLowerCase();
-  const match = parse(input, referenceDate, { forwardDate: true }).find(
-    (result) => result.text.toLowerCase().includes(lower)
-  );
-  return match?.text ?? phrase;
+  const phrases = await findWhenPhrases(text, { now });
+  return phrases.find((found) => found.toLowerCase().includes(lower)) ?? phrase;
 }
 
 /** Keep only phrases from the input and sort out start vs deadline. */
-export function checkPhrases({
+export async function checkPhrases({
   extraction,
   input,
-  referenceDate,
+  now,
 }: {
   extraction: Extraction;
   input: string;
-  referenceDate: Date;
+  now: Temporal.ZonedDateTime;
 }) {
   let when = verbatim(extraction.whenText, input);
   let deadline = verbatim(extraction.deadlineText, input);
@@ -204,10 +177,11 @@ export function checkPhrases({
   if (when && when === deadline) {
     when = undefined;
   }
+  const duration = verbatim(extraction.durationText, input);
   return {
     deadline,
-    duration: verbatim(extraction.durationText, input),
-    when: when && widen({ input, phrase: when, referenceDate }),
+    duration,
+    when: when && (await widen({ duration, input, now, phrase: when })),
   };
 }
 
@@ -218,10 +192,14 @@ export function checkPhrases({
 export async function smartParseTaskInput(
   input: string,
   {
-    referenceDate = new Date(),
+    now = Temporal.Now.zonedDateTimeISO(),
     signal,
     tagNames,
-  }: { referenceDate?: Date; signal?: AbortSignal; tagNames: string[] }
+  }: {
+    now?: Temporal.ZonedDateTime;
+    signal?: AbortSignal;
+    tagNames: string[];
+  }
 ): Promise<SmartTaskInput | null> {
   const base = await getBaseSession();
   if (!base) {
@@ -234,11 +212,11 @@ export async function smartParseTaskInput(
       signal,
     });
     const extraction = JSON.parse(raw) as Extraction;
-    const phrases = checkPhrases({ extraction, input, referenceDate });
-    const when = phrases.when ? resolveWhen(phrases.when, referenceDate) : null;
-    const due = phrases.deadline
-      ? resolveWhen(phrases.deadline, referenceDate)
-      : null;
+    const phrases = await checkPhrases({ extraction, input, now });
+    const [when, due] = await Promise.all([
+      phrases.when ? resolveWhen(phrases.when, { now }) : null,
+      phrases.deadline ? resolveWhen(phrases.deadline, { now }) : null,
+    ]);
     return {
       dueDate: due?.date ?? null,
       durationMinutes: phrases.duration
