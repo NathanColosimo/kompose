@@ -1,49 +1,48 @@
+import { WhoopApiError, WhoopParseError } from "@kompose/whoop/errors";
 import { implement, ORPCError } from "@orpc/server";
-import { effectErrors, requireAuth } from "../..";
+import { mapErrors, requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { whoopContract } from "./contract";
-import type { WhoopError } from "./errors";
+import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 import { WhoopService } from "./service";
+
+function toORPCError(error: unknown) {
+  if (error instanceof WhoopApiError) {
+    return new ORPCError("SERVICE_UNAVAILABLE", {
+      cause: error,
+      data: { operation: error.operation, status: error.status },
+      message: error.message,
+    });
+  }
+  if (error instanceof WhoopInvalidRangeError) {
+    return new ORPCError("BAD_REQUEST", {
+      cause: error,
+      message: error.message,
+    });
+  }
+  if (error instanceof WhoopParseError) {
+    return new ORPCError("PARSE_ERROR", {
+      cause: error,
+      data: { operation: error.operation },
+      message: error.message,
+    });
+  }
+  if (error instanceof WhoopTokenUnavailableError) {
+    return new ORPCError("SERVICE_UNAVAILABLE", {
+      cause: error,
+      data: { accountId: error.accountId, whoopErrorCode: "TOKEN_UNAVAILABLE" },
+      message: error.message,
+    });
+  }
+  return error;
+}
 
 const os = implement(whoopContract)
   .$context<Context>()
   .use(requireAuth)
   .use(globalRateLimit)
-  .use(
-    effectErrors<WhoopError>({
-      WhoopApiError: (error) =>
-        new ORPCError("SERVICE_UNAVAILABLE", {
-          cause: error,
-          data: {
-            cause: error.cause,
-            operation: error.operation,
-            status: error.status,
-          },
-          message: error.message,
-        }),
-      WhoopInvalidRangeError: (error) =>
-        new ORPCError("BAD_REQUEST", { cause: error, message: error.message }),
-      WhoopParseError: (error) =>
-        new ORPCError("PARSE_ERROR", {
-          cause: error,
-          data: {
-            cause: error.cause,
-            operation: error.operation,
-          },
-          message: error.message,
-        }),
-      WhoopTokenUnavailableError: (error) =>
-        new ORPCError("SERVICE_UNAVAILABLE", {
-          cause: error,
-          data: {
-            accountId: error.accountId,
-            whoopErrorCode: "TOKEN_UNAVAILABLE",
-          },
-          message: error.message,
-        }),
-    })
-  );
+  .use(mapErrors(toORPCError));
 
 export const whoopRouter = os.router({
   days: {

@@ -1,5 +1,4 @@
 import "@orpc/experimental-effect/extensions/effect";
-import type { EffectWrapOptions } from "@orpc/experimental-effect";
 import { ORPCError, os } from "@orpc/server";
 import { Effect } from "effect";
 import type { Context } from "./context";
@@ -18,57 +17,18 @@ export const requireAuth = base.middleware(({ context, next }) => {
   });
 });
 
-interface TaggedError {
-  readonly _tag: string;
-}
-
-type TaggedErrorMappers<E extends TaggedError> = {
-  readonly [K in E["_tag"]]: (
-    error: Extract<E, { _tag: K }>,
-    opts: EffectWrapOptions
-  ) => ORPCError<string, unknown>;
-};
-
-function isTaggedError(error: unknown): error is TaggedError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    typeof error._tag === "string"
-  );
-}
-
 /**
- * Maps a router's tagged Effect errors to `ORPCError`s for every effectful
- * handler below it. Anything left unmapped (e.g. a failed DB query) reaches
- * oRPC as a plain error, which it returns as a 500 without exposing details.
+ * Runs every Effect failure from a router's handlers through `toORPCError`.
+ * Return an `ORPCError` for errors the router knows about and the error
+ * itself for the rest; oRPC sends those as a generic 500.
  */
-export function effectErrors<E extends TaggedError>(
-  mappers: TaggedErrorMappers<E>
-) {
-  const lookup = mappers as unknown as Record<
-    string,
-    (error: TaggedError, opts: EffectWrapOptions) => ORPCError<string, unknown>
-  >;
-
-  return base.middleware(({ context, next }) => {
-    const outer = context["effect/wrap"];
-
-    return next({
+export function mapErrors(toORPCError: (error: unknown) => unknown) {
+  return base.middleware(({ next }) =>
+    next({
       context: {
-        "effect/wrap": <A>(
-          effect: Effect.Effect<A, unknown>,
-          opts: EffectWrapOptions
-        ) => {
-          const mapped = effect.pipe(
-            Effect.mapError((error) => {
-              const map = isTaggedError(error) ? lookup[error._tag] : undefined;
-              return map && isTaggedError(error) ? map(error, opts) : error;
-            })
-          );
-          return outer ? outer(mapped, opts) : mapped;
-        },
+        "effect/wrap": <A>(effect: Effect.Effect<A, unknown>) =>
+          effect.pipe(Effect.mapError(toORPCError)),
       },
-    });
-  });
+    })
+  );
 }

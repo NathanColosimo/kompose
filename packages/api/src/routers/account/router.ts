@@ -11,20 +11,6 @@ const os = implement(accountContract)
   .use(requireAuth)
   .use(globalRateLimit);
 
-function getCauseMessage(cause: unknown): string {
-  if (cause instanceof Error) {
-    return cause.message;
-  }
-  if (typeof cause === "string") {
-    return cause;
-  }
-  try {
-    return JSON.stringify(cause);
-  } catch {
-    return String(cause);
-  }
-}
-
 export const accountRouter = os.router({
   list: os.list.effect(function* ({ context }) {
     return yield* listLinkedAccountsWithProfile(context.user.id).pipe(
@@ -32,11 +18,6 @@ export const accountRouter = os.router({
         (cause) =>
           new ORPCError("INTERNAL_SERVER_ERROR", {
             cause,
-            data: {
-              causeMessage: getCauseMessage(cause),
-              operation: "account.list",
-              userId: context.user.id,
-            },
             message: "Failed to list linked accounts",
           })
       )

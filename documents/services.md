@@ -62,20 +62,22 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 
 ### Router pattern
 
-Handlers are Effect generators (`.effect(function* ...)` from `@orpc/experimental-effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own tagged errors to `ORPCError` once with `effectErrors`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
+Handlers are Effect generators (`.effect(function* ...)` from `@orpc/experimental-effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own errors to `ORPCError` once with `mapErrors(toORPCError)`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
 
 ```ts
+function toORPCError(error: unknown) {
+  if (error instanceof TaskNotFoundError) {
+    return new ORPCError("NOT_FOUND", { cause: error, message: `Task not found: ${error.taskId}` });
+  }
+  // ...one branch per error the router knows about
+  return error;
+}
+
 const os = implement(taskContract)
   .$context<Context>()
   .use(requireAuth)
   .use(globalRateLimit)
-  .use(
-    effectErrors<TaskError | LinkParseError>({
-      TaskNotFoundError: (error) =>
-        new ORPCError("NOT_FOUND", { cause: error, message: `Task not found: ${error.taskId}` }),
-      // ...one entry per tag; the type requires every tag in the union
-    })
-  );
+  .use(mapErrors(toORPCError));
 
 list: os.list.effect(function* ({ context }) {
   const tasks = yield* TaskService.use((service) => service.listTasks(context.user.id));
@@ -141,7 +143,6 @@ Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods
 
 | Error | Meaning |
 |-------|---------|
-| `TagRepositoryError` | DB query failed |
 | `TagConflictError` | Tag name already exists |
 | `TagNotFoundError` | Tag not found by ID |
 | `InvalidTagError` | Invalid input |
@@ -169,19 +170,19 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. Google errors are mapped once on the router with `effectErrors`, which adds the request's `accountId` and `userId` to the error data.
+Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. `getGoogleCalendar(userId, accountId)` fetches the account's access token and returns the Google client. Google errors are mapped once on the router with `mapErrors`.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
-  const accessToken = yield* checkGoogleAccountIsLinked(userId, accountId);
+  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
   // Cache-first read
   const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
   if (Option.isSome(cached)) return cached.value;
 
   // API fallback
-  const data = yield* service.listCalendars();
+  const data = yield* google.listCalendars();
   yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
   return data;
 }),
@@ -475,7 +476,7 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 ### Effect ↔ oRPC bridge
 
 - `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/experimental-effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
-- `effectErrors(mappers)` (in `index.ts`) is a router middleware that maps that router's tagged errors to `ORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
+- `mapErrors(toORPCError)` (in `index.ts`) is a router middleware that sets `effect/wrap` to run every handler failure through the router's `toORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
 - Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
 
 ---

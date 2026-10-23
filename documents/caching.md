@@ -7,7 +7,7 @@ Google Calendar API data is cached in Redis to reduce latency. Webhooks handle r
 ```
 Client request
   ▼
-checkGoogleAccountIsLinked (auth first, always)
+getGoogleCalendar (auth first, always)
   ▼
 Cache lookup (Redis GET)
   ├── HIT  → return cached data
@@ -169,18 +169,18 @@ const scanAndDelete = async (prefix: string) => {
 
 ## Auth-First Pattern
 
-Cache lookups happen **after** `checkGoogleAccountIsLinked`, never before. This prevents serving cached data to unauthorized users:
+Cache lookups happen **after** `getGoogleCalendar`, never before. This prevents serving cached data to unauthorized users:
 
 ```ts
 // 1. Auth check (always first)
-const accessToken = yield* checkGoogleAccountIsLinked(userId, accountId);
+const google = yield* getGoogleCalendar(userId, accountId);
 
 // 2. Cache lookup (only after auth passes)
 const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
 if (Option.isSome(cached)) return cached.value;
 
 // 3. API fetch on miss
-const data = yield* service.listCalendars();
+const data = yield* google.listCalendars();
 
 // 4. Populate cache
 yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
