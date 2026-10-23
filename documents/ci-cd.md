@@ -15,6 +15,11 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | Type-check and build | `turbo run type-check --affected`, then the iOS bundle (`expo export`, including the Hermes bytecode compile) and the Electron main/preload build, both `--affected` |
 | Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
+A PR skips the type-check/build and migration jobs when every changed file is
+Markdown, `documents/`, `.agents/`, `.claude/`, or `skills-lock.json` (the
+`changes` job decides). Lint runs either way. Pushes to `main` always run all
+jobs. Skipped jobs count as passing for the required checks.
+
 Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
 work done in CI, on Vercel, or locally (if logged in) is not repeated. Web is
 not built in CI: it needs production env vars, and Vercel builds it on deploy.
