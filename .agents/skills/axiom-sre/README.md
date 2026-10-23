@@ -22,30 +22,33 @@ npx skills add axiomhq/skills -s sre
 ## Prerequisites
 
 - Access to Axiom deployment(s)
-- Tools: `jq`, `curl`
+- Tools: `jq`, `curl`, and `timeout` or `gtimeout` (`brew install coreutils` on macOS)
 
 ## Setup
 
-Run the interactive setup to configure Axiom access and initialize memory:
+From this skill's installed directory, initialize configuration and memory:
 
 ```bash
-scripts/setup
+scripts/init
 ```
 
-This will:
-1. Create the memory system for storing patterns and learnings
-2. Guide you through creating `~/.axiom.toml` if it doesn't exist
+On first run, this creates `~/.config/axiom-sre/config.toml` with commented examples and initializes memory. It prints configuration guidance and exits when no deployments are configured. To use a different directory, set `SRE_CONFIG_DIR`.
 
-**To configure manually**, create `~/.axiom.toml`:
+Edit `~/.config/axiom-sre/config.toml` and add your deployment:
 
 ```toml
-[deployments.prod]
+[axiom.deployments.prod]
 url = "https://api.axiom.co"
+edge_url = "https://us-east-1.aws.edge.axiom.co" # Settings → General → Edge deployment
 token = "xaat-your-api-token"
 org_id = "your-org-id"
 ```
 
-Get your org_id from Settings → Organization. For the token, create a scoped **API token** (Settings → API Tokens) with the permissions your workflow needs. Avoid Personal Access Tokens for automated tooling.
+Then run `scripts/init` again.
+
+If you already have `~/.axiom.toml`, use `scripts/init --migrate` **instead of the initial `scripts/init` run**. This imports legacy configuration into the new format; it refuses to overwrite an existing SRE config. Other skills may still use `~/.axiom.toml`, so keep it for those workflows.
+
+Get your org_id from Settings → Organization and your edge deployment from Settings → General. For the token, create a scoped **API token** (Settings → API Tokens) with the permissions your workflow needs. Hosted APL runs on the regional edge (`POST /v1/query/_apl`). Set `edge_url` when the token cannot list datasets, which is required once that token has query cost limits. Avoid Personal Access Tokens for automated tooling.
 
 ## Usage
 
@@ -61,8 +64,8 @@ scripts/axiom-api <deployment> GET "/v1/datasets"
 # Generate shareable query links
 scripts/axiom-link <deployment> "<apl query>" "<time range>"
 
-# Setup personal memory tier
-scripts/setup
+# Initialize configuration and memory
+scripts/init
 ```
 
 ## Scripts
@@ -73,10 +76,9 @@ scripts/setup
 | `axiom-api` | Make raw API calls |
 | `axiom-link` | Generate shareable query URLs |
 | `axiom-deployments` | List configured deployments |
-| `setup` | Initialize memory system |
+| `init` | Initialize configuration and memory; report configured tools |
 | `mem-write` | Write entries to memory KB |
 | `mem-sync` | Sync org memory from git |
-| `mem-digest` | Consolidate journal to KB |
 | `mem-doctor` | Health check all memory tiers |
 | `mem-share` | Push org memory changes |
 

@@ -88,6 +88,17 @@ module.exports = withUniwindConfig(config, {
 });
 ```
 
+`cssEntryFile` must be a **relative path string** from project root (e.g. `./global.css` or `./app/global.css`).
+Do **not** use absolute paths or `path.resolve(...)` / `path.join(...)` for this option.
+
+```js
+// ❌ Broken
+cssEntryFile: path.resolve(__dirname, 'app', 'global.css')
+
+// ✅ Correct
+cssEntryFile: './app/global.css'
+```
+
 **Always set `polyfills.rem` to 14** to match NativeWind's default rem value and prevent spacing/sizing differences after migration.
 
 If the project uses custom themes beyond `light`/`dark` (e.g. defined via NativeWind's `vars()` or a custom ThemeProvider), register them with `extraThemes`. Do NOT include `light` or `dark` — they are added automatically:
@@ -101,7 +112,7 @@ module.exports = withUniwindConfig(config, {
 ```
 
 Options:
-- `cssEntryFile` (required): path to CSS entry file
+- `cssEntryFile` (required): relative path string to CSS entry file (from project root)
 - `polyfills.rem` (required for migration): set to `14` to match NativeWind's rem base
 - `extraThemes` (required if project has custom themes): array of custom theme names — do NOT include `light`/`dark`
 - `dtsFile` (optional): path for generated TypeScript types, defaults to `./uniwind-types.d.ts`
@@ -309,6 +320,15 @@ export const themes = {
 
 No ThemeProvider wrapper needed. Remove the NativeWind `<ThemeProvider>` or `vars()` wrapper from JSX. Keep React Navigation's `<ThemeProvider>` if used.
 
+If the project used nested theme wrappers to preview or force a theme for a specific subtree (for example a demo card, settings preview, or side-by-side theme comparison), use Uniwind Pro's `ScopedTheme` instead of changing the global theme:
+```tsx
+import { ScopedTheme } from 'uniwind';
+
+<ScopedTheme theme="dark">
+  <PreviewCard />
+</ScopedTheme>
+```
+
 If the project has **custom themes beyond light/dark** (e.g. `ocean`, `premium`), you must:
 1. Define them in CSS using `@variant`:
 ```css
@@ -393,6 +413,15 @@ import { cn } from '@/lib/cn';
 ```
 
 Use `cn` instead of raw `twMerge` — it handles conditional classes, arrays, and falsy values via `clsx` before deduplicating with `tailwind-merge`.
+
+Important utilities are also supported in Uniwind. If migrated NativeWind code intentionally forces an override with Tailwind's important modifier, keep it:
+
+```tsx
+<View className="bg-blue-500 !bg-red-500" />
+<Pressable className="bg-blue-500 active:!bg-red-500" />
+```
+
+Important utilities override non-important utilities for the same style property. Inline `style` still has the highest priority, even over important className utilities.
 
 ## Step 14: Update Animated Class Names
 
@@ -486,15 +515,16 @@ Use for: animations, third-party library configs, calculations with design token
 
 Docs: https://docs.uniwind.dev/api/css-functions
 
-Define custom utilities using device-aware CSS functions like `hairlineWidth()`, `fontScale()`, `pixelRatio()`:
+Define custom utilities using device-aware CSS functions like `hairlineWidth()`, `fontScale()`, `pixelRatio()`. These can be used everywhere (custom CSS classes, `@utility`, etc.) — but NOT inside `@theme {}` (which only accepts static values). Use `@utility` to create reusable Tailwind-style classes:
 
 ```css
-@theme {
-  --width-hairline: hairlineWidth();
-}
+@utility w-hairline { width: hairlineWidth(); }
+@utility h-hairline { height: hairlineWidth(); }
+@utility border-hairline { border-width: hairlineWidth(); }
+@utility text-scaled { font-size: fontScale(); }
 ```
 
-Then use as: `<View className="w-hairline" />`
+Then use as: `<View className="w-hairline h-hairline" />`
 
 ### Platform Selectors
 
@@ -524,6 +554,34 @@ Uniwind.setTheme('light');    // force light
 Uniwind.setTheme('system');   // follow system (default)
 Uniwind.setTheme('ocean');    // custom theme (must be in extraThemes)
 ```
+
+### ScopedTheme — Theme a Subtree Only
+
+Docs: https://docs.uniwind.dev/api/scoped-themes
+
+Use `ScopedTheme` when the project needs a different theme for only part of the UI (component previews, themed sections, nested demos) without changing the app-wide theme:
+
+```tsx
+import { ScopedTheme } from 'uniwind';
+
+<View className="gap-3">
+  <PreviewCard />
+
+  <ScopedTheme theme="light">
+    <PreviewCard />
+  </ScopedTheme>
+
+  <ScopedTheme theme="dark">
+    <PreviewCard />
+  </ScopedTheme>
+</View>
+```
+
+Important behavior:
+- Nearest `ScopedTheme` wins (nested scopes are supported)
+- Hooks like `useUniwind`, `useResolveClassNames`, and `useCSSVariable` resolve against the nearest scoped theme
+- `withUniwind`-wrapped third-party components inside the scope also resolve themed values from that scope
+- Custom theme names can be used in `ScopedTheme` (must be defined in `extraThemes`)
 
 ### Style Based on Themes — Prefer CSS Variables
 
@@ -612,10 +670,15 @@ If the project is a monorepo, add `@source` directives in `global.css` so Tailwi
 
 Docs: https://docs.uniwind.dev/faq
 
-**Custom Fonts**: Uniwind maps className to font-family only — font files must be loaded separately (expo-font plugin in `app.json` or `react-native-asset` for bare RN). Font family names in `@theme` must exactly match filenames (without extension). Use platform media queries for per-platform fonts:
+**Custom Fonts**: Uniwind maps className to font-family only — font files must be loaded separately (expo-font plugin in `app.json` or `react-native-asset` for bare RN). Font family names in `@theme` must exactly match filenames (without extension). Use `@variant` for per-platform fonts (must be inside `@layer theme { :root { } }`):
 ```css
-@media ios { --font-sans: 'SF Pro Text'; }
-@media android { --font-sans: 'Roboto-Regular'; }
+@layer theme {
+  :root {
+    @variant ios { --font-sans: 'SF Pro Text'; }
+    @variant android { --font-sans: 'Roboto-Regular'; }
+    @variant web { --font-sans: 'system-ui'; }
+  }
+}
 ```
 
 **Data Selectors**: Use `data-[prop=value]:utility` for prop-based styling. Only equality checks supported:
