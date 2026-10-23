@@ -351,7 +351,7 @@ separate `Kompose Dev` profile.
 ### 6.9 Effect-TS Service Architecture
 - **Pattern**: All backend services use `Effect.Service` with `accessors: true` and `Effect.fn("Service.method")` for automatic OTel tracing spans.
 - **Errors**: Each domain uses `Schema.TaggedError` for typed, compile-time-checked error channels. Callers handle errors with `Effect.catchTags`.
-- **Layer composition**: Services declare `dependencies: [...]` for automatic wiring. At the router level, service layers are merged with `TelemetryLive` (e.g. `Layer.merge(TaskService.Default, TelemetryLive)`).
+- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/experimental-effect`) that get services from that runtime through the request context, and each router maps its tagged errors with `effectErrors`.
 - **Services implemented**: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
 - See [`services.md`](./services.md) for full method/error tables.
 

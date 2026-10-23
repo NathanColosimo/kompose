@@ -203,16 +203,11 @@ so they target the same keys as normal reads.
 
 ## Layer Composition
 
-The cache service is provided alongside telemetry via a merged layer:
+`GoogleCalendarCacheService.layer` is part of `AppLayer` in `runtime.ts`, so handlers get it from the shared `appRuntime` through the oRPC context:
 
 ```ts
-const GoogleCalLive = Layer.merge(GoogleCalendarCacheService.Default, TelemetryLive);
-
-// Used in every handler
-Effect.runPromise(
-  program.pipe(
-    Effect.provide(GoogleCalLive),
-    Effect.match({ onSuccess, onFailure: handleError })
-  )
-);
+list: os.calendars.list.effect(function* ({ input, context }) {
+  const cache = yield* GoogleCalendarCacheService;
+  // ...
+}),
 ```

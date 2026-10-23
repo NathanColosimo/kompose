@@ -49,11 +49,10 @@ BatchSpanProcessor → SpanAttributeFilter → OTLPTraceExporter → Axiom (or J
 
 ### Effect telemetry layer
 
-Exported as `TelemetryLive` — a `Layer<never>` that is merged with service layers at the router level:
+Exported as `TelemetryLive` — a `Layer<never>` that is merged into `AppLayer` in `runtime.ts`, so every effectful handler runs with it:
 
 ```ts
-const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
-const GoogleCalLive = Layer.merge(GoogleCalendarCacheService.Default, TelemetryLive);
+const AppLayer = Layer.mergeAll(DatabaseLive, TaskService.layer, /* ... */, TelemetryLive);
 ```
 
 When no exporter is configured, `TelemetryLive` resolves to `Layer.empty` — everything no-ops gracefully.

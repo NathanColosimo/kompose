@@ -11,5 +11,4 @@ export const errorStatusMap: Record<string, number> = {
   GOOGLE_API_ERROR: 500,
   GOOGLE_MAPS_ERROR: 500,
   PARSE_ERROR: 500,
-  UNKNOWN_ERROR: 500,
 };

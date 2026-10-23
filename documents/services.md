@@ -62,17 +62,25 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 
 ### Router pattern
 
-Handlers call the service directly (no `Effect.gen` wrapper), provide a merged layer (`TaskService.Default` + `TelemetryLive`), and map errors to `ORPCError` via `Effect.match`. Mutating operations publish a realtime `tasks` event via `publishToUserBestEffort`.
+Handlers are Effect generators (`.effect(function* ...)` from `@orpc/experimental-effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own tagged errors to `ORPCError` once with `effectErrors`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
 
 ```ts
-TaskService.listTasks(userId).pipe(
-  Effect.map((tasks) => tasks.map(normalizeTaskTags)),
-  Effect.provide(TaskLive),
-  Effect.match({
-    onSuccess: (value) => value,
-    onFailure: handleError,
-  }),
-)
+const os = implement(taskContract)
+  .$context<Context>()
+  .use(requireAuth)
+  .use(globalRateLimit)
+  .use(
+    effectErrors<TaskError | LinkParseError>({
+      TaskNotFoundError: (error) =>
+        new ORPCError("NOT_FOUND", { cause: error, message: `Task not found: ${error.taskId}` }),
+      // ...one entry per tag; the type requires every tag in the union
+    })
+  );
+
+list: os.list.effect(function* ({ context }) {
+  const tasks = yield* TaskService.use((service) => service.listTasks(context.user.id));
+  return tasks.map(normalizeTaskTags);
+}),
 ```
 
 ---
@@ -161,10 +169,10 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. All handlers use a single `Effect.runPromise` call.
+Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. Google errors are mapped once on the router with `effectErrors`, which adds the request's `accountId` and `userId` to the error data.
 
 ```ts
-const program = Effect.gen(function* () {
+list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
   const accessToken = yield* checkGoogleAccountIsLinked(userId, accountId);
 
@@ -176,14 +184,7 @@ const program = Effect.gen(function* () {
   const data = yield* service.listCalendars();
   yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
   return data;
-});
-
-return Effect.runPromise(
-  program.pipe(
-    Effect.provide(GoogleCalLive),
-    Effect.match({ onSuccess: (v) => v, onFailure: handleError })
-  )
-);
+}),
 ```
 
 Cache layer details are documented in [`caching.md`](./caching.md).
@@ -359,7 +360,7 @@ Redis-backed rate limiters using `@orpc/ratelimit`, with a small `BunRedisRateLi
 Full details in [`otel.md`](./otel.md). Summary:
 
 1. **`NodeSDK`** — single global `TracerProvider` with `ORPCInstrumentation` for automatic oRPC handler/middleware spans. Exports to Axiom (or local Jaeger) via OTLP HTTP.
-2. **`Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same provider. Exported as `TelemetryLive` layer, merged with service layers at the router level.
+2. **`Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same provider. Exported as `TelemetryLive` layer, merged into `AppLayer` in `runtime.ts`.
 3. **`SpanAttributeFilter`** — strips noisy Next.js internal attributes before export.
 4. **`instrumentation.ts`** — Next.js hook ensuring early `NodeSDK.start()` to prevent orphaned root spans.
 
@@ -460,20 +461,23 @@ Effect.catchTags({
 
 ### Layer composition
 
-At the route/router level, provide the service layer — all transitive dependencies are resolved automatically via `dependencies`.
+Every service layer is merged once into `AppLayer` in `runtime.ts`, and `appRuntime` (a `ManagedRuntime`) builds it once per process. Layers referenced more than once, like `DatabaseLive`, are built once, so all requests share one Postgres pool. Code outside oRPC handlers runs through the same runtime:
 
 ```ts
-// Webhook services (auto-wired via dependencies)
-WebhookService.refreshAll({ userId }).pipe(
-  Effect.provide(WebhookService.Default)
-)
-
-// Task/Tag services (merged with TelemetryLive at router level)
-const TaskLive = Layer.merge(TaskService.Default, TelemetryLive);
-TaskService.listTasks(userId).pipe(
-  Effect.provide(TaskLive),
-)
+// Google webhook route
+await appRuntime.runPromise(
+  WebhookService.use((service) => service.handleGoogleNotification({ headers }))
+);
 ```
+
+Don't `Effect.provide` a service layer per request: each call builds the layer again, including a new Postgres pool.
+
+### Effect ↔ oRPC bridge
+
+- `createContext` adds `effect/context` (from `appRuntime.context()`) and `effect/wrap` to the oRPC context. `@orpc/experimental-effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
+- `effect/wrap` in `createContext` maps errors any router can hit (`EffectDrizzleQueryError` → `INTERNAL_SERVER_ERROR`).
+- `effectErrors(mappers)` (in `index.ts`) is a router middleware that maps that router's tagged errors to `ORPCError` and then hands the rest to the outer wrap. Unmapped failures become a generic `INTERNAL_SERVER_ERROR`.
+- Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
 
 ---
 
@@ -483,4 +487,4 @@ TaskService.listTasks(userId).pipe(
 |-------------|------|----------|
 | oRPC handler | `apps/web/src/app/api/rpc/[[...rest]]/route.ts` | All oRPC routes — tasks, tags, google-cal, maps, sync |
 | SSE connect | `routers/sync/router.ts` | Fire-and-forget `refreshAll` then return Redis iterator |
-| Google webhook | `apps/web/src/app/api/webhooks/google-calendar/route.ts` | `handleGoogleNotification` → map errors to HTTP → optional follow-up `refreshAll` |
+| Google webhook | `apps/web/src/app/api/webhooks/google-calendar/route.ts` | `handleGoogleNotification` → map errors to HTTP → optional follow-up `refreshAll`, all through `appRuntime` |

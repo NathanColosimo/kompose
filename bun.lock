@@ -165,6 +165,7 @@
         "@opentelemetry/sdk-node": "catalog:",
         "@opentelemetry/sdk-trace-base": "catalog:",
         "@orpc/contract": "catalog:",
+        "@orpc/experimental-effect": "catalog:",
         "@orpc/opentelemetry": "catalog:",
         "@orpc/ratelimit": "catalog:",
         "@orpc/server": "catalog:",
@@ -311,6 +312,7 @@
     "@opentelemetry/sdk-trace-base": "^2.12.0",
     "@orpc/client": "2.0.0-beta.45",
     "@orpc/contract": "2.0.0-beta.45",
+    "@orpc/experimental-effect": "2.0.0-beta.45",
     "@orpc/openapi": "2.0.0-beta.45",
     "@orpc/opentelemetry": "2.0.0-beta.45",
     "@orpc/ratelimit": "2.0.0-beta.45",
@@ -937,6 +939,8 @@
     "@orpc/client": ["@orpc/client@2.0.0-beta.45", "", { "dependencies": { "@orpc/shared": "2.0.0-beta.45", "@standard-server/core": "~0.11.0", "@standard-server/fetch": "~0.11.0", "@standard-server/peer": "~0.11.0" } }, "sha512-7i19zp7FOsX3ZreBgnccLuvHJmDlM1j2oUnTFT+aEYwetCZ6TgT0RZvjjsZ7GkchU8No4UfMXeXzeEFfyz4yOw=="],
 
     "@orpc/contract": ["@orpc/contract@2.0.0-beta.45", "", { "dependencies": { "@orpc/client": "2.0.0-beta.45", "@orpc/shared": "2.0.0-beta.45", "@standard-schema/spec": "^1.1.0" } }, "sha512-6Ayqk0ogJm7u0f0b8+iQgo2NCJYCahpjn6x1wts1vB4itsfbkL/3kUDy4i37eUKVbSl/o3Q/LGEs/ju5cCdV/Q=="],
+
+    "@orpc/experimental-effect": ["@orpc/experimental-effect@2.0.0-beta.45", "", { "dependencies": { "@orpc/client": "2.0.0-beta.45", "@orpc/contract": "2.0.0-beta.45", "@orpc/json-schema": "2.0.0-beta.45", "@orpc/server": "2.0.0-beta.45", "@orpc/shared": "2.0.0-beta.45" }, "peerDependencies": { "effect": ">=4.0.0" } }, "sha512-Gz/Jg2H/4alxkvWQ6KftguojU9dTotbAZtvsGXMeZ/OEPK1BLHnSszA3/2VxbbU+dXRQhtZUbOc2lTD8x9CtlQ=="],
 
     "@orpc/json-schema": ["@orpc/json-schema@2.0.0-beta.45", "", { "dependencies": { "@openapi-spec/types": "~0.3.0", "@orpc/client": "2.0.0-beta.45", "@orpc/contract": "2.0.0-beta.45", "@orpc/server": "2.0.0-beta.45", "@orpc/shared": "2.0.0-beta.45", "@standard-schema/spec": "^1.1.0" } }, "sha512-SqviqAvuZZK2xulKUn5sy0WrgyUD2HOfzxof2TkVvm3CA/W1aF/k10WFUR7MvJ7DBz5kM3plkX3jS4GKrVqRXQ=="],
 

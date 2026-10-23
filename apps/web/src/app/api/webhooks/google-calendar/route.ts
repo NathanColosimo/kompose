@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/correctness/noNestedComponentDefinitions: route handler */
-import { WebhookLive } from "@kompose/api/webhooks/live";
+import { appRuntime } from "@kompose/api/runtime";
 import { WebhookService } from "@kompose/api/webhooks/webhook-service";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { Effect } from "effect";
@@ -25,7 +25,7 @@ export async function POST(request: Request): Promise<Response> {
       }
 
       try {
-        const result = await Effect.runPromise(
+        const result = await appRuntime.runPromise(
           WebhookService.use((service) =>
             service.handleGoogleNotification({
               headers: request.headers,
@@ -36,8 +36,7 @@ export async function POST(request: Request): Promise<Response> {
                 Effect.succeed(new Response(error.message, { status: 202 })),
               WebhookValidationError: (error) =>
                 Effect.succeed(new Response(error.message, { status: 400 })),
-            }),
-            Effect.provide(WebhookLive)
+            })
           )
         );
 
@@ -49,7 +48,7 @@ export async function POST(request: Request): Promise<Response> {
 
         // Fire-and-forget webhook refresh when calendar list changes
         if (result.followUpRefresh) {
-          Effect.runPromise(
+          appRuntime.runFork(
             WebhookService.use((service) =>
               service.refreshAll({
                 accountId: result.followUpRefresh.accountId,
@@ -62,9 +61,9 @@ export async function POST(request: Request): Promise<Response> {
                   { error }
                 )
               ),
-              Effect.provide(WebhookLive)
+              Effect.ignore
             )
-          ).catch(() => undefined);
+          );
         }
 
         span.setAttribute("http.status_code", 200);

@@ -1,17 +1,21 @@
 import { implement } from "@orpc/server";
 import { Effect } from "effect";
 import { requireAuth } from "../..";
+import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { createUserSyncEventIterator } from "../../realtime/sync";
-import { WebhookLive } from "../../webhooks/live";
 import { WebhookService } from "../../webhooks/webhook-service";
 import { syncContract } from "./contract";
 
-const os = implement(syncContract).use(requireAuth).use(globalRateLimit);
+const os = implement(syncContract)
+  .$context<Context>()
+  .use(requireAuth)
+  .use(globalRateLimit);
 
 export const syncRouter = os.router({
   events: os.events.handler(({ context }) => {
-    Effect.runPromise(
+    // Fire-and-forget: the stream shouldn't wait on Google watch renewal.
+    Effect.runForkWith(context["effect/context"])(
       WebhookService.use((service) =>
         service.refreshAll({
           userId: context.user.id,
@@ -23,9 +27,9 @@ export const syncRouter = os.router({
             userId: context.user.id,
           })
         ),
-        Effect.provide(WebhookLive)
+        Effect.ignore
       )
-    ).catch(() => undefined);
+    );
 
     return createUserSyncEventIterator(context.user.id);
   }),
