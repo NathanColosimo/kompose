@@ -1,8 +1,8 @@
 import { env } from "@kompose/env";
 import { ratelimit } from "@orpc/ratelimit";
 import { BaseRedisRateLimiter } from "@orpc/ratelimit/base-redis";
+import type { User } from "better-auth";
 import { RedisClient } from "bun";
-import type { Context } from "./context";
 
 /** Dedicated Redis client for rate limiting (separate from pub/sub client) */
 const redisClient = new RedisClient(env.REDIS_URL);
@@ -41,16 +41,14 @@ const mapsLimiter = new BunRedisRateLimiter({
   window: 60_000,
 });
 
-type AuthedContext = Context & { user: NonNullable<Context["user"]> };
-
 /** Global rate limit middleware — apply after requireAuth on all routers */
-export const globalRateLimit = ratelimit<AuthedContext, unknown>({
+export const globalRateLimit = ratelimit<{ user: User }, unknown>({
   key: ({ context }) => context.user.id,
   limiter: globalLimiter,
 });
 
 /** Maps-specific rate limit middleware — apply on the maps router only */
-export const mapsRateLimit = ratelimit<AuthedContext, unknown>({
+export const mapsRateLimit = ratelimit<{ user: User }, unknown>({
   key: ({ context }) => context.user.id,
   limiter: mapsLimiter,
 });
