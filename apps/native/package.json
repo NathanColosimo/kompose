@@ -7,6 +7,7 @@
     "android": "expo run:android",
     "build": "expo export --platform ios",
     "dev": "expo start",
+    "doctor": "expo-doctor",
     "ios": "expo run:ios",
     "prebuild:native": "expo prebuild",
     "type-check": "tsc --noEmit",
