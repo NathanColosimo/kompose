@@ -343,7 +343,7 @@ A plain Next.js `POST` handler (not an oRPC route). It:
 
 **File:** `ratelimit.ts`
 
-Redis-backed rate limiters using `@orpc/experimental-ratelimit`.
+Redis-backed rate limiters using `@orpc/ratelimit`, with a small `BunRedisRateLimiter` adapter that runs its Lua script through Bun's `RedisClient`.
 
 | Limiter | Limit | Applied to |
 |---------|-------|------------|

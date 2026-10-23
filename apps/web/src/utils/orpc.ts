@@ -2,7 +2,7 @@ import type { AppRouterClient } from "@kompose/api/routers/index";
 import { env } from "@kompose/env";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { RetryAfterPlugin } from "@orpc/client/plugins";
+import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -38,9 +38,9 @@ export function createAppQueryClient({
 }
 
 const link = new RPCLink({
-  fetch(_url, options) {
-    return fetch(_url, {
-      ...options,
+  fetch(url, init) {
+    return globalThis.fetch(url, {
+      ...init,
       credentials: "include",
     });
   },
@@ -55,8 +55,9 @@ const link = new RPCLink({
     const { headers } = await import("next/headers");
     return Object.fromEntries(await headers());
   },
-  plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
-  url: `${env.NEXT_PUBLIC_WEB_URL}/api/rpc`,
+  origin: env.NEXT_PUBLIC_WEB_URL,
+  plugins: [new RetryAfterLinkPlugin({ maxAttempts: 2 })],
+  url: "/api/rpc",
 });
 
 export const orpc: AppRouterClient = createORPCClient(link);

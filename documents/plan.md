@@ -380,7 +380,7 @@ separate `Kompose Dev` profile.
 - **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
 
 ### 6.13 Rate Limiting
-- **Implementation**: Redis-backed via `@orpc/experimental-ratelimit` with Lua script evaluation (`EVAL`).
+- **Implementation**: Redis-backed via `@orpc/ratelimit` with Lua script evaluation (`EVAL`) through Bun's `RedisClient`.
 - **Limiters**:
   - Global: 200 req/60s per user — applied to all authenticated endpoints.
   - Maps: 20 req/60s per user — stacked on top of global for Google Places search (per-request cost).
