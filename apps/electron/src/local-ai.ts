@@ -47,14 +47,20 @@ function request(
       reject(signal.reason);
       return;
     }
-    signal?.addEventListener("abort", () => {
+    const onAbort = () => {
       helper.stdin.write(`${JSON.stringify({ id, type: "cancel" })}\n`);
       pending.delete(id);
-      reject(signal.reason);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    pending.set(id, (reply) => {
+      signal?.removeEventListener("abort", onAbort);
+      if (reply.error) {
+        reject(new Error(reply.error));
+      } else {
+        resolve(reply);
+      }
     });
-    pending.set(id, (reply) =>
-      reply.error ? reject(new Error(reply.error)) : resolve(reply)
-    );
     helper.stdin.write(`${JSON.stringify({ id, ...body })}\n`);
   });
 }

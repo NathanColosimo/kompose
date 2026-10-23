@@ -6,6 +6,7 @@
     "build": "bun run --bun next build",
     "dev": "PORTLESS_PORT=443 PORTLESS_APP_PORT=3000 PORTLESS_TLD=dev PORTLESS_HTTPS=1 portless local.kompose bun run --bun next dev",
     "start": "bun run --bun next start",
+    "test": "bun test",
     "type-check": "SKIP_ENV_VALIDATION=1 bun run --bun next typegen && tsc --noEmit"
   },
   "dependencies": {

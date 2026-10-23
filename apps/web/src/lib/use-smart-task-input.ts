@@ -8,8 +8,20 @@ import {
 } from "@tanstack/react-query";
 import {
   isSmartTaskInputAvailable,
+  type SmartTaskInput,
   smartParseTaskInput,
 } from "@/lib/smart-task-input";
+
+/**
+ * Where on-device parsing stands for the current text. `result` is null when
+ * the model answered nothing usable.
+ */
+export type SmartParse =
+  /** No model, or the input isn't sent to it. */
+  | { status: "off" }
+  /** Running; `previous` is the last result, for earlier text. */
+  | { status: "reading"; previous: SmartTaskInput | null }
+  | { status: "done"; result: SmartTaskInput | null };
 
 /** How long typing must pause before the model runs for the preview. */
 const DEBOUNCE_MS = 300;
@@ -58,10 +70,9 @@ function parseQuery(text: string, tagNames: string[]) {
 }
 
 /**
- * On-device parsing of `text` for the live preview. While a newer request
- * runs, the last result stays visible and `stale` is true. `resolve` returns
- * the result for submit, reusing the in-flight request. Pass null to skip
- * parsing (for example, when explicit tokens are present).
+ * On-device parsing of `text` for the live preview. `resolve` returns the
+ * result for submit, reusing the in-flight request. Pass null to skip parsing
+ * (for example, when explicit tokens are present).
  */
 export function useSmartTaskInput(text: string | null, tagNames: string[]) {
   const queryClient = useQueryClient();
@@ -86,11 +97,14 @@ export function useSmartTaskInput(text: string | null, tagNames: string[]) {
     return await Promise.race([parsed, timeout]);
   };
 
-  return {
-    available,
-    pending: enabled && query.isFetching,
-    resolve,
-    result: enabled ? (query.data ?? null) : null,
-    stale: enabled && query.isPlaceholderData,
-  };
+  let parse: SmartParse = { status: "off" };
+  if (enabled) {
+    const data = query.data ?? null;
+    parse =
+      query.isFetching || query.isPlaceholderData
+        ? { previous: data, status: "reading" }
+        : { result: data, status: "done" };
+  }
+
+  return { available, parse, resolve };
 }

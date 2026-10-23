@@ -2,6 +2,7 @@
 
 import { parse } from "chrono-node";
 import { Temporal } from "temporal-polyfill";
+import type { ParsedTaskInput } from "@/lib/task-input-parser";
 
 /**
  * On-device natural-language task parsing through the browser Prompt API
@@ -29,14 +30,16 @@ declare global {
   var LanguageModel: PromptAPI | undefined;
 }
 
-export interface SmartTaskInput {
-  dueDate: Temporal.PlainDate | null;
-  durationMinutes: number | null;
-  startDate: Temporal.PlainDate | null;
-  startTime: Temporal.PlainTime | null;
-  tagNames: string[];
-  title: string;
-}
+/** The fields the model fills; they replace the same fields of the typed parse. */
+export type SmartTaskInput = Pick<
+  ParsedTaskInput,
+  | "dueDate"
+  | "durationMinutes"
+  | "startDate"
+  | "startTime"
+  | "tagNames"
+  | "title"
+>;
 
 interface Extraction {
   deadlineText?: string;
@@ -164,7 +167,15 @@ function verbatim(phrase: string | undefined, input: string) {
  * Widen a phrase to the whole date expression chrono finds around it, since
  * the model sometimes clips one ("in 2 days" of "in 2 days at 4").
  */
-function widen(phrase: string, input: string, referenceDate: Date) {
+function widen({
+  input,
+  phrase,
+  referenceDate,
+}: {
+  input: string;
+  phrase: string;
+  referenceDate: Date;
+}) {
   const lower = phrase.toLowerCase();
   const match = parse(input, referenceDate, { forwardDate: true }).find(
     (result) => result.text.toLowerCase().includes(lower)
@@ -173,11 +184,15 @@ function widen(phrase: string, input: string, referenceDate: Date) {
 }
 
 /** Keep only phrases from the input and sort out start vs deadline. */
-function checkPhrases(
-  extraction: Extraction,
-  input: string,
-  referenceDate: Date
-) {
+export function checkPhrases({
+  extraction,
+  input,
+  referenceDate,
+}: {
+  extraction: Extraction;
+  input: string;
+  referenceDate: Date;
+}) {
   let when = verbatim(extraction.whenText, input);
   let deadline = verbatim(extraction.deadlineText, input);
   // "before end of month" is a deadline even when the model calls it a start.
@@ -192,7 +207,7 @@ function checkPhrases(
   return {
     deadline,
     duration: verbatim(extraction.durationText, input),
-    when: when && widen(when, input, referenceDate),
+    when: when && widen({ input, phrase: when, referenceDate }),
   };
 }
 
@@ -219,7 +234,7 @@ export async function smartParseTaskInput(
       signal,
     });
     const extraction = JSON.parse(raw) as Extraction;
-    const phrases = checkPhrases(extraction, input, referenceDate);
+    const phrases = checkPhrases({ extraction, input, referenceDate });
     const when = phrases.when ? resolveWhen(phrases.when, referenceDate) : null;
     const due = phrases.deadline
       ? resolveWhen(phrases.deadline, referenceDate)

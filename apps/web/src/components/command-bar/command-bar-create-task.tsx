@@ -41,7 +41,7 @@ import {
   parseTaskInput,
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
-import { useSmartTaskInput } from "@/lib/use-smart-task-input";
+import { type SmartParse, useSmartTaskInput } from "@/lib/use-smart-task-input";
 import { cn } from "@/lib/utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
@@ -66,27 +66,31 @@ function hasExplicitTokens(parsed: ParsedTaskInput) {
   );
 }
 
-/**
- * Fill fields from on-device parsing; only used when no tokens were typed.
- * A stale result (for earlier text) keeps the typed title, which is current.
- */
+/** Fill fields from on-device parsing; only used when no tokens were typed. */
 function withSmartInput(
   parsed: ParsedTaskInput,
-  smart: SmartTaskInput | null,
-  stale = false
+  smart: SmartTaskInput | null
 ): ParsedTaskInput {
-  if (!smart) {
-    return parsed;
+  return smart ? { ...parsed, ...smart } : parsed;
+}
+
+/**
+ * The preview for the current parse. While a newer request runs, the last
+ * result's fields stay, but the title is the typed one, which is current.
+ */
+function previewInput(typed: ParsedTaskInput, parse: SmartParse) {
+  switch (parse.status) {
+    case "off":
+      return typed;
+    case "done":
+      return withSmartInput(typed, parse.result);
+    case "reading":
+      return parse.previous
+        ? { ...withSmartInput(typed, parse.previous), title: typed.title }
+        : typed;
+    default:
+      return parse satisfies never;
   }
-  return {
-    ...parsed,
-    dueDate: smart.dueDate,
-    durationMinutes: smart.durationMinutes,
-    startDate: smart.startDate,
-    startTime: smart.startTime,
-    tagNames: smart.tagNames,
-    title: stale ? parsed.title : smart.title,
-  };
 }
 
 /** Build task data from parsed input and resolved link metadata */
@@ -178,13 +182,14 @@ function startLabel(date: Temporal.PlainDate, time: Temporal.PlainTime | null) {
  * the end of the row so the badges don't shift when it appears.
  */
 function OnDeviceStatus({
-  parsed,
-  pending,
+  parse,
+  resolving,
 }: {
-  parsed: boolean;
-  pending: boolean;
+  parse: SmartParse;
+  resolving: boolean;
 }) {
-  if (!(parsed || pending)) {
+  const reading = resolving || parse.status === "reading";
+  if (!(reading || (parse.status === "done" && parse.result))) {
     return null;
   }
   return (
@@ -192,24 +197,24 @@ function OnDeviceStatus({
       className="ml-auto flex shrink-0 items-center gap-1 self-start text-[11px] text-muted-foreground"
       title="Dates and times are read on this device; nothing leaves it."
     >
-      {pending ? (
+      {reading ? (
         <Loader2Icon className="size-3 animate-spin" />
       ) : (
         <SparklesIcon className="size-3" />
       )}
-      {pending ? "Reading…" : "On-device"}
+      {reading ? "Reading…" : "On-device"}
     </span>
   );
 }
 
 /** Model-filled fields fade in, and dim while a newer request replaces them. */
-function smartFieldClassName(fromModel: boolean, stale: boolean) {
-  return fromModel
-    ? cn(
-        "fade-in-0 animate-in transition-opacity duration-150",
-        stale && "opacity-50"
-      )
-    : undefined;
+function smartFieldClassName(parse: SmartParse) {
+  if (parse.status === "done" && parse.result) {
+    return "fade-in-0 animate-in transition-opacity duration-150";
+  }
+  if (parse.status === "reading" && parse.previous) {
+    return "opacity-50 transition-opacity duration-150";
+  }
 }
 
 function TokenHints() {
@@ -272,11 +277,8 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || typed.title.length < 3 ? null : typed.title,
     tagNames
   );
-  const parsed = withSmartInput(typed, smartInput.result, smartInput.stale);
-  const smartClassName = smartFieldClassName(
-    smartInput.result !== null,
-    smartInput.stale
-  );
+  const parsed = previewInput(typed, smartInput.parse);
+  const smartClassName = smartFieldClassName(smartInput.parse);
   const [resolving, startResolving] = useTransition();
 
   // Links alone are enough to create a task — the title will come from metadata
@@ -399,7 +401,7 @@ export function CommandBarCreateTask({
     if (!isValid || createTask.isPending || resolving) {
       return;
     }
-    if (!smartInput.pending) {
+    if (smartInput.parse.status !== "reading") {
       createFrom(parsed);
       return;
     }
@@ -473,8 +475,8 @@ export function CommandBarCreateTask({
                     {createItemLabel}
                   </span>
                   <OnDeviceStatus
-                    parsed={smartInput.result !== null}
-                    pending={smartInput.pending || resolving}
+                    parse={smartInput.parse}
+                    resolving={resolving}
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
