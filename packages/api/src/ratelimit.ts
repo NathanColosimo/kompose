@@ -1,35 +1,18 @@
 import { env } from "@kompose/env";
 import { ratelimit } from "@orpc/ratelimit";
-import {
-  BaseRedisRateLimiter,
-  type BaseRedisRateLimiterOptions,
-} from "@orpc/ratelimit/base-redis";
+import { BaseRedisRateLimiter } from "@orpc/ratelimit/base-redis";
 import { RedisClient } from "bun";
 import type { Context } from "./context";
 
 /** Dedicated Redis client for rate limiting (separate from pub/sub client) */
 const redisClient = new RedisClient(env.REDIS_URL);
 
-/**
- * oRPC's built-in Redis adapter expects a node-redis client, so this adapter
- * runs the same fixed-window Lua script through Bun's Redis client instead.
- */
+/** oRPC's Redis rate limiter, run through Bun's Redis client */
 class BunRedisRateLimiter extends BaseRedisRateLimiter {
-  readonly #client: RedisClient;
-
-  constructor(client: RedisClient, options: BaseRedisRateLimiterOptions) {
-    super(options);
-    this.#client = client;
-  }
-
-  protected evalScript(
-    script: string,
-    keys: string[],
-    args: string[]
-  ): Promise<unknown> {
-    return this.#client.send("EVAL", [
+  protected evalScript(script: string, keys: string[], args: string[]) {
+    return redisClient.send("EVAL", [
       script,
-      keys.length.toString(),
+      String(keys.length),
       ...keys,
       ...args,
     ]);
@@ -41,7 +24,7 @@ class BunRedisRateLimiter extends BaseRedisRateLimiter {
  * Covers all authenticated endpoints as a baseline protection
  * against runaway clients or compromised accounts.
  */
-const globalLimiter = new BunRedisRateLimiter(redisClient, {
+const globalLimiter = new BunRedisRateLimiter({
   maxRequests: 200,
   prefix: "orpc:ratelimit:global:",
   window: 60_000,
@@ -52,7 +35,7 @@ const globalLimiter = new BunRedisRateLimiter(redisClient, {
  * Tighter limit because maps search hits the external Google Places API
  * which has per-request costs.
  */
-const mapsLimiter = new BunRedisRateLimiter(redisClient, {
+const mapsLimiter = new BunRedisRateLimiter({
   maxRequests: 20,
   prefix: "orpc:ratelimit:maps:",
   window: 60_000,
