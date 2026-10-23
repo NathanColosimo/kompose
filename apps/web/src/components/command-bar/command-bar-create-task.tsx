@@ -17,7 +17,15 @@ import {
   PlayCircleIcon,
   SparklesIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +42,7 @@ import {
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { useSmartTaskInput } from "@/lib/use-smart-task-input";
+import { cn } from "@/lib/utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
 const EMPTY_TAGS: TagSelect[] = [];
@@ -57,10 +66,14 @@ function hasExplicitTokens(parsed: ParsedTaskInput) {
   );
 }
 
-/** Fill fields from on-device parsing; only used when no tokens were typed. */
+/**
+ * Fill fields from on-device parsing; only used when no tokens were typed.
+ * A stale result (for earlier text) keeps the typed title, which is current.
+ */
 function withSmartInput(
   parsed: ParsedTaskInput,
-  smart: SmartTaskInput | null
+  smart: SmartTaskInput | null,
+  stale = false
 ): ParsedTaskInput {
   if (!smart) {
     return parsed;
@@ -72,7 +85,7 @@ function withSmartInput(
     startDate: smart.startDate,
     startTime: smart.startTime,
     tagNames: smart.tagNames,
-    title: smart.title,
+    title: stale ? parsed.title : smart.title,
   };
 }
 
@@ -127,8 +140,44 @@ function buildTaskDataFromParsed(
   };
 }
 
-/** Marks a preview filled (or being filled) by the on-device model. */
-function OnDeviceBadge({
+const DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  day: "numeric",
+  month: "short",
+  weekday: "short",
+};
+const TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  hour: "numeric",
+  minute: "2-digit",
+};
+
+function PreviewBadge({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Badge
+      className={cn("h-6 gap-1.5 px-2 font-normal text-[11px]", className)}
+      variant="secondary"
+    >
+      {children}
+    </Badge>
+  );
+}
+
+/** Label for a start date, with the time when one was given. */
+function startLabel(date: Temporal.PlainDate, time: Temporal.PlainTime | null) {
+  const day = formatPlainDate(date, DATE_FORMAT);
+  return time ? `${day} · ${time.toLocaleString(undefined, TIME_FORMAT)}` : day;
+}
+
+/**
+ * Shows that the on-device model filled (or is filling) the preview. Sits at
+ * the end of the row so the badges don't shift when it appears.
+ */
+function OnDeviceStatus({
   parsed,
   pending,
 }: {
@@ -139,38 +188,46 @@ function OnDeviceBadge({
     return null;
   }
   return (
-    <Badge
-      className="h-6 gap-1.5 px-2 text-[11px]"
-      title="Parsed on this device"
-      variant="secondary"
+    <span
+      className="ml-auto flex shrink-0 items-center gap-1 self-start text-[11px] text-muted-foreground"
+      title="Dates and times are read on this device; nothing leaves it."
     >
       {pending ? (
-        <Loader2Icon className="size-3.5 animate-spin" />
+        <Loader2Icon className="size-3 animate-spin" />
       ) : (
-        <SparklesIcon className="size-3.5" />
+        <SparklesIcon className="size-3" />
       )}
-      On-device
-    </Badge>
+      {pending ? "Reading…" : "On-device"}
+    </span>
   );
 }
 
-function StartBadge({
-  date,
-  time,
-}: {
-  date: Temporal.PlainDate;
-  time: Temporal.PlainTime | null;
-}) {
+/** Model-filled fields fade in, and dim while a newer request replaces them. */
+function smartFieldClassName(fromModel: boolean, stale: boolean) {
+  return fromModel
+    ? cn(
+        "fade-in-0 animate-in transition-opacity duration-150",
+        stale && "opacity-50"
+      )
+    : undefined;
+}
+
+function TokenHints() {
   return (
-    <Badge className="h-6 gap-1.5 px-2 text-[11px]" variant="secondary">
-      <PlayCircleIcon className="size-3.5" />
-      {formatPlainDate(date, { day: "numeric", month: "short" })}
-      {time &&
-        ` ${time.toLocaleString(undefined, {
-          hour: "numeric",
-          minute: "2-digit",
-        })}`}
-    </Badge>
+    <div className="flex justify-center gap-3 text-muted-foreground">
+      <span>
+        <code className="rounded bg-muted px-1">=</code> duration
+      </span>
+      <span>
+        <code className="rounded bg-muted px-1">&gt;</code> due
+      </span>
+      <span>
+        <code className="rounded bg-muted px-1">~</code> start
+      </span>
+      <span>
+        <code className="rounded bg-muted px-1">#</code> tag
+      </span>
+    </div>
   );
 }
 
@@ -215,8 +272,12 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || typed.title.length < 3 ? null : typed.title,
     tagNames
   );
-  const parsed = withSmartInput(typed, smartInput.result);
-  const [resolving, setResolving] = useState(false);
+  const parsed = withSmartInput(typed, smartInput.result, smartInput.stale);
+  const smartClassName = smartFieldClassName(
+    smartInput.result !== null,
+    smartInput.stale
+  );
+  const [resolving, startResolving] = useTransition();
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
@@ -314,19 +375,7 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  const handleCreate = async () => {
-    if (!isValid || createTask.isPending || resolving) {
-      return;
-    }
-
-    // Enter can beat the debounced parse; wait briefly for the model.
-    let input = parsed;
-    if (smartInput.pending) {
-      setResolving(true);
-      input = withSmartInput(typed, await smartInput.resolve());
-      setResolving(false);
-    }
-
+  const createFrom = (input: ParsedTaskInput) => {
     const matchedTagIds = Array.from(
       new Set(
         input.tagNames.flatMap((name) => {
@@ -344,6 +393,21 @@ export function CommandBarCreateTask({
     );
 
     createTask.mutate(taskData, { onSuccess: () => onCreated() });
+  };
+
+  const handleCreate = () => {
+    if (!isValid || createTask.isPending || resolving) {
+      return;
+    }
+    if (!smartInput.pending) {
+      createFrom(parsed);
+      return;
+    }
+    // Enter can beat the debounced parse; wait briefly for the model.
+    startResolving(async () => {
+      const smart = await smartInput.resolve();
+      createFrom(withSmartInput(typed, smart));
+    });
   };
 
   // Effective duration for display — explicit input takes priority
@@ -370,21 +434,12 @@ export function CommandBarCreateTask({
       {!isValid && matchingTags.length === 0 && (
         <CommandEmpty>
           <div className="space-y-2">
-            <p>Type a task title to create…</p>
-            <div className="flex justify-center gap-2 text-muted-foreground">
-              <span>
-                <code className="rounded bg-muted px-1">=</code> duration
-              </span>
-              <span>
-                <code className="rounded bg-muted px-1">&gt;</code> due
-              </span>
-              <span>
-                <code className="rounded bg-muted px-1">~</code> start
-              </span>
-              <span>
-                <code className="rounded bg-muted px-1">#</code> tag
-              </span>
-            </div>
+            <p>
+              {smartInput.available
+                ? "Describe a task, like “call mom tomorrow at 4 for 30m”"
+                : "Type a task title to create…"}
+            </p>
+            <TokenHints />
           </div>
         </CommandEmpty>
       )}
@@ -413,62 +468,51 @@ export function CommandBarCreateTask({
             <CommandItem onSelect={handleCreate} value={createItemValue}>
               <CheckIcon className="text-muted-foreground" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="truncate font-medium">{createItemLabel}</span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <OnDeviceBadge
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium">
+                    {createItemLabel}
+                  </span>
+                  <OnDeviceStatus
                     parsed={smartInput.result !== null}
                     pending={smartInput.pending || resolving}
                   />
-
-                  {effectiveDuration !== null && (
-                    <Badge
-                      className="h-6 gap-1.5 px-2 text-[11px]"
-                      variant="secondary"
-                    >
-                      <ClockIcon className="size-3.5" />
-                      {formatDuration(effectiveDuration)}
-                    </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {parsed.startDate && (
+                    <PreviewBadge className={smartClassName}>
+                      <PlayCircleIcon className="size-3.5" />
+                      {startLabel(parsed.startDate, parsed.startTime)}
+                    </PreviewBadge>
                   )}
 
                   {parsed.dueDate && (
-                    <Badge
-                      className="h-6 gap-1.5 px-2 text-[11px]"
-                      variant="secondary"
-                    >
+                    <PreviewBadge className={smartClassName}>
                       <CalendarIcon className="size-3.5" />
-                      {formatPlainDate(parsed.dueDate, {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </Badge>
+                      Due {formatPlainDate(parsed.dueDate, DATE_FORMAT)}
+                    </PreviewBadge>
+                  )}
+
+                  {effectiveDuration !== null && (
+                    <PreviewBadge className={smartClassName}>
+                      <ClockIcon className="size-3.5" />
+                      {formatDuration(effectiveDuration)}
+                    </PreviewBadge>
                   )}
 
                   {/* Link badges — one per detected URL */}
                   {parsed.links.map((url) => {
                     const meta = linkMetaMap[url];
-                    const isPending = pendingUrls.has(url);
                     return (
-                      <Badge
-                        className="h-6 gap-1.5 px-2 text-[11px]"
-                        key={url}
-                        variant="secondary"
-                      >
-                        {isPending ? (
+                      <PreviewBadge key={url}>
+                        {pendingUrls.has(url) ? (
                           <Loader2Icon className="size-3.5 animate-spin" />
                         ) : (
                           <Link2Icon className="size-3.5" />
                         )}
                         {meta ? getProviderLabel(meta.provider) : "Link"}
-                      </Badge>
+                      </PreviewBadge>
                     );
                   })}
-
-                  {parsed.startDate && (
-                    <StartBadge
-                      date={parsed.startDate}
-                      time={parsed.startTime}
-                    />
-                  )}
 
                   {parsed.tagNames.map((name) => {
                     const tag = tags.find((t) => t.name === name);
@@ -477,14 +521,10 @@ export function CommandBarCreateTask({
                     }
                     const Icon = tagIconMap[tag.icon];
                     return (
-                      <Badge
-                        className="h-6 gap-1.5 px-2 text-[11px]"
-                        key={tag.id}
-                        variant="secondary"
-                      >
+                      <PreviewBadge className={smartClassName} key={tag.id}>
                         <Icon className="size-3.5" />
                         {tag.name}
-                      </Badge>
+                      </PreviewBadge>
                     );
                   })}
                 </div>
@@ -492,19 +532,8 @@ export function CommandBarCreateTask({
             </CommandItem>
           </CommandGroup>
 
-          <div className="flex justify-center gap-3 border-t px-3 py-2.5 text-muted-foreground text-sm">
-            <span>
-              <code className="rounded bg-muted px-1">=</code> duration
-            </span>
-            <span>
-              <code className="rounded bg-muted px-1">&gt;</code> due
-            </span>
-            <span>
-              <code className="rounded bg-muted px-1">~</code> start
-            </span>
-            <span>
-              <code className="rounded bg-muted px-1">#</code> tag
-            </span>
+          <div className="border-t px-3 py-2.5 text-sm">
+            <TokenHints />
           </div>
         </>
       )}
