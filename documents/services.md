@@ -474,9 +474,8 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 
 ### Effect ↔ oRPC bridge
 
-- `createContext` adds `effect/context` (from `appRuntime.context()`) and `effect/wrap` to the oRPC context. `@orpc/experimental-effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
-- `effect/wrap` in `createContext` maps errors any router can hit (`EffectDrizzleQueryError` → `INTERNAL_SERVER_ERROR`).
-- `effectErrors(mappers)` (in `index.ts`) is a router middleware that maps that router's tagged errors to `ORPCError` and then hands the rest to the outer wrap. Unmapped failures become a generic `INTERNAL_SERVER_ERROR`.
+- `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/experimental-effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
+- `effectErrors(mappers)` (in `index.ts`) is a router middleware that maps that router's tagged errors to `ORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
 - Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
 
 ---

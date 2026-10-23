@@ -40,8 +40,8 @@ function isTaggedError(error: unknown): error is TaggedError {
 
 /**
  * Maps a router's tagged Effect errors to `ORPCError`s for every effectful
- * handler below it. Wraps any outer `effect/wrap`, so shared mappings from
- * `createContext` still apply to whatever this one leaves untouched.
+ * handler below it. Anything left unmapped (e.g. a failed DB query) reaches
+ * oRPC as a plain error, which it returns as a 500 without exposing details.
  */
 export function effectErrors<E extends TaggedError>(
   mappers: TaggedErrorMappers<E>
