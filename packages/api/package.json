@@ -24,7 +24,7 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@orpc/contract": "catalog:",
-    "@orpc/experimental-effect": "catalog:",
+    "@orpc/effect": "catalog:",
     "@orpc/opentelemetry": "catalog:",
     "@orpc/ratelimit": "catalog:",
     "@orpc/server": "catalog:",

@@ -62,7 +62,7 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 
 ### Router pattern
 
-Handlers are Effect generators (`.effect(function* ...)` from `@orpc/experimental-effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own errors to `ORPCError` once with `mapErrors(toORPCError)`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
+Handlers are Effect generators (`.effect(function* ...)` from `@orpc/effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own errors to `ORPCError` once with `mapErrors(toORPCError)`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
 
 ```ts
 function toORPCError(error: unknown) {
@@ -475,7 +475,7 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 
 ### Effect ↔ oRPC bridge
 
-- `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/experimental-effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
+- `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
 - `mapErrors(toORPCError)` (in `index.ts`) is a router middleware that sets `effect/wrap` to run every handler failure through the router's `toORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
 - Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
 
