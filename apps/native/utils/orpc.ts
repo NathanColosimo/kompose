@@ -9,9 +9,12 @@ import {
 } from "@kompose/state/google-calendar-query-keys";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { RetryAfterPlugin } from "@orpc/client/plugins";
+import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
-import { fetch as expoFetch } from "expo/fetch";
+import {
+  type FetchRequestInit as ExpoFetchInit,
+  fetch as expoFetch,
+} from "expo/fetch";
 import { uuidv7 } from "uuidv7";
 import { authClient } from "@/lib/auth-client";
 import { env } from "@/lib/env";
@@ -48,17 +51,13 @@ export const queryClient = new QueryClient({
 export const link = new RPCLink({
   // React Native's built-in fetch does not support SSE / ReadableStream.
   // expo/fetch provides streaming support required for oRPC eventIterator.
-  async fetch(request, init) {
-    const response = await expoFetch(request.url, {
-      body: await request.blob(),
+  async fetch(url, init) {
+    const response = await expoFetch(url, {
+      ...(init as ExpoFetchInit),
       // Better Auth Expo already injects the session cookie manually.
       // On iOS, letting fetch use native cookie handling can interfere
       // with that header and break server-side session resolution.
       credentials: "omit",
-      headers: request.headers,
-      method: request.method,
-      signal: request.signal,
-      ...init,
     });
     return response as unknown as Response;
   },
@@ -74,8 +73,9 @@ export const link = new RPCLink({
     headers.set("x-request-start", Date.now().toString());
     return Object.fromEntries(headers);
   },
-  plugins: [new RetryAfterPlugin({ maxAttempts: 2 })],
-  url: `${env.EXPO_PUBLIC_SERVER_URL}/api/rpc`,
+  origin: env.EXPO_PUBLIC_SERVER_URL,
+  plugins: [new RetryAfterLinkPlugin({ maxAttempts: 2 })],
+  url: "/api/rpc",
 });
 
 export const orpc: AppRouterClient = createORPCClient(link);
