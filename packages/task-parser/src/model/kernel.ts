@@ -113,7 +113,8 @@ export class Kernel {
     n: number,
     w: number | Float32Array,
     rows: number,
-    cols: number
+    cols: number,
+    bias?: Float32Array
   ) {
     const stride = pad4(cols);
     const paddedN = pad4(n);
@@ -134,21 +135,22 @@ export class Kernel {
       outAt,
       paddedN * paddedRows
     );
-    // Copied out: later calls reuse this memory.
+    // Copied out (later calls reuse this memory), adding the bias.
     const out = new Float32Array(n * rows);
     for (let t = 0; t < n; t += 1) {
       const from = t * paddedRows;
       const to = t * rows;
       for (let r = 0; r < rows; r += 1) {
-        out[to + r] = result[from + r] as number;
+        out[to + r] =
+          (result[from + r] as number) + (bias ? (bias[r] as number) : 0);
       }
     }
     return out;
   }
 
-  /** out[n, rows] = x[n, cols] · Wᵀ (no bias). */
-  linear(x: Float32Array, n: number, weight: Matrix) {
-    return this.#run(x, n, this.#place(weight), weight.rows, weight.cols);
+  /** out[n, rows] = x[n, cols] · Wᵀ + bias. */
+  linear(x: Float32Array, n: number, weight: Matrix, bias?: Float32Array) {
+    return this.#run(x, n, this.#place(weight), weight.rows, weight.cols, bias);
   }
 
   /** out[n, rows] = a[n, cols] · b[rows, cols]ᵀ for short-lived matrices. */

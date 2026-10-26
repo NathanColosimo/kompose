@@ -152,10 +152,11 @@ function linear(
   bias: Matrix | undefined
 ) {
   kernel ??= Kernel.create();
-  const out = kernel?.supports(weight)
-    ? kernel.linear(x, n, weight)
-    : matmul(x, n, weight);
   const b = bias?.data as Float32Array | undefined;
+  if (kernel?.supports(weight)) {
+    return kernel.linear(x, n, weight, b);
+  }
+  const out = matmul(x, n, weight);
   if (b) {
     const { rows } = weight;
     for (let t = 0; t < n; t += 1) {

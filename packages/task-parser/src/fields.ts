@@ -38,6 +38,8 @@ const CLOCK_ONLY_PATTERN = new RegExp(
   `^(?:by|at|before|until|till|around|about|@)?\\s*(?:\\d{1,2}(?::?\\d{2})?\\s*(?:[ap]\\.?m\\.?)?|(?:half|quarter)(?:\\s+(?:past|to))?\\s+(?:\\d{1,2}|${CLOCK_WORDS})|(?:${CLOCK_WORDS})(?:[\\s-]+(?:thirty|fifteen|forty[\\s-]five|ten|twenty|o'clock))?|noon|midday|midnight|eod|cob|end of (?:the )?day|close of business|(?:in the )?(?:morning|afternoon|evening|night)|(?:lunch|dinner)(?:time)?)$`,
   "i"
 );
+/** "to" left over from "remind me to …" when the filler span stops early. */
+const LEADING_TO_PATTERN = /^to\s+(?!do\b)(?=\S+\s+\S)/i;
 const CORRECTION_PATTERN =
   /\b(?:actually|make (?:it|that)|no wait|instead|i mean|scratch that|change (?:it|that) to)\b/i;
 const BARE_CLOCK_PATTERN = /^(?:at |around |about )?\d{1,2}(?::\d{2})?$/i;
@@ -184,7 +186,7 @@ export async function resolveFields({
     startDate,
     startTime: repeat?.time ?? start?.time ?? null,
     tagNames,
-    title: sentence(textOf(spans, "T", text)),
+    title: sentence(textOf(spans, "T", text).replace(LEADING_TO_PATTERN, "")),
   };
 }
 

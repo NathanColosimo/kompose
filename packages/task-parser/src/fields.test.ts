@@ -53,6 +53,13 @@ describe("resolveFields", () => {
     );
   });
 
+  test("drops a leading 'to' left by the filler", async () => {
+    expect(
+      (await fields("[F:remind me] [T:to ask Maya for the folder]")).title
+    ).toBe("Ask Maya for the folder");
+    expect((await fields("[T:to do list]")).title).toBe("To do list");
+  });
+
   test("drops linking words left where a span was cut out", async () => {
     expect((await fields("[T:stretch for] [M:10 minutes]")).title).toBe(
       "Stretch"
