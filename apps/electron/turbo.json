@@ -1,9 +1,6 @@
 {
   "extends": ["//"],
   "tasks": {
-    "build": {
-      "outputs": ["dist/**", "native-build/**"]
-    },
     "dev": {
       "cache": false,
       "passThroughEnv": ["KOMPOSE_SERVER_URL"],

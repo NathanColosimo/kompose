@@ -1,5 +1,5 @@
+import { resolveWhen } from "@kompose/task-parser/when";
 import { Temporal } from "temporal-polyfill";
-import { resolveWhen } from "@/lib/resolve-when";
 
 /**
  * Result of parsing a task input string with NLP syntax.

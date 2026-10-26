@@ -1,4 +1,3 @@
-import { release } from "node:os";
 import { dirname, join } from "node:path";
 import tls from "node:tls";
 import { fileURLToPath } from "node:url";
@@ -28,7 +27,6 @@ import {
   screen,
   session,
   shell,
-  utilityProcess,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
@@ -47,9 +45,6 @@ const serverURL = app.isPackaged
   ? "https://kompose.dev"
   : (process.env.KOMPOSE_SERVER_URL ?? "https://local.kompose.dev");
 const serverOrigin = new URL(serverURL).origin;
-// Apple's on-device model needs macOS 26 (Darwin 25) and answers the Prompt
-// API (`LanguageModel`) in app windows; see local-ai.ts.
-const localAI = isMac && Number(release().split(".")[0]) >= 25;
 const MAIN_WINDOW = { height: 840, minHeight: 480, minWidth: 720, width: 1280 };
 const COMMAND_BAR = { height: 80, minHeight: 56, width: 480 };
 
@@ -225,7 +220,6 @@ function createAppWindow(
     show: false,
     webPreferences: {
       contextIsolation: true,
-      ...(localAI ? { enableBlinkFeatures: "AIPromptAPI" } : {}),
       nodeIntegration: false,
       preload: join(here, "../preload/index.cjs"),
       sandbox: true,
@@ -512,22 +506,6 @@ function registerBridge() {
   });
 }
 
-/** Serve the Prompt API from Apple's on-device model through a utility process. */
-function setUpLocalAI() {
-  if (!localAI) {
-    return;
-  }
-  const helper = app.isPackaged
-    ? join(process.resourcesPath, "kompose-fm")
-    : join(here, "../../native-build/kompose-fm");
-  const handler = utilityProcess.fork(
-    join(here, "local-ai.js"),
-    [helper, serverOrigin],
-    { serviceName: "Kompose Local AI" }
-  );
-  session.defaultSession.registerLocalAIHandler(handler);
-}
-
 /** Updates download in the background; the web app offers a restart once ready. */
 function setUpAutoUpdates() {
   if (!app.isPackaged) {
@@ -573,7 +551,6 @@ app
       (_contents, _permission, callback) => callback(false)
     );
     registerBridge();
-    setUpLocalAI();
     setUpMenu();
     showMain();
     // Kept loaded and hidden so the shortcut opens it instantly.

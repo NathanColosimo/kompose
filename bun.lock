@@ -106,6 +106,7 @@
         "@kompose/env": "workspace:*",
         "@kompose/google-cal": "workspace:*",
         "@kompose/state": "workspace:*",
+        "@kompose/task-parser": "workspace:*",
         "@opentelemetry/api": "catalog:",
         "@orpc/client": "catalog:",
         "@orpc/contract": "catalog:",
@@ -123,7 +124,6 @@
         "fumadocs-core": "^16.17.7",
         "fumadocs-mdx": "^15.4.9",
         "fumadocs-ui": "^16.17.7",
-        "gpu-time": "0.5.0",
         "jotai": "catalog:",
         "lucide-react": "^1.61.0",
         "next": "catalog:",
@@ -270,6 +270,19 @@
         "@kompose/config": "workspace:*",
         "@types/node": "catalog:",
         "@types/react": "catalog:",
+      },
+    },
+    "packages/task-parser": {
+      "name": "@kompose/task-parser",
+      "dependencies": {
+        "gpu-time": "0.5.0",
+        "temporal-polyfill": "catalog:",
+      },
+      "devDependencies": {
+        "@kompose/config": "workspace:*",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "wabt": "1.0.36",
       },
     },
     "packages/whoop": {
@@ -821,6 +834,8 @@
     "@kompose/google-cal": ["@kompose/google-cal@workspace:packages/google-cal"],
 
     "@kompose/state": ["@kompose/state@workspace:packages/state"],
+
+    "@kompose/task-parser": ["@kompose/task-parser@workspace:packages/task-parser"],
 
     "@kompose/whoop": ["@kompose/whoop@workspace:packages/whoop"],
 
@@ -3011,6 +3026,8 @@
     "vite": ["vite@8.3.5", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.30", "rolldown": "~1.2.14", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1 || ^0.8.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-z1YpjieJ9g0ebTmQpLBv/oq9E3F9EIlOe+7LahW8SrE3LTiG3udBRUXQOlYXP9b+IC2q2phHeVxj9xGlw34OEQ=="],
 
     "vlq": ["vlq@1.0.1", "", {}, "sha512-gQpnTgkubC6hQgdIcRdYGDSDc+SaujOdyesZQMv6JlfQee/9Mp0Qhnys6WxDWvQnL5WZdT7o2Ul187aSt0Rq+w=="],
+
+    "wabt": ["wabt@1.0.36", "", { "bin": { "wasm2c": "bin/wasm2c", "wasm2wat": "bin/wasm2wat", "wat2wasm": "bin/wat2wasm", "wasm-stats": "bin/wasm-stats", "wasm-strip": "bin/wasm-strip", "wasm-interp": "bin/wasm-interp", "wasm-objdump": "bin/wasm-objdump", "wasm-validate": "bin/wasm-validate", "wasm-decompile": "bin/wasm-decompile" } }, "sha512-GAfEcFyvYRZ51xIZKeeCmIKytTz3ejCeEU9uevGNhEnqt9qXp3a8Q2O4ByZr6rKWcd8jV/Oj5cbDJFtmTYdchg=="],
 
     "walk-up-path": ["walk-up-path@4.0.0", "", {}, "sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A=="],
 

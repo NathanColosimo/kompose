@@ -1,0 +1,23 @@
+{
+  "name": "@kompose/task-parser",
+  "type": "module",
+  "exports": {
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test src",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gpu-time": "0.5.0",
+    "temporal-polyfill": "catalog:"
+  },
+  "devDependencies": {
+    "@kompose/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "wabt": "1.0.36"
+  }
+}

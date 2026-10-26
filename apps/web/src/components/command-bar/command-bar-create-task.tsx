@@ -8,6 +8,8 @@ import type {
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
+import type { ParsedTask } from "@kompose/task-parser/parser";
+import type { TaskRecurrence } from "@kompose/task-parser/recurrence";
 import {
   CalendarIcon,
   CheckIcon,
@@ -15,6 +17,7 @@ import {
   Link2Icon,
   Loader2Icon,
   PlayCircleIcon,
+  RepeatIcon,
   SparklesIcon,
 } from "lucide-react";
 import {
@@ -34,14 +37,13 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import type { SmartTaskInput } from "@/lib/smart-task-input";
 import {
   formatDuration,
   type ParsedTaskInput,
   parseTaskInput,
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
-import { type SmartParse, useSmartTaskInput } from "@/lib/use-smart-task-input";
+import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { useTokenDates } from "@/lib/use-token-dates";
 import { cn } from "@/lib/utils";
 
@@ -67,36 +69,84 @@ function hasExplicitTokens(parsed: ParsedTaskInput) {
   );
 }
 
-/** Fill fields from on-device parsing; only used when no tokens were typed. */
-function withSmartInput(
-  parsed: ParsedTaskInput,
-  smart: SmartTaskInput | null
-): ParsedTaskInput {
-  return smart ? { ...parsed, ...smart } : parsed;
+/** What the create item shows and creates. */
+interface TaskDraft extends ParsedTaskInput {
+  description: string | null;
+  recurrence: TaskRecurrence | null;
+}
+
+function draftFromTokens(typed: ParsedTaskInput): TaskDraft {
+  return { ...typed, description: null, recurrence: null };
+}
+
+/** Fields from the magic box; only used when no tokens were typed. */
+function draftFromModel(typed: ParsedTaskInput, task: ParsedTask): TaskDraft {
+  return {
+    ...typed,
+    description: task.description,
+    dueDate: task.dueDate,
+    durationMinutes: task.durationMinutes,
+    links: task.links,
+    recurrence: task.recurrence,
+    startDate: task.startDate,
+    startTime: task.startTime,
+    tagNames: task.tags.map((tag) => tag.name),
+    title: task.title,
+  };
 }
 
 /**
- * The preview for the current parse. While a newer request runs, the last
- * result's fields stay, but the title is the typed one, which is current.
+ * The preview for the current parse. While a newer parse runs (only while
+ * the model loads, in practice), the last result's fields stay.
  */
-function previewInput(typed: ParsedTaskInput, parse: SmartParse) {
+function previewDraft(typed: ParsedTaskInput, parse: MagicParse): TaskDraft {
   switch (parse.status) {
     case "off":
-      return typed;
+      return draftFromTokens(typed);
     case "done":
-      return withSmartInput(typed, parse.result);
+      return draftFromModel(typed, parse.result);
     case "reading":
       return parse.previous
-        ? { ...withSmartInput(typed, parse.previous), title: typed.title }
-        : typed;
+        ? draftFromModel(typed, parse.previous)
+        : draftFromTokens(typed);
     default:
       return parse satisfies never;
   }
 }
 
+const WEEKDAY_NAMES: Record<string, string> = {
+  FR: "Fri",
+  MO: "Mon",
+  SA: "Sat",
+  SU: "Sun",
+  TH: "Thu",
+  TU: "Tue",
+  WE: "Wed",
+};
+const UNITS = {
+  DAILY: ["Daily", "days"],
+  MONTHLY: ["Monthly", "months"],
+  WEEKLY: ["Weekly", "weeks"],
+  YEARLY: ["Yearly", "years"],
+} as const;
+
+/** "Weekly on Mon, Wed", "Every 2 weeks on Fri", "Monthly on the 1st". */
+function repeatLabel(recurrence: TaskRecurrence) {
+  const [single, plural] = UNITS[recurrence.freq];
+  const every =
+    recurrence.interval > 1 ? `Every ${recurrence.interval} ${plural}` : single;
+  if (recurrence.freq === "WEEKLY" && recurrence.byDay.length > 0) {
+    return `${every} on ${recurrence.byDay.map((day) => WEEKDAY_NAMES[day]).join(", ")}`;
+  }
+  if (recurrence.freq === "MONTHLY") {
+    return `${every} on day ${recurrence.byMonthDay}`;
+  }
+  return every;
+}
+
 /** Build task data from parsed input and resolved link metadata */
 function buildTaskDataFromParsed(
-  parsed: ParsedTaskInput,
+  parsed: TaskDraft,
   linkMetaMap: Record<string, LinkMeta>,
   firstLinkMeta: LinkMeta | undefined,
   matchedTagIds: string[]
@@ -134,10 +184,14 @@ function buildTaskDataFromParsed(
     title = fallbackTitle(parsed.links[0]);
   }
 
+  // A repeating task needs a first occurrence.
+  const recurrence = parsed.startDate ? parsed.recurrence : null;
   return {
+    description: parsed.description ?? undefined,
     dueDate: parsed.dueDate ?? undefined,
     durationMinutes,
     links,
+    recurrence: recurrence ?? undefined,
     startDate: parsed.startDate ?? undefined,
     startTime: parsed.startTime ?? undefined,
     tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
@@ -186,17 +240,17 @@ function OnDeviceStatus({
   parse,
   resolving,
 }: {
-  parse: SmartParse;
+  parse: MagicParse;
   resolving: boolean;
 }) {
   const reading = resolving || parse.status === "reading";
-  if (!(reading || (parse.status === "done" && parse.result))) {
+  if (!(reading || parse.status === "done")) {
     return null;
   }
   return (
     <span
       className="ml-auto flex shrink-0 items-center gap-1 self-start text-[11px] text-muted-foreground"
-      title="Dates and times are read on this device; nothing leaves it."
+      title="Read by a model on this device; nothing leaves it."
     >
       {reading ? (
         <Loader2Icon className="size-3 animate-spin" />
@@ -209,8 +263,8 @@ function OnDeviceStatus({
 }
 
 /** Model-filled fields fade in, and dim while a newer request replaces them. */
-function smartFieldClassName(parse: SmartParse) {
-  if (parse.status === "done" && parse.result) {
+function smartFieldClassName(parse: MagicParse) {
+  if (parse.status === "done") {
     return "fade-in-0 animate-in transition-opacity duration-150";
   }
   if (parse.status === "reading" && parse.previous) {
@@ -271,16 +325,20 @@ export function CommandBarCreateTask({
     [search]
   );
 
-  // Free-form input (no tokens) also goes to the on-device model, when the
-  // browser has one. Its result replaces the preview once it arrives.
-  const tagNames = useMemo(() => tags.map((tag) => tag.name), [tags]);
-  const smartInput = useSmartTaskInput(
-    hasExplicitTokens(typed) || typed.title.length < 3 ? null : typed.title,
-    tagNames
+  // Free-form input (no tokens) goes to the magic box model, which reads
+  // the title, dates, duration, repeat, links, description and tags.
+  const tagOptions = useMemo(
+    () => tags.map((tag) => ({ id: tag.id, name: tag.name })),
+    [tags]
+  );
+  const freeText = search.trim();
+  const magic = useMagicTask(
+    hasExplicitTokens(typed) || !freeText ? null : freeText,
+    tagOptions
   );
   const tokenDates = useTokenDates(typed);
-  const parsed = previewInput(tokenDates.parsed, smartInput.parse);
-  const smartClassName = smartFieldClassName(smartInput.parse);
+  const parsed = previewDraft(tokenDates.parsed, magic.parse);
+  const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
 
   // Links alone are enough to create a task — the title will come from metadata
@@ -379,7 +437,7 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  const createFrom = (input: ParsedTaskInput) => {
+  const createFrom = (input: TaskDraft) => {
     const matchedTagIds = Array.from(
       new Set(
         input.tagNames.flatMap((name) => {
@@ -403,19 +461,20 @@ export function CommandBarCreateTask({
     if (!isValid || createTask.isPending || resolving) {
       return;
     }
-    const reading = smartInput.parse.status === "reading";
+    const reading = magic.parse.status === "reading";
     if (!(reading || tokenDates.pending)) {
       createFrom(parsed);
       return;
     }
-    // Enter can beat the debounced parse; wait briefly for the model. Typed
+    // Enter can beat the parse (or the model download); wait for it. Typed
     // tokens and the model never both apply, so only one of these waits.
     startResolving(async () => {
-      createFrom(
-        reading
-          ? withSmartInput(typed, await smartInput.resolve())
-          : await tokenDates.resolve()
-      );
+      if (!reading) {
+        createFrom(draftFromTokens(await tokenDates.resolve()));
+        return;
+      }
+      const task = await magic.resolve();
+      createFrom(task ? draftFromModel(typed, task) : draftFromTokens(typed));
     });
   };
 
@@ -444,9 +503,7 @@ export function CommandBarCreateTask({
         <CommandEmpty>
           <div className="space-y-2">
             <p>
-              {smartInput.available
-                ? "Describe a task, like “call mom tomorrow at 4 for 30m”"
-                : "Type a task title to create…"}
+              Describe a task, like “call mom tomorrow at 4 for 30m #family”
             </p>
             <TokenHints />
           </div>
@@ -481,16 +538,30 @@ export function CommandBarCreateTask({
                   <span className="truncate font-medium">
                     {createItemLabel}
                   </span>
-                  <OnDeviceStatus
-                    parse={smartInput.parse}
-                    resolving={resolving}
-                  />
+                  <OnDeviceStatus parse={magic.parse} resolving={resolving} />
                 </div>
+                {parsed.description && (
+                  <span
+                    className={cn(
+                      "line-clamp-2 text-muted-foreground text-xs",
+                      smartClassName
+                    )}
+                  >
+                    {parsed.description}
+                  </span>
+                )}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {parsed.startDate && (
                     <PreviewBadge className={smartClassName}>
                       <PlayCircleIcon className="size-3.5" />
                       {startLabel(parsed.startDate, parsed.startTime)}
+                    </PreviewBadge>
+                  )}
+
+                  {parsed.recurrence && parsed.startDate && (
+                    <PreviewBadge className={smartClassName}>
+                      <RepeatIcon className="size-3.5" />
+                      {repeatLabel(parsed.recurrence)}
                     </PreviewBadge>
                   )}
 

@@ -1,0 +1,394 @@
+{
+  "now": "2026-10-23T10:00:00-04:00[America/New_York]",
+  "note": "Friday Oct 23 2026, 10:00 New York. Fields not listed must be empty.",
+  "defaultTags": ["Work", "Health", "Family", "Errands", "Finance", "Home"],
+  "cases": [
+    {
+      "text": "call mom tomorrow at 4",
+      "expect": {
+        "title": "Call mom",
+        "startDate": "2026-10-24",
+        "startTime": "16:00:00",
+        "tags": ["Family"]
+      }
+    },
+    {
+      "text": "Submit expense report by thursday #work",
+      "expect": {
+        "title": "Submit expense report",
+        "dueDate": "2026-10-29",
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "dentist appointment next tue 3pm 1h",
+      "expect": {
+        "title": "Dentist appointment",
+        "startDate": "2026-10-27",
+        "startTime": "15:00:00",
+        "durationMinutes": 60,
+        "tags": ["Health"]
+      }
+    },
+    {
+      "text": "standup every weekday at 9:30 for 15 min",
+      "tags": ["Work", "Personal"],
+      "expect": {
+        "title": "Standup",
+        "recurrence": {
+          "freq": "WEEKLY",
+          "interval": 1,
+          "byDay": ["MO", "TU", "WE", "TH", "FR"]
+        },
+        "startDate": "2026-10-26",
+        "startTime": "09:30:00",
+        "durationMinutes": 15,
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "pay rent every month by the 1st",
+      "tags": ["Finance", "Work"],
+      "expect": {
+        "title": "Pay rent",
+        "recurrence": {
+          "freq": "MONTHLY",
+          "interval": 1,
+          "byMonthDay": 1
+        },
+        "startDate": "2026-11-01",
+        "dueDate": "2026-11-01",
+        "tags": ["Finance"]
+      }
+    },
+    {
+      "text": "read 1984 before march 3",
+      "tags": ["Work", "Errands"],
+      "expect": {
+        "title": "Read 1984",
+        "dueDate": "2027-03-03"
+      }
+    },
+    {
+      "text": "email May about the lease",
+      "tags": ["Work", "Errands"],
+      "expect": {
+        "title": "Email May about the lease"
+      }
+    },
+    {
+      "text": "gym mon wed fri at 6am #health",
+      "expect": {
+        "title": "Gym",
+        "recurrence": {
+          "freq": "WEEKLY",
+          "interval": 1,
+          "byDay": ["MO", "WE", "FR"]
+        },
+        "startDate": "2026-10-26",
+        "startTime": "06:00:00",
+        "tags": ["Health"]
+      }
+    },
+    {
+      "text": "renew passport (travel) 30m",
+      "tags": ["Travel", "Work"],
+      "expect": {
+        "title": "Renew passport",
+        "durationMinutes": 30,
+        "tags": ["Travel"]
+      }
+    },
+    {
+      "text": "renew passport (travel) 30m",
+      "tags": ["Work", "Errands"],
+      "expect": {
+        "title": "Renew passport",
+        "durationMinutes": 30
+      }
+    },
+    {
+      "text": "fix the sink - home",
+      "expect": {
+        "title": "Fix the sink",
+        "tags": ["Home"]
+      }
+    },
+    {
+      "text": "plan q4 offsite starting monday, due nov 13, 3 hours",
+      "tags": ["Work", "Health"],
+      "expect": {
+        "title": "Plan q4 offsite",
+        "startDate": "2026-10-26",
+        "dueDate": "2026-11-13",
+        "durationMinutes": 180,
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "remind me to water the plants every sunday",
+      "tags": ["Work", "Home"],
+      "expect": {
+        "title": "Water the plants",
+        "recurrence": {
+          "freq": "WEEKLY",
+          "interval": 1,
+          "byDay": ["SU"]
+        },
+        "startDate": "2026-10-25",
+        "tags": ["Home"]
+      }
+    },
+    {
+      "text": "review https://github.com/acme/api/pull/42 tomorrow morning",
+      "tags": ["Work", "Home"],
+      "expect": {
+        "title": "Review",
+        "links": ["https://github.com/acme/api/pull/42"],
+        "startDate": "2026-10-24",
+        "startTime": "09:00:00",
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "book flights to denver, check if sam needs a seat too",
+      "tags": ["Travel", "Work"],
+      "expect": {
+        "title": "Book flights to denver",
+        "description": "Check if sam needs a seat too",
+        "tags": ["Travel"]
+      }
+    },
+    {
+      "text": "call the bank about the late fee",
+      "tags": ["Finance", "Health"],
+      "expect": {
+        "title": "Call the bank about the late fee",
+        "tags": ["Finance"]
+      }
+    },
+    {
+      "text": "dinner with alex sat 7pm",
+      "tags": ["Work", "Finance"],
+      "expect": {
+        "title": "Dinner with alex",
+        "startDate": "2026-10-24",
+        "startTime": "19:00:00"
+      }
+    },
+    {
+      "text": "1:1 with priya thursday 2-2:30",
+      "tags": ["Work", "Home"],
+      "expect": {
+        "title": "1:1 with priya",
+        "startDate": "2026-10-29",
+        "startTime": "14:00:00",
+        "tags": ["Work"],
+        "durationMinutes": 30
+      }
+    },
+    {
+      "text": "take out recycling every other tuesday",
+      "tags": ["Home", "Work"],
+      "expect": {
+        "title": "Take out recycling",
+        "recurrence": {
+          "freq": "WEEKLY",
+          "interval": 2,
+          "byDay": ["TU"]
+        },
+        "startDate": "2026-10-27",
+        "tags": ["Home"]
+      }
+    },
+    {
+      "text": "finish tax return by april 15",
+      "tags": ["Finance", "Health"],
+      "expect": {
+        "title": "Finish tax return",
+        "dueDate": "2027-04-15",
+        "tags": ["Finance"]
+      }
+    },
+    {
+      "text": "write the onboarding doc 2h",
+      "tags": ["Health", "Family"],
+      "expect": {
+        "title": "Write the onboarding doc",
+        "durationMinutes": 120
+      }
+    },
+    {
+      "text": "pick up dry cleaning",
+      "tags": ["Errands", "Work"],
+      "expect": {
+        "title": "Pick up dry cleaning",
+        "tags": ["Errands"]
+      }
+    },
+    {
+      "text": "pick up dry cleaning",
+      "tags": ["Work", "Health"],
+      "expect": {
+        "title": "Pick up dry cleaning"
+      }
+    },
+    {
+      "text": "schedule annual physical",
+      "tags": ["Health Insurance", "Health", "Work"],
+      "expect": {
+        "title": "Schedule annual physical",
+        "tags": ["Health"]
+      }
+    },
+    {
+      "text": "compare health insurance plans by nov 30",
+      "tags": ["Health Insurance", "Health", "Work"],
+      "expect": {
+        "title": "Compare health insurance plans",
+        "dueDate": "2026-11-30",
+        "tags": ["Health Insurance"]
+      }
+    },
+    {
+      "text": "todo: update resume, 45 mins",
+      "tags": ["Career", "Home"],
+      "expect": {
+        "title": "Update resume",
+        "durationMinutes": 45,
+        "tags": ["Career"]
+      }
+    },
+    {
+      "text": "ok so i need to like send the invoice to hartwell by end of month",
+      "tags": ["Clients", "Personal"],
+      "expect": {
+        "title": "Send the invoice to hartwell",
+        "dueDate": "2026-10-31",
+        "tags": ["Clients"]
+      }
+    },
+    {
+      "text": "clients: send invoice to hartwell",
+      "tags": ["Clients", "Personal"],
+      "expect": {
+        "title": "Send invoice to hartwell",
+        "tags": ["Clients"]
+      }
+    },
+    {
+      "text": "stretch for 10 minutes every morning at 7",
+      "tags": ["Health", "Work"],
+      "expect": {
+        "title": "Stretch",
+        "durationMinutes": 10,
+        "recurrence": {
+          "freq": "DAILY",
+          "interval": 1
+        },
+        "startDate": "2026-10-24",
+        "startTime": "07:00:00",
+        "tags": ["Health"]
+      }
+    },
+    {
+      "text": "Buy birthday gift for dad before nov 8",
+      "tags": ["Family", "Errands"],
+      "expect": {
+        "title": "Buy birthday gift for dad",
+        "dueDate": "2026-11-08",
+        "tags": ["Family"]
+      }
+    },
+    {
+      "text": "prep slides for the board meeting monday 9am 90 min",
+      "tags": ["Work", "Home"],
+      "expect": {
+        "title": "Prep slides for the board meeting",
+        "startDate": "2026-10-26",
+        "startTime": "09:00:00",
+        "durationMinutes": 90,
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "cancel gym membership",
+      "tags": ["Finance", "Errands", "Fitness"],
+      "expect": {
+        "title": "Cancel gym membership"
+      }
+    },
+    {
+      "text": "change oil in 2 weeks",
+      "tags": ["Car", "Home"],
+      "expect": {
+        "title": "Change oil",
+        "startDate": "2026-11-06",
+        "tags": ["Car"]
+      }
+    },
+    {
+      "text": "vacuum the car this weekend",
+      "tags": ["Car", "Home"],
+      "expect": {
+        "title": "Vacuum the car",
+        "startDate": "2026-10-24",
+        "tags": ["Car"]
+      }
+    },
+    {
+      "text": "team retro the last friday of every month",
+      "tags": ["Work", "Home"],
+      "expect": {
+        "title": "Team retro",
+        "startDate": "2026-10-30",
+        "tags": ["Work"]
+      }
+    },
+    {
+      "text": "call grandma on sunday, she wants to hear about the trip",
+      "tags": ["Family", "Work"],
+      "expect": {
+        "title": "Call grandma",
+        "description": "She wants to hear about the trip",
+        "startDate": "2026-10-25",
+        "tags": ["Family"]
+      }
+    },
+    {
+      "text": "upload photos to photos.app/share/abc123",
+      "tags": ["Photography", "Work"],
+      "expect": {
+        "title": "Upload photos",
+        "links": ["https://photos.app/share/abc123"],
+        "tags": ["Photography"]
+      }
+    },
+    {
+      "text": "30 min walk",
+      "tags": ["Health", "Work"],
+      "expect": {
+        "title": "Walk",
+        "durationMinutes": 30,
+        "tags": ["Health"]
+      }
+    },
+    {
+      "text": "order a 30 minute timer",
+      "tags": ["Errands", "Work"],
+      "expect": {
+        "title": "Order a 30 minute timer",
+        "tags": ["Errands"]
+      }
+    },
+    {
+      "text": "march 2nd: renew car registration",
+      "tags": ["Car", "Work"],
+      "expect": {
+        "title": "Renew car registration",
+        "startDate": "2027-03-02",
+        "tags": ["Car"]
+      }
+    }
+  ]
+}

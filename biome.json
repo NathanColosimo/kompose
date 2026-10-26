@@ -35,11 +35,31 @@
   ],
   "overrides": [
     {
-      "includes": ["**/global.css"],
+      "includes": [
+        "**/global.css"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
             "noDuplicateCustomProperties": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/task-parser/training/**"
+      ],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "performance": {
+            "noAwaitInLoops": "off"
+          },
+          "suspicious": {
+            "noBitwiseOperators": "off"
           }
         }
       }
