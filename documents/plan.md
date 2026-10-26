@@ -351,7 +351,7 @@ separate `Kompose Dev` profile.
 ### 6.9 Effect-TS Service Architecture
 - **Pattern**: All backend services use `Effect.Service` with `accessors: true` and `Effect.fn("Service.method")` for automatic OTel tracing spans.
 - **Errors**: Each domain uses `Schema.TaggedError` for typed, compile-time-checked error channels. Callers handle errors with `Effect.catchTags`.
-- **Layer composition**: Services declare `dependencies: [...]` for automatic wiring. At the router level, service layers are merged with `TelemetryLive` (e.g. `Layer.merge(TaskService.Default, TelemetryLive)`).
+- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/effect`) that get services from that runtime through the request context, and each router maps its errors with `mapErrors`.
 - **Services implemented**: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
 - See [`services.md`](./services.md) for full method/error tables.
 
@@ -360,7 +360,7 @@ separate `Kompose Dev` profile.
 - **Cached resources**: Calendar list, single calendar, colors (24h TTL), event lists, single events (1h TTL).
 - **Invalidation**: Dual strategy — Google webhooks trigger broad invalidation (unknown which resource changed); local mutations use targeted invalidation (specific keys only).
 - **Error handling**: Cache errors are always caught, logged as `CACHE_ERROR` (visible in OTel), and swallowed. Cache failures degrade to API fetches, never fail requests.
-- **Auth-first**: Cache lookups happen *after* `checkGoogleAccountIsLinked` to prevent serving cached data to unauthorized users.
+- **Auth-first**: Cache lookups happen *after* `getGoogleCalendar` to prevent serving cached data to unauthorized users.
 - See [`caching.md`](./caching.md) for full details.
 
 ### 6.11 Google Calendar Webhooks

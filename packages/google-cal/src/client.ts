@@ -333,7 +333,9 @@ export class GoogleCalendarZodError extends Schema.TaggedError<GoogleCalendarZod
 
 // -- Implementation --
 
-function makeGoogleCalendarService(accessToken: string): GoogleCalendarService {
+export function makeGoogleCalendarService(
+  accessToken: string
+): GoogleCalendarService {
   const client = new GoogleCalendarClient({ accessToken });
 
   // --- Calendar Methods ---
