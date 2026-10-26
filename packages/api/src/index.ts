@@ -1,4 +1,4 @@
-import "@orpc/experimental-effect/extensions/effect";
+import "@orpc/effect/extensions/effect";
 import { ORPCError, os } from "@orpc/server";
 import { Effect } from "effect";
 import type { Context } from "./context";

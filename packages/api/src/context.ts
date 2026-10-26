@@ -1,5 +1,5 @@
 import { auth } from "@kompose/auth";
-import type { WithEffectContext } from "@orpc/experimental-effect";
+import type { WithEffectContext } from "@orpc/effect";
 import type { User } from "better-auth";
 import type { NextRequest } from "next/server";
 import { type AppServices, appRuntime } from "./runtime";
