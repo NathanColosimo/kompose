@@ -21,8 +21,13 @@ class Config:
         self.embedding_dim = 128
         self.vocab = 29528
         # "scratch": pre-norm layers trained here; "electra": a pretrained
-        # post-norm BERT-style encoder (ELECTRA-small) fine-tuned here.
+        # post-norm BERT-style encoder (ELECTRA-small) fine-tuned here;
+        # "modernbert": a pretrained ModernBERT-style encoder (Ettin) with
+        # RoPE, GeGLU, no biases and local attention in most layers.
         self.arch = "scratch"
+        self.rope_theta = 160000.0
+        self.local_window = 128
+        self.global_every = 3
         self.__dict__.update(kwargs)
 
     def to_dict(self):
@@ -79,6 +84,54 @@ class PostLayer(nn.Module):
         return self.norm2(x + self.drop(self.down(nn.functional.gelu(self.up(x)))))
 
 
+def rope(x, theta: float):
+    """Rotary position embedding on [b, heads, n, d] (rotate-half form)."""
+    n, d = x.shape[-2], x.shape[-1]
+    inv = 1.0 / (theta ** (torch.arange(0, d, 2, device=x.device, dtype=torch.float32) / d))
+    freqs = torch.outer(torch.arange(n, device=x.device, dtype=torch.float32), inv)
+    angles = torch.cat([freqs, freqs], dim=-1)
+    cos, sin = angles.cos().to(x.dtype), angles.sin().to(x.dtype)
+    half = torch.cat([-x[..., d // 2 :], x[..., : d // 2]], dim=-1)
+    return x * cos + half * sin
+
+
+class ModernLayer(nn.Module):
+    """ModernBERT/Ettin layer: pre-norm (no biases), RoPE, GeGLU; local layers
+    attend within +-window/2 tokens."""
+
+    def __init__(self, c: Config, index: int):
+        super().__init__()
+        self.heads = c.heads
+        self.theta = c.rope_theta
+        self.local = index % c.global_every != 0
+        self.half_window = c.local_window // 2
+        self.attn_norm = nn.LayerNorm(c.dim, bias=False) if index > 0 else nn.Identity()
+        self.qkv = nn.Linear(c.dim, 3 * c.dim, bias=False)
+        self.out = nn.Linear(c.dim, c.dim, bias=False)
+        self.mlp_norm = nn.LayerNorm(c.dim, bias=False)
+        self.up = nn.Linear(c.dim, 2 * c.ffn, bias=False)
+        self.down = nn.Linear(c.ffn, c.dim, bias=False)
+        self.drop = nn.Dropout(c.dropout)
+
+    def forward(self, x, mask):
+        b, n, d = x.shape
+        q, k, v = self.qkv(self.attn_norm(x)).view(b, n, 3, self.heads, d // self.heads).permute(2, 0, 3, 1, 4)
+        q, k = rope(q, self.theta), rope(k, self.theta)
+        scores = (q @ k.transpose(-1, -2)) / math.sqrt(d // self.heads)
+        allowed = mask[:, None, None, :]
+        if self.local:
+            positions = torch.arange(n, device=x.device)
+            distance = (positions[:, None] - positions[None, :]).abs()
+            # Each token may always see itself, so a padding row far from
+            # every real token isn't left with nothing to attend to.
+            allowed = (allowed & (distance <= self.half_window)) | (distance == 0)
+        scores = scores.masked_fill(~allowed, float("-inf"))
+        attention = self.drop(scores.softmax(-1))
+        x = x + self.drop(self.out((attention @ v).transpose(1, 2).reshape(b, n, d)))
+        gate_in, gate = self.up(self.mlp_norm(x)).chunk(2, dim=-1)
+        return x + self.drop(self.down(nn.functional.gelu(gate_in) * gate))
+
+
 class TaskParser(nn.Module):
     def __init__(self, c: Config, embeddings: torch.Tensor | None = None):
         super().__init__()
@@ -89,19 +142,28 @@ class TaskParser(nn.Module):
         self.project = nn.Linear(c.embedding_dim, c.dim)
         # Pretrained encoders take their inputs at embedding width, summed
         # and normalized before the projection; the scratch encoder after it.
-        width = c.embedding_dim if c.arch == "electra" else c.dim
+        width = c.embedding_dim if c.arch in ("electra", "modernbert") else c.dim
         self.specials = nn.Embedding(len(SPECIALS), width)
         self.shapes = nn.Embedding(len(SHAPES), width)
         self.segments = nn.Embedding(2, width)
         self.flags = nn.Embedding(4, width)  # spaced + 2 * overlap
         self.positions = nn.Embedding(c.max_positions, width)
         self.drop = nn.Dropout(c.dropout)
-        if c.arch == "electra":
+        if c.arch in ("electra", "modernbert"):
             # New features start at zero so the pretrained inputs are intact.
             nn.init.zeros_(self.shapes.weight)
             nn.init.zeros_(self.flags.weight)
+        if c.arch == "electra":
             self.embed_norm = nn.LayerNorm(width, eps=1e-12)
             self.layers = nn.ModuleList(PostLayer(c) for _ in range(c.layers))
+        elif c.arch == "modernbert":
+            # RoPE carries position, so the position and segment tables start
+            # at zero too; there is no projection (embedding width = model width).
+            nn.init.zeros_(self.positions.weight)
+            nn.init.zeros_(self.segments.weight)
+            self.embed_norm = nn.LayerNorm(width, bias=False)
+            self.layers = nn.ModuleList(ModernLayer(c, i) for i in range(c.layers))
+            self.norm = nn.LayerNorm(c.dim, bias=False)
         else:
             self.layers = nn.ModuleList(Layer(c) for _ in range(c.layers))
             self.norm = nn.LayerNorm(c.dim)
@@ -115,9 +177,9 @@ class TaskParser(nn.Module):
     def forward(self, batch):
         ids, specials = batch["ids"], batch["specials"]
         is_special = specials > 0
-        electra = self.config.arch == "electra"
+        arch = self.config.arch
         words = self.words(ids.clamp(min=0))
-        if not electra:
+        if arch == "scratch":
             words = self.project(words)
         x = torch.where(is_special[..., None], self.specials(specials), words)
         positions = torch.arange(ids.shape[1], device=ids.device)[None, :]
@@ -128,14 +190,16 @@ class TaskParser(nn.Module):
             + self.flags(batch["spaced"] + 2 * batch["overlap"])
             + self.positions(positions)
         )
-        if electra:
+        if arch == "electra":
             x = self.project(self.drop(self.embed_norm(x)))
+        elif arch == "modernbert":
+            x = self.drop(self.embed_norm(x))
         else:
             x = self.drop(x)
         mask = batch["mask"]
         for layer in self.layers:
             x = layer(x, mask)
-        if not electra:
+        if arch != "electra":
             x = self.norm(x)
         span_logits = self.spans(x)
         tag_states = x.gather(1, batch["tag_positions"].clamp(min=0)[..., None].expand(-1, -1, x.shape[-1]))
@@ -191,3 +255,28 @@ def load_electra(model: TaskParser, path: str, vocab: dict[str, int]):
             layer.down.bias.copy_(w[p + "output.dense.bias"])
             layer.norm2.weight.copy_(w[p + "output.LayerNorm.weight"])
             layer.norm2.bias.copy_(w[p + "output.LayerNorm.bias"])
+
+
+def load_modernbert(model: TaskParser, path: str, vocab: dict[str, int]):
+    """Copy ModernBERT/Ettin weights (data/embeddings/ettin-*) into `model`."""
+    from safetensors.torch import load_file
+
+    w = load_file(path)
+    with torch.no_grad():
+        words = w["model.embeddings.tok_embeddings.weight"]
+        model.words.weight.copy_(words)
+        model.embed_norm.weight.copy_(w["model.embeddings.norm.weight"])
+        model.norm.weight.copy_(w["model.final_norm.weight"])
+        # [PAD] [CLS] [SEP] start as their pretrained tokens; [URL] and [TAG]
+        # as [MASK] and [UNK].
+        for index, token in enumerate(["[PAD]", "[CLS]", "[SEP]", "[MASK]", "[UNK]"]):
+            model.specials.weight[index].copy_(words[vocab[token]])
+        for i, layer in enumerate(model.layers):
+            p = f"model.layers.{i}."
+            if i > 0:
+                layer.attn_norm.weight.copy_(w[p + "attn_norm.weight"])
+            layer.qkv.weight.copy_(w[p + "attn.Wqkv.weight"])
+            layer.out.weight.copy_(w[p + "attn.Wo.weight"])
+            layer.mlp_norm.weight.copy_(w[p + "mlp_norm.weight"])
+            layer.up.weight.copy_(w[p + "mlp.Wi.weight"])
+            layer.down.weight.copy_(w[p + "mlp.Wo.weight"])

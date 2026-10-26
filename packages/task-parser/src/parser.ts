@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 import { resolveFields, type TaskFields } from "./fields";
+import { BytePairEncoding } from "./model/bpe";
 import {
   decodeSpans,
   encode,
@@ -7,8 +8,8 @@ import {
   viterbi,
 } from "./model/features";
 import { forward } from "./model/network";
-import { WordPiece } from "./model/tokenizer";
-import { readWeights } from "./model/weights";
+import { type Tokenizer, WordPiece } from "./model/tokenizer";
+import { readWeights, type Weights } from "./model/weights";
 
 export interface TagOption<Id extends string = string> {
   id: Id;
@@ -40,6 +41,13 @@ export function tagKey(name: string) {
     .toLowerCase();
 }
 
+/** The tokenizer a weight file was trained with: BPE when it has merges. */
+export function tokenizerFor(weights: Weights): Tokenizer {
+  return weights.merges
+    ? new BytePairEncoding(weights.vocab, weights.merges, weights.added)
+    : new WordPiece(weights.vocab);
+}
+
 export interface TaskParser {
   parse: <Id extends string>(
     text: string,
@@ -56,7 +64,7 @@ export function createTaskParser(
   { tagThreshold = DEFAULT_TAG_THRESHOLD }: { tagThreshold?: number } = {}
 ): TaskParser {
   const weights = readWeights(weightsFile);
-  const tokenizer = new WordPiece(weights.vocab);
+  const tokenizer = tokenizerFor(weights);
 
   return {
     async parse(

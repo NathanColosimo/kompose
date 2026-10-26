@@ -2,7 +2,7 @@
  * Model inputs for (text, tag list). Mirrors training/model/features.py;
  * src/model/features.parity.test.ts checks the two produce the same inputs.
  */
-import type { WordPiece } from "./tokenizer";
+import type { Tokenizer } from "./tokenizer";
 
 export const LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"] as const;
 export const TAG_NAMES = [
@@ -115,7 +115,7 @@ function spacedBefore(source: string, start: number) {
 }
 
 export function encode(
-  tokenizer: WordPiece,
+  tokenizer: Tokenizer,
   text: string,
   tagList: string[]
 ): Encoded {

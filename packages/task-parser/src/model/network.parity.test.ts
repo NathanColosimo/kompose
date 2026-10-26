@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { tokenizerFor } from "../parser";
 import { encode, viterbi } from "./features";
 import { forward } from "./network";
-import { WordPiece } from "./tokenizer";
 import { readWeights } from "./weights";
 
 const run =
@@ -19,7 +19,7 @@ describe.skipIf(!(existsSync(weightsFile) && existsSync(casesFile)))(
       const weights = readWeights(
         file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength)
       );
-      const tokenizer = new WordPiece(weights.vocab);
+      const tokenizer = tokenizerFor(weights);
       const cases = JSON.parse(readFileSync(casesFile, "utf8")) as {
         spans: number[];
         tagList: string[];

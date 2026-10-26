@@ -174,12 +174,12 @@ function layerNorm(
   n: number,
   dim: number,
   weight: Matrix,
-  bias: Matrix,
+  bias: Matrix | undefined,
   epsilon = 1e-5
 ) {
   const out = new Float32Array(x.length);
   const g = weight.data as Float32Array;
-  const b = bias.data as Float32Array;
+  const b = bias?.data as Float32Array | undefined;
   for (let t = 0; t < n; t += 1) {
     const o = t * dim;
     let mean = 0;
@@ -196,7 +196,7 @@ function layerNorm(
     for (let i = 0; i < dim; i += 1) {
       out[o + i] =
         ((x[o + i] as number) - mean) * inv * (g[i] as number) +
-        (b[i] as number);
+        (b ? (b[i] as number) : 0);
     }
   }
   return out;
@@ -258,11 +258,69 @@ function row(matrix: Matrix, index: number) {
   return out;
 }
 
+interface AttentionOptions {
+  /** Attend only within this many tokens either way (local layers). */
+  halfWindow?: number;
+  /** Rotary position embedding base for queries and keys. */
+  ropeTheta?: number;
+}
+
+/** Rotate each [t, size] row by its position (RoPE, rotate-half form). */
+function rope(x: Float32Array, n: number, size: number, theta: number) {
+  const half = size / 2;
+  for (let i = 0; i < half; i += 1) {
+    const frequency = 1 / theta ** ((2 * i) / size);
+    for (let t = 0; t < n; t += 1) {
+      const angle = t * frequency;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const a = x[t * size + i] as number;
+      const b = x[t * size + i + half] as number;
+      x[t * size + i] = a * cos - b * sin;
+      x[t * size + i + half] = b * cos + a * sin;
+    }
+  }
+}
+
+/**
+ * Softmax over each row of [n, n] attention scores (scaled), in place.
+ * With `halfWindow`, keys further than that from the query are masked.
+ */
+function softmaxRows(
+  scores: Float32Array,
+  n: number,
+  scale: number,
+  halfWindow: number | undefined
+) {
+  for (let i = 0; i < n; i += 1) {
+    const o = i * n;
+    const from = halfWindow === undefined ? 0 : Math.max(0, i - halfWindow);
+    const to = halfWindow === undefined ? n : Math.min(n, i + halfWindow + 1);
+    let max = Number.NEGATIVE_INFINITY;
+    for (let j = from; j < to; j += 1) {
+      max = Math.max(max, (scores[o + j] as number) * scale);
+    }
+    let total = 0;
+    for (let j = 0; j < n; j += 1) {
+      const weight =
+        j >= from && j < to
+          ? Math.exp((scores[o + j] as number) * scale - max)
+          : 0;
+      scores[o + j] = weight;
+      total += weight;
+    }
+    for (let j = 0; j < n; j += 1) {
+      scores[o + j] = (scores[o + j] as number) / total;
+    }
+  }
+}
+
 function attention(
   weights: Weights,
   prefix: string,
   h: Float32Array,
-  n: number
+  n: number,
+  { halfWindow, ropeTheta }: AttentionOptions = {}
 ) {
   const { dim, heads } = weights.config;
   const size = dim / heads;
@@ -287,23 +345,12 @@ function attention(
         vt[c * n + t] = qkv[at + 2 * dim + c] as number;
       }
     }
-    const scores = product(q, n, k, n, size);
-    for (let i = 0; i < n; i += 1) {
-      const o = i * n;
-      let max = Number.NEGATIVE_INFINITY;
-      for (let j = 0; j < n; j += 1) {
-        max = Math.max(max, (scores[o + j] as number) * scale);
-      }
-      let total = 0;
-      for (let j = 0; j < n; j += 1) {
-        const weight = Math.exp((scores[o + j] as number) * scale - max);
-        scores[o + j] = weight;
-        total += weight;
-      }
-      for (let j = 0; j < n; j += 1) {
-        scores[o + j] = (scores[o + j] as number) / total;
-      }
+    if (ropeTheta) {
+      rope(q, n, size, ropeTheta);
+      rope(k, n, size, ropeTheta);
     }
+    const scores = product(q, n, k, n, size);
+    softmaxRows(scores, n, scale, halfWindow);
     const perHead = product(scores, n, vt, size, n);
     for (let t = 0; t < n; t += 1) {
       mixed.set(
@@ -381,27 +428,14 @@ export interface Logits {
   tags: Float32Array;
 }
 
-/**
- * Token inputs: the word (or special) embedding plus shape, segment, flag
- * and position embeddings. The scratch encoder sums them at model width
- * after projecting words; ELECTRA sums them at embedding width, normalizes
- * and then projects.
- */
-function embed(weights: Weights, encoded: Encoded) {
-  const electra = weights.config.arch === "electra";
+/** Per token: word or special row + shape + segment + flags + position. */
+function sumInputs(
+  weights: Weights,
+  encoded: Encoded,
+  base: Float32Array,
+  width: number
+) {
   const n = encoded.ids.length;
-  const words = tensor(weights, "words.weight");
-  const project = tensor(weights, "project.weight");
-  const projectBias = weights.tensors.get("project.bias");
-  const width = electra ? words.cols : weights.config.dim;
-  const embedded = new Float32Array(n * words.cols);
-  for (let t = 0; t < n; t += 1) {
-    if (!encoded.specials[t]) {
-      embedded.set(row(words, encoded.ids[t] ?? 0), t * words.cols);
-    }
-  }
-  // Word embeddings are projected together, one row per token.
-  const base = electra ? embedded : linear(embedded, n, project, projectBias);
   const tables = {
     flags: tensor(weights, "flags.weight"),
     positions: tensor(weights, "positions.weight"),
@@ -433,18 +467,57 @@ function embed(weights: Weights, encoded: Encoded) {
       x[t * width + i] = value;
     }
   }
-  if (!electra) {
+  return x;
+}
+
+/**
+ * Token inputs: the word (or special) embedding plus shape, segment, flag
+ * and position embeddings. The scratch encoder sums them at model width
+ * after projecting words; ELECTRA sums them at embedding width, normalizes
+ * and then projects.
+ */
+function embed(weights: Weights, encoded: Encoded) {
+  const { arch = "scratch" } = weights.config;
+  const n = encoded.ids.length;
+  const words = tensor(weights, "words.weight");
+  const width = arch === "scratch" ? weights.config.dim : words.cols;
+  const embedded = new Float32Array(n * words.cols);
+  for (let t = 0; t < n; t += 1) {
+    if (!encoded.specials[t]) {
+      embedded.set(row(words, encoded.ids[t] ?? 0), t * words.cols);
+    }
+  }
+  // Word embeddings are projected together, one row per token.
+  const base =
+    arch === "scratch"
+      ? linear(
+          embedded,
+          n,
+          tensor(weights, "project.weight"),
+          weights.tensors.get("project.bias")
+        )
+      : embedded;
+  const x = sumInputs(weights, encoded, base, width);
+  if (arch === "scratch") {
     return x;
   }
+  const electra = arch === "electra";
   const normed = layerNorm(
     x,
     n,
     width,
     tensor(weights, "embed_norm.weight"),
-    tensor(weights, "embed_norm.bias"),
-    1e-12
+    weights.tensors.get("embed_norm.bias"),
+    electra ? 1e-12 : 1e-5
   );
-  return linear(normed, n, project, projectBias);
+  return electra
+    ? linear(
+        normed,
+        n,
+        tensor(weights, "project.weight"),
+        weights.tensors.get("project.bias")
+      )
+    : normed;
 }
 
 /** Pre-norm layer (scratch encoder). */
@@ -529,23 +602,89 @@ function postNormLayer(
   );
 }
 
+/**
+ * ModernBERT/Ettin layer: pre-norm without biases (none before the first
+ * attention), RoPE, GeGLU; all but every `global_every`-th layer attend
+ * locally.
+ */
+function modernLayer(
+  weights: Weights,
+  index: number,
+  x: Float32Array,
+  n: number
+) {
+  const {
+    dim,
+    ffn,
+    global_every: globalEvery = 3,
+    local_window: localWindow = 128,
+    rope_theta: ropeTheta = 160_000,
+  } = weights.config;
+  const p = `layers.${index}`;
+  const h =
+    index > 0
+      ? layerNorm(
+          x,
+          n,
+          dim,
+          tensor(weights, `${p}.attn_norm.weight`),
+          undefined
+        )
+      : x;
+  addInPlace(
+    x,
+    attention(weights, p, h, n, {
+      halfWindow: index % globalEvery === 0 ? undefined : localWindow / 2,
+      ropeTheta,
+    })
+  );
+  const m = layerNorm(
+    x,
+    n,
+    dim,
+    tensor(weights, `${p}.mlp_norm.weight`),
+    undefined
+  );
+  const up = linear(m, n, tensor(weights, `${p}.up.weight`), undefined);
+  // GeGLU: GELU of the first half times the second half.
+  const gated = new Float32Array(n * ffn);
+  for (let t = 0; t < n; t += 1) {
+    gated.set(up.subarray(t * 2 * ffn, t * 2 * ffn + ffn), t * ffn);
+  }
+  geluExact(gated);
+  for (let t = 0; t < n; t += 1) {
+    for (let j = 0; j < ffn; j += 1) {
+      gated[t * ffn + j] =
+        (gated[t * ffn + j] as number) * (up[t * 2 * ffn + ffn + j] as number);
+    }
+  }
+  addInPlace(
+    x,
+    linear(gated, n, tensor(weights, `${p}.down.weight`), undefined)
+  );
+  return x;
+}
+
 export function forward(weights: Weights, encoded: Encoded): Logits {
-  const { dim, layers } = weights.config;
-  const electra = weights.config.arch === "electra";
+  const { arch = "scratch", dim, layers } = weights.config;
   const n = encoded.ids.length;
   let x: Float32Array = embed(weights, encoded);
   for (let l = 0; l < layers; l += 1) {
-    x = electra
-      ? postNormLayer(weights, `layers.${l}`, x, n)
-      : preNormLayer(weights, `layers.${l}`, x, n);
+    if (arch === "electra") {
+      x = postNormLayer(weights, `layers.${l}`, x, n);
+    } else if (arch === "modernbert") {
+      x = modernLayer(weights, l, x, n);
+    } else {
+      x = preNormLayer(weights, `layers.${l}`, x, n);
+    }
   }
-  if (!electra) {
+  if (arch !== "electra") {
     x = layerNorm(
       x,
       n,
       dim,
       tensor(weights, "norm.weight"),
-      tensor(weights, "norm.bias")
+      weights.tensors.get("norm.bias")
     );
   }
 

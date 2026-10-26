@@ -25,7 +25,8 @@ const ROOT = new URL("../", import.meta.url).pathname;
 const DIR = `${ROOT}data/test/`;
 await mkdir(DIR, { recursive: true });
 const spec = await readFile(`${ROOT}SPEC.md`, "utf8");
-const [step = "compose", arg = "", concurrencyArg = "6"] = process.argv.slice(2);
+const [step = "compose", arg = "", concurrencyArg = "6"] =
+  process.argv.slice(2);
 /** Sol is rate-limited per account; a few calls at a time keep it moving. */
 const CONCURRENCY = Number(concurrencyArg);
 const random = rng(4242);

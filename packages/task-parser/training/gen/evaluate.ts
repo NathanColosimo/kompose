@@ -66,6 +66,62 @@ function actualOf(parsed: ParsedTask) {
   };
 }
 
+const EDGE_WORDS = new Set([
+  "a",
+  "and",
+  "at",
+  "by",
+  "for",
+  "in",
+  "my",
+  "on",
+  "or",
+  "please",
+  "pls",
+  "the",
+  "to",
+]);
+
+/** Words of a title or description without filler at either end. */
+function coreWords(value: string | null | undefined) {
+  const words = normalizeText(value).split(" ").filter(Boolean);
+  while (words.length > 0 && EDGE_WORDS.has(words[0] as string)) {
+    words.shift();
+  }
+  while (words.length > 0 && EDGE_WORDS.has(words.at(-1) as string)) {
+    words.pop();
+  }
+  return words;
+}
+
+/**
+ * Close enough to use as-is: the same words up to filler at the edges, or
+ * 80%+ word overlap (a stray "when home" or "before the meeting").
+ */
+function closeEnough(
+  expected: string | null | undefined,
+  actual: string | null
+) {
+  const a = coreWords(expected);
+  const b = coreWords(actual);
+  if (a.join(" ") === b.join(" ")) {
+    return true;
+  }
+  if (a.length === 0 || b.length === 0) {
+    return false;
+  }
+  const remaining = [...b];
+  let shared = 0;
+  for (const word of a) {
+    const index = remaining.indexOf(word);
+    if (index >= 0) {
+      shared += 1;
+      remaining.splice(index, 1);
+    }
+  }
+  return (2 * shared) / (a.length + b.length) >= 0.8;
+}
+
 function equal(
   field: (typeof FIELDS)[number],
   expected: Expected,
@@ -155,6 +211,7 @@ for (const [name, cases] of Object.entries(sets)) {
     FIELDS.map((f) => [f, 0])
   );
   let all = 0;
+  let usable = 0;
   const failures: string[] = [];
   let elapsed = 0;
   for (const c of cases) {
@@ -166,6 +223,16 @@ for (const [name, cases] of Object.entries(sets)) {
     elapsed += performance.now() - started;
     const actual = actualOf(parsed);
     const wrong = FIELDS.filter((field) => !equal(field, c.expect, actual));
+    const textOk = (field: "title" | "description") =>
+      closeEnough(c.expect[field], actual[field]);
+    if (
+      wrong.every(
+        (field) =>
+          (field === "title" || field === "description") && textOk(field)
+      )
+    ) {
+      usable += 1;
+    }
     for (const field of FIELDS) {
       correct[field] = (correct[field] ?? 0) + (wrong.includes(field) ? 0 : 1);
     }
@@ -188,7 +255,7 @@ for (const [name, cases] of Object.entries(sets)) {
   }
   const pct = (n: number) => `${((100 * n) / cases.length).toFixed(1)}%`;
   console.log(
-    `\n== ${name}: ${cases.length} cases, all fields right ${pct(all)}, ${(elapsed / cases.length).toFixed(1)} ms/case`
+    `\n== ${name}: ${cases.length} cases, all fields right ${pct(all)}, usable ${pct(usable)}, ${(elapsed / cases.length).toFixed(1)} ms/case`
   );
   console.log(
     FIELDS.map((field) => `${field} ${pct(correct[field] ?? 0)}`).join(" | ")

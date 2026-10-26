@@ -11,6 +11,11 @@ export interface Piece {
   start: number;
 }
 
+/** WordPiece here, or byte-level BPE (bpe.ts) for ModernBERT-style models. */
+export interface Tokenizer {
+  encode: (text: string) => Piece[];
+}
+
 const MAX_WORD_CHARS = 100;
 const COMBINING_MARK = /\p{Mn}/u;
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
@@ -105,7 +110,7 @@ function preTokenize(chars: Char[]): Char[][] {
   return words;
 }
 
-export class WordPiece {
+export class WordPiece implements Tokenizer {
   readonly #vocab: Map<string, number>;
   readonly #unk: number;
 

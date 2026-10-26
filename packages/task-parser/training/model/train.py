@@ -20,7 +20,7 @@ from torch import nn
 
 from augment import build_pools, compose, swap_phrases, typo
 from features import IGNORE, LABELS, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
-from model import Config, TaskParser, load_electra
+from model import Config, TaskParser, load_electra, load_modernbert
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -225,8 +225,14 @@ def main():
     embedding_dir = ROOT / "data" / "embeddings" / args.embeddings
     featurizer = Featurizer(str(embedding_dir / "tokenizer.json"))
     electra = args.embeddings.startswith("electra")
+    modern = args.embeddings.startswith("ettin")
     weights = load_file(str(embedding_dir / "model.safetensors"))
-    embeddings = (weights["electra.embeddings.word_embeddings.weight"] if electra else weights["embeddings"]).float()
+    if electra:
+        embeddings = weights["electra.embeddings.word_embeddings.weight"].float()
+    elif modern:
+        embeddings = weights["model.embeddings.tok_embeddings.weight"].float()
+    else:
+        embeddings = weights["embeddings"].float()
 
     rows = load(args.data)
     if args.fold:
@@ -242,7 +248,18 @@ def main():
     tag_pool = sorted({tag for r in train_rows for tag in r["tagList"]})
     print(f"{len(train_rows)} train, {len(dev_rows)} dev, {len(tag_pool)} distinct tags", flush=True)
 
-    if electra:
+    if modern:
+        pretrained = json.loads((embedding_dir / "config.json").read_text())
+        config = Config(
+            arch="modernbert", dim=pretrained["hidden_size"], layers=args.keep_layers or pretrained["num_hidden_layers"],
+            heads=pretrained["num_attention_heads"], ffn=pretrained["intermediate_size"], dropout=args.dropout,
+            embedding_dim=embeddings.shape[1], vocab=embeddings.shape[0], rope_theta=pretrained["global_rope_theta"],
+            local_window=pretrained["local_attention"], global_every=pretrained["global_attn_every_n_layers"],
+        )
+        model = TaskParser(config)
+        load_modernbert(model, str(embedding_dir / "model.safetensors"), featurizer.tokenizer.get_vocab())
+        model = model.to(device)
+    elif electra:
         pretrained = json.loads((embedding_dir / "config.json").read_text())
         config = Config(
             arch="electra", dim=pretrained["hidden_size"], layers=args.keep_layers or pretrained["num_hidden_layers"],
@@ -268,7 +285,11 @@ def main():
         Examples(dev_rows, featurizer, tag_pool, augment=False), batch_size=128, collate_fn=collate, num_workers=2
     )
     # Pretrained parts fine-tune gently; new parts (features, heads) learn at --lr.
-    pretrained_prefixes = ("layers.", "project.", "positions.", "segments.", "embed_norm.") if electra else ()
+    pretrained_prefixes = (
+        ("layers.", "project.", "positions.", "segments.", "embed_norm.") if electra
+        else ("layers.", "embed_norm.", "norm.") if modern
+        else ()
+    )
     groups = {"words": [], "pretrained": [], "new": []}
     for name, parameter in model.named_parameters():
         key = "words" if name.startswith("words.") else "pretrained" if name.startswith(pretrained_prefixes) else "new"

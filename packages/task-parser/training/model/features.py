@@ -119,7 +119,14 @@ class Featurizer:
     def _pieces(self, text: str, base: int) -> list[tuple[int, int, int]]:
         """(vocab id, start, end) for a plain segment, offsets shifted by base."""
         encoding = self.tokenizer.encode(text, add_special_tokens=False)
-        return [(i, s + base, e + base) for i, (s, e) in zip(encoding.ids, encoding.offsets)]
+        pieces = []
+        for i, (s, e) in zip(encoding.ids, encoding.offsets):
+            # Byte-level BPE tokens carry their leading space ("Ġmom"); the
+            # offsets point at the word itself, as WordPiece's do.
+            while s < e and text[s] in WHITESPACE:
+                s += 1
+            pieces.append((i, s + base, e + base))
+        return pieces
 
     def encode(self, text: str, tag_list: list[str]) -> Encoded:
         out = Encoded()

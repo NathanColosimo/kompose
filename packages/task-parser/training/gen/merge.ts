@@ -126,5 +126,8 @@ for (const file of [...files].filter((f) => f.endsWith(".json")).sort()) {
   }
   await writeFile(outDir + file, JSON.stringify({ items: merged }));
 }
-await writeFile(`${ROOT}data/disagree-${name}.jsonl`, `${disagree.join("\n")}\n`);
+await writeFile(
+  `${ROOT}data/disagree-${name}.jsonl`,
+  `${disagree.join("\n")}\n`
+);
 console.log(JSON.stringify(counts));

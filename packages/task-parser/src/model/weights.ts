@@ -1,14 +1,20 @@
 /** Reads the runtime weight file written by training/model/export.py. */
 
 export interface ModelConfig {
-  /** "scratch" (pre-norm, default) or "electra" (pretrained post-norm). */
-  arch?: "scratch" | "electra";
+  /**
+   * "scratch" (pre-norm, default), "electra" (pretrained post-norm) or
+   * "modernbert" (pretrained Ettin: RoPE, GeGLU, local attention).
+   */
+  arch?: "scratch" | "electra" | "modernbert";
   dim: number;
   embedding_dim: number;
   ffn: number;
+  global_every?: number;
   heads: number;
   layers: number;
+  local_window?: number;
   max_positions: number;
+  rope_theta?: number;
 }
 
 /**
@@ -23,7 +29,11 @@ export interface Matrix {
 }
 
 export interface Weights {
+  /** Byte-level BPE models: tokens matched whole before BPE. */
+  added: string[];
   config: ModelConfig;
+  /** Byte-level BPE models: merge rules ("a b"), highest priority first. */
+  merges: string[] | null;
   tensors: Map<string, Matrix>;
   vocab: string[];
 }
@@ -70,7 +80,9 @@ export function readWeights(buffer: ArrayBuffer): Weights {
   const header = JSON.parse(
     new TextDecoder().decode(bytes.subarray(8, 8 + headerLength))
   ) as {
+    added?: string[];
     config: ModelConfig;
+    merges?: string[];
     tensors: TensorEntry[];
     vocab: string[];
   };
@@ -91,5 +103,11 @@ export function readWeights(buffer: ArrayBuffer): Weights {
         : null;
     tensors.set(entry.name, unpack({ cols, data, rows, scales }, entry.name));
   }
-  return { config: header.config, tensors, vocab: header.vocab };
+  return {
+    added: header.added ?? [],
+    config: header.config,
+    merges: header.merges ?? null,
+    tensors,
+    vocab: header.vocab,
+  };
 }

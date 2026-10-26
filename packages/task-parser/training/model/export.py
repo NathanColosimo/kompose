@@ -3,7 +3,8 @@
 uv run python model/export.py runs/<name> [--out ../assets/task-parser.bin]
 
 Layout: b"KTP1", u32 header length, JSON header, then tensors (4-byte aligned).
-Header: {"config", "vocab", "tensors": [{"name", "shape", "dtype", "offset", "scales"?}]}.
+Header: {"config", "vocab", "tensors": [{"name", "shape", "dtype", "offset", "scales"?}],
+"merges"?, "added"?} (merges and added tokens for byte-level BPE models).
 2-D weights are int8 with one f32 scale per row; with --word-bits 4 the word
 table is int4 instead (two per byte, low nibble first, stored +8).
 Also writes <run>/dequantized.safetensors so Python can score the exact runtime weights.
@@ -80,7 +81,13 @@ def main():
             dequantized[name] = torch.from_numpy(array.astype(np.float32))
         tensors.append(entry)
 
-    header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab}, ensure_ascii=False).encode()
+    # Byte-level BPE tokenizers (Ettin) also need their merges and added tokens.
+    spec = json.loads((ROOT / "data/embeddings" / config["embeddings"] / "tokenizer.json").read_text())
+    extra = {}
+    if spec["model"]["type"] == "BPE":
+        extra["merges"] = [m if isinstance(m, str) else " ".join(m) for m in spec["model"]["merges"]]
+        extra["added"] = [a["content"] for a in spec.get("added_tokens", [])]
+    header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab, **extra}, ensure_ascii=False).encode()
     header += b" " * ((-len(header)) % 4)
     out = Path(args.out) if args.out else run / "task-parser.bin"
     out.parent.mkdir(parents=True, exist_ok=True)
