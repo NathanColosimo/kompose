@@ -1,6 +1,8 @@
 import { tagInsertSchema, tagSelectSchema } from "@kompose/db/schema/tag";
 import { oc } from "@orpc/contract";
 import z from "zod";
+import { clientErrors } from "../../errors";
+import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
 
 export const tagIconNames = [
   "Tag",
@@ -64,12 +66,14 @@ const deleteTagInputSchema = z.object({
 
 export const deleteTag = oc.input(deleteTagInputSchema).output(z.null());
 
-export const tagContract = {
-  create: createTag,
-  delete: deleteTag,
-  list: listTags,
-  update: updateTag,
-};
+export const tagContract = oc
+  .errors(clientErrors(InvalidTagError, TagConflictError, TagNotFoundError))
+  .router({
+    create: createTag,
+    delete: deleteTag,
+    list: listTags,
+    update: updateTag,
+  });
 
 export type CreateTagInput = z.infer<typeof createTagInputSchema>;
 export type UpdateTagInput = z.infer<typeof updateTagInputSchema>;

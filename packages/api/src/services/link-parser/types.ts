@@ -10,7 +10,8 @@ export class LinkParseError extends Schema.TaggedError<LinkParseError>()(
     cause: Schema.optional(Schema.Unknown),
     message: Schema.String,
     url: Schema.String,
-  }
+  },
+  { httpApiStatus: 400 }
 ) {}
 
 const FIFTEEN_MINUTES_SECS = 900;

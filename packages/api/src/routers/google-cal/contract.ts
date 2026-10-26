@@ -1,4 +1,8 @@
 import {
+  GoogleApiError,
+  GoogleCalendarZodError,
+} from "@kompose/google-cal/errors";
+import {
   CalendarSchema,
   ColorsSchema,
   CreateCalendarInputSchema,
@@ -8,6 +12,8 @@ import {
 } from "@kompose/google-cal/schema";
 import { oc } from "@orpc/contract";
 import { z } from "zod";
+import { clientErrors } from "../../errors";
+import { AccountNotLinkedError, NonEditableGoogleEventError } from "./errors";
 
 // --- Calendars ---
 export const ListCalendarsInputSchema = z.object({
@@ -159,23 +165,32 @@ export const listColors = oc
   .input(z.object({ accountId: z.string() }))
   .output(ColorsSchema);
 
-export const googleCalContract = {
-  calendars: {
-    create: createCalendar,
-    delete: deleteCalendar,
-    get: getCalendar,
-    list: listCalendars,
-    update: updateCalendar,
-  },
-  colors: {
-    list: listColors,
-  },
-  events: {
-    create: createEvent,
-    delete: deleteEvent,
-    get: getEvent,
-    list: listEvents,
-    move: moveEvent,
-    update: updateEvent,
-  },
-};
+export const googleCalContract = oc
+  .errors(
+    clientErrors(
+      AccountNotLinkedError,
+      GoogleApiError,
+      GoogleCalendarZodError,
+      NonEditableGoogleEventError
+    )
+  )
+  .router({
+    calendars: {
+      create: createCalendar,
+      delete: deleteCalendar,
+      get: getCalendar,
+      list: listCalendars,
+      update: updateCalendar,
+    },
+    colors: {
+      list: listColors,
+    },
+    events: {
+      create: createEvent,
+      delete: deleteEvent,
+      get: getEvent,
+      list: listEvents,
+      move: moveEvent,
+      update: updateEvent,
+    },
+  });

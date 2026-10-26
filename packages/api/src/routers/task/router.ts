@@ -1,16 +1,14 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
-import { implement, ORPCError } from "@orpc/server";
+import { implement } from "@orpc/server";
 import { Effect } from "effect";
-import { mapErrors, requireAuth } from "../..";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
 import { LinkParserService } from "../../services/link-parser/service";
-import { LinkParseError } from "../../services/link-parser/types";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
 import { TaskService } from "./client";
 import { taskContract } from "./contract";
-import { InvalidTaskError, TaskNotFoundError } from "./errors";
 
 /** Deduplicate links by URL — later entries win when URLs collide */
 function dedupeLinks(links: LinkMeta[] | undefined): LinkMeta[] | undefined {
@@ -24,34 +22,10 @@ function dedupeLinks(links: LinkMeta[] | undefined): LinkMeta[] | undefined {
   return [...map.values()];
 }
 
-function toORPCError(error: unknown) {
-  if (error instanceof InvalidTaskError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof LinkParseError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      data: { url: error.url },
-      message: error.message,
-    });
-  }
-  if (error instanceof TaskNotFoundError) {
-    return new ORPCError("NOT_FOUND", {
-      cause: error,
-      message: `Task not found: ${error.taskId}`,
-    });
-  }
-  return error;
-}
-
 const os = implement(taskContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 const normalizeTaskTags = <T extends { tags: Array<{ icon: string }> }>(
   task: T

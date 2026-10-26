@@ -5,7 +5,8 @@ export class AccountNotLinkedError extends Schema.TaggedError<AccountNotLinkedEr
   {
     cause: Schema.Unknown,
     message: Schema.String,
-  }
+  },
+  { httpApiStatus: 500 }
 ) {}
 
 export class NonEditableGoogleEventError extends Schema.TaggedError<NonEditableGoogleEventError>()(
@@ -14,7 +15,8 @@ export class NonEditableGoogleEventError extends Schema.TaggedError<NonEditableG
     eventId: Schema.String,
     eventType: Schema.optional(Schema.String),
     message: Schema.String,
-  }
+  },
+  { httpApiStatus: 400 }
 ) {}
 
 /** Internal cache error — always caught and logged, never surfaces to the client. */

@@ -1,7 +1,7 @@
 import "@orpc/effect/extensions/effect";
 import { ORPCError, os } from "@orpc/server";
-import { Effect } from "effect";
 import type { Context } from "./context";
+import { toORPCError } from "./errors";
 
 export const base = os.$context<Context>();
 
@@ -18,17 +18,13 @@ export const requireAuth = base.middleware(({ context, next }) => {
 });
 
 /**
- * Runs every Effect failure from a router's handlers through `toORPCError`.
- * Return an `ORPCError` for errors the router knows about and the error
- * itself for the rest; oRPC sends those as a generic 500.
+ * Sends each failure a procedure's contract declares as that typed error.
+ * Everything else passes through, and oRPC sends it as a generic 500.
  */
-export function mapErrors(toORPCError: (error: unknown) => unknown) {
-  return base.middleware(({ next }) =>
-    next({
-      context: {
-        "effect/wrap": <A>(effect: Effect.Effect<A, unknown>) =>
-          effect.pipe(Effect.mapError(toORPCError)),
-      },
-    })
-  );
-}
+export const encodeErrors = os.middleware(async ({ next, procedure }) => {
+  try {
+    return await next();
+  } catch (error) {
+    throw toORPCError(procedure["~orpc"].errorMap, error);
+  }
+});

@@ -1,6 +1,7 @@
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
+import { GoogleApiError, GoogleCalendarZodError } from "./errors";
 import {
   type Calendar,
   CalendarSchema,
@@ -313,23 +314,6 @@ export class GoogleCalendar extends Context.Service<
   GoogleCalendar,
   GoogleCalendarService
 >()("GoogleCalendar") {}
-
-// -- Errors --
-
-export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
-  "GoogleApiError",
-  {
-    cause: Schema.Unknown,
-    message: Schema.optional(Schema.String),
-  },
-) {}
-
-export class GoogleCalendarZodError extends Schema.TaggedError<GoogleCalendarZodError>()(
-  "GoogleCalendarZodError",
-  {
-    cause: Schema.Unknown,
-  },
-) {}
 
 // -- Implementation --
 

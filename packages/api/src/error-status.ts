@@ -1,14 +1,21 @@
-import { COMMON_ERROR_STATUS_MAP } from "@orpc/server";
+import {
+  COMMON_ERROR_STATUS_MAP,
+  walkProcedureContractsSync,
+} from "@orpc/server";
+import { clientErrorStatuses } from "./errors";
+import { appContract } from "./routers";
 
 /**
- * HTTP status for each error code. oRPC v2 sends unmapped codes as 400,
- * while v1 sent them as 500, so the app's custom codes are listed here to
- * keep reporting them as server failures.
+ * HTTP status for each error code: oRPC's common codes plus every client
+ * error a contract declares, from that error class's `httpApiStatus`.
  */
 export const errorStatusMap: Record<string, number> = {
   ...COMMON_ERROR_STATUS_MAP,
-  ACCOUNT_NOT_LINKED: 500,
-  GOOGLE_API_ERROR: 500,
-  GOOGLE_MAPS_ERROR: 500,
-  PARSE_ERROR: 500,
 };
+
+walkProcedureContractsSync(appContract, (procedure) => {
+  Object.assign(
+    errorStatusMap,
+    clientErrorStatuses(procedure["~orpc"].errorMap)
+  );
+});

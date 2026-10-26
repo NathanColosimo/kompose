@@ -1,5 +1,8 @@
+import { WhoopApiError, WhoopParseError } from "@kompose/whoop/errors";
 import { oc } from "@orpc/contract";
 import z from "zod";
+import { clientErrors } from "../../errors";
+import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 
 const plainDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -46,17 +49,26 @@ export const whoopProfileOutputSchema = z.object({
 
 export type WhoopProfile = z.infer<typeof whoopProfileOutputSchema>;
 
-export const whoopContract = {
-  days: {
-    list: oc
-      .input(whoopDaysListInputSchema)
-      .output(z.array(whoopDaySummarySchema)),
-  },
-  profile: {
-    get: oc
-      .input(z.object({ accountId: z.string().min(1) }))
-      .output(whoopProfileOutputSchema),
-  },
-};
+export const whoopContract = oc
+  .errors(
+    clientErrors(
+      WhoopApiError,
+      WhoopInvalidRangeError,
+      WhoopParseError,
+      WhoopTokenUnavailableError
+    )
+  )
+  .router({
+    days: {
+      list: oc
+        .input(whoopDaysListInputSchema)
+        .output(z.array(whoopDaySummarySchema)),
+    },
+    profile: {
+      get: oc
+        .input(z.object({ accountId: z.string().min(1) }))
+        .output(whoopProfileOutputSchema),
+    },
+  });
 
 export type WhoopDaySummary = z.infer<typeof whoopDaySummarySchema>;

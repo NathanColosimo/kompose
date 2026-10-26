@@ -1,11 +1,12 @@
 import { env } from "@kompose/env";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
-import { implement, ORPCError } from "@orpc/server";
+import { implement } from "@orpc/server";
 import { z } from "zod";
 import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit, mapsRateLimit } from "../../ratelimit";
 import { type LocationSuggestion, mapsContract } from "./contract";
+import { GoogleMapsError } from "./errors";
 
 const tracer = trace.getTracer("kompose-api");
 
@@ -44,7 +45,7 @@ function mapSuggestions(
   data: z.infer<typeof PlacesAutocompleteResponseSchema>
 ): LocationSuggestion[] {
   if (data.error?.message || data.message) {
-    throw new ORPCError("GOOGLE_MAPS_ERROR", {
+    throw new GoogleMapsError({
       message: data.error?.message ?? data.message ?? "Places API error",
     });
   }
@@ -113,7 +114,7 @@ function fetchAutocomplete(query: string) {
 
       if (!res.ok) {
         const message = await extractPlacesErrorMessage(res);
-        const error = new ORPCError("GOOGLE_MAPS_ERROR", { message });
+        const error = new GoogleMapsError({ message });
         span.recordException(error);
         span.setStatus({ code: SpanStatusCode.ERROR });
         throw error;
@@ -122,7 +123,7 @@ function fetchAutocomplete(query: string) {
       const json = await res.json();
       const parsed = PlacesAutocompleteResponseSchema.safeParse(json);
       if (!parsed.success) {
-        const error = new ORPCError("PARSE_ERROR", {
+        const error = new GoogleMapsError({
           message: `Places API response parse failed: ${parsed.error.message}`,
         });
         span.recordException(error);
@@ -131,7 +132,7 @@ function fetchAutocomplete(query: string) {
       }
       return parsed.data;
     } catch (error) {
-      if (!(error instanceof ORPCError)) {
+      if (!(error instanceof GoogleMapsError)) {
         span.recordException(
           error instanceof Error ? error : new Error(String(error))
         );

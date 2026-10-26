@@ -1,4 +1,6 @@
 import { implement, type RouterClient } from "@orpc/server";
+import { encodeErrors } from "..";
+import type { Context } from "../context";
 import { accountContract } from "./account/contract";
 import { googleCalContract } from "./google-cal/contract";
 import { mapsContract } from "./maps/contract";
@@ -7,7 +9,7 @@ import { tagContract } from "./tag/contract";
 import { taskContract } from "./task/contract";
 import { whoopContract } from "./whoop/contract";
 
-const appContract = {
+export const appContract = {
   account: accountContract,
   googleCal: googleCalContract,
   maps: mapsContract,
@@ -17,7 +19,7 @@ const appContract = {
   whoop: whoopContract,
 };
 
-const app = implement(appContract);
+const app = implement(appContract).$context<Context>().use(encodeErrors);
 
 export const appRouter = app.router({
   account: app.account.lazy(async () => ({
