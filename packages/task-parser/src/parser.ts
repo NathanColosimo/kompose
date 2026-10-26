@@ -22,8 +22,8 @@ export interface ParsedTask<Id extends string = string> extends TaskFields {
   tags: (TagOption<Id> & { confidence: number })[];
 }
 
-/** Tags at or above this probability are applied (tuned for precision). */
-const DEFAULT_TAG_THRESHOLD = 0.5;
+/** Tags at or above this probability are applied: a wrong tag costs more than a missing one (tuned on the test set). */
+const DEFAULT_TAG_THRESHOLD = 0.6;
 
 const TAG_WORD_PATTERN = /^(tags?\b:?|#|@)\s*|\s+tag$/giu;
 const NOT_NAME_PATTERN = /[^\p{L}\p{N}\s&/]/gu;
