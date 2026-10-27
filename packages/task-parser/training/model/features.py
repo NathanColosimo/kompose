@@ -44,6 +44,7 @@ WHITESPACE = set("\t\n\v\f\r \u00a0\u1680\u2028\u2029\u202f\u205f\u3000\ufeff") 
 
 MAX_TEXT_TOKENS = 128
 MAX_TOKENS = 256
+MAX_LATE_TAGS = 64
 
 
 def find_links(text: str) -> list[tuple[int, int]]:
@@ -110,6 +111,9 @@ class Encoded:
     offsets: list[tuple[int, int]] = field(default_factory=list)  # text char range; (-1,-1) elsewhere
     tag_positions: list[int] = field(default_factory=list)  # index of each [TAG] marker
     links: list[tuple[int, int]] = field(default_factory=list)
+    # Late tags: each tag as its own short sequence ([TAG] + its words),
+    # independent of the text so it can be cached.
+    tag_sequences: list["Encoded"] = field(default_factory=list)
 
 
 class Featurizer:
@@ -128,7 +132,38 @@ class Featurizer:
             pieces.append((i, s + base, e + base))
         return pieces
 
-    def encode(self, text: str, tag_list: list[str]) -> Encoded:
+    def encode_tag(self, tag: str) -> Encoded:
+        """A tag on its own: [TAG] and up to 8 word pieces, segment 1."""
+        out = Encoded()
+        out.ids.append(-1)
+        out.specials.append(TAG)
+        out.shapes.append(SHAPES.index("special"))
+        out.segments.append(1)
+        out.spaced.append(0)
+        out.overlap.append(0)
+        out.offsets.append((-1, -1))
+        for vocab_id, start, end in self._pieces(tag, 0)[:8]:
+            out.ids.append(vocab_id)
+            out.specials.append(0)
+            out.shapes.append(shape(tag[start:end]))
+            out.segments.append(1)
+            out.spaced.append(spaced_before(tag, start))
+            out.overlap.append(0)
+            out.offsets.append((-1, -1))
+        return out
+
+    def encode(self, text: str, tag_list: list[str], late: bool = False) -> Encoded:
+        if late:
+            # Text alone (its words still flagged when they appear in a tag);
+            # the tags become separate sequences.
+            out = self.encode(text, [])
+            tag_words = words_of(" ".join(tag_list))
+            for i, (start, end) in enumerate(out.offsets):
+                if start >= 0 and out.specials[i] == 0:
+                    out.overlap[i] = 1 if text[start:end].lower() in tag_words else 0
+            out.tag_sequences = [self.encode_tag(tag) for tag in tag_list[:MAX_LATE_TAGS]]
+            out.tag_positions = [0] * len(out.tag_sequences)
+            return out
         out = Encoded()
         links = find_links(text)
         out.links = links

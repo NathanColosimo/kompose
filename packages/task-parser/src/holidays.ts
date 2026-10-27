@@ -40,46 +40,65 @@ const fixed =
   (year) =>
     Temporal.PlainDate.from({ day, month, year });
 
-const CURLY_APOSTROPHE = /’/g;
+/** US holidays and season starts people use as dates, by their words. */
+export const HOLIDAYS: Record<string, DateRule> = {
+  autumn: fixed(9, 22),
+  "black friday": (year) => nthWeekday(year, 11, 4, 4).add({ days: 1 }),
+  "boxing day": fixed(12, 26),
+  "canada day": fixed(7, 1),
+  christmas: fixed(12, 25),
+  "cinco de may": fixed(5, 5),
+  "columbus day": (year) => nthWeekday(year, 10, 1, 2),
+  "cyber monday": (year) => nthWeekday(year, 11, 4, 4).add({ days: 4 }),
+  "earth day": fixed(4, 22),
+  easter,
+  "easter monday": (year) => easter(year).add({ days: 1 }),
+  fall: fixed(9, 22),
+  "father day": (year) => nthWeekday(year, 6, 7, 3),
+  "good friday": (year) => easter(year).subtract({ days: 2 }),
+  "groundhog day": fixed(2, 2),
+  halloween: fixed(10, 31),
+  "independence day": fixed(7, 4),
+  juneteenth: fixed(6, 19),
+  "labor day": (year) => nthWeekday(year, 9, 1, 1),
+  "labour day": (year) => nthWeekday(year, 9, 1, 1),
+  "martin luther king day": (year) => nthWeekday(year, 1, 1, 3),
+  "memorial day": (year) => nthWeekday(year, 5, 1, -1),
+  mlk: (year) => nthWeekday(year, 1, 1, 3),
+  "mother day": (year) => nthWeekday(year, 5, 7, 2),
+  "new year": fixed(1, 1),
+  "new years": fixed(1, 1),
+  nye: fixed(12, 31),
+  "patrick day": fixed(3, 17),
+  "president day": (year) => nthWeekday(year, 2, 1, 3),
+  "presidents day": (year) => nthWeekday(year, 2, 1, 3),
+  "presidents' day": (year) => nthWeekday(year, 2, 1, 3),
+  spring: fixed(3, 20),
+  summer: fixed(6, 21),
+  "tax day": fixed(4, 15),
+  thanksgiving: (year) => nthWeekday(year, 11, 4, 4),
+  valentine: fixed(2, 14),
+  valentines: fixed(2, 14),
+  "veteran day": fixed(11, 11),
+  "veterans day": fixed(11, 11),
+  winter: fixed(12, 21),
+  xmas: fixed(12, 25),
+};
 
-/** US holidays and season starts people use as dates. */
-const RULES: [RegExp, DateRule][] = [
-  [/^thanksgiving( day)?$/, (year) => nthWeekday(year, 11, 4, 4)],
-  [/^(new year'?s?|new year'?s day)$/, fixed(1, 1)],
-  [/^new year'?s eve$/, fixed(12, 31)],
-  [/^(labor|labour) day( weekend)?$/, (year) => nthWeekday(year, 9, 1, 1)],
-  [/^memorial day( weekend)?$/, (year) => nthWeekday(year, 5, 1, -1)],
-  [
-    /^(the )?(4th|fourth) of july|july (4th|fourth)|independence day$/,
-    fixed(7, 4),
-  ],
-  [/^halloween$/, fixed(10, 31)],
-  [/^valentine'?s( day)?$/, fixed(2, 14)],
-  [/^mother'?s day$/, (year) => nthWeekday(year, 5, 7, 2)],
-  [/^father'?s day$/, (year) => nthWeekday(year, 6, 7, 3)],
-  [/^easter( sunday)?$/, easter],
-  [
-    /^(mlk|martin luther king( jr\.?)?) day$/,
-    (year) => nthWeekday(year, 1, 1, 3),
-  ],
-  [/^presidents'? day$/, (year) => nthWeekday(year, 2, 1, 3)],
-  [/^(this |next )?spring$/, fixed(3, 20)],
-  [/^(this |next )?summer$/, fixed(6, 21)],
-  [/^(this |next )?(fall|autumn)$/, fixed(9, 22)],
-  [/^(this |next )?winter$/, fixed(12, 21)],
-];
-
-/** The next date (on or after `today`) of a named holiday or season. */
-export function holidayDate(text: string, today: Temporal.PlainDate) {
-  const phrase = text.trim().toLowerCase().replace(CURLY_APOSTROPHE, "'");
-  for (const [pattern, rule] of RULES) {
-    if (!pattern.test(phrase)) {
-      continue;
-    }
-    const thisYear = rule(today.year);
-    return Temporal.PlainDate.compare(thisYear, today) >= 0
-      ? thisYear
-      : rule(today.year + 1);
+/**
+ * The next date (on or after `today`) of a holiday by name; "<name> eve"
+ * is the day before.
+ */
+export function holidayDate(name: string, today: Temporal.PlainDate) {
+  const eve = name.endsWith(" eve");
+  const rule = HOLIDAYS[eve ? name.slice(0, -4) : name];
+  if (!rule) {
+    return null;
   }
-  return null;
+  const on = (year: number) =>
+    eve ? rule(year).subtract({ days: 1 }) : rule(year);
+  const thisYear = on(today.year);
+  return Temporal.PlainDate.compare(thisYear, today) >= 0
+    ? thisYear
+    : on(today.year + 1);
 }

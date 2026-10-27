@@ -59,8 +59,11 @@ def fold_of(row: dict, folds: int) -> int:
 
 
 class Examples(torch.utils.data.Dataset):
-    def __init__(self, rows, featurizer, tag_pool, augment):
+    def __init__(self, rows, featurizer, tag_pool, augment, late=False, joint_too=False):
         self.rows, self.featurizer, self.tag_pool, self.augment = rows, featurizer, tag_pool, augment
+        # late: tags as separate sequences; joint_too: also the appended form
+        # (for a teacher that reads tags that way).
+        self.late, self.joint_too = late, joint_too
         phrases = ROOT / "data" / "phrases.json"
         extra = json.loads(phrases.read_text()) if phrases.exists() else None
         self.pools = build_pools(rows, extra) if augment else {}
@@ -94,10 +97,11 @@ class Examples(torch.utils.data.Dataset):
         row = self.rows[index]
         text = row["text"]
         spans = row["spans"]
-        composed = compose(row, self.pools) if self.augment and random.random() < 0.2 else None
+        transfer = row.get("transfer", False)
+        composed = compose(row, self.pools) if self.augment and not transfer and random.random() < 0.2 else None
         if composed:
             text, spans = composed
-        elif self.augment:
+        elif self.augment and not transfer:
             text, spans = swap_phrases(text, spans, self.pools)
         if self.augment:
             text, spans = typo(text, spans)
@@ -106,12 +110,19 @@ class Examples(torch.utils.data.Dataset):
             if len(changed) == len(text):
                 text = changed
         tags, gold = self.tag_list(row)
-        encoded = self.featurizer.encode(text, tags)
+        encoded = self.featurizer.encode(text, tags, late=self.late)
+        targets = bio_targets(encoded, spans)
+        # The teacher's predictions cover every text token; transfer rows
+        # (unlabelled) only have those.
+        distill = [special == 0 and segment == 0 for special, segment in zip(encoded.specials, encoded.segments)]
+        tag_count = len(encoded.tag_positions)
         return {
             "encoded": encoded,
-            "targets": bio_targets(encoded, spans),
+            "joint": self.featurizer.encode(text, tags[:tag_count]) if self.joint_too else None,
+            "targets": [IGNORE] * len(targets) if transfer else targets,
+            "distill": [d or t != IGNORE for d, t in zip(distill, targets)],
             "spans": spans,
-            "tag_targets": [1.0 if tag in gold else 0.0 for tag in tags[: len(encoded.tag_positions)]],
+            "tag_targets": [-1.0] * tag_count if transfer else [1.0 if tag in gold else 0.0 for tag in tags[:tag_count]],
             "row": row,
             "text": text,
             "tags": tags[: len(encoded.tag_positions)],
@@ -119,31 +130,31 @@ class Examples(torch.utils.data.Dataset):
         }
 
 
-def collate(items):
-    n = max(len(item["encoded"].ids) for item in items)
-    t = max(1, max(len(item["encoded"].tag_positions) for item in items))
+def tensors_of(encodeds):
+    """Padded input tensors for a list of Encoded sequences."""
+    n = max(len(e.ids) for e in encodeds)
+    t = max(1, max(len(e.tag_positions) for e in encodeds))
     def pad(values, size, fill):
         return values + [fill] * (size - len(values))
     batch = {
-        "ids": torch.tensor([pad(i["encoded"].ids, n, 0) for i in items]),
-        "specials": torch.tensor([pad(i["encoded"].specials, n, 0) for i in items]),
-        "shapes": torch.tensor([pad(i["encoded"].shapes, n, 0) for i in items]),
-        "segments": torch.tensor([pad(i["encoded"].segments, n, 0) for i in items]),
-        "spaced": torch.tensor([pad(i["encoded"].spaced, n, 0) for i in items]),
-        "overlap": torch.tensor([pad(i["encoded"].overlap, n, 0) for i in items]),
-        "mask": torch.tensor([pad([True] * len(i["encoded"].ids), n, False) for i in items]),
-        "targets": torch.tensor([pad(i["targets"], n, IGNORE) for i in items]),
-        "tag_positions": torch.tensor([pad(i["encoded"].tag_positions, t, -1) for i in items]),
-        "tag_targets": torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items]),
+        "ids": torch.tensor([pad(e.ids, n, 0) for e in encodeds]),
+        "specials": torch.tensor([pad(e.specials, n, 0) for e in encodeds]),
+        "shapes": torch.tensor([pad(e.shapes, n, 0) for e in encodeds]),
+        "segments": torch.tensor([pad(e.segments, n, 0) for e in encodeds]),
+        "spaced": torch.tensor([pad(e.spaced, n, 0) for e in encodeds]),
+        "overlap": torch.tensor([pad(e.overlap, n, 0) for e in encodeds]),
+        "mask": torch.tensor([pad([True] * len(e.ids), n, False) for e in encodeds]),
+        "tag_positions": torch.tensor([pad(e.tag_positions, t, -1) for e in encodeds]),
+        "tag_valid": torch.tensor([pad([True] * len(e.tag_positions), t, False) for e in encodeds]),
     }
     # Which tokens are each tag's words, and which are text words (for similarity).
-    members = torch.zeros(len(items), t, n, dtype=torch.bool)
-    text_words = torch.zeros(len(items), n, dtype=torch.bool)
-    for b, item in enumerate(items):
-        e = item["encoded"]
-        for k, start in enumerate(e.tag_positions):
-            end = e.tag_positions[k + 1] if k + 1 < len(e.tag_positions) else len(e.ids)
-            members[b, k, start + 1:end] = True
+    members = torch.zeros(len(encodeds), t, n, dtype=torch.bool)
+    text_words = torch.zeros(len(encodeds), n, dtype=torch.bool)
+    for b, e in enumerate(encodeds):
+        if not e.tag_sequences:
+            for k, start in enumerate(e.tag_positions):
+                end = e.tag_positions[k + 1] if k + 1 < len(e.tag_positions) else len(e.ids)
+                members[b, k, start + 1:end] = True
         for i, special in enumerate(e.specials):
             if special == 0 and e.segments[i] == 0:
                 text_words[b, i] = True
@@ -151,6 +162,39 @@ def collate(items):
     batch["text_words"] = text_words
     # Pad tokens are real ids 0 with no special; mark them as [PAD] special.
     batch["specials"] = torch.where(batch["mask"], batch["specials"], torch.zeros_like(batch["specials"]))
+    if any(e.tag_sequences for e in encodeds):
+        length = max(len(seq.ids) for e in encodeds for seq in e.tag_sequences)
+        def seqs(field, fill):
+            rows = []
+            for e in encodeds:
+                padded = [pad(getattr(seq, field), length, fill) for seq in e.tag_sequences]
+                rows.append(padded + [[fill] * length] * (t - len(padded)))
+            return torch.tensor(rows)
+        batch["tag_seq_ids"] = seqs("ids", 0)
+        batch["tag_seq_specials"] = seqs("specials", 0)
+        batch["tag_seq_shapes"] = seqs("shapes", 0)
+        batch["tag_seq_spaced"] = seqs("spaced", 0)
+        mask = torch.zeros(len(encodeds), t, length, dtype=torch.bool)
+        for b, e in enumerate(encodeds):
+            for k, seq in enumerate(e.tag_sequences):
+                mask[b, k, : len(seq.ids)] = True
+        # Padding tags attend to their first slot so softmax stays finite.
+        mask[..., 0] = True
+        batch["tag_seq_mask"] = mask
+    return batch
+
+
+def collate(items):
+    batch = tensors_of([item["encoded"] for item in items])
+    n = batch["ids"].shape[1]
+    t = batch["tag_positions"].shape[1]
+    def pad(values, size, fill):
+        return values + [fill] * (size - len(values))
+    batch["targets"] = torch.tensor([pad(i["targets"], n, IGNORE) for i in items])
+    batch["distill"] = torch.tensor([pad(i["distill"], n, False) for i in items])
+    batch["tag_targets"] = torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items])
+    if items[0]["joint"] is not None:
+        batch["joint"] = tensors_of([item["joint"] for item in items])
     return batch, items
 
 
@@ -161,7 +205,8 @@ def evaluate(model, loader, device, threshold=0.5):
     exact_spans = exact_tags = exact_all = total = 0
     with torch.no_grad():
         for batch, items in loader:
-            tensors = {k: v.to(device) for k, v in batch.items()}
+            tensors = {k: v.to(device) for k, v in batch.items() if k != "joint"}
+            joint = {k: v.to(device) for k, v in batch["joint"].items()} if "joint" in batch else tensors
             span_logits, tag_logits = model(tensors)
             log_probs = span_logits.log_softmax(-1).cpu().tolist()
             tag_probs = torch.sigmoid(tag_logits).cpu().tolist()
@@ -217,11 +262,11 @@ def distill_loss(span_logits, tag_logits, teacher_spans, teacher_tags, tensors):
     """KL to the teacher's softened span distribution on text tokens, plus
     cross-entropy to its tag probabilities."""
     t = DISTILL_TEMPERATURE
-    tokens = tensors["targets"] != IGNORE
+    tokens = tensors["distill"]
     student = nn.functional.log_softmax(span_logits[tokens] / t, dim=-1)
     target = nn.functional.softmax(teacher_spans[tokens] / t, dim=-1)
     loss = nn.functional.kl_div(student, target, reduction="batchmean") * t * t
-    tag_mask = tensors["tag_targets"] >= 0
+    tag_mask = tensors["tag_valid"]
     if tag_mask.any():
         loss = loss + nn.functional.binary_cross_entropy_with_logits(
             tag_logits[tag_mask], torch.sigmoid(teacher_tags[tag_mask])
@@ -243,12 +288,15 @@ def main():
     parser.add_argument("--label-smoothing", type=float, default=0.0)
     parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>... with the same tokenizer: distill their averaged span and tag predictions")
     parser.add_argument("--distill-weight", type=float, default=0.5)
+    parser.add_argument("--transfer", nargs="*", default=[], help="data/transfer/*.jsonl: unlabelled rows learned only from the teacher")
     parser.add_argument("--keep-layers", type=int, default=0, help="pretrained encoders: use only the first N layers (faster)")
     parser.add_argument("--dim", type=int, default=160)
     parser.add_argument("--layers", type=int, default=4)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--ffn", type=int, default=448)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--late-tags", action="store_true", help="encode tags as separate cacheable sequences matched by cross-attention")
+    parser.add_argument("--bf16", action="store_true", help="bfloat16 autocast (faster for base/large encoders)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--fold", default="", help="k/n: hold out fold k of n (for out-of-fold predictions)")
     args = parser.parse_args()
@@ -258,7 +306,7 @@ def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     embedding_dir = ROOT / "data" / "embeddings" / args.embeddings
     featurizer = Featurizer(str(embedding_dir / "tokenizer.json"))
-    electra = args.embeddings.startswith("electra")
+    electra = args.embeddings.startswith(("electra", "minilm", "bert"))
     modern = args.embeddings.startswith("ettin")
     weights = load_file(str(embedding_dir / "model.safetensors"))
     if electra:
@@ -279,6 +327,12 @@ def main():
         dev_rows = [r for r in rows if is_dev(r)]
     if not dev_rows:  # tiny runs: hold out every 10th row instead
         dev_rows, train_rows = rows[::10], [r for i, r in enumerate(rows) if i % 10]
+    if args.transfer:
+        if not args.teacher:
+            raise SystemExit("--transfer rows are only learned through --teacher")
+        transfer_rows = [json.loads(line) for path in args.transfer for line in open(path) if line.strip()]
+        print(f"{len(transfer_rows)} transfer rows (teacher-labelled)", flush=True)
+        train_rows = train_rows + transfer_rows
     tag_pool = sorted({tag for r in train_rows for tag in r["tagList"]})
     print(f"{len(train_rows)} train, {len(dev_rows)} dev, {len(tag_pool)} distinct tags", flush=True)
 
@@ -309,14 +363,22 @@ def main():
             embedding_dim=embeddings.shape[1], vocab=embeddings.shape[0],
         )
         model = TaskParser(config, embeddings).to(device)
+    if args.late_tags:
+        # The cross-attention head is new; add it after loading pretrained weights.
+        config.late_tags = True
+        fresh = TaskParser(config)
+        model.cross_q, model.cross_kv, model.cross_out = fresh.cross_q.to(device), fresh.cross_kv.to(device), fresh.cross_out.to(device)
+        model.config = config
     encoder_params = sum(p.numel() for n, p in model.named_parameters() if not n.startswith("words."))
     print(f"encoder parameters: {encoder_params:,}; embedding table: {embeddings.numel():,}", flush=True)
 
+    teacher_late = [json.loads((Path(run) / "config.json").read_text()).get("late_tags", False) for run in args.teacher]
+    joint_too = any(late != args.late_tags for late in teacher_late)
     train_loader = torch.utils.data.DataLoader(
-        Examples(train_rows, featurizer, tag_pool, augment=True), batch_size=args.batch, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
+        Examples(train_rows, featurizer, tag_pool, augment=True, late=args.late_tags, joint_too=joint_too), batch_size=args.batch, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
     )
     dev_loader = torch.utils.data.DataLoader(
-        Examples(dev_rows, featurizer, tag_pool, augment=False), batch_size=128, collate_fn=collate, num_workers=2
+        Examples(dev_rows, featurizer, tag_pool, augment=False, late=args.late_tags), batch_size=128, collate_fn=collate, num_workers=2
     )
     # Pretrained parts fine-tune gently; new parts (features, heads) learn at --lr.
     pretrained_prefixes = (
@@ -356,17 +418,32 @@ def main():
     for epoch in range(args.epochs):
         total = 0.0
         for step, (batch, _) in enumerate(train_loader):
-            tensors = {k: v.to(device) for k, v in batch.items()}
-            span_logits, tag_logits = model(tensors)
-            loss = span_loss(span_logits.reshape(-1, span_logits.shape[-1]), tensors["targets"].reshape(-1))
+            tensors = {k: v.to(device) for k, v in batch.items() if k != "joint"}
+            joint = {k: v.to(device) for k, v in batch["joint"].items()} if "joint" in batch else tensors
+            with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
+                span_logits, tag_logits = model(tensors)
+            span_logits, tag_logits = span_logits.float(), tag_logits.float()
+            labelled = tensors["targets"] != IGNORE
+            loss = (
+                span_loss(span_logits.reshape(-1, span_logits.shape[-1]), tensors["targets"].reshape(-1))
+                if labelled.any()
+                else span_logits.sum() * 0.0
+            )
             tag_mask = tensors["tag_targets"] >= 0
             if tag_mask.any():
                 loss = loss + nn.functional.binary_cross_entropy_with_logits(
                     tag_logits[tag_mask], tensors["tag_targets"][tag_mask], pos_weight=torch.tensor(2.0, device=device)
                 )
             if teachers:
-                with torch.no_grad():
-                    outputs = [teacher(tensors) for teacher in teachers]
+                with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
+                    # A teacher reading tags the other way gets its own inputs;
+                    # the text tokens come first either way.
+                    outputs = [
+                        [o.float() for o in teacher(tensors if teacher.config.late_tags == config.late_tags else joint)]
+                        for teacher in teachers
+                    ]
+                    n = span_logits.shape[1]
+                    outputs = [[spans[:, :n], tags] for spans, tags in outputs]
                     teacher_spans = torch.stack([o[0] for o in outputs]).mean(0)
                     teacher_tags = torch.stack([o[1] for o in outputs]).mean(0)
                 loss = (1 - args.distill_weight) * loss + args.distill_weight * distill_loss(
@@ -380,6 +457,8 @@ def main():
             if ema is not None:
                 ema.update_parameters(model)
             total += loss.item()
+            if step % 500 == 499:
+                print(f"  step {step + 1}/{len(train_loader)} loss {total / (step + 1):.4f} {time.time() - started:.0f}s", flush=True)
         scored = ema.module if ema is not None else model
         metrics = evaluate(scored, dev_loader, device)
         print(f"epoch {epoch + 1} loss {total / len(train_loader):.4f} {json.dumps(metrics)} {time.time() - started:.0f}s", flush=True)

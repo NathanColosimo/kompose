@@ -57,7 +57,7 @@ export interface TaskParser {
 
 /**
  * A parser over weights from training/model/export.py. Parsing takes a few
- * milliseconds; date resolution loads gpu-time on first use.
+ * milliseconds, nearly all of it the model; dates resolve in microseconds.
  */
 export function createTaskParser(
   weightsFile: ArrayBuffer,

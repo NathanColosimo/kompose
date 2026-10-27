@@ -102,6 +102,11 @@ const UNITS: Record<string, Unit> = {
   minute: 1,
   minutes: 1,
   mn: 1,
+  w: 7 * 24 * 60,
+  week: 7 * 24 * 60,
+  weeks: 7 * 24 * 60,
+  wk: 7 * 24 * 60,
+  wks: 7 * 24 * 60,
 };
 
 const NUMBER_WORDS: Record<string, number> = {

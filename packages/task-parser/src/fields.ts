@@ -1,6 +1,7 @@
 import { Temporal } from "temporal-polyfill";
+import { isClockOnly } from "./datetime";
 import { parseDuration } from "./duration";
-import { type TaskRecurrence, toTaskRecurrence } from "./recurrence";
+import type { TaskRecurrence } from "./recurrence";
 import type { Label, Span } from "./spans";
 import { resolveWhen } from "./when";
 
@@ -31,13 +32,6 @@ const JOINER_PATTERN =
 const TRAILING_JOINER_PATTERN =
   /(?:[\s,;:&+/\u2013\u2014-]|\s(?:for|at|by|from|until|till|starting|due|every|before|and|or)\b)+$/i;
 
-const CLOCK_WORDS =
-  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve";
-/** A time of day with no date: "4pm", "930am", "half nine", "evening". */
-const CLOCK_ONLY_PATTERN = new RegExp(
-  `^(?:by|at|before|until|till|around|about|@)?\\s*(?:\\d{1,2}(?::?\\d{2})?\\s*(?:[ap]\\.?m\\.?)?|(?:half|quarter)(?:\\s+(?:past|to))?\\s+(?:\\d{1,2}|${CLOCK_WORDS})|(?:${CLOCK_WORDS})(?:[\\s-]+(?:thirty|fifteen|forty[\\s-]five|ten|twenty|o'clock))?|noon|midday|midnight|eod|cob|end of (?:the )?day|close of business|(?:in the )?(?:morning|afternoon|evening|night)|(?:lunch|dinner)(?:time)?)$`,
-  "i"
-);
 /** "to" left over from "remind me to …" when the filler span stops early. */
 const LEADING_TO_PATTERN = /^to\s+(?!do\b)(?=\S+\s+\S)/i;
 const CORRECTION_PATTERN =
@@ -79,7 +73,7 @@ function whenPieces(spans: Span[], label: Label) {
     .filter((span) => span.label === label)
     .sort((a, b) => a.start - b.start);
   const pieces = ordered.map((span) => span.text.trim());
-  const days = pieces.filter((piece) => !CLOCK_ONLY_PATTERN.test(piece));
+  const days = pieces.filter((piece) => !isClockOnly(piece));
   // "thursday the 29th, actually make that wednesday": the last one wins.
   const corrected =
     days.length > 1 &&
@@ -90,8 +84,7 @@ function whenPieces(spans: Span[], label: Label) {
         span.start > (ordered[0]?.start ?? 0)
     );
   const day = (corrected ? days.at(-1) : days[0]) ?? null;
-  const clock =
-    pieces.findLast((piece) => CLOCK_ONLY_PATTERN.test(piece)) ?? null;
+  const clock = pieces.findLast((piece) => isClockOnly(piece)) ?? null;
   return { clock, day, text: [day, clock].filter(Boolean).join(" ") };
 }
 
@@ -107,18 +100,20 @@ function withMeridiemOf(day: string, clock: string) {
 }
 
 /** A day piece read on its own, with the clock piece's time when there is one. */
-async function resolvePieces(
+function resolvePieces(
   { clock, day, text }: ReturnType<typeof whenPieces>,
   now: Temporal.ZonedDateTime
 ) {
   if (!(day && clock)) {
     return text ? resolveWhen(text, { now }) : null;
   }
-  const date = await resolveWhen(day, { now });
-  if (!date) {
-    return resolveWhen(text, { now });
+  const date = resolveWhen(day, { now });
+  // "thanksgiving" + "3pm ET": read together, so the zone can move the day.
+  if (!date?.time) {
+    return resolveWhen(`${day} ${withMeridiemOf(day, clock)}`, { now }) ?? date;
   }
-  const time = await resolveWhen(withMeridiemOf(day, clock), {
+  // "tomorrow at 3 … no, 4": the later clock replaces the day's.
+  const time = resolveWhen(withMeridiemOf(day, clock), {
     now: date.date.toZonedDateTime({ timeZone: now.timeZoneId }),
   });
   return time?.time ? { ...date, end: time.end, time: time.time } : date;
@@ -135,7 +130,8 @@ function toLink(text: string) {
 
 /**
  * Resolve labelled spans into task fields. Dates resolve against `now`;
- * `tagNames` are the tags already chosen for the input.
+ * `tagNames` are the tags already chosen for the input. Synchronous inside;
+ * async so callers don't change if resolution ever needs to load anything.
  */
 export async function resolveFields({
   now = Temporal.Now.zonedDateTimeISO(),
@@ -155,21 +151,27 @@ export async function resolveFields({
   const dueText = duePieces.text;
   const repeatText = textOf(spans, "R");
 
-  const start = await resolvePieces(startPieces, now);
+  const start = resolvePieces(startPieces, now);
   const repeat = repeatText
-    ? await resolveRepeat({ dueText, now, repeatText, startText })
+    ? resolveRepeat({
+        dueText,
+        now,
+        repeatText,
+        startText,
+        until: endsRepeat(spans, text),
+      })
     : null;
   const anchor = start ?? repeat;
   // "start nov 5 at 1:15, due 4pm": a deadline with only a clock time is on
   // the start's day (or the next one after the start).
   const dueFrom =
-    anchor && CLOCK_ONLY_PATTERN.test(dueText)
+    anchor && isClockOnly(dueText)
       ? anchor.date.toZonedDateTime({
           plainTime: anchor.time ?? undefined,
           timeZone: now.timeZoneId,
         })
       : now;
-  const due = await resolvePieces(duePieces, dueFrom);
+  const due = resolvePieces(duePieces, dueFrom);
 
   const startDate = repeat?.date ?? start?.date ?? null;
   return {
@@ -179,10 +181,7 @@ export async function resolveFields({
     links: spans
       .filter((span) => span.label === "L")
       .map((span) => toLink(span.text)),
-    recurrence:
-      repeat?.rrule && startDate
-        ? toTaskRecurrence(repeat.rrule, startDate, now.timeZoneId)
-        : null,
+    recurrence: repeat?.recurrence ?? null,
     startDate,
     startTime: repeat?.time ?? start?.time ?? null,
     tagNames,
@@ -190,64 +189,21 @@ export async function resolveFields({
   };
 }
 
-const EVERY_PATTERN = /\b(every|each)\b/i;
-const ENDING_PATTERN =
-  /\s+(?:repeat(?:ing)?\s+)?(?:thru|through|until|till|ending(?:\s+on)?|up to)\s+(.+)$/i;
-const LAST_WEEKDAY_PATTERN = /\blast (?:week|business |work(?:ing)? )day\b/i;
-const MONTH_WORDS_PATTERN = /^.*\bmonth\b/i;
+const UNTIL_GAP_PATTERN =
+  /\b(?:until|till|til|thru|through|ending(?: on)?)\s*$/i;
 
-/**
- * "the last weekday of every month" has no place in the task schema, so it
- * resolves to its next date (and time) without a repeat.
- */
-async function lastWeekdayRepeat(text: string, now: Temporal.ZonedDateTime) {
-  const today = now.toPlainDate();
-  let date = lastWeekdayOf(today);
-  if (Temporal.PlainDate.compare(date, today) < 0) {
-    date = lastWeekdayOf(today.add({ months: 1 }));
-  }
-  const clock = text.replace(MONTH_WORDS_PATTERN, "").trim();
-  const time = clock
-    ? ((await resolveWhen(clock, { now }))?.time ?? null)
-    : null;
-  return { date, end: null, rrule: null, time };
-}
-
-function lastWeekdayOf(day: Temporal.PlainDate) {
-  let last = day.with({ day: day.daysInMonth });
-  while (last.dayOfWeek > 5) {
-    last = last.subtract({ days: 1 });
-  }
-  return last;
-}
-
-/** Repeat words gpu-time doesn't know, as phrases it does. */
-const REPEAT_SYNONYMS: [RegExp, string][] = [
-  [/\bnightly\b/i, "every night"],
-  [/\bonce an? (day|week|month|year)\b/i, "every $1"],
-  [/\bquarterly\b/i, "every 3 months"],
-  [/\bsemi-?annually\b/i, "every 6 months"],
-  [/\bfortnightly\b/i, "every 2 weeks"],
-  [/\bm\/?w\/?f\b/i, "mon wed fri"],
-  [/\bt\/?th\b/i, "tue thu"],
-  [/\bm-f\b/i, "weekdays"],
-  // Clinical shorthand: "q2 weeks", "q3d".
-  [/\bq(\d+)\s*(day|week|month)s?\b/i, "every $1 $2s"],
-  [/\bq(\d+)d\b/i, "every $1 days"],
-  [/\bea\.?\s+mo\b/i, "each month"],
-  [/\bea\.?\s+wk\b/i, "each week"],
-];
-
-function normalizeRepeat(text: string) {
-  let result = text;
-  for (const [pattern, replacement] of REPEAT_SYNONYMS) {
-    result = result.replace(pattern, replacement);
-  }
-  return result;
+/** Whether the first due span follows "until"/"through" (a repeat's end). */
+function endsRepeat(spans: Span[], text?: string) {
+  const due = spans.find((span) => span.label === "U");
+  return (
+    due !== undefined &&
+    text !== undefined &&
+    UNTIL_GAP_PATTERN.test(text.slice(Math.max(0, due.start - 20), due.start))
+  );
 }
 
 /** Minutes in an explicit time range ("2-2:30"). */
-function rangeMinutes(when: Awaited<ReturnType<typeof resolveWhen>>) {
+function rangeMinutes(when: ReturnType<typeof resolveWhen>) {
   if (!(when?.end && when.time)) {
     return null;
   }
@@ -261,52 +217,32 @@ function rangeMinutes(when: Awaited<ReturnType<typeof resolveWhen>>) {
  * A repeat with its anchor: "every monday" starting "next week", or "every
  * month" by "the 1st". Falls back to the repeat phrase alone.
  */
-async function resolveRepeat({
+function resolveRepeat({
   dueText,
   now,
   repeatText,
   startText,
+  until,
 }: {
   dueText: string;
   now: Temporal.ZonedDateTime;
   repeatText: string;
   startText: string;
+  /** The due span is the repeat's end ("every tue until [dec]"). */
+  until: boolean;
 }) {
-  const normalized = normalizeRepeat(repeatText);
-  if (LAST_WEEKDAY_PATTERN.test(normalized)) {
-    return lastWeekdayRepeat(normalized, now);
-  }
-  // gpu-time wants the end last: "every sun starting oct 25 until dec 20".
-  const ending = ENDING_PATTERN.exec(normalized);
-  const base = ending ? normalized.slice(0, ending.index) : normalized;
-  const until = ending ? ` until ${ending[1]}` : "";
-  const phrases = [base];
-  // "mon wed fri at 6am" only repeats for gpu-time with "every".
-  if (!EVERY_PATTERN.test(base)) {
-    phrases.push(`every ${base}`);
-  }
-  const candidates = phrases.flatMap((phrase) =>
-    [
-      startText && `${phrase} starting ${startText}${until}`,
-      dueText && `${phrase} on ${dueText}${until}`,
-      `${phrase}${until}`,
-      until && phrase,
-    ].filter(Boolean)
-  );
-  // The first reading the task schema can hold wins; otherwise keep any
-  // repeating reading for its first date.
-  let fallback: Awaited<ReturnType<typeof resolveWhen>> = null;
+  const base = until && dueText ? `${repeatText} until ${dueText}` : repeatText;
+  const candidates = [
+    startText && `${base} starting ${startText}`,
+    !until && dueText && !isClockOnly(dueText) && `${base} on ${dueText}`,
+    base,
+  ].filter(Boolean) as string[];
+  // The fullest reading that resolves wins.
   for (const candidate of candidates) {
-    // Sequential on purpose: the first reading that fits wins.
-    // biome-ignore lint/performance/noAwaitInLoops: see above
-    const resolved = await resolveWhen(candidate, { now });
-    if (!resolved?.rrule) {
-      continue;
-    }
-    if (toTaskRecurrence(resolved.rrule, resolved.date, now.timeZoneId)) {
+    const resolved = resolveWhen(candidate, { now, repeating: true });
+    if (resolved) {
       return resolved;
     }
-    fallback ??= resolved;
   }
-  return fallback;
+  return null;
 }

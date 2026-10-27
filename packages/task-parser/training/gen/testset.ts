@@ -659,23 +659,21 @@ ${batch
 
 /**
  * testset/test.jsonl for gen/evaluate.ts: gold labels with the fields our
- * resolvers give for them, so the set measures the model. Where the
- * independent field check (fields) disagreed, the item is left out until
- * that is settled.
+ * resolvers give for them, so the set measures the model. Items where the
+ * resolvers disagree with the independent field check (fields) are left out
+ * until that is settled; the check reruns against the current resolvers.
  */
 async function build() {
   const checked = new Map(
     (
-      await readJsonl<{ id: string; mismatches: string[] }>(
+      await readJsonl<{ id: string; independent: Record<string, unknown> }>(
         `${DIR}fields.jsonl`
       )
     ).map((row) => [row.id, row])
   );
   const rows: object[] = [];
+  let excluded = 0;
   for (const row of await readJsonl<Gold>(`${DIR}gold.jsonl`)) {
-    if ((checked.get(row.id)?.mismatches.length ?? 0) > 0) {
-      continue;
-    }
     const { spans, text } = parseMarkup(row.marked);
     const resolved = fieldsOf(
       await resolveFields({
@@ -685,10 +683,61 @@ async function build() {
         text,
       })
     );
+    const independent = checked.get(row.id)?.independent;
+    if (!independent) {
+      continue;
+    }
+    const agrees = DATE_FIELDS.every((field) =>
+      field === "recurrence"
+        ? JSON.stringify(
+            canonicalRecurrence(independent.recurrence, independent.startDate)
+          ) ===
+          JSON.stringify(
+            canonicalRecurrence(resolved.recurrence, resolved.startDate)
+          )
+        : JSON.stringify(independent[field] ?? null) ===
+          JSON.stringify(resolved[field] ?? null)
+    );
+    if (!agrees) {
+      excluded += 1;
+      continue;
+    }
     rows.push({ ...row, fields: resolved });
   }
   await writeJsonl(`${ROOT}testset/test.jsonl`, rows);
-  console.log(`${rows.length} test rows (${checked.size} field-checked)`);
+  console.log(
+    `${rows.length} test rows (${excluded} left out: resolver and field check disagree)`
+  );
+}
+
+const CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+/** A recurrence with the schema's defaults filled in, keys sorted. */
+function canonicalRecurrence(recurrence: unknown, startDate: unknown) {
+  if (
+    !(
+      recurrence &&
+      typeof recurrence === "object" &&
+      typeof startDate === "string"
+    )
+  ) {
+    return null;
+  }
+  const rule: Record<string, unknown> = Object.fromEntries(
+    Object.entries(recurrence).filter(([, value]) => value !== null)
+  );
+  const start = Temporal.PlainDate.from(startDate);
+  if (rule.freq === "WEEKLY" && !rule.byDay) {
+    rule.byDay = [CODES[start.dayOfWeek - 1]];
+  }
+  if (rule.freq === "MONTHLY" && !rule.byMonthDay) {
+    rule.byMonthDay = start.day;
+  }
+  if (Array.isArray(rule.byDay)) {
+    rule.byDay = [...rule.byDay].sort(
+      (a, b) => CODES.indexOf(a) - CODES.indexOf(b)
+    );
+  }
+  return sortKeys(rule);
 }
 
 function sortKeys(value: unknown) {

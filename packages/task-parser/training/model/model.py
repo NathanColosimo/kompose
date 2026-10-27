@@ -28,6 +28,10 @@ class Config:
         self.rope_theta = 160000.0
         self.local_window = 128
         self.global_every = 3
+        # Tags as separate sequences matched to the text by cross-attention
+        # (cacheable, so cost doesn't grow with the tag list), instead of
+        # appended to the text.
+        self.late_tags = False
         self.__dict__.update(kwargs)
 
     def to_dict(self):
@@ -168,13 +172,18 @@ class TaskParser(nn.Module):
             self.layers = nn.ModuleList(Layer(c) for _ in range(c.layers))
             self.norm = nn.LayerNorm(c.dim)
         self.spans = nn.Linear(c.dim, len(TAG_NAMES))
+        if c.late_tags:
+            self.cross_q = nn.Linear(c.dim, c.dim)
+            self.cross_kv = nn.Linear(c.dim, 2 * c.dim)
+            self.cross_out = nn.Linear(c.dim, c.dim)
         self.tag_hidden = nn.Linear(c.dim, c.dim)
         self.tag_out = nn.Linear(c.dim, 1)
         # Static-embedding similarity between a tag's words and the text's
         # words (max, mean of top 3), so unseen tag names still match by meaning.
         self.tag_similarity = nn.Linear(2, c.dim)
 
-    def forward(self, batch):
+    def embed(self, batch):
+        """Summed input embeddings of a batch of sequences."""
         ids, specials = batch["ids"], batch["specials"]
         is_special = specials > 0
         arch = self.config.arch
@@ -191,28 +200,66 @@ class TaskParser(nn.Module):
             + self.positions(positions)
         )
         if arch == "electra":
-            x = self.project(self.drop(self.embed_norm(x)))
-        elif arch == "modernbert":
-            x = self.drop(self.embed_norm(x))
-        else:
-            x = self.drop(x)
+            return self.project(self.drop(self.embed_norm(x)))
+        if arch == "modernbert":
+            return self.drop(self.embed_norm(x))
+        return self.drop(x)
+
+    def encode(self, batch):
+        x = self.embed(batch)
         mask = batch["mask"]
         for layer in self.layers:
             x = layer(x, mask)
-        if arch != "electra":
+        if self.config.arch != "electra":
             x = self.norm(x)
+        return x
+
+    def forward(self, batch):
+        x = self.encode(batch)
         span_logits = self.spans(x)
-        tag_states = x.gather(1, batch["tag_positions"].clamp(min=0)[..., None].expand(-1, -1, x.shape[-1]))
+        if self.config.late_tags:
+            tag_states = self.late_tag_states(batch, x)
+        else:
+            tag_states = x.gather(1, batch["tag_positions"].clamp(min=0)[..., None].expand(-1, -1, x.shape[-1]))
         tag_states = tag_states + self.tag_similarity(self.similarity(batch))
         tag_logits = self.tag_out(nn.functional.gelu(self.tag_hidden(tag_states), approximate="tanh")).squeeze(-1)
         return span_logits, tag_logits
+
+    def late_tag_states(self, batch, x):
+        """Each tag encoded alone ([TAG] state), plus what it attends to in the text."""
+        b, t, length = batch["tag_seq_ids"].shape
+        tags = {
+            "ids": batch["tag_seq_ids"].view(b * t, length),
+            "specials": batch["tag_seq_specials"].view(b * t, length),
+            "shapes": batch["tag_seq_shapes"].view(b * t, length),
+            "segments": torch.ones_like(batch["tag_seq_ids"]).view(b * t, length),
+            "spaced": batch["tag_seq_spaced"].view(b * t, length),
+            "overlap": torch.zeros_like(batch["tag_seq_ids"]).view(b * t, length),
+            "mask": batch["tag_seq_mask"].view(b * t, length),
+        }
+        tag_vectors = self.encode(tags)[:, 0].view(b, t, -1)
+        heads = self.config.heads
+        d = x.shape[-1]
+        q = self.cross_q(tag_vectors).view(b, t, heads, d // heads).transpose(1, 2)
+        k, v = self.cross_kv(x).view(b, -1, 2, heads, d // heads).permute(2, 0, 3, 1, 4)
+        scores = (q @ k.transpose(-1, -2)) / math.sqrt(d // heads)
+        text = batch["mask"] & (batch["segments"] == 0)
+        scores = scores.masked_fill(~text[:, None, None, :], float("-inf"))
+        context = (self.drop(scores.softmax(-1)) @ v).transpose(1, 2).reshape(b, t, d)
+        return tag_vectors + self.cross_out(context)
 
     def similarity(self, batch):
         """[batch, tags, 2]: max and top-3 mean cosine similarity of each tag's
         mean word embedding to the text's word embeddings."""
         static = nn.functional.normalize(self.words(batch["ids"].clamp(min=0)), dim=-1)
-        members = batch["tag_members"].float()  # [B, tags, N]
-        tag_vectors = nn.functional.normalize(members @ static, dim=-1)  # [B, tags, E]
+        if self.config.late_tags:
+            # Each tag's own word pieces (not [TAG], not padding).
+            words = batch["tag_seq_mask"] & (batch["tag_seq_specials"] == 0)  # [B, T, L]
+            tag_static = nn.functional.normalize(self.words(batch["tag_seq_ids"].clamp(min=0)), dim=-1)
+            tag_vectors = nn.functional.normalize((tag_static * words[..., None]).sum(2), dim=-1)
+        else:
+            members = batch["tag_members"].float()  # [B, tags, N]
+            tag_vectors = nn.functional.normalize(members @ static, dim=-1)  # [B, tags, E]
         sims = tag_vectors @ static.transpose(1, 2)  # [B, tags, N]
         text = batch["text_words"][:, None, :]  # [B, 1, N]
         sims = sims.masked_fill(~text, -1.0)
@@ -223,7 +270,7 @@ class TaskParser(nn.Module):
 
 
 def load_electra(model: TaskParser, path: str, vocab: dict[str, int]):
-    """Copy ELECTRA-small weights (data/embeddings/electra-small) into `model`."""
+    """Copy ELECTRA weights (data/embeddings/electra-*) into `model`."""
     from safetensors.torch import load_file
 
     w = load_file(path)
@@ -234,8 +281,13 @@ def load_electra(model: TaskParser, path: str, vocab: dict[str, int]):
         model.segments.weight.copy_(w[e + "token_type_embeddings.weight"])
         model.embed_norm.weight.copy_(w[e + "LayerNorm.weight"])
         model.embed_norm.bias.copy_(w[e + "LayerNorm.bias"])
-        model.project.weight.copy_(w["electra.embeddings_project.weight"])
-        model.project.bias.copy_(w["electra.embeddings_project.bias"])
+        if "electra.embeddings_project.weight" in w:
+            model.project.weight.copy_(w["electra.embeddings_project.weight"])
+            model.project.bias.copy_(w["electra.embeddings_project.bias"])
+        else:
+            # base/large: embeddings are already model-wide.
+            model.project.weight.copy_(torch.eye(model.project.weight.shape[0]))
+            model.project.bias.zero_()
         # [PAD] [CLS] [SEP] start as their pretrained tokens; [URL] and [TAG]
         # as unused slots.
         for index, token in enumerate(["[PAD]", "[CLS]", "[SEP]", "[unused0]", "[unused1]"]):

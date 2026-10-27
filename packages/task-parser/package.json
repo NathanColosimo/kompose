@@ -11,7 +11,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "gpu-time": "0.5.0",
     "temporal-polyfill": "catalog:"
   },
   "devDependencies": {
