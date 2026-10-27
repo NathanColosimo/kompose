@@ -387,22 +387,20 @@ function normalize(vector: Float32Array) {
 function tagSimilarity(weights: Weights, encoded: Encoded) {
   const words = tensor(weights, "words.weight");
   const n = encoded.ids.length;
-  const unit = (t: number) =>
-    normalize(row(words, Math.max(encoded.ids[t] ?? 0, 0)));
+  const unit = (id: number) => normalize(row(words, Math.max(id, 0)));
   const text: Float32Array[] = [];
   for (let t = 0; t < n; t += 1) {
     if (!encoded.specials[t] && encoded.segments[t] === 0) {
-      text.push(unit(t));
+      text.push(unit(encoded.ids[t] ?? 0));
     }
   }
-  return encoded.tagPositions.map((position, index) => {
+  return encoded.tagPositions.map((_, index) => {
     if (text.length === 0) {
       return [0, 0] as const;
     }
-    const end = encoded.tagPositions[index + 1] ?? n;
     const tag = new Float32Array(words.cols);
-    for (let t = position + 1; t < end; t += 1) {
-      addInPlace(tag, unit(t));
+    for (const id of tagWordIds(encoded, index)) {
+      addInPlace(tag, unit(id));
     }
     normalize(tag);
     const top = [-1, -1, -1].slice(0, Math.min(3, n));
@@ -419,6 +417,17 @@ function tagSimilarity(weights: Weights, encoded: Encoded) {
       top.reduce((a, b) => a + b, 0) / top.length,
     ] as const;
   });
+}
+
+/** The word-piece ids of the `index`th tag (after its [TAG] marker). */
+function tagWordIds(encoded: Encoded, index: number): number[] {
+  const sequence = encoded.tagSequences?.[index]?.encoded;
+  if (sequence) {
+    return sequence.ids.filter((_, t) => !sequence.specials[t]);
+  }
+  const position = encoded.tagPositions[index] ?? 0;
+  const end = encoded.tagPositions[index + 1] ?? encoded.ids.length;
+  return encoded.ids.slice(position + 1, end);
 }
 
 export interface Logits {
@@ -665,7 +674,8 @@ function modernLayer(
   return x;
 }
 
-export function forward(weights: Weights, encoded: Encoded): Logits {
+/** Final token states of one sequence: embeddings through every layer. */
+function encodeSequence(weights: Weights, encoded: Encoded): Float32Array {
   const { arch = "scratch", dim, layers } = weights.config;
   const n = encoded.ids.length;
   let x: Float32Array = embed(weights, encoded);
@@ -687,19 +697,120 @@ export function forward(weights: Weights, encoded: Encoded): Logits {
       weights.tensors.get("norm.bias")
     );
   }
+  return x;
+}
 
+/** Late-tag vectors by tag name: a tag's encoding doesn't depend on the text. */
+const tagVectorCache = new WeakMap<Weights, Map<string, Float32Array>>();
+const TAG_CACHE_SIZE = 512;
+
+function tagVector(
+  weights: Weights,
+  { encoded, name }: { encoded: Encoded; name: string }
+) {
+  let cache = tagVectorCache.get(weights);
+  if (!cache) {
+    cache = new Map();
+    tagVectorCache.set(weights, cache);
+  }
+  let vector = cache.get(name);
+  if (!vector) {
+    vector = encodeSequence(weights, encoded).slice(0, weights.config.dim);
+    if (cache.size >= TAG_CACHE_SIZE) {
+      cache.clear();
+    }
+    cache.set(name, vector);
+  }
+  return vector;
+}
+
+/**
+ * Late tags: each tag's own [TAG] state plus what it attends to among the
+ * text tokens (model.py `late_tag_states`).
+ */
+function lateTagStates(weights: Weights, encoded: Encoded, x: Float32Array) {
+  const { dim, heads } = weights.config;
+  const sequences = encoded.tagSequences ?? [];
+  const count = sequences.length;
+  const n = encoded.ids.length;
+  const states = new Float32Array(count * dim);
+  sequences.forEach((sequence, index) => {
+    states.set(tagVector(weights, sequence), index * dim);
+  });
+  const q = linear(
+    states,
+    count,
+    tensor(weights, "cross_q.weight"),
+    weights.tensors.get("cross_q.bias")
+  );
+  const kv = linear(
+    x,
+    n,
+    tensor(weights, "cross_kv.weight"),
+    weights.tensors.get("cross_kv.bias")
+  );
+  const size = dim / heads;
+  const scale = 1 / Math.sqrt(size);
+  const context = new Float32Array(count * dim);
+  const scores = new Float32Array(n);
+  for (let tag = 0; tag < count; tag += 1) {
+    for (let head = 0; head < heads; head += 1) {
+      const qAt = tag * dim + head * size;
+      let max = Number.NEGATIVE_INFINITY;
+      for (let t = 0; t < n; t += 1) {
+        const score = dot(q, qAt, kv, t * 2 * dim + head * size, size) * scale;
+        scores[t] = score;
+        max = Math.max(max, score);
+      }
+      let total = 0;
+      for (let t = 0; t < n; t += 1) {
+        const weight = Math.exp((scores[t] as number) - max);
+        scores[t] = weight;
+        total += weight;
+      }
+      for (let t = 0; t < n; t += 1) {
+        const weight = (scores[t] as number) / total;
+        const vAt = t * 2 * dim + dim + head * size;
+        for (let c = 0; c < size; c += 1) {
+          context[qAt + c] =
+            (context[qAt + c] as number) + weight * (kv[vAt + c] as number);
+        }
+      }
+    }
+  }
+  addInPlace(
+    states,
+    linear(
+      context,
+      count,
+      tensor(weights, "cross_out.weight"),
+      weights.tensors.get("cross_out.bias")
+    )
+  );
+  return states;
+}
+
+export function forward(weights: Weights, encoded: Encoded): Logits {
+  const { dim } = weights.config;
+  const n = encoded.ids.length;
+  const x = encodeSequence(weights, encoded);
   const spans = linear(
     x,
     n,
     tensor(weights, "spans.weight"),
     weights.tensors.get("spans.bias")
   );
-  // The tag head runs on every tag's [TAG] state at once.
+  // The tag head runs on every tag's state at once.
   const count = encoded.tagPositions.length;
-  const states = new Float32Array(count * dim);
-  encoded.tagPositions.forEach((position, index) => {
-    states.set(x.subarray(position * dim, (position + 1) * dim), index * dim);
-  });
+  let states: Float32Array;
+  if (weights.config.late_tags) {
+    states = lateTagStates(weights, encoded, x);
+  } else {
+    states = new Float32Array(count * dim);
+    encoded.tagPositions.forEach((position, index) => {
+      states.set(x.subarray(position * dim, (position + 1) * dim), index * dim);
+    });
+  }
   addInPlace(
     states,
     linear(

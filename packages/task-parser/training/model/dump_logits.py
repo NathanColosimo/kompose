@@ -3,6 +3,7 @@
 uv run python model/dump_logits.py runs/<name> data/clean/<file>.jsonl [limit]
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,8 @@ from features import Featurizer, viterbi  # noqa: E402
 from model import Config, TaskParser  # noqa: E402
 from train import collate  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
+# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 run = Path(sys.argv[1])
 config = json.loads((run / "config.json").read_text())
 model = TaskParser(Config(**{k: v for k, v in config.items() if k not in ("embeddings", "dev")}))
@@ -25,8 +27,14 @@ limit = int(sys.argv[3]) if len(sys.argv) > 3 else 50
 cases = []
 for line in list(open(sys.argv[2]))[:limit]:
     row = json.loads(line)
-    encoded = featurizer.encode(row["text"], row["tagList"])
-    item = {"encoded": encoded, "targets": [0] * len(encoded.ids), "tag_targets": [0.0] * len(encoded.tag_positions)}
+    encoded = featurizer.encode(row["text"], row["tagList"], late=config.get("late_tags", False))
+    item = {
+        "encoded": encoded,
+        "targets": [0] * len(encoded.ids),
+        "distill": [False] * len(encoded.ids),
+        "tag_targets": [0.0] * len(encoded.tag_positions),
+        "joint": None,
+    }
     batch, _ = collate([item])
     with torch.no_grad():
         spans, tags = model(batch)

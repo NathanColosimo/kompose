@@ -6,11 +6,13 @@ leading-space trim features.py applies (byte-level BPE tokens carry it).
 """
 import argparse
 import json
+import os
 from pathlib import Path
 
 from tokenizers import Tokenizer
 
-ROOT = Path(__file__).resolve().parent.parent
+# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 parser = argparse.ArgumentParser()
 parser.add_argument("--embeddings", default="potion-base-4M")
 parser.add_argument("data", nargs="+")

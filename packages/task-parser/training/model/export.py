@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 from pathlib import Path
 
@@ -22,7 +23,8 @@ import torch
 from safetensors.torch import load_file, save_file
 from tokenizers import Tokenizer
 
-ROOT = Path(__file__).resolve().parent.parent
+# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 
 
 def quantize(weight: np.ndarray):

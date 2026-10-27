@@ -22,7 +22,9 @@ const rows = (await readFile(`${ROOT}testset/test.jsonl`, "utf8"))
   .split("\n")
   .filter(Boolean)
   .map((l) => JSON.parse(l));
-const inputs = rows.map((row) => encode(tokenizer, row.text, row.tagList));
+const inputs = rows.map((row) =>
+  encode(tokenizer, row.text, row.tagList, { late: weights.config.late_tags })
+);
 for (const input of inputs.slice(0, 50)) {
   forward(weights, input); // warm up
 }

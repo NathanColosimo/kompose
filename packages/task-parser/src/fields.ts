@@ -130,10 +130,9 @@ function toLink(text: string) {
 
 /**
  * Resolve labelled spans into task fields. Dates resolve against `now`;
- * `tagNames` are the tags already chosen for the input. Synchronous inside;
- * async so callers don't change if resolution ever needs to load anything.
+ * `tagNames` are the tags already chosen for the input.
  */
-export async function resolveFields({
+export function resolveFields({
   now = Temporal.Now.zonedDateTimeISO(),
   spans,
   tagNames,
@@ -144,7 +143,7 @@ export async function resolveFields({
   tagNames: string[];
   /** The input, so split fields keep their punctuation. */
   text?: string;
-}): Promise<TaskFields> {
+}): TaskFields {
   const startPieces = whenPieces(spans, "S");
   const duePieces = whenPieces(spans, "U");
   const startText = startPieces.text;

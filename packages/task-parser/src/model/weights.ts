@@ -11,6 +11,8 @@ export interface ModelConfig {
   ffn: number;
   global_every?: number;
   heads: number;
+  /** Tags as separate cached sequences matched by cross-attention. */
+  late_tags?: boolean;
   layers: number;
   local_window?: number;
   max_positions: number;

@@ -30,7 +30,9 @@ describe.skipIf(!(existsSync(weightsFile) && existsSync(casesFile)))(
       let worst = 0;
       let decodedDifferently = 0;
       for (const expected of cases) {
-        const encoded = encode(tokenizer, expected.text, expected.tagList);
+        const encoded = encode(tokenizer, expected.text, expected.tagList, {
+          late: weights.config.late_tags,
+        });
         const logits = forward(weights, encoded);
         if (
           JSON.stringify(viterbi(encoded, logits.spans)) !==

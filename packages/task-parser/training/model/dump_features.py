@@ -1,12 +1,14 @@
 """Dump Python features for dataset rows (UTF-16 offsets) for the TS parity test."""
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from features import Featurizer  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
+# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 featurizer = Featurizer(str(ROOT / "data/embeddings/potion-base-4M/tokenizer.json"))
 
 

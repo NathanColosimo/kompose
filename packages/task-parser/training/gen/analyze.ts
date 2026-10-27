@@ -118,7 +118,9 @@ for (const row of rows) {
   }
 
   const t0 = performance.now();
-  const enc = encode(tokenizer, row.text, row.tagList);
+  const enc = encode(tokenizer, row.text, row.tagList, {
+    late: weights.config.late_tags,
+  });
   const logits = forward(weights, enc);
   const spans = decodeSpans(enc, viterbi(enc, logits.spans), row.text);
   const named = new Set(

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import math
 import random
 import time
@@ -22,7 +23,8 @@ from augment import build_pools, compose, swap_phrases, typo
 from features import IGNORE, LABELS, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
 from model import Config, TaskParser, load_electra, load_modernbert
 
-ROOT = Path(__file__).resolve().parent.parent
+# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 
 
 def load(paths: list[str]) -> list[dict]:

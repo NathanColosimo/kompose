@@ -74,7 +74,8 @@ export function createTaskParser(
       const encoded = encode(
         tokenizer,
         text,
-        tags.map((tag) => tag.name)
+        tags.map((tag) => tag.name),
+        { late: weights.config.late_tags }
       );
       const logits = forward(weights, encoded);
       const spans = decodeSpans(encoded, viterbi(encoded, logits.spans), text);
