@@ -84,7 +84,7 @@ def main():
     # Byte-level BPE tokenizers (Ettin) also need their merges and added tokens.
     spec = json.loads((ROOT / "data/embeddings" / config["embeddings"] / "tokenizer.json").read_text())
     extra = {}
-    if spec["model"]["type"] == "BPE":
+    if spec["model"].get("type") == "BPE":
         extra["merges"] = [m if isinstance(m, str) else " ".join(m) for m in spec["model"]["merges"]]
         extra["added"] = [a["content"] for a in spec.get("added_tokens", [])]
     header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab, **extra}, ensure_ascii=False).encode()
