@@ -253,11 +253,36 @@ function shuffled<T>(random: () => number, items: T[]) {
   return copy;
 }
 
+/**
+ * "weak" oversamples what the model gets wrong most on the test set: tag
+ * judgment, start vs deadline wording, voice dictation, messy text and
+ * title traps.
+ */
+export type Focus = "all" | "weak";
+
+const WEAK_STYLE_PATTERN =
+  /voice dictation|typos|brain dump|ramble|autocorrect|run-on|sloppy|non-native|dense|forwarded|polite sentences/;
+const WEAK_TWIST_PATTERN =
+  /deadline|due|start and a separate|work on it|tag|purpose|context|looks like a date|number that is not|duration-like|vague|false|correction/;
+const WEAK_STYLES = STYLES.filter((style) => WEAK_STYLE_PATTERN.test(style));
+const WEAK_TWISTS = TWISTS.filter((twist) => WEAK_TWIST_PATTERN.test(twist));
+const WEAK_TAG_MODES = [
+  [TAG_MODES[1][0], 0.35],
+  [TAG_MODES[3][0], 0.25],
+  [TAG_MODES[2][0], 0.2],
+  [TAG_MODES[4][0], 0.1],
+  [TAG_MODES[0][0], 0.1],
+] as const;
+
 export function planSlot(
   random: () => number,
   tagSets: string[][],
-  personas: Persona[]
+  personas: Persona[],
+  focus: Focus = "all"
 ): Slot {
+  if (focus === "weak" && random() < 0.6) {
+    return weakSlot(random, tagSets, personas);
+  }
   const labels = ["T"];
   for (const [label, rate] of Object.entries(LABEL_RATES)) {
     if (random() < rate) {
@@ -278,5 +303,32 @@ export function planSlot(
       ? genericTags(random)
       : shuffled(random, pick(random, tagSets)),
     twist: random() < 0.35 ? pick(random, TWISTS) : null,
+  };
+}
+
+function weakSlot(
+  random: () => number,
+  tagSets: string[][],
+  personas: Persona[]
+): Slot {
+  const labels = ["T", "D"];
+  if (random() < 0.6) {
+    labels.push("S", "U");
+  } else if (random() < 0.5) {
+    labels.push("S");
+  }
+  if (random() < 0.3) {
+    labels.push("M");
+  }
+  const generic = random() < 0.4;
+  return {
+    labels,
+    persona: pick(random, personas),
+    style: random() < 0.7 ? pick(random, WEAK_STYLES) : pick(random, STYLES),
+    tagMode: pickMode(random, generic ? GENERIC_MODES : WEAK_TAG_MODES),
+    tags: generic
+      ? genericTags(random)
+      : shuffled(random, pick(random, tagSets)),
+    twist: random() < 0.8 ? pick(random, WEAK_TWISTS) : null,
   };
 }

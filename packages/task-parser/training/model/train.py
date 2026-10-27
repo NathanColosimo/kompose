@@ -199,6 +199,36 @@ def evaluate(model, loader, device, threshold=0.5):
     return result
 
 
+DISTILL_TEMPERATURE = 2.0
+
+
+def load_teacher(run: str, embeddings: str, device):
+    """A trained run, frozen, to distill from. It must share the tokenizer."""
+    config = json.loads((Path(run) / "config.json").read_text())
+    tokenizer = lambda name: (ROOT / "data/embeddings" / name / "tokenizer.json").read_bytes()  # noqa: E731
+    if tokenizer(config["embeddings"]) != tokenizer(embeddings):
+        raise SystemExit(f"teacher uses {config['embeddings']}, student {embeddings}: tokens would not line up")
+    teacher = TaskParser(Config(**{k: v for k, v in config.items() if k not in ("embeddings", "dev")}))
+    teacher.load_state_dict(load_file(str(Path(run) / "model.safetensors")))
+    return teacher.to(device).eval()
+
+
+def distill_loss(span_logits, tag_logits, teacher_spans, teacher_tags, tensors):
+    """KL to the teacher's softened span distribution on text tokens, plus
+    cross-entropy to its tag probabilities."""
+    t = DISTILL_TEMPERATURE
+    tokens = tensors["targets"] != IGNORE
+    student = nn.functional.log_softmax(span_logits[tokens] / t, dim=-1)
+    target = nn.functional.softmax(teacher_spans[tokens] / t, dim=-1)
+    loss = nn.functional.kl_div(student, target, reduction="batchmean") * t * t
+    tag_mask = tensors["tag_targets"] >= 0
+    if tag_mask.any():
+        loss = loss + nn.functional.binary_cross_entropy_with_logits(
+            tag_logits[tag_mask], torch.sigmoid(teacher_tags[tag_mask])
+        )
+    return loss
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", nargs="+", required=True)
@@ -209,6 +239,10 @@ def main():
     parser.add_argument("--lr", type=float, default=1.5e-3)
     parser.add_argument("--embedding-lr", type=float, default=2e-4)
     parser.add_argument("--pretrained-lr", type=float, default=1e-4)
+    parser.add_argument("--ema", type=float, default=0.0, help="evaluate and save an exponential moving average of the weights (e.g. 0.999)")
+    parser.add_argument("--label-smoothing", type=float, default=0.0)
+    parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>... with the same tokenizer: distill their averaged span and tag predictions")
+    parser.add_argument("--distill-weight", type=float, default=0.5)
     parser.add_argument("--keep-layers", type=int, default=0, help="pretrained encoders: use only the first N layers (faster)")
     parser.add_argument("--dim", type=int, default=160)
     parser.add_argument("--layers", type=int, default=4)
@@ -306,7 +340,15 @@ def main():
     schedule = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda s: min(1.0, (s + 1) / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, s / steps)))
     )
-    span_loss = nn.CrossEntropyLoss(ignore_index=IGNORE)
+    span_loss = nn.CrossEntropyLoss(ignore_index=IGNORE, label_smoothing=args.label_smoothing)
+    teachers = [load_teacher(run, args.embeddings, device) for run in args.teacher]
+    # An exponential moving average of the weights is usually a little better
+    # than the last step; it is what gets evaluated and saved when enabled.
+    ema = (
+        torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(args.ema))
+        if args.ema
+        else None
+    )
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     best = -1.0
@@ -322,17 +364,28 @@ def main():
                 loss = loss + nn.functional.binary_cross_entropy_with_logits(
                     tag_logits[tag_mask], tensors["tag_targets"][tag_mask], pos_weight=torch.tensor(2.0, device=device)
                 )
+            if teachers:
+                with torch.no_grad():
+                    outputs = [teacher(tensors) for teacher in teachers]
+                    teacher_spans = torch.stack([o[0] for o in outputs]).mean(0)
+                    teacher_tags = torch.stack([o[1] for o in outputs]).mean(0)
+                loss = (1 - args.distill_weight) * loss + args.distill_weight * distill_loss(
+                    span_logits, tag_logits, teacher_spans, teacher_tags, tensors
+                )
             optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             schedule.step()
+            if ema is not None:
+                ema.update_parameters(model)
             total += loss.item()
-        metrics = evaluate(model, dev_loader, device)
+        scored = ema.module if ema is not None else model
+        metrics = evaluate(scored, dev_loader, device)
         print(f"epoch {epoch + 1} loss {total / len(train_loader):.4f} {json.dumps(metrics)} {time.time() - started:.0f}s", flush=True)
         if metrics["exact_all"] > best:
             best = metrics["exact_all"]
-            save_file({k: v.detach().cpu().contiguous() for k, v in model.state_dict().items()}, str(out / "model.safetensors"))
+            save_file({k: v.detach().cpu().contiguous() for k, v in scored.state_dict().items()}, str(out / "model.safetensors"))
             (out / "config.json").write_text(json.dumps({**config.to_dict(), "embeddings": args.embeddings, "dev": metrics}, indent=1))
     print(f"best dev exact_all {best}")
 

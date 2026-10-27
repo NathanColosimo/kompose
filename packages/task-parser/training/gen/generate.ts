@@ -1,20 +1,26 @@
 /**
  * Bulk training data: batches of planned slots sent to gpt-6-luna.
- * Usage: bun gen/generate.ts <name> <batches> [concurrency] [seed]
+ * Usage: bun gen/generate.ts <name> <batches> [concurrency] [seed] [focus=all|weak]
  * Writes data/raw/<name>/<batch>.json; existing batches are skipped.
  */
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
 import { EXAMPLES } from "./examples";
-import { type Persona, planSlot, rng, type Slot } from "./plan";
+import { type Focus, type Persona, planSlot, rng, type Slot } from "./plan";
 import { outputSchema } from "./schema";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 const SLOTS_PER_BATCH = 15;
 
-const [name = "train", batchArg = "4", concurrencyArg = "16", seedArg = "1"] =
-  process.argv.slice(2);
+const [
+  name = "train",
+  batchArg = "4",
+  concurrencyArg = "16",
+  seedArg = "1",
+  focusArg = "all",
+] = process.argv.slice(2);
+const focus = focusArg as Focus;
 const batches = Number(batchArg);
 const concurrency = Number(concurrencyArg);
 const seed = Number(seedArg);
@@ -80,7 +86,7 @@ await mkdir(dir, { recursive: true });
 
 const jobs = Array.from({ length: batches }, (_, batch) => {
   const slots = Array.from({ length: SLOTS_PER_BATCH }, () =>
-    planSlot(random, tagSets, personas)
+    planSlot(random, tagSets, personas, focus)
   );
   const file = `${dir}${String(batch).padStart(5, "0")}.json`;
   return async () => {
