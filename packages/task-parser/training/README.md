@@ -7,7 +7,8 @@ this directory; Python runs with `uv run`.
 ## Data (Codex)
 
 1. `bun gen/seeds.ts`, then `bun gen/split.ts`: tag lists and personas,
-   15% held out for the test set.
+   15% held out for the test set (`personas.json` is the train split of
+   `personas-all.json`).
 2. `bun gen/generate.ts <name> <batches>` (Luna-written examples) or
    `bun gen/solwrite.ts <name> <calls>` (Sol-written inputs, the larger win).
 3. `bun gen/finalize.ts <name>`: Sol labels every example (it can run
@@ -26,6 +27,8 @@ Each generation distills from the previous ones (start with no `--teacher`).
 (labelled under an earlier scheme, kept as they are),
 `data/clean/{train4,train5,train6,pilot2,train7}.final.jsonl` and
 `data/clean/solw1.final.jsonl` four times (upweighted).
+`data/overrides.jsonl` (reviewed relabels that `model/train.py` applies on
+load) is a frozen artifact: the scripts that produced it were removed.
 
 ```sh
 ./run-snapshot.sh v18 train.py --data $DATA --epochs 8 \

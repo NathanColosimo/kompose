@@ -334,10 +334,9 @@ async function build() {
     const resolved = resolveFields({
       now: Temporal.ZonedDateTime.from(row.now),
       spans,
-      tagNames: row.tags,
       text,
     });
-    const expected = plainFields(resolved);
+    const expected = plainFields(resolved, row.tags);
     if (dateMismatches(independent, expected).length > 0) {
       excluded += 1;
       continue;

@@ -60,7 +60,10 @@ export interface Persona {
   writingHabits: string;
 }
 
-/** Tag lists and personas from gen/seeds.ts, as gen/split.ts divided them. */
+/**
+ * Tag lists and personas from gen/seeds.ts, as gen/split.ts divided them
+ * (personas.json is the train split).
+ */
 export async function readSeeds(split: "test" | "train") {
   const seeds = `${ROOT}data/seeds/`;
   const tagSets = JSON.parse(await readFile(`${seeds}split.json`, "utf8"))[
@@ -75,24 +78,29 @@ export async function readSeeds(split: "test" | "train") {
   return { personas, tagSets };
 }
 
-/** A Codex answer schema: `{items: [{item, ...properties}]}`, all required. */
-export function itemsSchema(properties: Record<string, object>) {
+/** A Codex answer schema: `{[key]: [{...properties}]}`, all required. */
+export function listSchema(key: string, properties: Record<string, object>) {
   return {
     additionalProperties: false,
     properties: {
-      items: {
+      [key]: {
         items: {
           additionalProperties: false,
-          properties: { item: { type: "integer" }, ...properties },
-          required: ["item", ...Object.keys(properties)],
+          properties,
+          required: Object.keys(properties),
           type: "object",
         },
         type: "array",
       },
     },
-    required: ["items"],
+    required: [key],
     type: "object",
   };
+}
+
+/** `{items: [{item, ...properties}]}`: one answer per numbered item. */
+export function itemsSchema(properties: Record<string, object>) {
+  return listSchema("items", { item: { type: "integer" }, ...properties });
 }
 
 /** Whether `marked` is valid markup of exactly `text`. */
@@ -187,8 +195,8 @@ ${items.map((item, index) => `Item ${index + 1}\n  person: ${item.persona.descri
 
 // --- expected date fields (test set and date benchmark) -------------------
 
-/** Resolved task fields as JSON, with tag names. */
-export function plainFields(fields: TaskFields) {
+/** Resolved task fields as JSON, with the chosen tags' names. */
+export function plainFields(fields: TaskFields, tags: string[]) {
   return {
     description: fields.description,
     dueDate: fields.dueDate?.toString() ?? null,
@@ -197,7 +205,7 @@ export function plainFields(fields: TaskFields) {
     recurrence: fields.recurrence,
     startDate: fields.startDate?.toString() ?? null,
     startTime: fields.startTime?.toString() ?? null,
-    tags: fields.tagNames,
+    tags,
     title: fields.title,
   };
 }

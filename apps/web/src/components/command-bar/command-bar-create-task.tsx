@@ -8,6 +8,7 @@ import type {
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
+import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { ParsedTask } from "@kompose/task-parser/parser";
 import type { TaskRecurrence } from "@kompose/task-parser/recurrence";
 import {
@@ -93,47 +94,6 @@ function draft(typed: ParsedTaskInput, task: ParsedTask | null): TaskDraft {
   };
 }
 
-/**
- * The parse to preview. While a newer parse runs (only while the model
- * loads, in practice), the last result's fields stay.
- */
-function previewTask(parse: MagicParse) {
-  if (parse.status === "done") {
-    return parse.result;
-  }
-  return parse.status === "reading" ? parse.previous : null;
-}
-
-const WEEKDAY_NAMES: Record<string, string> = {
-  FR: "Fri",
-  MO: "Mon",
-  SA: "Sat",
-  SU: "Sun",
-  TH: "Thu",
-  TU: "Tue",
-  WE: "Wed",
-};
-const UNITS = {
-  DAILY: ["Daily", "days"],
-  MONTHLY: ["Monthly", "months"],
-  WEEKLY: ["Weekly", "weeks"],
-  YEARLY: ["Yearly", "years"],
-} as const;
-
-/** "Weekly on Mon, Wed", "Every 2 weeks on Fri", "Monthly on day 1". */
-function repeatLabel(recurrence: TaskRecurrence) {
-  const [single, plural] = UNITS[recurrence.freq];
-  const every =
-    recurrence.interval > 1 ? `Every ${recurrence.interval} ${plural}` : single;
-  if (recurrence.freq === "WEEKLY" && recurrence.byDay.length > 0) {
-    return `${every} on ${recurrence.byDay.map((day) => WEEKDAY_NAMES[day]).join(", ")}`;
-  }
-  if (recurrence.freq === "MONTHLY") {
-    return `${every} on day ${recurrence.byMonthDay}`;
-  }
-  return every;
-}
-
 /** Build task data from parsed input and resolved link metadata */
 function buildTaskDataFromParsed(
   parsed: TaskDraft,
@@ -174,14 +134,12 @@ function buildTaskDataFromParsed(
     title = fallbackTitle(parsed.links[0]);
   }
 
-  // A repeating task needs a first occurrence.
-  const recurrence = parsed.startDate ? parsed.recurrence : null;
   return {
     description: parsed.description ?? undefined,
     dueDate: parsed.dueDate ?? undefined,
     durationMinutes,
     links,
-    recurrence: recurrence ?? undefined,
+    recurrence: parsed.recurrence ?? undefined,
     startDate: parsed.startDate ?? undefined,
     startTime: parsed.startTime ?? undefined,
     tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
@@ -257,7 +215,7 @@ function smartFieldClassName(parse: MagicParse) {
   if (parse.status === "done") {
     return "fade-in-0 animate-in transition-opacity duration-150";
   }
-  if (parse.status === "reading" && parse.previous) {
+  if (parse.status === "reading" && parse.task) {
     return "opacity-50 transition-opacity duration-150";
   }
 }
@@ -290,13 +248,16 @@ interface CommandBarCreateTaskProps {
 }
 
 /**
- * CommandBarCreateTask - Create task sub-view with NLP input parsing.
+ * CommandBarCreateTask - Create task sub-view.
  *
- * Parses input using special syntax:
+ * Free text ("call mom tomorrow at 4 for 30m #family") is read by the
+ * on-device model (useMagicTask). Input with explicit tokens is parsed by
+ * their syntax instead:
  * - Title: text before any special tokens
  * - =duration: task duration (e.g., =2h, =30m)
  * - >date: due date (e.g., >monday, >tomorrow)
  * - ~date: start date (e.g., ~friday, ~next week)
+ * - #tag: one of the user's tags (e.g., #work)
  *
  * Shows a live preview and creates the task on Enter.
  */
@@ -326,7 +287,7 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || !freeText ? null : freeText,
     tagOptions
   );
-  const parsed = draft(typed, previewTask(magic.parse));
+  const parsed = draft(typed, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
 
@@ -540,10 +501,10 @@ export function CommandBarCreateTask({
                     </PreviewBadge>
                   )}
 
-                  {parsed.recurrence && parsed.startDate && (
+                  {parsed.recurrence && (
                     <PreviewBadge className={smartClassName}>
                       <RepeatIcon className="size-3.5" />
-                      {repeatLabel(parsed.recurrence)}
+                      {getTaskRecurrenceDisplayText(parsed.recurrence)}
                     </PreviewBadge>
                   )}
 

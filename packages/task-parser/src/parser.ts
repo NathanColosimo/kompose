@@ -1,25 +1,21 @@
 import { Temporal } from "temporal-polyfill";
 import { resolveFields, type TaskFields } from "./fields";
-import {
-  decodeSpans,
-  encode,
-  type LabelledSpan,
-  viterbi,
-} from "./model/features";
+import { decodeSpans, encode, viterbi } from "./model/features";
 import { createNetwork } from "./model/network";
 import { WordPiece } from "./model/tokenizer";
 import { readWeights } from "./model/weights";
+import type { Span } from "./spans";
 
-export interface TagOption<Id extends string = string> {
-  id: Id;
+export interface TagOption {
+  id: string;
   name: string;
 }
 
-export interface ParsedTask<Id extends string = string> extends TaskFields {
+export interface ParsedTask extends TaskFields {
   /** Labelled character ranges of the input (UTF-16), for highlighting. */
-  spans: LabelledSpan[];
+  spans: Span[];
   /** Chosen tags, most confident first. */
-  tags: (TagOption<Id> & { confidence: number })[];
+  tags: (TagOption & { confidence: number })[];
 }
 
 /**
@@ -43,9 +39,9 @@ function tagKey(name: string) {
     .toLowerCase();
 }
 
-export interface ParseOptions<Id extends string = string> {
+export interface ParseOptions {
   now?: Temporal.ZonedDateTime;
-  tags?: TagOption<Id>[];
+  tags?: TagOption[];
 }
 
 /**
@@ -58,10 +54,10 @@ export function createTaskParser(weightsFile: ArrayBuffer) {
   const tokenizer = new WordPiece(weights.vocab);
   const forward = createNetwork(weights);
 
-  return function parse<Id extends string>(
+  return function parse(
     text: string,
-    { now = Temporal.Now.zonedDateTimeISO(), tags = [] }: ParseOptions<Id> = {}
-  ): ParsedTask<Id> {
+    { now = Temporal.Now.zonedDateTimeISO(), tags = [] }: ParseOptions = {}
+  ): ParsedTask {
     const encoded = encode(
       tokenizer,
       text,
@@ -88,13 +84,7 @@ export function createTaskParser(weightsFile: ArrayBuffer) {
       }))
       .filter((tag) => tag.confidence >= TAG_THRESHOLD)
       .sort((a, b) => b.confidence - a.confidence);
-    const fields = resolveFields({
-      now,
-      spans,
-      tagNames: chosen.map((tag) => tag.name),
-      text,
-    });
-    return { ...fields, spans, tags: chosen };
+    return { ...resolveFields({ now, spans, text }), spans, tags: chosen };
   };
 }
 

@@ -176,7 +176,10 @@ for (const [name, cases] of Object.entries(await loadCases())) {
       tags: c.tags.map((tagName) => ({ id: tagName, name: tagName })),
     });
     elapsed += performance.now() - started;
-    const actual = plainFields(parsed);
+    const actual = plainFields(
+      parsed,
+      parsed.tags.map((tag) => tag.name)
+    );
     const wrong = FIELDS.filter((field) => !equal(field, c.expect, actual));
     for (const field of FIELDS) {
       if (!wrong.includes(field)) {

@@ -2,6 +2,7 @@
  * Model inputs for (text, tag list). Mirrors training/model/features.py;
  * src/model/features.parity.test.ts checks the two produce the same inputs.
  */
+import type { Span } from "../spans";
 import type { WordPiece } from "./tokenizer";
 
 export const LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"] as const;
@@ -240,20 +241,13 @@ export function viterbi(encoded: Encoded, logits: Float32Array): number[] {
   return result;
 }
 
-export interface LabelledSpan {
-  end: number;
-  label: (typeof LABELS)[number] | "L";
-  start: number;
-  text: string;
-}
-
 /** Merge per-token BIO predictions into spans of `text`, plus links. */
 export function decodeSpans(
   encoded: Encoded,
   predictions: number[],
   text: string
-): LabelledSpan[] {
-  const spans: LabelledSpan[] = [];
+): Span[] {
+  const spans: Span[] = [];
   let lastToken = -1;
   encoded.offsets.forEach(([start, end], index) => {
     const tag = predictions[index] ?? 0;
@@ -262,7 +256,7 @@ export function decodeSpans(
     }
     const [prefix, label] = (TAG_NAMES[tag] ?? "O").split("-") as [
       string,
-      LabelledSpan["label"],
+      Span["label"],
     ];
     const last = spans.at(-1);
     const continuing =

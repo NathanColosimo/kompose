@@ -3,7 +3,7 @@
  * "a couple hours", "forty-five minutes", "1.5 hrs", "2-3 hours". Returns
  * null when the phrase has no duration. Ranges take their lower bound.
  */
-import { NUMBER_WORDS } from "./datetime/lexicon";
+import { lookup, NUMBER_WORDS } from "./datetime/lexicon";
 
 export function parseDuration(phrase: string): number | null {
   const words = normalize(phrase);
@@ -46,7 +46,7 @@ interface State {
 /** Reads the token at `index`; returns the index of the last token used. */
 function step(state: State, tokens: string[], index: number): number {
   const token = tokens[index] ?? "";
-  const unit = UNITS[token];
+  const unit = lookup(UNITS, token);
   if (unit) {
     state.minutes += (state.pending ?? 1) * unit;
     state.found = true;
@@ -75,7 +75,7 @@ function fraction(
 ) {
   // "half an hour": skip the article; the unit follows.
   const next = ARTICLES.has(tokens[index + 1] ?? "") ? index + 1 : index;
-  if (UNITS[tokens[next + 1] ?? ""]) {
+  if (lookup(UNITS, tokens[next + 1])) {
     // "half hour", "1 and a half hours"
     state.pending = (state.pending ?? 0) + value;
   } else if (state.lastUnit) {
@@ -114,6 +114,9 @@ const UNITS: Record<string, number> = {
 };
 
 const WHITESPACE_PATTERN = /\s+/;
+/** "2 1/2", "3/4": a whole number and a half, third or quarter. */
+const FRACTION =
+  /(?:(?<![\d/.])(\d+)\s+)?(?<![\d/.])([1-3])\/([2-4])(?![\d/])/g;
 const ARTICLES = new Set(["a", "an"]);
 const CLOCK_PATTERN = /^(\d{1,2}):(\d{2})$/;
 const NUMBER_PATTERN = /^\d+(?:\.\d+)?$/;
@@ -122,17 +125,19 @@ function amountOf(token: string): number | null {
   if (NUMBER_PATTERN.test(token)) {
     return Number(token);
   }
-  return NUMBER_WORDS[token] ?? null;
+  return lookup(NUMBER_WORDS, token) ?? null;
 }
 
 /**
  * Lowercase, split numbers from units ("1h30m" → "1 h 30 m"), drop filler
- * words, and turn "½" and hyphenated number words into plain tokens.
+ * words, and turn "½", fractions and hyphenated number words into plain
+ * tokens.
  */
 function normalize(phrase: string) {
   return phrase
     .toLowerCase()
     .replaceAll("½", " half ")
+    .replace(FRACTION, decimal)
     .replace(/(\d)([a-z])/g, "$1 $2")
     .replace(/([a-z])(\d)/g, "$1 $2")
     .replace(/(\d)\s*[-–]\s*(\d)/g, "$1 to $2")
@@ -143,12 +148,24 @@ function normalize(phrase: string) {
     .filter(
       (word, index, words) =>
         !ARTICLES.has(word) ||
-        UNITS[words[index + 1] ?? ""] !== undefined ||
+        lookup(UNITS, words[index + 1]) !== undefined ||
         words[index - 1] === "half" ||
         words[index - 1] === "quarter"
     )
     .join(" ")
     .trim();
+}
+
+/** A fraction as a decimal: "2 1/2" → "2.5". */
+function decimal(
+  match: string,
+  whole: string | undefined,
+  top: string,
+  bottom: string
+) {
+  return Number(top) < Number(bottom)
+    ? String(Number(whole ?? 0) + Number(top) / Number(bottom))
+    : match;
 }
 
 const FILLER = new Set([

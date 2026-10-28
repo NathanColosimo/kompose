@@ -1,4 +1,5 @@
 import { Temporal } from "temporal-polyfill";
+import { lookup } from "./lexicon";
 
 type DateRule = (year: number) => Temporal.PlainDate;
 
@@ -96,12 +97,15 @@ export const HOLIDAYS: Record<string, DateRule> = {
 };
 
 /**
- * The next date (on or after `today`) of a holiday by name; "<name> eve"
- * is the day before.
+ * The next date (on or after `today`) of a holiday by name, or of its eve
+ * (the day before).
  */
-export function holidayDate(name: string, today: Temporal.PlainDate) {
-  const eve = name.endsWith(" eve");
-  const rule = HOLIDAYS[eve ? name.slice(0, -4) : name];
+export function holidayDate(
+  name: string,
+  eve: boolean,
+  today: Temporal.PlainDate
+) {
+  const rule = lookup(HOLIDAYS, name);
   if (!rule) {
     return null;
   }

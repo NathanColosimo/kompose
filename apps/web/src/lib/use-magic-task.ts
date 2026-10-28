@@ -14,12 +14,14 @@ import {
  * text and code resolves the labels into task fields. Parsing takes a few
  * milliseconds in a Worker, so it runs on every keystroke without a debounce.
  */
-export type MagicParse =
-  /** The model isn't loaded yet, or the input isn't sent to it. */
-  | { status: "off" }
-  /** Running; `previous` is the result for earlier text. */
-  | { status: "reading"; previous: ParsedTask | null }
-  | { status: "done"; result: ParsedTask };
+export interface MagicParse {
+  /**
+   * "off": the model isn't loaded yet, or the input isn't sent to it.
+   * "reading": running; `task` is the result for earlier text, if any.
+   */
+  status: "off" | "reading" | "done";
+  task: ParsedTask | null;
+}
 
 /** The parser runs in a Worker so a parse never blocks typing. */
 async function loadParser() {
@@ -83,13 +85,11 @@ export function useMagicTask(text: string | null, tags: TagOption[]) {
     }
   };
 
-  let parse: MagicParse = { status: "off" };
+  let parse: MagicParse = { status: "off", task: null };
   if (parser && text !== null && !query.isError) {
-    const data = query.data ?? null;
-    parse =
-      data && !(query.isFetching || query.isPlaceholderData)
-        ? { result: data, status: "done" }
-        : { previous: data, status: "reading" };
+    const task = query.data ?? null;
+    const done = task && !(query.isFetching || query.isPlaceholderData);
+    parse = { status: done ? "done" : "reading", task };
   }
   return { parse, resolve };
 }

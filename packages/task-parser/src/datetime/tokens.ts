@@ -8,6 +8,7 @@ import {
   CORRECTABLE,
   GERMAN_HOURS,
   JAPANESE,
+  lookup,
   MONTHS,
   NUMBER_WORDS,
   ORDINAL_WORDS,
@@ -38,14 +39,27 @@ const TRANSLATION_PATTERNS = TRANSLATIONS.map(
 const SPACES = /\s+/g;
 const POSSESSIVE = /'s$/;
 const LETTERS_ONLY = /^\p{L}+$/u;
+const DIGIT_LED = /^\d/;
 const GERMAN_HALF = new RegExp(
   `\\bhalb (\\d{1,2}|${Object.keys(GERMAN_HOURS).join("|")})\\b`,
   "gu"
 );
-const AT_FOREIGN_HOUR = new RegExp(
-  `\\bat (${[...Object.keys(ROMANCE_HOURS), ...Object.keys(GERMAN_HOURS)].join("|")})\\b`,
+/**
+ * A Spanish, Italian, French, Portuguese or German hour word after the
+ * word for "at" ("a las ocho", "alle otto", "um drei"), or before a Spanish
+ * quarter or half ("ocho y media"). After English "at" only German ones:
+ * "at once" is not 11:00.
+ */
+const FOREIGN_HOUR = new RegExp(
+  `(?<![\\p{L}])((?:a las|a la|às|à|alle|um|at) |all')?(${[
+    ...Object.keys(ROMANCE_HOURS),
+    ...Object.keys(GERMAN_HOURS),
+  ].join("|")})(?![\\p{L}])( y media| y cuarto| menos cuarto)?(?![\\p{L}])`,
   "gu"
 );
+/** 午後3時半, 3時5分, 15時: am/pm, the hour, then 半 (half) or minutes. */
+const JAPANESE_CLOCK = /(午前|午後)?(\d{1,2})時(?:(半)|(\d{1,2})分)?/gu;
+const JAPANESE_MERIDIEMS: Record<string, string> = { 午前: "am", 午後: "pm" };
 
 /** Lowercase, other languages to English, curly quotes straightened. */
 function normalizeText(text: string) {
@@ -64,8 +78,17 @@ function normalizeText(text: string) {
     .replace(
       /\b(twenty|thirty)[- ](first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/g,
       (_m, tens: string, unit: string) =>
-        `${(tens === "twenty" ? 20 : 30) + (ORDINAL_WORDS[unit] ?? 0)}th`
+        `${(tens === "twenty" ? 20 : 30) + (lookup(ORDINAL_WORDS, unit) ?? 0)}th`
     )} `;
+  result = result.replace(
+    JAPANESE_CLOCK,
+    (_m, period: string | undefined, hour: string, half, minute = "0") => {
+      // 午前/午後 only on a 12-hour clock: 午後15時 is 15:00.
+      const meridiem =
+        period && Number(hour) <= 12 ? JAPANESE_MERIDIEMS[period] : "";
+      return ` ${hour}:${half ? "30" : minute.padStart(2, "0")}${meridiem} `;
+    }
+  );
   for (const [pattern, english] of JAPANESE) {
     result = result.replace(pattern, english);
   }
@@ -80,6 +103,17 @@ function normalizeText(text: string) {
     "$1 $2"
   );
   result = result.replace(/\bel d[íi]a (\d{1,2})\b/gu, "the $1th");
+  result = result.replace(
+    FOREIGN_HOUR,
+    (match, lead: string | undefined, hour: string, fraction?: string) => {
+      const german = lookup(GERMAN_HOURS, hour);
+      const isHour = lead === "at " ? german !== undefined : Boolean(lead);
+      if (!(isHour || fraction)) {
+        return match;
+      }
+      return `${lead ?? ""}${german ?? lookup(ROMANCE_HOURS, hour)}${fraction ?? ""}`;
+    }
+  );
   // Spanish quarter and half hours: "a las 8 y media".
   result = result
     .replace(/(\d{1,2}) y media\b/gu, "$1:30")
@@ -96,21 +130,21 @@ function normalizeText(text: string) {
     /(monday|tuesday|wednesday|thursday|friday|saturday|sunday) by (monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gu,
     "$1 through $2"
   );
-  result = result.replace(
-    AT_FOREIGN_HOUR,
-    (_m, word: string) => `at ${ROMANCE_HOURS[word] ?? GERMAN_HOURS[word]}`
-  );
   return result.replace(SPACES, " ").trim();
 }
 
+const DIGIT_ALIASES = new RegExp(
+  `(?:${Object.keys(ALIASES)
+    .filter((alias) => DIGIT_LED.test(alias))
+    .join("|")})(?![\\p{L}])`,
+  "uy"
+);
 const MERIDIEM = String.raw`\s*(a|p)\.?(?:m\b\.?)?(?![\p{L}])(?!\s+(?:day|week|month|year|time|few|couple|bit)\b)`;
 /** Token patterns, tried in order at each position. */
 const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
   [
-    [
-      /(?:2(?:moro|morrow|morow|morro|mrw|mro|mrow|nite|night|nyt|day)|b4)(?![\p{L}])/uy,
-      (m) => wordTokens(m[0]),
-    ],
+    // "2moro", "2nite": aliases that start with a digit.
+    [DIGIT_ALIASES, (m) => wordTokens(m[0])],
     // 2026-11-14, 2026/11/14
     [
       /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?![\d])/y,
@@ -250,7 +284,7 @@ function timeToken(
 /** A word in canonical form, or several ("everyday" → "every day"). */
 function wordTokens(raw: string): Token[] {
   const word = raw.replace(POSSESSIVE, "");
-  const alias = ALIASES[raw] ?? ALIASES[word];
+  const alias = lookup(ALIASES, raw) ?? lookup(ALIASES, word);
   const canonical = alias ?? correct(word);
   return canonical.split(" ").map((text): Token => ({ kind: "word", text }));
 }
@@ -271,7 +305,7 @@ function correct(word: string) {
   const limit = word.length <= 5 ? 1 : 2;
   let best = word;
   let bestDistance = limit + 1;
-  for (const candidate of [...CORRECTABLE, ...Object.keys(ABBREVIATIONS)]) {
+  for (const candidate of [...CORRECTABLE, ...SHORTHANDS]) {
     // Typos keep the first letter; otherwise "bridal" would become "friday".
     if (
       candidate[0] !== word[0] ||
@@ -285,17 +319,11 @@ function correct(word: string) {
       bestDistance = distance;
     }
   }
-  return ABBREVIATIONS[best] ?? best;
+  return lookup(ALIASES, best) ?? best;
 }
 
-/** Short forms typos are also corrected toward ("thrus" → "thurs"). */
-const ABBREVIATIONS: Record<string, string> = {
-  thurs: "thursday",
-  tues: "tuesday",
-  weds: "wednesday",
-  tmrw: "tomorrow",
-  tomorow: "tomorrow",
-};
+/** Aliases typos are also corrected toward ("thrus" → "thurs"). */
+const SHORTHANDS = ["thurs", "tues", "weds", "tmrw", "tomorow"];
 
 /** Optimal string alignment distance (Levenshtein plus transpositions). */
 function editDistance(a: string, b: string) {

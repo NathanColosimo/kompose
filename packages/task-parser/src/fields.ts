@@ -13,7 +13,6 @@ export interface TaskFields {
   recurrence: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null;
   startTime: Temporal.PlainTime | null;
-  tagNames: string[];
   title: string;
 }
 
@@ -127,19 +126,14 @@ function toLink(text: string) {
   return SCHEME_PATTERN.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-/**
- * Resolve labelled spans into task fields. Dates resolve against `now`;
- * `tagNames` are the tags already chosen for the input.
- */
+/** Resolve labelled spans into task fields. Dates resolve against `now`. */
 export function resolveFields({
   now = Temporal.Now.zonedDateTimeISO(),
   spans,
-  tagNames,
   text,
 }: {
   now?: Temporal.ZonedDateTime;
   spans: Span[];
-  tagNames: string[];
   /** The input, so split fields keep their punctuation. */
   text?: string;
 }): TaskFields {
@@ -182,7 +176,6 @@ export function resolveFields({
     recurrence: repeat?.recurrence ?? null,
     startDate,
     startTime: repeat?.time ?? start?.time ?? null,
-    tagNames,
     title: sentence(textOf(spans, "T", text).replace(LEADING_TO_PATTERN, "")),
   };
 }

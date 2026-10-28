@@ -27,8 +27,8 @@ describe("worker parser", () => {
     const text = "call mom tomorrow at 4 for 30m #family";
     const remote = await parse(text, { now, tags });
     const here = parseHere(text, { now, tags });
-    expect(remote).toEqual(here);
-    expect(remote.startDate?.toString()).toBe(here.startDate?.toString());
+    // Stringified so the Temporal fields are compared too.
+    expect(JSON.stringify(remote)).toBe(JSON.stringify(here));
     worker.terminate();
   });
 });

@@ -174,11 +174,16 @@ export function getTaskRecurrenceDisplayText(
     case "DAILY":
       return interval > 1 ? `${prefix}days` : "Daily";
     case "WEEKLY": {
-      const days = normalizeByDay(value.byDay).join(", ");
+      const days = normalizeByDay(value.byDay)
+        .map(
+          (code) =>
+            TASK_RECURRENCE_DAYS.find((day) => day.value === code)?.label
+        )
+        .join(", ");
       return interval > 1 ? `${prefix}weeks on ${days}` : `Weekly on ${days}`;
     }
     case "MONTHLY":
-      return interval > 1 ? `${prefix}months` : "Monthly";
+      return `${interval > 1 ? `${prefix}months` : "Monthly"} on day ${value.byMonthDay}`;
     case "YEARLY":
       return interval > 1 ? `${prefix}years` : "Yearly";
     default:

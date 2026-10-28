@@ -230,7 +230,6 @@ function fieldsFor(label: Label, phrase: string) {
       { end: 4, label: "T", start: 0, text: "task" },
       { end: 5 + phrase.length, label, start: 5, text: phrase },
     ],
-    tagNames: [],
   });
 }
 

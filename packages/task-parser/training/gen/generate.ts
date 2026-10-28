@@ -6,31 +6,16 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
-import { ROOT, readSeeds, rng } from "./common";
+import { listSchema, ROOT, readSeeds, rng } from "./common";
 import { EXAMPLES } from "./examples";
 import { type Focus, planSlot, type Slot } from "./plan";
 
 /** The final answer: examples written for the batch's slots. */
-const outputSchema = {
-  additionalProperties: false,
-  properties: {
-    examples: {
-      items: {
-        additionalProperties: false,
-        properties: {
-          marked: { type: "string" },
-          slot: { type: "integer" },
-          tags: { items: { type: "string" }, type: "array" },
-        },
-        required: ["slot", "marked", "tags"],
-        type: "object",
-      },
-      type: "array",
-    },
-  },
-  required: ["examples"],
-  type: "object",
-};
+const outputSchema = listSchema("examples", {
+  marked: { type: "string" },
+  slot: { type: "integer" },
+  tags: { items: { type: "string" }, type: "array" },
+});
 
 const SLOTS_PER_BATCH = 15;
 

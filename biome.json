@@ -35,9 +35,7 @@
   ],
   "overrides": [
     {
-      "includes": [
-        "**/global.css"
-      ],
+      "includes": ["**/global.css"],
       "linter": {
         "rules": {
           "suspicious": {
@@ -47,9 +45,7 @@
       }
     },
     {
-      "includes": [
-        "packages/task-parser/training/**"
-      ],
+      "includes": ["packages/task-parser/training/**"],
       "linter": {
         "rules": {
           "complexity": {

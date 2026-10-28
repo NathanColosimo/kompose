@@ -145,22 +145,27 @@ function partDateOfYear(year: number, part: Part) {
     : dateIn(year, 1, 1);
 }
 
-/** "nov 3": this year's, or next year's once it's past. */
+/**
+ * "nov 3": the next one on or after today; "feb 29" the next leap day. A
+ * day the month never has ("feb 30"), or not in the year given, is null.
+ */
 function resolveDate(spec: SpecOf<"date">, today: Temporal.PlainDate) {
-  if (spec.day > lastDay(spec.year ?? today.year, spec.month)) {
-    return null;
-  }
+  const { day, month } = spec;
+  const inYear = (year: number) =>
+    day <= lastDay(year, month)
+      ? Temporal.PlainDate.from({ day, month, year })
+      : null;
   if (spec.year !== null) {
-    return Temporal.PlainDate.from({
-      day: spec.day,
-      month: spec.month,
-      year: spec.year,
-    });
+    return inYear(spec.year);
   }
-  const date = dateIn(today.year, spec.month, spec.day);
-  return before(date, today)
-    ? dateIn(today.year + 1, spec.month, spec.day)
-    : date;
+  // Leap years are at most 8 years apart (2096 → 2104).
+  for (let year = today.year; year <= today.year + 8; year += 1) {
+    const date = inYear(year);
+    if (date && !before(date, today)) {
+      return date;
+    }
+  }
+  return null;
 }
 
 function resolveWeekday(spec: SpecOf<"weekday">, today: Temporal.PlainDate) {
@@ -271,7 +276,7 @@ function resolveDay(
       return before(end, today) ? end.add({ years: 1 }) : end;
     }
     case "holiday":
-      return holidayDate(spec.name, today);
+      return holidayDate(spec.name, spec.eve, today);
     case "nthWeekday":
     case "nthDay":
       return monthRuleDate(spec, today);
@@ -400,23 +405,33 @@ function matches(
   }
 }
 
-/** Occurrences in [first, first + span). */
+/** Occurrences in [first, first + span) (days counted up to ten years). */
 function countIn(
   repeat: RepeatSpec,
   first: Temporal.PlainDate,
-  span: { amount: number; unit: Unit },
-  yearly: Temporal.PlainDate | null
+  span: { amount: number; unit: Unit }
 ) {
   const end = first.add({ [`${span.unit}s`]: Math.round(span.amount) });
   let count = 0;
+  if (repeat.freq === "YEARLY") {
+    // The first's date every `interval` years (Feb 29 falls back to the 28th).
+    while (before(first.add({ years: count * repeat.interval }), end)) {
+      count += 1;
+    }
+    return count;
+  }
+  // Days the rule leaves open are the first's: "every week" is on its weekday.
+  const rule: RepeatSpec = {
+    ...repeat,
+    byDay: repeat.byDay.length > 0 ? repeat.byDay : [first.dayOfWeek],
+    byMonthDay: repeat.byMonthDay ?? first.day,
+  };
   let date = first;
-  let guard = 0;
-  while (before(date, end) && guard < 800) {
-    if (matches(repeat, date, yearly) && onInterval(repeat, first, date)) {
+  for (let guard = 0; before(date, end) && guard < 3660; guard += 1) {
+    if (matches(rule, date, null) && onInterval(rule, first, date)) {
       count += 1;
     }
     date = date.add({ days: 1 });
-    guard += 1;
   }
   return count;
 }
@@ -465,7 +480,7 @@ function timesOf({ end, noTime, part, time }: Phrase) {
   return { end: null, time: null };
 }
 
-/** "in 2 hours": now plus the offset, to the minute. */
+/** "in 2 hours": now plus that much elapsed time (across DST), to the minute. */
 function clockOffset(phrase: Phrase, now: Temporal.ZonedDateTime): When | null {
   const day = phrase.day;
   if (
@@ -475,8 +490,8 @@ function clockOffset(phrase: Phrase, now: Temporal.ZonedDateTime): When | null {
     return null;
   }
   const at = now
-    .toPlainDateTime()
     .add({ [`${day.unit}s`]: day.amount })
+    .toPlainDateTime()
     .with({ microsecond: 0, millisecond: 0, nanosecond: 0, second: 0 });
   return {
     date: at.toPlainDate(),
@@ -723,7 +738,7 @@ function resolveRepeat(
   }
   const until = rule.until ? resolveDay(rule.until, today) : null;
   const count =
-    rule.count ?? (rule.span ? countIn(rule, first, rule.span, yearly) : null);
+    rule.count ?? (rule.span ? countIn(rule, first, rule.span) : null);
   return finish(
     {
       date: first,

@@ -8,7 +8,7 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { parseDuration } from "../../src/duration";
 import { resolveFields } from "../../src/fields";
-import { MarkupError, parseMarkup, type Span } from "../../src/spans";
+import { parseMarkup, type Span } from "../../src/spans";
 import { resolveWhen } from "../../src/when";
 import { ROOT, writeJsonl } from "./common";
 
@@ -76,7 +76,7 @@ function check(marked: string, tags: string[], tagList: string[]) {
   try {
     parsed = parseMarkup(marked);
   } catch (error) {
-    return error instanceof MarkupError ? `markup: ${error.message}` : "markup";
+    return `markup: ${(error as Error).message}`;
   }
   const spans = parsed.spans
     .map((span) => tidy(span, parsed.text))
@@ -125,7 +125,7 @@ function check(marked: string, tags: string[], tagList: string[]) {
     }
   }
   if (spans.some((span) => span.label === "R")) {
-    const fields = resolveFields({ now, spans, tagNames: [] });
+    const fields = resolveFields({ now, spans });
     if (!fields.recurrence) {
       flags.push(
         `unresolved-R: ${spans

@@ -17,10 +17,10 @@ export async function createWorkerTaskParser(
 ) {
   const remote = wrap<WorkerApi>(worker);
   await remote.load(url);
-  return async function parse<Id extends string>(
+  return async function parse(
     text: string,
-    { now = Temporal.Now.zonedDateTimeISO(), tags = [] }: ParseOptions<Id> = {}
-  ): Promise<ParsedTask<Id>> {
+    { now = Temporal.Now.zonedDateTimeISO(), tags = [] }: ParseOptions = {}
+  ): Promise<ParsedTask> {
     const task = await remote.parse(text, now.toString(), tags);
     return {
       ...task,
@@ -31,7 +31,6 @@ export async function createWorkerTaskParser(
       startTime: task.startTime
         ? Temporal.PlainTime.from(task.startTime)
         : null,
-      tags: task.tags as ParsedTask<Id>["tags"],
     };
   };
 }

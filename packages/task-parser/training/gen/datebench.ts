@@ -251,11 +251,10 @@ async function score() {
     const resolved = resolveFields({
       now: Temporal.ZonedDateTime.from(row.now),
       spans,
-      tagNames: [],
       text,
     });
     elapsed += performance.now() - started;
-    const actual = plainFields(resolved);
+    const actual = plainFields(resolved, []);
     const wrong = dateMismatches(row.expect, actual);
     const stats = byCategory[row.category] ?? { n: 0, right: 0 };
     byCategory[row.category] = stats;

@@ -1,10 +1,11 @@
 /**
  * Seed pools for generation: users' tag lists and personas.
- * Usage: bun gen/seeds.ts   (writes data/seeds/*.json)
+ * Usage: bun gen/seeds.ts
+ * Writes data/seeds/tag-sets.json and personas-all.json for gen/split.ts.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
-import { type Persona, ROOT } from "./common";
+import { listSchema, type Persona, ROOT } from "./common";
 
 const OUT = `${ROOT}data/seeds/`;
 const MODEL = "gpt-6-luna";
@@ -53,42 +54,13 @@ const PERSONA_THEMES = [
   "people with ADHD or who brain-dump everything as it comes",
 ];
 
-const tagSetSchema = {
-  additionalProperties: false,
-  properties: {
-    sets: {
-      items: {
-        additionalProperties: false,
-        properties: { tags: { items: { type: "string" }, type: "array" } },
-        required: ["tags"],
-        type: "object",
-      },
-      type: "array",
-    },
-  },
-  required: ["sets"],
-  type: "object",
-};
-
-const personaSchema = {
-  additionalProperties: false,
-  properties: {
-    personas: {
-      items: {
-        additionalProperties: false,
-        properties: {
-          description: { type: "string" },
-          writingHabits: { type: "string" },
-        },
-        required: ["description", "writingHabits"],
-        type: "object",
-      },
-      type: "array",
-    },
-  },
-  required: ["personas"],
-  type: "object",
-};
+const tagSetSchema = listSchema("sets", {
+  tags: { items: { type: "string" }, type: "array" },
+});
+const personaSchema = listSchema("personas", {
+  description: { type: "string" },
+  writingHabits: { type: "string" },
+});
 
 function tagPrompt(theme: string) {
   return `Do not run commands. Answer only with the JSON object.
@@ -156,5 +128,5 @@ const personas = personaResults.flatMap((result) =>
 );
 
 await writeFile(`${OUT}tag-sets.json`, JSON.stringify(tagSets, null, 1));
-await writeFile(`${OUT}personas.json`, JSON.stringify(personas, null, 1));
+await writeFile(`${OUT}personas-all.json`, JSON.stringify(personas, null, 1));
 console.log(`${tagSets.length} tag sets, ${personas.length} personas`);

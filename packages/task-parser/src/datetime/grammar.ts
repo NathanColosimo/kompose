@@ -7,6 +7,7 @@ import { HOLIDAYS } from "./holidays";
 import {
   CITY_ZONES,
   type DayPart,
+  lookup,
   MONTHS,
   NUMBER_WORDS,
   ORDINAL_WORDS,
@@ -37,7 +38,8 @@ export type DaySpec =
   | { type: "monthOf"; months: number; part: Part }
   | { type: "yearOf"; years: number; part: Part }
   | { type: "quarterEnd"; quarter: number | null }
-  | { type: "holiday"; name: string }
+  /** `eve`: the day before ("christmas eve"). */
+  | { type: "holiday"; name: string; eve: boolean }
   /** nth weekdays of a month ("first monday of next month"); -1 = last. */
   | {
       type: "nthWeekday";
@@ -221,7 +223,7 @@ function ordinalAt(token: Token | undefined, last = false): number | null {
   if (text === null || (text === "last" && !last)) {
     return null;
   }
-  return ORDINAL_WORDS[text] ?? null;
+  return lookup(ORDINAL_WORDS, text) ?? null;
 }
 
 const word = (token: Token | undefined) =>
@@ -251,14 +253,14 @@ function numberAt(tokens: Token[], i: number): Read<number> {
   if (text === null || text === "a" || text === "an") {
     return null;
   }
-  const value = NUMBER_WORDS[text];
+  const value = lookup(NUMBER_WORDS, text);
   if (value === undefined || text === "couple" || text === "few") {
     return null;
   }
   // "twenty one", "forty-five"
   if (value >= 20 && value % 10 === 0) {
     const hyphen = is(tokens[i + 1], "-") ? 1 : 0;
-    const unit = NUMBER_WORDS[word(tokens[i + 1 + hyphen]) ?? ""];
+    const unit = lookup(NUMBER_WORDS, word(tokens[i + 1 + hyphen]));
     if (unit !== undefined && unit >= 1 && unit <= 9) {
       return { length: 2 + hyphen, value: value + unit };
     }
@@ -305,7 +307,7 @@ function unitAt(tokens: Token[], i: number): Unit | "fortnight" | null {
   if (is(tokens[i], "fortnight")) {
     return "fortnight";
   }
-  return UNITS[word(tokens[i]) ?? ""] ?? null;
+  return lookup(UNITS, word(tokens[i])) ?? null;
 }
 
 /** "in 2 weeks", "3 days from now", "in an hour and a half", "a fortnight". */
@@ -480,7 +482,7 @@ function readMonthDay(tokens: Token[], i: number): Read<DaySpec> {
     ) &&
     !WEEKDAY_INDEX.has(word(follower) ?? "") &&
     !MONTH_INDEX.has(word(follower) ?? "") &&
-    !DAY_PART_ALIASES[word(follower) ?? ""]
+    !lookup(DAY_PART_ALIASES, word(follower))
   ) {
     return null;
   }
@@ -517,7 +519,7 @@ function readWeekday(tokens: Token[], i: number): Read<DaySpec> {
   if (wordsAt(tokens, at, "after", "next")) {
     after = true;
     at += 2;
-  } else if (is(tokens[at], "next") && !UNITS[word(tokens[at + 1]) ?? ""]) {
+  } else if (is(tokens[at], "next") && !lookup(UNITS, word(tokens[at + 1]))) {
     // "monday next"
     next = true;
     at += 1;
@@ -532,6 +534,14 @@ function readWeekday(tokens: Token[], i: number): Read<DaySpec> {
   return { length: at - i, value: { after, next, type: "weekday", weekday } };
 }
 
+const RELATIVE_DAYS: Record<string, number> = {
+  now: 0,
+  today: 0,
+  tomorrow: 1,
+  tonight: 0,
+  yesterday: -1,
+};
+
 /** today, tonight, tomorrow, the day after tomorrow, yesterday. */
 function readRelative(tokens: Token[], i: number): Read<DaySpec> {
   const the = is(tokens[i], "the") ? 1 : 0;
@@ -541,9 +551,7 @@ function readRelative(tokens: Token[], i: number): Read<DaySpec> {
   if (is(tokens[i + the], "overmorrow")) {
     return { length: the + 1, value: { days: 2, type: "relative" } };
   }
-  const days = { now: 0, today: 0, tomorrow: 1, tonight: 0, yesterday: -1 }[
-    word(tokens[i]) ?? ""
-  ];
+  const days = lookup(RELATIVE_DAYS, word(tokens[i]));
   return days === undefined
     ? null
     : { length: 1, value: { days, type: "relative" } };
@@ -559,18 +567,35 @@ const PART_WORDS: Record<string, Part> = {
   start: "start",
 };
 
+const MONTH_END: DaySpec = { months: 0, part: "end", type: "monthOf" };
+const QUARTER_END: DaySpec = { quarter: null, type: "quarterEnd" };
+const WEEK_END: DaySpec = { part: "end", type: "week", weeks: 0 };
+const YEAR_END: DaySpec = { part: "end", type: "yearOf", years: 0 };
+/** Period ends by unit ("month end") and by shorthand ("eom"). */
+const PERIOD_ENDS: Record<string, DaySpec> = {
+  eom: MONTH_END,
+  eoq: QUARTER_END,
+  eow: WEEK_END,
+  eoy: YEAR_END,
+  month: MONTH_END,
+  qtr: QUARTER_END,
+  quarter: QUARTER_END,
+  week: WEEK_END,
+  year: YEAR_END,
+};
+
 /** Shorthand ends: "eom", "eoq", "q3 end", "month end", "the year end". */
 function readPeriodEnd(tokens: Token[], i: number): Read<DaySpec> {
-  const single: Record<string, DaySpec> = {
-    eom: { months: 0, part: "end", type: "monthOf" },
-    eoq: { quarter: null, type: "quarterEnd" },
-    eow: { part: "end", type: "week", weeks: 0 },
-    eoy: { part: "end", type: "yearOf", years: 0 },
-    midmonth: { day: 15, months: 0, type: "monthDay" },
-  };
-  const direct = single[word(tokens[i]) ?? ""];
-  if (direct) {
-    return { length: 1, value: direct };
+  const text = word(tokens[i]) ?? "";
+  if (text === "midmonth") {
+    return { length: 1, value: { day: 15, months: 0, type: "monthDay" } };
+  }
+  // "eom", "eoq"; a bare "month" is no end.
+  const shorthand = text.startsWith("eo")
+    ? lookup(PERIOD_ENDS, text)
+    : undefined;
+  if (shorthand) {
+    return { length: 1, value: shorthand };
   }
   // q1..q4 end, end of q3
   const quarter = quarterAt(tokens, i);
@@ -582,14 +607,7 @@ function readPeriodEnd(tokens: Token[], i: number): Read<DaySpec> {
   if (!is(tokens[i + lead + 1], "end")) {
     return null;
   }
-  const ends: Record<string, DaySpec> = {
-    month: { months: 0, part: "end", type: "monthOf" },
-    qtr: { quarter: null, type: "quarterEnd" },
-    quarter: { quarter: null, type: "quarterEnd" },
-    week: { part: "end", type: "week", weeks: 0 },
-    year: { part: "end", type: "yearOf", years: 0 },
-  };
-  const end = ends[word(tokens[i + lead]) ?? ""];
+  const end = lookup(PERIOD_ENDS, word(tokens[i + lead]));
   return end ? { length: lead + 2, value: end } : null;
 }
 
@@ -597,7 +615,7 @@ function readPeriodEnd(tokens: Token[], i: number): Read<DaySpec> {
 function readPeriodPart(tokens: Token[], i: number): Read<DaySpec> {
   let at = is(tokens[i], "the") ? i + 1 : i;
   // "the end of", "mid-", "early"
-  const part = PART_WORDS[word(tokens[at]) ?? ""] ?? "whole";
+  const part = lookup(PART_WORDS, word(tokens[at])) ?? "whole";
   if (part !== "whole") {
     at += 1;
     if (is(tokens[at], "-")) {
@@ -827,13 +845,11 @@ function readHoliday(tokens: Token[], i: number): Read<DaySpec> {
       if (is(tokens[i + length], "day")) {
         length += 1;
       }
-      if (is(tokens[i + length], "eve") && !name.endsWith("eve")) {
-        return {
-          length: length + 1,
-          value: { name: `${name} eve`, type: "holiday" },
-        };
-      }
-      return { length, value: { name, type: "holiday" } };
+      const eve = is(tokens[i + length], "eve");
+      return {
+        length: length + (eve ? 1 : 0),
+        value: { eve, name, type: "holiday" },
+      };
     }
   }
   return null;
@@ -1027,7 +1043,7 @@ function clockNumberAt(tokens: Token[], i: number): ClockNumber | null {
     };
   }
   const text = word(token);
-  const value = text === null ? undefined : NUMBER_WORDS[text];
+  const value = lookup(NUMBER_WORDS, text);
   if (
     value === undefined ||
     value < 1 ||
@@ -1062,11 +1078,14 @@ function minuteWordsAt(tokens: Token[], i: number): Read<number> {
     return null;
   }
   const hyphen = is(tokens[i + 1], "-") ? 1 : 0;
-  const pair = `${text} ${word(tokens[i + 1 + hyphen]) ?? ""}`;
-  if (MINUTE_WORDS[pair] !== undefined) {
-    return { length: 2 + hyphen, value: MINUTE_WORDS[pair] };
+  const pair = lookup(
+    MINUTE_WORDS,
+    `${text} ${word(tokens[i + 1 + hyphen]) ?? ""}`
+  );
+  if (pair !== undefined) {
+    return { length: 2 + hyphen, value: pair };
   }
-  const value = MINUTE_WORDS[text];
+  const value = lookup(MINUTE_WORDS, text);
   return value !== undefined && text !== "five" && text !== "ten"
     ? { length: 1, value }
     : null;
@@ -1075,7 +1094,7 @@ function minuteWordsAt(tokens: Token[], i: number): Read<number> {
 function isPartAfter(tokens: Token[], i: number) {
   const at = wordsAt(tokens, i, "in", "the") ? i + 2 : i;
   return (
-    DAY_PART_ALIASES[word(tokens[at]) ?? ""] !== undefined ||
+    lookup(DAY_PART_ALIASES, word(tokens[at])) !== undefined ||
     is(tokens[at], "tonight", "today", "tomorrow")
   );
 }
@@ -1110,11 +1129,11 @@ function withMeridiemWord(
 /** A time zone after a time: "PT", "EST", "london time", "NY time". */
 function readZone(tokens: Token[], i: number): Read<string> {
   const text = word(tokens[i]) ?? "";
-  const zone = ZONES[text];
+  const zone = lookup(ZONES, text);
   if (zone) {
     return { length: is(tokens[i + 1], "time") ? 2 : 1, value: zone };
   }
-  const city = CITY_ZONES[text];
+  const city = lookup(CITY_ZONES, text);
   if (city && is(tokens[i + 1], "time")) {
     return { length: 2, value: city };
   }
@@ -1198,7 +1217,7 @@ const DAY_LETTERS: Record<string, number> = {
 
 /** Shorthand day sets: "m/w/f", "mwf", "t/th", "tth", "m-f", "weekdays". */
 function readDaySet(tokens: Token[], i: number): Read<number[]> {
-  const set = DAY_SETS[word(tokens[i]) ?? ""];
+  const set = lookup(DAY_SETS, word(tokens[i]));
   if (set) {
     return { length: 1, value: set };
   }
@@ -1216,7 +1235,7 @@ function readDaySet(tokens: Token[], i: number): Read<number[]> {
   const days: number[] = [];
   let at = i;
   for (;;) {
-    const day = DAY_LETTERS[word(tokens[at]) ?? ""];
+    const day = lookup(DAY_LETTERS, word(tokens[at]));
     if (day === undefined) {
       break;
     }
@@ -1272,7 +1291,7 @@ function readRepeat(
 
 /** "daily", "biweekly", "nightly" (which also says when). */
 function readFrequencyWord(text: string): RepeatRead {
-  const frequency = FREQUENCY_WORDS[text];
+  const frequency = lookup(FREQUENCY_WORDS, text);
   if (!frequency) {
     return null;
   }
@@ -1293,7 +1312,7 @@ function readClinicalRepeat(tokens: Token[], i: number): RepeatRead {
     return null;
   }
   const unit = clinical[2] ?? word(tokens[i + 1]);
-  const freq = CLINICAL_FREQUENCIES[unit?.[0] ?? ""];
+  const freq = lookup(CLINICAL_FREQUENCIES, unit?.[0]);
   if (!freq) {
     return null;
   }
@@ -1308,7 +1327,7 @@ function readOncePer(tokens: Token[], i: number): RepeatRead {
   if (!wordsAt(tokens, i, "once", ["a", "per", "every", "each"])) {
     return null;
   }
-  const freq = unitFrequency(UNITS[word(tokens[i + 2]) ?? ""]);
+  const freq = unitFrequency(lookup(UNITS, word(tokens[i + 2])));
   return freq ? { length: 3, value: { repeat: newRepeat(freq) } } : null;
 }
 
@@ -1344,7 +1363,7 @@ function readSpanRepeat(
   if (i === 0) {
     const amount = amountAt(tokens, i);
     const unit = amount
-      ? UNITS[word(tokens[i + amount.length]) ?? ""]
+      ? lookup(UNITS, word(tokens[i + amount.length]))
       : undefined;
     if (amount && unit && Number.isInteger(amount.value)) {
       const freq = unitFrequency(unit);
@@ -1406,7 +1425,7 @@ function everyIntervalAt(
     is(tokens[at], "other") ||
     (ordinalAt(tokens[at]) === 2 &&
       (WEEKDAY_INDEX.has(word(tokens[at + 1]) ?? "") ||
-        UNITS[word(tokens[at + 1]) ?? ""]) &&
+        lookup(UNITS, word(tokens[at + 1]))) &&
       !is(tokens[at + 2], "of"))
   ) {
     return { interval: 2, length: 1 };
@@ -1458,7 +1477,7 @@ function readEveryUnit(
     return { length: at - i + nth.length, value: { repeat } };
   }
   const text = word(tokens[at]) ?? "";
-  const unit = UNITS[text];
+  const unit = lookup(UNITS, text);
   if (unit === "hour" || unit === "minute") {
     const repeat = newRepeat("DAILY", { unsupported: true });
     return { length: at - i + 1, value: { repeat } };
@@ -1473,7 +1492,7 @@ function readEveryUnit(
     return { length: at - i + 1, value: { repeat } };
   }
   // "every morning", "every night", "every weekday morning"
-  const part = DAY_PART_ALIASES[text];
+  const part = lookup(DAY_PART_ALIASES, text);
   if (part) {
     const repeat = newRepeat("DAILY", { interval });
     return { length: at - i + 1, value: { repeat, time: part } };
@@ -1518,8 +1537,15 @@ export function parsePhrase(tokens: Token[], repeating = false): Phrase {
   let marker: Marker = null;
   let i = 0;
   while (i < tokens.length) {
-    const consumed = step(reader, phrase, i, marker);
-    if (consumed.length > 0) {
+    // The first reader that knows the expression at `i` wins.
+    let consumed: Consumed | null = null;
+    for (const read of STEPS) {
+      consumed = read(reader, phrase, i, marker);
+      if (consumed) {
+        break;
+      }
+    }
+    if (consumed && consumed.length > 0) {
       marker = consumed.marker;
       i += consumed.length;
     } else {
@@ -1605,7 +1631,7 @@ const readCompletionGap: Step = ({ tokens }, phrase, i) => {
   if (
     !(
       gap &&
-      UNITS[word(tokens[i + gap.length]) ?? ""] &&
+      lookup(UNITS, word(tokens[i + gap.length])) &&
       wordsAt(tokens, i + gap.length + 1, ["after", "from"], COMPLETION_WORDS)
     )
   ) {
@@ -1885,7 +1911,7 @@ const readFiller: Step = ({ tokens }, _phrase, i, marker) => {
   };
 };
 
-/** The readers `step` tries, in order: earlier ones win. */
+/** The readers `parsePhrase` tries at each token, in order. */
 const STEPS: Step[] = [
   readCompletionGap,
   readWeekAfterNext,
@@ -1903,22 +1929,6 @@ const STEPS: Step[] = [
   readLoneNumber,
   readFiller,
 ];
-
-/** Reads one expression at `i`; returns how many tokens it used and the marker it leaves. */
-function step(
-  reader: Reader,
-  phrase: Phrase,
-  i: number,
-  marker: Marker
-): Consumed {
-  for (const read of STEPS) {
-    const consumed = read(reader, phrase, i, marker);
-    if (consumed) {
-      return consumed;
-    }
-  }
-  return { length: 0, marker: null };
-}
 
 /** "for 2 weeks", "for the next 4 weeks", "for 10 days", "for 6 sessions". */
 function readSpan(
@@ -1990,7 +2000,7 @@ function readShift(tokens: Token[], i: number): Read<number> {
     return null;
   }
   at += amount?.length ?? 0;
-  const days = SHIFT_UNIT_DAYS[word(tokens[at]) ?? ""];
+  const days = lookup(SHIFT_UNIT_DAYS, word(tokens[at]));
   if (days === undefined || !Number.isInteger(count)) {
     return null;
   }
@@ -2018,7 +2028,7 @@ function readPart(tokens: Token[], i: number): Read<DayPart> {
   if (is(tokens[at], "early", "late")) {
     at += 1;
   }
-  const part = DAY_PART_ALIASES[word(tokens[at]) ?? ""];
+  const part = lookup(DAY_PART_ALIASES, word(tokens[at]));
   if (part) {
     return { length: at - i + 1, value: part };
   }

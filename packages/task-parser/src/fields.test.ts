@@ -7,9 +7,9 @@ const now = Temporal.ZonedDateTime.from(
   "2026-10-23T10:00:00-04:00[America/New_York]"
 );
 
-function fields(marked: string, tagNames: string[] = []) {
+function fields(marked: string) {
   const { spans, text } = parseMarkup(marked);
-  const result = resolveFields({ now, spans, tagNames, text });
+  const result = resolveFields({ now, spans, text });
   return {
     ...result,
     dueDate: result.dueDate?.toString() ?? null,
@@ -22,8 +22,7 @@ describe("resolveFields", () => {
   test("a full task", () => {
     expect(
       fields(
-        "[F:remind me to] [T:call mom about the trip] [S:tmrw at 4] for [M:30 min], [D:ask her to bring passports] [G:#family]",
-        ["Family"]
+        "[F:remind me to] [T:call mom about the trip] [S:tmrw at 4] for [M:30 min], [D:ask her to bring passports] [G:#family]"
       )
     ).toEqual({
       description: "Ask her to bring passports",
@@ -33,7 +32,6 @@ describe("resolveFields", () => {
       recurrence: null,
       startDate: "2026-10-24",
       startTime: "16:00:00",
-      tagNames: ["Family"],
       title: "Call mom about the trip",
     });
   });
@@ -222,7 +220,7 @@ describe("resolveFields repeat anchors", () => {
     const { spans } = parseMarkup(
       "[T:mow] [R:every other friday] before [U:nov 6]"
     );
-    const result = resolveFields({ now, spans, tagNames: [] });
+    const result = resolveFields({ now, spans });
     expect(result.recurrence).toEqual({
       byDay: ["FR"],
       freq: "WEEKLY",

@@ -3,6 +3,17 @@
  * misspellings people type, and other languages mixed into English tasks.
  */
 
+/**
+ * `table[key]` for a key from user text: an own entry only, so words like
+ * "constructor" don't reach Object.prototype.
+ */
+export function lookup<T>(
+  table: Readonly<Record<string, T>>,
+  key: string | null | undefined
+): T | undefined {
+  return key != null && Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 export const WEEKDAYS = [
   "monday",
   "tuesday",
@@ -100,6 +111,7 @@ export const ALIASES: Record<string, string> = {
   "2day": "today",
   "2mrw": "tomorrow",
   "2mro": "tomorrow",
+  "2mrow": "tomorrow",
   "2moro": "tomorrow",
   "2morow": "tomorrow",
   "2morro": "tomorrow",
@@ -114,17 +126,10 @@ export const ALIASES: Record<string, string> = {
   aftn: "afternoon",
   b4: "before",
   bday: "birthday",
-  biweekly: "biweekly",
   cob: "eod",
-  daily: "daily",
   ea: "each",
   ev: "every",
   evry: "every",
-  eod: "eod",
-  eom: "eom",
-  eoq: "eoq",
-  eow: "eow",
-  eoy: "eoy",
   evng: "evening",
   eves: "evenings",
   fortnightly: "fortnightly",
@@ -157,6 +162,7 @@ export const ALIASES: Record<string, string> = {
   tmrow: "tomorrow",
   tmoro: "tomorrow",
   tomo: "tomorrow",
+  tomorow: "tomorrow",
   tomoz: "tomorrow",
   tom: "tomorrow",
   tonite: "tonight",
@@ -203,8 +209,6 @@ export const ALIASES: Record<string, string> = {
   everyday: "every day",
   weeknights: "weeknights",
   "o'clock": "oclock",
-  oclock: "oclock",
-  midmonth: "midmonth",
 };
 
 /** Words typos are corrected toward (edit distance, same first letter). */
@@ -277,8 +281,6 @@ export const TRANSLATIONS: [string, string][] = [
   ["hoy", " today "],
   ["mediod[íi]a", " noon "],
   ["medianoche", " midnight "],
-  ["y media", ":30 "],
-  ["y cuarto", ":15 "],
   ["a las|a la", " at "],
   ["que viene|pr[óo]ximo|pr[óo]xima", " next "],
   ["antes del?", " by "],
@@ -482,11 +484,6 @@ export const JAPANESE: [RegExp, string][] = [
   [/金曜日?/gu, " friday "],
   [/土曜日?/gu, " saturday "],
   [/日曜日?/gu, " sunday "],
-  [/午前(\d{1,2})時/gu, " $1am "],
-  [/午後(\d{1,2})時/gu, " $1pm "],
-  [/(\d{1,2})時半/gu, " $1:30 "],
-  [/(\d{1,2})時(\d{1,2})分/gu, " $1:$2 "],
-  [/(\d{1,2})時/gu, " $1:00 "],
   [/午前/gu, " morning "],
   [/午後/gu, " afternoon "],
   [/夕方/gu, " evening "],

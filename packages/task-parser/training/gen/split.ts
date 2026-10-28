@@ -1,4 +1,7 @@
-/** Holds out 15% of tag sets and personas for the test set only. */
+/**
+ * Holds out 15% of tag sets and personas for the test set only. Reads the
+ * full pools (gen/seeds.ts), so a rerun gives the same split.
+ */
 import { readFile, writeFile } from "node:fs/promises";
 import { ROOT, rng } from "./common";
 
@@ -10,7 +13,7 @@ const tagSets = (
   }[]
 ).map((set) => set.tags);
 const personas = JSON.parse(
-  await readFile(`${seeds}personas.json`, "utf8")
+  await readFile(`${seeds}personas-all.json`, "utf8")
 ) as unknown[];
 
 const split = <T>(items: T[]) => {

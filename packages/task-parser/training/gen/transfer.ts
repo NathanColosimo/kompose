@@ -4,7 +4,7 @@
  * Usage: bun gen/transfer.ts <raw name>   → data/transfer/<name>.jsonl
  */
 import { mkdir, readdir, readFile } from "node:fs/promises";
-import { MarkupError, parseMarkup } from "../../src/spans";
+import { parseMarkup } from "../../src/spans";
 import { ROOT, writeJsonl } from "./common";
 
 const name = process.argv[2] ?? "";
@@ -22,11 +22,8 @@ for (const file of (await readdir(dir))
     let text: string;
     try {
       text = parseMarkup(item.marked).text;
-    } catch (error) {
-      if (error instanceof MarkupError) {
-        continue;
-      }
-      throw error;
+    } catch {
+      continue;
     }
     const tagList = batch.slots[item.slot - 1]?.tags;
     if (!(tagList && text.trim()) || seen.has(text)) {
