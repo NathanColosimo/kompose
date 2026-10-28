@@ -74,12 +74,11 @@ interface TaskDraft extends ParsedTaskInput {
   recurrence: TaskRecurrence | null;
 }
 
-function draftFromTokens(typed: ParsedTaskInput): TaskDraft {
-  return { ...typed, description: null, recurrence: null };
-}
-
-/** Fields from the magic box; only used when no tokens were typed. */
-function draftFromModel(typed: ParsedTaskInput, task: ParsedTask): TaskDraft {
+/** The typed fields, overlaid with the magic box's parse when there is one. */
+function draft(typed: ParsedTaskInput, task: ParsedTask | null): TaskDraft {
+  if (!task) {
+    return { ...typed, description: null, recurrence: null };
+  }
   return {
     ...typed,
     description: task.description,
@@ -95,22 +94,14 @@ function draftFromModel(typed: ParsedTaskInput, task: ParsedTask): TaskDraft {
 }
 
 /**
- * The preview for the current parse. While a newer parse runs (only while
- * the model loads, in practice), the last result's fields stay.
+ * The parse to preview. While a newer parse runs (only while the model
+ * loads, in practice), the last result's fields stay.
  */
-function previewDraft(typed: ParsedTaskInput, parse: MagicParse): TaskDraft {
-  switch (parse.status) {
-    case "off":
-      return draftFromTokens(typed);
-    case "done":
-      return draftFromModel(typed, parse.result);
-    case "reading":
-      return parse.previous
-        ? draftFromModel(typed, parse.previous)
-        : draftFromTokens(typed);
-    default:
-      return parse satisfies never;
+function previewTask(parse: MagicParse) {
+  if (parse.status === "done") {
+    return parse.result;
   }
+  return parse.status === "reading" ? parse.previous : null;
 }
 
 const WEEKDAY_NAMES: Record<string, string> = {
@@ -129,7 +120,7 @@ const UNITS = {
   YEARLY: ["Yearly", "years"],
 } as const;
 
-/** "Weekly on Mon, Wed", "Every 2 weeks on Fri", "Monthly on the 1st". */
+/** "Weekly on Mon, Wed", "Every 2 weeks on Fri", "Monthly on day 1". */
 function repeatLabel(recurrence: TaskRecurrence) {
   const [single, plural] = UNITS[recurrence.freq];
   const every =
@@ -271,21 +262,21 @@ function smartFieldClassName(parse: MagicParse) {
   }
 }
 
+const TOKEN_HINTS = [
+  ["=", "duration"],
+  [">", "due"],
+  ["~", "start"],
+  ["#", "tag"],
+] as const;
+
 function TokenHints() {
   return (
     <div className="flex justify-center gap-3 text-muted-foreground">
-      <span>
-        <code className="rounded bg-muted px-1">=</code> duration
-      </span>
-      <span>
-        <code className="rounded bg-muted px-1">&gt;</code> due
-      </span>
-      <span>
-        <code className="rounded bg-muted px-1">~</code> start
-      </span>
-      <span>
-        <code className="rounded bg-muted px-1">#</code> tag
-      </span>
+      {TOKEN_HINTS.map(([token, field]) => (
+        <span key={token}>
+          <code className="rounded bg-muted px-1">{token}</code> {field}
+        </span>
+      ))}
     </div>
   );
 }
@@ -335,7 +326,7 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || !freeText ? null : freeText,
     tagOptions
   );
-  const parsed = previewDraft(typed, magic.parse);
+  const parsed = draft(typed, previewTask(magic.parse));
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
 
@@ -465,8 +456,7 @@ export function CommandBarCreateTask({
     }
     // Enter can beat the parse (or the model download); wait for it.
     startResolving(async () => {
-      const task = await magic.resolve();
-      createFrom(task ? draftFromModel(typed, task) : draftFromTokens(typed));
+      createFrom(draft(typed, await magic.resolve()));
     });
   };
 

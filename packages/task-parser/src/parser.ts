@@ -77,16 +77,15 @@ export function createTaskParser(weightsFile: ArrayBuffer) {
         .map((span) => tagKey(span.text))
         .filter(Boolean)
     );
-    const chosen = encoded.tagPositions
-      .map((_, index) => {
-        const tag = tags[index] as TagOption<Id>;
-        return {
-          ...tag,
-          confidence: named.has(tagKey(tag.name))
-            ? 1
-            : 1 / (1 + Math.exp(-(logits.tags[index] as number))),
-        };
-      })
+    // Tags past the model's token limit are dropped.
+    const chosen = tags
+      .slice(0, encoded.tagPositions.length)
+      .map((tag, index) => ({
+        ...tag,
+        confidence: named.has(tagKey(tag.name))
+          ? 1
+          : 1 / (1 + Math.exp(-(logits.tags[index] as number))),
+      }))
       .filter((tag) => tag.confidence >= TAG_THRESHOLD)
       .sort((a, b) => b.confidence - a.confidence);
     const fields = resolveFields({

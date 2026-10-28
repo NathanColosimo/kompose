@@ -42,7 +42,7 @@ const DIGIT = /^\p{Nd}$/u;
 const LETTER = /^\p{L}$/u;
 const UPPER = /^\p{Lu}$/u;
 const PUNCT_OR_SYMBOL = /^[\p{P}\p{S}]$/u;
-const WORD_CHAR = /^[\p{L}\p{N}_]$/u;
+const WORD = /[\p{L}\p{N}_]{2,}/gu;
 
 export interface Encoded {
   ids: number[];
@@ -61,15 +61,11 @@ function findLinks(text: string): [number, number][] {
   const links: [number, number][] = [];
   for (const match of text.matchAll(LINK_PATTERN)) {
     const start = match.index;
-    let end = start + match[0].length;
-    const trailing = TRAILING_LINK_PUNCT.exec(match[0]);
-    if (trailing) {
-      end -= trailing[0].length;
+    // An email's domain isn't a link.
+    if (text[start - 1] !== "@") {
+      const link = match[0].replace(TRAILING_LINK_PUNCT, "");
+      links.push([start, start + link.length]);
     }
-    if (start > 0 && text[start - 1] === "@") {
-      continue;
-    }
-    links.push([start, end]);
   }
   return links;
 }
@@ -97,24 +93,8 @@ function shape(word: string): number {
 }
 
 /** Lowercased words of 2+ characters (letters, numbers, underscore). */
-function wordsOf(text: string): Set<string> {
-  const words = new Set<string>();
-  let current: string[] = [];
-  for (const char of [...text, " "]) {
-    if (WORD_CHAR.test(char)) {
-      current.push(char);
-    } else {
-      if (current.length > 1) {
-        words.add(current.join("").toLowerCase());
-      }
-      current = [];
-    }
-  }
-  return words;
-}
-
-function spacedBefore(source: string, start: number) {
-  return start > 0 && WHITESPACE.test(source[start - 1] ?? "") ? 1 : 0;
+function wordsOf(text: string) {
+  return new Set(text.match(WORD)?.map((word) => word.toLowerCase()));
 }
 
 /**
@@ -140,6 +120,7 @@ export function encode(
   const tagWords = wordsOf(tagList.join(" "));
   const textWords = wordsOf(text.replace(LINK_PATTERN, " "));
 
+  /** One token of `source` (the text, segment 0, or a tag, segment 1). */
   const add = (
     id: number,
     special: number,
@@ -153,7 +134,9 @@ export function encode(
     out.specials.push(special);
     out.shapes.push(special ? SHAPES.indexOf("special") : shape(word));
     out.segments.push(segment);
-    out.spaced.push(spacedBefore(source, start));
+    out.spaced.push(
+      start > 0 && WHITESPACE.test(source[start - 1] ?? "") ? 1 : 0
+    );
     out.overlap.push(
       (segment === 0 ? tagWords : textWords).has(word.toLowerCase()) ? 1 : 0
     );
@@ -180,43 +163,21 @@ export function encode(
     cursor = linkEnd;
   }
   add(-1, SEP, -1, -1, 0, text);
-  appendTags(out, tokenizer, tagList, textWords);
-  return out;
-}
-
-/** Each tag after the text: [TAG] and its word pieces, segment 1. */
-function appendTags(
-  out: Encoded,
-  tokenizer: WordPiece,
-  tagList: string[],
-  textWords: Set<string>
-) {
+  // Each tag: [TAG] and its word pieces.
   for (const tag of tagList) {
     if (out.ids.length >= MAX_TOKENS - 1) {
       break;
     }
     out.tagPositions.push(out.ids.length);
-    out.ids.push(-1);
-    out.specials.push(TAG);
-    out.shapes.push(SHAPES.indexOf("special"));
-    out.segments.push(1);
-    out.spaced.push(0);
-    out.overlap.push(0);
-    out.offsets.push([-1, -1]);
+    add(-1, TAG, -1, -1, 1, tag);
     for (const piece of tokenizer.encode(tag).slice(0, MAX_TAG_PIECES)) {
       if (out.ids.length >= MAX_TOKENS) {
         break;
       }
-      const word = tag.slice(piece.start, piece.end);
-      out.ids.push(piece.id);
-      out.specials.push(0);
-      out.shapes.push(shape(word));
-      out.segments.push(1);
-      out.spaced.push(spacedBefore(tag, piece.start));
-      out.overlap.push(textWords.has(word.toLowerCase()) ? 1 : 0);
-      out.offsets.push([-1, -1]);
+      add(piece.id, 0, piece.start, piece.end, 1, tag);
     }
   }
+  return out;
 }
 
 /** BIO: an I-X tag only continues a B-X or I-X. */
@@ -249,15 +210,12 @@ export function viterbi(encoded: Encoded, logits: Float32Array): number[] {
     const log = max + Math.log(total);
     return Array.from(row, (value) => value - log);
   };
-  const [first] = positions;
-  if (first === undefined) {
-    return result;
-  }
-  let best = logProbs(first).map((score, tag) =>
-    allowed(0, tag) ? score : Number.NEGATIVE_INFINITY
+  // From a virtual O before the first token.
+  let best = TAG_NAMES.map((_, tag) =>
+    tag === 0 ? 0 : Number.NEGATIVE_INFINITY
   );
   const back: number[][] = [];
-  for (const position of positions.slice(1)) {
+  for (const position of positions) {
     const row = logProbs(position);
     const pointers: number[] = [];
     best = row.map((score, tag) => {
@@ -277,9 +235,7 @@ export function viterbi(encoded: Encoded, logits: Float32Array): number[] {
   let last = best.indexOf(Math.max(...best));
   for (let index = positions.length - 1; index >= 0; index -= 1) {
     result[positions[index] as number] = last;
-    if (index > 0) {
-      last = back[index - 1]?.[last] ?? 0;
-    }
+    last = back[index]?.[last] ?? 0;
   }
   return result;
 }
@@ -297,7 +253,8 @@ export function decodeSpans(
   predictions: number[],
   text: string
 ): LabelledSpan[] {
-  const spans: (LabelledSpan & { lastToken: number })[] = [];
+  const spans: LabelledSpan[] = [];
+  let lastToken = -1;
   encoded.offsets.forEach(([start, end], index) => {
     const tag = predictions[index] ?? 0;
     if (start < 0 || encoded.specials[index] === URL || tag === 0) {
@@ -311,23 +268,18 @@ export function decodeSpans(
     const continuing =
       last !== undefined &&
       last.label === label &&
-      last.lastToken === index - 1 &&
+      lastToken === index - 1 &&
       (prefix === "I" || (start === last.end && !encoded.spaced[index]));
     if (continuing) {
       last.end = end;
-      last.lastToken = index;
+      last.text = text.slice(last.start, end);
     } else {
-      spans.push({ end, label, lastToken: index, start, text: "" });
+      spans.push({ end, label, start, text: text.slice(start, end) });
     }
+    lastToken = index;
   });
-  const result: LabelledSpan[] = spans.map(({ end, label, start }) => ({
-    end,
-    label,
-    start,
-    text: text.slice(start, end),
-  }));
   for (const [start, end] of encoded.links) {
-    result.push({ end, label: "L", start, text: text.slice(start, end) });
+    spans.push({ end, label: "L", start, text: text.slice(start, end) });
   }
-  return result.sort((a, b) => a.start - b.start);
+  return spans.sort((a, b) => a.start - b.start);
 }

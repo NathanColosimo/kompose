@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { WordPiece } from "./tokenizer";
 
@@ -7,8 +7,9 @@ const file = new URL(
   import.meta.url
 ).pathname;
 
-describe.skipIf(!existsSync(file))("WordPiece parity with Hugging Face", () => {
-  test("every dumped case matches ids and offsets", () => {
+test.skipIf(!existsSync(file))(
+  "WordPiece matches Hugging Face ids and offsets on every dumped case",
+  () => {
     const { cases, vocab } = JSON.parse(readFileSync(file, "utf8")) as {
       cases: { ids: number[]; offsets: [number, number][]; text: string }[];
       vocab: string[];
@@ -28,6 +29,5 @@ describe.skipIf(!existsSync(file))("WordPiece parity with Hugging Face", () => {
       }
     }
     expect(failures.slice(0, 5)).toEqual([]);
-    expect(failures.length).toBe(0);
-  });
-});
+  }
+);

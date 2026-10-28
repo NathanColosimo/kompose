@@ -1,17 +1,24 @@
 """Turns (text, tag list) into model inputs, and gold spans into targets.
 
 Mirrored in TypeScript by src/model/features.ts; keep the two in lockstep
-(model/dump_features.py feeds src/model/features.parity.test.ts).
+(model/dump_parity.py feeds src/model/features.parity.test.ts).
 """
 
 from __future__ import annotations
 
 import math
+import os
 import re
-import unicodedata
 from dataclasses import dataclass, field
+from pathlib import Path
+from unicodedata import category
 
 from tokenizers import Tokenizer
+
+# run-snapshot.sh runs copies of these files elsewhere; TRAINING_ROOT points home.
+ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
+# The pretrained encoder (config, weights, tokenizer) every run starts from.
+ELECTRA = ROOT / "data/embeddings/electra-small"
 
 # Span labels the model predicts. Links come from LINK_PATTERN instead.
 LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"]
@@ -50,18 +57,14 @@ def find_links(text: str) -> list[tuple[int, int]]:
     links = []
     for match in LINK_PATTERN.finditer(text):
         start, end = match.span()
-        trailing = TRAILING_LINK_PUNCT.search(text[start:end])
-        if trailing:
-            end -= len(trailing.group(0))
         # An e-mail address is not a link.
         if start > 0 and text[start - 1] == "@":
             continue
+        trailing = TRAILING_LINK_PUNCT.search(text[start:end])
+        if trailing:
+            end -= len(trailing.group(0))
         links.append((start, end))
     return links
-
-
-def category(char: str) -> str:
-    return unicodedata.category(char)
 
 
 def shape(word: str) -> int:
@@ -94,10 +97,6 @@ def words_of(text: str) -> set[str]:
     return words
 
 
-def spaced_before(source: str, start: int) -> int:
-    return 1 if start > 0 and source[start - 1] in WHITESPACE else 0
-
-
 @dataclass
 class Encoded:
     ids: list[int] = field(default_factory=list)  # vocab id, or -1 for specials
@@ -112,8 +111,8 @@ class Encoded:
 
 
 class Featurizer:
-    def __init__(self, tokenizer_path: str):
-        self.tokenizer = Tokenizer.from_file(tokenizer_path)
+    def __init__(self):
+        self.tokenizer = Tokenizer.from_file(str(ELECTRA / "tokenizer.json"))
 
     def _pieces(self, text: str, base: int) -> list[tuple[int, int, int]]:
         """(vocab id, start, end) for a plain segment, offsets shifted by base."""
@@ -121,9 +120,7 @@ class Featurizer:
         return [(i, s + base, e + base) for i, (s, e) in zip(encoding.ids, encoding.offsets)]
 
     def encode(self, text: str, tag_list: list[str]) -> Encoded:
-        out = Encoded()
-        links = find_links(text)
-        out.links = links
+        out = Encoded(links=find_links(text))
         tag_words = words_of(" ".join(tag_list))
         text_words = words_of(LINK_PATTERN.sub(" ", text))
 
@@ -133,7 +130,7 @@ class Featurizer:
             out.specials.append(special)
             out.shapes.append(SHAPES.index("special") if special else shape(word))
             out.segments.append(segment)
-            out.spaced.append(spaced_before(source, start))
+            out.spaced.append(1 if start > 0 and source[start - 1] in WHITESPACE else 0)
             other = tag_words if segment == 0 else text_words
             out.overlap.append(1 if word.lower() in other else 0)
             out.offsets.append((start, end) if segment == 0 else (-1, -1))
@@ -141,7 +138,7 @@ class Featurizer:
         add(-1, CLS, -1, -1, 0, text)
         cursor = 0
         count = 0
-        for link_start, link_end in [*links, (len(text), len(text))]:
+        for link_start, link_end in [*out.links, (len(text), len(text))]:
             for vocab_id, start, end in self._pieces(text[cursor:link_start], cursor):
                 if count < MAX_TEXT_TOKENS:
                     add(vocab_id, 0, start, end, 0, text)
@@ -159,15 +156,7 @@ class Featurizer:
             for vocab_id, start, end in self._pieces(tag, 0)[:8]:
                 if len(out.ids) >= MAX_TOKENS:
                     break
-                # Tag tokens keep their own offsets for shape/overlap only.
-                out.ids.append(vocab_id)
-                out.specials.append(0)
-                word = tag[start:end]
-                out.shapes.append(shape(word))
-                out.segments.append(1)
-                out.spaced.append(spaced_before(tag, start))
-                out.overlap.append(1 if word.lower() in text_words else 0)
-                out.offsets.append((-1, -1))
+                add(vocab_id, 0, start, end, 1, tag)
         return out
 
 
@@ -175,18 +164,17 @@ def bio_targets(encoded: Encoded, spans: list[dict]) -> list[int]:
     """BIO target per token: a text token takes the label of the span holding its start."""
     targets = []
     previous_span = None
-    for (start, end), special in zip(encoded.offsets, encoded.specials):
-        if start < 0 or special == URL:
-            targets.append(IGNORE if start < 0 else 0)
-            previous_span = None
-            continue
-        span = next((s for s in spans if s["start"] <= start < s["end"] and s["label"] in LABELS), None)
-        if span is None:
+    for (start, _), special in zip(encoded.offsets, encoded.specials):
+        span = None
+        if start >= 0 and special != URL:
+            span = next((s for s in spans if s["start"] <= start < s["end"] and s["label"] in LABELS), None)
+        if start < 0:
+            targets.append(IGNORE)
+        elif span is None:
             targets.append(0)
-            previous_span = None
-            continue
-        prefix = "I" if previous_span is span else "B"
-        targets.append(TAG_NAMES.index(f"{prefix}-{span['label']}"))
+        else:
+            prefix = "I" if previous_span is span else "B"
+            targets.append(TAG_NAMES.index(f"{prefix}-{span['label']}"))
         previous_span = span
     return targets
 

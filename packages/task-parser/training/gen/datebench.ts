@@ -15,9 +15,13 @@ import { parseMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
 import {
   answeredFields,
+  chunks,
   DATE_FIELDS,
   DATE_FIELDS_SCHEMA,
+  datedItems,
   dateMismatches,
+  pick,
+  plainFields,
   ROOT,
   readJsonl,
   rng,
@@ -32,9 +36,6 @@ await mkdir(DIR, { recursive: true });
 const [step = "score", arg = "", concurrencyArg = "8"] = process.argv.slice(2);
 const CONCURRENCY = Number(concurrencyArg);
 const random = rng(777);
-
-const pick = <T>(items: readonly T[]) =>
-  items[Math.floor(random() * items.length)] as T;
 
 const CATEGORIES: Record<string, string> = {
   absolute:
@@ -82,13 +83,14 @@ function randomNow() {
   const day = Temporal.PlainDate.from("2026-10-01").add({
     days: Math.floor(random() * 455),
   });
-  const hour = pick([
-    0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-  ]);
-  const minute = pick([0, 5, 15, 30, 45, 50]);
+  const hour = pick(
+    random,
+    [0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  );
+  const minute = pick(random, [0, 5, 15, 30, 45, 50]);
   return day
     .toPlainDateTime({ hour, minute })
-    .toZonedDateTime(pick(ZONES))
+    .toZonedDateTime(pick(random, ZONES))
     .toString();
 }
 
@@ -166,12 +168,8 @@ async function answer(pass: string) {
     items.filter((item) => !done.has(item.id))
   );
   const rows: object[] = [...done.values()];
-  const BATCH = 20;
-  const jobs: (() => Promise<void>)[] = [];
-  for (let first = 0; first < order.length; first += BATCH) {
-    const batch = order.slice(first, first + BATCH);
-    jobs.push(async () => {
-      const prompt = `You compute the expected date fields of to-do items for an evaluation set. Do not run any commands; answer only with the JSON object. Work each one out carefully with a calendar.
+  const jobs = chunks(order, 20).map((batch) => async () => {
+    const prompt = `You compute the expected date fields of to-do items for an evaluation set. Do not run any commands; answer only with the JSON object. Work each one out carefully with a calendar.
 
 Each item is a labelled quick-add text and the moment it was typed ("now", with its time zone and weekday). From the S (start), U (due), R (repeat) and M (duration) spans, work out:
 - startDate (YYYY-MM-DD) and startTime (HH:MM:SS, or null when no time of day was given)
@@ -182,29 +180,23 @@ ${CONVENTIONS}
 
 ## Items
 
-${batch
-  .map(
-    (row, index) =>
-      `Item ${index + 1}\n  now: ${row.now} (${Temporal.ZonedDateTime.from(row.now).toLocaleString("en-US", { weekday: "long" })})\n  labelled: ${row.marked}`
-  )
-  .join("\n\n")}`;
-      const result = await codexJson<{
-        items: (Record<string, unknown> & { item: number })[];
-      }>({
-        effort: "high",
-        model: "gpt-6.1-sol",
-        prompt,
-        schema: DATE_FIELDS_SCHEMA,
-      });
-      for (const entry of result.items) {
-        const row = batch[entry.item - 1];
-        if (row) {
-          rows.push({ fields: answeredFields(entry), id: row.id });
-        }
-      }
-      await writeJsonl(out, rows);
+${datedItems(batch)}`;
+    const result = await codexJson<{
+      items: (Record<string, unknown> & { item: number })[];
+    }>({
+      effort: "high",
+      model: "gpt-6.1-sol",
+      prompt,
+      schema: DATE_FIELDS_SCHEMA,
     });
-  }
+    for (const entry of result.items) {
+      const row = batch[entry.item - 1];
+      if (row) {
+        rows.push({ fields: answeredFields(entry), id: row.id });
+      }
+    }
+    await writeJsonl(out, rows);
+  });
   await pool("answer", jobs, CONCURRENCY);
   console.log(`${rows.length} answered`);
 }
@@ -252,6 +244,7 @@ async function score() {
   const wrongFields: Record<string, number> = {};
   const failures: string[] = [];
   let elapsed = 0;
+  let right = 0;
   for (const row of rows) {
     const { spans, text } = parseMarkup(row.marked);
     const started = performance.now();
@@ -262,22 +255,14 @@ async function score() {
       text,
     });
     elapsed += performance.now() - started;
-    const actual: Record<string, unknown> = {
-      dueDate: resolved.dueDate?.toString() ?? null,
-      durationMinutes: resolved.durationMinutes,
-      recurrence: resolved.recurrence,
-      startDate: resolved.startDate?.toString() ?? null,
-      startTime: resolved.startTime?.toString() ?? null,
-    };
+    const actual = plainFields(resolved);
     const wrong = dateMismatches(row.expect, actual);
-    let stats = byCategory[row.category];
-    if (!stats) {
-      stats = { n: 0, right: 0 };
-      byCategory[row.category] = stats;
-    }
+    const stats = byCategory[row.category] ?? { n: 0, right: 0 };
+    byCategory[row.category] = stats;
     stats.n += 1;
     if (wrong.length === 0) {
       stats.right += 1;
+      right += 1;
       continue;
     }
     for (const field of wrong) {
@@ -294,19 +279,18 @@ async function score() {
       );
     }
   }
-  const total = Object.values(byCategory).reduce(
-    (sum, stats) => ({ n: sum.n + stats.n, right: sum.right + stats.right }),
-    { n: 0, right: 0 }
-  );
-  const pct = (stats: { n: number; right: number }) =>
-    `${((100 * stats.right) / stats.n).toFixed(1)}%`;
+  const pct = (count: number, n: number) =>
+    `${((100 * count) / n).toFixed(1)}%`;
   console.log(
-    `dates: ${total.n} items, ${pct(total)} all right, ${(elapsed / total.n).toFixed(2)} ms/item`
+    `dates: ${rows.length} items, ${pct(right, rows.length)} all right, ${(elapsed / rows.length).toFixed(2)} ms/item`
   );
   console.log(
     Object.entries(byCategory)
       .sort()
-      .map(([category, stats]) => `${category} ${pct(stats)} (${stats.n})`)
+      .map(
+        ([category, stats]) =>
+          `${category} ${pct(stats.right, stats.n)} (${stats.n})`
+      )
       .join(" | ")
   );
   console.log("wrong fields", wrongFields);

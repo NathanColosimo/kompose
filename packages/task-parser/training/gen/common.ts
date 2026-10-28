@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
+import type { TaskFields } from "../../src/fields";
 import { parseMarkup } from "../../src/spans";
 import { codexJson } from "./codex";
 
@@ -19,6 +20,10 @@ export function rng(seed: number) {
   };
 }
 
+export function pick<T>(random: () => number, items: readonly T[]) {
+  return items[Math.floor(random() * items.length)] as T;
+}
+
 export function shuffled<T>(random: () => number, items: readonly T[]) {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -26,6 +31,13 @@ export function shuffled<T>(random: () => number, items: readonly T[]) {
     [copy[index], copy[other]] = [copy[other] as T, copy[index] as T];
   }
   return copy;
+}
+
+/** `items` in consecutive groups of `size`. */
+export function chunks<T>(items: T[], size: number) {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
+    items.slice(index * size, (index + 1) * size)
+  );
 }
 
 /** Rows of a JSONL file; none if it doesn't exist yet. */
@@ -174,6 +186,31 @@ ${items.map((item, index) => `Item ${index + 1}\n  person: ${item.persona.descri
 }
 
 // --- expected date fields (test set and date benchmark) -------------------
+
+/** Resolved task fields as JSON, with tag names. */
+export function plainFields(fields: TaskFields) {
+  return {
+    description: fields.description,
+    dueDate: fields.dueDate?.toString() ?? null,
+    durationMinutes: fields.durationMinutes,
+    links: fields.links,
+    recurrence: fields.recurrence,
+    startDate: fields.startDate?.toString() ?? null,
+    startTime: fields.startTime?.toString() ?? null,
+    tags: fields.tagNames,
+    title: fields.title,
+  };
+}
+
+/** Labelled items and when each was typed, as the field prompts list them. */
+export function datedItems(rows: { marked: string; now: string }[]) {
+  return rows
+    .map(
+      (row, index) =>
+        `Item ${index + 1}\n  now: ${row.now} (${Temporal.ZonedDateTime.from(row.now).toLocaleString("en-US", { weekday: "long" })})\n  labelled: ${row.marked}`
+    )
+    .join("\n\n");
+}
 
 export const DATE_FIELDS = [
   "startDate",

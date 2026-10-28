@@ -28,15 +28,15 @@ Each generation distills from the previous ones (start with no `--teacher`).
 `data/clean/solw1.final.jsonl` four times (upweighted).
 
 ```sh
-./run-snapshot.sh v18 train.py --data $DATA --embeddings electra-small \
-  --epochs 8 --ema 0.999 --teacher runs/v17-kd runs/v16-kd runs/v15-kd \
+./run-snapshot.sh v18 train.py --data $DATA --epochs 8 \
+  --teacher runs/v17-kd runs/v16-kd runs/v15-kd \
   --transfer data/transfer/train8.jsonl --out runs/v18-kd
 # Quantization-aware fine-tune for the int8 kernel.
-./run-snapshot.sh v18q train.py --data $DATA --embeddings electra-small \
-  --init-from runs/v18-kd --qat --epochs 2 --pretrained-lr 3e-5 --lr 3e-4 \
-  --embedding-lr 5e-5 --ema 0.999 --teacher runs/v18-kd runs/v17-kd \
-  runs/v16-kd --transfer data/transfer/train8.jsonl --out runs/v18q
-uv run python model/export.py runs/v18q --out runs/v18q/task-parser.bin
+./run-snapshot.sh v18q train.py --data $DATA --init-from runs/v18-kd --qat \
+  --epochs 2 --pretrained-lr 3e-5 --lr 3e-4 --embedding-lr 5e-5 \
+  --teacher runs/v18-kd runs/v17-kd runs/v16-kd \
+  --transfer data/transfer/train8.jsonl --out runs/v18q
+uv run python model/export.py runs/v18q   # → runs/v18q/task-parser.bin
 bun gen/evaluate.ts runs/v18q both   # test 66.4% all right, 79.4% usable
 ```
 
@@ -44,6 +44,6 @@ To ship, copy `runs/<name>/task-parser.bin` to `../task-parser.bin`. To
 check the TypeScript forward pass, run
 `uv run python model/dump_logits.py runs/<name> data/clean/train-merged.final.jsonl 300`,
 then `bun test` with `TASK_PARSER_RUN=$PWD/runs/<name>`. The tokenizer and
-feature parity tests read `data/tokenizer-parity.json` and
-`data/features-parity.json` from `model/dump_tokens.py` and
-`model/dump_features.py`.
+feature parity tests read the files that
+`uv run python model/dump_parity.py data/clean/pilot.jsonl data/clean/pilot2.final.jsonl`
+writes.

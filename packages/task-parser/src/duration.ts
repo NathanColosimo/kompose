@@ -35,7 +35,7 @@ export function parseDuration(phrase: string): number | null {
 
 interface State {
   found: boolean;
-  lastUnit: Unit | null;
+  lastUnit: number | null;
   minutes: number;
   /** Most recent bare amount, waiting for its unit. */
   pending: number | null;
@@ -84,13 +84,15 @@ function fraction(
   return next;
 }
 
-type Unit = number;
-const HOUR: Unit = 60;
+const HOUR = 60;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
 
-const UNITS: Record<string, Unit> = {
-  d: 24 * 60,
-  day: 24 * 60,
-  days: 24 * 60,
+/** Minutes in each unit word. */
+const UNITS: Record<string, number> = {
+  d: DAY,
+  day: DAY,
+  days: DAY,
   h: HOUR,
   hour: HOUR,
   hours: HOUR,
@@ -102,11 +104,11 @@ const UNITS: Record<string, Unit> = {
   minute: 1,
   minutes: 1,
   mn: 1,
-  w: 7 * 24 * 60,
-  week: 7 * 24 * 60,
-  weeks: 7 * 24 * 60,
-  wk: 7 * 24 * 60,
-  wks: 7 * 24 * 60,
+  w: WEEK,
+  week: WEEK,
+  weeks: WEEK,
+  wk: WEEK,
+  wks: WEEK,
 };
 
 const NUMBER_WORDS: Record<string, number> = {

@@ -12,8 +12,9 @@ interface CodexOptions {
   model: string;
   prompt: string;
   schema: object;
-  timeoutMs?: number;
 }
+
+const TIMEOUT_MS = 30 * 60_000;
 
 /**
  * The user's Codex config loads MCP servers and plugins (computer use, a
@@ -53,7 +54,6 @@ export async function codexJson<T>({
   model,
   prompt,
   schema,
-  timeoutMs = 30 * 60_000,
 }: CodexOptions): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), "codex-"));
   try {
@@ -88,7 +88,7 @@ export async function codexJson<T>({
       child.stderr.on("data", (chunk) => {
         stderr = (stderr + chunk).slice(-4000);
       });
-      const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+      const timer = setTimeout(() => child.kill("SIGKILL"), TIMEOUT_MS);
       child.on("error", reject);
       child.on("exit", (code) => {
         clearTimeout(timer);

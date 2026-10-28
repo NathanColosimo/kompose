@@ -10,7 +10,7 @@ import torch
 from safetensors.torch import load_file
 from torch import nn
 
-from features import SHAPES, SPECIALS, TAG_NAMES
+from features import ELECTRA, SHAPES, SPECIALS, TAG_NAMES
 
 
 class Config:
@@ -121,15 +121,15 @@ class TaskParser(nn.Module):
 
 
 def load_run(run: Path, weights: str = "model.safetensors") -> TaskParser:
-    """A trained run (runs/<name>) in eval mode; config.embeddings names its tokenizer."""
+    """A trained run (runs/<name>) in eval mode."""
     model = TaskParser(Config(**json.loads((run / "config.json").read_text())))
     model.load_state_dict(load_file(str(run / weights)))
     return model.eval()
 
 
-def load_electra(model: TaskParser, path: str, vocab: dict[str, int]):
-    """Copy ELECTRA weights (data/embeddings/electra-small) into `model`."""
-    w = load_file(path)
+def load_electra(model: TaskParser, vocab: dict[str, int]):
+    """Copy the pretrained ELECTRA weights into `model`."""
+    w = load_file(str(ELECTRA / "model.safetensors"))
     e = "electra.embeddings."
     with torch.no_grad():
         model.words.weight.copy_(w[e + "word_embeddings.weight"])

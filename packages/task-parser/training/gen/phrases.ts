@@ -9,11 +9,9 @@ import { writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { resolveFields, type TaskFields } from "../../src/fields";
 import type { Label } from "../../src/spans";
-import { ROOT, rng } from "./common";
+import { pick, ROOT, rng } from "./common";
 
 const random = rng(77);
-const pick = <T>(items: readonly T[]) =>
-  items[Math.floor(random() * items.length)] as T;
 
 const WEEKDAYS = [
   ["monday", "mon", "Mon", "Monday"],
@@ -38,18 +36,19 @@ const MONTHS = [
   ["november", "nov", "Nov"],
   ["december", "dec", "Dec"],
 ];
+const MONTH_NAMES = MONTHS.map((names) => names[0] as string);
 const SUFFIXES: Record<number, string> = { 1: "st", 2: "nd", 3: "rd" };
 const ORDINAL = (n: number) =>
   `${n}${(n < 11 || n > 13 ? SUFFIXES[n % 10] : undefined) ?? "th"}`;
 
 function weekday() {
-  return pick(pick(WEEKDAYS));
+  return pick(random, pick(random, WEEKDAYS));
 }
 function day() {
   const month = Math.floor(random() * 12);
   const date = 1 + Math.floor(random() * 28);
-  const name = pick(MONTHS[month] ?? ["jan"]);
-  return pick([
+  const name = pick(random, MONTHS[month] as string[]);
+  return pick(random, [
     `${name} ${date}`,
     `${name} ${ORDINAL(date)}`,
     `${ORDINAL(date)} of ${name}`,
@@ -61,19 +60,19 @@ function day() {
 }
 function clock() {
   const hour = 1 + Math.floor(random() * 12);
-  const minutes = pick(["", ":00", ":15", ":30", ":45", ":10", ":20"]);
+  const minutes = pick(random, ["", ":00", ":15", ":30", ":45", ":10", ":20"]);
   const h24 = 6 + Math.floor(random() * 16);
-  return pick([
-    `${hour}${minutes}${pick(["am", "pm", " am", " pm", "AM", "PM", "p", "a", "pm"])}`,
+  return pick(random, [
+    `${hour}${minutes}${pick(random, ["am", "pm", " am", " pm", "AM", "PM", "p", "a", "pm"])}`,
     `${hour}${minutes}`,
-    `${h24}:${pick(["00", "15", "30", "45"])}`,
-    `${String(h24).padStart(2, "0")}${pick(["00", "30"])}`,
+    `${h24}:${pick(random, ["00", "15", "30", "45"])}`,
+    `${String(h24).padStart(2, "0")}${pick(random, ["00", "30"])}`,
     `${h24}h`,
-    pick(["noon", "midnight", "lunch"]),
+    pick(random, ["noon", "midnight", "lunch"]),
   ]);
 }
 function relative() {
-  return pick([
+  return pick(random, [
     "today",
     "tomorrow",
     "tmrw",
@@ -92,9 +91,9 @@ function relative() {
     `next ${weekday()}`,
     `this ${weekday()}`,
     `this coming ${weekday()}`,
-    `${weekday()} ${pick(["morning", "afternoon", "evening", "night"])}`,
-    `in ${pick(["2", "3", "a few", "10", "two"])} ${pick(["days", "weeks"])}`,
-    `in ${pick(["an hour", "2 hours", "30 min", "45 minutes", "90 mins", "2h"])}`,
+    `${weekday()} ${pick(random, ["morning", "afternoon", "evening", "night"])}`,
+    `in ${pick(random, ["2", "3", "a few", "10", "two"])} ${pick(random, ["days", "weeks"])}`,
+    `in ${pick(random, ["an hour", "2 hours", "30 min", "45 minutes", "90 mins", "2h"])}`,
     `a week from ${weekday()}`,
     "end of month",
     "end of the week",
@@ -103,12 +102,12 @@ function relative() {
     "cob",
     `eod ${weekday()}`,
     "next month",
-    `next ${pick(MONTHS.map((names) => names[0] ?? ""))}`,
-    `early ${pick(MONTHS.map((names) => names[0] ?? ""))}`,
-    `mid ${pick(MONTHS.map((names) => names[0] ?? ""))}`,
+    `next ${pick(random, MONTH_NAMES)}`,
+    `early ${pick(random, MONTH_NAMES)}`,
+    `mid ${pick(random, MONTH_NAMES)}`,
     "end of q4",
     "end of quarter",
-    pick([
+    pick(random, [
       "christmas",
       "thanksgiving",
       "new year's eve",
@@ -120,9 +119,11 @@ function relative() {
 
 function start() {
   const zone =
-    random() < 0.08 ? ` ${pick(["ET", "PT", "PST", "EST", "CT", "UTC"])}` : "";
+    random() < 0.08
+      ? ` ${pick(random, ["ET", "PT", "PST", "EST", "CT", "UTC"])}`
+      : "";
   const time = () => `${clock()}${zone}`;
-  return pick([
+  return pick(random, [
     weekday,
     day,
     relative,
@@ -134,13 +135,13 @@ function start() {
     () => `${day()} ${time()}`,
     () => `${time()} on ${weekday()}`,
     () =>
-      `${weekday()} ${pick(["2-3pm", "9-10am", "1-2:30pm", "10am-12pm", "3pm-5pm", "11-1pm", "9 to 11", "14:00-15:30"])}`,
+      `${weekday()} ${pick(random, ["2-3pm", "9-10am", "1-2:30pm", "10am-12pm", "3pm-5pm", "11-1pm", "9 to 11", "14:00-15:30"])}`,
     () =>
-      `${relative()} from ${pick(["2 to 4", "9 to 10", "1 to 3pm", "10 to noon"])}`,
+      `${relative()} from ${pick(random, ["2 to 4", "9 to 10", "1 to 3pm", "10 to noon"])}`,
   ])();
 }
 function due() {
-  return pick([
+  return pick(random, [
     weekday,
     day,
     relative,
@@ -154,43 +155,47 @@ function due() {
 function repeat() {
   const days = WEEKDAYS.map((names) => names[0] ?? "");
   const at = random() < 0.4 ? ` at ${clock()}` : "";
-  return pick([
+  return pick(random, [
     () => `every ${weekday()}${at}`,
     () => `every other ${weekday()}${at}`,
     () =>
-      `every ${pick(["day", "weekday", "week", "month", "year", "morning", "evening"])}${at}`,
+      `every ${pick(random, ["day", "weekday", "week", "month", "year", "morning", "evening"])}${at}`,
     () =>
-      `${pick(["daily", "weekly", "monthly", "yearly", "annually", "biweekly", "nightly", "quarterly", "fortnightly"])}${at}`,
+      `${pick(random, ["daily", "weekly", "monthly", "yearly", "annually", "biweekly", "nightly", "quarterly", "fortnightly"])}${at}`,
     () =>
-      `every ${pick(["2", "3", "two", "4"])} ${pick(["days", "weeks", "months"])}${at}`,
-    () => `every ${pick(days)} and ${pick(days)}${at}`,
+      `every ${pick(random, ["2", "3", "two", "4"])} ${pick(random, ["days", "weeks", "months"])}${at}`,
+    () => `every ${pick(random, days)} and ${pick(random, days)}${at}`,
     () =>
-      `${pick(["mondays", "tuesdays", "wednesdays", "thursdays", "fridays", "saturdays", "sundays"])}${at}`,
-    () => `on ${pick(["mondays", "tuesdays", "thursdays", "fridays"])}${at}`,
+      `${pick(random, ["mondays", "tuesdays", "wednesdays", "thursdays", "fridays", "saturdays", "sundays"])}${at}`,
+    () =>
+      `on ${pick(random, ["mondays", "tuesdays", "thursdays", "fridays"])}${at}`,
     () => `the ${ORDINAL(1 + Math.floor(random() * 28))} of every month`,
     () => `monthly on the ${ORDINAL(1 + Math.floor(random() * 28))}`,
     () => `every month on the ${ORDINAL(1 + Math.floor(random() * 28))}`,
     () => `every year on ${day()}`,
-    () => `every day for ${pick(["2 weeks", "a week", "10 days", "a month"])}`,
-    () => `daily until ${pick([day(), weekday(), "end of month"])}`,
+    () =>
+      `every day for ${pick(random, ["2 weeks", "a week", "10 days", "a month"])}`,
+    () => `daily until ${pick(random, [day(), weekday(), "end of month"])}`,
     () => `every ${weekday()} until ${day()}`,
-    () => `weekly ${pick(["5 times", "for 6 weeks", "through december"])}`,
+    () =>
+      `weekly ${pick(random, ["5 times", "for 6 weeks", "through december"])}`,
     () => `mwf${at}`,
     () => `m-f${at}`,
     () => `every weekday${at}`,
   ])();
 }
 function duration() {
-  return pick([
+  return pick(random, [
     () =>
-      `${pick([5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90, 120])} ${pick(["min", "mins", "minutes", "m", "minute"])}`,
+      `${pick(random, [5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90, 120])} ${pick(random, ["min", "mins", "minutes", "m", "minute"])}`,
     () =>
-      `${pick([5, 10, 15, 20, 25, 30, 45, 90])}${pick(["m", "min", "mins", "'"])}`,
+      `${pick(random, [5, 10, 15, 20, 25, 30, 45, 90])}${pick(random, ["m", "min", "mins", "'"])}`,
     () =>
-      `${pick([1, 2, 3, 4, 1.5, 2.5, 0.5])}${pick(["h", "hr", "hrs", " hours", " hour", " h"])}`,
-    () => `${pick(["1h30", "1h15", "2h30m", "1h45m", "1:30", "0:45", "2:00"])}`,
+      `${pick(random, [1, 2, 3, 4, 1.5, 2.5, 0.5])}${pick(random, ["h", "hr", "hrs", " hours", " hour", " h"])}`,
     () =>
-      pick([
+      pick(random, ["1h30", "1h15", "2h30m", "1h45m", "1:30", "0:45", "2:00"]),
+    () =>
+      pick(random, [
         "an hour",
         "half an hour",
         "an hour and a half",

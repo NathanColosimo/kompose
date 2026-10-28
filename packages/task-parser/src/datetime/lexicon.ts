@@ -204,7 +204,7 @@ export const ALIASES: Record<string, string> = {
   weeknights: "weeknights",
   "o'clock": "oclock",
   oclock: "oclock",
-  "mid-month": "midmonth",
+  midmonth: "midmonth",
 };
 
 /** Words typos are corrected toward (edit distance, same first letter). */

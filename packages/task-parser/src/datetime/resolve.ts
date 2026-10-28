@@ -301,8 +301,11 @@ function clockOf(time: TimeSpec, part: Phrase["part"]): Temporal.PlainTime {
   return Temporal.PlainTime.from({ hour, minute: time.minute });
 }
 
-/** The range end: shares the start's am/pm when it has none. */
-function endOf(start: TimeSpec, end: TimeSpec, part: Phrase["part"]) {
+/**
+ * A time range: a bare start takes the end's am/pm ("11-1pm"), and a bare
+ * end comes after the start ("9-5").
+ */
+function rangeOf(start: TimeSpec, end: TimeSpec, part: Phrase["part"]) {
   let startTime = clockOf(start, part);
   let endTime = clockOf(end, part);
   if (
@@ -325,7 +328,7 @@ function endOf(start: TimeSpec, end: TimeSpec, part: Phrase["part"]) {
   ) {
     endTime = endTime.add({ hours: 12 });
   }
-  return { endTime, startTime };
+  return { end: endTime, time: startTime };
 }
 
 /** How a recurrence ends: after a count, on a date, or never. */
@@ -446,24 +449,20 @@ function onInterval(
 }
 
 /** The start and end times a phrase names, or its day part's hour. */
-function timesOf(phrase: Phrase) {
-  const part = phrase.part;
-  let time: Temporal.PlainTime | null = null;
-  if (phrase.time) {
-    time = clockOf(phrase.time, part);
-  } else if (part) {
-    time = Temporal.PlainTime.from({ hour: DAY_PARTS[part] });
+function timesOf({ end, noTime, part, time }: Phrase) {
+  if (time && end) {
+    return rangeOf(time, end, part);
   }
-  let end: Temporal.PlainTime | null = null;
-  if (phrase.time && phrase.end) {
-    const range = endOf(phrase.time, phrase.end, part);
-    time = range.startTime;
-    end = range.endTime;
+  if (time) {
+    return { end: null, time: clockOf(time, part) };
   }
-  if (phrase.noTime && !phrase.time) {
-    time = null;
+  if (part && !noTime) {
+    return {
+      end: null,
+      time: Temporal.PlainTime.from({ hour: DAY_PARTS[part] }),
+    };
   }
-  return { end, time };
+  return { end: null, time: null };
 }
 
 /** "in 2 hours": now plus the offset, to the minute. */

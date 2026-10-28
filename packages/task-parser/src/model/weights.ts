@@ -46,8 +46,8 @@ export function readWeights(buffer: ArrayBuffer): Weights {
     const cols = entry.shape.at(-1) ?? 1;
     const at = base + entry.offset;
     // Dense int8 layers stay views of the file: the kernel copies them into
-    // its own memory and releases them (network.ts placeWeights), so the
-    // file can be freed. Everything else is copied out now.
+    // its own memory and releases them (createNetwork), so the file can be
+    // freed. Everything else is copied out now.
     let data: Float32Array | Int8Array;
     if (entry.dtype === "f32") {
       data = new Float32Array(buffer.slice(at, at + rows * cols * 4));

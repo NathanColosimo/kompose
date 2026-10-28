@@ -45,16 +45,21 @@ const fixed =
   (year) =>
     Temporal.PlainDate.from({ day, month, year });
 
+const thanksgiving: DateRule = (year) => nthWeekday(year, 11, 4, 4);
+const laborDay: DateRule = (year) => nthWeekday(year, 9, 1, 1);
+const mlkDay: DateRule = (year) => nthWeekday(year, 1, 1, 3);
+const presidentsDay: DateRule = (year) => nthWeekday(year, 2, 1, 3);
+
 /** US holidays and season starts people use as dates, by their words. */
 export const HOLIDAYS: Record<string, DateRule> = {
   autumn: fixed(9, 22),
-  "black friday": (year) => nthWeekday(year, 11, 4, 4).add({ days: 1 }),
+  "black friday": (year) => thanksgiving(year).add({ days: 1 }),
   "boxing day": fixed(12, 26),
   "canada day": fixed(7, 1),
   christmas: fixed(12, 25),
   "cinco de may": fixed(5, 5),
   "columbus day": (year) => nthWeekday(year, 10, 1, 2),
-  "cyber monday": (year) => nthWeekday(year, 11, 4, 4).add({ days: 4 }),
+  "cyber monday": (year) => thanksgiving(year).add({ days: 4 }),
   "earth day": fixed(4, 22),
   easter,
   "easter monday": (year) => easter(year).add({ days: 1 }),
@@ -65,23 +70,23 @@ export const HOLIDAYS: Record<string, DateRule> = {
   halloween: fixed(10, 31),
   "independence day": fixed(7, 4),
   juneteenth: fixed(6, 19),
-  "labor day": (year) => nthWeekday(year, 9, 1, 1),
-  "labour day": (year) => nthWeekday(year, 9, 1, 1),
-  "martin luther king day": (year) => nthWeekday(year, 1, 1, 3),
+  "labor day": laborDay,
+  "labour day": laborDay,
+  "martin luther king day": mlkDay,
   "memorial day": (year) => nthWeekday(year, 5, 1, -1),
-  mlk: (year) => nthWeekday(year, 1, 1, 3),
+  mlk: mlkDay,
   "mother day": (year) => nthWeekday(year, 5, 7, 2),
   "new year": fixed(1, 1),
   "new years": fixed(1, 1),
   nye: fixed(12, 31),
   "patrick day": fixed(3, 17),
-  "president day": (year) => nthWeekday(year, 2, 1, 3),
-  "presidents day": (year) => nthWeekday(year, 2, 1, 3),
-  "presidents' day": (year) => nthWeekday(year, 2, 1, 3),
+  "president day": presidentsDay,
+  "presidents day": presidentsDay,
+  "presidents' day": presidentsDay,
   spring: fixed(3, 20),
   summer: fixed(6, 21),
   "tax day": fixed(4, 15),
-  thanksgiving: (year) => nthWeekday(year, 11, 4, 4),
+  thanksgiving,
   valentine: fixed(2, 14),
   valentines: fixed(2, 14),
   "veteran day": fixed(11, 11),

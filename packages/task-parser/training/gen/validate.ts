@@ -51,17 +51,13 @@ export function tidy(span: Span, fullText: string): Span {
     start += junk[0].length;
     text = text.slice(junk[0].length);
   }
-  if ("SUMR".includes(span.label)) {
-    const meridiem = MERIDIEM.exec(fullText.slice(end));
-    if (meridiem && span.label !== "M") {
-      end += meridiem[0].length;
-      text = fullText.slice(start, end);
-    }
-    for (
-      let cue = span.label === "R" ? null : LEADING_CUE.exec(text);
-      cue;
-      cue = LEADING_CUE.exec(text)
-    ) {
+  const meridiem = MERIDIEM.exec(fullText.slice(end));
+  if (meridiem && "SUR".includes(span.label)) {
+    end += meridiem[0].length;
+    text = fullText.slice(start, end);
+  }
+  if ("SUM".includes(span.label)) {
+    for (let cue = LEADING_CUE.exec(text); cue; cue = LEADING_CUE.exec(text)) {
       start += cue[0].length;
       text = text.slice(cue[0].length);
     }
@@ -74,28 +70,13 @@ export function tidy(span: Span, fullText: string): Span {
   return { ...span, end, start, text };
 }
 
-function check(
-  marked: string,
-  tags: string[],
-  tagList: string[]
-): {
-  example?: {
-    flags: string[];
-    spans: Span[];
-    tagList: string[];
-    tags: string[];
-    text: string;
-  };
-  reject?: string;
-} {
+/** The clean example, or why it was rejected. */
+function check(marked: string, tags: string[], tagList: string[]) {
   let parsed: ReturnType<typeof parseMarkup>;
   try {
     parsed = parseMarkup(marked);
   } catch (error) {
-    return {
-      reject:
-        error instanceof MarkupError ? `markup: ${error.message}` : "markup",
-    };
+    return error instanceof MarkupError ? `markup: ${error.message}` : "markup";
   }
   const spans = parsed.spans
     .map((span) => tidy(span, parsed.text))
@@ -109,20 +90,20 @@ function check(
     const gap = parsed.text.slice(cursor, span.start).toLowerCase();
     const words = gap.match(/[\p{L}']+/gu) ?? [];
     if (words.filter((word) => !CONNECTORS.has(word)).length >= 4) {
-      return { reject: `unlabelled: ${gap.trim()}` };
+      return `unlabelled: ${gap.trim()}`;
     }
     cursor = span.end;
   }
   const flags: string[] = [];
   if (!spans.some((span) => span.label === "T" || span.label === "L")) {
-    return { reject: "no title" };
+    return "no title";
   }
   const exact = new Map(tagList.map((tag) => [tag.toLowerCase(), tag]));
   const fixedTags: string[] = [];
   for (const tag of tags) {
     const match = exact.get(tag.toLowerCase());
     if (!match) {
-      return { reject: `tag not in list: ${tag}` };
+      return `tag not in list: ${tag}`;
     }
     fixedTags.push(match);
   }
@@ -155,13 +136,11 @@ function check(
     }
   }
   return {
-    example: {
-      flags,
-      spans,
-      tagList,
-      tags: [...new Set(fixedTags)],
-      text: parsed.text,
-    },
+    flags,
+    spans,
+    tagList,
+    tags: [...new Set(fixedTags)],
+    text: parsed.text,
   };
 }
 
@@ -186,14 +165,10 @@ if (import.meta.main) {
     };
     for (const [index, item] of items.entries()) {
       total += 1;
-      const { example, reject = "" } = check(
-        item.marked,
-        item.tags,
-        item.tagList
-      );
-      if (!example) {
-        rejectLog.push({ ...item, reason: reject });
-        const reason = reject.split(":")[0] ?? "";
+      const example = check(item.marked, item.tags, item.tagList);
+      if (typeof example === "string") {
+        rejectLog.push({ ...item, reason: example });
+        const reason = example.split(":")[0] ?? "";
         rejects[reason] = (rejects[reason] ?? 0) + 1;
         continue;
       }

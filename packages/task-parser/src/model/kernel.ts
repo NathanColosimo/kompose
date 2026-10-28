@@ -6,58 +6,23 @@
  * products per instruction with relaxed SIMD), so the model takes a quarter
  * of the memory of float32 and runs about twice as fast. Test-set accuracy
  * stays within half a point of float32.
- * Weights are copied into the module's memory once (placeWeights), padded;
+ * Weights are copied into the module's memory once (place), padded;
  * activations are copied in and out per call.
  */
 import { KERNEL_RELAXED_WASM, KERNEL_WASM } from "./kernel-wasm";
 import type { Matrix } from "./weights";
 
+/** Byte offsets, sizes and scalars, as documented in scripts/build-kernel.ts. */
+type KernelFunction = (...args: number[]) => void;
+
 interface Exports {
-  attention: (
-    qkv: number,
-    n: number,
-    dim: number,
-    heads: number,
-    scale: number,
-    scores: number,
-    out: number
-  ) => void;
-  dequantize: (
-    sums: number,
-    n: number,
-    rows: number,
-    meta: number,
-    scales: number,
-    rowSums: number,
-    bias: number,
-    out: number
-  ) => void;
-  gelu: (at: number, count: number) => void;
-  layer_norm: (
-    x: number,
-    n: number,
-    dim: number,
-    gain: number,
-    bias: number,
-    epsilon: number,
-    out: number
-  ) => void;
-  linear: (
-    x: number,
-    n: number,
-    w: number,
-    rows: number,
-    cols: number,
-    out: number
-  ) => void;
+  attention: KernelFunction;
+  dequantize: KernelFunction;
+  gelu: KernelFunction;
+  layer_norm: KernelFunction;
+  linear: KernelFunction;
   memory: WebAssembly.Memory;
-  quantize: (
-    x: number,
-    n: number,
-    cols: number,
-    q: number,
-    meta: number
-  ) => void;
+  quantize: KernelFunction;
 }
 
 /** Byte offsets of an int8 matrix and its per-row values (rows padded to 4). */
@@ -102,23 +67,38 @@ export class Kernel {
     this.#exports = exports;
   }
 
-  #reserve(bytes: number) {
-    const { memory } = this.#exports;
-    const needed = this.#top + bytes - memory.buffer.byteLength;
-    if (needed > 0) {
-      memory.grow(Math.ceil(needed / PAGE));
+  /**
+   * Consecutive regions of the given byte sizes at the top, growing memory
+   * as needed; returns their byte offsets. Scratch is reused by every call.
+   */
+  #scratch<Sizes extends number[]>(...sizes: Sizes) {
+    const offsets: number[] = [];
+    let end = this.#top;
+    for (const size of sizes) {
+      offsets.push(end);
+      end += size;
     }
+    const { memory } = this.#exports;
+    if (end > memory.buffer.byteLength) {
+      memory.grow(Math.ceil((end - memory.buffer.byteLength) / PAGE));
+    }
+    return offsets as { [K in keyof Sizes]: number };
   }
 
-  /** Copies float32 values in at the top, zero-padded to `length`. */
-  #append(values: Float32Array, length: number) {
-    const offset = this.#top;
-    this.#reserve(length * 4);
-    new Float32Array(this.#exports.memory.buffer, offset, length)
+  #floats(at: number, length: number) {
+    return new Float32Array(this.#exports.memory.buffer, at, length);
+  }
+
+  /** Copies `values` in at the top for good, zero-padded to `length`. */
+  #append(values: Float32Array | Int8Array, length: number) {
+    const at = this.#top;
+    const bytes = pad4(length) * values.BYTES_PER_ELEMENT;
+    this.#scratch(bytes);
+    new Uint8Array(this.#exports.memory.buffer, at, bytes)
       .fill(0)
-      .set(values);
-    this.#top += pad4(length) * 4;
-    return offset;
+      .set(new Uint8Array(values.buffer, values.byteOffset, values.byteLength));
+    this.#top += bytes;
+    return at;
   }
 
   /**
@@ -129,12 +109,6 @@ export class Kernel {
   place(weight: Matrix, bias: Float32Array | undefined) {
     const data = weight.data as Int8Array;
     const rows = pad4(weight.rows);
-    const offset = this.#top;
-    this.#reserve(rows * weight.cols);
-    new Int8Array(this.#exports.memory.buffer, offset, rows * weight.cols)
-      .fill(0)
-      .set(data);
-    this.#top += rows * weight.cols;
     const rowSums = new Float32Array(weight.rows);
     for (let i = 0; i < data.length; i += 1) {
       const r = Math.floor(i / weight.cols);
@@ -144,7 +118,7 @@ export class Kernel {
       bias: this.#append(bias ?? new Float32Array(0), rows),
       rowSums: this.#append(rowSums, rows),
       scales: this.#append(weight.scales as Float32Array, rows),
-      weight: offset,
+      weight: this.#append(data, rows * weight.cols),
     });
     weight.data = new Int8Array(0);
   }
@@ -164,14 +138,14 @@ export class Kernel {
     }
     const paddedN = pad4(n);
     const paddedRows = pad4(rows);
-    const xAt = this.#top;
-    const qAt = xAt + n * cols * 4;
-    const metaAt = qAt + paddedN * cols;
-    const sumsAt = metaAt + paddedN * 8;
-    const outAt = sumsAt + paddedN * paddedRows * 4;
-    this.#reserve(outAt + paddedN * paddedRows * 4 - xAt);
-    const { buffer } = this.#exports.memory;
-    new Float32Array(buffer, xAt, n * cols).set(x.subarray(0, n * cols));
+    const [xAt, qAt, metaAt, sumsAt, outAt] = this.#scratch(
+      x.length * 4,
+      paddedN * cols,
+      paddedN * 8,
+      paddedN * paddedRows * 4,
+      paddedN * paddedRows * 4
+    );
+    this.#floats(xAt, x.length).set(x);
     this.#exports.quantize(xAt, n, cols, qAt, metaAt);
     // Rows past n are left as they were: their sums are never read.
     this.#exports.linear(qAt, paddedN, placed.weight, paddedRows, cols, sumsAt);
@@ -188,7 +162,7 @@ export class Kernel {
     if (gelu) {
       this.#exports.gelu(outAt, n * paddedRows);
     }
-    const result = new Float32Array(buffer, outAt, n * paddedRows);
+    const result = this.#floats(outAt, n * paddedRows);
     const out = new Float32Array(n * rows);
     for (let t = 0; t < n; t += 1) {
       out.set(result.subarray(t * paddedRows, t * paddedRows + rows), t * rows);
@@ -201,14 +175,12 @@ export class Kernel {
    * to [n, dim]. Head size must be a multiple of 16.
    */
   attention(qkv: Float32Array, n: number, dim: number, heads: number) {
-    const qkvAt = this.#top;
-    const scoresAt = qkvAt + n * 3 * dim * 4;
-    const outAt = scoresAt + (n + 4) * 4;
-    this.#reserve(outAt + n * dim * 4 - qkvAt);
-    const { buffer } = this.#exports.memory;
-    new Float32Array(buffer, qkvAt, n * 3 * dim).set(
-      qkv.subarray(0, n * 3 * dim)
+    const [qkvAt, scoresAt, outAt] = this.#scratch(
+      qkv.length * 4,
+      (n + 4) * 4,
+      n * dim * 4
     );
+    this.#floats(qkvAt, qkv.length).set(qkv);
     this.#exports.attention(
       qkvAt,
       n,
@@ -218,7 +190,7 @@ export class Kernel {
       scoresAt,
       outAt
     );
-    return new Float32Array(buffer, outAt, n * dim).slice();
+    return this.#floats(outAt, n * dim).slice();
   }
 
   #placeVector(values: Float32Array) {
@@ -230,23 +202,27 @@ export class Kernel {
     return offset;
   }
 
-  /** Layer norm of each token of x [n, dim] (dim a multiple of 4). */
+  /** Layer norm of each token of x [n, dim], dim (gain's length) a multiple of 4. */
   layerNorm(
     x: Float32Array,
     n: number,
-    dim: number,
     gain: Float32Array,
     bias: Float32Array,
     epsilon: number
   ) {
     const gainAt = this.#placeVector(gain);
     const biasAt = this.#placeVector(bias);
-    const xAt = this.#top;
-    const outAt = xAt + n * dim * 4;
-    this.#reserve(n * dim * 8);
-    const { buffer } = this.#exports.memory;
-    new Float32Array(buffer, xAt, n * dim).set(x.subarray(0, n * dim));
-    this.#exports.layer_norm(xAt, n, dim, gainAt, biasAt, epsilon, outAt);
-    return new Float32Array(buffer, outAt, n * dim).slice();
+    const [xAt, outAt] = this.#scratch(x.length * 4, x.length * 4);
+    this.#floats(xAt, x.length).set(x);
+    this.#exports.layer_norm(
+      xAt,
+      n,
+      gain.length,
+      gainAt,
+      biasAt,
+      epsilon,
+      outAt
+    );
+    return this.#floats(outAt, x.length).slice();
   }
 }

@@ -1,6 +1,6 @@
-"""Train the task parser.
+"""Train the task parser (see README.md for the recipe).
 
-uv run python model/train.py --data data/clean/train.final.jsonl --out runs/name [--embeddings electra-small]
+uv run python model/train.py --data data/clean/<name>.final.jsonl... --out runs/<name>
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import random
 import time
 from pathlib import Path
@@ -19,11 +18,8 @@ from safetensors.torch import load_file, save_file
 from torch import nn
 
 from augment import build_pools, compose, swap_phrases, typo
-from features import IGNORE, LABELS, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
+from features import IGNORE, LABELS, ROOT, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
 from model import Config, TaskParser, load_electra, load_run
-
-# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
-ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 
 
 def load(paths: list[str]) -> list[dict]:
@@ -57,9 +53,7 @@ def is_dev(row: dict) -> bool:
 class Examples(torch.utils.data.Dataset):
     def __init__(self, rows, featurizer, tag_pool, augment):
         self.rows, self.featurizer, self.tag_pool, self.augment = rows, featurizer, tag_pool, augment
-        phrases = ROOT / "data" / "phrases.json"
-        extra = json.loads(phrases.read_text()) if phrases.exists() else None
-        self.pools = build_pools(rows, extra) if augment else {}
+        self.pools = build_pools(rows, json.loads((ROOT / "data/phrases.json").read_text())) if augment else {}
 
     def __len__(self):
         return len(self.rows)
@@ -91,31 +85,34 @@ class Examples(torch.utils.data.Dataset):
         text = row["text"]
         spans = row["spans"]
         transfer = row.get("transfer", False)
-        composed = compose(row, self.pools) if self.augment and not transfer and random.random() < 0.2 else None
-        if composed:
-            text, spans = composed
-        elif self.augment and not transfer:
-            text, spans = swap_phrases(text, spans, self.pools)
+        if self.augment and not transfer:
+            composed = compose(row, self.pools) if random.random() < 0.2 else None
+            if composed:
+                text, spans = composed
+            else:
+                text, spans = swap_phrases(text, spans, self.pools)
         if self.augment:
             text, spans = typo(text, spans)
             roll = random.random()
-            changed = text.lower() if roll < 0.15 else text.upper() if roll < 0.18 else text
+            changed = text
+            if roll < 0.15:
+                changed = text.lower()
+            elif roll < 0.18:
+                changed = text.upper()
+            # Case changes that change the length ("İ") would move the spans.
             if len(changed) == len(text):
                 text = changed
         tags, gold = self.tag_list(row)
         encoded = self.featurizer.encode(text, tags)
         targets = bio_targets(encoded, spans)
-        # The teacher's predictions cover every text token; transfer rows
-        # (unlabelled) only have those.
-        distill = [special == 0 and segment == 0 for special, segment in zip(encoded.specials, encoded.segments)]
         tag_count = len(encoded.tag_positions)
         return {
             "encoded": encoded,
             "targets": [IGNORE] * len(targets) if transfer else targets,
-            "distill": [d or t != IGNORE for d, t in zip(distill, targets)],
+            # The teacher covers every text token; transfer rows (unlabelled) only have it.
+            "distill": [t != IGNORE for t in targets],
             "spans": spans,
             "tag_targets": [-1.0] * tag_count if transfer else [1.0 if tag in gold else 0.0 for tag in tags[:tag_count]],
-            "row": row,
             "text": text,
             "tags": tags[:tag_count],
             "gold": gold,
@@ -157,7 +154,7 @@ def collate(items):
     return batch, items
 
 
-def evaluate(model, loader, device, threshold=0.5):
+def evaluate(model, loader, device):
     model.eval()
     stats = {label: [0, 0, 0] for label in LABELS}  # tp, predicted, gold
     tag_tp = tag_pred = tag_gold = 0
@@ -178,7 +175,7 @@ def evaluate(model, loader, device, threshold=0.5):
                     stats[label][0] += len(p & g)
                     stats[label][1] += len(p)
                     stats[label][2] += len(g)
-                chosen = {tag for tag, prob in zip(item["tags"], probs) if prob >= threshold}
+                chosen = {tag for tag, prob in zip(item["tags"], probs) if prob >= 0.5}
                 gold_tags = set(item["gold"])
                 tag_tp += len(chosen & gold_tags)
                 tag_pred += len(chosen)
@@ -202,6 +199,8 @@ def evaluate(model, loader, device, threshold=0.5):
 
 
 DISTILL_TEMPERATURE = 2.0
+# Share of the loss that comes from the teachers.
+DISTILL_WEIGHT = 0.5
 
 
 def fake_quantize_activations(x: torch.Tensor) -> torch.Tensor:
@@ -237,15 +236,6 @@ def quantize_aware(model: nn.Module):
     print(f"quantization-aware: {count} linear layers", flush=True)
 
 
-def load_teacher(run: str, embeddings: str, device):
-    """A trained run, frozen, to distill from. It must share the tokenizer."""
-    teacher = load_run(Path(run))
-    tokenizer = lambda name: (ROOT / "data/embeddings" / name / "tokenizer.json").read_bytes()  # noqa: E731
-    if tokenizer(teacher.config.embeddings) != tokenizer(embeddings):
-        raise SystemExit(f"teacher uses {teacher.config.embeddings}, student {embeddings}: tokens would not line up")
-    return teacher.to(device)
-
-
 def distill_loss(span_logits, tag_logits, teacher_spans, teacher_tags, tensors):
     """KL to the teacher's softened span distribution on text tokens, plus
     cross-entropy to its tag probabilities."""
@@ -266,27 +256,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", nargs="+", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--embeddings", default="electra-small")
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1.5e-3)
     parser.add_argument("--embedding-lr", type=float, default=2e-4)
     parser.add_argument("--pretrained-lr", type=float, default=1e-4)
-    parser.add_argument("--ema", type=float, default=0.0, help="evaluate and save an exponential moving average of the weights (e.g. 0.999)")
-    parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>... with the same tokenizer: distill their averaged span and tag predictions")
-    parser.add_argument("--distill-weight", type=float, default=0.5)
+    parser.add_argument("--ema", type=float, default=0.999, help="decay of the weight average that is evaluated and saved")
+    parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>...: distill their averaged span and tag predictions")
     parser.add_argument("--transfer", nargs="*", default=[], help="data/transfer/*.jsonl: unlabelled rows learned only from the teacher")
     parser.add_argument("--qat", action="store_true", help="train through the runtime's int8 rounding: int8 weights and 7-bit activations (kernel.ts)")
     parser.add_argument("--init-from", default="", help="runs/<name>: start from a trained run's weights (same shape)")
-    parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    embedding_dir = ROOT / "data" / "embeddings" / args.embeddings
-    featurizer = Featurizer(str(embedding_dir / "tokenizer.json"))
+    featurizer = Featurizer()
 
     rows = load(args.data)
     train_rows = [r for r in rows if not is_dev(r)]
@@ -302,17 +288,12 @@ def main():
     tag_pool = sorted({tag for r in train_rows for tag in r["tagList"]})
     print(f"{len(train_rows)} train, {len(dev_rows)} dev, {len(tag_pool)} distinct tags", flush=True)
 
-    pretrained = json.loads((embedding_dir / "config.json").read_text())
-    config = Config(
-        dim=pretrained["hidden_size"], layers=pretrained["num_hidden_layers"], heads=pretrained["num_attention_heads"],
-        ffn=pretrained["intermediate_size"], dropout=args.dropout, embedding_dim=pretrained["embedding_size"], vocab=pretrained["vocab_size"],
-    )
-    model = TaskParser(config)
-    load_electra(model, str(embedding_dir / "model.safetensors"), featurizer.tokenizer.get_vocab())
-    model = model.to(device)
+    model = TaskParser(Config())
     if args.init_from:
         model.load_state_dict(load_file(str(Path(args.init_from) / "model.safetensors")))
-        print(f"initialised from {args.init_from}", flush=True)
+    else:
+        load_electra(model, featurizer.tokenizer.get_vocab())
+    model = model.to(device)
     if args.qat:
         quantize_aware(model)
     encoder_params = sum(p.numel() for n, p in model.named_parameters() if not n.startswith("words."))
@@ -328,8 +309,12 @@ def main():
     pretrained_prefixes = ("layers.", "project.", "positions.", "segments.", "embed_norm.")
     groups = {"words": [], "pretrained": [], "new": []}
     for name, parameter in model.named_parameters():
-        key = "words" if name.startswith("words.") else "pretrained" if name.startswith(pretrained_prefixes) else "new"
-        groups[key].append(parameter)
+        if name.startswith("words."):
+            groups["words"].append(parameter)
+        elif name.startswith(pretrained_prefixes):
+            groups["pretrained"].append(parameter)
+        else:
+            groups["new"].append(parameter)
     optimizer = torch.optim.AdamW(
         [
             {"params": groups["words"], "lr": args.embedding_lr, "weight_decay": 0.0},
@@ -343,14 +328,10 @@ def main():
         optimizer, lambda s: min(1.0, (s + 1) / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, s / steps)))
     )
     span_loss = nn.CrossEntropyLoss(ignore_index=IGNORE)
-    teachers = [load_teacher(run, args.embeddings, device) for run in args.teacher]
+    teachers = [load_run(Path(run)).to(device) for run in args.teacher]
     # An exponential moving average of the weights is usually a little better
-    # than the last step; it is what gets evaluated and saved when enabled.
-    ema = (
-        torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(args.ema))
-        if args.ema
-        else None
-    )
+    # than the last step; it is what gets evaluated and saved.
+    ema = torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(args.ema))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     best = -1.0
@@ -360,12 +341,11 @@ def main():
         for step, (batch, _) in enumerate(train_loader):
             tensors = {k: v.to(device) for k, v in batch.items()}
             span_logits, tag_logits = model(tensors)
-            labelled = tensors["targets"] != IGNORE
-            loss = (
-                span_loss(span_logits.reshape(-1, span_logits.shape[-1]), tensors["targets"].reshape(-1))
-                if labelled.any()
-                else span_logits.sum() * 0.0
-            )
+            targets = tensors["targets"]
+            if (targets != IGNORE).any():
+                loss = span_loss(span_logits.reshape(-1, span_logits.shape[-1]), targets.reshape(-1))
+            else:  # only transfer rows
+                loss = span_logits.sum() * 0.0
             tag_mask = tensors["tag_targets"] >= 0
             if tag_mask.any():
                 loss = loss + nn.functional.binary_cross_entropy_with_logits(
@@ -376,7 +356,7 @@ def main():
                     outputs = [teacher(tensors) for teacher in teachers]
                     teacher_spans = torch.stack([o[0] for o in outputs]).mean(0)
                     teacher_tags = torch.stack([o[1] for o in outputs]).mean(0)
-                loss = (1 - args.distill_weight) * loss + args.distill_weight * distill_loss(
+                loss = (1 - DISTILL_WEIGHT) * loss + DISTILL_WEIGHT * distill_loss(
                     span_logits, tag_logits, teacher_spans, teacher_tags, tensors
                 )
             optimizer.zero_grad()
@@ -384,18 +364,16 @@ def main():
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             schedule.step()
-            if ema is not None:
-                ema.update_parameters(model)
+            ema.update_parameters(model)
             total += loss.item()
             if step % 500 == 499:
                 print(f"  step {step + 1}/{len(train_loader)} loss {total / (step + 1):.4f} {time.time() - started:.0f}s", flush=True)
-        scored = ema.module if ema is not None else model
-        metrics = evaluate(scored, dev_loader, device)
+        metrics = evaluate(ema.module, dev_loader, device)
         print(f"epoch {epoch + 1} loss {total / len(train_loader):.4f} {json.dumps(metrics)} {time.time() - started:.0f}s", flush=True)
         if metrics["exact_all"] > best:
             best = metrics["exact_all"]
-            save_file({k: v.detach().cpu().contiguous() for k, v in scored.state_dict().items()}, str(out / "model.safetensors"))
-            (out / "config.json").write_text(json.dumps({**config.to_dict(), "embeddings": args.embeddings, "dev": metrics}, indent=1))
+            save_file({k: v.detach().cpu().contiguous() for k, v in ema.module.state_dict().items()}, str(out / "model.safetensors"))
+            (out / "config.json").write_text(json.dumps({**model.config.to_dict(), "dev": metrics}, indent=1))
     print(f"best dev exact_all {best}")
 
 

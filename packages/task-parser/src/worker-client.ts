@@ -35,7 +35,3 @@ export async function createWorkerTaskParser(
     };
   };
 }
-
-export type RemoteTaskParser = Awaited<
-  ReturnType<typeof createWorkerTaskParser>
->;

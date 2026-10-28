@@ -3,7 +3,7 @@
  * list, persona, style, labels and twist, so coverage is controlled by code
  * rather than by whatever the generator likes to write.
  */
-import { type Persona, shuffled } from "./common";
+import { type Persona, pick, shuffled } from "./common";
 
 export interface Slot {
   labels: string[];
@@ -224,10 +224,6 @@ function pickMode(
     }
   }
   return modes[0]?.[0] ?? "";
-}
-
-function pick<T>(random: () => number, items: readonly T[]): T {
-  return items[Math.floor(random() * items.length)] as T;
 }
 
 /**

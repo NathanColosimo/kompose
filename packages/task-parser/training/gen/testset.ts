@@ -17,12 +17,16 @@ import { parseMarkup, toMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
 import {
   answeredFields,
+  chunks,
   DATE_FIELDS_SCHEMA,
+  datedItems,
   dateMismatches,
   FOCUS_CALLS,
   isMarkupOf,
   itemsSchema,
   LABELS_SCHEMA,
+  pick,
+  plainFields,
   ROOT,
   readJsonl,
   readSeeds,
@@ -41,8 +45,6 @@ const [step = "compose", arg = "", concurrencyArg = "6"] =
 /** Sol is rate-limited per account; a few calls at a time keep it moving. */
 const CONCURRENCY = Number(concurrencyArg);
 const random = rng(4242);
-const pick = <T>(items: readonly T[]) =>
-  items[Math.floor(random() * items.length)] as T;
 
 interface TestInput {
   focus: string;
@@ -84,14 +86,14 @@ async function compose() {
     "compose",
     FOCUS_CALLS.map((focus, call) => async () => {
       const items = Array.from({ length: 10 }, () => ({
-        persona: pick(personas),
-        tagList: [...pick(tagSets)].sort(() => random() - 0.5),
+        persona: pick(random, personas),
+        tagList: [...pick(random, tagSets)].sort(() => random() - 0.5),
       }));
       for (const { item, text } of await writeInputs(focus, items)) {
         rows.push({
           focus: focus.split(":")[0] ?? focus,
           id: `test/${call}/${item}`,
-          now: pick(NOWS),
+          now: pick(random, NOWS),
           tagList: items[item - 1]?.tagList ?? [],
           text,
         });
@@ -105,8 +107,24 @@ async function compose() {
 
 // --- label -------------------------------------------------------------------
 
-function labelPrompt(items: { tagList: string[]; text: string }[]) {
-  return `You label evaluation data for a task-parsing model. Do not run any commands; answer only with the JSON object.
+interface Label {
+  id: string;
+  marked: string;
+  tags: string[];
+  valid: boolean;
+}
+
+async function label(pass: string) {
+  const inputs = await readJsonl<TestInput>(`${DIR}inputs.jsonl`);
+  const out = `${DIR}labels-${pass}.jsonl`;
+  const rows = await readJsonl<Label>(out);
+  const done = new Set(rows.map((row) => row.id));
+  // Different batching per pass so context effects differ.
+  const order = inputs.filter((input) => !done.has(input.id));
+  const shuffle = rng(pass === "A" ? 1 : 2);
+  order.sort(() => shuffle() - 0.5);
+  const jobs = chunks(order, 15).map((batch) => async () => {
+    const prompt = `You label evaluation data for a task-parsing model. Do not run any commands; answer only with the JSON object.
 
 ${spec}
 
@@ -121,57 +139,28 @@ Label each item's text exactly as the spec requires and choose its tags.
 - Tags only from that item's list, spelled exactly, and only when the spec's rules justify them.
 Return one entry per item with "item" set to its number.
 
-${items.map((item, index) => `Item ${index + 1}\n  tags list: ${JSON.stringify(item.tagList)}\n  text: ${JSON.stringify(item.text)}`).join("\n\n")}`;
-}
-
-async function label(pass: string) {
-  const inputs = await readJsonl<TestInput>(`${DIR}inputs.jsonl`);
-  const out = `${DIR}labels-${pass}.jsonl`;
-  const rows = await readJsonl<Label>(out);
-  const done = new Set(rows.map((row) => row.id));
-  // Different batching per pass so context effects differ.
-  const order = inputs.filter((input) => !done.has(input.id));
-  const shuffle = rng(pass === "A" ? 1 : 2);
-  order.sort(() => shuffle() - 0.5);
-  const BATCH = 15;
-  const jobs: (() => Promise<void>)[] = [];
-  for (let first = 0; first < order.length; first += BATCH) {
-    const batch = order.slice(first, first + BATCH);
-    jobs.push(async () => {
-      const result = await codexJson<{
-        items: { item: number; marked: string; tags: string[] }[];
-      }>({
-        effort: "high",
-        model: "gpt-6.1-sol",
-        prompt: labelPrompt(batch),
-        schema: LABELS_SCHEMA,
-      });
-      for (const entry of result.items) {
-        const input = batch[entry.item - 1];
-        if (input) {
-          rows.push({
-            id: input.id,
-            marked: entry.marked,
-            tags: entry.tags,
-            valid: isMarkupOf(entry.marked, input.text),
-          });
-        }
+${batch.map((item, index) => `Item ${index + 1}\n  tags list: ${JSON.stringify(item.tagList)}\n  text: ${JSON.stringify(item.text)}`).join("\n\n")}`;
+    const result = await codexJson<{
+      items: { item: number; marked: string; tags: string[] }[];
+    }>({ effort: "high", model: "gpt-6.1-sol", prompt, schema: LABELS_SCHEMA });
+    for (const entry of result.items) {
+      const input = batch[entry.item - 1];
+      if (input) {
+        rows.push({
+          id: input.id,
+          marked: entry.marked,
+          tags: entry.tags,
+          valid: isMarkupOf(entry.marked, input.text),
+        });
       }
-      await writeJsonl(out, rows);
-    });
-  }
+    }
+    await writeJsonl(out, rows);
+  });
   await pool(`label ${pass}`, jobs, CONCURRENCY);
   console.log(`pass ${pass}: ${rows.length} labels`);
 }
 
 // --- judge -------------------------------------------------------------------
-
-interface Label {
-  id: string;
-  marked: string;
-  tags: string[];
-  valid: boolean;
-}
 
 /** Markup with the validator's deterministic edge clean-up applied. */
 function canonical(marked: string) {
@@ -179,13 +168,6 @@ function canonical(marked: string) {
   return toMarkup(
     text,
     spans.map((span) => tidy(span, text)).filter((span) => span.text)
-  );
-}
-
-function sameTags(a: string[], b: string[]) {
-  return (
-    JSON.stringify([...new Set(a)].sort()) ===
-    JSON.stringify([...new Set(b)].sort())
   );
 }
 
@@ -201,6 +183,7 @@ async function judge() {
   const gold = await readJsonl<{ id: string } & Record<string, unknown>>(out);
   const done = new Set(gold.map((row) => row.id));
   const disputes: { a: Label; b: Label; input: TestInput }[] = [];
+  const tagKey = (tags: string[]) => JSON.stringify([...new Set(tags)].sort());
   for (const input of inputs) {
     const a = passes[0]?.get(input.id);
     const b = passes[1]?.get(input.id);
@@ -210,16 +193,9 @@ async function judge() {
     const tagList = new Set(input.tagList);
     a.tags = a.tags.filter((tag) => tagList.has(tag));
     b.tags = b.tags.filter((tag) => tagList.has(tag));
-    if (
-      canonical(a.marked) === canonical(b.marked) &&
-      sameTags(a.tags, b.tags)
-    ) {
-      gold.push({
-        ...input,
-        agreement: "both",
-        marked: canonical(a.marked),
-        tags: a.tags,
-      });
+    const marked = canonical(a.marked);
+    if (marked === canonical(b.marked) && tagKey(a.tags) === tagKey(b.tags)) {
+      gold.push({ ...input, agreement: "both", marked, tags: a.tags });
     } else {
       disputes.push({ a, b, input });
     }
@@ -231,12 +207,8 @@ async function judge() {
     reason: { type: "string" },
     tags: { items: { type: "string" }, type: "array" },
   });
-  const BATCH = 8;
-  const jobs: (() => Promise<void>)[] = [];
-  for (let first = 0; first < disputes.length; first += BATCH) {
-    const batch = disputes.slice(first, first + BATCH);
-    jobs.push(async () => {
-      const prompt = `You are the final judge for evaluation labels of a task-parsing model. Do not run any commands; answer only with the JSON object.
+  const jobs = chunks(disputes, 8).map((batch) => async () => {
+    const prompt = `You are the final judge for evaluation labels of a task-parsing model. Do not run any commands; answer only with the JSON object.
 
 ${spec}
 
@@ -256,32 +228,31 @@ ${batch
       `Item ${index + 1}\n  tags list: ${JSON.stringify(input.tagList)}\n  text: ${JSON.stringify(input.text)}\n  annotator 1: ${one.marked} → tags ${JSON.stringify(one.tags)}\n  annotator 2: ${two.marked} → tags ${JSON.stringify(two.tags)}`
   )
   .join("\n\n")}`;
-      const result = await codexJson<{
-        items: {
-          item: number;
-          marked: string;
-          reason: string;
-          tags: string[];
-        }[];
-      }>({ effort: "xhigh", model: "gpt-6.1-sol", prompt, schema });
-      for (const entry of result.items) {
-        const dispute = batch[entry.item - 1];
-        if (!(dispute && isMarkupOf(entry.marked, dispute.input.text))) {
-          continue;
-        }
-        const tagList = new Set(dispute.input.tagList);
-        gold.push({
-          ...dispute.input,
-          agreement: "judged",
-          annotators: [dispute.a.marked, dispute.b.marked],
-          marked: canonical(entry.marked),
-          reason: entry.reason,
-          tags: entry.tags.filter((tag) => tagList.has(tag)),
-        });
+    const result = await codexJson<{
+      items: {
+        item: number;
+        marked: string;
+        reason: string;
+        tags: string[];
+      }[];
+    }>({ effort: "xhigh", model: "gpt-6.1-sol", prompt, schema });
+    for (const entry of result.items) {
+      const dispute = batch[entry.item - 1];
+      if (!(dispute && isMarkupOf(entry.marked, dispute.input.text))) {
+        continue;
       }
-      await writeJsonl(out, gold);
-    });
-  }
+      const tagList = new Set(dispute.input.tagList);
+      gold.push({
+        ...dispute.input,
+        agreement: "judged",
+        annotators: [dispute.a.marked, dispute.b.marked],
+        marked: canonical(entry.marked),
+        reason: entry.reason,
+        tags: entry.tags.filter((tag) => tagList.has(tag)),
+      });
+    }
+    await writeJsonl(out, gold);
+  });
   await pool("judge", jobs, CONCURRENCY);
   console.log(`${gold.length} gold`);
 }
@@ -299,12 +270,8 @@ async function fields() {
   const rows = await readJsonl<{ id: string; independent: object }>(out);
   const done = new Set(rows.map((row) => row.id));
   const todo = gold.filter((row) => !done.has(row.id));
-  const BATCH = 12;
-  const jobs: (() => Promise<void>)[] = [];
-  for (let first = 0; first < todo.length; first += BATCH) {
-    const batch = todo.slice(first, first + BATCH);
-    jobs.push(async () => {
-      const prompt = `You compute the expected date fields of tasks for an evaluation set. Do not run any commands; answer only with the JSON object.
+  const jobs = chunks(todo, 12).map((batch) => async () => {
+    const prompt = `You compute the expected date fields of tasks for an evaluation set. Do not run any commands; answer only with the JSON object.
 
 Each item is labelled quick-add text (labels per the spec below) and the moment it was typed ("now", with its time zone). Work out, from the labelled S (start), U (due), R (repeat) and M (duration) spans:
 - startDate (YYYY-MM-DD) and startTime (HH:MM:SS, or null when no time of day was given)
@@ -319,29 +286,23 @@ ${spec}
 
 ## Items
 
-${batch
-  .map(
-    (row, index) =>
-      `Item ${index + 1}\n  now: ${row.now} (${Temporal.ZonedDateTime.from(row.now).toLocaleString("en-US", { weekday: "long" })})\n  labelled: ${row.marked}`
-  )
-  .join("\n\n")}`;
-      const result = await codexJson<{
-        items: (Record<string, unknown> & { item: number })[];
-      }>({
-        effort: "high",
-        model: "gpt-6.1-sol",
-        prompt,
-        schema: DATE_FIELDS_SCHEMA,
-      });
-      for (const entry of result.items) {
-        const row = batch[entry.item - 1];
-        if (row) {
-          rows.push({ id: row.id, independent: answeredFields(entry) });
-        }
-      }
-      await writeJsonl(out, rows);
+${datedItems(batch)}`;
+    const result = await codexJson<{
+      items: (Record<string, unknown> & { item: number })[];
+    }>({
+      effort: "high",
+      model: "gpt-6.1-sol",
+      prompt,
+      schema: DATE_FIELDS_SCHEMA,
     });
-  }
+    for (const entry of result.items) {
+      const row = batch[entry.item - 1];
+      if (row) {
+        rows.push({ id: row.id, independent: answeredFields(entry) });
+      }
+    }
+    await writeJsonl(out, rows);
+  });
   await pool("fields", jobs, CONCURRENCY);
   console.log(`${rows.length} computed`);
 }
@@ -376,17 +337,7 @@ async function build() {
       tagNames: row.tags,
       text,
     });
-    const expected = {
-      description: resolved.description,
-      dueDate: resolved.dueDate?.toString() ?? null,
-      durationMinutes: resolved.durationMinutes,
-      links: resolved.links,
-      recurrence: resolved.recurrence,
-      startDate: resolved.startDate?.toString() ?? null,
-      startTime: resolved.startTime?.toString() ?? null,
-      tags: resolved.tagNames,
-      title: resolved.title,
-    };
+    const expected = plainFields(resolved);
     if (dateMismatches(independent, expected).length > 0) {
       excluded += 1;
       continue;

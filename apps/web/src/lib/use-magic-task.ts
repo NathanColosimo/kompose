@@ -1,17 +1,13 @@
 "use client";
 
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
-import {
-  createWorkerTaskParser,
-  type RemoteTaskParser,
-} from "@kompose/task-parser/worker-client";
+import { createWorkerTaskParser } from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Temporal } from "temporal-polyfill";
 
 /**
  * The magic box: a small on-device model (packages/task-parser) labels the
@@ -26,7 +22,7 @@ export type MagicParse =
   | { status: "done"; result: ParsedTask };
 
 /** The parser runs in a Worker so a parse never blocks typing. */
-async function loadParser(): Promise<RemoteTaskParser> {
+async function loadParser() {
   const worker = new Worker(
     new URL("./task-parser.worker.ts", import.meta.url),
     { type: "module" }
@@ -47,22 +43,13 @@ const parserQuery = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
-function parseQuery(
-  parse: RemoteTaskParser | undefined,
-  text: string,
-  tags: TagOption[]
-) {
+function parseQuery(text: string, tags: TagOption[]) {
   // Relative phrases ("tomorrow", "in 2 hours") depend on the current time.
-  const minute = Temporal.Now.plainDateTimeISO()
-    .round({ roundingMode: "floor", smallestUnit: "minute" })
-    .toString();
+  const minute = Math.floor(Date.now() / 60_000);
   return queryOptions({
-    enabled: parse !== undefined,
     gcTime: 60_000,
-    queryFn: () => {
-      if (!parse) {
-        throw new Error("Task parser not loaded");
-      }
+    queryFn: async ({ client }) => {
+      const parse = await client.fetchQuery(parserQuery);
       return parse(text, { tags });
     },
     queryKey: ["task-parser", "parse", minute, tags, text],
@@ -80,7 +67,7 @@ export function useMagicTask(text: string | null, tags: TagOption[]) {
   const queryClient = useQueryClient();
   const { data: parser } = useQuery(parserQuery);
   const query = useQuery({
-    ...parseQuery(parser, text ?? "", tags),
+    ...parseQuery(text ?? "", tags),
     enabled: parser !== undefined && text !== null,
     placeholderData: keepPreviousData,
   });
@@ -90,8 +77,7 @@ export function useMagicTask(text: string | null, tags: TagOption[]) {
       return null;
     }
     try {
-      const loaded = await queryClient.fetchQuery(parserQuery);
-      return await queryClient.fetchQuery(parseQuery(loaded, text, tags));
+      return await queryClient.fetchQuery(parseQuery(text, tags));
     } catch {
       return null;
     }

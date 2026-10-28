@@ -76,7 +76,7 @@ function linear(
 function layerNorm(model: Model, x: Float32Array, n: number, name: string) {
   const gain = tensor(model, `${name}.weight`).data as Float32Array;
   const bias = tensor(model, `${name}.bias`).data as Float32Array;
-  return model.kernel.layerNorm(x, n, gain.length, gain, bias, EPSILON);
+  return model.kernel.layerNorm(x, n, gain, bias, EPSILON);
 }
 
 /** GELU, tanh approximation (the tag head's), in place. */
@@ -124,7 +124,7 @@ function normalize(vector: Float32Array) {
 function tagSimilarity(model: Model, encoded: Encoded) {
   const words = tensor(model, "words.weight");
   const n = encoded.ids.length;
-  const unit = (id: number) => normalize(row(words, Math.max(id, 0)));
+  const unit = (id: number) => normalize(row(words, id));
   const text: Float32Array[] = [];
   for (let t = 0; t < n; t += 1) {
     if (!encoded.specials[t] && encoded.segments[t] === 0) {
@@ -142,16 +142,16 @@ function tagSimilarity(model: Model, encoded: Encoded) {
       addInPlace(tag, unit(id));
     }
     normalize(tag);
-    const top = [-1, -1, -1].slice(0, Math.min(3, n));
+    const top = [-1, -1, -1];
     for (const word of text) {
       const cosine = dot(tag, 0, word, 0, tag.length);
-      if (cosine > (top.at(-1) as number)) {
-        top[top.length - 1] = cosine;
+      if (cosine > (top[2] as number)) {
+        top[2] = cosine;
         top.sort((a, b) => b - a);
       }
     }
     // With fewer than 3 text words, masked tokens (-1) fill the top 3.
-    return [top[0] as number, top.reduce((a, b) => a + b, 0) / top.length];
+    return [top[0] as number, top.reduce((a, b) => a + b, 0) / 3];
   });
 }
 

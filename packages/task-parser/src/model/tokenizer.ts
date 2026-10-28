@@ -17,12 +17,13 @@ const CONTROL = /[\p{Cc}\p{Cf}]/u;
 const WHITESPACE = /\s/u;
 const PUNCTUATION = /\p{P}/u;
 
-function isPunctuation(codePoint: number, char: string) {
+function isPunctuation(char: string) {
+  const cp = char.codePointAt(0) ?? 0;
   return (
-    (codePoint >= 33 && codePoint <= 47) ||
-    (codePoint >= 58 && codePoint <= 64) ||
-    (codePoint >= 91 && codePoint <= 96) ||
-    (codePoint >= 123 && codePoint <= 126) ||
+    (cp >= 33 && cp <= 47) ||
+    (cp >= 58 && cp <= 64) ||
+    (cp >= 91 && cp <= 96) ||
+    (cp >= 123 && cp <= 126) ||
     PUNCTUATION.test(char)
   );
 }
@@ -47,61 +48,58 @@ interface Char {
   text: string;
 }
 
-/** Normalize like BertNormalizer, keeping each output char's source range. */
-function normalize(text: string): Char[] {
-  const chars: Char[] = [];
+/** Chars BertNormalizer removes: NUL, U+FFFD and controls other than \t \n \r. */
+function isDropped(char: string) {
+  const cp = char.codePointAt(0);
+  return (
+    cp === 0 ||
+    cp === 0xff_fd ||
+    (char !== "\t" && char !== "\n" && char !== "\r" && CONTROL.test(char))
+  );
+}
+
+/**
+ * Normalize like BertNormalizer and split into words like
+ * BertPreTokenizer: on whitespace, with each punctuation char and CJK
+ * ideograph a word of its own.
+ */
+function splitWords(text: string): Char[][] {
+  const words: Char[][] = [];
+  let current: Char[] = [];
+  /** Ends the current word; `alone` becomes a word of its own. */
+  const split = (alone?: Char) => {
+    if (current.length > 0) {
+      words.push(current);
+    }
+    current = [];
+    if (alone) {
+      words.push([alone]);
+    }
+  };
   let index = 0;
   for (const char of text) {
     const start = index;
     index += char.length;
-    const cp = char.codePointAt(0) ?? 0;
-    if (cp === 0 || cp === 0xff_fd) {
-      continue;
-    }
-    if (char !== "\t" && char !== "\n" && char !== "\r" && CONTROL.test(char)) {
+    if (isDropped(char)) {
       continue;
     }
     if (WHITESPACE.test(char)) {
-      chars.push({ end: index, start, text: " " });
-      continue;
-    }
-    if (isChinese(cp)) {
-      chars.push({ end: start, start, text: " " });
-      chars.push({ end: index, start, text: char });
-      chars.push({ end: index, start: index, text: " " });
-      continue;
-    }
-    // Lowercase, then strip accents (NFD without combining marks).
-    for (const part of char.toLowerCase().normalize("NFD")) {
-      if (!COMBINING_MARK.test(part)) {
-        chars.push({ end: index, start, text: part });
+      split();
+    } else if (isChinese(char.codePointAt(0) ?? 0)) {
+      split({ end: index, start, text: char });
+    } else {
+      // Lowercase, then strip accents (NFD without combining marks).
+      for (const part of char.toLowerCase().normalize("NFD")) {
+        const normalized = { end: index, start, text: part };
+        if (isPunctuation(part)) {
+          split(normalized);
+        } else if (!COMBINING_MARK.test(part)) {
+          current.push(normalized);
+        }
       }
     }
   }
-  return chars;
-}
-
-/** Split into words on whitespace, with each punctuation char its own word. */
-function preTokenize(chars: Char[]): Char[][] {
-  const words: Char[][] = [];
-  let current: Char[] = [];
-  const flush = () => {
-    if (current.length > 0) {
-      words.push(current);
-      current = [];
-    }
-  };
-  for (const char of chars) {
-    if (char.text === " ") {
-      flush();
-    } else if (isPunctuation(char.text.codePointAt(0) ?? 0, char.text)) {
-      flush();
-      words.push([char]);
-    } else {
-      current.push(char);
-    }
-  }
-  flush();
+  split();
   return words;
 }
 
@@ -115,21 +113,14 @@ export class WordPiece {
   }
 
   encode(text: string): Piece[] {
-    const pieces: Piece[] = [];
-    for (const word of preTokenize(normalize(text))) {
-      pieces.push(...this.#word(word));
-    }
-    return pieces;
+    return splitWords(text).flatMap((word) => this.#word(word));
   }
 
   #word(word: Char[]): Piece[] {
     const start = word[0]?.start ?? 0;
     const end = word.at(-1)?.end ?? start;
-    // Count code points, like the Rust implementation.
-    if (
-      word.reduce((sum, char) => sum + [...char.text].length, 0) >
-      MAX_WORD_CHARS
-    ) {
+    // Each char is one code point, as the Rust implementation counts.
+    if (word.length > MAX_WORD_CHARS) {
       return [{ end, id: this.#unk, start }];
     }
     const pieces: Piece[] = [];

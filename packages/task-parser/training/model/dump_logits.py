@@ -3,22 +3,18 @@
 uv run python model/dump_logits.py runs/<name> data/clean/<file>.jsonl [limit]
 """
 import json
-import os
 import sys
 from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent))
-from features import Featurizer, viterbi  # noqa: E402
-from model import load_run  # noqa: E402
-from train import collate  # noqa: E402
+from features import Featurizer, viterbi
+from model import load_run
+from train import collate
 
-# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
-ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 run = Path(sys.argv[1])
 model = load_run(run, "dequantized.safetensors")
-featurizer = Featurizer(str(ROOT / "data/embeddings" / model.config.embeddings / "tokenizer.json"))
+featurizer = Featurizer()
 limit = int(sys.argv[3]) if len(sys.argv) > 3 else 50
 cases = []
 for line in list(open(sys.argv[2]))[:limit]:

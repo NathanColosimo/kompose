@@ -19,7 +19,7 @@ REPEAT_WORDS = re.compile(
 )
 
 
-def build_pools(rows: list[dict], extra: dict[str, list[str]] | None = None) -> dict[str, list[str]]:
+def build_pools(rows: list[dict], extra: dict[str, list[str]]) -> dict[str, list[str]]:
     """Phrases per label from the data, plus grammar phrases (gen/phrases.ts)
     weighted to about a third of each pool."""
     pools: dict[str, set[str]] = {label: set() for label in SWAPPABLE}
@@ -32,10 +32,9 @@ def build_pools(rows: list[dict], extra: dict[str, list[str]] | None = None) -> 
                 if span["label"] != "R" or REPEAT_WORDS.search(phrase):
                     pools[span["label"]].add(phrase)
     out = {label: sorted(values) for label, values in pools.items()}
-    for label, phrases in (extra or {}).items():
-        if label in out and phrases:
-            share = max(1, len(out[label]) // 2)
-            out[label] += random.Random(label).choices(phrases, k=min(share, len(phrases) * 3))
+    for label, phrases in extra.items():
+        share = max(1, len(out[label]) // 2)
+        out[label] += random.Random(label).choices(phrases, k=min(share, len(phrases) * 3))
     return out
 
 

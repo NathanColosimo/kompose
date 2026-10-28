@@ -15,11 +15,27 @@ const locals = [
   ...BLOCK.map((i) => `(local $xv${i} v128)`),
   ...BLOCK.map((j) => `(local $wv${j} v128)`),
 ].join(" ");
-const isum = (name: string) =>
-  `(i32.add (i32.add (i32x4.extract_lane 0 (local.get ${name})) (i32x4.extract_lane 1 (local.get ${name}))) (i32.add (i32x4.extract_lane 2 (local.get ${name})) (i32x4.extract_lane 3 (local.get ${name}))))`;
+
+/**
+ * loopStart(counter, limit) … loopEnd(counter, step) is `for (; counter <
+ * limit; counter += step)` over i32 locals; callers set the start.
+ */
+const loopStart = (counter: string, limit: string) =>
+  `(block $${counter}_done (loop $${counter}_next
+    (br_if $${counter}_done (i32.ge_u (local.get $${counter}) (local.get $${limit})))`;
+const loopEnd = (counter: string, step: number) =>
+  `(local.set $${counter} (i32.add (local.get $${counter}) (i32.const ${step})))
+    (br $${counter}_next)))`;
+
+/** The lanes of v128 local `v` combined by `op` ("f32.add"): (0 op 1) op (2 op 3). */
+const reduce = (op: string, v: string) => {
+  const lane = (i: number) =>
+    `(${op.slice(0, 3)}x4.extract_lane ${i} (local.get ${v}))`;
+  return `(${op} (${op} ${lane(0)} ${lane(1)}) (${op} ${lane(2)} ${lane(3)}))`;
+};
 
 /** `a += x · w` over 16 int8 lanes. */
-const dotAdd = (relaxed: boolean) => (i: number, j: number) =>
+const dotAdd = (relaxed: boolean, i: number, j: number) =>
   relaxed
     ? `(local.set $a${i}${j} (i32x4.relaxed_dot_i8x16_i7x16_add_s (local.get $wv${j}) (local.get $xv${i}) (local.get $a${i}${j})))`
     : `(local.set $a${i}${j} (i32x4.add (local.get $a${i}${j}) (i32x4.extadd_pairwise_i16x8_s (i16x8.add (i16x8.extmul_low_i8x16_s (local.get $xv${i}) (local.get $wv${j})) (i16x8.extmul_high_i8x16_s (local.get $xv${i}) (local.get $wv${j}))))))`;
@@ -40,44 +56,28 @@ const linear = (relaxed: boolean) => `  (func (export "linear")
     (local $ostride i32) (local $o i32)
     ${locals}
     (local.set $ostride (i32.shl (local.get $rows) (i32.const 2)))
-    (block $rdone (loop $rloop
-      (br_if $rdone (i32.ge_u (local.get $r) (local.get $rows)))
+    ${loopStart("r", "rows")}
       (local.set $w0 (i32.add (local.get $w) (i32.mul (local.get $r) (local.get $cols))))
-      ${BLOCK.slice(1)
-        .map(
-          (j) =>
-            `(local.set $w${j} (i32.add (local.get $w${j - 1}) (local.get $cols)))`
-        )
-        .join("\n      ")}
+      ${[1, 2, 3].map((j) => `(local.set $w${j} (i32.add (local.get $w${j - 1}) (local.get $cols)))`).join("\n      ")}
       (local.set $t (i32.const 0))
-      (block $tdone (loop $tloop
-        (br_if $tdone (i32.ge_u (local.get $t) (local.get $n)))
+      ${loopStart("t", "n")}
         (local.set $x0 (i32.add (local.get $x) (i32.mul (local.get $t) (local.get $cols))))
-        ${BLOCK.slice(1)
-          .map(
-            (i) =>
-              `(local.set $x${i} (i32.add (local.get $x${i - 1}) (local.get $cols)))`
-          )
-          .join("\n        ")}
+        ${[1, 2, 3].map((i) => `(local.set $x${i} (i32.add (local.get $x${i - 1}) (local.get $cols)))`).join("\n        ")}
         ${pairs.map(([i, j]) => `(local.set $a${i}${j} (v128.const i32x4 0 0 0 0))`).join("\n        ")}
         (local.set $c (i32.const 0))
-        (block $cdone (loop $cloop
-          (br_if $cdone (i32.ge_u (local.get $c) (local.get $cols)))
+        ${loopStart("c", "cols")}
           ${BLOCK.map((i) => `(local.set $xv${i} (v128.load (i32.add (local.get $x${i}) (local.get $c))))`).join("\n          ")}
           ${BLOCK.map((j) => `(local.set $wv${j} (v128.load (i32.add (local.get $w${j}) (local.get $c))))`).join("\n          ")}
-          ${pairs.map(([i, j]) => dotAdd(relaxed)(i, j)).join("\n          ")}
-          (local.set $c (i32.add (local.get $c) (i32.const 16)))
-          (br $cloop)))
+          ${pairs.map(([i, j]) => dotAdd(relaxed, i, j)).join("\n          ")}
+        ${loopEnd("c", 16)}
         (local.set $o (i32.add (local.get $out) (i32.add (i32.mul (local.get $t) (local.get $ostride)) (i32.shl (local.get $r) (i32.const 2)))))
         ${BLOCK.map(
           (i) =>
-            `${BLOCK.map((j) => `(i32.store offset=${j * 4} (local.get $o) ${isum(`$a${i}${j}`)})`).join("\n        ")}
+            `${BLOCK.map((j) => `(i32.store offset=${j * 4} (local.get $o) ${reduce("i32.add", `$a${i}${j}`)})`).join("\n        ")}
         (local.set $o (i32.add (local.get $o) (local.get $ostride)))`
         ).join("\n        ")}
-        (local.set $t (i32.add (local.get $t) (i32.const 4)))
-        (br $tloop)))
-      (local.set $r (i32.add (local.get $r) (i32.const 4)))
-      (br $rloop))))`;
+      ${loopEnd("t", 4)}
+    ${loopEnd("r", 4)})`;
 
 /**
  * quantize: each token of x (float32 [n, cols], cols a multiple of 16) is
@@ -92,22 +92,19 @@ const CONVERSIONS = `  (func (export "quantize")
     (local $lo v128) (local $hi v128) (local $v v128) (local $mid v128) (local $inv v128)
     (local $min f32) (local $max f32) (local $half f32)
     (local $a v128) (local $b v128) (local $c2 v128) (local $d v128)
-    (block $tdone (loop $tloop
-      (br_if $tdone (i32.ge_u (local.get $t) (local.get $n)))
+    ${loopStart("t", "n")}
       (local.set $row (i32.add (local.get $x) (i32.shl (i32.mul (local.get $t) (local.get $cols)) (i32.const 2))))
       (local.set $end (i32.add (local.get $row) (i32.shl (local.get $cols) (i32.const 2))))
       (local.set $lo (v128.load (local.get $row)))
       (local.set $hi (local.get $lo))
       (local.set $c (local.get $row))
-      (block $mdone (loop $mloop
-        (br_if $mdone (i32.ge_u (local.get $c) (local.get $end)))
+      ${loopStart("c", "end")}
         (local.set $v (v128.load (local.get $c)))
         (local.set $lo (f32x4.min (local.get $lo) (local.get $v)))
         (local.set $hi (f32x4.max (local.get $hi) (local.get $v)))
-        (local.set $c (i32.add (local.get $c) (i32.const 16)))
-        (br $mloop)))
-      (local.set $min (f32.min (f32.min (f32x4.extract_lane 0 (local.get $lo)) (f32x4.extract_lane 1 (local.get $lo))) (f32.min (f32x4.extract_lane 2 (local.get $lo)) (f32x4.extract_lane 3 (local.get $lo)))))
-      (local.set $max (f32.max (f32.max (f32x4.extract_lane 0 (local.get $hi)) (f32x4.extract_lane 1 (local.get $hi))) (f32.max (f32x4.extract_lane 2 (local.get $hi)) (f32x4.extract_lane 3 (local.get $hi)))))
+      ${loopEnd("c", 16)}
+      (local.set $min ${reduce("f32.min", "$lo")})
+      (local.set $max ${reduce("f32.max", "$hi")})
       (local.set $half (f32.mul (f32.sub (local.get $max) (local.get $min)) (f32.const 0.5)))
       (local.set $mid (f32x4.splat (f32.mul (f32.add (local.get $max) (local.get $min)) (f32.const 0.5))))
       (local.set $inv (f32x4.splat (select (f32.div (f32.const 63) (local.get $half)) (f32.const 0) (f32.gt (local.get $half) (f32.const 0)))))
@@ -115,29 +112,24 @@ const CONVERSIONS = `  (func (export "quantize")
       (f32.store offset=4 (i32.add (local.get $meta) (i32.shl (local.get $t) (i32.const 3))) (f32x4.extract_lane 0 (local.get $mid)))
       (local.set $out (i32.add (local.get $q) (i32.mul (local.get $t) (local.get $cols))))
       (local.set $c (local.get $row))
-      (block $qdone (loop $qloop
-        (br_if $qdone (i32.ge_u (local.get $c) (local.get $end)))
+      ${loopStart("c", "end")}
         (local.set $a (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load (local.get $c)) (local.get $mid)) (local.get $inv)))))
         (local.set $b (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=16 (local.get $c)) (local.get $mid)) (local.get $inv)))))
         (local.set $c2 (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=32 (local.get $c)) (local.get $mid)) (local.get $inv)))))
         (local.set $d (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=48 (local.get $c)) (local.get $mid)) (local.get $inv)))))
         (v128.store (local.get $out) (i8x16.narrow_i16x8_s (i16x8.narrow_i32x4_s (local.get $a) (local.get $b)) (i16x8.narrow_i32x4_s (local.get $c2) (local.get $d))))
         (local.set $out (i32.add (local.get $out) (i32.const 16)))
-        (local.set $c (i32.add (local.get $c) (i32.const 64)))
-        (br $qloop)))
-      (local.set $t (i32.add (local.get $t) (i32.const 1)))
-      (br $tloop))))
+      ${loopEnd("c", 64)}
+    ${loopEnd("t", 1)})
   (func (export "dequantize")
     (param $sums i32) (param $n i32) (param $rows i32) (param $meta i32)
     (param $scales i32) (param $rowSums i32) (param $bias i32) (param $out i32)
     (local $t i32) (local $r i32) (local $at i32) (local $scale v128) (local $mid v128)
-    (block $tdone (loop $tloop
-      (br_if $tdone (i32.ge_u (local.get $t) (local.get $n)))
+    ${loopStart("t", "n")}
       (local.set $scale (v128.load32_splat (i32.add (local.get $meta) (i32.shl (local.get $t) (i32.const 3)))))
       (local.set $mid (v128.load32_splat offset=4 (i32.add (local.get $meta) (i32.shl (local.get $t) (i32.const 3)))))
       (local.set $r (i32.const 0))
-      (block $rdone (loop $rloop
-        (br_if $rdone (i32.ge_u (local.get $r) (local.get $rows)))
+      ${loopStart("r", "rows")}
         (local.set $at (i32.shl (i32.add (i32.mul (local.get $t) (local.get $rows)) (local.get $r)) (i32.const 2)))
         (v128.store (i32.add (local.get $out) (local.get $at))
           (f32x4.add
@@ -147,17 +139,15 @@ const CONVERSIONS = `  (func (export "quantize")
                 (f32x4.mul (local.get $mid) (v128.load (i32.add (local.get $rowSums) (i32.shl (local.get $r) (i32.const 2))))))
               (v128.load (i32.add (local.get $scales) (i32.shl (local.get $r) (i32.const 2)))))
             (v128.load (i32.add (local.get $bias) (i32.shl (local.get $r) (i32.const 2))))))
-        (local.set $r (i32.add (local.get $r) (i32.const 4)))
-        (br $rloop)))
-      (local.set $t (i32.add (local.get $t) (i32.const 1)))
-      (br $tloop))))`;
+      ${loopEnd("r", 4)}
+    ${loopEnd("t", 1)})`;
 
 const f4 = (value: number) => `(f32x4.splat (f32.const ${value}))`;
 
 /**
- * gelu: exact GELU, x·Φ(x), in place over `count` floats (a multiple of 4),
- * as network.ts geluExact: erf by Abramowitz and Stegun 7.1.26, exp as
- * 2^i · 2^f with a degree-5 polynomial for 2^f (relative error ~2e-7).
+ * gelu: exact GELU, x·Φ(x), in place over `count` floats (a multiple of 4).
+ * erf by Abramowitz and Stegun 7.1.26; exp as 2^i · 2^f with a degree-5
+ * polynomial for 2^f (relative error ~2e-7).
  */
 const GELU = `  (func $exp (param $x v128) (result v128)
     (local $t v128) (local $i v128) (local $f v128)
@@ -170,8 +160,7 @@ const GELU = `  (func $exp (param $x v128) (result v128)
   (func (export "gelu") (param $at i32) (param $count i32)
     (local $end i32) (local $v v128) (local $z v128) (local $t v128) (local $erf v128)
     (local.set $end (i32.add (local.get $at) (i32.shl (local.get $count) (i32.const 2))))
-    (block $done (loop $next
-      (br_if $done (i32.ge_u (local.get $at) (local.get $end)))
+    ${loopStart("at", "end")}
       (local.set $v (v128.load (local.get $at)))
       (local.set $z (f32x4.mul (f32x4.abs (local.get $v)) ${f4(Math.SQRT1_2)}))
       (local.set $t (f32x4.div ${f4(1)} (f32x4.add ${f4(1)} (f32x4.mul ${f4(0.327_591_1)} (local.get $z)))))
@@ -182,8 +171,7 @@ const GELU = `  (func $exp (param $x v128) (result v128)
       ;; erf takes the sign of v.
       (local.set $erf (v128.or (local.get $erf) (v128.and (local.get $v) (v128.const i32x4 0x80000000 0x80000000 0x80000000 0x80000000))))
       (v128.store (local.get $at) (f32x4.mul (f32x4.mul ${f4(0.5)} (local.get $v)) (f32x4.add ${f4(1)} (local.get $erf))))
-      (local.set $at (i32.add (local.get $at) (i32.const 16)))
-      (br $next))))`;
+    ${loopEnd("at", 16)})`;
 
 /**
  * attention: softmax(q·kᵀ · scale) · v for every head, from qkv (float32
@@ -201,66 +189,49 @@ const ATTENTION = `  (func (export "attention")
     (local.set $stride (i32.mul (local.get $dim) (i32.const 12)))
     ;; Lanes past n score -1e30, so their exp is 0.
     (v128.store (i32.add (local.get $scores) (i32.shl (local.get $n) (i32.const 2))) ${f4(-1e30)})
-    (block $hdone (loop $hloop
-      (br_if $hdone (i32.ge_u (local.get $h) (local.get $heads)))
+    ${loopStart("h", "heads")}
       (local.set $t (i32.const 0))
-      (block $tdone (loop $tloop
-        (br_if $tdone (i32.ge_u (local.get $t) (local.get $n)))
+      ${loopStart("t", "n")}
         (local.set $q (i32.add (local.get $qkv) (i32.add (i32.mul (local.get $t) (local.get $stride)) (i32.shl (i32.mul (local.get $h) (local.get $size)) (i32.const 2)))))
         (local.set $max (f32.const -1e30))
         (local.set $j (i32.const 0))
-        (block $jdone (loop $jloop
-          (br_if $jdone (i32.ge_u (local.get $j) (local.get $n)))
+        ${loopStart("j", "n")}
           (local.set $k (i32.add (local.get $qkv) (i32.add (i32.mul (local.get $j) (local.get $stride)) (i32.shl (i32.add (local.get $dim) (i32.mul (local.get $h) (local.get $size))) (i32.const 2)))))
-          ${[0, 1, 2, 3].map((i) => `(local.set $a${i} (v128.const f32x4 0 0 0 0))`).join("\n          ")}
+          ${BLOCK.map((i) => `(local.set $a${i} (v128.const f32x4 0 0 0 0))`).join("\n          ")}
           (local.set $c (i32.const 0))
-          (block $cdone (loop $cloop
-            (br_if $cdone (i32.ge_u (local.get $c) (local.get $size)))
-            ${[0, 1, 2, 3].map((i) => `(local.set $a${i} (f32x4.add (local.get $a${i}) (f32x4.mul (v128.load offset=${i * 16} (i32.add (local.get $q) (i32.shl (local.get $c) (i32.const 2)))) (v128.load offset=${i * 16} (i32.add (local.get $k) (i32.shl (local.get $c) (i32.const 2)))))))`).join("\n            ")}
-            (local.set $c (i32.add (local.get $c) (i32.const 16)))
-            (br $cloop)))
+          ${loopStart("c", "size")}
+            ${BLOCK.map((i) => `(local.set $a${i} (f32x4.add (local.get $a${i}) (f32x4.mul (v128.load offset=${i * 16} (i32.add (local.get $q) (i32.shl (local.get $c) (i32.const 2)))) (v128.load offset=${i * 16} (i32.add (local.get $k) (i32.shl (local.get $c) (i32.const 2)))))))`).join("\n            ")}
+          ${loopEnd("c", 16)}
           (local.set $acc (f32x4.add (f32x4.add (local.get $a0) (local.get $a1)) (f32x4.add (local.get $a2) (local.get $a3))))
-          (local.set $s (f32.mul (local.get $scale) (f32.add (f32.add (f32x4.extract_lane 0 (local.get $acc)) (f32x4.extract_lane 1 (local.get $acc))) (f32.add (f32x4.extract_lane 2 (local.get $acc)) (f32x4.extract_lane 3 (local.get $acc))))))
+          (local.set $s (f32.mul (local.get $scale) ${reduce("f32.add", "$acc")}))
           (f32.store (i32.add (local.get $scores) (i32.shl (local.get $j) (i32.const 2))) (local.get $s))
           (local.set $max (f32.max (local.get $max) (local.get $s)))
-          (local.set $j (i32.add (local.get $j) (i32.const 1)))
-          (br $jloop)))
+        ${loopEnd("j", 1)}
         (local.set $sum (f32.const 0))
         (local.set $j (i32.const 0))
-        (block $edone (loop $eloop
-          (br_if $edone (i32.ge_u (local.get $j) (local.get $n)))
+        ${loopStart("j", "n")}
           (local.set $e (call $exp (f32x4.sub (v128.load (i32.add (local.get $scores) (i32.shl (local.get $j) (i32.const 2)))) (f32x4.splat (local.get $max)))))
           (v128.store (i32.add (local.get $scores) (i32.shl (local.get $j) (i32.const 2))) (local.get $e))
-          (local.set $sum (f32.add (local.get $sum) (f32.add (f32.add (f32x4.extract_lane 0 (local.get $e)) (f32x4.extract_lane 1 (local.get $e))) (f32.add (f32x4.extract_lane 2 (local.get $e)) (f32x4.extract_lane 3 (local.get $e))))))
-          (local.set $j (i32.add (local.get $j) (i32.const 4)))
-          (br $eloop)))
+          (local.set $sum (f32.add (local.get $sum) ${reduce("f32.add", "$e")}))
+        ${loopEnd("j", 4)}
         ;; The -1e30 lanes were overwritten by the last group: restore them.
         (v128.store (i32.add (local.get $scores) (i32.shl (local.get $n) (i32.const 2))) ${f4(-1e30)})
         (local.set $o (i32.add (local.get $out) (i32.shl (i32.add (i32.mul (local.get $t) (local.get $dim)) (i32.mul (local.get $h) (local.get $size))) (i32.const 2))))
         (local.set $c (i32.const 0))
-        (block $vdone (loop $vloop
-          (br_if $vdone (i32.ge_u (local.get $c) (local.get $size)))
-          ${[0, 1, 2, 3].map((i) => `(local.set $a${i} (v128.const f32x4 0 0 0 0))`).join("\n          ")}
+        ${loopStart("c", "size")}
+          ${BLOCK.map((i) => `(local.set $a${i} (v128.const f32x4 0 0 0 0))`).join("\n          ")}
           (local.set $v (i32.add (local.get $qkv) (i32.shl (i32.add (i32.shl (local.get $dim) (i32.const 1)) (i32.add (i32.mul (local.get $h) (local.get $size)) (local.get $c))) (i32.const 2))))
           (local.set $j (i32.const 0))
-          (block $mdone (loop $mloop
-            (br_if $mdone (i32.ge_u (local.get $j) (local.get $n)))
+          ${loopStart("j", "n")}
             (local.set $e (v128.load32_splat (i32.add (local.get $scores) (i32.shl (local.get $j) (i32.const 2)))))
-            ${[0, 1, 2, 3].map((i) => `(local.set $a${i} (f32x4.add (local.get $a${i}) (f32x4.mul (local.get $e) (v128.load offset=${i * 16} (local.get $v)))))`).join("\n            ")}
+            ${BLOCK.map((i) => `(local.set $a${i} (f32x4.add (local.get $a${i}) (f32x4.mul (local.get $e) (v128.load offset=${i * 16} (local.get $v)))))`).join("\n            ")}
             (local.set $v (i32.add (local.get $v) (local.get $stride)))
-            (local.set $j (i32.add (local.get $j) (i32.const 1)))
-            (br $mloop)))
+          ${loopEnd("j", 1)}
           (local.set $e (f32x4.splat (f32.div (f32.const 1) (local.get $sum))))
-          ${[0, 1, 2, 3].map((i) => `(v128.store offset=${i * 16} (i32.add (local.get $o) (i32.shl (local.get $c) (i32.const 2))) (f32x4.mul (local.get $a${i}) (local.get $e)))`).join("\n          ")}
-          (local.set $c (i32.add (local.get $c) (i32.const 16)))
-          (br $vloop)))
-        (local.set $t (i32.add (local.get $t) (i32.const 1)))
-        (br $tloop)))
-      (local.set $h (i32.add (local.get $h) (i32.const 1)))
-      (br $hloop))))`;
-
-const sumLanes = (v: string) =>
-  `(f32.add (f32.add (f32x4.extract_lane 0 ${v}) (f32x4.extract_lane 1 ${v})) (f32.add (f32x4.extract_lane 2 ${v}) (f32x4.extract_lane 3 ${v})))`;
+          ${BLOCK.map((i) => `(v128.store offset=${i * 16} (i32.add (local.get $o) (i32.shl (local.get $c) (i32.const 2))) (f32x4.mul (local.get $a${i}) (local.get $e)))`).join("\n          ")}
+        ${loopEnd("c", 16)}
+      ${loopEnd("t", 1)}
+    ${loopEnd("h", 1)})`;
 
 /**
  * layer_norm: out = (x − mean) / √(variance + epsilon) · gain + bias for
@@ -272,38 +243,30 @@ const LAYER_NORM = `  (func (export "layer_norm")
     (local $t i32) (local $c i32) (local $row i32) (local $o i32) (local $bytes i32)
     (local $acc v128) (local $d v128) (local $mean v128) (local $inv v128)
     (local.set $bytes (i32.shl (local.get $dim) (i32.const 2)))
-    (block $tdone (loop $tloop
-      (br_if $tdone (i32.ge_u (local.get $t) (local.get $n)))
+    ${loopStart("t", "n")}
       (local.set $row (i32.add (local.get $x) (i32.mul (local.get $t) (local.get $bytes))))
       (local.set $o (i32.add (local.get $out) (i32.mul (local.get $t) (local.get $bytes))))
       (local.set $acc (v128.const f32x4 0 0 0 0))
       (local.set $c (i32.const 0))
-      (block $sdone (loop $sloop
-        (br_if $sdone (i32.ge_u (local.get $c) (local.get $bytes)))
+      ${loopStart("c", "bytes")}
         (local.set $acc (f32x4.add (local.get $acc) (v128.load (i32.add (local.get $row) (local.get $c)))))
-        (local.set $c (i32.add (local.get $c) (i32.const 16)))
-        (br $sloop)))
-      (local.set $mean (f32x4.splat (f32.div ${sumLanes("(local.get $acc)")} (f32.convert_i32_u (local.get $dim)))))
+      ${loopEnd("c", 16)}
+      (local.set $mean (f32x4.splat (f32.div ${reduce("f32.add", "$acc")} (f32.convert_i32_u (local.get $dim)))))
       (local.set $acc (v128.const f32x4 0 0 0 0))
       (local.set $c (i32.const 0))
-      (block $vdone (loop $vloop
-        (br_if $vdone (i32.ge_u (local.get $c) (local.get $bytes)))
+      ${loopStart("c", "bytes")}
         (local.set $d (f32x4.sub (v128.load (i32.add (local.get $row) (local.get $c))) (local.get $mean)))
         (local.set $acc (f32x4.add (local.get $acc) (f32x4.mul (local.get $d) (local.get $d))))
-        (local.set $c (i32.add (local.get $c) (i32.const 16)))
-        (br $vloop)))
-      (local.set $inv (f32x4.splat (f32.div (f32.const 1) (f32.sqrt (f32.add (f32.div ${sumLanes("(local.get $acc)")} (f32.convert_i32_u (local.get $dim))) (local.get $epsilon))))))
+      ${loopEnd("c", 16)}
+      (local.set $inv (f32x4.splat (f32.div (f32.const 1) (f32.sqrt (f32.add (f32.div ${reduce("f32.add", "$acc")} (f32.convert_i32_u (local.get $dim))) (local.get $epsilon))))))
       (local.set $c (i32.const 0))
-      (block $ndone (loop $nloop
-        (br_if $ndone (i32.ge_u (local.get $c) (local.get $bytes)))
+      ${loopStart("c", "bytes")}
         (v128.store (i32.add (local.get $o) (local.get $c))
           (f32x4.add
             (f32x4.mul (f32x4.mul (f32x4.sub (v128.load (i32.add (local.get $row) (local.get $c))) (local.get $mean)) (local.get $inv)) (v128.load (i32.add (local.get $gain) (local.get $c))))
             (v128.load (i32.add (local.get $bias) (local.get $c)))))
-        (local.set $c (i32.add (local.get $c) (i32.const 16)))
-        (br $nloop)))
-      (local.set $t (i32.add (local.get $t) (i32.const 1)))
-      (br $tloop))))`;
+      ${loopEnd("c", 16)}
+    ${loopEnd("t", 1)})`;
 
 const kernel = (relaxed: boolean) => `(module
   (memory (export "memory") 1)

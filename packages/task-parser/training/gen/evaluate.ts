@@ -1,28 +1,19 @@
 /**
  * End-to-end evaluation of an exported model through the TypeScript parser.
- * Usage: bun gen/evaluate.ts <run dir> [handwritten|test|both] [--show N]
+ * Usage: bun gen/evaluate.ts <run dir> [handwritten|test|both]
  * Prints per-field accuracy and the first failures.
  */
 import { readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
-import { createTaskParser, type ParsedTask } from "../../src/parser";
-import { ROOT, readJsonl, sortKeys } from "./common";
+import { createTaskParser } from "../../src/parser";
+import { plainFields, ROOT, readJsonl, sortKeys } from "./common";
 
 const [run = "", which = "both"] = process.argv.slice(2);
-const showIndex = process.argv.indexOf("--show");
-const show = showIndex > 0 ? Number(process.argv[showIndex + 1]) : 15;
+const SHOW = 15;
 
-interface Expected {
-  description?: string | null;
-  dueDate?: string | null;
-  durationMinutes?: number | null;
-  links?: string[];
-  recurrence?: object | null;
-  startDate?: string | null;
-  startTime?: string | null;
-  tags?: string[];
-  title: string;
-}
+type Actual = ReturnType<typeof plainFields>;
+/** Fields left out are expected empty. */
+type Expected = Partial<Actual> & { title: string };
 
 interface Case {
   expect: Expected;
@@ -43,26 +34,13 @@ const FIELDS = [
   "links",
   "tags",
 ] as const;
+type Field = (typeof FIELDS)[number];
 
 const PUNCTUATION = /[^\p{L}\p{N}]+/gu;
 
 /** Titles and descriptions compare by their words: punctuation and case are style. */
 function normalizeText(value: string | null | undefined) {
   return (value ?? "").replace(PUNCTUATION, " ").trim().toLowerCase();
-}
-
-function actualOf(parsed: ParsedTask) {
-  return {
-    description: parsed.description,
-    dueDate: parsed.dueDate?.toString() ?? null,
-    durationMinutes: parsed.durationMinutes,
-    links: parsed.links,
-    recurrence: parsed.recurrence,
-    startDate: parsed.startDate?.toString() ?? null,
-    startTime: parsed.startTime?.toString() ?? null,
-    tags: parsed.tags.map((tag) => tag.name),
-    title: parsed.title,
-  };
 }
 
 const EDGE_WORDS = new Set([
@@ -121,11 +99,7 @@ function closeEnough(
   return (2 * shared) / (a.length + b.length) >= 0.8;
 }
 
-function equal(
-  field: (typeof FIELDS)[number],
-  expected: Expected,
-  actual: ReturnType<typeof actualOf>
-) {
+function equal(field: Field, expected: Expected, actual: Actual) {
   switch (field) {
     case "title":
     case "description":
@@ -183,18 +157,14 @@ async function loadCases(): Promise<Record<string, Case[]>> {
   return sets;
 }
 
-const file = await readFile(`${run}/task-parser.bin`);
 const parse = createTaskParser(
-  file.buffer.slice(
-    file.byteOffset,
-    file.byteOffset + file.byteLength
-  ) as ArrayBuffer
+  new Uint8Array(await readFile(`${run}/task-parser.bin`)).buffer
 );
-const sets = await loadCases();
-for (const [name, cases] of Object.entries(sets)) {
-  const correct: Record<string, number> = Object.fromEntries(
-    FIELDS.map((f) => [f, 0])
-  );
+for (const [name, cases] of Object.entries(await loadCases())) {
+  const correct = Object.fromEntries(FIELDS.map((f) => [f, 0])) as Record<
+    Field,
+    number
+  >;
   let all = 0;
   let usable = 0;
   const failures: string[] = [];
@@ -206,24 +176,26 @@ for (const [name, cases] of Object.entries(sets)) {
       tags: c.tags.map((tagName) => ({ id: tagName, name: tagName })),
     });
     elapsed += performance.now() - started;
-    const actual = actualOf(parsed);
+    const actual = plainFields(parsed);
     const wrong = FIELDS.filter((field) => !equal(field, c.expect, actual));
-    const textOk = (field: "title" | "description") =>
-      closeEnough(c.expect[field], actual[field]);
+    for (const field of FIELDS) {
+      if (!wrong.includes(field)) {
+        correct[field] += 1;
+      }
+    }
+    // Usable: every wrong field is a title or description that is close enough.
     if (
       wrong.every(
         (field) =>
-          (field === "title" || field === "description") && textOk(field)
+          (field === "title" || field === "description") &&
+          closeEnough(c.expect[field], actual[field])
       )
     ) {
       usable += 1;
     }
-    for (const field of FIELDS) {
-      correct[field] = (correct[field] ?? 0) + (wrong.includes(field) ? 0 : 1);
-    }
     if (wrong.length === 0) {
       all += 1;
-    } else if (failures.length < show) {
+    } else if (failures.length < SHOW) {
       const spans = parsed.spans
         .map((span) => `[${span.label}:${span.text}]`)
         .join(" ");
@@ -243,7 +215,7 @@ for (const [name, cases] of Object.entries(sets)) {
     `\n== ${name}: ${cases.length} cases, all fields right ${pct(all)}, usable ${pct(usable)}, ${(elapsed / cases.length).toFixed(1)} ms/case`
   );
   console.log(
-    FIELDS.map((field) => `${field} ${pct(correct[field] ?? 0)}`).join(" | ")
+    FIELDS.map((field) => `${field} ${pct(correct[field])}`).join(" | ")
   );
   if (name === "handwritten" || name === "test") {
     console.log(failures.join("\n"));

@@ -1,29 +1,26 @@
 """Export a trained run to the runtime format (int8 weights, per-row scales).
 
-uv run python model/export.py runs/<name> [--out ../assets/task-parser.bin]
+uv run python model/export.py runs/<name>   → runs/<name>/task-parser.bin
 
 Layout: b"KTP1", u32 header length, JSON header, then tensors (4-byte aligned).
 Header: {"config", "vocab", "tensors": [{"name", "shape", "dtype", "offset", "scales"?}]}.
-2-D weights of 4096+ values (not the small feature tables) are int8 with one
+2-D weights of 4096+ values other than the position table are int8 with one
 f32 scale per row; everything else is f32.
 Also writes <run>/dequantized.safetensors so Python can score the exact runtime weights.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
-import os
 import struct
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 from safetensors.torch import load_file, save_file
-from tokenizers import Tokenizer
 
-# run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
-ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
+from features import Featurizer
 
 
 def quantize(weight: np.ndarray):
@@ -34,15 +31,11 @@ def quantize(weight: np.ndarray):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("run")
-    parser.add_argument("--out")
-    args = parser.parse_args()
-    run = Path(args.run)
+    run = Path(sys.argv[1])
     config = json.loads((run / "config.json").read_text())
     state = load_file(str(run / "model.safetensors"))
-    tokenizer = Tokenizer.from_file(str(ROOT / "data/embeddings" / config["embeddings"] / "tokenizer.json"))
-    vocab = [token for token, _ in sorted(tokenizer.get_vocab().items(), key=lambda kv: kv[1])]
+    ids = Featurizer().tokenizer.get_vocab()
+    vocab = sorted(ids, key=ids.get)
 
     blobs, tensors, dequantized = [], [], {}
     offset = 0
@@ -57,7 +50,7 @@ def main():
 
     for name, tensor in state.items():
         array = tensor.float().numpy()
-        if array.ndim == 2 and array.size >= 4096 and not name.startswith(("positions", "specials", "shapes", "segments", "flags")):
+        if array.ndim == 2 and array.size >= 4096 and name != "positions.weight":
             q, scales = quantize(array)
             entry = {"name": name, "shape": list(array.shape), "dtype": "i8", "offset": push(q.tobytes()), "scales": push(scales.tobytes())}
             dequantized[name] = torch.from_numpy(q.astype(np.float32) * scales[:, None])
@@ -68,8 +61,7 @@ def main():
 
     header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab}, ensure_ascii=False).encode()
     header += b" " * ((-len(header)) % 4)
-    out = Path(args.out) if args.out else run / "task-parser.bin"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = run / "task-parser.bin"
     with open(out, "wb") as f:
         f.write(b"KTP1")
         f.write(struct.pack("<I", len(header)))
