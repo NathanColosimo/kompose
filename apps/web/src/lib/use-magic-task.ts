@@ -45,6 +45,14 @@ const parserQuery = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
+/**
+ * Loads the model as soon as the app mounts, so it's ready before the
+ * command bar opens.
+ */
+export function usePreloadTaskParser() {
+  useQuery(parserQuery);
+}
+
 function parseQuery(text: string, tags: TagOption[]) {
   // Relative phrases ("tomorrow", "in 2 hours") depend on the current time.
   const minute = Math.floor(Date.now() / 60_000);

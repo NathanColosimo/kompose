@@ -19,7 +19,6 @@ import {
   Loader2Icon,
   PlayCircleIcon,
   RepeatIcon,
-  SparklesIcon,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -161,36 +160,6 @@ function PreviewBadge({
 function startLabel(date: Temporal.PlainDate, time: Temporal.PlainTime | null) {
   const day = formatPlainDate(date, DATE_FORMAT);
   return time ? `${day} · ${time.toLocaleString(undefined, TIME_FORMAT)}` : day;
-}
-
-/**
- * Shows that the on-device model filled (or is filling) the preview. Sits at
- * the end of the row so the badges don't shift when it appears.
- */
-function OnDeviceStatus({
-  parse,
-  resolving,
-}: {
-  parse: MagicParse;
-  resolving: boolean;
-}) {
-  const reading = resolving || parse.status === "reading";
-  if (!(reading || parse.status === "done")) {
-    return null;
-  }
-  return (
-    <span
-      className="ml-auto flex shrink-0 items-center gap-1 self-start text-[11px] text-muted-foreground"
-      title="Read by a model on this device; nothing leaves it."
-    >
-      {reading ? (
-        <Loader2Icon className="size-3 animate-spin" />
-      ) : (
-        <SparklesIcon className="size-3" />
-      )}
-      {reading ? "Reading…" : "On-device"}
-    </span>
-  );
 }
 
 /** Model-filled fields fade in, and dim while a newer request replaces them. */
@@ -413,10 +382,7 @@ export function CommandBarCreateTask({
           <CommandItem onSelect={handleCreate} value={createItemValue}>
             <CheckIcon className="text-muted-foreground" />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium">{createItemLabel}</span>
-                <OnDeviceStatus parse={magic.parse} resolving={resolving} />
-              </div>
+              <span className="truncate font-medium">{createItemLabel}</span>
               {parsed.description && (
                 <span
                   className={cn(
