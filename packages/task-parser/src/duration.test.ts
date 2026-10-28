@@ -16,6 +16,7 @@ describe("parseDuration", () => {
     ["1 hr 15 min", 75],
     ["1:30", 90],
     ["an hour", 60],
+    ["fourteen minutes", 14],
     ["an hr", 60],
     ["half an hour", 30],
     ["a half hour", 30],

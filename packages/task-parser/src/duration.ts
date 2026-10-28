@@ -3,6 +3,8 @@
  * "a couple hours", "forty-five minutes", "1.5 hrs", "2-3 hours". Returns
  * null when the phrase has no duration. Ranges take their lower bound.
  */
+import { NUMBER_WORDS } from "./datetime/lexicon";
+
 export function parseDuration(phrase: string): number | null {
   const words = normalize(phrase);
   if (!words) {
@@ -109,33 +111,6 @@ const UNITS: Record<string, number> = {
   weeks: WEEK,
   wk: WEEK,
   wks: WEEK,
-};
-
-const NUMBER_WORDS: Record<string, number> = {
-  a: 1,
-  an: 1,
-  couple: 2,
-  eight: 8,
-  eighty: 80,
-  eleven: 11,
-  fifteen: 15,
-  fifty: 50,
-  five: 5,
-  forty: 40,
-  four: 4,
-  few: 3,
-  nine: 9,
-  ninety: 90,
-  one: 1,
-  seven: 7,
-  six: 6,
-  sixty: 60,
-  ten: 10,
-  thirty: 30,
-  three: 3,
-  twelve: 12,
-  twenty: 20,
-  two: 2,
 };
 
 const WHITESPACE_PATTERN = /\s+/;
