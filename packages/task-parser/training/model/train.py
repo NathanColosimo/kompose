@@ -17,7 +17,7 @@ import torch
 from safetensors.torch import load_file, save_file
 from torch import nn
 
-from augment import build_pools, compose, swap_phrases, typo
+from augment import build_pools, compose, holiday_in_title, holiday_pools, swap_holiday, swap_phrases, typo
 from features import IGNORE, LABELS, ROOT, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
 from model import Config, TaskParser, load_electra, load_run
 
@@ -54,6 +54,7 @@ class Examples(torch.utils.data.Dataset):
     def __init__(self, rows, featurizer, tag_pool, augment):
         self.rows, self.featurizer, self.tag_pool, self.augment = rows, featurizer, tag_pool, augment
         self.pools = build_pools(rows, json.loads((ROOT / "data/phrases.json").read_text())) if augment else {}
+        self.holidays = holiday_pools(self.pools)
 
     def __len__(self):
         return len(self.rows)
@@ -91,8 +92,22 @@ class Examples(torch.utils.data.Dataset):
                 text, spans = composed
             else:
                 text, spans = swap_phrases(text, spans, self.pools)
+        # The teachers miss most holidays and never saw misspelled dates, so
+        # examples given those are learned from their labels alone.
+        teach = True
         if self.augment:
-            text, spans = typo(text, spans)
+            text, spans, typed = typo(text, spans)
+            teach = typed in (None, "T", "D")
+            if not transfer:
+                roll = random.random()
+                changed = None
+                if roll < 0.06:
+                    changed = swap_holiday(text, spans, self.holidays)
+                elif roll < 0.09:
+                    changed = holiday_in_title(text, spans)
+                if changed:
+                    text, spans = changed
+                    teach = False
             roll = random.random()
             changed = text
             if roll < 0.15:
@@ -110,7 +125,7 @@ class Examples(torch.utils.data.Dataset):
             "encoded": encoded,
             "targets": [IGNORE] * len(targets) if transfer else targets,
             # The teacher covers every text token; transfer rows (unlabelled) only have it.
-            "distill": [t != IGNORE for t in targets],
+            "distill": [teach and t != IGNORE for t in targets],
             "spans": spans,
             "tag_targets": [-1.0] * tag_count if transfer else [1.0 if tag in gold else 0.0 for tag in tags[:tag_count]],
             "text": text,

@@ -20,7 +20,7 @@ this directory; Python runs with `uv run`.
 The test set (`gen/testset.ts`) and the date benchmark (`gen/datebench.ts`)
 are built independently of the training data; see their headers.
 
-## The shipped model (v18q)
+## The shipped model (v21q)
 
 Each generation distills from the previous ones (start with no `--teacher`).
 `DATA` is `data/clean/{train-merged,train2-merged,train3-merged}.final.jsonl`
@@ -39,9 +39,19 @@ load) is a frozen artifact: the scripts that produced it were removed.
   --epochs 2 --pretrained-lr 3e-5 --lr 3e-4 --embedding-lr 5e-5 \
   --teacher runs/v18-kd runs/v17-kd runs/v16-kd \
   --transfer data/transfer/train8.jsonl --out runs/v18q
-uv run python model/export.py runs/v18q   # → runs/v18q/task-parser.bin
-bun gen/evaluate.ts runs/v18q both   # test 66.4% all right, 79.4% usable
+# The same fine-tune again from v18q, after the holiday augmentations
+# (misspelled dates, holiday swaps, holidays inside titles) were added.
+./run-snapshot.sh v21q train.py --data $DATA --init-from runs/v18q --qat \
+  --epochs 2 --pretrained-lr 3e-5 --lr 3e-4 --embedding-lr 5e-5 \
+  --teacher runs/v18-kd runs/v17-kd runs/v16-kd \
+  --transfer data/transfer/train8.jsonl --out runs/v21q
+uv run python model/export.py runs/v21q   # → runs/v21q/task-parser.bin
+bun gen/evaluate.ts runs/v21q both
+# test 66.6% all right, 79.3% usable; handwritten 85.0%; holidays 82.6%
 ```
+
+`testset/holidays.json` checks holidays: misspelled ones that date the task
+and ones inside a title that don't.
 
 To ship, copy `runs/<name>/task-parser.bin` to `../task-parser.bin`. To
 check the TypeScript forward pass, run

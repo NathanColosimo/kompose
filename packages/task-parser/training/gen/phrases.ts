@@ -7,6 +7,7 @@
  */
 import { writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
+import { HOLIDAYS } from "../../src/datetime/holidays";
 import { resolveFields, type TaskFields } from "../../src/fields";
 import type { Label } from "../../src/spans";
 import { pick, ROOT, rng } from "./common";
@@ -107,13 +108,74 @@ function relative() {
     `mid ${pick(random, MONTH_NAMES)}`,
     "end of q4",
     "end of quarter",
-    pick(random, [
-      "christmas",
-      "thanksgiving",
-      "new year's eve",
-      "halloween",
-      "valentine's day",
-    ]),
+    holiday(),
+  ]);
+}
+
+/**
+ * Holidays as people write them (the typo augmentation misspells them);
+ * the table's own keys are normalized forms ("father day") nobody types.
+ */
+const UNTYPED = new Set([
+  "autumn",
+  "cinco de may",
+  "fall",
+  "father day",
+  "martin luther king jr",
+  "mother day",
+  "patrick day",
+  "president day",
+  "spring",
+  "summer",
+  "veteran day",
+  "winter",
+]);
+const HOLIDAY_FORMS = [
+  ...Object.keys(HOLIDAYS).filter((name) => !UNTYPED.has(name)),
+  "Christmas",
+  "Thanksgiving",
+  "christmas eve",
+  "Christmas Eve",
+  "christmas day",
+  "cinco de mayo",
+  "new year's eve",
+  "New Year's Day",
+  "new years",
+  "mother's day",
+  "Mother's Day",
+  "mothers day",
+  "father's day",
+  "fathers day",
+  "valentine's day",
+  "valentines day",
+  "Valentine's",
+  "st patrick's day",
+  "St. Patrick's Day",
+  "st paddys day",
+  "the 4th of july",
+  "fourth of july",
+  "July 4th",
+  "Easter Sunday",
+  "Memorial Day",
+  "Labor Day",
+  "Black Friday",
+  "veterans day",
+  "presidents day",
+  "MLK day",
+];
+
+function holiday() {
+  const name = pick(random, HOLIDAY_FORMS);
+  return pick(random, [
+    name,
+    name,
+    `on ${name}`,
+    `${name} eve`,
+    `${name} weekend`,
+    `the day after ${name}`,
+    `the day before ${name}`,
+    `${name} morning`,
+    `${name} ${2027 + Math.floor(random() * 2)}`,
   ]);
 }
 
@@ -127,6 +189,7 @@ function start() {
     weekday,
     day,
     relative,
+    holiday,
     () => `${weekday()} ${time()}`,
     () => `${weekday()} at ${time()}`,
     () => `${relative()} at ${time()}`,
@@ -145,6 +208,7 @@ function due() {
     weekday,
     day,
     relative,
+    holiday,
     () => `${weekday()} ${clock()}`,
     () => `${day()} ${clock()}`,
     () => `${weekday()} at ${clock()}`,

@@ -1,6 +1,6 @@
 /**
  * End-to-end evaluation of an exported model through the TypeScript parser.
- * Usage: bun gen/evaluate.ts <run dir> [handwritten|test|both]
+ * Usage: bun gen/evaluate.ts <run dir> [handwritten|holidays|test|both]
  * Prints per-field accuracy and the first failures.
  */
 import { readFile } from "node:fs/promises";
@@ -9,7 +9,7 @@ import { createTaskParser } from "../../src/parser";
 import { plainFields, ROOT, readJsonl, sortKeys } from "./common";
 
 const [run = "", which = "both"] = process.argv.slice(2);
-const SHOW = 15;
+const SHOW = Number(process.env.SHOW ?? 15);
 
 type Actual = ReturnType<typeof plainFields>;
 /** Fields left out are expected empty. */
@@ -120,25 +120,31 @@ function equal(field: Field, expected: Expected, actual: Actual) {
   }
 }
 
+/** Sets in testset/<name>.json: cases written by hand at one `now`. */
+const HAND_SETS = ["handwritten", "holidays"];
+
 async function loadCases(): Promise<Record<string, Case[]>> {
   const sets: Record<string, Case[]> = {};
-  if (which !== "test") {
+  for (const name of HAND_SETS) {
+    if (which !== name && which !== "both") {
+      continue;
+    }
     const hand = JSON.parse(
-      await readFile(`${ROOT}testset/handwritten.json`, "utf8")
+      await readFile(`${ROOT}testset/${name}.json`, "utf8")
     ) as {
       cases: { expect: Expected; tags?: string[]; text: string }[];
       defaultTags: string[];
       now: string;
     };
-    sets.handwritten = hand.cases.map((c, index) => ({
+    sets[name] = hand.cases.map((c, index) => ({
       expect: c.expect,
-      id: `hand/${index}`,
+      id: `${name}/${index}`,
       now: hand.now,
       tags: c.tags ?? hand.defaultTags,
       text: c.text,
     }));
   }
-  if (which !== "handwritten") {
+  if (which === "test" || which === "both") {
     const rows = await readJsonl<{
       fields: Expected;
       focus: string;
@@ -220,7 +226,7 @@ for (const [name, cases] of Object.entries(await loadCases())) {
   console.log(
     FIELDS.map((field) => `${field} ${pct(correct[field])}`).join(" | ")
   );
-  if (name === "handwritten" || name === "test") {
+  if (HAND_SETS.includes(name) || name === "test") {
     console.log(failures.join("\n"));
   }
 }
