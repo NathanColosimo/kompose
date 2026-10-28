@@ -39,7 +39,7 @@ export type DaySpec =
   | { type: "yearOf"; years: number; part: Part }
   | { type: "quarterEnd"; quarter: number | null }
   /** `eve`: the day before ("christmas eve"). */
-  | { type: "holiday"; name: string; eve: boolean }
+  | { type: "holiday"; name: string; eve: boolean; year: number | null }
   /** nth weekdays of a month ("first monday of next month"); -1 = last. */
   | {
       type: "nthWeekday";
@@ -840,15 +840,19 @@ function readHoliday(tokens: Token[], i: number): Read<DaySpec> {
     at += 1;
   }
   for (const [name, words] of HOLIDAY_WORDS) {
-    if (words.every((text, k) => is(tokens[at + k], text))) {
+    if (words.every((text, k) => is(tokens[at + k], text, `${text}s`))) {
       let length = at - i + words.length;
       if (is(tokens[i + length], "day")) {
         length += 1;
       }
       const eve = is(tokens[i + length], "eve");
+      if (eve) {
+        length += 1;
+      }
+      const year = yearAt(tokens, i + length);
       return {
-        length: length + (eve ? 1 : 0),
-        value: { eve, name, type: "holiday" },
+        length: length + (year?.length ?? 0),
+        value: { eve, name, type: "holiday", year: year?.value ?? null },
       };
     }
   }

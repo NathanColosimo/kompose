@@ -276,7 +276,7 @@ function resolveDay(
       return before(end, today) ? end.add({ years: 1 }) : end;
     }
     case "holiday":
-      return holidayDate(spec.name, spec.eve, today);
+      return holidayDate(spec.name, spec.eve, spec.year, today);
     case "nthWeekday":
     case "nthDay":
       return monthRuleDate(spec, today);
@@ -505,9 +505,10 @@ function clockOffset(phrase: Phrase, now: Temporal.ZonedDateTime): When | null {
 function shiftedDay(phrase: Phrase, today: Temporal.PlainDate) {
   let date = phrase.day ? resolveDay(phrase.day, today) : null;
   if (date && phrase.weekendOf) {
-    // The Saturday of that day's weekend (Monday holidays: the one before).
+    // The Saturday of that day's weekend: the one before for Monday to
+    // Wednesday (Labor Day), the one after for Thursday (Thanksgiving).
     const shift =
-      { 1: -2, 2: -3, 3: -4, 4: -5, 5: 1, 6: 0, 7: -1 }[date.dayOfWeek] ?? 0;
+      { 1: -2, 2: -3, 3: -4, 4: 2, 5: 1, 6: 0, 7: -1 }[date.dayOfWeek] ?? 0;
     date = date.add({ days: shift });
   }
   if (date && phrase.shift) {

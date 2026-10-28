@@ -5,6 +5,7 @@
  */
 import {
   ALIASES,
+  CITY_ZONES,
   CORRECTABLE,
   GERMAN_HOURS,
   JAPANESE,
@@ -14,6 +15,7 @@ import {
   ORDINAL_WORDS,
   ROMANCE_HOURS,
   TRANSLATIONS,
+  ZONES,
 } from "./lexicon";
 
 export type Token =
@@ -37,7 +39,7 @@ const TRANSLATION_PATTERNS = TRANSLATIONS.map(
     ] as const
 );
 const SPACES = /\s+/g;
-const POSSESSIVE = /'s$/;
+const POSSESSIVE = /'s?$/;
 const LETTERS_ONLY = /^\p{L}+$/u;
 const DIGIT_LED = /^\d/;
 const GERMAN_HALF = new RegExp(
@@ -295,6 +297,10 @@ const KNOWN = new Set([
   ...Object.keys(ORDINAL_WORDS),
   ...CORRECTABLE,
   ...MONTHS,
+  // Zone words aren't typos of date words ("eastern" isn't "easter").
+  ...[...Object.keys(ZONES), ...Object.keys(CITY_ZONES)].flatMap((name) =>
+    name.split(" ")
+  ),
 ]);
 
 /** The nearest date word for a misspelling, or the word itself. */

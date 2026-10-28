@@ -51,7 +51,10 @@ const laborDay: DateRule = (year) => nthWeekday(year, 9, 1, 1);
 const mlkDay: DateRule = (year) => nthWeekday(year, 1, 1, 3);
 const presidentsDay: DateRule = (year) => nthWeekday(year, 2, 1, 3);
 
-/** US holidays and season starts people use as dates, by their words. */
+/**
+ * US holidays and season starts people use as dates, by their words (each
+ * word may also be read with an "s": "mothers day", "new years").
+ */
 export const HOLIDAYS: Record<string, DateRule> = {
   autumn: fixed(9, 22),
   "black friday": (year) => thanksgiving(year).add({ days: 1 }),
@@ -74,35 +77,32 @@ export const HOLIDAYS: Record<string, DateRule> = {
   "labor day": laborDay,
   "labour day": laborDay,
   "martin luther king day": mlkDay,
+  "martin luther king jr": mlkDay,
   "memorial day": (year) => nthWeekday(year, 5, 1, -1),
   mlk: mlkDay,
   "mother day": (year) => nthWeekday(year, 5, 7, 2),
   "new year": fixed(1, 1),
-  "new years": fixed(1, 1),
   nye: fixed(12, 31),
   "patrick day": fixed(3, 17),
   "president day": presidentsDay,
-  "presidents day": presidentsDay,
-  "presidents' day": presidentsDay,
   spring: fixed(3, 20),
   summer: fixed(6, 21),
   "tax day": fixed(4, 15),
   thanksgiving,
   valentine: fixed(2, 14),
-  valentines: fixed(2, 14),
   "veteran day": fixed(11, 11),
-  "veterans day": fixed(11, 11),
   winter: fixed(12, 21),
   xmas: fixed(12, 25),
 };
 
 /**
- * The next date (on or after `today`) of a holiday by name, or of its eve
- * (the day before).
+ * A holiday's date by name, or its eve's (the day before): in `year` if
+ * given, else the next one on or after `today`.
  */
 export function holidayDate(
   name: string,
   eve: boolean,
+  year: number | null,
   today: Temporal.PlainDate
 ) {
   const rule = lookup(HOLIDAYS, name);
@@ -111,6 +111,9 @@ export function holidayDate(
   }
   const on = (year: number) =>
     eve ? rule(year).subtract({ days: 1 }) : rule(year);
+  if (year !== null) {
+    return on(year);
+  }
   const thisYear = on(today.year);
   return Temporal.PlainDate.compare(thisYear, today) >= 0
     ? thisYear

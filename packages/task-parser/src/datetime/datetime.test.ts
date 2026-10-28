@@ -99,6 +99,18 @@ describe("resolveWhen", () => {
     ["Labor Day at 9am", "2027-09-06", "09:00"],
     ["labor day weekend", "2027-09-04", null],
     ["boxing day", "2026-12-26", null],
+    // Typos, plurals and possessives, "st"/"jr", a year, a Thursday's weekend
+    ["thanksgivng", "2026-11-26", null],
+    ["halloweeen", "2026-10-31", null],
+    ["memorial dya", "2027-05-31", null],
+    ["mothers day", "2027-05-09", null],
+    ["presidents' day", "2027-02-15", null],
+    ["st paddys day", "2027-03-17", null],
+    ["martin luther king jr day", "2027-01-18", null],
+    ["christmas eve 2027", "2027-12-24", null],
+    ["thanksgiving weekend", "2026-11-28", null],
+    // Zone words aren't corrected to holidays.
+    ["3pm eastern", "2026-10-27", "15:00"],
     // Time zones: abbreviations name the region, with its daylight saving.
     ["3pm PT", "2026-10-27", "18:00"],
     ["9am PST", "2026-10-27", "12:00"],
