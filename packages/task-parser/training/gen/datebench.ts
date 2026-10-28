@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
-import { resolveFields as currentResolveFields } from "../../src/fields";
+import { resolveFields } from "../../src/fields";
 import { parseMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
 import { rng } from "./plan";
@@ -363,11 +363,6 @@ interface BenchRow extends Written {
 }
 
 async function score() {
-  // --legacy: the gpu-time resolver as of the last commit (legacy-src/).
-  const resolveFields = process.argv.includes("--legacy")
-    ? ((await import(`${ROOT}legacy-src/fields.ts`))
-        .resolveFields as typeof currentResolveFields)
-    : currentResolveFields;
   const rows = await readJsonl<BenchRow>(BENCH);
   const show = Number(arg || 20);
   const byCategory: Record<string, { n: number; right: number }> = {};
@@ -377,7 +372,7 @@ async function score() {
   for (const row of rows) {
     const { spans, text } = parseMarkup(row.marked);
     const started = performance.now();
-    const resolved = await resolveFields({
+    const resolved = resolveFields({
       now: Temporal.ZonedDateTime.from(row.now),
       spans,
       tagNames: [],

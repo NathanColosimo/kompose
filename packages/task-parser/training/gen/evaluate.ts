@@ -12,6 +12,9 @@ const ROOT = new URL("../", import.meta.url).pathname;
 const [run = "", which = "both"] = process.argv.slice(2);
 const showIndex = process.argv.indexOf("--show");
 const show = showIndex > 0 ? Number(process.argv[showIndex + 1]) : 15;
+const thresholdIndex = process.argv.indexOf("--threshold");
+const tagThreshold =
+  thresholdIndex > 0 ? Number(process.argv[thresholdIndex + 1]) : undefined;
 
 export interface Expected {
   description?: string | null;
@@ -199,11 +202,12 @@ async function loadCases(): Promise<Record<string, Case[]>> {
 }
 
 const file = await readFile(`${run}/task-parser.bin`);
-const parser = createTaskParser(
+const parse = createTaskParser(
   file.buffer.slice(
     file.byteOffset,
     file.byteOffset + file.byteLength
-  ) as ArrayBuffer
+  ) as ArrayBuffer,
+  { tagThreshold }
 );
 const sets = await loadCases();
 for (const [name, cases] of Object.entries(sets)) {
@@ -216,7 +220,7 @@ for (const [name, cases] of Object.entries(sets)) {
   let elapsed = 0;
   for (const c of cases) {
     const started = performance.now();
-    const parsed = await parser.parse(c.text, {
+    const parsed = parse(c.text, {
       now: Temporal.ZonedDateTime.from(c.now),
       tags: c.tags.map((tagName) => ({ id: tagName, name: tagName })),
     });

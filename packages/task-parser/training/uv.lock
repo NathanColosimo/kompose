@@ -789,7 +789,6 @@ name = "training"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "safetensors" },
     { name = "tokenizers" },
@@ -798,7 +797,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "huggingface-hub", specifier = ">=2.3.0" },
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "safetensors", specifier = ">=0.8.0" },
     { name = "tokenizers", specifier = ">=0.23.3" },

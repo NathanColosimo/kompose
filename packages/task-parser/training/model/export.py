@@ -3,10 +3,9 @@
 uv run python model/export.py runs/<name> [--out ../assets/task-parser.bin]
 
 Layout: b"KTP1", u32 header length, JSON header, then tensors (4-byte aligned).
-Header: {"config", "vocab", "tensors": [{"name", "shape", "dtype", "offset", "scales"?}],
-"merges"?, "added"?} (merges and added tokens for byte-level BPE models).
-2-D weights are int8 with one f32 scale per row; with --word-bits 4 the word
-table is int4 instead (two per byte, low nibble first, stored +8).
+Header: {"config", "vocab", "tensors": [{"name", "shape", "dtype", "offset", "scales"?}]}.
+2-D weights of 4096+ values (not the small feature tables) are int8 with one
+f32 scale per row; everything else is f32.
 Also writes <run>/dequantized.safetensors so Python can score the exact runtime weights.
 """
 
@@ -34,21 +33,10 @@ def quantize(weight: np.ndarray):
     return q, scales.astype(np.float32)
 
 
-def quantize4(weight: np.ndarray):
-    scales = np.abs(weight).max(axis=1) / 7.0
-    scales[scales == 0] = 1.0
-    q = np.clip(np.round(weight / scales[:, None]), -7, 7).astype(np.int8)
-    unsigned = (q + 8).astype(np.uint8)
-    packed = unsigned[:, 0::2] | (unsigned[:, 1::2] << 4)
-    return packed, q, scales.astype(np.float32)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run")
     parser.add_argument("--out")
-    # 4-bit words cut the file ~30% for about a point of accuracy.
-    parser.add_argument("--word-bits", type=int, default=8, choices=(4, 8))
     args = parser.parse_args()
     run = Path(args.run)
     config = json.loads((run / "config.json").read_text())
@@ -69,12 +57,7 @@ def main():
 
     for name, tensor in state.items():
         array = tensor.float().numpy()
-        quantized = array.ndim == 2 and (name == "words.weight" or array.shape[0] * array.shape[1] >= 4096) and not name.startswith(("positions", "specials", "shapes", "segments", "flags"))
-        if name == "words.weight" and args.word_bits == 4:
-            packed, q, scales = quantize4(array)
-            entry = {"name": name, "shape": list(array.shape), "dtype": "i4", "offset": push(packed.tobytes()), "scales": push(scales.tobytes())}
-            dequantized[name] = torch.from_numpy(q.astype(np.float32) * scales[:, None])
-        elif quantized:
+        if array.ndim == 2 and array.size >= 4096 and not name.startswith(("positions", "specials", "shapes", "segments", "flags")):
             q, scales = quantize(array)
             entry = {"name": name, "shape": list(array.shape), "dtype": "i8", "offset": push(q.tobytes()), "scales": push(scales.tobytes())}
             dequantized[name] = torch.from_numpy(q.astype(np.float32) * scales[:, None])
@@ -83,13 +66,7 @@ def main():
             dequantized[name] = torch.from_numpy(array.astype(np.float32))
         tensors.append(entry)
 
-    # Byte-level BPE tokenizers (Ettin) also need their merges and added tokens.
-    spec = json.loads((ROOT / "data/embeddings" / config["embeddings"] / "tokenizer.json").read_text())
-    extra = {}
-    if spec["model"].get("type") == "BPE":
-        extra["merges"] = [m if isinstance(m, str) else " ".join(m) for m in spec["model"]["merges"]]
-        extra["added"] = [a["content"] for a in spec.get("added_tokens", [])]
-    header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab, **extra}, ensure_ascii=False).encode()
+    header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab}, ensure_ascii=False).encode()
     header += b" " * ((-len(header)) % 4)
     out = Path(args.out) if args.out else run / "task-parser.bin"
     out.parent.mkdir(parents=True, exist_ok=True)

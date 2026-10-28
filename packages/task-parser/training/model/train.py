@@ -1,6 +1,6 @@
 """Train the task parser.
 
-uv run python model/train.py --data data/clean/train.final.jsonl --out runs/name [--embeddings potion-base-4M]
+uv run python model/train.py --data data/clean/train.final.jsonl --out runs/name [--embeddings electra-small]
 """
 
 from __future__ import annotations
@@ -8,27 +8,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import math
+import os
 import random
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 from safetensors.torch import load_file, save_file
 from torch import nn
 
 from augment import build_pools, compose, swap_phrases, typo
 from features import IGNORE, LABELS, Featurizer, bio_targets, decode_spans, utf16_to_codepoints, viterbi, words_of
-from model import Config, TaskParser, load_electra, load_modernbert
+from model import Config, TaskParser, load_electra, load_run
 
 # run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
 ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
 
 
 def load(paths: list[str]) -> list[dict]:
-    """Rows from clean jsonl files, with reviewed labels (gen/review.ts) applied."""
+    """Rows from clean jsonl files, with reviewed labels (data/overrides.jsonl) applied."""
     overrides = {}
     path = ROOT / "data" / "overrides.jsonl"
     if path.exists():
@@ -55,17 +54,9 @@ def is_dev(row: dict) -> bool:
     return int(hashlib.md5(batch.encode()).hexdigest(), 16) % 20 == 0
 
 
-def fold_of(row: dict, folds: int) -> int:
-    batch = "/".join(row["id"].split("/")[:2])
-    return int(hashlib.sha1(batch.encode()).hexdigest(), 16) % folds
-
-
 class Examples(torch.utils.data.Dataset):
-    def __init__(self, rows, featurizer, tag_pool, augment, late=False, joint_too=False):
+    def __init__(self, rows, featurizer, tag_pool, augment):
         self.rows, self.featurizer, self.tag_pool, self.augment = rows, featurizer, tag_pool, augment
-        # late: tags as separate sequences; joint_too: also the appended form
-        # (for a teacher that reads tags that way).
-        self.late, self.joint_too = late, joint_too
         phrases = ROOT / "data" / "phrases.json"
         extra = json.loads(phrases.read_text()) if phrases.exists() else None
         self.pools = build_pools(rows, extra) if augment else {}
@@ -112,7 +103,7 @@ class Examples(torch.utils.data.Dataset):
             if len(changed) == len(text):
                 text = changed
         tags, gold = self.tag_list(row)
-        encoded = self.featurizer.encode(text, tags, late=self.late)
+        encoded = self.featurizer.encode(text, tags)
         targets = bio_targets(encoded, spans)
         # The teacher's predictions cover every text token; transfer rows
         # (unlabelled) only have those.
@@ -120,20 +111,19 @@ class Examples(torch.utils.data.Dataset):
         tag_count = len(encoded.tag_positions)
         return {
             "encoded": encoded,
-            "joint": self.featurizer.encode(text, tags[:tag_count]) if self.joint_too else None,
             "targets": [IGNORE] * len(targets) if transfer else targets,
             "distill": [d or t != IGNORE for d, t in zip(distill, targets)],
             "spans": spans,
             "tag_targets": [-1.0] * tag_count if transfer else [1.0 if tag in gold else 0.0 for tag in tags[:tag_count]],
             "row": row,
             "text": text,
-            "tags": tags[: len(encoded.tag_positions)],
+            "tags": tags[:tag_count],
             "gold": gold,
         }
 
 
-def tensors_of(encodeds):
-    """Padded input tensors for a list of Encoded sequences."""
+def collate(items):
+    encodeds = [item["encoded"] for item in items]
     n = max(len(e.ids) for e in encodeds)
     t = max(1, max(len(e.tag_positions) for e in encodeds))
     def pad(values, size, fill):
@@ -148,55 +138,22 @@ def tensors_of(encodeds):
         "mask": torch.tensor([pad([True] * len(e.ids), n, False) for e in encodeds]),
         "tag_positions": torch.tensor([pad(e.tag_positions, t, -1) for e in encodeds]),
         "tag_valid": torch.tensor([pad([True] * len(e.tag_positions), t, False) for e in encodeds]),
+        "targets": torch.tensor([pad(i["targets"], n, IGNORE) for i in items]),
+        "distill": torch.tensor([pad(i["distill"], n, False) for i in items]),
+        "tag_targets": torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items]),
     }
     # Which tokens are each tag's words, and which are text words (for similarity).
     members = torch.zeros(len(encodeds), t, n, dtype=torch.bool)
     text_words = torch.zeros(len(encodeds), n, dtype=torch.bool)
     for b, e in enumerate(encodeds):
-        if not e.tag_sequences:
-            for k, start in enumerate(e.tag_positions):
-                end = e.tag_positions[k + 1] if k + 1 < len(e.tag_positions) else len(e.ids)
-                members[b, k, start + 1:end] = True
+        for k, start in enumerate(e.tag_positions):
+            end = e.tag_positions[k + 1] if k + 1 < len(e.tag_positions) else len(e.ids)
+            members[b, k, start + 1:end] = True
         for i, special in enumerate(e.specials):
             if special == 0 and e.segments[i] == 0:
                 text_words[b, i] = True
     batch["tag_members"] = members
     batch["text_words"] = text_words
-    # Pad tokens are real ids 0 with no special; mark them as [PAD] special.
-    batch["specials"] = torch.where(batch["mask"], batch["specials"], torch.zeros_like(batch["specials"]))
-    if any(e.tag_sequences for e in encodeds):
-        length = max(len(seq.ids) for e in encodeds for seq in e.tag_sequences)
-        def seqs(field, fill):
-            rows = []
-            for e in encodeds:
-                padded = [pad(getattr(seq, field), length, fill) for seq in e.tag_sequences]
-                rows.append(padded + [[fill] * length] * (t - len(padded)))
-            return torch.tensor(rows)
-        batch["tag_seq_ids"] = seqs("ids", 0)
-        batch["tag_seq_specials"] = seqs("specials", 0)
-        batch["tag_seq_shapes"] = seqs("shapes", 0)
-        batch["tag_seq_spaced"] = seqs("spaced", 0)
-        mask = torch.zeros(len(encodeds), t, length, dtype=torch.bool)
-        for b, e in enumerate(encodeds):
-            for k, seq in enumerate(e.tag_sequences):
-                mask[b, k, : len(seq.ids)] = True
-        # Padding tags attend to their first slot so softmax stays finite.
-        mask[..., 0] = True
-        batch["tag_seq_mask"] = mask
-    return batch
-
-
-def collate(items):
-    batch = tensors_of([item["encoded"] for item in items])
-    n = batch["ids"].shape[1]
-    t = batch["tag_positions"].shape[1]
-    def pad(values, size, fill):
-        return values + [fill] * (size - len(values))
-    batch["targets"] = torch.tensor([pad(i["targets"], n, IGNORE) for i in items])
-    batch["distill"] = torch.tensor([pad(i["distill"], n, False) for i in items])
-    batch["tag_targets"] = torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items])
-    if items[0]["joint"] is not None:
-        batch["joint"] = tensors_of([item["joint"] for item in items])
     return batch, items
 
 
@@ -207,9 +164,7 @@ def evaluate(model, loader, device, threshold=0.5):
     exact_spans = exact_tags = exact_all = total = 0
     with torch.no_grad():
         for batch, items in loader:
-            tensors = {k: v.to(device) for k, v in batch.items() if k != "joint"}
-            joint = {k: v.to(device) for k, v in batch["joint"].items()} if "joint" in batch else tensors
-            span_logits, tag_logits = model(tensors)
+            span_logits, tag_logits = model({k: v.to(device) for k, v in batch.items()})
             log_probs = span_logits.log_softmax(-1).cpu().tolist()
             tag_probs = torch.sigmoid(tag_logits).cpu().tolist()
             for item, scores, probs in zip(items, log_probs, tag_probs):
@@ -249,15 +204,46 @@ def evaluate(model, loader, device, threshold=0.5):
 DISTILL_TEMPERATURE = 2.0
 
 
+def fake_quantize_activations(x: torch.Tensor) -> torch.Tensor:
+    """Each token's [min, max] mapped onto ±63 around its midpoint, as the
+    WebAssembly kernel does; gradients pass straight through."""
+    low, high = x.amin(-1, keepdim=True), x.amax(-1, keepdim=True)
+    middle = (high + low) / 2
+    step = ((high - low) / 2).clamp_min(1e-8) / 63
+    rounded = torch.round((x - middle) / step).clamp(-63, 63) * step + middle
+    return x + (rounded - x).detach()
+
+
+def fake_quantize_weight(w: torch.Tensor) -> torch.Tensor:
+    """Per-row int8, as export.py quantize; gradients pass straight through."""
+    step = w.abs().amax(-1, keepdim=True).clamp_min(1e-8) / 127
+    return w + (torch.round(w / step).clamp(-127, 127) * step - w).detach()
+
+
+class QuantizedLinear(nn.Linear):
+    def forward(self, x):
+        return nn.functional.linear(fake_quantize_activations(x), fake_quantize_weight(self.weight), self.bias)
+
+
+def quantize_aware(model: nn.Module):
+    """Linear layers that export.py stores as int8 run through the runtime's
+    rounding (export.py: 2-D weights with at least 4096 values). The class is
+    swapped, not the method, so EMA's deep copy keeps it."""
+    count = 0
+    for module in model.modules():
+        if type(module) is nn.Linear and module.weight.numel() >= 4096:
+            module.__class__ = QuantizedLinear
+            count += 1
+    print(f"quantization-aware: {count} linear layers", flush=True)
+
+
 def load_teacher(run: str, embeddings: str, device):
     """A trained run, frozen, to distill from. It must share the tokenizer."""
-    config = json.loads((Path(run) / "config.json").read_text())
+    teacher = load_run(Path(run))
     tokenizer = lambda name: (ROOT / "data/embeddings" / name / "tokenizer.json").read_bytes()  # noqa: E731
-    if tokenizer(config["embeddings"]) != tokenizer(embeddings):
-        raise SystemExit(f"teacher uses {config['embeddings']}, student {embeddings}: tokens would not line up")
-    teacher = TaskParser(Config(**{k: v for k, v in config.items() if k not in ("embeddings", "dev")}))
-    teacher.load_state_dict(load_file(str(Path(run) / "model.safetensors")))
-    return teacher.to(device).eval()
+    if tokenizer(teacher.config.embeddings) != tokenizer(embeddings):
+        raise SystemExit(f"teacher uses {teacher.config.embeddings}, student {embeddings}: tokens would not line up")
+    return teacher.to(device)
 
 
 def distill_loss(span_logits, tag_logits, teacher_spans, teacher_tags, tensors):
@@ -280,27 +266,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", nargs="+", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--embeddings", default="potion-base-4M")
+    parser.add_argument("--embeddings", default="electra-small")
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1.5e-3)
     parser.add_argument("--embedding-lr", type=float, default=2e-4)
     parser.add_argument("--pretrained-lr", type=float, default=1e-4)
     parser.add_argument("--ema", type=float, default=0.0, help="evaluate and save an exponential moving average of the weights (e.g. 0.999)")
-    parser.add_argument("--label-smoothing", type=float, default=0.0)
     parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>... with the same tokenizer: distill their averaged span and tag predictions")
     parser.add_argument("--distill-weight", type=float, default=0.5)
     parser.add_argument("--transfer", nargs="*", default=[], help="data/transfer/*.jsonl: unlabelled rows learned only from the teacher")
-    parser.add_argument("--keep-layers", type=int, default=0, help="pretrained encoders: use only the first N layers (faster)")
-    parser.add_argument("--dim", type=int, default=160)
-    parser.add_argument("--layers", type=int, default=4)
-    parser.add_argument("--heads", type=int, default=4)
-    parser.add_argument("--ffn", type=int, default=448)
+    parser.add_argument("--qat", action="store_true", help="train through the runtime's int8 rounding: int8 weights and 7-bit activations (kernel.ts)")
+    parser.add_argument("--init-from", default="", help="runs/<name>: start from a trained run's weights (same shape)")
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--late-tags", action="store_true", help="encode tags as separate cacheable sequences matched by cross-attention")
-    parser.add_argument("--bf16", action="store_true", help="bfloat16 autocast (faster for base/large encoders)")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--fold", default="", help="k/n: hold out fold k of n (for out-of-fold predictions)")
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -308,25 +287,10 @@ def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     embedding_dir = ROOT / "data" / "embeddings" / args.embeddings
     featurizer = Featurizer(str(embedding_dir / "tokenizer.json"))
-    electra = args.embeddings.startswith(("electra", "minilm", "bert"))
-    modern = args.embeddings.startswith("ettin")
-    weights = load_file(str(embedding_dir / "model.safetensors"))
-    if electra:
-        embeddings = weights["electra.embeddings.word_embeddings.weight"].float()
-    elif modern:
-        embeddings = weights["model.embeddings.tok_embeddings.weight"].float()
-    else:
-        embeddings = weights["embeddings"].float()
 
     rows = load(args.data)
-    if args.fold:
-        # k/n: train on every batch outside fold k; that fold is the dev set.
-        k, n = (int(x) for x in args.fold.split("/"))
-        dev_rows = [r for r in rows if fold_of(r, n) == k]
-        train_rows = [r for r in rows if fold_of(r, n) != k]
-    else:
-        train_rows = [r for r in rows if not is_dev(r)]
-        dev_rows = [r for r in rows if is_dev(r)]
+    train_rows = [r for r in rows if not is_dev(r)]
+    dev_rows = [r for r in rows if is_dev(r)]
     if not dev_rows:  # tiny runs: hold out every 10th row instead
         dev_rows, train_rows = rows[::10], [r for i, r in enumerate(rows) if i % 10]
     if args.transfer:
@@ -338,56 +302,30 @@ def main():
     tag_pool = sorted({tag for r in train_rows for tag in r["tagList"]})
     print(f"{len(train_rows)} train, {len(dev_rows)} dev, {len(tag_pool)} distinct tags", flush=True)
 
-    if modern:
-        pretrained = json.loads((embedding_dir / "config.json").read_text())
-        config = Config(
-            arch="modernbert", dim=pretrained["hidden_size"], layers=args.keep_layers or pretrained["num_hidden_layers"],
-            heads=pretrained["num_attention_heads"], ffn=pretrained["intermediate_size"], dropout=args.dropout,
-            embedding_dim=embeddings.shape[1], vocab=embeddings.shape[0], rope_theta=pretrained["global_rope_theta"],
-            local_window=pretrained["local_attention"], global_every=pretrained["global_attn_every_n_layers"],
-        )
-        model = TaskParser(config)
-        load_modernbert(model, str(embedding_dir / "model.safetensors"), featurizer.tokenizer.get_vocab())
-        model = model.to(device)
-    elif electra:
-        pretrained = json.loads((embedding_dir / "config.json").read_text())
-        config = Config(
-            arch="electra", dim=pretrained["hidden_size"], layers=args.keep_layers or pretrained["num_hidden_layers"],
-            heads=pretrained["num_attention_heads"], ffn=pretrained["intermediate_size"], dropout=args.dropout,
-            embedding_dim=embeddings.shape[1], vocab=embeddings.shape[0],
-        )
-        model = TaskParser(config)
-        load_electra(model, str(embedding_dir / "model.safetensors"), featurizer.tokenizer.get_vocab())
-        model = model.to(device)
-    else:
-        config = Config(
-            dim=args.dim, layers=args.layers, heads=args.heads, ffn=args.ffn, dropout=args.dropout,
-            embedding_dim=embeddings.shape[1], vocab=embeddings.shape[0],
-        )
-        model = TaskParser(config, embeddings).to(device)
-    if args.late_tags:
-        # The cross-attention head is new; add it after loading pretrained weights.
-        config.late_tags = True
-        fresh = TaskParser(config)
-        model.cross_q, model.cross_kv, model.cross_out = fresh.cross_q.to(device), fresh.cross_kv.to(device), fresh.cross_out.to(device)
-        model.config = config
+    pretrained = json.loads((embedding_dir / "config.json").read_text())
+    config = Config(
+        dim=pretrained["hidden_size"], layers=pretrained["num_hidden_layers"], heads=pretrained["num_attention_heads"],
+        ffn=pretrained["intermediate_size"], dropout=args.dropout, embedding_dim=pretrained["embedding_size"], vocab=pretrained["vocab_size"],
+    )
+    model = TaskParser(config)
+    load_electra(model, str(embedding_dir / "model.safetensors"), featurizer.tokenizer.get_vocab())
+    model = model.to(device)
+    if args.init_from:
+        model.load_state_dict(load_file(str(Path(args.init_from) / "model.safetensors")))
+        print(f"initialised from {args.init_from}", flush=True)
+    if args.qat:
+        quantize_aware(model)
     encoder_params = sum(p.numel() for n, p in model.named_parameters() if not n.startswith("words."))
-    print(f"encoder parameters: {encoder_params:,}; embedding table: {embeddings.numel():,}", flush=True)
+    print(f"encoder parameters: {encoder_params:,}; embedding table: {model.words.weight.numel():,}", flush=True)
 
-    teacher_late = [json.loads((Path(run) / "config.json").read_text()).get("late_tags", False) for run in args.teacher]
-    joint_too = any(late != args.late_tags for late in teacher_late)
     train_loader = torch.utils.data.DataLoader(
-        Examples(train_rows, featurizer, tag_pool, augment=True, late=args.late_tags, joint_too=joint_too), batch_size=args.batch, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
+        Examples(train_rows, featurizer, tag_pool, augment=True), batch_size=args.batch, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
     )
     dev_loader = torch.utils.data.DataLoader(
-        Examples(dev_rows, featurizer, tag_pool, augment=False, late=args.late_tags), batch_size=128, collate_fn=collate, num_workers=2
+        Examples(dev_rows, featurizer, tag_pool, augment=False), batch_size=128, collate_fn=collate, num_workers=2
     )
     # Pretrained parts fine-tune gently; new parts (features, heads) learn at --lr.
-    pretrained_prefixes = (
-        ("layers.", "project.", "positions.", "segments.", "embed_norm.") if electra
-        else ("layers.", "embed_norm.", "norm.") if modern
-        else ()
-    )
+    pretrained_prefixes = ("layers.", "project.", "positions.", "segments.", "embed_norm.")
     groups = {"words": [], "pretrained": [], "new": []}
     for name, parameter in model.named_parameters():
         key = "words" if name.startswith("words.") else "pretrained" if name.startswith(pretrained_prefixes) else "new"
@@ -404,7 +342,7 @@ def main():
     schedule = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda s: min(1.0, (s + 1) / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, s / steps)))
     )
-    span_loss = nn.CrossEntropyLoss(ignore_index=IGNORE, label_smoothing=args.label_smoothing)
+    span_loss = nn.CrossEntropyLoss(ignore_index=IGNORE)
     teachers = [load_teacher(run, args.embeddings, device) for run in args.teacher]
     # An exponential moving average of the weights is usually a little better
     # than the last step; it is what gets evaluated and saved when enabled.
@@ -420,11 +358,8 @@ def main():
     for epoch in range(args.epochs):
         total = 0.0
         for step, (batch, _) in enumerate(train_loader):
-            tensors = {k: v.to(device) for k, v in batch.items() if k != "joint"}
-            joint = {k: v.to(device) for k, v in batch["joint"].items()} if "joint" in batch else tensors
-            with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
-                span_logits, tag_logits = model(tensors)
-            span_logits, tag_logits = span_logits.float(), tag_logits.float()
+            tensors = {k: v.to(device) for k, v in batch.items()}
+            span_logits, tag_logits = model(tensors)
             labelled = tensors["targets"] != IGNORE
             loss = (
                 span_loss(span_logits.reshape(-1, span_logits.shape[-1]), tensors["targets"].reshape(-1))
@@ -437,15 +372,8 @@ def main():
                     tag_logits[tag_mask], tensors["tag_targets"][tag_mask], pos_weight=torch.tensor(2.0, device=device)
                 )
             if teachers:
-                with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
-                    # A teacher reading tags the other way gets its own inputs;
-                    # the text tokens come first either way.
-                    outputs = [
-                        [o.float() for o in teacher(tensors if teacher.config.late_tags == config.late_tags else joint)]
-                        for teacher in teachers
-                    ]
-                    n = span_logits.shape[1]
-                    outputs = [[spans[:, :n], tags] for spans, tags in outputs]
+                with torch.no_grad():
+                    outputs = [teacher(tensors) for teacher in teachers]
                     teacher_spans = torch.stack([o[0] for o in outputs]).mean(0)
                     teacher_tags = torch.stack([o[1] for o in outputs]).mean(0)
                 loss = (1 - args.distill_weight) * loss + args.distill_weight * distill_loss(

@@ -1,12 +1,10 @@
 "use client";
 
+import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
 import {
-  createTaskParser,
-  type ParsedTask,
-  type TagOption,
-  type TaskParser,
-} from "@kompose/task-parser/parser";
-import { createWorkerTaskParser } from "@kompose/task-parser/worker-client";
+  createWorkerTaskParser,
+  type RemoteTaskParser,
+} from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
@@ -27,43 +25,30 @@ export type MagicParse =
   | { status: "reading"; previous: ParsedTask | null }
   | { status: "done"; result: ParsedTask };
 
-/** Weights from packages/task-parser/training (model/export.py). */
-const MODEL_URL = "/task-parser.bin";
-
-/**
- * The parser runs in a Worker so a parse (up to ~20 ms) never blocks typing;
- * without Worker support it runs here.
- */
-async function loadParser(signal: AbortSignal): Promise<TaskParser> {
-  if (typeof Worker !== "undefined") {
-    const worker = new Worker(
-      new URL("./task-parser.worker.ts", import.meta.url),
-      { type: "module" }
-    );
-    try {
-      return await createWorkerTaskParser(worker, MODEL_URL);
-    } catch (error) {
-      worker.terminate();
-      throw error;
-    }
+/** The parser runs in a Worker so a parse never blocks typing. */
+async function loadParser(): Promise<RemoteTaskParser> {
+  const worker = new Worker(
+    new URL("./task-parser.worker.ts", import.meta.url),
+    { type: "module" }
+  );
+  try {
+    return await createWorkerTaskParser(worker);
+  } catch (error) {
+    worker.terminate();
+    throw error;
   }
-  const response = await fetch(MODEL_URL, { signal });
-  if (!response.ok) {
-    throw new Error(`Task parser weights: HTTP ${response.status}`);
-  }
-  return createTaskParser(await response.arrayBuffer());
 }
 
 const parserQuery = queryOptions({
   gcTime: Number.POSITIVE_INFINITY,
-  queryFn: ({ signal }) => loadParser(signal),
+  queryFn: loadParser,
   queryKey: ["task-parser", "model"],
   retry: 1,
   staleTime: Number.POSITIVE_INFINITY,
 });
 
 function parseQuery(
-  parser: TaskParser | undefined,
+  parse: RemoteTaskParser | undefined,
   text: string,
   tags: TagOption[]
 ) {
@@ -72,13 +57,13 @@ function parseQuery(
     .round({ roundingMode: "floor", smallestUnit: "minute" })
     .toString();
   return queryOptions({
-    enabled: parser !== undefined,
+    enabled: parse !== undefined,
     gcTime: 60_000,
     queryFn: () => {
-      if (!parser) {
+      if (!parse) {
         throw new Error("Task parser not loaded");
       }
-      return parser.parse(text, { tags });
+      return parse(text, { tags });
     },
     queryKey: ["task-parser", "parse", minute, tags, text],
     retry: false,

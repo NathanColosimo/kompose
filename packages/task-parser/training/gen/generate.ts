@@ -8,7 +8,28 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
 import { EXAMPLES } from "./examples";
 import { type Focus, type Persona, planSlot, rng, type Slot } from "./plan";
-import { outputSchema } from "./schema";
+
+/** The final answer: examples written for the batch's slots. */
+const outputSchema = {
+  additionalProperties: false,
+  properties: {
+    examples: {
+      items: {
+        additionalProperties: false,
+        properties: {
+          marked: { type: "string" },
+          slot: { type: "integer" },
+          tags: { items: { type: "string" }, type: "array" },
+        },
+        required: ["slot", "marked", "tags"],
+        type: "object",
+      },
+      type: "array",
+    },
+  },
+  required: ["examples"],
+  type: "object",
+};
 
 const ROOT = new URL("../", import.meta.url).pathname;
 const SLOTS_PER_BATCH = 15;

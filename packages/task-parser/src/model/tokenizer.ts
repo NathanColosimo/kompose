@@ -2,18 +2,13 @@
  * BERT-style WordPiece tokenizer matching Hugging Face `tokenizers` with
  * BertNormalizer (clean text, CJK spacing, lowercase + strip accents) and
  * BertPreTokenizer. Offsets are UTF-16 indices into the original text.
- * training/model/parity.py checks this against the Python tokenizer.
+ * tokenizer.parity.test.ts checks this against the Python tokenizer.
  */
 
 export interface Piece {
   end: number;
   id: number;
   start: number;
-}
-
-/** WordPiece here, or byte-level BPE (bpe.ts) for ModernBERT-style models. */
-export interface Tokenizer {
-  encode: (text: string) => Piece[];
 }
 
 const MAX_WORD_CHARS = 100;
@@ -110,7 +105,7 @@ function preTokenize(chars: Char[]): Char[][] {
   return words;
 }
 
-export class WordPiece implements Tokenizer {
+export class WordPiece {
   readonly #vocab: Map<string, number>;
   readonly #unk: number;
 

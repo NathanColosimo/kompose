@@ -150,7 +150,6 @@ export function resolveFields({
   const dueText = duePieces.text;
   const repeatText = textOf(spans, "R");
 
-  const start = resolvePieces(startPieces, now);
   const repeat = repeatText
     ? resolveRepeat({
         dueText,
@@ -159,7 +158,8 @@ export function resolveFields({
         startText,
         until: endsRepeat(spans, text),
       })
-    : null;
+    : weekdayList(startText, now);
+  const start = repeat && !repeatText ? null : resolvePieces(startPieces, now);
   const anchor = start ?? repeat;
   // "start nov 5 at 1:15, due 4pm": a deadline with only a clock time is on
   // the start's day (or the next one after the start).
@@ -186,6 +186,23 @@ export function resolveFields({
     tagNames,
     title: sentence(textOf(spans, "T", text).replace(LEADING_TO_PATTERN, "")),
   };
+}
+
+const ALTERNATIVE_PATTERN = /\b(?:or|either)\b/i;
+
+/**
+ * A start that lists several weekdays ("gym mon wed fri at 6am") repeats
+ * weekly on them, unless they're alternatives ("mon or tue").
+ */
+function weekdayList(startText: string, now: Temporal.ZonedDateTime) {
+  if (!startText || ALTERNATIVE_PATTERN.test(startText)) {
+    return null;
+  }
+  const resolved = resolveWhen(startText, { now, repeating: true });
+  const recurrence = resolved?.recurrence;
+  return recurrence?.freq === "WEEKLY" && recurrence.byDay.length >= 2
+    ? resolved
+    : null;
 }
 
 const UNTIL_GAP_PATTERN =

@@ -11,9 +11,9 @@ labels. Generators, verifiers and the test set all follow it.
 | --- | --- |
 | title | `T` spans, joined with a space, first letter capitalized |
 | description | `D` spans, joined with a space, first letter capitalized |
-| startDate, startTime | `S` span, resolved by gpu-time |
-| dueDate | `U` span, resolved by gpu-time |
-| recurrence | `R` span (+ `S`/`U` anchor), resolved by gpu-time |
+| startDate, startTime | `S` span, resolved by the date grammar (src/datetime) |
+| dueDate | `U` span, resolved by the date grammar |
+| recurrence | `R` span (+ `S`/`U` anchor), resolved by the date grammar |
 | durationMinutes | `M` span, resolved by the duration parser |
 | links | `L` spans |
 | tags | chosen from the user's tag list (see Tags) |

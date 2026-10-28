@@ -2,7 +2,7 @@
  * Model inputs for (text, tag list). Mirrors training/model/features.py;
  * src/model/features.parity.test.ts checks the two produce the same inputs.
  */
-import type { Tokenizer } from "./tokenizer";
+import type { WordPiece } from "./tokenizer";
 
 export const LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"] as const;
 export const TAG_NAMES = [
@@ -52,15 +52,7 @@ export interface Encoded {
   spaced: number[];
   specials: number[];
   tagPositions: number[];
-  /**
-   * Late-tag models: each tag as its own sequence, independent of the text
-   * (so its encoding can be cached by name).
-   */
-  tagSequences?: { encoded: Encoded; name: string }[];
 }
-
-/** Tags read by a late-tag model, at most. */
-const MAX_LATE_TAGS = 64;
 
 export function findLinks(text: string): [number, number][] {
   const links: [number, number][] = [];
@@ -122,67 +114,15 @@ function spacedBefore(source: string, start: number) {
   return start > 0 && WHITESPACE.test(source[start - 1] ?? "") ? 1 : 0;
 }
 
-/** A tag on its own for late-tag models: [TAG] and its word pieces. */
-export function encodeTag(tokenizer: Tokenizer, tag: string): Encoded {
-  const out: Encoded = {
-    ids: [-1],
-    links: [],
-    offsets: [[-1, -1]],
-    overlap: [0],
-    segments: [1],
-    shapes: [SHAPES.indexOf("special")],
-    spaced: [0],
-    specials: [TAG],
-    tagPositions: [],
-  };
-  for (const piece of tokenizer.encode(tag).slice(0, MAX_TAG_PIECES)) {
-    out.ids.push(piece.id);
-    out.specials.push(0);
-    out.shapes.push(shape(tag.slice(piece.start, piece.end)));
-    out.segments.push(1);
-    out.spaced.push(spacedBefore(tag, piece.start));
-    out.overlap.push(0);
-    out.offsets.push([-1, -1]);
-  }
-  return out;
-}
-
-/** The text alone (words still flagged when in a tag), tags separately. */
-function encodeLate(
-  tokenizer: Tokenizer,
+/**
+ * Model inputs for a text and the user's tags, appended after the text.
+ * Mirrors `Featurizer.encode` in training/model/features.py.
+ */
+export function encode(
+  tokenizer: WordPiece,
   text: string,
   tagList: string[]
 ): Encoded {
-  const out = encode(tokenizer, text, []);
-  const tagWords = wordsOf(tagList.join(" "));
-  out.offsets.forEach(([start, end], index) => {
-    if (start >= 0 && !out.specials[index]) {
-      out.overlap[index] = tagWords.has(text.slice(start, end).toLowerCase())
-        ? 1
-        : 0;
-    }
-  });
-  out.tagSequences = tagList
-    .slice(0, MAX_LATE_TAGS)
-    .map((name) => ({ encoded: encodeTag(tokenizer, name), name }));
-  out.tagPositions = out.tagSequences.map(() => 0);
-  return out;
-}
-
-/**
- * Model inputs for a text and the user's tags: the tags appended after the
- * text, or (`late`) as separate sequences. Mirrors `Featurizer.encode` in
- * training/model/features.py.
- */
-export function encode(
-  tokenizer: Tokenizer,
-  text: string,
-  tagList: string[],
-  { late = false }: { late?: boolean } = {}
-): Encoded {
-  if (late) {
-    return encodeLate(tokenizer, text, tagList);
-  }
   const out: Encoded = {
     ids: [],
     links: findLinks(text),
@@ -244,7 +184,7 @@ export function encode(
 /** Each tag after the text: [TAG] and its word pieces, segment 1. */
 function appendTags(
   out: Encoded,
-  tokenizer: Tokenizer,
+  tokenizer: WordPiece,
   tagList: string[],
   textWords: Set<string>
 ) {

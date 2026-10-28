@@ -9,7 +9,7 @@ from features import Featurizer  # noqa: E402
 
 # run-snapshot.sh runs a copy of this file elsewhere; TRAINING_ROOT points home.
 ROOT = Path(os.environ.get("TRAINING_ROOT") or Path(__file__).resolve().parent.parent)
-featurizer = Featurizer(str(ROOT / "data/embeddings/potion-base-4M/tokenizer.json"))
+featurizer = Featurizer(str(ROOT / "data/embeddings/electra-small/tokenizer.json"))
 
 
 def utf16(text, index):

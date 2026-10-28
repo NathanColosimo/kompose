@@ -192,6 +192,24 @@ describe("resolveFields", () => {
     expect(result.startDate).toBe("2026-11-02");
   });
 
+  test("a start listing weekdays repeats on them", async () => {
+    const result = await fields("[T:gym] [S:mon wed fri at 6am]");
+    expect(result.recurrence).toEqual({
+      byDay: ["MO", "WE", "FR"],
+      freq: "WEEKLY",
+      interval: 1,
+    });
+    expect([result.startDate, result.startTime]).toEqual([
+      "2026-10-26",
+      "06:00:00",
+    ]);
+  });
+
+  test("alternative weekdays don't repeat", async () => {
+    const result = await fields("[T:dentist] [S:mon or tue]");
+    expect([result.recurrence, result.startDate]).toEqual([null, "2026-10-26"]);
+  });
+
   test("normalizes links", async () => {
     const result = await fields(
       "[T:review] [L:github.com/a/b/pull/1]. [L:https://x.dev/y]"
