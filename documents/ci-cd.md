@@ -11,7 +11,8 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | Job | What it checks |
 | --- | --- |
 | Lint and format | `biome ci .` |
-| Type-check and build | `turbo run type-check --affected`, then the iOS bundle (`expo export`, including the Hermes bytecode compile) and the Electron main/preload build, both `--affected` |
+| Lint workflows | `actionlint` (with `shellcheck` on `run:` blocks) on `.github/workflows/` |
+| Type-check and build | `turbo run type-check --affected`, then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (native dependency versions against the Expo SDK; it calls the Expo API, so it can fail on network issues) |
 | Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
 Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
@@ -26,7 +27,7 @@ push to main
  └─ changes: what changed since each target last shipped?
      └─ web (if changed): Vercel builds a staged production deployment
          → drizzle-kit migrate → vercel promote (traffic switches here)
-         ├─ mobile (if changed): same fingerprint → eas update (OTA)
+         ├─ mobile (if changed): same fingerprint → Linux runner: eas update (OTA)
          │                       new fingerprint → macOS runner: eas build --local → eas submit
          └─ desktop (if the shell changed): macOS runner: build, sign, notarize,
                                             verify, GitHub release (Latest)
@@ -45,6 +46,10 @@ push to main
   Vercel with the project's production env vars and turbo remote cache, but
   serves no traffic until `vercel promote`. A failed migration leaves the
   current deployment live.
+- Before migrating, `vercel curl` POSTs to `/api/rpc/tags/list` on the staged
+  deployment with no session and expects oRPC's `UNAUTHORIZED` error. That
+  proves the route, auth context, and API code load. It doesn't touch the
+  database, so it works before migrations run.
 - Vercel's Git integration stays off (`apps/web/vercel.json`), so there are no
   preview deployments. `buildCommand` in `vercel.json` is `turbo run build`;
   migrations only run in the workflow, never in a Vercel build.
@@ -69,6 +74,10 @@ last *successful* release, not the previous commit.
   fingerprint, since OTA updates only reach binaries with the same runtime. Server-only changes can also mark `native` as affected
   (it imports `@kompose/api` for types); that just publishes an identical OTA
   update.
+- **Submitting**: `eas submit --no-wait` ends the job once EAS accepts the
+  upload instead of waiting ~20 minutes for App Store Connect processing.
+  Expo and Apple email if processing fails; `shipped/ios-binary` has already
+  moved by then, so rebuild by retagging it (or with the next native change).
 - **Native build cache**: a cold iOS build takes about 20 minutes, mostly
   Xcode compiling the third-party native modules (React Native core is
   prebuilt). The build runs with ccache (`USE_CCACHE=1`), and `actions/cache`
@@ -97,6 +106,28 @@ Rerun the failed jobs, or run the workflow from the Actions tab
 (`workflow_dispatch`). Targets that already shipped are skipped because their
 markers moved. A desktop run that fails after uploading leaves a draft release;
 the rerun reuses it under the same version.
+
+To inspect the markers locally, run `git fetch --tags --force`. Plain
+`git fetch --tags` doesn't update tags that already exist locally, and every
+`shipped/*` tag moves.
+
+### Testing workflow changes
+
+The release workflow only runs on `main`, so a mistake there shows up in a
+real release. Before merging:
+
+1. Run `actionlint` locally (`brew install actionlint shellcheck`). CI runs it
+   too.
+2. Run each new step's exact command locally against real inputs, e.g. a
+   staged deployment URL for a `vercel` call. CLI flag handling (such as
+   `vercel curl` passing its flags through to curl) only shows up when run.
+3. For behaviour that only exists on a runner (caches, Xcode, ccache), push a
+   temporary `workflow_dispatch` workflow containing just those steps to a
+   `tmp/` branch, run it with `gh workflow run <file> --ref tmp/<name>`, then
+   delete the branch and any caches it saved (`gh cache delete`).
+
+Wait for a run with `gh run watch <id> --exit-status` (in the background)
+rather than polling `gh run view`.
 
 ## Migrations: expand only
 
@@ -201,7 +232,7 @@ To start tracking from a known state instead (e.g. when re-creating the
 workflow later), tag what is already live before the first run:
 
 ```bash
-git fetch origin --tags
+git fetch origin --tags --force  # --force updates tags that moved
 LIVE=<sha of the commit currently deployed>
 git checkout "$LIVE"
 git tag -f shipped/web "$LIVE" && git tag -f shipped/mobile "$LIVE"

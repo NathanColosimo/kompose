@@ -7,7 +7,7 @@ import type {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { ORPCInstrumentation } from "@orpc/otel";
+import { ORPCInstrumentation } from "@orpc/opentelemetry";
 import { Layer } from "effect";
 
 /**

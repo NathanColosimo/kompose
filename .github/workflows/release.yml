@@ -24,6 +24,7 @@ jobs:
     outputs:
       web: ${{ steps.affected.outputs.web }}
       mobile: ${{ steps.affected.outputs.mobile }}
+      ios-build: ${{ steps.ios.outputs.build }}
       desktop: ${{ steps.desktop.outputs.changed }}
       desktop-fingerprint: ${{ steps.desktop.outputs.fingerprint }}
     steps:
@@ -48,6 +49,20 @@ jobs:
           }
           echo "web=$(affected web shipped/web)" >> "$GITHUB_OUTPUT"
           echo "mobile=$(affected native shipped/mobile)" >> "$GITHUB_OUTPUT"
+      # Picks the mobile runner: macOS only when a new binary is needed. Same
+      # check as the mobile job's (see there); Linux and macOS resolve the
+      # same fingerprint.
+      - id: ios
+        if: steps.affected.outputs.mobile == 'true'
+        working-directory: apps/native
+        run: |
+          fingerprint=$(bunx expo-updates runtimeversion:resolve --platform ios | jq -r .runtimeVersion)
+          shipped=$(git tag -l --format='%(contents:subject)' shipped/ios-binary)
+          if [[ "$fingerprint" == "$shipped" ]]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
       # The desktop app loads https://kompose.dev, so only shell changes need
       # a new binary. Turbo's per-task file inputs and locked dependency
       # versions for the Electron build (and the workspace packages it bundles)
@@ -102,6 +117,25 @@ jobs:
           url=$(bunx vercel@65.0.0 deploy --prod --skip-domain --yes --token "$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Staged $url" >> "$GITHUB_STEP_SUMMARY"
+      # Calls a real API procedure without a session: it must load the API code
+      # and answer UNAUTHORIZED. Catches a deploy that builds but can't serve
+      # requests before it migrates or takes traffic. `vercel curl` gets past
+      # Deployment Protection with the project's automation bypass secret.
+      - name: Smoke-test staged deployment
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # vercel curl forwards its flags to curl; the CLI reads VERCEL_TOKEN.
+          bunx vercel@65.0.0 curl "$URL/api/rpc/tags/list" -- \
+            --silent --show-error --output "$RUNNER_TEMP/smoke.json" \
+            --request POST --header "content-type: application/json" --data "{}"
+          if ! jq -e '.json.code == "UNAUTHORIZED"' "$RUNNER_TEMP/smoke.json" > /dev/null; then
+            cat "$RUNNER_TEMP/smoke.json"
+            exit 1
+          fi
       - name: Migrate database
         working-directory: packages/db
         env:
@@ -128,7 +162,8 @@ jobs:
       contents: write
     needs: [changes, web]
     if: ${{ !cancelled() && (needs.web.result == 'success' || needs.web.result == 'skipped') && needs.changes.outputs.mobile == 'true' }}
-    runs-on: macos-26
+    # OTA updates don't need macOS, and Linux runners start sooner.
+    runs-on: ${{ needs.changes.outputs.ios-build == 'true' && 'macos-26' || 'ubuntu-latest' }}
     environment: production
     concurrency:
       group: release-mobile
@@ -144,6 +179,8 @@ jobs:
       # Same value as the app's runtimeVersion (policy: fingerprint). An OTA
       # update only reaches binaries with the same runtime, so it must match
       # the latest submitted binary (shipped/ios-binary), not any older one.
+      # Rechecked here because an earlier run may have shipped a binary while
+      # this job waited its turn.
       - id: fingerprint
         working-directory: apps/native
         run: |
@@ -171,8 +208,12 @@ jobs:
           xcode-version: "26.6"
       # ccache reuses C/C++/Objective-C objects from the last native build, so
       # only files that changed recompile. Swift is not cached.
+      # React Native's compiler wrapper runs $CCACHE_BINARY, but Xcode doesn't
+      # pass that build setting to the compiler, so it must be in the env too.
       - if: steps.fingerprint.outputs.build == 'true'
-        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ccache
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install ccache
+          echo "CCACHE_BINARY=$(command -v ccache)" >> "$GITHUB_ENV"
       - if: steps.fingerprint.outputs.build == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -181,6 +222,8 @@ jobs:
           restore-keys: ccache-ios-
       # --local builds on this runner instead of EAS's paid build queue;
       # signing credentials and the build number still come from EAS.
+      # Submitting doesn't wait for App Store Connect to process the build;
+      # Expo and Apple email if that fails.
       # USE_CCACHE turns on React Native's ccache wrapper in pod install, and a
       # fixed working directory keeps compiler paths stable for cache hits.
       - name: Build and submit
@@ -199,7 +242,7 @@ jobs:
             --output "$RUNNER_TEMP/kompose.ipa"
           ccache --show-stats
           bunx eas-cli@25.3.0 submit -p ios --profile production --path "$RUNNER_TEMP/kompose.ipa" \
-            --non-interactive --wait
+            --non-interactive --no-wait
           git tag -fa shipped/ios-binary -m "$FINGERPRINT" "$GITHUB_SHA"
           git push -f origin refs/tags/shipped/ios-binary
       - name: Mark mobile shipped
