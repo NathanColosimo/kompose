@@ -16,7 +16,7 @@ import {
  */
 export interface MagicParse {
   /**
-   * "off": the model isn't loaded yet, or the input isn't sent to it.
+   * "off": the model isn't loaded yet, or there's no text.
    * "reading": running; `task` is the result for earlier text, if any.
    */
   status: "off" | "reading" | "done";
@@ -61,21 +61,21 @@ function parseQuery(text: string, tags: TagOption[]) {
 }
 
 /**
- * Parses `text` with the user's tags for the live preview. Pass null to skip
- * parsing (for example, when explicit tokens are typed). `resolve` returns the
- * parse for submit, waiting for the model if it is still loading.
+ * Parses `text` (if any) with the user's tags for the live preview.
+ * `resolve` returns the parse for submit, waiting for the model if it is
+ * still loading.
  */
-export function useMagicTask(text: string | null, tags: TagOption[]) {
+export function useMagicTask(text: string, tags: TagOption[]) {
   const queryClient = useQueryClient();
   const { data: parser } = useQuery(parserQuery);
   const query = useQuery({
-    ...parseQuery(text ?? "", tags),
-    enabled: parser !== undefined && text !== null,
+    ...parseQuery(text, tags),
+    enabled: parser !== undefined && text !== "",
     placeholderData: keepPreviousData,
   });
 
   const resolve = async (): Promise<ParsedTask | null> => {
-    if (text === null) {
+    if (!text) {
       return null;
     }
     try {
@@ -86,7 +86,7 @@ export function useMagicTask(text: string | null, tags: TagOption[]) {
   };
 
   let parse: MagicParse = { status: "off", task: null };
-  if (parser && text !== null && !query.isError) {
+  if (parser && text && !query.isError) {
     const task = query.data ?? null;
     const done = task && !(query.isFetching || query.isPlaceholderData);
     parse = { status: done ? "done" : "reading", task };

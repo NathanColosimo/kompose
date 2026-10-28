@@ -9,8 +9,8 @@ import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
+import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask } from "@kompose/task-parser/parser";
-import type { TaskRecurrence } from "@kompose/task-parser/recurrence";
 import {
   CalendarIcon,
   CheckIcon,
@@ -38,16 +38,12 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import {
-  formatDuration,
-  type ParsedTaskInput,
-  parseTaskInput,
-} from "@/lib/task-input-parser";
-import { formatPlainDate } from "@/lib/temporal-utils";
+import { formatDuration, formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { cn } from "@/lib/utils";
 
-const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
+const TAG_QUERY_PATTERN = /#([^#]*)$/;
+const URL_PATTERN = /https?:\/\/\S+/g;
 const EMPTY_TAGS: TagSelect[] = [];
 
 /** Fallback title when no typed title and no metadata */
@@ -59,39 +55,35 @@ function fallbackTitle(link: string): string {
   }
 }
 
-/** True when the input uses any explicit token (=, >, ~, #). */
-function hasExplicitTokens(parsed: ParsedTaskInput) {
-  return (
-    parsed.durationRaw !== null ||
-    parsed.dueDateRaw !== null ||
-    parsed.startDateRaw !== null ||
-    parsed.tagNamesRaw.length > 0
-  );
-}
-
 /** What the create item shows and creates. */
-interface TaskDraft extends ParsedTaskInput {
-  description: string | null;
-  recurrence: TaskRecurrence | null;
+interface TaskDraft extends TaskFields {
+  tagNames: string[];
 }
 
-/** The typed fields, overlaid with the magic box's parse when there is one. */
-function draft(typed: ParsedTaskInput, task: ParsedTask | null): TaskDraft {
-  if (!task) {
-    return { ...typed, description: null, recurrence: null };
+/** The model's parse, or the plain text (links apart) until there is one. */
+function draft(text: string, task: ParsedTask | null): TaskDraft {
+  if (task) {
+    return { ...task, tagNames: task.tags.map((tag) => tag.name) };
   }
   return {
-    ...typed,
-    description: task.description,
-    dueDate: task.dueDate,
-    durationMinutes: task.durationMinutes,
-    links: task.links,
-    recurrence: task.recurrence,
-    startDate: task.startDate,
-    startTime: task.startTime,
-    tagNames: task.tags.map((tag) => tag.name),
-    title: task.title,
+    description: null,
+    dueDate: null,
+    durationMinutes: null,
+    links: text.match(URL_PATTERN) ?? [],
+    recurrence: null,
+    startDate: null,
+    startTime: null,
+    tagNames: [],
+    title: text.replace(URL_PATTERN, "").trim(),
   };
+}
+
+/** A linked video's length in minutes, if its metadata has one. */
+function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
+  if (meta && "durationSeconds" in meta && meta.durationSeconds > 0) {
+    return Math.ceil(meta.durationSeconds / 60);
+  }
+  return null;
 }
 
 /** Build task data from parsed input and resolved link metadata */
@@ -114,20 +106,11 @@ function buildTaskDataFromParsed(
     })
   );
 
-  let title = parsed.title;
+  let title = parsed.title || firstLinkMeta?.title || "";
   let durationMinutes = parsed.durationMinutes ?? 30;
-
-  if (firstLinkMeta) {
-    if (!title && firstLinkMeta.title) {
-      title = firstLinkMeta.title;
-    }
-    if (
-      !parsed.durationMinutes &&
-      "durationSeconds" in firstLinkMeta &&
-      firstLinkMeta.durationSeconds > 0
-    ) {
-      durationMinutes = Math.ceil(firstLinkMeta.durationSeconds / 60);
-    }
+  const linkMinutes = linkDurationMinutes(firstLinkMeta);
+  if (!parsed.durationMinutes && linkMinutes !== null) {
+    durationMinutes = linkMinutes;
   }
 
   if (!title && parsed.links.length > 0) {
@@ -220,25 +203,6 @@ function smartFieldClassName(parse: MagicParse) {
   }
 }
 
-const TOKEN_HINTS = [
-  ["=", "duration"],
-  [">", "due"],
-  ["~", "start"],
-  ["#", "tag"],
-] as const;
-
-function TokenHints() {
-  return (
-    <div className="flex justify-center gap-3 text-muted-foreground">
-      {TOKEN_HINTS.map(([token, field]) => (
-        <span key={token}>
-          <code className="rounded bg-muted px-1">{token}</code> {field}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 interface CommandBarCreateTaskProps {
   /** Callback when a task is successfully created (to clear/reset input) */
   onCreated: () => void;
@@ -250,16 +214,10 @@ interface CommandBarCreateTaskProps {
 /**
  * CommandBarCreateTask - Create task sub-view.
  *
- * Free text ("call mom tomorrow at 4 for 30m #family") is read by the
- * on-device model (useMagicTask). Input with explicit tokens is parsed by
- * their syntax instead:
- * - Title: text before any special tokens
- * - =duration: task duration (e.g., =2h, =30m)
- * - >date: due date (e.g., >monday, >tomorrow)
- * - ~date: start date (e.g., ~friday, ~next week)
- * - #tag: one of the user's tags (e.g., #work)
- *
- * Shows a live preview and creates the task on Enter.
+ * The on-device model (useMagicTask) reads the title, dates, duration,
+ * repeat, links, description and tags from free text ("call mom tomorrow
+ * at 4 for 30m #family"); typing # suggests the user's tags. Shows a live
+ * preview and creates the task on Enter.
  */
 export function CommandBarCreateTask({
   search,
@@ -270,24 +228,13 @@ export function CommandBarCreateTask({
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
-  // Parse the input into structured task data
-  const typed: ParsedTaskInput = useMemo(
-    () => parseTaskInput(search),
-    [search]
-  );
-
-  // Free-form input (no tokens) goes to the magic box model, which reads
-  // the title, dates, duration, repeat, links, description and tags.
   const tagOptions = useMemo(
     () => tags.map((tag) => ({ id: tag.id, name: tag.name })),
     [tags]
   );
-  const freeText = search.trim();
-  const magic = useMagicTask(
-    hasExplicitTokens(typed) || !freeText ? null : freeText,
-    tagOptions
-  );
-  const parsed = draft(typed, magic.parse.task);
+  const text = search.trim();
+  const magic = useMagicTask(text, tagOptions);
+  const parsed = draft(text, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
 
@@ -411,24 +358,19 @@ export function CommandBarCreateTask({
     if (!isValid || createTask.isPending || resolving) {
       return;
     }
-    if (magic.parse.status !== "reading") {
+    if (magic.parse.status === "done") {
       createFrom(parsed);
       return;
     }
     // Enter can beat the parse (or the model download); wait for it.
     startResolving(async () => {
-      createFrom(draft(typed, await magic.resolve()));
+      createFrom(draft(text, await magic.resolve()));
     });
   };
 
-  // Effective duration for display — explicit input takes priority
+  // Duration for display; a parsed one takes priority over the link's
   const effectiveDuration =
-    parsed.durationMinutes ??
-    (firstLinkMeta &&
-    "durationSeconds" in firstLinkMeta &&
-    firstLinkMeta.durationSeconds > 0
-      ? Math.ceil(firstLinkMeta.durationSeconds / 60)
-      : null);
+    parsed.durationMinutes ?? linkDurationMinutes(firstLinkMeta);
 
   // Keep the rendered label free to update from link metadata.
   const createItemLabel =
@@ -436,20 +378,15 @@ export function CommandBarCreateTask({
     firstLinkMeta?.title ||
     (parsed.links[0] ? fallbackTitle(parsed.links[0]) : "New task from link");
 
-  // Keep the command item value stable across async link parsing so cmdk does
-  // not drop selection when the preview label changes after metadata resolves.
-  const createItemValue = typed.title || typed.links.join(" ") || "create-task";
+  // Keep the command item value stable across async parsing so cmdk does not
+  // drop selection when the preview label changes.
+  const createItemValue = text || "create-task";
 
   return (
     <>
       {!isValid && matchingTags.length === 0 && (
         <CommandEmpty>
-          <div className="space-y-2">
-            <p>
-              Describe a task, like “call mom tomorrow at 4 for 30m #family”
-            </p>
-            <TokenHints />
-          </div>
+          Describe a task, like “call mom tomorrow at 4 for 30m #family”
         </CommandEmpty>
       )}
 
@@ -472,93 +409,85 @@ export function CommandBarCreateTask({
       )}
 
       {isValid && (
-        <>
-          <CommandGroup heading="Create Task">
-            <CommandItem onSelect={handleCreate} value={createItemValue}>
-              <CheckIcon className="text-muted-foreground" />
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">
-                    {createItemLabel}
-                  </span>
-                  <OnDeviceStatus parse={magic.parse} resolving={resolving} />
-                </div>
-                {parsed.description && (
-                  <span
-                    className={cn(
-                      "line-clamp-2 text-muted-foreground text-xs",
-                      smartClassName
-                    )}
-                  >
-                    {parsed.description}
-                  </span>
-                )}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {parsed.startDate && (
-                    <PreviewBadge className={smartClassName}>
-                      <PlayCircleIcon className="size-3.5" />
-                      {startLabel(parsed.startDate, parsed.startTime)}
-                    </PreviewBadge>
-                  )}
-
-                  {parsed.recurrence && (
-                    <PreviewBadge className={smartClassName}>
-                      <RepeatIcon className="size-3.5" />
-                      {getTaskRecurrenceDisplayText(parsed.recurrence)}
-                    </PreviewBadge>
-                  )}
-
-                  {parsed.dueDate && (
-                    <PreviewBadge className={smartClassName}>
-                      <CalendarIcon className="size-3.5" />
-                      Due {formatPlainDate(parsed.dueDate, DATE_FORMAT)}
-                    </PreviewBadge>
-                  )}
-
-                  {effectiveDuration !== null && (
-                    <PreviewBadge className={smartClassName}>
-                      <ClockIcon className="size-3.5" />
-                      {formatDuration(effectiveDuration)}
-                    </PreviewBadge>
-                  )}
-
-                  {/* Link badges — one per detected URL */}
-                  {parsed.links.map((url) => {
-                    const meta = linkMetaMap[url];
-                    return (
-                      <PreviewBadge key={url}>
-                        {pendingUrls.has(url) ? (
-                          <Loader2Icon className="size-3.5 animate-spin" />
-                        ) : (
-                          <Link2Icon className="size-3.5" />
-                        )}
-                        {meta ? getProviderLabel(meta.provider) : "Link"}
-                      </PreviewBadge>
-                    );
-                  })}
-
-                  {parsed.tagNames.map((name) => {
-                    const tag = tags.find((t) => t.name === name);
-                    if (!tag) {
-                      return null;
-                    }
-                    const Icon = tagIconMap[tag.icon];
-                    return (
-                      <PreviewBadge className={smartClassName} key={tag.id}>
-                        <Icon className="size-3.5" />
-                        {tag.name}
-                      </PreviewBadge>
-                    );
-                  })}
-                </div>
+        <CommandGroup heading="Create Task">
+          <CommandItem onSelect={handleCreate} value={createItemValue}>
+            <CheckIcon className="text-muted-foreground" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-medium">{createItemLabel}</span>
+                <OnDeviceStatus parse={magic.parse} resolving={resolving} />
               </div>
-            </CommandItem>
-          </CommandGroup>
+              {parsed.description && (
+                <span
+                  className={cn(
+                    "line-clamp-2 text-muted-foreground text-xs",
+                    smartClassName
+                  )}
+                >
+                  {parsed.description}
+                </span>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {parsed.startDate && (
+                  <PreviewBadge className={smartClassName}>
+                    <PlayCircleIcon className="size-3.5" />
+                    {startLabel(parsed.startDate, parsed.startTime)}
+                  </PreviewBadge>
+                )}
 
-          <div className="border-t px-3 py-2.5 text-sm">
-            <TokenHints />
-          </div>
-        </>
+                {parsed.recurrence && (
+                  <PreviewBadge className={smartClassName}>
+                    <RepeatIcon className="size-3.5" />
+                    {getTaskRecurrenceDisplayText(parsed.recurrence)}
+                  </PreviewBadge>
+                )}
+
+                {parsed.dueDate && (
+                  <PreviewBadge className={smartClassName}>
+                    <CalendarIcon className="size-3.5" />
+                    Due {formatPlainDate(parsed.dueDate, DATE_FORMAT)}
+                  </PreviewBadge>
+                )}
+
+                {effectiveDuration !== null && (
+                  <PreviewBadge className={smartClassName}>
+                    <ClockIcon className="size-3.5" />
+                    {formatDuration(effectiveDuration)}
+                  </PreviewBadge>
+                )}
+
+                {/* Link badges — one per detected URL */}
+                {parsed.links.map((url) => {
+                  const meta = linkMetaMap[url];
+                  return (
+                    <PreviewBadge key={url}>
+                      {pendingUrls.has(url) ? (
+                        <Loader2Icon className="size-3.5 animate-spin" />
+                      ) : (
+                        <Link2Icon className="size-3.5" />
+                      )}
+                      {meta ? getProviderLabel(meta.provider) : "Link"}
+                    </PreviewBadge>
+                  );
+                })}
+
+                {parsed.tagNames.map((name) => {
+                  const tag = tags.find((t) => t.name === name);
+                  if (!tag) {
+                    return null;
+                  }
+                  const Icon = tagIconMap[tag.icon];
+                  return (
+                    <PreviewBadge className={smartClassName} key={tag.id}>
+                      <Icon className="size-3.5" />
+                      {tag.name}
+                    </PreviewBadge>
+                  );
+                })}
+              </div>
+            </div>
+          </CommandItem>
+        </CommandGroup>
       )}
     </>
   );
