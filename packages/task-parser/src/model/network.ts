@@ -11,7 +11,7 @@ const EPSILON = 1e-12;
 const GELU_C = Math.sqrt(2 / Math.PI);
 const WEIGHT_SUFFIX = /weight$/;
 
-export interface Logits {
+interface Logits {
   /** [tokens, TAG_NAMES.length] */
   spans: Float32Array;
   /** One logit per tag in the list. */

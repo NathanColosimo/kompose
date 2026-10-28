@@ -59,8 +59,8 @@ describe("resolveWhen", () => {
     ["12–2 tomorrow", "2026-10-24", "12:00:00"],
     ["10/23 after 6", "2026-10-23", "18:00:00"],
     ["tuesday's 11am appointment", "2026-10-27", "11:00:00"],
-  ])("%p", async (phrase, date, time) => {
-    const when = await resolveWhen(phrase, { now });
+  ])("%p", (phrase, date, time) => {
+    const when = resolveWhen(phrase, { now });
     expect(when?.date.toString()).toBe(date);
     expect(when?.time?.toString() ?? null).toBe(time);
   });
@@ -71,34 +71,31 @@ describe("resolveWhen", () => {
     ["from 3 to 5", "2026-10-23", "15:00:00"],
     ["tomorrow at 4", "2026-10-24", "16:00:00"],
     ["in 2 days at 4", "2026-10-25", "16:00:00"],
-  ])(
-    "reads a bare low hour in %p as the afternoon",
-    async (phrase, date, time) => {
-      const when = await resolveWhen(phrase, { now });
-      expect(when?.date.toString()).toBe(date);
-      expect(when?.time?.toString()).toBe(time);
-    }
-  );
+  ])("reads a bare low hour in %p as the afternoon", (phrase, date, time) => {
+    const when = resolveWhen(phrase, { now });
+    expect(when?.date.toString()).toBe(date);
+    expect(when?.time?.toString()).toBe(time);
+  });
 
-  test("keeps an ambiguous morning hour in the morning", async () => {
-    const when = await resolveWhen("tomorrow at 9:30", { now });
+  test("keeps an ambiguous morning hour in the morning", () => {
+    const when = resolveWhen("tomorrow at 9:30", { now });
     expect(when?.time?.toString()).toBe("09:30:00");
   });
 
-  test("starts a day part at a plausible time", async () => {
-    const when = await resolveWhen("sat morning", { now });
+  test("starts a day part at a plausible time", () => {
+    const when = resolveWhen("sat morning", { now });
     expect(when?.time?.toString()).toBe("09:00:00");
   });
 
-  test("resolves a recurrence to its next date", async () => {
-    const when = await resolveWhen("every weekday at 9:30", { now });
+  test("resolves a recurrence to its next date", () => {
+    const when = resolveWhen("every weekday at 9:30", { now });
     expect(when?.date.toString()).toBe("2026-10-26");
     expect(when?.time?.toString()).toBe("09:30:00");
   });
 
-  test("returns null without a date", async () => {
-    expect(await resolveWhen("groceries", { now })).toBeNull();
-    expect(await resolveWhen("  ", { now })).toBeNull();
+  test("returns null without a date", () => {
+    expect(resolveWhen("groceries", { now })).toBeNull();
+    expect(resolveWhen("  ", { now })).toBeNull();
   });
 });
 
@@ -120,8 +117,8 @@ describe("resolveWhen shorthand and typos", () => {
     ["cob", "2026-10-23", null],
     ["close of business", "2026-10-23", null],
     ["mid november", "2026-11-15", null],
-  ])("%p", async (phrase, date, time) => {
-    const when = await resolveWhen(phrase, { now });
+  ])("%p", (phrase, date, time) => {
+    const when = resolveWhen(phrase, { now });
     expect(when?.date.toString()).toBe(date);
     expect(when?.time?.toString() ?? null).toBe(time);
   });
@@ -156,7 +153,7 @@ describe("resolveWhen holidays and clean-up", () => {
     ["friday's visit", "2026-10-23"],
     ["nov 2 after london open", "2026-11-02"],
     ["monday once the kiln's cool", "2026-10-26"],
-  ])("%p", async (phrase, date) => {
-    expect((await resolveWhen(phrase, { now }))?.date.toString()).toBe(date);
+  ])("%p", (phrase, date) => {
+    expect(resolveWhen(phrase, { now })?.date.toString()).toBe(date);
   });
 });

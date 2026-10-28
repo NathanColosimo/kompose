@@ -1,27 +1,38 @@
 /**
  * Test set, built independently of the training pipeline:
  *   compose   gpt-6.1-sol writes inputs from held-out tag lists and personas
- *   label A|B two blind labelling passes (neither sees the other); a pass
- *             named luna… uses the training labeller, to score it on the gold
+ *   label A|B two blind labelling passes (neither sees the other)
  *   judge     a stronger pass settles span/tag disagreements
- *             (judge agreed: only record the items both passes agree on)
  *   fields    Sol computes expected task fields from the text and a
- *             reference time, without our resolver; mismatches are judged
+ *             reference time, without our resolver
  *   build     testset/test.jsonl for gen/evaluate.ts
  * Usage: bun gen/testset.ts <step> [arg] [concurrency=6]
  * Everything lives in data/test/.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { resolveFields } from "../../src/fields";
 import { parseMarkup, toMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
+import {
+  answeredFields,
+  DATE_FIELDS_SCHEMA,
+  dateMismatches,
+  FOCUS_CALLS,
+  isMarkupOf,
+  itemsSchema,
+  LABELS_SCHEMA,
+  ROOT,
+  readJsonl,
+  readSeeds,
+  rng,
+  writeInputs,
+  writeJsonl,
+} from "./common";
 import { EXAMPLES } from "./examples";
-import { rng } from "./plan";
 import { tidy } from "./validate";
 
-const ROOT = new URL("../", import.meta.url).pathname;
 const DIR = `${ROOT}data/test/`;
 await mkdir(DIR, { recursive: true });
 const spec = await readFile(`${ROOT}SPEC.md`, "utf8");
@@ -30,8 +41,10 @@ const [step = "compose", arg = "", concurrencyArg = "6"] =
 /** Sol is rate-limited per account; a few calls at a time keep it moving. */
 const CONCURRENCY = Number(concurrencyArg);
 const random = rng(4242);
+const pick = <T>(items: readonly T[]) =>
+  items[Math.floor(random() * items.length)] as T;
 
-export interface TestInput {
+interface TestInput {
   focus: string;
   id: string;
   now: string;
@@ -39,64 +52,7 @@ export interface TestInput {
   text: string;
 }
 
-async function readJsonl<T>(file: string): Promise<T[]> {
-  if (!existsSync(file)) {
-    return [];
-  }
-  return (await readFile(file, "utf8"))
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as T);
-}
-
-async function writeJsonl(file: string, rows: unknown[]) {
-  await writeFile(file, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
-}
-
-const pick = <T>(items: readonly T[]) =>
-  items[Math.floor(random() * items.length)] as T;
-
-// --- compose ---------------------------------------------------------------
-
-/** Categories and how many 10-item calls each gets. */
-const FOCUS: [string, number][] = [
-  [
-    "everyday: what this person would really type on an ordinary day, any mix of fields",
-    50,
-  ],
-  [
-    "voice: dictated on the go, rambling, spoken numbers and times, no punctuation",
-    10,
-  ],
-  ["minimal: a few words, maybe one date or tag", 8],
-  [
-    "dense: title, description, start, deadline, duration, tag and maybe a link all in one",
-    8,
-  ],
-  [
-    "recurring: tasks that repeat, with days, times, intervals, end dates, or anchors",
-    10,
-  ],
-  [
-    "deadlines vs starts: tasks where telling 'when I'll do it' from 'when it's due' is subtle",
-    8,
-  ],
-  [
-    "tag judgment: tasks where deciding which of the user's tags apply (if any) needs care, including near-misses and confusable tag names",
-    12,
-  ],
-  [
-    "traps: words that look like dates, times, durations or tags but are part of the title (names, titles of works, product names, numbers)",
-    12,
-  ],
-  [
-    "messy: typos, abbreviations, slang, odd spacing and punctuation, emoji",
-    10,
-  ],
-  ["links: pasted URLs or bare domains with surrounding words", 6],
-  ["brain dumps: two or three sentences of context around one task", 8],
-  ["power users: hashtags, compact times (3p, 1530), parentheses, prefixes", 6],
-];
+// --- compose -----------------------------------------------------------------
 
 /** Reference times: ordinary days plus month/year ends, late nights and DST. */
 const NOWS = [
@@ -117,115 +73,37 @@ const NOWS = [
 ];
 
 async function compose() {
-  const seeds = `${ROOT}data/seeds/`;
-  const { test: tagSets } = JSON.parse(
-    await readFile(`${seeds}split.json`, "utf8")
-  ) as { test: string[][] };
-  const personas = JSON.parse(
-    await readFile(`${seeds}personas-test.json`, "utf8")
-  ) as {
-    description: string;
-    writingHabits: string;
-  }[];
-  const schema = {
-    additionalProperties: false,
-    properties: {
-      inputs: {
-        items: {
-          additionalProperties: false,
-          properties: { item: { type: "integer" }, text: { type: "string" } },
-          required: ["item", "text"],
-          type: "object",
-        },
-        type: "array",
-      },
-    },
-    required: ["inputs"],
-    type: "object",
-  };
-  const calls = FOCUS.flatMap(([focus, count]) =>
-    Array.from({ length: count }, () => focus)
-  );
   const out = `${DIR}inputs.jsonl`;
   if (existsSync(out)) {
     console.log("inputs.jsonl exists; delete it to recompose");
     return;
   }
+  const { personas, tagSets } = await readSeeds("test");
   const rows: TestInput[] = [];
   await pool(
-    calls.map((focus, call) => async () => {
+    "compose",
+    FOCUS_CALLS.map((focus, call) => async () => {
       const items = Array.from({ length: 10 }, () => ({
         persona: pick(personas),
         tagList: [...pick(tagSets)].sort(() => random() - 0.5),
       }));
-      const prompt = `You write realistic test inputs for a quick-add box that turns free text into a task. Do not run any commands; answer only with the JSON object.
-
-Each input is what one specific person would type or dictate to create ONE task. They also have a list of tags in their task manager; inputs may refer to those tags or to things a tag covers, but often don't.
-Focus for this batch: ${focus}
-
-Write one input per item, in that person's voice. Vary length, structure and vocabulary; avoid formulaic openings. Never use square brackets. The fields such a box can capture are: title, description/notes, start date/time, due date, duration, repeat schedule, links, and the person's tags.
-
-${items.map((item, index) => `Item ${index + 1}\n  person: ${item.persona.description} ${item.persona.writingHabits}\n  their tags: ${JSON.stringify(item.tagList)}`).join("\n\n")}`;
-      const result = await codexJson<{
-        inputs: { item: number; text: string }[];
-      }>({
-        effort: "high",
-        model: "gpt-6.1-sol",
-        prompt,
-        schema,
-      });
-      for (const input of result.inputs) {
-        const item = items[input.item - 1];
-        const text = input.text.trim();
-        if (item && text && !text.includes("[") && !text.includes("]")) {
-          rows.push({
-            focus: focus.split(":")[0] ?? focus,
-            id: `test/${call}/${input.item}`,
-            now: pick(NOWS),
-            tagList: item.tagList,
-            text,
-          });
-        }
+      for (const { item, text } of await writeInputs(focus, items)) {
+        rows.push({
+          focus: focus.split(":")[0] ?? focus,
+          id: `test/${call}/${item}`,
+          now: pick(NOWS),
+          tagList: items[item - 1]?.tagList ?? [],
+          text,
+        });
       }
     }),
-    16,
-    (index, result) => {
-      if (result instanceof Error) {
-        console.log(`compose ${index} failed: ${result.message.slice(0, 200)}`);
-      }
-    }
+    16
   );
   await writeJsonl(out, rows);
   console.log(`${rows.length} test inputs`);
 }
 
 // --- label -------------------------------------------------------------------
-
-const labelSchema = {
-  additionalProperties: false,
-  properties: {
-    items: {
-      items: {
-        additionalProperties: false,
-        properties: {
-          item: { type: "integer" },
-          marked: { type: "string" },
-          tags: { items: { type: "string" }, type: "array" },
-        },
-        required: ["item", "marked", "tags"],
-        type: "object",
-      },
-      type: "array",
-    },
-  },
-  required: ["items"],
-  type: "object",
-};
-
-const examples = EXAMPLES.map(
-  (example) =>
-    `tags list ${JSON.stringify(example.tagList)}\n${example.marked}\n→ tags ${JSON.stringify(example.tags)}`
-).join("\n\n");
 
 function labelPrompt(items: { tagList: string[]; text: string }[]) {
   return `You label evaluation data for a task-parsing model. Do not run any commands; answer only with the JSON object.
@@ -234,7 +112,7 @@ ${spec}
 
 ## Reference examples (correct)
 
-${examples}
+${EXAMPLES}
 
 ## Your job
 
@@ -249,14 +127,12 @@ ${items.map((item, index) => `Item ${index + 1}\n  tags list: ${JSON.stringify(i
 async function label(pass: string) {
   const inputs = await readJsonl<TestInput>(`${DIR}inputs.jsonl`);
   const out = `${DIR}labels-${pass}.jsonl`;
-  const done = new Set(
-    (await readJsonl<{ id: string }>(out)).map((row) => row.id)
-  );
+  const rows = await readJsonl<Label>(out);
+  const done = new Set(rows.map((row) => row.id));
   // Different batching per pass so context effects differ.
   const order = inputs.filter((input) => !done.has(input.id));
   const shuffle = rng(pass === "A" ? 1 : 2);
   order.sort(() => shuffle() - 0.5);
-  const rows = await readJsonl<object>(out);
   const BATCH = 15;
   const jobs: (() => Promise<void>)[] = [];
   for (let first = 0; first < order.length; first += BATCH) {
@@ -266,51 +142,26 @@ async function label(pass: string) {
         items: { item: number; marked: string; tags: string[] }[];
       }>({
         effort: "high",
-        // "luna…" passes measure the training labeller against the gold.
-        model: pass.startsWith("luna") ? "gpt-6-luna" : "gpt-6.1-sol",
+        model: "gpt-6.1-sol",
         prompt: labelPrompt(batch),
-        schema: labelSchema,
+        schema: LABELS_SCHEMA,
       });
       for (const entry of result.items) {
         const input = batch[entry.item - 1];
-        if (!input) {
-          continue;
+        if (input) {
+          rows.push({
+            id: input.id,
+            marked: entry.marked,
+            tags: entry.tags,
+            valid: isMarkupOf(entry.marked, input.text),
+          });
         }
-        let valid = false;
-        try {
-          valid = parseMarkup(entry.marked).text === input.text;
-        } catch {
-          valid = false;
-        }
-        rows.push({
-          id: input.id,
-          marked: entry.marked,
-          tags: entry.tags,
-          valid,
-        });
       }
       await writeJsonl(out, rows);
     });
   }
-  await pool(jobs, CONCURRENCY, (index, result) => {
-    if (result instanceof Error) {
-      console.log(
-        `label ${pass} ${index} failed: ${result.message.slice(0, 200)}`
-      );
-    }
-  });
+  await pool(`label ${pass}`, jobs, CONCURRENCY);
   console.log(`pass ${pass}: ${rows.length} labels`);
-}
-
-switch (step) {
-  case "compose":
-    await compose();
-    break;
-  case "label":
-    await label(arg || "A");
-    break;
-  default:
-    break;
 }
 
 // --- judge -------------------------------------------------------------------
@@ -339,75 +190,47 @@ function sameTags(a: string[], b: string[]) {
 }
 
 async function judge() {
-  const inputs = new Map(
-    (await readJsonl<TestInput>(`${DIR}inputs.jsonl`)).map((input) => [
-      input.id,
-      input,
-    ])
-  );
-  const a = new Map(
-    (await readJsonl<Label>(`${DIR}labels-A.jsonl`)).map((row) => [row.id, row])
-  );
-  const b = new Map(
-    (await readJsonl<Label>(`${DIR}labels-B.jsonl`)).map((row) => [row.id, row])
+  const inputs = await readJsonl<TestInput>(`${DIR}inputs.jsonl`);
+  const passes = await Promise.all(
+    ["A", "B"].map(async (pass) => {
+      const rows = await readJsonl<Label>(`${DIR}labels-${pass}.jsonl`);
+      return new Map(rows.map((row) => [row.id, row]));
+    })
   );
   const out = `${DIR}gold.jsonl`;
-  const done = new Set(
-    (await readJsonl<{ id: string }>(out)).map((row) => row.id)
-  );
-  const gold: object[] = await readJsonl(out);
+  const gold = await readJsonl<{ id: string } & Record<string, unknown>>(out);
+  const done = new Set(gold.map((row) => row.id));
   const disputes: { a: Label; b: Label; input: TestInput }[] = [];
-  let agreed = 0;
-  for (const [id, input] of inputs) {
-    const first = a.get(id);
-    const second = b.get(id);
-    if (done.has(id) || !(first?.valid && second?.valid)) {
+  for (const input of inputs) {
+    const a = passes[0]?.get(input.id);
+    const b = passes[1]?.get(input.id);
+    if (done.has(input.id) || !(a?.valid && b?.valid)) {
       continue;
     }
     const tagList = new Set(input.tagList);
-    first.tags = first.tags.filter((tag) => tagList.has(tag));
-    second.tags = second.tags.filter((tag) => tagList.has(tag));
+    a.tags = a.tags.filter((tag) => tagList.has(tag));
+    b.tags = b.tags.filter((tag) => tagList.has(tag));
     if (
-      canonical(first.marked) === canonical(second.marked) &&
-      sameTags(first.tags, second.tags)
+      canonical(a.marked) === canonical(b.marked) &&
+      sameTags(a.tags, b.tags)
     ) {
       gold.push({
         ...input,
         agreement: "both",
-        marked: canonical(first.marked),
-        tags: first.tags,
+        marked: canonical(a.marked),
+        tags: a.tags,
       });
-      agreed += 1;
     } else {
-      disputes.push({ a: first, b: second, input });
+      disputes.push({ a, b, input });
     }
   }
-  console.log(`${agreed} agreed, ${disputes.length} disputed`);
+  console.log(`${gold.length - done.size} agreed, ${disputes.length} disputed`);
   await writeJsonl(out, gold);
-  if (arg === "agreed") {
-    return;
-  }
-  const schema = {
-    additionalProperties: false,
-    properties: {
-      items: {
-        items: {
-          additionalProperties: false,
-          properties: {
-            item: { type: "integer" },
-            marked: { type: "string" },
-            reason: { type: "string" },
-            tags: { items: { type: "string" }, type: "array" },
-          },
-          required: ["item", "marked", "tags", "reason"],
-          type: "object",
-        },
-        type: "array",
-      },
-    },
-    required: ["items"],
-    type: "object",
-  };
+  const schema = itemsSchema({
+    marked: { type: "string" },
+    reason: { type: "string" },
+    tags: { items: { type: "string" }, type: "array" },
+  });
   const BATCH = 8;
   const jobs: (() => Promise<void>)[] = [];
   for (let first = 0; first < disputes.length; first += BATCH) {
@@ -419,7 +242,7 @@ ${spec}
 
 ## Reference examples (correct)
 
-${examples}
+${EXAMPLES}
 
 ## Your job
 
@@ -440,22 +263,10 @@ ${batch
           reason: string;
           tags: string[];
         }[];
-      }>({
-        effort: "xhigh",
-        model: "gpt-6.1-sol",
-        prompt,
-        schema,
-      });
+      }>({ effort: "xhigh", model: "gpt-6.1-sol", prompt, schema });
       for (const entry of result.items) {
         const dispute = batch[entry.item - 1];
-        if (!dispute) {
-          continue;
-        }
-        try {
-          if (parseMarkup(entry.marked).text !== dispute.input.text) {
-            continue;
-          }
-        } catch {
+        if (!(dispute && isMarkupOf(entry.marked, dispute.input.text))) {
           continue;
         }
         const tagList = new Set(dispute.input.tagList);
@@ -471,11 +282,7 @@ ${batch
       await writeJsonl(out, gold);
     });
   }
-  await pool(jobs, CONCURRENCY, (index, result) => {
-    if (result instanceof Error) {
-      console.log(`judge ${index} failed: ${result.message.slice(0, 200)}`);
-    }
-  });
+  await pool("judge", jobs, CONCURRENCY);
   console.log(`${gold.length} gold`);
 }
 
@@ -486,99 +293,12 @@ interface Gold extends TestInput {
   tags: string[];
 }
 
-function fieldsOf(resolved: Awaited<ReturnType<typeof resolveFields>>) {
-  return {
-    description: resolved.description,
-    dueDate: resolved.dueDate?.toString() ?? null,
-    durationMinutes: resolved.durationMinutes,
-    links: resolved.links,
-    recurrence: resolved.recurrence,
-    startDate: resolved.startDate?.toString() ?? null,
-    startTime: resolved.startTime?.toString() ?? null,
-    tags: resolved.tagNames,
-    title: resolved.title,
-  };
-}
-
-const DATE_FIELDS = [
-  "startDate",
-  "startTime",
-  "dueDate",
-  "durationMinutes",
-  "recurrence",
-] as const;
-
 async function fields() {
   const gold = await readJsonl<Gold>(`${DIR}gold.jsonl`);
   const out = `${DIR}fields.jsonl`;
-  const done = new Map(
-    (await readJsonl<{ id: string }>(out)).map((row) => [row.id, row])
-  );
+  const rows = await readJsonl<{ id: string; independent: object }>(out);
+  const done = new Set(rows.map((row) => row.id));
   const todo = gold.filter((row) => !done.has(row.id));
-  const schema = {
-    additionalProperties: false,
-    properties: {
-      items: {
-        items: {
-          additionalProperties: false,
-          properties: {
-            dueDate: { type: ["string", "null"] },
-            durationMinutes: { type: ["integer", "null"] },
-            item: { type: "integer" },
-            recurrence: {
-              anyOf: [
-                { type: "null" },
-                {
-                  additionalProperties: false,
-                  properties: {
-                    byDay: {
-                      items: {
-                        enum: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"],
-                        type: "string",
-                      },
-                      type: ["array", "null"],
-                    },
-                    byMonthDay: { type: ["integer", "null"] },
-                    count: { type: ["integer", "null"] },
-                    freq: {
-                      enum: ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"],
-                      type: "string",
-                    },
-                    interval: { type: "integer" },
-                    until: { type: ["string", "null"] },
-                  },
-                  required: [
-                    "freq",
-                    "interval",
-                    "byDay",
-                    "byMonthDay",
-                    "count",
-                    "until",
-                  ],
-                  type: "object",
-                },
-              ],
-            },
-            startDate: { type: ["string", "null"] },
-            startTime: { type: ["string", "null"] },
-          },
-          required: [
-            "item",
-            "startDate",
-            "startTime",
-            "dueDate",
-            "durationMinutes",
-            "recurrence",
-          ],
-          type: "object",
-        },
-        type: "array",
-      },
-    },
-    required: ["items"],
-    type: "object",
-  };
-  const rows: object[] = [...done.values()];
   const BATCH = 12;
   const jobs: (() => Promise<void>)[] = [];
   for (let first = 0; first < todo.length; first += BATCH) {
@@ -611,48 +331,19 @@ ${batch
         effort: "high",
         model: "gpt-6.1-sol",
         prompt,
-        schema,
+        schema: DATE_FIELDS_SCHEMA,
       });
       for (const entry of result.items) {
         const row = batch[entry.item - 1];
-        if (!row) {
-          continue;
+        if (row) {
+          rows.push({ id: row.id, independent: answeredFields(entry) });
         }
-        const { spans } = parseMarkup(row.marked);
-        const resolved = fieldsOf(
-          await resolveFields({
-            now: Temporal.ZonedDateTime.from(row.now),
-            spans,
-            tagNames: row.tags,
-          })
-        );
-        const recurrence = entry.recurrence
-          ? Object.fromEntries(
-              Object.entries(entry.recurrence as object).filter(
-                ([, value]) => value !== null
-              )
-            )
-          : null;
-        const independent: Record<string, unknown> = { ...entry, recurrence };
-        const mismatches = DATE_FIELDS.filter(
-          (field) =>
-            JSON.stringify(sortKeys(independent[field] ?? null)) !==
-            JSON.stringify(sortKeys(resolved[field] ?? null))
-        );
-        rows.push({ id: row.id, independent, mismatches, resolved });
       }
       await writeJsonl(out, rows);
     });
   }
-  await pool(jobs, CONCURRENCY, (index, result) => {
-    if (result instanceof Error) {
-      console.log(`fields ${index} failed: ${result.message.slice(0, 200)}`);
-    }
-  });
-  const all = rows as { mismatches: string[] }[];
-  console.log(
-    `${all.length} computed; ${all.filter((row) => row.mismatches.length > 0).length} disagree with the resolver`
-  );
+  await pool("fields", jobs, CONCURRENCY);
+  console.log(`${rows.length} computed`);
 }
 
 // --- build -------------------------------------------------------------------
@@ -669,40 +360,38 @@ async function build() {
       await readJsonl<{ id: string; independent: Record<string, unknown> }>(
         `${DIR}fields.jsonl`
       )
-    ).map((row) => [row.id, row])
+    ).map((row) => [row.id, row.independent])
   );
   const rows: object[] = [];
   let excluded = 0;
   for (const row of await readJsonl<Gold>(`${DIR}gold.jsonl`)) {
-    const { spans, text } = parseMarkup(row.marked);
-    const resolved = fieldsOf(
-      await resolveFields({
-        now: Temporal.ZonedDateTime.from(row.now),
-        spans,
-        tagNames: row.tags,
-        text,
-      })
-    );
-    const independent = checked.get(row.id)?.independent;
+    const independent = checked.get(row.id);
     if (!independent) {
       continue;
     }
-    const agrees = DATE_FIELDS.every((field) =>
-      field === "recurrence"
-        ? JSON.stringify(
-            canonicalRecurrence(independent.recurrence, independent.startDate)
-          ) ===
-          JSON.stringify(
-            canonicalRecurrence(resolved.recurrence, resolved.startDate)
-          )
-        : JSON.stringify(independent[field] ?? null) ===
-          JSON.stringify(resolved[field] ?? null)
-    );
-    if (!agrees) {
+    const { spans, text } = parseMarkup(row.marked);
+    const resolved = resolveFields({
+      now: Temporal.ZonedDateTime.from(row.now),
+      spans,
+      tagNames: row.tags,
+      text,
+    });
+    const expected = {
+      description: resolved.description,
+      dueDate: resolved.dueDate?.toString() ?? null,
+      durationMinutes: resolved.durationMinutes,
+      links: resolved.links,
+      recurrence: resolved.recurrence,
+      startDate: resolved.startDate?.toString() ?? null,
+      startTime: resolved.startTime?.toString() ?? null,
+      tags: resolved.tagNames,
+      title: resolved.title,
+    };
+    if (dateMismatches(independent, expected).length > 0) {
       excluded += 1;
       continue;
     }
-    rows.push({ ...row, fields: resolved });
+    rows.push({ ...row, fields: expected });
   }
   await writeJsonl(`${ROOT}testset/test.jsonl`, rows);
   console.log(
@@ -710,54 +399,11 @@ async function build() {
   );
 }
 
-const CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-/** A recurrence with the schema's defaults filled in, keys sorted. */
-function canonicalRecurrence(recurrence: unknown, startDate: unknown) {
-  if (
-    !(
-      recurrence &&
-      typeof recurrence === "object" &&
-      typeof startDate === "string"
-    )
-  ) {
-    return null;
-  }
-  const rule: Record<string, unknown> = Object.fromEntries(
-    Object.entries(recurrence).filter(([, value]) => value !== null)
-  );
-  const start = Temporal.PlainDate.from(startDate);
-  if (rule.freq === "WEEKLY" && !rule.byDay) {
-    rule.byDay = [CODES[start.dayOfWeek - 1]];
-  }
-  if (rule.freq === "MONTHLY" && !rule.byMonthDay) {
-    rule.byMonthDay = start.day;
-  }
-  if (Array.isArray(rule.byDay)) {
-    rule.byDay = [...rule.byDay].sort(
-      (a, b) => CODES.indexOf(a) - CODES.indexOf(b)
-    );
-  }
-  return sortKeys(rule);
-}
-
-function sortKeys(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? Object.fromEntries(
-        Object.entries(value).sort(([x], [y]) => x.localeCompare(y))
-      )
-    : value;
-}
-
-switch (step) {
-  case "judge":
-    await judge();
-    break;
-  case "fields":
-    await fields();
-    break;
-  case "build":
-    await build();
-    break;
-  default:
-    break;
-}
+const STEPS: Record<string, (arg: string) => Promise<void>> = {
+  build,
+  compose,
+  fields,
+  judge,
+  label: (pass) => label(pass || "A"),
+};
+await STEPS[step]?.(arg);

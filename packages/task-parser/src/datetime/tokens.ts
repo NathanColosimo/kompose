@@ -48,7 +48,7 @@ const AT_FOREIGN_HOUR = new RegExp(
 );
 
 /** Lowercase, other languages to English, curly quotes straightened. */
-export function normalizeText(text: string) {
+function normalizeText(text: string) {
   let result = ` ${text
     .normalize("NFKC")
     .toLowerCase()
@@ -154,10 +154,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
           Number(m[1]),
           Number(m[2]),
           m[3],
-          m[4] ??
-            ((m[1] ?? "").length === 2 && (m[1] ?? "").startsWith("0")
-              ? "0"
-              : undefined)
+          m[4] === undefined && (m[1] ?? "").startsWith("0")
         ),
     ],
     // 4.30pm, 6.20p
@@ -187,7 +184,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
       /(\d{1,2})h(\d{2})?(?![\p{L}\d])/uy,
       (m) =>
         m[2] !== undefined || Number(m[1]) >= 13
-          ? timeToken(Number(m[1]), Number(m[2] ?? 0), undefined, "h")
+          ? timeToken(Number(m[1]), Number(m[2] ?? 0))
           : null,
     ],
     // 1st, 22nd, 3rd, 15th
@@ -230,7 +227,8 @@ function timeToken(
   hour: number,
   minute: number,
   meridiem?: string,
-  suffix?: string
+  /** Written with a leading zero ("07:00"). */
+  padded = false
 ): Token | null {
   if (minute > 59 || hour > 24) {
     return null;
@@ -244,10 +242,7 @@ function timeToken(
     hour,
     kind: "time",
     // "7h30" still follows the 1-7 pm rule; "17h" is a 24-hour clock.
-    meridiem:
-      hour >= 13 || hour === 0 || suffix === "0" || (suffix && hour > 12)
-        ? "24"
-        : null,
+    meridiem: hour >= 13 || hour === 0 || padded ? "24" : null,
     minute,
   };
 }
@@ -303,7 +298,7 @@ const ABBREVIATIONS: Record<string, string> = {
 };
 
 /** Optimal string alignment distance (Levenshtein plus transpositions). */
-export function editDistance(a: string, b: string) {
+function editDistance(a: string, b: string) {
   const rows: number[][] = [];
   for (let i = 0; i <= a.length; i += 1) {
     const row: number[] = [i];

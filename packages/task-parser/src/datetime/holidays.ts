@@ -3,7 +3,12 @@ import { Temporal } from "temporal-polyfill";
 type DateRule = (year: number) => Temporal.PlainDate;
 
 /** The `nth` (1-based; -1 = last) `weekday` (1 = Monday) of a month. */
-function nthWeekday(year: number, month: number, weekday: number, nth: number) {
+export function nthWeekday(
+  year: number,
+  month: number,
+  weekday: number,
+  nth: number
+) {
   if (nth > 0) {
     const first = Temporal.PlainDate.from({ day: 1, month, year });
     return first.add({

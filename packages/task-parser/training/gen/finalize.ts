@@ -1,56 +1,22 @@
 /**
  * Final labels: gpt-6.1-sol relabels every generated example (its draft
  * labels are only a hint). Follows a generation run as batches appear.
- * Usage: bun gen/finalize.ts <name> [concurrency] [effort] [model] [out name] [skip name]
- * Reads data/raw/<name>/*.json, writes data/final/<out name>/*.json; batches
- * already in data/final/<skip name>/ are left out.
+ * Usage: bun gen/finalize.ts <name> [concurrency]
+ * Reads data/raw/<name>/*.json, writes data/final/<name>/*.json.
  */
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { parseMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
+import { isMarkupOf, LABELS_SCHEMA, ROOT } from "./common";
 import { EXAMPLES } from "./examples";
 import type { Slot } from "./plan";
 
-const ROOT = new URL("../", import.meta.url).pathname;
-const [
-  name = "train",
-  concurrencyArg = "16",
-  effort = "high",
-  model = "gpt-6.1-sol",
-  outName = name,
-  skipName = "",
-] = process.argv.slice(2);
-const skipDir = skipName ? `${ROOT}data/final/${skipName}/` : null;
+const [name = "train", concurrencyArg = "16"] = process.argv.slice(2);
 const rawDir = `${ROOT}data/raw/${name}/`;
-const outDir = `${ROOT}data/final/${outName}/`;
+const outDir = `${ROOT}data/final/${name}/`;
 await mkdir(outDir, { recursive: true });
-
-const schema = {
-  additionalProperties: false,
-  properties: {
-    items: {
-      items: {
-        additionalProperties: false,
-        properties: {
-          item: { type: "integer" },
-          marked: { type: "string" },
-          tags: { items: { type: "string" }, type: "array" },
-        },
-        required: ["item", "marked", "tags"],
-        type: "object",
-      },
-      type: "array",
-    },
-  },
-  required: ["items"],
-  type: "object",
-};
-
-const examples = EXAMPLES.map(
-  (example) =>
-    `tags list ${JSON.stringify(example.tagList)}\n${example.marked}\n→ tags ${JSON.stringify(example.tags)}`
-).join("\n\n");
+const spec = await readFile(`${ROOT}SPEC.md`, "utf8");
 
 /** Plain text of a draft, even when its markup is malformed. */
 function plainText(marked: string) {
@@ -65,7 +31,6 @@ function plainText(marked: string) {
 }
 
 async function finalize(file: string) {
-  const spec = await readFile(`${ROOT}SPEC.md`, "utf8");
   const { output, slots } = JSON.parse(
     await readFile(rawDir + file, "utf8")
   ) as {
@@ -89,7 +54,7 @@ ${spec}
 
 ## Reference examples (correct)
 
-${examples}
+${EXAMPLES}
 
 ## Your job
 
@@ -107,25 +72,12 @@ ${items
   .join("\n\n")}`;
   const result = await codexJson<{
     items: { item: number; marked: string; tags: string[] }[];
-  }>({
-    effort: effort as "high",
-    model,
-    prompt,
-    schema,
-  });
+  }>({ effort: "high", model: "gpt-6.1-sol", prompt, schema: LABELS_SCHEMA });
   const final = result.items.flatMap((entry) => {
     const item = items[entry.item - 1];
-    if (!item) {
-      return [];
-    }
-    try {
-      if (parseMarkup(entry.marked).text !== item.text) {
-        return [];
-      }
-    } catch {
-      return [];
-    }
-    return [{ marked: entry.marked, tagList: item.tagList, tags: entry.tags }];
+    return item && isMarkupOf(entry.marked, item.text)
+      ? [{ marked: entry.marked, tagList: item.tagList, tags: entry.tags }]
+      : [];
   });
   await writeFile(
     outDir + file,
@@ -142,14 +94,7 @@ for (;;) {
     ? (await readdir(rawDir)).filter((file) => file.endsWith(".json"))
     : [];
   const todo = files
-    .filter(
-      (file) =>
-        !(
-          existsSync(outDir + file) ||
-          failed.has(file) ||
-          (skipDir && existsSync(skipDir + file))
-        )
-    )
+    .filter((file) => !(existsSync(outDir + file) || failed.has(file)))
     .sort();
   if (todo.length === 0) {
     if (generatorDone) {
@@ -160,14 +105,12 @@ for (;;) {
   }
   const started = Date.now();
   await pool(
+    "finalize",
     todo.map((file) => () => finalize(file)),
     Number(concurrencyArg),
     (index, result) => {
       if (result instanceof Error) {
         failed.add(todo[index] ?? "");
-        console.log(
-          `finalize ${todo[index]} failed: ${result.message.slice(0, 200)}`
-        );
       }
     }
   );

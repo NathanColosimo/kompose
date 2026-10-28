@@ -8,15 +8,24 @@
  * Usage: bun gen/datebench.ts <step> [arg] [concurrency=8]
  * Everything lives in data/dates/.
  */
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { resolveFields } from "../../src/fields";
 import { parseMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
-import { rng } from "./plan";
+import {
+  answeredFields,
+  DATE_FIELDS,
+  DATE_FIELDS_SCHEMA,
+  dateMismatches,
+  ROOT,
+  readJsonl,
+  rng,
+  shuffled,
+  sortKeys,
+  writeJsonl,
+} from "./common";
 
-const ROOT = new URL("../", import.meta.url).pathname;
 const DIR = `${ROOT}data/dates/`;
 const BENCH = `${ROOT}testset/dates.jsonl`;
 await mkdir(DIR, { recursive: true });
@@ -24,24 +33,10 @@ const [step = "score", arg = "", concurrencyArg = "8"] = process.argv.slice(2);
 const CONCURRENCY = Number(concurrencyArg);
 const random = rng(777);
 
-async function readJsonl<T>(file: string): Promise<T[]> {
-  if (!existsSync(file)) {
-    return [];
-  }
-  return (await readFile(file, "utf8"))
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as T);
-}
-
-async function writeJsonl(file: string, rows: unknown[]) {
-  await writeFile(file, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
-}
-
 const pick = <T>(items: readonly T[]) =>
   items[Math.floor(random() * items.length)] as T;
 
-export const CATEGORIES: Record<string, string> = {
+const CATEGORIES: Record<string, string> = {
   absolute:
     "absolute dates in many written formats: 'nov 3', '3rd of november', '11/3', '3/11' only where unambiguous, '2026-11-03', 'the 15th', 'Dec 1st at noon', 'Mon Nov 9', 'jan 2 2027', 'sept. 30'",
   clock:
@@ -153,51 +148,11 @@ Example: [T:call the dentist] [S:tmrw at 4]`;
       });
     }
   }
-  await pool(jobs, CONCURRENCY, (index, result) => {
-    if (result instanceof Error) {
-      console.log(`write ${index} failed: ${result.message.slice(0, 200)}`);
-    }
-  });
+  await pool("write", jobs, CONCURRENCY);
   console.log(`${rows.length} items`);
 }
 
-const RECURRENCE_SCHEMA = {
-  anyOf: [
-    { type: "null" },
-    {
-      additionalProperties: false,
-      properties: {
-        byDay: {
-          items: {
-            enum: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"],
-            type: "string",
-          },
-          type: ["array", "null"],
-        },
-        byMonthDay: { type: ["integer", "null"] },
-        count: { type: ["integer", "null"] },
-        freq: {
-          enum: ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"],
-          type: "string",
-        },
-        interval: { type: "integer" },
-        until: { type: ["string", "null"] },
-      },
-      required: ["freq", "interval", "byDay", "byMonthDay", "count", "until"],
-      type: "object",
-    },
-  ],
-};
-
-export const DATE_FIELDS = [
-  "startDate",
-  "startTime",
-  "dueDate",
-  "durationMinutes",
-  "recurrence",
-] as const;
-
-export const CONVENTIONS = `Conventions: a bare weekday means the next one on or after today (today itself if it's that weekday); "next <weekday>" means the coming one, not the week after; "this <weekday>" likewise; bare hours 1-7 without am/pm are pm, 8-11 am, 12 is noon; day parts: morning 09:00, afternoon 13:00, evening 18:00, night/tonight 20:00; "first thing" 09:00; "in N days/weeks/months" keeps no time of day, "in N hours/minutes" does (now plus the offset); "next week" is next Monday, "this weekend" Saturday, "next month" the 1st of next month, end of week = Sunday, end of month = its last day; eod/cob = today with no time; a date with no year that has already passed this year rolls to next year; a time already past today with no day named means tomorrow at that time. A time with a time zone is converted to the user's zone (now's zone). A phrase in another language means what it says. A phrase that names no concrete date gives null.`;
+const CONVENTIONS = `Conventions: a bare weekday means the next one on or after today (today itself if it's that weekday); "next <weekday>" means the coming one, not the week after; "this <weekday>" likewise; bare hours 1-7 without am/pm are pm, 8-11 am, 12 is noon; day parts: morning 09:00, afternoon 13:00, evening 18:00, night/tonight 20:00; "first thing" 09:00; "in N days/weeks/months" keeps no time of day, "in N hours/minutes" does (now plus the offset); "next week" is next Monday, "this weekend" Saturday, "next month" the 1st of next month, end of week = Sunday, end of month = its last day; eod/cob = today with no time; a date with no year that has already passed this year rolls to next year; a time already past today with no day named means tomorrow at that time. A time with a time zone is converted to the user's zone (now's zone). A phrase in another language means what it says. A phrase that names no concrete date gives null.`;
 
 async function answer(pass: string) {
   const items = await readJsonl<Written>(`${DIR}written.jsonl`);
@@ -206,35 +161,10 @@ async function answer(pass: string) {
     (await readJsonl<{ id: string }>(out)).map((row) => [row.id, row])
   );
   // Each pass sees its own order and batches, so they share no context.
-  const order = [...items.filter((item) => !done.has(item.id))];
-  const shuffle = rng(pass === "A" ? 1 : 2);
-  for (let i = order.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(shuffle() * (i + 1));
-    [order[i], order[j]] = [order[j] as Written, order[i] as Written];
-  }
-  const schema = {
-    additionalProperties: false,
-    properties: {
-      items: {
-        items: {
-          additionalProperties: false,
-          properties: {
-            dueDate: { type: ["string", "null"] },
-            durationMinutes: { type: ["integer", "null"] },
-            item: { type: "integer" },
-            recurrence: RECURRENCE_SCHEMA,
-            startDate: { type: ["string", "null"] },
-            startTime: { type: ["string", "null"] },
-          },
-          required: ["item", ...DATE_FIELDS],
-          type: "object",
-        },
-        type: "array",
-      },
-    },
-    required: ["items"],
-    type: "object",
-  };
+  const order = shuffled(
+    rng(pass === "A" ? 1 : 2),
+    items.filter((item) => !done.has(item.id))
+  );
   const rows: object[] = [...done.values()];
   const BATCH = 20;
   const jobs: (() => Promise<void>)[] = [];
@@ -260,77 +190,23 @@ ${batch
   .join("\n\n")}`;
       const result = await codexJson<{
         items: (Record<string, unknown> & { item: number })[];
-      }>({ effort: "high", model: "gpt-6.1-sol", prompt, schema });
+      }>({
+        effort: "high",
+        model: "gpt-6.1-sol",
+        prompt,
+        schema: DATE_FIELDS_SCHEMA,
+      });
       for (const entry of result.items) {
         const row = batch[entry.item - 1];
         if (row) {
-          const { item: _, ...fields } = entry;
-          rows.push({ fields: compact(fields), id: row.id });
+          rows.push({ fields: answeredFields(entry), id: row.id });
         }
       }
       await writeJsonl(out, rows);
     });
   }
-  await pool(jobs, CONCURRENCY, (index, result) => {
-    if (result instanceof Error) {
-      console.log(`answer ${index} failed: ${result.message.slice(0, 200)}`);
-    }
-  });
+  await pool("answer", jobs, CONCURRENCY);
   console.log(`${rows.length} answered`);
-}
-
-/** Recurrence without null keys, as the resolver writes it. */
-function compact(fields: Record<string, unknown>) {
-  const recurrence = fields.recurrence
-    ? Object.fromEntries(
-        Object.entries(fields.recurrence as object).filter(
-          ([, value]) => value !== null
-        )
-      )
-    : null;
-  return { ...fields, recurrence };
-}
-
-function sortKeys(value: unknown): unknown {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? Object.fromEntries(
-        Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
-      )
-    : value;
-}
-
-const same = (a: unknown, b: unknown) =>
-  JSON.stringify(sortKeys(a ?? null)) === JSON.stringify(sortKeys(b ?? null));
-
-const CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-/**
- * A recurrence as the task schema stores it: a weekly repeat without days
- * runs on the start's weekday, a monthly one on the start's day.
- */
-function canonical(recurrence: unknown, startDate: unknown) {
-  if (
-    !(
-      recurrence &&
-      typeof recurrence === "object" &&
-      typeof startDate === "string"
-    )
-  ) {
-    return recurrence ?? null;
-  }
-  const rule = { ...(recurrence as Record<string, unknown>) };
-  const start = Temporal.PlainDate.from(startDate);
-  if (rule.freq === "WEEKLY" && !rule.byDay) {
-    rule.byDay = [CODES[start.dayOfWeek - 1]];
-  }
-  if (rule.freq === "MONTHLY" && !rule.byMonthDay) {
-    rule.byMonthDay = start.day;
-  }
-  if (Array.isArray(rule.byDay)) {
-    rule.byDay = [...rule.byDay].sort(
-      (a, b) => CODES.indexOf(a) - CODES.indexOf(b)
-    );
-  }
-  return rule;
 }
 
 async function build() {
@@ -348,7 +224,14 @@ async function build() {
     if (!(x && y)) {
       continue;
     }
-    if (DATE_FIELDS.every((field) => same(x[field], y[field]))) {
+    // Exact agreement: no filling in a recurrence's defaults here.
+    if (
+      DATE_FIELDS.every(
+        (field) =>
+          JSON.stringify(sortKeys(x[field] ?? null)) ===
+          JSON.stringify(sortKeys(y[field] ?? null))
+      )
+    ) {
       rows.push({ ...item, expect: x });
     } else {
       disagree += 1;
@@ -386,14 +269,7 @@ async function score() {
       startDate: resolved.startDate?.toString() ?? null,
       startTime: resolved.startTime?.toString() ?? null,
     };
-    const wrong = DATE_FIELDS.filter((field) =>
-      field === "recurrence"
-        ? !same(
-            canonical(row.expect.recurrence, row.expect.startDate),
-            canonical(actual.recurrence, actual.startDate)
-          )
-        : !same(row.expect[field], actual[field])
-    );
+    const wrong = dateMismatches(row.expect, actual);
     let stats = byCategory[row.category];
     if (!stats) {
       stats = { n: 0, right: 0 };

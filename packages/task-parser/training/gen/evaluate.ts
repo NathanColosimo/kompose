@@ -3,20 +3,16 @@
  * Usage: bun gen/evaluate.ts <run dir> [handwritten|test|both] [--show N]
  * Prints per-field accuracy and the first failures.
  */
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { createTaskParser, type ParsedTask } from "../../src/parser";
+import { ROOT, readJsonl, sortKeys } from "./common";
 
-const ROOT = new URL("../", import.meta.url).pathname;
 const [run = "", which = "both"] = process.argv.slice(2);
 const showIndex = process.argv.indexOf("--show");
 const show = showIndex > 0 ? Number(process.argv[showIndex + 1]) : 15;
-const thresholdIndex = process.argv.indexOf("--threshold");
-const tagThreshold =
-  thresholdIndex > 0 ? Number(process.argv[thresholdIndex + 1]) : undefined;
 
-export interface Expected {
+interface Expected {
   description?: string | null;
   dueDate?: string | null;
   durationMinutes?: number | null;
@@ -150,15 +146,6 @@ function equal(
   }
 }
 
-function sortKeys(value: object | null) {
-  return (
-    value &&
-    Object.fromEntries(
-      Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
-    )
-  );
-}
-
 async function loadCases(): Promise<Record<string, Case[]>> {
   const sets: Record<string, Case[]> = {};
   if (which !== "test") {
@@ -177,26 +164,21 @@ async function loadCases(): Promise<Record<string, Case[]>> {
       text: c.text,
     }));
   }
-  const testFile = `${ROOT}testset/test.jsonl`;
-  if (which !== "handwritten" && existsSync(testFile)) {
-    const rows = (await readFile(testFile, "utf8"))
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-    const byFocus: Record<string, Case[]> = {};
+  if (which !== "handwritten") {
+    const rows = await readJsonl<{
+      fields: Expected;
+      focus: string;
+      id: string;
+      now: string;
+      tagList: string[];
+      text: string;
+    }>(`${ROOT}testset/test.jsonl`);
     for (const row of rows) {
-      const c: Case = {
-        expect: row.fields,
-        id: row.id,
-        now: row.now,
-        tags: row.tagList,
-        text: row.text,
-      };
+      const c = { ...row, expect: row.fields, tags: row.tagList };
       for (const key of ["test", `test:${row.focus}`]) {
-        byFocus[key] = [...(byFocus[key] ?? []), c];
+        sets[key] = [...(sets[key] ?? []), c];
       }
     }
-    Object.assign(sets, byFocus);
   }
   return sets;
 }
@@ -206,8 +188,7 @@ const parse = createTaskParser(
   file.buffer.slice(
     file.byteOffset,
     file.byteOffset + file.byteLength
-  ) as ArrayBuffer,
-  { tagThreshold }
+  ) as ArrayBuffer
 );
 const sets = await loadCases();
 for (const [name, cases] of Object.entries(sets)) {

@@ -3,10 +3,10 @@
  * time zone and a repeat rule, each still relative to "now" (resolve.ts
  * turns them into dates).
  */
-import { HOLIDAYS } from "../holidays";
+import { HOLIDAYS } from "./holidays";
 import {
   CITY_ZONES,
-  type DAY_PARTS,
+  type DayPart,
   MONTHS,
   NUMBER_WORDS,
   ORDINAL_WORDS,
@@ -55,6 +55,7 @@ export type DaySpec =
       repeats?: boolean;
     };
 
+export type MonthRule = Extract<DaySpec, { type: "nthWeekday" | "nthDay" }>;
 export type Part = "start" | "early" | "mid" | "late" | "end" | "whole";
 /** A month relative to now ("months" from this one) or by name. */
 export type MonthRef = { months: number } | { month: number };
@@ -72,7 +73,7 @@ export interface RepeatSpec {
   freq: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
   interval: number;
   /** A month rule the task schema can't hold: only its first date is kept. */
-  monthRule: DaySpec | null;
+  monthRule: MonthRule | null;
   /** "for 2 weeks": turned into a count once the rule is known. */
   span: { amount: number; unit: Unit } | null;
   /** Repeats more often than daily ("every 2 hours"): first date only. */
@@ -83,11 +84,9 @@ export interface RepeatSpec {
 export interface Phrase {
   day: DaySpec | null;
   end: TimeSpec | null;
-  /** Tokens the grammar read. */
-  known: number;
   /** "eod": the day, explicitly with no time. */
   noTime: boolean;
-  part: keyof typeof DAY_PARTS | null;
+  part: DayPart | null;
   /** Repeats counted from completion ("2 weeks after I finish"). */
   relative: boolean;
   repeat: RepeatSpec | null;
@@ -98,8 +97,6 @@ export interface Phrase {
   time: TimeSpec | null;
   /** "this afternoon": today even once it's over. */
   today: boolean;
-  /** Words that weren't part of any date expression. */
-  unknown: number;
   /** "later this week", "after lunch" alone: no concrete date. */
   vague: boolean;
   /** "labor day weekend": the Saturday of that day's weekend. */
@@ -143,7 +140,7 @@ const MINUTE_WORDS: Record<string, number> = {
   twenty: 20,
   oclock: 0,
 };
-const DAY_PART_ALIASES: Record<string, keyof typeof DAY_PARTS> = {
+const DAY_PART_ALIASES: Record<string, DayPart> = {
   afternoon: "afternoon",
   afternoons: "afternoon",
   eve: "evening",
@@ -225,8 +222,7 @@ function ordinalAt(token: Token | undefined, last = false): number | null {
   if (text === null || (text === "last" && !last)) {
     return null;
   }
-  const value = ORDINAL_WORDS[text];
-  return value === undefined ? null : value;
+  return ORDINAL_WORDS[text] ?? null;
 }
 
 const word = (token: Token | undefined) =>
@@ -599,14 +595,6 @@ const PART_WORDS: Record<string, Part> = {
   start: "start",
 };
 
-/**
- * Weeks, months, years and quarters: "next week", "this weekend", "end of
- * the month", "mid-december", "eom", "early next week", "q3 end".
- */
-function readPeriod(tokens: Token[], i: number): Read<DaySpec> {
-  return readPeriodEnd(tokens, i) ?? readPeriodPart(tokens, i);
-}
-
 /** Shorthand ends: "eom", "eoq", "q3 end", "month end", "the year end". */
 function readPeriodEnd(tokens: Token[], i: number): Read<DaySpec> {
   const single: Record<string, DaySpec> = {
@@ -852,7 +840,7 @@ function readNthOfMonth(
   tokens: Token[],
   i: number,
   requireMonth = true
-): Read<DaySpec> {
+): Read<MonthRule> {
   let at = i;
   while (is(tokens[at], "the", "on", "every", "each")) {
     at += 1;
@@ -884,7 +872,7 @@ function readNthOfMonth(
   if (bare && (nths.length === 1 || nths.some((nth) => nth < 1))) {
     return null;
   }
-  const value: DaySpec = weekday
+  const value: MonthRule = weekday
     ? { month, nths, repeats, type: "nthWeekday", weekday }
     : { business, month, nths, repeats, type: "nthDay" };
   return { length: at - i, value };
@@ -1036,13 +1024,8 @@ function relativeClock(tokens: Token[], i: number): Read<TimeSpec> {
     return null;
   }
   const { length, value: minutes } = amount;
-  const direction = word(tokens[i + length]);
-  const toward =
-    direction === "to" ||
-    direction === "til" ||
-    direction === "till" ||
-    direction === "before";
-  const past = direction === "past" || direction === "after";
+  const toward = is(tokens[i + length], "to", "til", "till", "before");
+  const past = is(tokens[i + length], "past", "after");
   const hourAt = i + length + (toward || past ? 1 : 0);
   // "ten to midnight", "quarter past noon"
   if ((toward || past) && is(tokens[hourAt], "midnight", "noon")) {
@@ -1315,18 +1298,15 @@ function readDaySet(tokens: Token[], i: number): Read<number[]> {
     weekday: WORKDAYS,
     weekdays: WORKDAYS,
     weekends: [6, 7],
-    weeknight: [1, 2, 3, 4, 5],
-    weeknights: [1, 2, 3, 4, 5],
+    weeknight: WORKDAYS,
+    weeknights: WORKDAYS,
     workdays: WORKDAYS,
   };
   if (sets[text]) {
     return { length: 1, value: sets[text] };
   }
   if (
-    (text === "school" ||
-      text === "business" ||
-      text === "work" ||
-      text === "working") &&
+    is(tokens[i], "school", "business", "work", "working") &&
     is(tokens[i + 1], "days", "day", "nights")
   ) {
     return { length: 2, value: WORKDAYS };
@@ -1365,7 +1345,7 @@ function readDaySet(tokens: Token[], i: number): Read<number[]> {
   return null;
 }
 
-type RepeatRead = Read<{ repeat: RepeatSpec; time?: keyof typeof DAY_PARTS }>;
+type RepeatRead = Read<{ repeat: RepeatSpec; time?: DayPart }>;
 
 /** The frequency a clinical-style unit letter means: "d", "w"/"wk", "m". */
 const CLINICAL_FREQUENCIES: Record<string, RepeatSpec["freq"]> = {
@@ -1651,7 +1631,6 @@ export function parsePhrase(tokens: Token[], repeating = false): Phrase {
   const phrase: Phrase = {
     day: null,
     end: null,
-    known: 0,
     noTime: false,
     part: null,
     today: false,
@@ -1662,23 +1641,17 @@ export function parsePhrase(tokens: Token[], repeating = false): Phrase {
     shift: 0,
     start: null,
     time: null,
-    unknown: 0,
     zone: null,
   };
   const reader: Reader = { repeating, tokens };
-  let marker: "start" | "until" | "range" | "for" | "before" | "after" | null =
-    null;
+  let marker: Marker = null;
   let i = 0;
   while (i < tokens.length) {
     const consumed = step(reader, phrase, i, marker);
     if (consumed.length > 0) {
-      phrase.known += consumed.length;
       marker = consumed.marker;
       i += consumed.length;
     } else {
-      if (tokens[i]?.kind === "word") {
-        phrase.unknown += 1;
-      }
       // Punctuation keeps a pending marker, and "until"/"starting" reach
       // past other words ("until my exam on december 8").
       if (
@@ -1694,7 +1667,7 @@ export function parsePhrase(tokens: Token[], repeating = false): Phrase {
   return phrase;
 }
 
-type Marker = "start" | "until" | "range" | "for" | "before" | "after" | null;
+type Marker = "start" | "until" | "range" | null;
 
 /** How many tokens an expression used, and the marker it leaves for the next. */
 interface Consumed {
@@ -1840,7 +1813,11 @@ const readMarker: Step = (reader, phrase, i) => {
   if (
     text !== null &&
     START_WORDS.has(text) &&
-    !(text === "from" && phrase.time === null && isTimeAhead(tokens, i + 1))
+    !(
+      text === "from" &&
+      phrase.time === null &&
+      readTime(tokens, i + 1, true) !== null
+    )
   ) {
     return { length: 1, marker: "start" };
   }
@@ -2054,7 +2031,7 @@ const readLoneNumber: Step = ({ tokens }, phrase, i) => {
   return null;
 };
 
-/** Filler words: kept as known; "before"/"after" become markers, others pass the marker on. */
+/** Filler words: "before"/"after" end a pending marker, others pass it on. */
 const readFiller: Step = ({ tokens }, _phrase, i, marker) => {
   const text = word(tokens[i]);
   if (text === null || !FILLER_WORDS.has(text)) {
@@ -2062,7 +2039,7 @@ const readFiller: Step = ({ tokens }, _phrase, i, marker) => {
   }
   return {
     length: 1,
-    marker: text === "before" || text === "after" ? text : marker,
+    marker: text === "before" || text === "after" ? null : marker,
   };
 };
 
@@ -2099,10 +2076,6 @@ function step(
     }
   }
   return { length: 0, marker: null };
-}
-
-function isTimeAhead(tokens: Token[], i: number) {
-  return readTime(tokens, i, true) !== null;
 }
 
 /** "for 2 weeks", "for the next 4 weeks", "for 10 days", "for 6 sessions". */
@@ -2205,7 +2178,7 @@ function shiftUnitDays(unit: string | null) {
   return unit === "week" || unit === "weeks" ? 7 : null;
 }
 
-function readPart(tokens: Token[], i: number): Read<keyof typeof DAY_PARTS> {
+function readPart(tokens: Token[], i: number): Read<DayPart> {
   let at = i;
   if (is(tokens[at], "in", "at", "this", "during")) {
     at += 1;
@@ -2239,7 +2212,8 @@ function readDay(tokens: Token[], i: number): Read<DaySpec> {
     readRelative(tokens, i) ??
     readWeekdayWithDate(tokens, i) ??
     readWeekday(tokens, i) ??
-    readPeriod(tokens, i) ??
+    readPeriodEnd(tokens, i) ??
+    readPeriodPart(tokens, i) ??
     readMonthDay(tokens, i) ??
     readMonth(tokens, i)
   );

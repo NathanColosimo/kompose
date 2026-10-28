@@ -6,8 +6,9 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
+import { ROOT, readSeeds, rng } from "./common";
 import { EXAMPLES } from "./examples";
-import { type Focus, type Persona, planSlot, rng, type Slot } from "./plan";
+import { type Focus, planSlot, type Slot } from "./plan";
 
 /** The final answer: examples written for the batch's slots. */
 const outputSchema = {
@@ -31,7 +32,6 @@ const outputSchema = {
   type: "object",
 };
 
-const ROOT = new URL("../", import.meta.url).pathname;
 const SLOTS_PER_BATCH = 15;
 
 const [
@@ -41,21 +41,8 @@ const [
   seedArg = "1",
   focusArg = "all",
 ] = process.argv.slice(2);
-const focus = focusArg as Focus;
-const batches = Number(batchArg);
-const concurrency = Number(concurrencyArg);
-const seed = Number(seedArg);
-
 const spec = await readFile(`${ROOT}SPEC.md`, "utf8");
-const seeds = `${ROOT}data/seeds/`;
-const { train: tagSets } = JSON.parse(
-  await readFile(`${seeds}split.json`, "utf8")
-) as {
-  train: string[][];
-};
-const personas = JSON.parse(
-  await readFile(`${seeds}personas.json`, "utf8")
-) as Persona[];
+const { personas, tagSets } = await readSeeds("train");
 
 function describeSlot(slot: Slot, index: number) {
   return [
@@ -71,18 +58,14 @@ function describeSlot(slot: Slot, index: number) {
     .join("\n");
 }
 
-export function generationPrompt(slots: Slot[]) {
-  const examples = EXAMPLES.map(
-    (example) =>
-      `tags list ${JSON.stringify(example.tagList)}\n${example.marked}\n→ tags ${JSON.stringify(example.tags)}`
-  ).join("\n\n");
+function generationPrompt(slots: Slot[]) {
   return `You write training data for a small model that turns quick-add text into a task. Do not run any commands or read files; answer only with the JSON object.
 
 ${spec}
 
 ## Reference examples
 
-${examples}
+${EXAMPLES}
 
 ## Your job
 
@@ -101,18 +84,18 @@ Vary sentence shapes, vocabulary and topics; do not reuse the reference examples
 ${slots.map(describeSlot).join("\n\n")}`;
 }
 
-const random = rng(seed);
+const random = rng(Number(seedArg));
 const dir = `${ROOT}data/raw/${name}/`;
 await mkdir(dir, { recursive: true });
 
-const jobs = Array.from({ length: batches }, (_, batch) => {
+const jobs = Array.from({ length: Number(batchArg) }, (_, batch) => {
   const slots = Array.from({ length: SLOTS_PER_BATCH }, () =>
-    planSlot(random, tagSets, personas, focus)
+    planSlot(random, tagSets, personas, focusArg as Focus)
   );
   const file = `${dir}${String(batch).padStart(5, "0")}.json`;
   return async () => {
     if (existsSync(file)) {
-      return "skipped";
+      return;
     }
     const output = await codexJson<{
       examples: { marked: string; slot: number; tags: string[] }[];
@@ -123,17 +106,13 @@ const jobs = Array.from({ length: batches }, (_, batch) => {
       schema: outputSchema,
     });
     await writeFile(file, JSON.stringify({ output: output.examples, slots }));
-    return "ok";
   };
 });
 
 let done = 0;
 const started = Date.now();
-await pool(jobs, concurrency, (index, result) => {
+await pool("batch", jobs, Number(concurrencyArg), () => {
   done += 1;
-  if (result instanceof Error) {
-    console.log(`batch ${index} failed: ${result.message.slice(0, 300)}`);
-  }
   if (done % 10 === 0 || done === jobs.length) {
     const minutes = ((Date.now() - started) / 60_000).toFixed(1);
     console.log(`${done}/${jobs.length} batches, ${minutes} min`);

@@ -44,7 +44,6 @@ import {
 } from "@/lib/task-input-parser";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
-import { useTokenDates } from "@/lib/use-token-dates";
 import { cn } from "@/lib/utils";
 
 const TAG_QUERY_PATTERN = /#([^=~>#]*)$/;
@@ -336,8 +335,7 @@ export function CommandBarCreateTask({
     hasExplicitTokens(typed) || !freeText ? null : freeText,
     tagOptions
   );
-  const tokenDates = useTokenDates(typed);
-  const parsed = previewDraft(tokenDates.parsed, magic.parse);
+  const parsed = previewDraft(typed, magic.parse);
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
 
@@ -461,18 +459,12 @@ export function CommandBarCreateTask({
     if (!isValid || createTask.isPending || resolving) {
       return;
     }
-    const reading = magic.parse.status === "reading";
-    if (!(reading || tokenDates.pending)) {
+    if (magic.parse.status !== "reading") {
       createFrom(parsed);
       return;
     }
-    // Enter can beat the parse (or the model download); wait for it. Typed
-    // tokens and the model never both apply, so only one of these waits.
+    // Enter can beat the parse (or the model download); wait for it.
     startResolving(async () => {
-      if (!reading) {
-        createFrom(draftFromTokens(await tokenDates.resolve()));
-        return;
-      }
       const task = await magic.resolve();
       createFrom(task ? draftFromModel(typed, task) : draftFromTokens(typed));
     });

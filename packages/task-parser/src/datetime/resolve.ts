@@ -5,33 +5,31 @@
  * already past today with no day named is tomorrow.
  */
 import { Temporal } from "temporal-polyfill";
-import { holidayDate } from "../holidays";
 import type { TaskRecurrence } from "../recurrence";
 import type {
   DaySpec,
   MonthRef,
+  MonthRule,
   Part,
   Phrase,
   RepeatSpec,
   TimeSpec,
   Unit,
 } from "./grammar";
+import { holidayDate, nthWeekday } from "./holidays";
 import { DAY_PARTS } from "./lexicon";
 
-export interface When {
+interface When {
   date: Temporal.PlainDate;
   /** End of an explicit time range ("2-2:30pm"). */
   end: Temporal.PlainDateTime | null;
   recurrence: TaskRecurrence | null;
-  /** The phrase repeats, even if the schema can't hold how. */
-  repeats: boolean;
   /** Null when the phrase named a day but no time. */
   time: Temporal.PlainTime | null;
 }
 
 type Weekday = Extract<TaskRecurrence, { freq: "WEEKLY" }>["byDay"][number];
 type SpecOf<T extends DaySpec["type"]> = Extract<DaySpec, { type: T }>;
-type MonthRule = SpecOf<"nthWeekday" | "nthDay">;
 const CODES: Weekday[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 function lastDay(year: number, month: number) {
@@ -48,22 +46,6 @@ function dateIn(year: number, month: number, day: number) {
 
 const before = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
   Temporal.PlainDate.compare(a, b) < 0;
-
-function nthWeekdayOf(
-  year: number,
-  month: number,
-  weekday: number,
-  nth: number
-) {
-  if (nth > 0) {
-    const first = dateIn(year, month, 1);
-    return first.add({
-      days: ((weekday - first.dayOfWeek + 7) % 7) + (nth - 1) * 7,
-    });
-  }
-  const last = dateIn(year, month, 31);
-  return last.subtract({ days: (last.dayOfWeek - weekday + 7) % 7 });
-}
 
 function nthDayOf(year: number, month: number, nth: number, business: boolean) {
   if (!business) {
@@ -105,7 +87,7 @@ function ruleDayIn(
 ) {
   const dates = spec.nths.map((nth) =>
     spec.type === "nthWeekday"
-      ? nthWeekdayOf(year, month, spec.weekday, nth)
+      ? nthWeekday(year, month, spec.weekday, nth)
       : nthDayOf(year, month, nth, spec.business)
   );
   const upcoming = dates
@@ -118,19 +100,10 @@ function ruleDayIn(
 }
 
 /** A rule over months (nth weekday/day) on or after `from`. */
-function monthRuleDate(
-  spec: DaySpec,
-  from: Temporal.PlainDate
-): Temporal.PlainDate | null {
-  if (spec.type !== "nthWeekday" && spec.type !== "nthDay") {
-    return null;
-  }
+function monthRuleDate(spec: MonthRule, from: Temporal.PlainDate) {
   let [year, month, fixed] = monthOf(spec.month, from);
   let date = ruleDayIn(spec, year, month, from);
-  for (let tries = 0; before(date, from) && tries < 24; tries += 1) {
-    if (fixed) {
-      break;
-    }
+  for (let tries = 0; !fixed && before(date, from) && tries < 24; tries += 1) {
     // A named month rolls a year; "the month" rolls a month.
     const next =
       "month" in spec.month
@@ -267,7 +240,7 @@ function resolveYearOf(spec: SpecOf<"yearOf">, today: Temporal.PlainDate) {
   return before(date, today) ? today : date;
 }
 
-export function resolveDay(
+function resolveDay(
   spec: DaySpec,
   today: Temporal.PlainDate
 ): Temporal.PlainDate | null {
@@ -479,10 +452,7 @@ function timesOf(phrase: Phrase) {
   if (phrase.time) {
     time = clockOf(phrase.time, part);
   } else if (part) {
-    time = Temporal.PlainTime.from({
-      hour: DAY_PARTS[part]?.[0] ?? 9,
-      minute: DAY_PARTS[part]?.[1] ?? 0,
-    });
+    time = Temporal.PlainTime.from({ hour: DAY_PARTS[part] });
   }
   let end: Temporal.PlainTime | null = null;
   if (phrase.time && phrase.end) {
@@ -513,7 +483,6 @@ function clockOffset(phrase: Phrase, now: Temporal.ZonedDateTime): When | null {
     date: at.toPlainDate(),
     end: null,
     recurrence: null,
-    repeats: false,
     time: at.toPlainTime(),
   };
 }
@@ -594,7 +563,6 @@ export function resolvePhrase(
   if (repeat) {
     return resolveRepeat(phrase, repeat, {
       date,
-      end,
       now,
       nowTime: local.toPlainTime(),
       start,
@@ -625,34 +593,30 @@ function resolveOnce(
   if (isMidnightAhead(phrase)) {
     date = date.add({ days: 1 });
   }
-  const endDateTime = rangeEndAt(date, time, end);
-  const when = finish(
-    { date, end: endDateTime, recurrence: null, repeats: false, time },
+  // A time already past today, with no day named, is tomorrow's ("at 3"
+  // at 5pm). "This afternoon" and "tonight" stay today.
+  if (
+    !named &&
+    time &&
+    !phrase.today &&
+    !(phrase.part === "night" && !phrase.time) &&
+    Temporal.PlainDateTime.compare(
+      date.toPlainDateTime(time),
+      local.toPlainDateTime()
+    ) < 0
+  ) {
+    date = date.add({ days: 1 });
+  }
+  return finish(
+    {
+      date,
+      end: rangeEndAt(date, time, end),
+      recurrence: null,
+      time,
+    },
     phrase,
     now
   );
-  // A time already past today, with no day named, is tomorrow's ("at 3"
-  // at 5pm). "This afternoon" and "tonight" stay today.
-  if (!named && time && !phrase.today && when.time) {
-    const at = date.toPlainDateTime(time);
-    if (
-      Temporal.PlainDateTime.compare(at, local.toPlainDateTime()) < 0 &&
-      !(phrase.part === "night" && !phrase.time)
-    ) {
-      return finish(
-        {
-          date: date.add({ days: 1 }),
-          end: endDateTime?.add({ days: 1 }) ?? null,
-          recurrence: null,
-          repeats: false,
-          time,
-        },
-        phrase,
-        now
-      );
-    }
-  }
-  return when;
 }
 
 /**
@@ -709,7 +673,7 @@ function firstOccurrence(
 ): Temporal.PlainDate | null {
   if (rule.monthRule) {
     const first = monthRuleDate(rule.monthRule, from);
-    return first && past(first)
+    return past(first)
       ? monthRuleDate(rule.monthRule, first.add({ days: 1 }))
       : first;
   }
@@ -728,7 +692,6 @@ function resolveRepeat(
   repeat: RepeatSpec,
   context: {
     date: Temporal.PlainDate | null;
-    end: Temporal.PlainTime | null;
     now: Temporal.ZonedDateTime;
     nowTime: Temporal.PlainTime;
     start: Temporal.PlainDate | null;
@@ -767,7 +730,6 @@ function resolveRepeat(
       date: first,
       end: null,
       recurrence: toRecurrence(rule, first, until, count),
-      repeats: true,
       time,
     },
     phrase,

@@ -10,8 +10,9 @@ this directory; Python runs with `uv run`.
    15% held out for the test set.
 2. `bun gen/generate.ts <name> <batches>` (Luna-written examples) or
    `bun gen/solwrite.ts <name> <calls>` (Sol-written inputs, the larger win).
-3. `bun gen/finalize.ts <name>`: Sol labels every example.
-4. `bun gen/validate.ts <name>`: spec checks → `data/clean/<name>.jsonl`.
+3. `bun gen/finalize.ts <name>`: Sol labels every example (it can run
+   alongside step 2).
+4. `bun gen/validate.ts <name>`: spec checks → `data/clean/<name>.final.jsonl`.
 5. `bun gen/transfer.ts <raw name>`: unlabelled texts for distillation.
 6. `bun gen/phrases.ts`: extra date phrases for the phrase-swap augmentation.
 
@@ -22,6 +23,7 @@ are built independently of the training data; see their headers.
 
 Each generation distills from the previous ones (start with no `--teacher`).
 `DATA` is `data/clean/{train-merged,train2-merged,train3-merged}.final.jsonl`
+(labelled under an earlier scheme, kept as they are),
 `data/clean/{train4,train5,train6,pilot2,train7}.final.jsonl` and
 `data/clean/solw1.final.jsonl` four times (upweighted).
 
@@ -41,4 +43,7 @@ bun gen/evaluate.ts runs/v18q both   # test 66.4% all right, 79.4% usable
 To ship, copy `runs/<name>/task-parser.bin` to `../task-parser.bin`. To
 check the TypeScript forward pass, run
 `uv run python model/dump_logits.py runs/<name> data/clean/train-merged.final.jsonl 300`,
-then `bun test` with `TASK_PARSER_RUN=$PWD/runs/<name>`.
+then `bun test` with `TASK_PARSER_RUN=$PWD/runs/<name>`. The tokenizer and
+feature parity tests read `data/tokenizer-parity.json` and
+`data/features-parity.json` from `model/dump_tokens.py` and
+`model/dump_features.py`.

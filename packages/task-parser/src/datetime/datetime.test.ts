@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { isClockOnly, parseWhen } from ".";
+import { isClockOnly, resolveWhen } from "../when";
 
 // Tuesday 27 Oct 2026, 11:30 in New York.
 const now = Temporal.ZonedDateTime.from(
@@ -8,7 +8,7 @@ const now = Temporal.ZonedDateTime.from(
 );
 
 function read(text: string, repeating = false) {
-  const when = parseWhen(text, { now, repeating });
+  const when = resolveWhen(text, { now, repeating });
   return when
     ? [
         when.date.toString(),
@@ -20,7 +20,7 @@ function read(text: string, repeating = false) {
 
 type Case = [text: string, date: string, time: string | null, end?: string];
 
-describe("parseWhen", () => {
+describe("resolveWhen", () => {
   const cases: Case[] = [
     // Days and times
     ["tmrw 3", "2026-10-28", "15:00"],
@@ -188,7 +188,7 @@ describe("repeats", () => {
     ],
     ["毎晩 21時", "2026-10-27", { freq: "DAILY", interval: 1 }],
   ])("%p", (text, date, recurrence) => {
-    const when = parseWhen(text, { now, repeating: true });
+    const when = resolveWhen(text, { now, repeating: true });
     expect(when?.date.toString()).toBe(date);
     expect(when?.recurrence).toEqual(recurrence as never);
   });
@@ -199,7 +199,7 @@ describe("repeats", () => {
     ["every 2nd and 4th wednesday", "2026-10-28"],
     ["last day of each month at 11pm", "2026-10-31"],
   ])("%p keeps only its first date", (text, date) => {
-    const when = parseWhen(text, { now, repeating: true });
+    const when = resolveWhen(text, { now, repeating: true });
     expect(when?.date.toString()).toBe(date);
     expect(when?.recurrence).toBeNull();
   });

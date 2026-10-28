@@ -7,11 +7,10 @@
  */
 import { writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
-import { resolveFields } from "../../src/fields";
+import { resolveFields, type TaskFields } from "../../src/fields";
 import type { Label } from "../../src/spans";
-import { rng } from "./plan";
+import { ROOT, rng } from "./common";
 
-const ROOT = new URL("../", import.meta.url).pathname;
 const random = rng(77);
 const pick = <T>(items: readonly T[]) =>
   items[Math.floor(random() * items.length)] as T;
@@ -217,27 +216,6 @@ const now = Temporal.ZonedDateTime.from(
   "2026-10-23T10:00:00-04:00[America/New_York]"
 );
 const TARGET = 3000;
-const pools: Record<string, string[]> = { M: [], R: [], S: [], U: [] };
-
-async function fill(
-  label: string,
-  make: () => string,
-  valid: (phrase: string) => Promise<boolean>
-) {
-  const seen = new Set<string>();
-  for (
-    let attempt = 0;
-    attempt < TARGET * 4 && seen.size < TARGET;
-    attempt += 1
-  ) {
-    const phrase = make();
-    if (!seen.has(phrase) && (await valid(phrase))) {
-      seen.add(phrase);
-    }
-  }
-  pools[label] = [...seen];
-  console.log(label, seen.size);
-}
 
 /** Resolve "task <phrase>" with the phrase as one `label` span. */
 function fieldsFor(label: Label, phrase: string) {
@@ -251,24 +229,25 @@ function fieldsFor(label: Label, phrase: string) {
   });
 }
 
-await fill(
-  "S",
-  start,
-  async (phrase) => (await fieldsFor("S", phrase)).startDate !== null
-);
-await fill(
-  "U",
-  due,
-  async (phrase) => (await fieldsFor("U", phrase)).dueDate !== null
-);
-await fill(
-  "R",
-  repeat,
-  async (phrase) => (await fieldsFor("R", phrase)).recurrence !== null
-);
-await fill(
-  "M",
-  duration,
-  async (phrase) => (await fieldsFor("M", phrase)).durationMinutes !== null
-);
-await writeFile(`${ROOT}data/phrases.json`, JSON.stringify(pools));
+/** Up to TARGET distinct phrases from `make` that resolve to `field`. */
+function fill(label: Label, make: () => string, field: keyof TaskFields) {
+  const seen = new Set<string>();
+  for (
+    let attempt = 0;
+    attempt < TARGET * 4 && seen.size < TARGET;
+    attempt += 1
+  ) {
+    const phrase = make();
+    if (!seen.has(phrase) && fieldsFor(label, phrase)[field] !== null) {
+      seen.add(phrase);
+    }
+  }
+  console.log(label, seen.size);
+  return [...seen];
+}
+
+const S = fill("S", start, "startDate");
+const U = fill("U", due, "dueDate");
+const R = fill("R", repeat, "recurrence");
+const M = fill("M", duration, "durationMinutes");
+await writeFile(`${ROOT}data/phrases.json`, JSON.stringify({ M, R, S, U }));

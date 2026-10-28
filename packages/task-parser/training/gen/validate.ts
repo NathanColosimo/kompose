@@ -1,32 +1,20 @@
 /**
- * Checks raw generations against the spec and writes clean examples.
+ * Checks final labels against the spec and writes clean examples.
  * Usage: bun gen/validate.ts <name>
- * Writes data/clean/<name>.jsonl and prints a report.
+ * Reads data/final/<name>/, writes data/clean/<name>.final.jsonl (and the
+ * rejected items to .final.rejects.jsonl) and prints a report.
  */
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import { parseDuration } from "../../src/duration";
 import { resolveFields } from "../../src/fields";
 import { MarkupError, parseMarkup, type Span } from "../../src/spans";
 import { resolveWhen } from "../../src/when";
-import type { Slot } from "./plan";
+import { ROOT, writeJsonl } from "./common";
 
-const ROOT = new URL("../", import.meta.url).pathname;
-const name = process.argv[2] ?? "train";
-/** "raw" checks Luna's drafts; "final" checks Sol's labels. */
-const source = process.argv[3] ?? "raw";
 const now = Temporal.ZonedDateTime.from(
   "2026-10-23T10:00:00-04:00[America/New_York]"
 );
-
-export interface CleanExample {
-  flags: string[];
-  id: string;
-  spans: Span[];
-  tagList: string[];
-  tags: string[];
-  text: string;
-}
 
 const LEADING_CUE =
   /^(by|due|due on|due by|before|for|on|at|starting|from|until|takes|about|around)\s+/i;
@@ -63,26 +51,20 @@ export function tidy(span: Span, fullText: string): Span {
     start += junk[0].length;
     text = text.slice(junk[0].length);
   }
-  if (!"SUMR".includes(span.label)) {
-    const trailing = TRAILING_PUNCT.exec(text);
-    if (trailing) {
-      end -= trailing[0].length;
-      text = text.slice(0, -trailing[0].length);
+  if ("SUMR".includes(span.label)) {
+    const meridiem = MERIDIEM.exec(fullText.slice(end));
+    if (meridiem && span.label !== "M") {
+      end += meridiem[0].length;
+      text = fullText.slice(start, end);
     }
-    return { ...span, end, start, text };
-  }
-  const meridiem = MERIDIEM.exec(fullText.slice(end));
-  if (meridiem && "SUR".includes(span.label)) {
-    end += meridiem[0].length;
-    text = fullText.slice(start, end);
-  }
-  for (;;) {
-    const cue = span.label === "R" ? null : LEADING_CUE.exec(text);
-    if (!cue) {
-      break;
+    for (
+      let cue = span.label === "R" ? null : LEADING_CUE.exec(text);
+      cue;
+      cue = LEADING_CUE.exec(text)
+    ) {
+      start += cue[0].length;
+      text = text.slice(cue[0].length);
     }
-    start += cue[0].length;
-    text = text.slice(cue[0].length);
   }
   const trailing = TRAILING_PUNCT.exec(text);
   if (trailing) {
@@ -92,11 +74,20 @@ export function tidy(span: Span, fullText: string): Span {
   return { ...span, end, start, text };
 }
 
-async function check(
+function check(
   marked: string,
   tags: string[],
   tagList: string[]
-): Promise<{ example?: Omit<CleanExample, "id">; reject?: string }> {
+): {
+  example?: {
+    flags: string[];
+    spans: Span[];
+    tagList: string[];
+    tags: string[];
+    text: string;
+  };
+  reject?: string;
+} {
   let parsed: ReturnType<typeof parseMarkup>;
   try {
     parsed = parseMarkup(marked);
@@ -138,7 +129,7 @@ async function check(
   for (const span of spans) {
     if (
       (span.label === "S" || span.label === "U") &&
-      !(await resolveWhen(span.text, { now }))
+      !resolveWhen(span.text, { now })
     ) {
       flags.push(`unresolved-${span.label}: ${span.text}`);
     }
@@ -153,7 +144,7 @@ async function check(
     }
   }
   if (spans.some((span) => span.label === "R")) {
-    const fields = await resolveFields({ now, spans, tagNames: [] });
+    const fields = resolveFields({ now, spans, tagNames: [] });
     if (!fields.recurrence) {
       flags.push(
         `unresolved-R: ${spans
@@ -175,125 +166,68 @@ async function check(
 }
 
 if (import.meta.main) {
-  const dir = `${ROOT}data/${source}/${name}/`;
+  const name = process.argv[2] ?? "train";
+  const dir = `${ROOT}data/final/${name}/`;
   const files = (await readdir(dir))
     .filter((file) => file.endsWith(".json"))
     .sort();
-  const clean: CleanExample[] = [];
+  const clean: object[] = [];
+  const rejectLog: object[] = [];
   const rejects: Record<string, number> = {};
   const flagCounts: Record<string, number> = {};
   const labelCounts: Record<string, number> = {};
-  const missing: Record<string, number> = {};
   const seenText = new Set<string>();
-  const rejectLog: string[] = [];
+  let flagged = 0;
   let total = 0;
-
+  let withTags = 0;
   for (const file of files) {
-    const parsedFile = JSON.parse(await readFile(dir + file, "utf8"));
-    const entries: {
-      marked: string;
-      slotNumber: number;
-      tagList: string[] | undefined;
-      tags: string[];
-      labels: string[];
-    }[] =
-      source === "final"
-        ? (
-            parsedFile.items as {
-              marked: string;
-              tagList: string[];
-              tags: string[];
-            }[]
-          ).map((item, index) => ({
-            labels: [],
-            marked: item.marked,
-            slotNumber: index + 1,
-            tagList: item.tagList,
-            tags: item.tags,
-          }))
-        : (
-            parsedFile.output as {
-              marked: string;
-              slot: number;
-              tags: string[];
-            }[]
-          ).map((item) => {
-            const slot = (parsedFile.slots as Slot[])[item.slot - 1];
-            return {
-              labels: slot?.labels ?? [],
-              marked: item.marked,
-              slotNumber: item.slot,
-              tagList: slot?.tags,
-              tags: item.tags,
-            };
-          });
-    for (const item of entries) {
+    const { items } = JSON.parse(await readFile(dir + file, "utf8")) as {
+      items: { marked: string; tagList: string[]; tags: string[] }[];
+    };
+    for (const [index, item] of items.entries()) {
       total += 1;
-      const slot = item.tagList
-        ? { labels: item.labels, tags: item.tagList }
-        : undefined;
-      if (!slot) {
-        rejects["bad slot"] = (rejects["bad slot"] ?? 0) + 1;
-        continue;
-      }
-      const result = await check(item.marked, item.tags, slot.tags);
-      if (!result.example) {
-        const reason = (result.reject ?? "").split(":")[0] ?? "";
-        rejectLog.push(
-          JSON.stringify({
-            marked: item.marked,
-            reason: result.reject,
-            tagList: slot.tags,
-            tags: item.tags,
-          })
-        );
+      const { example, reject = "" } = check(
+        item.marked,
+        item.tags,
+        item.tagList
+      );
+      if (!example) {
+        rejectLog.push({ ...item, reason: reject });
+        const reason = reject.split(":")[0] ?? "";
         rejects[reason] = (rejects[reason] ?? 0) + 1;
         continue;
       }
-      const key = result.example.text.toLowerCase();
+      const key = example.text.toLowerCase();
       if (seenText.has(key)) {
         rejects.duplicate = (rejects.duplicate ?? 0) + 1;
         continue;
       }
       seenText.add(key);
-      for (const flag of result.example.flags) {
+      for (const flag of example.flags) {
         const kind = flag.split(":")[0] ?? "";
         flagCounts[kind] = (flagCounts[kind] ?? 0) + 1;
       }
-      const labels = new Set(result.example.spans.map((span) => span.label));
-      for (const label of labels) {
+      for (const label of new Set(example.spans.map((span) => span.label))) {
         labelCounts[label] = (labelCounts[label] ?? 0) + 1;
       }
-      for (const label of slot.labels) {
-        if (!labels.has(label as Span["label"])) {
-          missing[label] = (missing[label] ?? 0) + 1;
-        }
-      }
+      flagged += example.flags.length > 0 ? 1 : 0;
+      withTags += example.tags.length > 0 ? 1 : 0;
       clean.push({
-        id: `${name}/${file.replace(".json", "")}/${item.slotNumber}`,
-        ...result.example,
+        id: `${name}/${file.replace(".json", "")}/${index + 1}`,
+        ...example,
       });
     }
   }
-
   await mkdir(`${ROOT}data/clean`, { recursive: true });
-  await writeFile(
-    `${ROOT}data/clean/${name}${source === "final" ? ".final" : ""}.jsonl`,
-    `${clean.map((example) => JSON.stringify(example)).join("\n")}\n`
-  );
-  await writeFile(
-    `${ROOT}data/clean/${name}${source === "final" ? ".final" : ""}.rejects.jsonl`,
-    `${rejectLog.join("\n")}\n`
-  );
-  const withTags = clean.filter((example) => example.tags.length > 0).length;
+  await writeJsonl(`${ROOT}data/clean/${name}.final.jsonl`, clean);
+  await writeJsonl(`${ROOT}data/clean/${name}.final.rejects.jsonl`, rejectLog);
   console.log(
     JSON.stringify(
       {
         clean: clean.length,
-        flagged: clean.filter((example) => example.flags.length > 0).length,
+        flagged,
         flags: flagCounts,
         labels: labelCounts,
-        missingRequired: missing,
         rejects,
         total,
         withTags,

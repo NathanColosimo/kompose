@@ -22,8 +22,11 @@ export interface ParsedTask<Id extends string = string> extends TaskFields {
   tags: (TagOption<Id> & { confidence: number })[];
 }
 
-/** Tags at or above this probability are applied: a wrong tag costs more than a missing one (tuned on the test set). */
-const DEFAULT_TAG_THRESHOLD = 0.8;
+/**
+ * Tags at or above this probability are applied: a wrong tag costs more
+ * than a missing one (tuned on the test set).
+ */
+const TAG_THRESHOLD = 0.8;
 
 const TAG_WORD_PATTERN = /^(tags?\b:?|#|@)\s*|\s+tag$/giu;
 const NOT_NAME_PATTERN = /[^\p{L}\p{N}\s&/]/gu;
@@ -50,10 +53,7 @@ export interface ParseOptions<Id extends string = string> {
  * 5 ms on an M-series chip, nearly all of it the model (WebAssembly SIMD);
  * dates resolve in microseconds.
  */
-export function createTaskParser(
-  weightsFile: ArrayBuffer,
-  { tagThreshold = DEFAULT_TAG_THRESHOLD }: { tagThreshold?: number } = {}
-) {
+export function createTaskParser(weightsFile: ArrayBuffer) {
   const weights = readWeights(weightsFile);
   const tokenizer = new WordPiece(weights.vocab);
   const forward = createNetwork(weights);
@@ -87,7 +87,7 @@ export function createTaskParser(
             : 1 / (1 + Math.exp(-(logits.tags[index] as number))),
         };
       })
-      .filter((tag) => tag.confidence >= tagThreshold)
+      .filter((tag) => tag.confidence >= TAG_THRESHOLD)
       .sort((a, b) => b.confidence - a.confidence);
     const fields = resolveFields({
       now,

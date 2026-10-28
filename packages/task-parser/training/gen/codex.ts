@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export interface CodexOptions {
+interface CodexOptions {
   effort?: "low" | "medium" | "high" | "xhigh";
   model: string;
   prompt: string;
@@ -106,8 +106,12 @@ export async function codexJson<T>({
   }
 }
 
-/** Run `tasks` with at most `limit` in flight; failures are retried twice. */
+/**
+ * Run `tasks` with at most `limit` in flight; failures are retried twice,
+ * then logged as "<name> <index> failed".
+ */
 export async function pool<T>(
+  name: string,
   tasks: (() => Promise<T>)[],
   limit: number,
   onDone?: (index: number, result: T | Error) => void
@@ -126,6 +130,9 @@ export async function pool<T>(
         } catch (error) {
           result = error as Error;
         }
+      }
+      if (result instanceof Error) {
+        console.log(`${name} ${index} failed: ${result.message.slice(0, 200)}`);
       }
       results[index] = result;
       onDone?.(index, result);

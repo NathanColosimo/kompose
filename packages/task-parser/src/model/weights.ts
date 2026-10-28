@@ -1,10 +1,9 @@
 /** Reads the runtime weight file written by training/model/export.py. */
 
-export interface ModelConfig {
+interface ModelConfig {
   dim: number;
   heads: number;
   layers: number;
-  max_positions: number;
 }
 
 /** A row-major matrix; int8 matrices carry one scale per row. */

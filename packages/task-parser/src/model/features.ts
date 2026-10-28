@@ -9,9 +9,12 @@ export const TAG_NAMES = [
   "O",
   ...LABELS.flatMap((label) => [`B-${label}`, `I-${label}`]),
 ];
-export const SPECIALS = ["[PAD]", "[CLS]", "[SEP]", "[URL]", "[TAG]"] as const;
-const [, CLS, SEP, URL, TAG] = [0, 1, 2, 3, 4] as const;
-export const SHAPES = [
+/** Special token ids: [PAD] 0, [CLS] 1, [SEP] 2, [URL] 3, [TAG] 4. */
+const CLS = 1;
+const SEP = 2;
+const URL = 3;
+const TAG = 4;
+const SHAPES = [
   "special",
   "lower",
   "title",
@@ -54,7 +57,7 @@ export interface Encoded {
   tagPositions: number[];
 }
 
-export function findLinks(text: string): [number, number][] {
+function findLinks(text: string): [number, number][] {
   const links: [number, number][] = [];
   for (const match of text.matchAll(LINK_PATTERN)) {
     const start = match.index;
@@ -71,7 +74,7 @@ export function findLinks(text: string): [number, number][] {
   return links;
 }
 
-export function shape(word: string): number {
+function shape(word: string): number {
   const chars = [...word];
   if (chars.length === 0) {
     return SHAPES.indexOf("other");
@@ -94,7 +97,7 @@ export function shape(word: string): number {
 }
 
 /** Lowercased words of 2+ characters (letters, numbers, underscore). */
-export function wordsOf(text: string): Set<string> {
+function wordsOf(text: string): Set<string> {
   const words = new Set<string>();
   let current: string[] = [];
   for (const char of [...text, " "]) {

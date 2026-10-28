@@ -28,13 +28,9 @@ export const MONTHS = [
   "december",
 ] as const;
 
-/** Day parts and the time a task in them starts. */
-export const DAY_PARTS: Record<string, [number, number]> = {
-  afternoon: [13, 0],
-  evening: [18, 0],
-  morning: [9, 0],
-  night: [20, 0],
-};
+/** Day parts and the hour a task in them starts. */
+export const DAY_PARTS = { afternoon: 13, evening: 18, morning: 9, night: 20 };
+export type DayPart = keyof typeof DAY_PARTS;
 
 export const NUMBER_WORDS: Record<string, number> = {
   a: 1,

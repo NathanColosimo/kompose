@@ -4,8 +4,9 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { codexJson, pool } from "./codex";
+import { type Persona, ROOT } from "./common";
 
-const OUT = new URL("../data/seeds/", import.meta.url).pathname;
+const OUT = `${ROOT}data/seeds/`;
 const MODEL = "gpt-6-luna";
 
 const TAG_THEMES = [
@@ -117,7 +118,7 @@ const tagJobs = TAG_THEMES.map(
 );
 const personaJobs = PERSONA_THEMES.map(
   (theme) => () =>
-    codexJson<{ personas: { description: string; writingHabits: string }[] }>({
+    codexJson<{ personas: Persona[] }>({
       model: MODEL,
       prompt: personaPrompt(theme),
       schema: personaSchema,
@@ -125,18 +126,8 @@ const personaJobs = PERSONA_THEMES.map(
 );
 
 const [tagResults, personaResults] = await Promise.all([
-  pool(tagJobs, 16, (index, result) =>
-    console.log(
-      `tags ${index}`,
-      result instanceof Error ? result.message : "ok"
-    )
-  ),
-  pool(personaJobs, 8, (index, result) =>
-    console.log(
-      `personas ${index}`,
-      result instanceof Error ? result.message : "ok"
-    )
-  ),
+  pool("tags", tagJobs, 16),
+  pool("personas", personaJobs, 8),
 ]);
 
 const seen = new Set<string>();

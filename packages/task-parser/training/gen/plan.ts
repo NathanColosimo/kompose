@@ -3,10 +3,7 @@
  * list, persona, style, labels and twist, so coverage is controlled by code
  * rather than by whatever the generator likes to write.
  */
-export interface Persona {
-  description: string;
-  writingHabits: string;
-}
+import { type Persona, shuffled } from "./common";
 
 export interface Slot {
   labels: string[];
@@ -17,7 +14,7 @@ export interface Slot {
   twist: string | null;
 }
 
-export const STYLES = [
+const STYLES = [
   "terse, all lowercase, no punctuation",
   "normal sentence case with punctuation",
   "voice dictation: one run-on sentence, spoken filler (um, so, like), numbers and times spelled out in words (three thirty, twenty minutes)",
@@ -55,7 +52,7 @@ export const STYLES = [
   "written to an assistant in full polite sentences, with the details spread over two or three sentences",
 ];
 
-export const TWISTS = [
+const TWISTS = [
   "the title contains a word that looks like a date or weekday but is not one (a name like May or June, a show like Friday Night Lights, a book like 1984, 'march' as a verb, a band)",
   "the title contains a number that is not a duration or date (room 204, 3 boxes, v2.1, 401k, 5k run, 2 tickets)",
   "the title contains a duration-like phrase that belongs to the thing itself (buy a 2 hour parking pass, book a 30 min call slot, 10 minute abs video) while the real duration is separate or absent",
@@ -229,28 +226,8 @@ function pickMode(
   return modes[0]?.[0] ?? "";
 }
 
-/** Mulberry32: small seeded PRNG so plans are reproducible. */
-export function rng(seed: number) {
-  let state = seed;
-  return () => {
-    state = (state + 0x6d_2b_79_f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
 function pick<T>(random: () => number, items: readonly T[]): T {
   return items[Math.floor(random() * items.length)] as T;
-}
-
-function shuffled<T>(random: () => number, items: T[]) {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const other = Math.floor(random() * (index + 1));
-    [copy[index], copy[other]] = [copy[other] as T, copy[index] as T];
-  }
-  return copy;
 }
 
 /**
@@ -263,7 +240,7 @@ export type Focus = "all" | "weak";
 const WEAK_STYLE_PATTERN =
   /voice dictation|typos|brain dump|ramble|autocorrect|run-on|sloppy|non-native|dense|forwarded|polite sentences/;
 const WEAK_TWIST_PATTERN =
-  /deadline|due|start and a separate|work on it|tag|purpose|context|looks like a date|number that is not|duration-like|vague|false|correction/;
+  /deadline|due|start and a separate|work on it|tag|purpose|context|looks like a date|number that is not|duration-like|vague|correction/;
 const WEAK_STYLES = STYLES.filter((style) => WEAK_STYLE_PATTERN.test(style));
 const WEAK_TWISTS = TWISTS.filter((twist) => WEAK_TWIST_PATTERN.test(twist));
 const WEAK_TAG_MODES = [

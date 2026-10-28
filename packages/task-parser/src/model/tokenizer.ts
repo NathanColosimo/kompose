@@ -5,7 +5,7 @@
  * tokenizer.parity.test.ts checks this against the Python tokenizer.
  */
 
-export interface Piece {
+interface Piece {
   end: number;
   id: number;
   start: number;

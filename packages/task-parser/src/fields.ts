@@ -1,9 +1,8 @@
 import { Temporal } from "temporal-polyfill";
-import { isClockOnly } from "./datetime";
 import { parseDuration } from "./duration";
 import type { TaskRecurrence } from "./recurrence";
 import type { Label, Span } from "./spans";
-import { resolveWhen } from "./when";
+import { isClockOnly, resolveWhen } from "./when";
 
 /** A task built from labelled spans. */
 export interface TaskFields {

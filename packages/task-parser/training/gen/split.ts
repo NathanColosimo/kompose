@@ -1,8 +1,8 @@
 /** Holds out 15% of tag sets and personas for the test set only. */
 import { readFile, writeFile } from "node:fs/promises";
-import { rng } from "./plan";
+import { ROOT, rng } from "./common";
 
-const seeds = new URL("../data/seeds/", import.meta.url).pathname;
+const seeds = `${ROOT}data/seeds/`;
 const random = rng(7);
 const tagSets = (
   JSON.parse(await readFile(`${seeds}tag-sets.json`, "utf8")) as {

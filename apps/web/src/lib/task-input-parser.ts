@@ -1,3 +1,4 @@
+import { parseDuration } from "@kompose/task-parser/duration";
 import { resolveWhen } from "@kompose/task-parser/when";
 import { Temporal } from "temporal-polyfill";
 
@@ -5,7 +6,7 @@ import { Temporal } from "temporal-polyfill";
  * Result of parsing a task input string with NLP syntax.
  */
 export interface ParsedTaskInput {
-  /** Due date from the >date token; filled by `resolveTokenDates` */
+  /** Due date from the >date token (e.g., >monday, >tomorrow) */
   dueDate: Temporal.PlainDate | null;
   /** Raw due date string for display (e.g., "monday", "tomorrow") */
   dueDateRaw: string | null;
@@ -15,11 +16,11 @@ export interface ParsedTaskInput {
   durationRaw: string | null;
   /** URLs detected in the title text */
   links: string[];
-  /** Start date from the ~date token; filled by `resolveTokenDates` */
+  /** Start date from the ~date token (e.g., ~friday, ~next week) */
   startDate: Temporal.PlainDate | null;
   /** Raw start date string for display (e.g., "friday", "next week") */
   startDateRaw: string | null;
-  /** Start time from the ~date token ("~fri 3pm") or on-device parsing */
+  /** Start time from the ~date token (e.g., ~fri 3pm) */
   startTime: Temporal.PlainTime | null;
   /** Tag names parsed from #tag tokens */
   tagNames: string[];
@@ -34,36 +35,9 @@ export interface ParsedTaskInput {
  * Tokens are: =duration, >dueDate, ~startDate
  * Each pattern captures the value after the symbol until the next token or end.
  */
-const DURATION_PATTERN = /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m?)?$/;
 const TOKEN_PATTERN = /([=~>#])([^=~>#]+)/g;
 const FIRST_TOKEN_PATTERN = /(?<!\S)[=~>#]/;
 const URL_PATTERN = /https?:\/\/\S+/g;
-
-/**
- * Parse duration string into minutes.
- * Supports formats: "2h", "30m", "1h30m", "90"
- *
- * @param durationStr - The duration string (e.g., "2h", "30m", "1h30m")
- * @returns Duration in minutes, or null if parsing fails
- */
-function parseDuration(durationStr: string): number | null {
-  const trimmed = durationStr.trim().toLowerCase();
-
-  // Match hours and/or minutes: "2h", "30m", "1h30m", "2h30"
-  const match = trimmed.match(DURATION_PATTERN);
-  if (!match) {
-    return null;
-  }
-
-  const hours = match[1] ? Number.parseInt(match[1], 10) : 0;
-  const minutes = match[2] ? Number.parseInt(match[2], 10) : 0;
-
-  if (hours === 0 && minutes === 0) {
-    return null;
-  }
-
-  return hours * 60 + minutes;
-}
 
 /**
  * Parse a task input string with NLP-style syntax.
@@ -75,15 +49,16 @@ function parseDuration(durationStr: string): number | null {
  * - ~date: start date (e.g., ~friday, ~next week)
  *
  * Example: "Read that book =2h >monday ~tmrw"
- * Result: { title: "Read that book", durationMinutes: 120, dueDateRaw: "monday", startDateRaw: "tmrw" }
- *
- * Runs on every keystroke, so it stays synchronous; date tokens are only
- * captured here, and `resolveTokenDates` turns them into dates.
+ * Result: { title: "Read that book", durationMinutes: 120, dueDate: Monday, startDate: Tomorrow }
  *
  * @param input - The raw input string from the command bar
- * @returns Parsed task input with title, duration, and raw date tokens
+ * @param now - Reference time for relative dates (defaults to now)
+ * @returns Parsed task input with title, duration, and dates
  */
-export function parseTaskInput(input: string): ParsedTaskInput {
+export function parseTaskInput(
+  input: string,
+  now = Temporal.Now.zonedDateTimeISO()
+): ParsedTaskInput {
   const result: ParsedTaskInput = {
     dueDate: null,
     dueDateRaw: null,
@@ -143,11 +118,16 @@ export function parseTaskInput(input: string): ParsedTaskInput {
       case ">":
         // Due date token
         result.dueDateRaw = trimmedValue;
+        result.dueDate = resolveWhen(trimmedValue, { now })?.date ?? null;
         break;
-      case "~":
-        // Start date token
+      case "~": {
+        // Start date token, with an optional time ("~fri 3pm")
+        const start = resolveWhen(trimmedValue, { now });
         result.startDateRaw = trimmedValue;
+        result.startDate = start?.date ?? null;
+        result.startTime = start?.time ?? null;
         break;
+      }
       case "#":
         result.tagNamesRaw.push(trimmedValue);
         if (trimmedValue) {
@@ -160,27 +140,6 @@ export function parseTaskInput(input: string): ParsedTaskInput {
   }
 
   return result;
-}
-
-/** The dates named by the >due and ~start tokens. */
-export async function resolveTokenDates(
-  {
-    dueDateRaw,
-    startDateRaw,
-  }: Pick<ParsedTaskInput, "dueDateRaw" | "startDateRaw">,
-  {
-    now = Temporal.Now.zonedDateTimeISO(),
-  }: { now?: Temporal.ZonedDateTime } = {}
-): Promise<Pick<ParsedTaskInput, "dueDate" | "startDate" | "startTime">> {
-  const [due, start] = await Promise.all([
-    dueDateRaw ? resolveWhen(dueDateRaw, { now }) : null,
-    startDateRaw ? resolveWhen(startDateRaw, { now }) : null,
-  ]);
-  return {
-    dueDate: due?.date ?? null,
-    startDate: start?.date ?? null,
-    startTime: start?.time ?? null,
-  };
 }
 
 export function formatDuration(minutes: number): string {

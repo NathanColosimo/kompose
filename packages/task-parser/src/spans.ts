@@ -1,7 +1,7 @@
 /**
  * Span labels; see training/SPEC.md. Words outside any span are dropped.
  */
-export const LABELS = ["T", "D", "S", "U", "R", "M", "L", "G", "F"] as const;
+const LABELS = ["T", "D", "S", "U", "R", "M", "L", "G", "F"] as const;
 export type Label = (typeof LABELS)[number];
 
 export interface Span {
