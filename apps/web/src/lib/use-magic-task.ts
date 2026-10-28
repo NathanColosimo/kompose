@@ -1,13 +1,14 @@
 "use client";
 
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
-import { createWorkerTaskParser } from "@kompose/task-parser/worker-client";
+import { connectTaskParser } from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Temporal } from "temporal-polyfill";
 
 /**
  * The magic box: a small on-device model (packages/task-parser) labels the
@@ -30,7 +31,7 @@ async function loadParser() {
     { type: "module" }
   );
   try {
-    return await createWorkerTaskParser(worker);
+    return await connectTaskParser(worker);
   } catch (error) {
     worker.terminate();
     throw error;
@@ -59,8 +60,8 @@ function parseQuery(text: string, tags: TagOption[]) {
   return queryOptions({
     gcTime: 60_000,
     queryFn: async ({ client }) => {
-      const parse = await client.fetchQuery(parserQuery);
-      return parse(text, { tags });
+      const parser = await client.fetchQuery(parserQuery);
+      return parser.parse({ now: Temporal.Now.zonedDateTimeISO(), tags, text });
     },
     queryKey: ["task-parser", "parse", minute, tags, text],
     retry: false,

@@ -1,36 +1,25 @@
 /**
- * The parser behind a Worker (worker.ts), with the same `parse` as
- * createTaskParser but async, so a parse never lands on the typing thread.
+ * The parser behind a Worker (worker.ts): a typed oRPC client for
+ * workerContract, so a parse never lands on the typing thread.
  */
-import { wrap } from "comlink";
-import { Temporal } from "temporal-polyfill";
-import type { ParsedTask, ParseOptions } from "./parser";
-import type { WorkerApi } from "./worker";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/message-port";
+import type { ContractRouterClient } from "@orpc/contract";
+import { serializer, type workerContract } from "./worker-contract";
 
 /** The shipped weights; the bundler gives the file a content-hashed URL. */
 const WEIGHTS_URL = new URL("../task-parser.bin", import.meta.url).href;
 
-/** Loads the weights at `url` inside `worker`; resolves once it can parse. */
-export async function createWorkerTaskParser(
+export type TaskParserClient = ContractRouterClient<typeof workerContract>;
+
+/** A client for the parser in `worker`, once it has loaded the weights at `url`. */
+export async function connectTaskParser(
   worker: Worker,
   url = WEIGHTS_URL
-) {
-  const remote = wrap<WorkerApi>(worker);
-  await remote.load(url);
-  return async function parse(
-    text: string,
-    { now = Temporal.Now.zonedDateTimeISO(), tags = [] }: ParseOptions = {}
-  ): Promise<ParsedTask> {
-    const task = await remote.parse(text, now.toString(), tags);
-    return {
-      ...task,
-      dueDate: task.dueDate ? Temporal.PlainDate.from(task.dueDate) : null,
-      startDate: task.startDate
-        ? Temporal.PlainDate.from(task.startDate)
-        : null,
-      startTime: task.startTime
-        ? Temporal.PlainTime.from(task.startTime)
-        : null,
-    };
-  };
+): Promise<TaskParserClient> {
+  const client: TaskParserClient = createORPCClient(
+    new RPCLink({ port: worker, serializer })
+  );
+  await client.load({ url });
+  return client;
 }

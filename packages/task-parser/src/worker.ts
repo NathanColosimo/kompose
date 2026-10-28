@@ -1,16 +1,13 @@
 /// <reference lib="webworker" />
 /**
- * Runs the parser off the main thread. Load this module as a module Worker
- * and wrap it with `createWorkerTaskParser` (worker-client.ts).
+ * Runs the parser off the main thread, serving workerContract. Load this
+ * module as a module Worker and connect with `connectTaskParser`
+ * (worker-client.ts).
  */
-import { expose } from "comlink";
-import { Temporal } from "temporal-polyfill";
-import {
-  createTaskParser,
-  type ParsedTask,
-  type TagOption,
-  type TaskParser,
-} from "./parser";
+import { implement, ORPCError } from "@orpc/server";
+import { RPCHandler } from "@orpc/server/message-port";
+import { createTaskParser, type TaskParser } from "./parser";
+import { serializer, workerContract } from "./worker-contract";
 
 const CACHE_NAME = "task-parser";
 
@@ -48,30 +45,21 @@ async function fetchWeights(url: string) {
   return response.arrayBuffer();
 }
 
-/** Temporal values don't survive structured cloning: they cross as ISO strings. */
-function toWire(task: ParsedTask) {
-  return {
-    ...task,
-    dueDate: task.dueDate?.toString() ?? null,
-    startDate: task.startDate?.toString() ?? null,
-    startTime: task.startTime?.toString() ?? null,
-  };
-}
-
+const os = implement(workerContract);
 let parse: TaskParser | null = null;
 
-const api = {
-  async load(url: string) {
-    parse = createTaskParser(await fetchWeights(url));
-  },
-  parse(text: string, now: string, tags: TagOption[]) {
+const router = os.router({
+  load: os.load.handler(async ({ input }) => {
+    parse = createTaskParser(await fetchWeights(input.url));
+  }),
+  parse: os.parse.handler(({ input: { text, now, tags } }) => {
     if (!parse) {
-      throw new Error("Task parser not loaded");
+      throw new ORPCError("PRECONDITION_FAILED", {
+        message: "Task parser not loaded",
+      });
     }
-    return toWire(parse(text, { now: Temporal.ZonedDateTime.from(now), tags }));
-  },
-};
+    return parse(text, { now, tags });
+  }),
+});
 
-export type WorkerApi = typeof api;
-
-expose(api);
+new RPCHandler(router, { serializer }).upgrade(self);
