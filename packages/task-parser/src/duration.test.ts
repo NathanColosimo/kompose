@@ -1,0 +1,53 @@
+import { describe, expect, test } from "bun:test";
+import { parseDuration } from "./duration";
+
+describe("parseDuration", () => {
+  test.each([
+    ["30 min", 30],
+    ["30m", 30],
+    ["15m", 15],
+    ["45", 45],
+    ["2h", 120],
+    ["2 hrs", 120],
+    ["1.5 hrs", 90],
+    ["1h30", 90],
+    ["1h30m", 90],
+    ["1h 30", 90],
+    ["1 hr 15 min", 75],
+    ["1:30", 90],
+    ["an hour", 60],
+    ["fourteen minutes", 14],
+    ["an hr", 60],
+    ["half an hour", 30],
+    ["a half hour", 30],
+    ["half hour", 30],
+    ["an hour and a half", 90],
+    ["hour and a half", 90],
+    ["1 and a half hours", 90],
+    ["two and a half hours", 150],
+    ["an hour and a quarter", 75],
+    ["quarter hour", 15],
+    ["a couple hours", 120],
+    ["a couple of hours", 120],
+    ["a few hours", 180],
+    ["forty-five minutes", 45],
+    ["twenty five mins", 25],
+    ["ninety minutes", 90],
+    ["2-3 hours", 120],
+    ["2 to 3 hours", 120],
+    ["about 20 min", 20],
+    ["~10 mins", 10],
+    ["½ hour", 30],
+    ["1/2 hour", 30],
+    ["3/4 hr", 45],
+    ["2 1/2 hours", 150],
+    ["1 1/2h", 90],
+    ["constructor 2 hours", 120],
+    ["90 mins", 90],
+    ["1 day", 1440],
+    ["", null],
+    ["soon", null],
+  ])("%p is %p minutes", (phrase, minutes) => {
+    expect(parseDuration(phrase)).toBe(minutes);
+  });
+});

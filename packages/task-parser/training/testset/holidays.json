@@ -1,0 +1,319 @@
+{
+  "now": "2026-10-28T09:00:00-04:00[America/New_York]",
+  "note": "Wednesday Oct 28 2026, 09:00 New York. Holidays: misspelled or plural ones that date the task, and ones inside a title that don't. Fields not listed must be empty.",
+  "defaultTags": [],
+  "cases": [
+    {
+      "text": "buy turkey before thanksgivng",
+      "expect": {
+        "title": "Buy turkey",
+        "dueDate": "2026-11-26"
+      }
+    },
+    {
+      "text": "call grandma on chirstmas",
+      "expect": {
+        "title": "Call grandma",
+        "startDate": "2026-12-25"
+      }
+    },
+    {
+      "text": "costume ready by halloweeen",
+      "expect": {
+        "title": "Costume ready",
+        "dueDate": "2026-10-31"
+      }
+    },
+    {
+      "text": "send cards before christmass",
+      "expect": {
+        "title": "Send cards",
+        "dueDate": "2026-12-25"
+      }
+    },
+    {
+      "text": "pay taxes by tax dya",
+      "expect": {
+        "title": "Pay taxes",
+        "dueDate": "2027-04-15"
+      }
+    },
+    {
+      "text": "grill burgers on memorial dya",
+      "expect": {
+        "title": "Grill burgers",
+        "startDate": "2027-05-31"
+      }
+    },
+    {
+      "text": "fireworks on independance day",
+      "expect": {
+        "title": "Fireworks",
+        "startDate": "2027-07-04"
+      }
+    },
+    {
+      "text": "brunch with mom on mothers day",
+      "expect": {
+        "title": "Brunch with mom",
+        "startDate": "2027-05-09"
+      }
+    },
+    {
+      "text": "golf with dad on fathers dya",
+      "expect": {
+        "title": "Golf with dad",
+        "startDate": "2027-06-20"
+      }
+    },
+    {
+      "text": "hide eggs on eastr",
+      "expect": {
+        "title": "Hide eggs",
+        "startDate": "2027-03-28"
+      }
+    },
+    {
+      "text": "call mom on xmas eve",
+      "expect": {
+        "title": "Call mom",
+        "startDate": "2026-12-24"
+      }
+    },
+    {
+      "text": "review budget on labour day",
+      "expect": {
+        "title": "Review budget",
+        "startDate": "2027-09-06"
+      }
+    },
+    {
+      "text": "order gifts before black firday",
+      "expect": {
+        "title": "Order gifts",
+        "dueDate": "2026-11-27"
+      }
+    },
+    {
+      "text": "bank closed on juneteeth",
+      "expect": {
+        "title": "Bank closed",
+        "startDate": "2027-06-19"
+      }
+    },
+    {
+      "text": "parade on st patricks day",
+      "expect": {
+        "title": "Parade",
+        "startDate": "2027-03-17"
+      }
+    },
+    {
+      "text": "pub crawl on st paddys day",
+      "expect": {
+        "title": "Pub crawl",
+        "startDate": "2027-03-17"
+      }
+    },
+    {
+      "text": "visit parents thanksgiving weekend",
+      "expect": {
+        "title": "Visit parents",
+        "startDate": "2026-11-28"
+      }
+    },
+    {
+      "text": "mail the cards by chrismas eve",
+      "expect": {
+        "title": "Mail the cards",
+        "dueDate": "2026-12-24"
+      }
+    },
+    {
+      "text": "carve pumpkins on haloween",
+      "expect": {
+        "title": "Carve pumpkins",
+        "startDate": "2026-10-31"
+      }
+    },
+    {
+      "text": "call aunt jane on thanksgivng day",
+      "expect": {
+        "title": "Call aunt jane",
+        "startDate": "2026-11-26"
+      }
+    },
+    {
+      "text": "pay rent on new years eve",
+      "expect": {
+        "title": "Pay rent",
+        "startDate": "2026-12-31"
+      }
+    },
+    {
+      "text": "book flights before valentnes day",
+      "expect": {
+        "title": "Book flights",
+        "dueDate": "2027-02-14"
+      }
+    },
+    {
+      "text": "watch the parade on july 4th",
+      "expect": {
+        "title": "Watch the parade",
+        "startDate": "2027-07-04"
+      }
+    },
+    {
+      "text": "renew passport by memorial day",
+      "expect": {
+        "title": "Renew passport",
+        "dueDate": "2027-05-31"
+      }
+    },
+    {
+      "text": "buy christmas presents",
+      "expect": {
+        "title": "Buy christmas presents"
+      }
+    },
+    {
+      "text": "plan halloween party",
+      "expect": {
+        "title": "Plan halloween party"
+      }
+    },
+    {
+      "text": "book easter brunch reservation",
+      "expect": {
+        "title": "Book easter brunch reservation"
+      }
+    },
+    {
+      "text": "write valentines card for sarah",
+      "expect": {
+        "title": "Write valentines card for sarah"
+      }
+    },
+    {
+      "text": "memorial day sale research",
+      "expect": {
+        "title": "Memorial day sale research"
+      }
+    },
+    {
+      "text": "send halloween costume photos to mom",
+      "expect": {
+        "title": "Send halloween costume photos to mom"
+      }
+    },
+    {
+      "text": "easter egg hunt",
+      "expect": {
+        "title": "Easter egg hunt"
+      }
+    },
+    {
+      "text": "christmas shopping",
+      "expect": {
+        "title": "Christmas shopping"
+      }
+    },
+    {
+      "text": "thanksgiving grocery list",
+      "expect": {
+        "title": "Thanksgiving grocery list"
+      }
+    },
+    {
+      "text": "update the christmas card list",
+      "expect": {
+        "title": "Update the christmas card list"
+      }
+    },
+    {
+      "text": "buy christmas presents tomorrow",
+      "expect": {
+        "title": "Buy christmas presents",
+        "startDate": "2026-10-29"
+      }
+    },
+    {
+      "text": "wrap christmas gifts friday",
+      "expect": {
+        "title": "Wrap christmas gifts",
+        "startDate": "2026-10-30"
+      }
+    },
+    {
+      "text": "thanksgiving dinner prep monday",
+      "expect": {
+        "title": "Thanksgiving dinner prep",
+        "startDate": "2026-11-02"
+      }
+    },
+    {
+      "text": "carve halloween pumpkins on saturday",
+      "expect": {
+        "title": "Carve halloween pumpkins",
+        "startDate": "2026-10-31"
+      }
+    },
+    {
+      "text": "order mothers day flowers by friday",
+      "expect": {
+        "title": "Order mothers day flowers",
+        "dueDate": "2026-10-30"
+      }
+    },
+    {
+      "text": "get christmas cards printed by dec 10",
+      "expect": {
+        "title": "Get christmas cards printed",
+        "dueDate": "2026-12-10"
+      }
+    },
+    {
+      "text": "buy halloween candy before halloween",
+      "expect": {
+        "title": "Buy halloween candy",
+        "dueDate": "2026-10-31"
+      }
+    },
+    {
+      "text": "decorate the christmas tree this weekend",
+      "expect": {
+        "title": "Decorate the christmas tree",
+        "startDate": "2026-10-31"
+      }
+    },
+    {
+      "text": "christmas party planning next week",
+      "expect": {
+        "title": "Christmas party planning",
+        "startDate": "2026-11-02"
+      }
+    },
+    {
+      "text": "pay rent on christmas eve",
+      "expect": {
+        "title": "Pay rent",
+        "startDate": "2026-12-24"
+      }
+    },
+    {
+      "text": "pick up turkey for thanksgiving dinner on tuesday",
+      "expect": {
+        "title": "Pick up turkey for thanksgiving dinner",
+        "startDate": "2026-11-03"
+      }
+    },
+    {
+      "text": "email the team about the easter schedule tomorrow",
+      "expect": {
+        "title": "Email the team about the easter schedule",
+        "startDate": "2026-10-29"
+      }
+    }
+  ]
+}

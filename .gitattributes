@@ -1,2 +1,4 @@
 # Exclude db migrations folder from diffs in PRs (but still commit them)
 packages/db/src/migrations/** linguist-generated=true
+# Model weights live in Git LFS (the web release checkout fetches them)
+packages/task-parser/*.bin filter=lfs diff=lfs merge=lfs -text

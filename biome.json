@@ -12,6 +12,7 @@
       "!**/.cursor",
       "!**/.vscode",
       "!**/routeTree.gen.ts",
+      "!packages/task-parser/training/testset/parity",
       "!**/src-tauri",
       "!**/.nuxt",
       "!**/.expo",
@@ -40,6 +41,22 @@
         "rules": {
           "suspicious": {
             "noDuplicateCustomProperties": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/task-parser/training/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "performance": {
+            "noAwaitInLoops": "off"
+          },
+          "suspicious": {
+            "noBitwiseOperators": "off"
           }
         }
       }

@@ -72,6 +72,16 @@ export function formatPlainDate(
   return date.toLocaleString(undefined, options ?? { dateStyle: "medium" });
 }
 
+/** A duration for display: 30 → "30m", 90 → "1h 30m", 120 → "2h". */
+export function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) {
+    return `${rest}m`;
+  }
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
 /**
  * Format a ZonedDateTime's time portion for display.
  * Default format: "9:30 AM" (hour: "numeric", minute: "2-digit")

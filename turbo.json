@@ -17,6 +17,7 @@
     "type-check": {
       "dependsOn": ["transit"]
     },
+    "test": {},
     "doctor": {},
     "dev": {
       "cache": false,

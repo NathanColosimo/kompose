@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { formatDuration } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 
 interface DurationPickerProps {
@@ -30,15 +31,6 @@ const PRESETS = [
   { label: "3h", value: 180 },
   { label: "4h", value: 240 },
 ] as const;
-
-function formatDuration(minutes: number | undefined): string {
-  if (minutes === undefined || minutes <= 0) return "";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
 
 export function DurationPicker({
   value,
@@ -67,7 +59,7 @@ export function DurationPicker({
     }
   }, [customInput, onChange]);
 
-  const displayValue = formatDuration(value);
+  const displayValue = value && value > 0 ? formatDuration(value) : "";
   const isPresetValue = PRESETS.some((p) => p.value === value);
 
   return (
