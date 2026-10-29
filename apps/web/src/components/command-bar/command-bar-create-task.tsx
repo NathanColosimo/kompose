@@ -10,7 +10,7 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
-import type { ParsedTask } from "@kompose/task-parser/parser";
+import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
 import {
   CalendarIcon,
   CheckIcon,
@@ -56,13 +56,13 @@ function fallbackTitle(link: string): string {
 
 /** What the create item shows and creates. */
 interface TaskDraft extends TaskFields {
-  tagNames: string[];
+  tags: TagOption[];
 }
 
 /** The model's parse, or the plain text (links apart) until there is one. */
 function draft(text: string, task: ParsedTask | null): TaskDraft {
   if (task) {
-    return { ...task, tagNames: task.tags.map((tag) => tag.name) };
+    return task;
   }
   return {
     description: null,
@@ -72,7 +72,7 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
     recurrence: null,
     startDate: null,
     startTime: null,
-    tagNames: [],
+    tags: [],
     title: text.replace(URL_PATTERN, "").trim(),
   };
 }
@@ -89,8 +89,7 @@ function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
 function buildTaskDataFromParsed(
   parsed: TaskDraft,
   linkMetaMap: Record<string, LinkMeta>,
-  firstLinkMeta: LinkMeta | undefined,
-  matchedTagIds: string[]
+  firstLinkMeta: LinkMeta | undefined
 ): ClientTaskInsertDecoded {
   const links = dedupeLinks(
     parsed.links.map((url) => {
@@ -124,7 +123,8 @@ function buildTaskDataFromParsed(
     recurrence: parsed.recurrence ?? undefined,
     startDate: parsed.startDate ?? undefined,
     startTime: parsed.startTime ?? undefined,
-    tagIds: matchedTagIds.length > 0 ? matchedTagIds : undefined,
+    tagIds:
+      parsed.tags.length > 0 ? parsed.tags.map((tag) => tag.id) : undefined,
     title,
   };
 }
@@ -304,22 +304,7 @@ export function CommandBarCreateTask({
   };
 
   const createFrom = (input: TaskDraft) => {
-    const matchedTagIds = Array.from(
-      new Set(
-        input.tagNames.flatMap((name) => {
-          const id = tags.find((tag) => tag.name === name)?.id;
-          return id ? [id] : [];
-        })
-      )
-    );
-
-    const taskData = buildTaskDataFromParsed(
-      input,
-      linkMetaMap,
-      firstLinkMeta,
-      matchedTagIds
-    );
-
+    const taskData = buildTaskDataFromParsed(input, linkMetaMap, firstLinkMeta);
     createTask.mutate(taskData, { onSuccess: () => onCreated() });
   };
 
@@ -437,8 +422,8 @@ export function CommandBarCreateTask({
                   );
                 })}
 
-                {parsed.tagNames.map((name) => {
-                  const tag = tags.find((t) => t.name === name);
+                {parsed.tags.map(({ id }) => {
+                  const tag = tags.find((t) => t.id === id);
                   if (!tag) {
                     return null;
                   }
