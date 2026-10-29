@@ -22,25 +22,21 @@ from features import IGNORE, LABELS, ROOT, Featurizer, bio_targets, decode_spans
 from model import Config, TaskParser, load_electra, load_run
 
 
+def read_jsonl(path) -> list[dict]:
+    return [json.loads(line) for line in open(path) if line.strip()]
+
+
 def load(paths: list[str]) -> list[dict]:
     """Rows from clean jsonl files, with reviewed labels (data/overrides.jsonl) applied."""
-    overrides = {}
-    path = ROOT / "data" / "overrides.jsonl"
-    if path.exists():
-        for line in open(path):
-            if line.strip():
-                row = json.loads(line)
-                overrides[row["text"]] = row
+    overrides = {row["text"]: row for row in read_jsonl(ROOT / "data/overrides.jsonl")}
     rows = []
     for path in paths:
-        for line in open(path):
-            if line.strip():
-                row = json.loads(line)
-                fixed = overrides.get(row["text"])
-                if fixed:
-                    row = {**row, "spans": fixed["spans"], "tags": fixed["tags"]}
-                row["spans"] = utf16_to_codepoints(row["text"], row["spans"])
-                rows.append(row)
+        for row in read_jsonl(path):
+            fixed = overrides.get(row["text"])
+            if fixed:
+                row = {**row, "spans": fixed["spans"], "tags": fixed["tags"]}
+            row["spans"] = utf16_to_codepoints(row["text"], row["spans"])
+            rows.append(row)
     return rows
 
 
@@ -53,8 +49,9 @@ def is_dev(row: dict) -> bool:
 class Examples(torch.utils.data.Dataset):
     def __init__(self, rows, featurizer, tag_pool, augment):
         self.rows, self.featurizer, self.tag_pool, self.augment = rows, featurizer, tag_pool, augment
-        self.pools = build_pools(rows, json.loads((ROOT / "data/phrases.json").read_text())) if augment else {}
-        self.holidays = holiday_pools(self.pools)
+        if augment:
+            self.pools = build_pools(rows, json.loads((ROOT / "data/phrases.json").read_text()))
+            self.holidays = holiday_pools(self.pools)
 
     def __len__(self):
         return len(self.rows)
@@ -134,12 +131,14 @@ class Examples(torch.utils.data.Dataset):
         }
 
 
-def collate(items):
-    encodeds = [item["encoded"] for item in items]
+def pad(values, size, fill):
+    return values + [fill] * (size - len(values))
+
+
+def inputs(encodeds) -> dict[str, torch.Tensor]:
+    """The model inputs of a batch of encoded texts."""
     n = max(len(e.ids) for e in encodeds)
     t = max(1, max(len(e.tag_positions) for e in encodeds))
-    def pad(values, size, fill):
-        return values + [fill] * (size - len(values))
     batch = {
         "ids": torch.tensor([pad(e.ids, n, 0) for e in encodeds]),
         "specials": torch.tensor([pad(e.specials, n, 0) for e in encodeds]),
@@ -150,9 +149,6 @@ def collate(items):
         "mask": torch.tensor([pad([True] * len(e.ids), n, False) for e in encodeds]),
         "tag_positions": torch.tensor([pad(e.tag_positions, t, -1) for e in encodeds]),
         "tag_valid": torch.tensor([pad([True] * len(e.tag_positions), t, False) for e in encodeds]),
-        "targets": torch.tensor([pad(i["targets"], n, IGNORE) for i in items]),
-        "distill": torch.tensor([pad(i["distill"], n, False) for i in items]),
-        "tag_targets": torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items]),
     }
     # Which tokens are each tag's words, and which are text words (for similarity).
     members = torch.zeros(len(encodeds), t, n, dtype=torch.bool)
@@ -166,6 +162,16 @@ def collate(items):
                 text_words[b, i] = True
     batch["tag_members"] = members
     batch["text_words"] = text_words
+    return batch
+
+
+def collate(items):
+    """Inputs plus training targets, and the items themselves (for evaluate)."""
+    batch = inputs([item["encoded"] for item in items])
+    n, t = batch["ids"].shape[1], batch["tag_valid"].shape[1]
+    batch["targets"] = torch.tensor([pad(i["targets"], n, IGNORE) for i in items])
+    batch["distill"] = torch.tensor([pad(i["distill"], n, False) for i in items])
+    batch["tag_targets"] = torch.tensor([pad(i["tag_targets"], t, -1.0) for i in items])
     return batch, items
 
 
@@ -272,32 +278,27 @@ def main():
     parser.add_argument("--data", nargs="+", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--epochs", type=int, default=12)
-    parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1.5e-3)
     parser.add_argument("--embedding-lr", type=float, default=2e-4)
     parser.add_argument("--pretrained-lr", type=float, default=1e-4)
-    parser.add_argument("--ema", type=float, default=0.999, help="decay of the weight average that is evaluated and saved")
     parser.add_argument("--teacher", nargs="*", default=[], help="runs/<name>...: distill their averaged span and tag predictions")
     parser.add_argument("--transfer", nargs="*", default=[], help="data/transfer/*.jsonl: unlabelled rows learned only from the teacher")
     parser.add_argument("--qat", action="store_true", help="train through the runtime's int8 rounding: int8 weights and 7-bit activations (kernel.ts)")
     parser.add_argument("--init-from", default="", help="runs/<name>: start from a trained run's weights (same shape)")
-    parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
-    random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    random.seed(0)
+    torch.manual_seed(0)
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     featurizer = Featurizer()
 
     rows = load(args.data)
     train_rows = [r for r in rows if not is_dev(r)]
     dev_rows = [r for r in rows if is_dev(r)]
-    if not dev_rows:  # tiny runs: hold out every 10th row instead
-        dev_rows, train_rows = rows[::10], [r for i, r in enumerate(rows) if i % 10]
     if args.transfer:
         if not args.teacher:
             raise SystemExit("--transfer rows are only learned through --teacher")
-        transfer_rows = [json.loads(line) for path in args.transfer for line in open(path) if line.strip()]
+        transfer_rows = [row for path in args.transfer for row in read_jsonl(path)]
         print(f"{len(transfer_rows)} transfer rows (teacher-labelled)", flush=True)
         train_rows = train_rows + transfer_rows
     tag_pool = sorted({tag for r in train_rows for tag in r["tagList"]})
@@ -311,11 +312,9 @@ def main():
     model = model.to(device)
     if args.qat:
         quantize_aware(model)
-    encoder_params = sum(p.numel() for n, p in model.named_parameters() if not n.startswith("words."))
-    print(f"encoder parameters: {encoder_params:,}; embedding table: {model.words.weight.numel():,}", flush=True)
 
     train_loader = torch.utils.data.DataLoader(
-        Examples(train_rows, featurizer, tag_pool, augment=True), batch_size=args.batch, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
+        Examples(train_rows, featurizer, tag_pool, augment=True), batch_size=64, shuffle=True, collate_fn=collate, num_workers=4, persistent_workers=True
     )
     dev_loader = torch.utils.data.DataLoader(
         Examples(dev_rows, featurizer, tag_pool, augment=False), batch_size=128, collate_fn=collate, num_workers=2
@@ -346,7 +345,7 @@ def main():
     teachers = [load_run(Path(run)).to(device) for run in args.teacher]
     # An exponential moving average of the weights is usually a little better
     # than the last step; it is what gets evaluated and saved.
-    ema = torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(args.ema))
+    ema = torch.optim.swa_utils.AveragedModel(model, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     best = -1.0
@@ -388,7 +387,7 @@ def main():
         if metrics["exact_all"] > best:
             best = metrics["exact_all"]
             save_file({k: v.detach().cpu().contiguous() for k, v in ema.module.state_dict().items()}, str(out / "model.safetensors"))
-            (out / "config.json").write_text(json.dumps({**model.config.to_dict(), "dev": metrics}, indent=1))
+            (out / "config.json").write_text(json.dumps({**vars(model.config), "dev": metrics}, indent=1))
     print(f"best dev exact_all {best}")
 
 

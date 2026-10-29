@@ -11,6 +11,7 @@ Also writes <run>/dequantized.safetensors so Python can score the exact runtime 
 
 from __future__ import annotations
 
+import io
 import json
 import struct
 import sys
@@ -37,26 +38,23 @@ def main():
     ids = Featurizer().tokenizer.get_vocab()
     vocab = sorted(ids, key=ids.get)
 
-    blobs, tensors, dequantized = [], [], {}
-    offset = 0
+    body, tensors, dequantized = io.BytesIO(), [], {}
 
     def push(data: bytes):
-        nonlocal offset
-        start = offset
-        padding = (-len(data)) % 4
-        blobs.append(data + b"\0" * padding)
-        offset += len(data) + padding
+        start = body.tell()
+        body.write(data + b"\0" * (-len(data) % 4))
         return start
 
     for name, tensor in state.items():
         array = tensor.float().numpy()
+        entry = {"name": name, "shape": list(array.shape)}
         if array.ndim == 2 and array.size >= 4096 and name != "positions.weight":
             q, scales = quantize(array)
-            entry = {"name": name, "shape": list(array.shape), "dtype": "i8", "offset": push(q.tobytes()), "scales": push(scales.tobytes())}
+            entry.update(dtype="i8", offset=push(q.tobytes()), scales=push(scales.tobytes()))
             dequantized[name] = torch.from_numpy(q.astype(np.float32) * scales[:, None])
         else:
-            entry = {"name": name, "shape": list(array.shape), "dtype": "f32", "offset": push(array.astype(np.float32).tobytes())}
-            dequantized[name] = torch.from_numpy(array.astype(np.float32))
+            entry.update(dtype="f32", offset=push(array.tobytes()))
+            dequantized[name] = torch.from_numpy(array)
         tensors.append(entry)
 
     header = json.dumps({"config": config, "tensors": tensors, "vocab": vocab}, ensure_ascii=False).encode()
@@ -66,8 +64,7 @@ def main():
         f.write(b"KTP1")
         f.write(struct.pack("<I", len(header)))
         f.write(header)
-        for blob in blobs:
-            f.write(blob)
+        f.write(body.getvalue())
     save_file({k: v.contiguous() for k, v in dequantized.items()}, str(run / "dequantized.safetensors"))
     print(f"wrote {out} ({out.stat().st_size / 1e6:.2f} MB)")
 

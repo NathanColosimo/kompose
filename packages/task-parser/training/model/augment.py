@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import random
 import re
+import string
 
 # Labels whose text can be swapped between examples without changing tags.
 SWAPPABLE = ("S", "U", "R", "M", "F")
@@ -63,9 +64,6 @@ def swap_phrases(text: str, spans: list[dict], pools: dict[str, list[str]], rate
     return text, spans
 
 
-KEYBOARD = "abcdefghijklmnopqrstuvwxyz"
-
-
 # Labels a typo can land in: dates get misspelled too ("thanksgivng").
 TYPO_LABELS = ("T", "D", "S", "U", "R")
 
@@ -97,7 +95,7 @@ def typo(text: str, spans: list[dict], rate=0.12, only: int | None = None):
     elif kind == "double":
         new = word[:position] + word[position] + word[position:]
     else:
-        new = word[:position] + random.choice(KEYBOARD) + word[position + 1:]
+        new = word[:position] + random.choice(string.ascii_lowercase) + word[position + 1:]
     span = spans[index]
     inner_start = start - span["start"]
     span_text = text[span["start"]:span["end"]]
@@ -115,7 +113,7 @@ HOLIDAY = re.compile(
 
 def holiday_pools(pools: dict[str, list[str]]) -> dict[str, list[str]]:
     """The start and due phrases that name a holiday."""
-    return {label: [p for p in pools.get(label, []) if HOLIDAY.search(p)] for label in ("S", "U")}
+    return {label: [p for p in pools[label] if HOLIDAY.search(p)] for label in ("S", "U")}
 
 
 def swap_holiday(text: str, spans: list[dict], holidays: dict[str, list[str]]):

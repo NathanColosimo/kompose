@@ -26,9 +26,6 @@ class Config:
         self.vocab = 30522
         self.__dict__.update(kwargs)
 
-    def to_dict(self):
-        return dict(self.__dict__)
-
 
 class Layer(nn.Module):
     """BERT/ELECTRA post-norm layer (exact GELU), loadable from pretrained weights.
