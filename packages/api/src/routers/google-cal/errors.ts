@@ -5,8 +5,7 @@ export class AccountNotLinkedError extends Schema.TaggedError<AccountNotLinkedEr
   {
     cause: Schema.Unknown,
     message: Schema.String,
-  },
-  { httpApiStatus: 500 }
+  }
 ) {}
 
 export class NonEditableGoogleEventError extends Schema.TaggedError<NonEditableGoogleEventError>()(

@@ -1,13 +1,10 @@
 import { Schema } from "effect";
-// Types the `httpApiStatus` annotation.
-import type {} from "effect/http-api";
 
 export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
   "GoogleApiError",
   {
     cause: Schema.Unknown,
-  },
-  { httpApiStatus: 500 }
+  }
 ) {
   override get message() {
     return this.cause instanceof Error && this.cause.message
@@ -20,8 +17,7 @@ export class GoogleCalendarZodError extends Schema.TaggedError<GoogleCalendarZod
   "GoogleCalendarZodError",
   {
     cause: Schema.Unknown,
-  },
-  { httpApiStatus: 500 }
+  }
 ) {
   override get message() {
     return "Google Calendar returned an unexpected response";

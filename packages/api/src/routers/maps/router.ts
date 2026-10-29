@@ -113,31 +113,24 @@ function fetchAutocomplete(query: string) {
       span.setAttribute("http.status_code", res.status);
 
       if (!res.ok) {
-        const message = await extractPlacesErrorMessage(res);
-        const error = new GoogleMapsError({ message });
-        span.recordException(error);
-        span.setStatus({ code: SpanStatusCode.ERROR });
-        throw error;
+        throw new GoogleMapsError({
+          message: await extractPlacesErrorMessage(res),
+        });
       }
 
       const json = await res.json();
       const parsed = PlacesAutocompleteResponseSchema.safeParse(json);
       if (!parsed.success) {
-        const error = new GoogleMapsError({
+        throw new GoogleMapsError({
           message: `Places API response parse failed: ${parsed.error.message}`,
         });
-        span.recordException(error);
-        span.setStatus({ code: SpanStatusCode.ERROR });
-        throw error;
       }
       return parsed.data;
     } catch (error) {
-      if (!(error instanceof GoogleMapsError)) {
-        span.recordException(
-          error instanceof Error ? error : new Error(String(error))
-        );
-        span.setStatus({ code: SpanStatusCode.ERROR });
-      }
+      span.recordException(
+        error instanceof Error ? error : new Error(String(error))
+      );
+      span.setStatus({ code: SpanStatusCode.ERROR });
       throw error;
     } finally {
       span.end();

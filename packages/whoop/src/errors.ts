@@ -19,6 +19,5 @@ export class WhoopParseError extends Schema.TaggedError<WhoopParseError>()(
     cause: Schema.Unknown,
     message: Schema.String,
     operation: Schema.String,
-  },
-  { httpApiStatus: 500 }
+  }
 ) {}

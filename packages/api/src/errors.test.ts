@@ -69,7 +69,7 @@ const handler = new RPCHandler(router, {
     ...clientErrorStatuses(tagsContract.create["~orpc"].errorMap),
   },
 });
-const statuses: number[] = [];
+let lastStatus: number | undefined;
 const client: RouterClient<typeof router> = createORPCClient(
   new RPCLink({
     fetch: async (url, init) => {
@@ -77,29 +77,24 @@ const client: RouterClient<typeof router> = createORPCClient(
         new Request(`http://localhost${url}`, init),
         { context: {} }
       );
-      statuses.push(response?.status ?? 404);
+      lastStatus = response?.status;
       return response ?? new Response(null, { status: 404 });
     },
     url: "/",
   })
 );
 
-function lastStatus() {
-  return statuses.at(-1);
-}
-
 describe("client errors", () => {
   test("an Effect failure reaches the client as its typed error", async () => {
     const { error } = await safe(client.tags.create({ name: "Work" }));
 
-    expect(isDefinedError(error)).toBe(true);
     if (!(isDefinedError(error) && error.code === "TagConflictError")) {
       throw new Error("expected TagConflictError");
     }
     const name: string = error.data.name;
     expect(name).toBe("Work");
     expect(error.message).toBe("Tag name already exists: Work");
-    expect(lastStatus()).toBe(409);
+    expect(lastStatus).toBe(409);
   });
 
   test("a thrown error reaches the client as its typed error", async () => {
@@ -110,7 +105,7 @@ describe("client errors", () => {
     }
     expect(error.data).toEqual({ tagId: "t1" });
     expect(error.message).toBe("Tag not found: t1");
-    expect(lastStatus()).toBe(404);
+    expect(lastStatus).toBe(404);
   });
 
   test("cause stays on the server", async () => {
@@ -122,7 +117,7 @@ describe("client errors", () => {
     expect(error.data).toEqual({ tagId: "t1" });
     expect(error.message).toBe("Lookup failed");
     expect(JSON.stringify(error)).not.toContain("hunter2");
-    expect(lastStatus()).toBe(500);
+    expect(lastStatus).toBe(500);
   });
 
   test.each([
@@ -136,7 +131,7 @@ describe("client errors", () => {
       code: "INTERNAL_SERVER_ERROR",
       message: "Internal Server Error",
     });
-    expect(lastStatus()).toBe(500);
+    expect(lastStatus).toBe(500);
   });
 });
 

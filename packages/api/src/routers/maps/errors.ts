@@ -5,6 +5,5 @@ export class GoogleMapsError extends Schema.TaggedError<GoogleMapsError>()(
   "GoogleMapsError",
   {
     message: Schema.String,
-  },
-  { httpApiStatus: 500 }
+  }
 ) {}

@@ -12,7 +12,7 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | --- | --- |
 | Lint and format | `biome ci .` |
 | Lint workflows | `actionlint` (with `shellcheck` on `run:` blocks) on `.github/workflows/` |
-| Type-check and build | `turbo run type-check --affected`, then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (native dependency versions against the Expo SDK; it calls the Expo API, so it can fail on network issues) |
+| Type-check and build | `turbo run type-check --affected`, `turbo run test --affected` (`bun test` in packages with a `test` script), then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (native dependency versions against the Expo SDK; it calls the Expo API, so it can fail on network issues) |
 | Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
 Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
