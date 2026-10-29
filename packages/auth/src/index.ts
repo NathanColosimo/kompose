@@ -15,7 +15,7 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
-import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
+import { MCP_RESOURCE, MCP_SCOPE, mcpOfflineAccess } from "./mcp";
 import { redisSecondaryStorage } from "./redis-storage";
 import { whoopOAuthTokens } from "./whoop";
 
@@ -122,6 +122,7 @@ export const auth = betterAuth({
       resource: MCP_RESOURCE,
       scopes: ["openid", "profile", "email", "offline_access", MCP_SCOPE],
     }),
+    mcpOfflineAccess(),
     cimd({
       fetchClientMetadataResource,
       metadataProfile: "mcp-2026-07-28",
