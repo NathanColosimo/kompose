@@ -18,6 +18,7 @@ const apiHandler = new OpenAPIHandler(appRouter, {
       spec: () =>
         generator.generate(appRouter, {
           base: { info: { title: "Kompose API", version: "1.0.0" } },
+          errorStatusMap,
         }),
     }),
   ],

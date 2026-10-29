@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "test": "bun test",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
+    "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/effect": "catalog:",
     "@orpc/opentelemetry": "catalog:",

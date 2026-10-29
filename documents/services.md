@@ -62,22 +62,19 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 
 ### Router pattern
 
-Handlers are Effect generators (`.effect(function* ...)` from `@orpc/effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own errors to `ORPCError` once with `mapErrors(toORPCError)`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
+Handlers are Effect generators (`.effect(function* ...)` from `@orpc/effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. The contract lists the errors the client can receive, and handlers just fail with them. Mutating operations publish a realtime `tasks` event. See [Client errors](#client-errors).
 
 ```ts
-function toORPCError(error: unknown) {
-  if (error instanceof TaskNotFoundError) {
-    return new ORPCError("NOT_FOUND", { cause: error, message: `Task not found: ${error.taskId}` });
-  }
-  // ...one branch per error the router knows about
-  return error;
-}
+// contract.ts
+export const taskContract = oc
+  .errors(clientErrors(InvalidTaskError, LinkParseError, TaskNotFoundError))
+  .router({ create: createTask, list: listTasks /* ... */ });
 
+// router.ts
 const os = implement(taskContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 list: os.list.effect(function* ({ context }) {
   const tasks = yield* TaskService.use((service) => service.listTasks(context.user.id));
@@ -170,7 +167,7 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. `getGoogleCalendar(userId, accountId)` fetches the account's access token and returns the Google client. Google errors are mapped once on the router with `mapErrors`.
+Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. `getGoogleCalendar(userId, accountId)` fetches the account's access token and returns the Google client. The Google errors the client can receive are listed on `googleCalContract`.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
@@ -476,8 +473,42 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 ### Effect ↔ oRPC bridge
 
 - `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
-- `mapErrors(toORPCError)` (in `index.ts`) is a router middleware that sets `effect/wrap` to run every handler failure through the router's `toORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
 - Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
+
+### Client errors
+
+An error the client can receive is a `Schema.TaggedError` class listed in a contract with `.errors(clientErrors(...))` (`packages/api/src/errors.ts`). The class is the only definition:
+
+| Class part | On the wire |
+|------------|-------------|
+| Tag (`"TagConflictError"`) | `code` |
+| Fields except `message` and `cause` | `data`, typed on the client |
+| `message` (a field or a getter) | `message` |
+| `cause` | Not sent; kept on the server |
+| `httpApiStatus` annotation | HTTP status (500 when missing) |
+
+```ts
+export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
+  "TagConflictError",
+  { name: Schema.String },
+  { httpApiStatus: 409 }
+) {
+  override get message() {
+    return `Tag name already exists: ${this.name}`;
+  }
+}
+```
+
+`encodeErrors` (in `index.ts`) runs once at the root of `appRouter`. When a procedure fails or throws an error its contract lists, it sends that error as a typed `ORPCError`. Any other failure, such as `EffectDrizzleQueryError`, becomes a generic `INTERNAL_SERVER_ERROR`; its cause is recorded on the span but not sent to the client. `error-status.ts` builds the RPC handler's code → status map from the contracts.
+
+On the client, `isDefinedError(error)` narrows to the listed errors:
+
+```ts
+const { error } = await safe(client.tags.create(input));
+if (isDefinedError(error) && error.code === "TagConflictError") {
+  error.data.name; // string
+}
+```
 
 ---
 

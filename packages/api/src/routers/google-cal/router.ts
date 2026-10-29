@@ -1,14 +1,10 @@
 import { auth } from "@kompose/auth";
 import { getLinkedAccountId } from "@kompose/auth/accounts";
-import {
-  GoogleApiError,
-  GoogleCalendarZodError,
-  makeGoogleCalendarService,
-} from "@kompose/google-cal/client";
+import { makeGoogleCalendarService } from "@kompose/google-cal/client";
 import { getGoogleEventEditBlockReason } from "@kompose/google-cal/schema";
-import { implement, ORPCError } from "@orpc/server";
+import { implement } from "@orpc/server";
 import { Effect, Option } from "effect";
-import { mapErrors, requireAuth } from "../..";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
@@ -52,40 +48,10 @@ const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   return makeGoogleCalendarService(accessToken);
 });
 
-function toORPCError(error: unknown) {
-  if (error instanceof AccountNotLinkedError) {
-    return new ORPCError("ACCOUNT_NOT_LINKED", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleApiError) {
-    return new ORPCError("GOOGLE_API_ERROR", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleCalendarZodError) {
-    return new ORPCError("PARSE_ERROR", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof NonEditableGoogleEventError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      data: { eventId: error.eventId, eventType: error.eventType },
-      message: error.message,
-    });
-  }
-  return error;
-}
-
 export const os = implement(googleCalContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 function publishGoogleCalendarEvent(
   userId: string,

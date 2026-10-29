@@ -6,12 +6,15 @@ import {
 } from "@kompose/db/schema/task";
 import { oc } from "@orpc/contract";
 import z from "zod";
+import { clientErrors } from "../../errors";
 import {
   instantCodec,
   plainDateCodec,
   plainTimeCodec,
 } from "../../lib/temporal-codecs";
+import { LinkParseError } from "../../services/link-parser/types";
 import { tagSelectSchemaWithIcon } from "../tag/contract";
+import { InvalidTaskError, TaskNotFoundError } from "./errors";
 
 // Re-export types for frontend use (native app lacks @kompose/db dependency)
 export type { LinkMeta } from "@kompose/db/schema/link";
@@ -199,12 +202,14 @@ export const parseLink = oc
   .input(z.object({ url: z.string().url() }))
   .output(linkMetaSchema);
 
-export const taskContract = {
-  create: createTask,
-  delete: deleteTask,
-  list: listTasks,
-  parseLink,
-  update: updateTask,
-};
+export const taskContract = oc
+  .errors(clientErrors(InvalidTaskError, LinkParseError, TaskNotFoundError))
+  .router({
+    create: createTask,
+    delete: deleteTask,
+    list: listTasks,
+    parseLink,
+    update: updateTask,
+  });
 
 export type TaskListParams = z.infer<typeof listTasksParamsSchema>;

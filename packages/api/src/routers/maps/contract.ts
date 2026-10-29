@@ -1,5 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
+import { clientErrors } from "../../errors";
+import { GoogleMapsError } from "./errors";
 
 export const LocationSuggestionSchema = z.object({
   description: z.string(),
@@ -23,6 +25,6 @@ export const searchPlaces = oc
   .input(SearchPlacesInputSchema)
   .output(z.array(LocationSuggestionSchema));
 
-export const mapsContract = {
+export const mapsContract = oc.errors(clientErrors(GoogleMapsError)).router({
   search: searchPlaces,
-};
+});

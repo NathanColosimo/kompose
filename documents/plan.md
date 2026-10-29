@@ -257,7 +257,7 @@ separate `Kompose Dev` profile.
     2.  Constructs an Effect program using the `GoogleCalendar` service.
     3.  Provides the live service layer (`GoogleCalendarLive`) injected with the user's access token.
     4.  Runs the effect and returns the result.
-  - **Error Handling**: Maps internal errors (AccountNotLinked, GoogleApiError) to standard `ORPCError` types for the client.
+  - **Error Handling**: The contract lists the errors the client can receive (AccountNotLinkedError, GoogleApiError, ...), and they reach the client typed.
 
 ### 6.3 UI & Layout Implementation
 - **shadcn/ui Sidebar**: Integrated the new `shadcn/ui` sidebar components (`Sidebar`, `SidebarContent`, etc.).
@@ -351,7 +351,7 @@ separate `Kompose Dev` profile.
 ### 6.9 Effect-TS Service Architecture
 - **Pattern**: All backend services use `Effect.Service` with `accessors: true` and `Effect.fn("Service.method")` for automatic OTel tracing spans.
 - **Errors**: Each domain uses `Schema.TaggedError` for typed, compile-time-checked error channels. Callers handle errors with `Effect.catchTags`.
-- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/effect`) that get services from that runtime through the request context, and each router maps its errors with `mapErrors`.
+- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/effect`) that get services from that runtime through the request context, and each contract lists the errors its client can receive.
 - **Services implemented**: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
 - See [`services.md`](./services.md) for full method/error tables.
 

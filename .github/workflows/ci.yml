@@ -53,6 +53,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Type-check
         run: bunx turbo run type-check --affected
+      - name: Test
+        run: bunx turbo run test --affected
       # Web is built by Vercel with production env. The native export
       # includes the Hermes bytecode compile, which catches syntax the
       # engine rejects before it reaches a release build. Doctor checks native
