@@ -1,15 +1,13 @@
 /**
  * End-to-end evaluation of an exported model through the TypeScript parser.
  * Usage: bun gen/evaluate.ts <run dir> [handwritten|holidays|test|both]
- * Prints per-field accuracy and the first failures.
+ * Prints per-field accuracy and the first failures. src/accuracy.test.ts
+ * holds the shipped model to its scores.
  */
 import { readFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
-import { createTaskParser } from "../../src/parser";
+import { createTaskParser, type TaskParser } from "../../src/parser";
 import { plainFields, ROOT, readJsonl, sortKeys } from "./common";
-
-const [run = "", which = "both"] = process.argv.slice(2);
-const SHOW = Number(process.env.SHOW ?? 15);
 
 type Actual = ReturnType<typeof plainFields>;
 /** Fields left out are expected empty. */
@@ -23,7 +21,7 @@ interface Case {
   text: string;
 }
 
-const FIELDS = [
+export const FIELDS = [
   "title",
   "description",
   "startDate",
@@ -123,7 +121,10 @@ function equal(field: Field, expected: Expected, actual: Actual) {
 /** Sets in testset/<name>.json: cases written by hand at one `now`. */
 const HAND_SETS = ["handwritten", "holidays"];
 
-async function loadCases(): Promise<Record<string, Case[]>> {
+/** The evaluation sets by name; the test set is also split by focus ("test:voice"). */
+export async function loadCases(
+  which = "both"
+): Promise<Record<string, Case[]>> {
   const sets: Record<string, Case[]> = {};
   for (const name of HAND_SETS) {
     if (which !== name && which !== "both") {
@@ -164,10 +165,19 @@ async function loadCases(): Promise<Record<string, Case[]>> {
   return sets;
 }
 
-const parse = createTaskParser(
-  new Uint8Array(await readFile(`${run}/task-parser.bin`)).buffer
-);
-for (const [name, cases] of Object.entries(await loadCases())) {
+export interface Score {
+  /** Cases with every field right. */
+  all: number;
+  /** Per-field counts of right cases. */
+  correct: Record<Field, number>;
+  elapsed: number;
+  /** The first `show` wrong cases, described. */
+  failures: string[];
+  /** Cases whose only wrong fields are a close-enough title or description. */
+  usable: number;
+}
+
+export function score(parse: TaskParser, cases: Case[], show = 0): Score {
   const correct = Object.fromEntries(FIELDS.map((f) => [f, 0])) as Record<
     Field,
     number
@@ -205,7 +215,7 @@ for (const [name, cases] of Object.entries(await loadCases())) {
     }
     if (wrong.length === 0) {
       all += 1;
-    } else if (failures.length < SHOW) {
+    } else if (failures.length < show) {
       const spans = parsed.spans
         .map((span) => `[${span.label}:${span.text}]`)
         .join(" ");
@@ -220,15 +230,31 @@ for (const [name, cases] of Object.entries(await loadCases())) {
       );
     }
   }
-  const pct = (n: number) => `${((100 * n) / cases.length).toFixed(1)}%`;
-  console.log(
-    `\n== ${name}: ${cases.length} cases, all fields right ${pct(all)}, usable ${pct(usable)}, ${(elapsed / cases.length).toFixed(1)} ms/case`
+  return { all, correct, elapsed, failures, usable };
+}
+
+if (import.meta.main) {
+  const [run = "", which = "both"] = process.argv.slice(2);
+  const show = Number(process.env.SHOW ?? 15);
+  const parse = createTaskParser(
+    new Uint8Array(await readFile(`${run}/task-parser.bin`)).buffer
   );
-  console.log(
-    FIELDS.map((field) => `${field} ${pct(correct[field])}`).join(" | ")
-  );
-  // Per-focus slices of the test set only print their accuracy.
-  if (!name.startsWith("test:")) {
-    console.log(failures.join("\n"));
+  for (const [name, cases] of Object.entries(await loadCases(which))) {
+    const { all, correct, elapsed, failures, usable } = score(
+      parse,
+      cases,
+      show
+    );
+    const pct = (n: number) => `${((100 * n) / cases.length).toFixed(1)}%`;
+    console.log(
+      `\n== ${name}: ${cases.length} cases, all fields right ${pct(all)}, usable ${pct(usable)}, ${(elapsed / cases.length).toFixed(1)} ms/case`
+    );
+    console.log(
+      FIELDS.map((field) => `${field} ${pct(correct[field])}`).join(" | ")
+    );
+    // Per-focus slices of the test set only print their accuracy.
+    if (!name.startsWith("test:")) {
+      console.log(failures.join("\n"));
+    }
   }
 }

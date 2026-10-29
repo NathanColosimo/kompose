@@ -2,7 +2,8 @@
 TypeScript parity tests (src/model/*.parity.test.ts), with UTF-16 offsets.
 
 uv run python model/dump_parity.py data/clean/pilot.jsonl data/clean/pilot2.final.jsonl
-→ data/tokenizer-parity.json (every text and tag), data/features-parity.json (every row)
+→ testset/parity/tokenizer.json (every text and tag), testset/parity/features.json (every row)
+The tests read the vocabulary from ../task-parser.bin.
 """
 
 import json
@@ -26,8 +27,7 @@ tokens = []
 for text in sorted(texts):
     encoding = tokenizer.encode(text, add_special_tokens=False)
     tokens.append({"text": text, "ids": encoding.ids, "offsets": [[utf16(text, s), utf16(text, e)] for s, e in encoding.offsets]})
-ids = tokenizer.get_vocab()
-json.dump({"vocab": sorted(ids, key=ids.get), "cases": tokens}, open(ROOT / "data/tokenizer-parity.json", "w"))
+json.dump(tokens, open(ROOT / "testset/parity/tokenizer.json", "w"))
 print(len(tokens), "tokenizer cases")
 
 features = []
@@ -41,5 +41,5 @@ for row in rows:
         "offsets": [[-1, -1] if s < 0 else [utf16(text, s), utf16(text, t)] for s, t in e.offsets],
         "links": [[utf16(text, s), utf16(text, t)] for s, t in e.links],
     })
-json.dump(features, open(ROOT / "data/features-parity.json", "w"))
+json.dump(features, open(ROOT / "testset/parity/features.json", "w"))
 print(len(features), "feature cases")

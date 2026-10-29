@@ -12,6 +12,7 @@
       "!**/.cursor",
       "!**/.vscode",
       "!**/routeTree.gen.ts",
+      "!packages/task-parser/training/testset/parity",
       "!**/src-tauri",
       "!**/.nuxt",
       "!**/.expo",

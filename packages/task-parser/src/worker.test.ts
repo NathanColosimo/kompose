@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { Temporal } from "temporal-polyfill";
 import { createTaskParser } from "./parser";
+import { shippedWeights, WEIGHTS_FILE } from "./test-fixtures";
 import { connectTaskParser } from "./worker-client";
 
-const weightsFile = new URL("../task-parser.bin", import.meta.url).pathname;
 const now = Temporal.ZonedDateTime.from(
   "2026-10-23T10:00:00-04:00[America/New_York]"
 );
@@ -17,12 +16,9 @@ describe("worker parser", () => {
     });
     const client = await connectTaskParser(
       worker,
-      pathToFileURL(weightsFile).href
+      pathToFileURL(WEIGHTS_FILE).href
     );
-    const file = readFileSync(weightsFile);
-    const parseHere = createTaskParser(
-      file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength)
-    );
+    const parseHere = createTaskParser(shippedWeights());
     const tags = [{ id: "f", name: "Family" }];
     const text = "call mom tomorrow at 4 for 30m #family";
     const remote = await client.parse({ now, tags, text });

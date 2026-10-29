@@ -53,10 +53,16 @@ bun gen/evaluate.ts runs/v21q both
 `testset/holidays.json` checks holidays: misspelled ones that date the task
 and ones inside a title that don't.
 
-To ship, copy `runs/<name>/task-parser.bin` to `../task-parser.bin`. To
-check the TypeScript forward pass, run
-`uv run python model/dump_logits.py runs/<name> data/clean/train-merged.final.jsonl 300`,
-then `bun test` with `TASK_PARSER_RUN=$PWD/runs/<name>`. The tokenizer and
-feature parity tests read the files that
-`uv run python model/dump_parity.py data/clean/pilot.jsonl data/clean/pilot2.final.jsonl`
-writes.
+To ship:
+
+1. Copy `runs/<name>/task-parser.bin` to `../task-parser.bin`.
+2. Run `uv run python model/dump_logits.py runs/<name> data/clean/train-merged.final.jsonl`.
+   It writes `testset/parity/logits.json`, the PyTorch logits that the
+   TypeScript forward pass is checked against.
+3. Raise the floors in `../src/accuracy.test.ts` to the new model's scores.
+4. Run `bun test` from `..`. CI runs it on every PR.
+
+`testset/parity/` holds what the parity tests compare against, so they run
+on any checkout. When `features.py` or the tokenizer changes, rewrite the
+tokenizer and feature files with
+`uv run python model/dump_parity.py data/clean/pilot.jsonl data/clean/pilot2.final.jsonl`.
