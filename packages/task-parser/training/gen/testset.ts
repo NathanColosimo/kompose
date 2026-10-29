@@ -26,6 +26,7 @@ import {
   itemsSchema,
   LABELS_SCHEMA,
   pick,
+  pickWriters,
   plainFields,
   ROOT,
   readJsonl,
@@ -80,15 +81,12 @@ async function compose() {
     console.log("inputs.jsonl exists; delete it to recompose");
     return;
   }
-  const { personas, tagSets } = await readSeeds("test");
+  const seeds = await readSeeds("test");
   const rows: TestInput[] = [];
   await pool(
     "compose",
     FOCUS_CALLS.map((focus, call) => async () => {
-      const items = Array.from({ length: 10 }, () => ({
-        persona: pick(random, personas),
-        tagList: [...pick(random, tagSets)].sort(() => random() - 0.5),
-      }));
+      const items = pickWriters(random, seeds);
       for (const { item, text } of await writeInputs(focus, items)) {
         rows.push({
           focus: focus.split(":")[0] ?? focus,

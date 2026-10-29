@@ -6,11 +6,10 @@
  * Usage: bun gen/phrases.ts  → data/phrases.json
  */
 import { writeFile } from "node:fs/promises";
-import { Temporal } from "temporal-polyfill";
 import { HOLIDAYS } from "../../src/datetime/holidays";
 import { resolveFields, type TaskFields } from "../../src/fields";
 import type { Label } from "../../src/spans";
-import { pick, ROOT, rng } from "./common";
+import { pick, REFERENCE_NOW, ROOT, rng } from "./common";
 
 const random = rng(77);
 
@@ -281,15 +280,12 @@ function duration() {
   ])();
 }
 
-const now = Temporal.ZonedDateTime.from(
-  "2026-10-23T10:00:00-04:00[America/New_York]"
-);
 const TARGET = 3000;
 
 /** Resolve "task <phrase>" with the phrase as one `label` span. */
 function fieldsFor(label: Label, phrase: string) {
   return resolveFields({
-    now,
+    now: REFERENCE_NOW,
     spans: [
       { end: 4, label: "T", start: 0, text: "task" },
       { end: 5 + phrase.length, label, start: 5, text: phrase },

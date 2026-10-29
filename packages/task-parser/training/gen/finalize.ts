@@ -8,9 +8,14 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { parseMarkup } from "../../src/spans";
 import { codexJson, pool } from "./codex";
-import { isMarkupOf, LABELS_SCHEMA, ROOT } from "./common";
+import {
+  isMarkupOf,
+  jsonFiles,
+  LABELS_SCHEMA,
+  type RawBatch,
+  ROOT,
+} from "./common";
 import { EXAMPLES } from "./examples";
-import type { Slot } from "./plan";
 
 const [name = "train", concurrencyArg = "16"] = process.argv.slice(2);
 const rawDir = `${ROOT}data/raw/${name}/`;
@@ -33,10 +38,7 @@ function plainText(marked: string) {
 async function finalize(file: string) {
   const { output, slots } = JSON.parse(
     await readFile(rawDir + file, "utf8")
-  ) as {
-    output: { marked: string; slot: number; tags: string[] }[];
-    slots: Slot[];
-  };
+  ) as RawBatch;
   const items = output.flatMap((draft) => {
     const slot = slots[draft.slot - 1];
     const text = plainText(draft.marked).trim();
@@ -90,12 +92,10 @@ ${items
 const failed = new Set<string>();
 for (;;) {
   const generatorDone = existsSync(`${ROOT}data/raw/${name}.done`);
-  const files = existsSync(rawDir)
-    ? (await readdir(rawDir)).filter((file) => file.endsWith(".json"))
-    : [];
-  const todo = files
-    .filter((file) => !(existsSync(outDir + file) || failed.has(file)))
-    .sort();
+  const files = existsSync(rawDir) ? await jsonFiles(rawDir) : [];
+  const todo = files.filter(
+    (file) => !(existsSync(outDir + file) || failed.has(file))
+  );
   if (todo.length === 0) {
     if (generatorDone) {
       break;

@@ -156,7 +156,8 @@ async function loadCases(): Promise<Record<string, Case[]>> {
     for (const row of rows) {
       const c = { ...row, expect: row.fields, tags: row.tagList };
       for (const key of ["test", `test:${row.focus}`]) {
-        sets[key] = [...(sets[key] ?? []), c];
+        sets[key] ??= [];
+        sets[key].push(c);
       }
     }
   }
@@ -226,7 +227,8 @@ for (const [name, cases] of Object.entries(await loadCases())) {
   console.log(
     FIELDS.map((field) => `${field} ${pct(correct[field])}`).join(" | ")
   );
-  if (HAND_SETS.includes(name) || name === "test") {
+  // Per-focus slices of the test set only print their accuracy.
+  if (!name.startsWith("test:")) {
     console.log(failures.join("\n"));
   }
 }

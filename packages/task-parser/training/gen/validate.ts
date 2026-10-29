@@ -4,17 +4,12 @@
  * Reads data/final/<name>/, writes data/clean/<name>.final.jsonl (and the
  * rejected items to .final.rejects.jsonl) and prints a report.
  */
-import { mkdir, readdir, readFile } from "node:fs/promises";
-import { Temporal } from "temporal-polyfill";
+import { mkdir, readFile } from "node:fs/promises";
 import { parseDuration } from "../../src/duration";
 import { resolveFields } from "../../src/fields";
 import { parseMarkup, type Span } from "../../src/spans";
 import { resolveWhen } from "../../src/when";
-import { ROOT, writeJsonl } from "./common";
-
-const now = Temporal.ZonedDateTime.from(
-  "2026-10-23T10:00:00-04:00[America/New_York]"
-);
+import { jsonFiles, REFERENCE_NOW as now, ROOT, writeJsonl } from "./common";
 
 const LEADING_CUE =
   /^(by|due|due on|due by|before|for|on|at|starting|from|until|takes|about|around)\s+/i;
@@ -34,10 +29,10 @@ const LINK = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i;
  * and a following "am"/"pm" into a time span.
  */
 export function tidy(span: Span, fullText: string): Span {
-  let { start, end, text } = span;
   if (span.label === "L") {
     return span;
   }
+  let { start, end, text } = span;
   // "#"/"@" belong to a tag mention; pull a detached one in ("# work").
   if (span.label === "G") {
     const before = DETACHED_MARK.exec(fullText.slice(0, start));
@@ -147,12 +142,13 @@ function check(marked: string, tags: string[], tagList: string[]) {
 if (import.meta.main) {
   const name = process.argv[2] ?? "train";
   const dir = `${ROOT}data/final/${name}/`;
-  const files = (await readdir(dir))
-    .filter((file) => file.endsWith(".json"))
-    .sort();
+  const files = await jsonFiles(dir);
   const clean: object[] = [];
   const rejectLog: object[] = [];
   const rejects: Record<string, number> = {};
+  const bump = (counts: Record<string, number>, key: string) => {
+    counts[key] = (counts[key] ?? 0) + 1;
+  };
   const flagCounts: Record<string, number> = {};
   const labelCounts: Record<string, number> = {};
   const seenText = new Set<string>();
@@ -168,22 +164,20 @@ if (import.meta.main) {
       const example = check(item.marked, item.tags, item.tagList);
       if (typeof example === "string") {
         rejectLog.push({ ...item, reason: example });
-        const reason = example.split(":")[0] ?? "";
-        rejects[reason] = (rejects[reason] ?? 0) + 1;
+        bump(rejects, example.split(":")[0] ?? "");
         continue;
       }
       const key = example.text.toLowerCase();
       if (seenText.has(key)) {
-        rejects.duplicate = (rejects.duplicate ?? 0) + 1;
+        bump(rejects, "duplicate");
         continue;
       }
       seenText.add(key);
       for (const flag of example.flags) {
-        const kind = flag.split(":")[0] ?? "";
-        flagCounts[kind] = (flagCounts[kind] ?? 0) + 1;
+        bump(flagCounts, flag.split(":")[0] ?? "");
       }
       for (const label of new Set(example.spans.map((span) => span.label))) {
-        labelCounts[label] = (labelCounts[label] ?? 0) + 1;
+        bump(labelCounts, label);
       }
       flagged += example.flags.length > 0 ? 1 : 0;
       withTags += example.tags.length > 0 ? 1 : 0;

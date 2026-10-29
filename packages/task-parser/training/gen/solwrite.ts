@@ -8,7 +8,15 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { pool } from "./codex";
-import { FOCUS_CALLS, pick, ROOT, readSeeds, rng, writeInputs } from "./common";
+import {
+  FOCUS_CALLS,
+  pick,
+  pickWriters,
+  ROOT,
+  readSeeds,
+  rng,
+  writeInputs,
+} from "./common";
 
 const [
   name = "solwrite",
@@ -17,7 +25,7 @@ const [
   seedArg = "11",
 ] = process.argv.slice(2);
 const random = rng(Number(seedArg));
-const { personas, tagSets } = await readSeeds("train");
+const seeds = await readSeeds("train");
 const dir = `${ROOT}data/raw/${name}/`;
 await mkdir(dir, { recursive: true });
 
@@ -25,10 +33,7 @@ await mkdir(dir, { recursive: true });
 const calls = Array.from({ length: Number(callsArg) }, (_, call) => ({
   call,
   focus: pick(random, FOCUS_CALLS),
-  items: Array.from({ length: 10 }, () => ({
-    persona: pick(random, personas),
-    tagList: [...pick(random, tagSets)].sort(() => random() - 0.5),
-  })),
+  items: pickWriters(random, seeds),
 }));
 
 await pool(

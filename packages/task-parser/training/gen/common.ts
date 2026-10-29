@@ -1,6 +1,6 @@
 /** Helpers shared by the gen scripts. */
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { Temporal } from "temporal-polyfill";
 import type { TaskFields } from "../../src/fields";
 import { parseMarkup } from "../../src/spans";
@@ -8,6 +8,11 @@ import { codexJson } from "./codex";
 
 /** The training/ directory. */
 export const ROOT = new URL("../", import.meta.url).pathname;
+
+/** The reference time of the training data's labels and checks. */
+export const REFERENCE_NOW = Temporal.ZonedDateTime.from(
+  "2026-10-23T10:00:00-04:00[America/New_York]"
+);
 
 /** Mulberry32: small seeded PRNG so plans are reproducible. */
 export function rng(seed: number) {
@@ -55,6 +60,20 @@ export async function writeJsonl(file: string, rows: unknown[]) {
   await writeFile(file, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
 }
 
+/** The .json files in `dir`, sorted. */
+export async function jsonFiles(dir: string) {
+  return (await readdir(dir)).filter((file) => file.endsWith(".json")).sort();
+}
+
+/**
+ * A data/raw batch (gen/generate.ts, gen/solwrite.ts): the written examples
+ * and the slots they were written for; `slot` is 1-based.
+ */
+export interface RawBatch {
+  output: { marked: string; slot: number; tags: string[] }[];
+  slots: { tags: string[] }[];
+}
+
 export interface Persona {
   description: string;
   writingHabits: string;
@@ -76,6 +95,17 @@ export async function readSeeds(split: "test" | "train") {
     )
   ) as Persona[];
   return { personas, tagSets };
+}
+
+/** Ten writers for one writeInputs call, each a persona and a shuffled tag list. */
+export function pickWriters(
+  random: () => number,
+  { personas, tagSets }: { personas: Persona[]; tagSets: string[][] }
+) {
+  return Array.from({ length: 10 }, () => ({
+    persona: pick(random, personas),
+    tagList: [...pick(random, tagSets)].sort(() => random() - 0.5),
+  }));
 }
 
 /** A Codex answer schema: `{[key]: [{...properties}]}`, all required. */
@@ -220,6 +250,8 @@ export function datedItems(rows: { marked: string; now: string }[]) {
     .join("\n\n");
 }
 
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 export const DATE_FIELDS = [
   "startDate",
   "startTime",
@@ -239,10 +271,7 @@ export const DATE_FIELDS_SCHEMA = itemsSchema({
         additionalProperties: false,
         properties: {
           byDay: {
-            items: {
-              enum: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"],
-              type: "string",
-            },
+            items: { enum: WEEKDAY_CODES, type: "string" },
             type: ["array", "null"],
           },
           byMonthDay: { type: ["integer", "null"] },
@@ -287,8 +316,6 @@ export function sortKeys(value: unknown) {
     : value;
 }
 
-const CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-
 /**
  * A recurrence as the task schema stores it: a weekly repeat without days
  * runs on the start's weekday, a monthly one on the start's day.
@@ -301,7 +328,7 @@ function canonicalRecurrence(recurrence: unknown, startDate: unknown) {
   if (typeof startDate === "string") {
     const start = Temporal.PlainDate.from(startDate);
     if (rule.freq === "WEEKLY" && !rule.byDay) {
-      rule.byDay = [CODES[start.dayOfWeek - 1]];
+      rule.byDay = [WEEKDAY_CODES[start.dayOfWeek - 1]];
     }
     if (rule.freq === "MONTHLY" && !rule.byMonthDay) {
       rule.byMonthDay = start.day;
@@ -309,7 +336,7 @@ function canonicalRecurrence(recurrence: unknown, startDate: unknown) {
   }
   if (Array.isArray(rule.byDay)) {
     rule.byDay = [...rule.byDay].sort(
-      (a, b) => CODES.indexOf(a) - CODES.indexOf(b)
+      (a, b) => WEEKDAY_CODES.indexOf(a) - WEEKDAY_CODES.indexOf(b)
     );
   }
   return sortKeys(rule);
