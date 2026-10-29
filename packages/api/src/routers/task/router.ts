@@ -88,9 +88,16 @@ export const taskRouter = os.router({
     return null;
   }),
 
-  list: os.list.effect(function* ({ context }) {
+  get: os.get.effect(function* ({ input, context }) {
+    const task = yield* TaskService.use((service) =>
+      service.getTask(context.user.id, input.id)
+    );
+    return normalizeTaskTags(task);
+  }),
+
+  list: os.list.effect(function* ({ input, context }) {
     const tasks = yield* TaskService.use((service) =>
-      service.listTasks(context.user.id)
+      service.listTasks(context.user.id, input?.params ?? {})
     );
     return tasks.map(normalizeTaskTags);
   }),

@@ -1,0 +1,168 @@
+---
+title: Connect an AI agent
+description: Let ChatGPT, Claude, or any MCP client find and manage your Kompose tasks.
+---
+
+Kompose has an [MCP](https://modelcontextprotocol.io) server. Once you connect an AI app to it, you can ask that app things like "what's due this week?" or "move my dentist task to Friday at 3pm", and it reads and changes your tasks in Kompose directly.
+
+You sign in with your Kompose account and approve the app; you never paste a password or API key into it.
+
+## Your server URL
+
+```txt
+https://kompose.dev/api/mcp
+```
+
+You can also copy it from **Settings → AI Agents** in Kompose on the web or on your phone.
+
+## Add Kompose to your AI app
+
+AI apps rename their menus often. If a label below doesn't match what you see, look for "Connectors", "Apps", or "MCP" in the app's settings.
+
+<Tabs items={["ChatGPT", "Claude", "Claude Code", "Other apps"]}>
+<Tab value="ChatGPT">
+
+<Steps>
+<Step>
+
+Open **Settings → Apps & Connectors → Advanced settings** and turn on **Developer mode**. Custom connectors need it, and it's only offered on some ChatGPT plans.
+
+</Step>
+<Step>
+
+Back in **Apps & Connectors**, click **Create**.
+
+</Step>
+<Step>
+
+Fill in the form:
+
+- **Name**: `Kompose`
+- **MCP Server URL**: `https://kompose.dev/api/mcp`
+- **Authentication**: OAuth. Leave the client ID and secret empty.
+
+Accept the warning about custom connectors, then click **Create**.
+
+</Step>
+<Step>
+
+ChatGPT opens Kompose. Sign in if asked, check the permissions, and click **Allow**.
+
+</Step>
+<Step>
+
+In a new chat, open the **+** menu, pick Kompose under Developer mode, and ask about your tasks.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="Claude">
+
+Works in Claude on the web, desktop, and mobile. Connectors you add on one sync to the others.
+
+<Steps>
+<Step>
+
+Open **Settings → Connectors** and click **Add custom connector**.
+
+</Step>
+<Step>
+
+Enter `Kompose` as the name and `https://kompose.dev/api/mcp` as the URL. Leave **Advanced settings** empty, then click **Add**.
+
+</Step>
+<Step>
+
+Click **Connect** next to Kompose. Sign in if asked, check the permissions, and click **Allow**.
+
+</Step>
+<Step>
+
+In a chat, open the tools menu and make sure Kompose is turned on, then ask about your tasks.
+
+</Step>
+</Steps>
+
+On Team and Enterprise plans, an admin may need to allow custom connectors first.
+
+</Tab>
+<Tab value="Claude Code">
+
+<Steps>
+<Step>
+
+Add the server:
+
+```bash
+claude mcp add --transport http kompose https://kompose.dev/api/mcp
+```
+
+Add `--scope user` to use it in every project instead of only the current one.
+
+</Step>
+<Step>
+
+Start Claude Code, run `/mcp`, select **kompose**, and choose **Authenticate**. Your browser opens Kompose; sign in and click **Allow**.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="Other apps">
+
+Any MCP client that supports remote servers over Streamable HTTP with OAuth can connect. Give it `https://kompose.dev/api/mcp` and let it find the sign-in page on its own; there is no client ID, secret, or API key to enter.
+
+Kompose identifies apps by their [client metadata document](https://modelcontextprotocol.io/specification/draft/basic/authorization#client-id-metadata-documents), so the app has to support that. Apps that can only register themselves with dynamic client registration can't connect yet.
+
+</Tab>
+</Tabs>
+
+## The approval screen
+
+Kompose shows the app's name and what it's asking for. Kompose has one permission:
+
+- **Tasks**: see, create, edit, and delete your tasks, and see your tags.
+
+Click **Allow** to connect or **Cancel** to stop. The app can't do anything until you allow it.
+
+## What your agent can do
+
+| Tool | What it does |
+| --- | --- |
+| `search_tasks` | Finds tasks by text, status, scheduled or due date ranges, and tags. Returns up to 50 at a time, newest first. |
+| `get_task` | Reads one task. |
+| `create_task` | Creates a task, or a repeating series. |
+| `update_task` | Changes a task: title, notes, dates, time, duration, status, tags, or repeat rule. For repeating tasks it can change just one or this one and every later one. |
+| `delete_task` | Deletes a task, or this one and every later one in a series. Apps usually ask you before running it. |
+| `list_tags` | Lists your tags so the agent can filter and tag tasks. |
+
+Changes made by an agent show up in your open Kompose apps right away.
+
+Agents can't see your calendar events, account details, or other users' data.
+
+### Things to try
+
+- "What's on my plate this week?"
+- "Add a task to call the bank tomorrow at 10am for 15 minutes."
+- "Mark everything tagged errands as done."
+- "Add a task to plan the week every Monday at 9am."
+- "Push all of today's unfinished tasks to tomorrow."
+
+Dates and times are in your local time, the same as in the app.
+
+## Disconnect an agent
+
+Open **Settings → AI Agents** in Kompose and click **Remove** next to the app. It loses access immediately, including any chat that's in progress. To use it again, connect it from the start.
+
+Removing Kompose inside the AI app may only remove it from that app. To be sure its access is gone, remove it in Kompose.
+
+## Troubleshooting
+
+**Kompose asks me to sign in even though I'm signed in.** This can happen the first time you connect an app. Sign in again and the connection continues.
+
+**The app says it can't connect or the sign-in fails.** Check the URL is exactly `https://kompose.dev/api/mcp`. If it still fails, the app may not support client metadata documents yet (see **Other apps** above).
+
+**The agent stopped working.** If you removed it in **Settings → AI Agents**, reconnect it. Otherwise disconnect and reconnect it in the AI app to sign in again.
+
+**The agent says it found nothing.** It may be filtering too narrowly. Ask it to search again without a date or status filter.

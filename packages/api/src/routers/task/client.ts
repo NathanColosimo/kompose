@@ -8,13 +8,25 @@ import type {
   TaskUpdate,
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  ilike,
+  inArray,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
-import type { DeleteScope, UpdateScope } from "./contract";
+import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, type TaskError, TaskNotFoundError } from "./errors";
 
 type TaskSelectRow = typeof taskTable.$inferSelect;
@@ -57,16 +69,59 @@ const groupTaskTagRows = (
   return [...tasks.values()];
 };
 
-const dbSelect = (userId: string) =>
+/** Escape LIKE wildcards so a search for "50%" matches literally. */
+const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
+
+/** WHERE clause for `tasks.list` / `search_tasks`; unset params don't filter. */
+const listFilters = (userId: string, params: TaskListParams) => {
+  const pattern = params.query ? `%${escapeLike(params.query)}%` : null;
+  return and(
+    eq(taskTable.userId, userId),
+    params.status?.length
+      ? inArray(taskTable.status, params.status)
+      : undefined,
+    pattern
+      ? or(
+          ilike(taskTable.title, pattern),
+          ilike(taskTable.description, pattern)
+        )
+      : undefined,
+    params.startDateMin
+      ? gte(taskTable.startDate, params.startDateMin)
+      : undefined,
+    params.startDateMax
+      ? lte(taskTable.startDate, params.startDateMax)
+      : undefined,
+    params.dueDateMin ? gte(taskTable.dueDate, params.dueDateMin) : undefined,
+    params.dueDateMax ? lte(taskTable.dueDate, params.dueDateMax) : undefined,
+    // Tasks carrying any of the given tags
+    params.tagIds?.length
+      ? exists(
+          sql`select 1 from ${taskTagTable} where ${and(
+            eq(taskTagTable.taskId, taskTable.id),
+            inArray(taskTagTable.tagId, params.tagIds)
+          )}`
+        )
+      : undefined
+  );
+};
+
+/** Matching tasks with their tags, newest created first. */
+const dbSelect = (userId: string, params: TaskListParams = {}) =>
   Effect.gen(function* () {
     const db = yield* Database;
+    const where = listFilters(userId, params);
+    // Limit tasks before joining tags, which fans out to one row per tag.
+    const taskIds = params.limit
+      ? sql`(select ${taskTable.id} from ${taskTable} where ${where} order by ${taskTable.createdAt} desc limit ${params.limit})`
+      : undefined;
     const rows = yield* db
       .select({ tag: tagTable, task: taskTable })
       .from(taskTable)
       .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
       .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
-      .where(eq(taskTable.userId, userId))
-      .orderBy(desc(taskTable.createdAt));
+      .where(taskIds ? and(where, inArray(taskTable.id, taskIds)) : where)
+      .orderBy(desc(taskTable.createdAt), asc(taskTable.id));
     return groupTaskTagRows(rows);
   });
 
@@ -875,10 +930,23 @@ const resolveUpdatedTasks = (
 export class TaskService extends Context.Service<TaskService>()("TaskService", {
   make: Effect.gen(function* () {
     const listTasks = Effect.fn("TaskService.listTasks")(function* (
-      userId: string
+      userId: string,
+      params: TaskListParams = {}
     ) {
       yield* Effect.annotateCurrentSpan("userId", userId);
-      return yield* dbSelect(userId);
+      return yield* dbSelect(userId, params);
+    });
+
+    const getTask = Effect.fn("TaskService.getTask")(function* (
+      userId: string,
+      taskId: string
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      const [task] = yield* dbSelectByIdsWithTags(userId, [taskId]);
+      if (!task) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
+      return task;
     });
 
     const createTask = Effect.fn("TaskService.createTask")(function* (
@@ -1041,7 +1109,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
     });
 
-    return { createTask, deleteTask, listTasks, updateTask };
+    return { createTask, deleteTask, getTask, listTasks, updateTask };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make).pipe(

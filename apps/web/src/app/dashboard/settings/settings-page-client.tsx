@@ -32,6 +32,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, extractAuthErrorMessage } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
 import { orpc } from "@/utils/orpc";
+import { ConnectedAgentsSettings } from "./connected-agents-settings";
 import { DesktopShortcutSettings } from "./desktop-shortcut-settings";
 
 export default function SettingsPageClient() {
@@ -400,6 +401,8 @@ export default function SettingsPageClient() {
             })}
           </CardContent>
         </Card>
+
+        <ConnectedAgentsSettings />
 
         {isDesktop ? <DesktopShortcutSettings /> : null}
       </div>
