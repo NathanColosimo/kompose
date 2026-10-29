@@ -128,9 +128,10 @@ export class Kernel {
   /**
    * out[n, rows] = x[n, cols] · Wᵀ + bias for a placed int8 W, then exact
    * GELU if `gelu`. Each token maps its [min, max] onto ±63 around its
-   * midpoint (relaxed SIMD's int8 dot product is exact on every CPU only
-   * for 7-bit second operands); the int32 sums are scaled back and the
-   * midpoint's share added from W's row sums.
+   * midpoint, sent shifted into 0–126 (relaxed SIMD's int8 dot product is
+   * exact on every CPU only for 7-bit unsigned second operands; x86 reads
+   * them as unsigned bytes). The int32 sums are scaled back, with the
+   * shift's and the midpoint's shares taken from W's row sums.
    */
   linear(x: Float32Array, n: number, weight: Matrix, gelu = false) {
     const { cols, rows } = weight;

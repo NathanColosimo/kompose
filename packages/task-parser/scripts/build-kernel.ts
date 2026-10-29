@@ -34,6 +34,8 @@ const reduce = (op: string, v: string) => {
   return `(${op} (${op} ${lane(0)} ${lane(1)}) (${op} ${lane(2)} ${lane(3)}))`;
 };
 
+const f4 = (value: number) => `(f32x4.splat (f32.const ${value}))`;
+
 /** `a += x · w` over 16 int8 lanes. */
 const dotAdd = (relaxed: boolean, i: number, j: number) =>
   relaxed
@@ -42,11 +44,12 @@ const dotAdd = (relaxed: boolean, i: number, j: number) =>
 
 /**
  * out[n, rows] (int32) = x[n, cols] · w[rows, cols]ᵀ, both int8, byte
- * offsets; callers scale the sums back. Activations must be within ±63
- * (7 bits): relaxed SIMD's dot product then gives the same exact sums on
- * every CPU, 16 products per instruction (ARM sdot). Without relaxed SIMD,
- * 16 products are taken to int16 (at most 63 · 127, so two of them still
- * fit), added in pairs and widened into the int32 sums.
+ * offsets; callers scale the sums back. Activations must be within 0–127
+ * (7 bits, unsigned): relaxed SIMD's dot product then gives the same exact
+ * sums on every CPU, 16 products per instruction (ARM sdot; x86 reads that
+ * operand as unsigned bytes, so negative ones would come out wrong).
+ * Without relaxed SIMD, 16 products are taken to int16 (at most 126 · 127,
+ * so two of them still fit), added in pairs and widened into the int32 sums.
  * n and rows must be multiples of 4, cols of 16.
  */
 const linear = (relaxed: boolean) => `  (func (export "linear")
@@ -81,10 +84,13 @@ const linear = (relaxed: boolean) => `  (func (export "linear")
 
 /**
  * quantize: each token of x (float32 [n, cols], cols a multiple of 16) is
- * mapped from [min, max] onto ±63 around its midpoint, written as int8
- * [n, cols], with (scale, midpoint) per token in meta (float32 [n, 2]).
- * dequantize: out[t, r] = (sum · scale_t + midpoint_t · rowSum_r) ·
- * weightScale_r + bias_r, for int32 sums [n, rows] (rows a multiple of 4).
+ * mapped from [min, max] onto ±63 around its midpoint, then shifted by 63
+ * into 0–126 for linear, written as int8 [n, cols], with (scale, midpoint)
+ * per token in meta (float32 [n, 2]).
+ * dequantize: out[t, r] = ((sum − 63 · rowSum_r) · scale_t + midpoint_t ·
+ * rowSum_r) · weightScale_r + bias_r, for int32 sums [n, rows] (rows a
+ * multiple of 4). The shift's share is taken out exactly: every term is an
+ * integer below 2^24.
  */
 const CONVERSIONS = `  (func (export "quantize")
     (param $x i32) (param $n i32) (param $cols i32) (param $q i32) (param $meta i32)
@@ -113,7 +119,7 @@ const CONVERSIONS = `  (func (export "quantize")
       (local.set $out (i32.add (local.get $q) (i32.mul (local.get $t) (local.get $cols))))
       (local.set $c (local.get $row))
       ${loopStart("c", "end")}
-        ${BLOCK.map((i) => `(local.set $part${i} (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=${i * 16} (local.get $c)) (local.get $mid)) (local.get $inv)))))`).join("\n        ")}
+        ${BLOCK.map((i) => `(local.set $part${i} (i32x4.add (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=${i * 16} (local.get $c)) (local.get $mid)) (local.get $inv)))) (i32x4.splat (i32.const 63))))`).join("\n        ")}
         (v128.store (local.get $out) (i8x16.narrow_i16x8_s (i16x8.narrow_i32x4_s (local.get $part0) (local.get $part1)) (i16x8.narrow_i32x4_s (local.get $part2) (local.get $part3))))
         (local.set $out (i32.add (local.get $out) (i32.const 16)))
       ${loopEnd("c", 64)}
@@ -121,25 +127,26 @@ const CONVERSIONS = `  (func (export "quantize")
   (func (export "dequantize")
     (param $sums i32) (param $n i32) (param $rows i32) (param $meta i32)
     (param $scales i32) (param $rowSums i32) (param $bias i32) (param $out i32)
-    (local $t i32) (local $r i32) (local $at i32) (local $scale v128) (local $mid v128)
+    (local $t i32) (local $r i32) (local $at i32) (local $scale v128) (local $mid v128) (local $rowSum v128)
     ${loopStart("t", "n")}
       (local.set $scale (v128.load32_splat (i32.add (local.get $meta) (i32.shl (local.get $t) (i32.const 3)))))
       (local.set $mid (v128.load32_splat offset=4 (i32.add (local.get $meta) (i32.shl (local.get $t) (i32.const 3)))))
       (local.set $r (i32.const 0))
       ${loopStart("r", "rows")}
         (local.set $at (i32.shl (i32.add (i32.mul (local.get $t) (local.get $rows)) (local.get $r)) (i32.const 2)))
+        (local.set $rowSum (v128.load (i32.add (local.get $rowSums) (i32.shl (local.get $r) (i32.const 2)))))
         (v128.store (i32.add (local.get $out) (local.get $at))
           (f32x4.add
             (f32x4.mul
               (f32x4.add
-                (f32x4.mul (f32x4.convert_i32x4_s (v128.load (i32.add (local.get $sums) (local.get $at)))) (local.get $scale))
-                (f32x4.mul (local.get $mid) (v128.load (i32.add (local.get $rowSums) (i32.shl (local.get $r) (i32.const 2))))))
+                (f32x4.mul
+                  (f32x4.sub (f32x4.convert_i32x4_s (v128.load (i32.add (local.get $sums) (local.get $at)))) (f32x4.mul (local.get $rowSum) ${f4(63)}))
+                  (local.get $scale))
+                (f32x4.mul (local.get $mid) (local.get $rowSum)))
               (v128.load (i32.add (local.get $scales) (i32.shl (local.get $r) (i32.const 2)))))
             (v128.load (i32.add (local.get $bias) (i32.shl (local.get $r) (i32.const 2))))))
       ${loopEnd("r", 4)}
     ${loopEnd("t", 1)})`;
-
-const f4 = (value: number) => `(f32x4.splat (f32.const ${value}))`;
 
 /**
  * gelu: exact GELU, x·Φ(x), in place over `count` floats (a multiple of 4).
