@@ -109,8 +109,8 @@ export function holidayDate(
   if (!rule) {
     return null;
   }
-  const on = (year: number) =>
-    eve ? rule(year).subtract({ days: 1 }) : rule(year);
+  const on = (inYear: number) =>
+    eve ? rule(inYear).subtract({ days: 1 }) : rule(inYear);
   if (year !== null) {
     return on(year);
   }

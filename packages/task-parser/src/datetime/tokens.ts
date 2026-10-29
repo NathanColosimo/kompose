@@ -303,6 +303,10 @@ const KNOWN = new Set([
   ),
 ]);
 
+/** Aliases typos are also corrected toward ("thrus" → "thurs"). */
+const SHORTHANDS = ["thurs", "tues", "weds", "tmrw", "tomorow"];
+const CORRECTIONS = [...CORRECTABLE, ...SHORTHANDS];
+
 /** The nearest date word for a misspelling, or the word itself. */
 function correct(word: string) {
   if (word.length < 4 || KNOWN.has(word) || !LETTERS_ONLY.test(word)) {
@@ -311,7 +315,7 @@ function correct(word: string) {
   const limit = word.length <= 5 ? 1 : 2;
   let best = word;
   let bestDistance = limit + 1;
-  for (const candidate of [...CORRECTABLE, ...SHORTHANDS]) {
+  for (const candidate of CORRECTIONS) {
     // Typos keep the first letter; otherwise "bridal" would become "friday".
     if (
       candidate[0] !== word[0] ||
@@ -327,9 +331,6 @@ function correct(word: string) {
   }
   return lookup(ALIASES, best) ?? best;
 }
-
-/** Aliases typos are also corrected toward ("thrus" → "thurs"). */
-const SHORTHANDS = ["thurs", "tues", "weds", "tmrw", "tomorow"];
 
 /** Optimal string alignment distance (Levenshtein plus transpositions). */
 function editDistance(a: string, b: string) {

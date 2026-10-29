@@ -49,9 +49,9 @@ const before = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
 
 function nthDayOf(year: number, month: number, nth: number, business: boolean) {
   if (!business) {
-    return nth > 0 ? dateIn(year, month, nth) : dateIn(year, month, 31);
+    return dateIn(year, month, nth > 0 ? nth : 31);
   }
-  let day = nth > 0 ? dateIn(year, month, 1) : dateIn(year, month, 31);
+  let day = dateIn(year, month, nth > 0 ? 1 : 31);
   let found = 0;
   const step = nth > 0 ? 1 : -1;
   for (;;) {
@@ -119,31 +119,21 @@ function weekStart(today: Temporal.PlainDate, weeks: number) {
   return today.subtract({ days: today.dayOfWeek - 1 }).add({ weeks });
 }
 
-const PART_DAYS: Record<string, number> = {
-  early: 0,
-  end: 6,
-  late: 4,
-  mid: 2,
-  start: 0,
+/**
+ * Where a part of a period starts: days into a week, the day of a month,
+ * and the [month, day] of a year ("mid" is Wednesday, the 15th, July 1st).
+ */
+const PART_STARTS: Record<
+  Part,
+  { week: number; month: number; year: [number, number] }
+> = {
+  early: { month: 1, week: 0, year: [1, 1] },
+  end: { month: 31, week: 6, year: [12, 31] },
+  late: { month: 31, week: 4, year: [12, 31] },
+  mid: { month: 15, week: 2, year: [7, 1] },
+  start: { month: 1, week: 0, year: [1, 1] },
+  whole: { month: 1, week: 0, year: [1, 1] },
 };
-
-/** The day of the month a part of it starts on ("mid" is the 15th). */
-function partDayOfMonth(part: Part) {
-  if (part === "mid") {
-    return 15;
-  }
-  return part === "late" || part === "end" ? 31 : 1;
-}
-
-/** The day a part of a year starts on ("mid" is July 1st). */
-function partDateOfYear(year: number, part: Part) {
-  if (part === "mid") {
-    return dateIn(year, 7, 1);
-  }
-  return part === "late" || part === "end"
-    ? dateIn(year, 12, 31)
-    : dateIn(year, 1, 1);
-}
 
 /**
  * "nov 3": the next one on or after today; "feb 29" the next leap day. A
@@ -198,7 +188,7 @@ function resolveMonthDay(spec: SpecOf<"monthDay">, today: Temporal.PlainDate) {
 function resolveMonth(spec: SpecOf<"month">, today: Temporal.PlainDate) {
   const year =
     spec.year ?? (spec.month < today.month ? today.year + 1 : today.year);
-  const day = partDayOfMonth(spec.part);
+  const day = PART_STARTS[spec.part].month;
   const date = dateIn(year, spec.month, day);
   if (!before(date, today) || spec.year !== null) {
     return date;
@@ -218,30 +208,21 @@ function resolveWeek(spec: SpecOf<"week">, today: Temporal.PlainDate) {
     }
     return today.dayOfWeek === 6 ? saturday.add({ weeks: 1 }) : saturday;
   }
-  if (spec.part === "whole") {
-    return spec.weeks === 0 ? today : weekStart(today, spec.weeks);
-  }
   const date = weekStart(today, spec.weeks).add({
-    days: PART_DAYS[spec.part] ?? 0,
+    days: PART_STARTS[spec.part].week,
   });
   return before(date, today) ? today : date;
 }
 
 function resolveMonthOf(spec: SpecOf<"monthOf">, today: Temporal.PlainDate) {
   const first = today.with({ day: 1 }).add({ months: spec.months });
-  if (spec.part === "whole") {
-    return spec.months === 0 ? today : first;
-  }
-  const date = dateIn(first.year, first.month, partDayOfMonth(spec.part));
+  const date = dateIn(first.year, first.month, PART_STARTS[spec.part].month);
   return before(date, today) ? today : date;
 }
 
 function resolveYearOf(spec: SpecOf<"yearOf">, today: Temporal.PlainDate) {
-  const year = today.year + spec.years;
-  if (spec.part === "whole") {
-    return spec.years === 0 ? today : dateIn(year, 1, 1);
-  }
-  const date = partDateOfYear(year, spec.part);
+  const [month, day] = PART_STARTS[spec.part].year;
+  const date = dateIn(today.year + spec.years, month, day);
   return before(date, today) ? today : date;
 }
 
@@ -574,37 +555,36 @@ export function resolvePhrase(
     return null;
   }
   const start = phrase.start ? resolveDay(phrase.start, today) : null;
+  const context: Context = { date, end, local, start, time, today };
+  const when = repeat
+    ? resolveRepeat(phrase, repeat, context)
+    : resolveOnce(phrase, context);
+  return when && finish(when, phrase, now);
+}
 
-  if (repeat) {
-    return resolveRepeat(phrase, repeat, {
-      date,
-      now,
-      nowTime: local.toPlainTime(),
-      start,
-      time,
-      today,
-    });
-  }
-  return resolveOnce(phrase, { date: date ?? start, end, local, now, time });
+/** What a phrase's day and time come to, before its repeat or one-off rules. */
+interface Context {
+  /** The day named, shifted ("a week from friday"). */
+  date: Temporal.PlainDate | null;
+  /** The end of a time range. */
+  end: Temporal.PlainTime | null;
+  /** Now, in the zone of a bare zoned time ("3pm ET"). */
+  local: Temporal.ZonedDateTime;
+  /** Where a repeat (or the task) begins ("starting next week"). */
+  start: Temporal.PlainDate | null;
+  time: Temporal.PlainTime | null;
+  /** `local`'s date. */
+  today: Temporal.PlainDate;
 }
 
 /** A one-off phrase: its day (today when only a time is named) and time. */
-function resolveOnce(
-  phrase: Phrase,
-  context: {
-    date: Temporal.PlainDate | null;
-    end: Temporal.PlainTime | null;
-    local: Temporal.ZonedDateTime;
-    now: Temporal.ZonedDateTime;
-    time: Temporal.PlainTime | null;
-  }
-): When | null {
-  const { end, local, now, time } = context;
-  const named = context.date !== null;
-  if (!(context.date || time)) {
+function resolveOnce(phrase: Phrase, context: Context): When | null {
+  const { end, local, time } = context;
+  const named = context.date ?? context.start;
+  if (!(named || time)) {
     return null;
   }
-  let date = context.date ?? local.toPlainDate();
+  let date = named ?? context.today;
   if (isMidnightAhead(phrase)) {
     date = date.add({ days: 1 });
   }
@@ -622,16 +602,7 @@ function resolveOnce(
   ) {
     date = date.add({ days: 1 });
   }
-  return finish(
-    {
-      date,
-      end: rangeEndAt(date, time, end),
-      recurrence: null,
-      time,
-    },
-    phrase,
-    now
-  );
+  return { date, end: rangeEndAt(date, time, end), recurrence: null, time };
 }
 
 /**
@@ -642,11 +613,7 @@ function resolveOnce(
 function applyDayToRule(
   day: DaySpec | null,
   rule: RepeatSpec,
-  context: {
-    date: Temporal.PlainDate | null;
-    start: Temporal.PlainDate | null;
-    today: Temporal.PlainDate;
-  }
+  context: Context
 ): { from: Temporal.PlainDate; yearly: Temporal.PlainDate | null } {
   const { date, start, today } = context;
   let yearly: Temporal.PlainDate | null = null;
@@ -705,16 +672,9 @@ function firstOccurrence(
 function resolveRepeat(
   phrase: Phrase,
   repeat: RepeatSpec,
-  context: {
-    date: Temporal.PlainDate | null;
-    now: Temporal.ZonedDateTime;
-    nowTime: Temporal.PlainTime;
-    start: Temporal.PlainDate | null;
-    time: Temporal.PlainTime | null;
-    today: Temporal.PlainDate;
-  }
+  context: Context
 ): When | null {
-  const { now, nowTime, start, time, today } = context;
+  const { local, start, time, today } = context;
   const rule: RepeatSpec = { ...repeat, byDay: [...repeat.byDay] };
   const anchor = applyDayToRule(phrase.day, rule, context);
   let yearly = anchor.yearly;
@@ -729,6 +689,7 @@ function resolveRepeat(
     yearly = start;
   }
   // The first occurrence on or after `from` (and after now when it's today).
+  const nowTime = local.toPlainTime();
   const past = (candidate: Temporal.PlainDate) =>
     candidate.equals(today) &&
     time !== null &&
@@ -740,16 +701,8 @@ function resolveRepeat(
   const until = rule.until ? resolveDay(rule.until, today) : null;
   const count =
     rule.count ?? (rule.span ? countIn(rule, first, rule.span) : null);
-  return finish(
-    {
-      date: first,
-      end: null,
-      recurrence: toRecurrence(rule, first, until, count),
-      time,
-    },
-    phrase,
-    now
-  );
+  const recurrence = toRecurrence(rule, first, until, count);
+  return { date: first, end: null, recurrence, time };
 }
 
 /** Converts a time given in another zone back to the user's. */

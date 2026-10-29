@@ -46,7 +46,7 @@ export type DaySpec =
       nths: number[];
       weekday: number;
       month: MonthRef;
-      repeats?: boolean;
+      repeats: boolean;
     }
   /** nth business or calendar days of a month (-1 = last). `repeats`: "of each month". */
   | {
@@ -54,7 +54,7 @@ export type DaySpec =
       nths: number[];
       business: boolean;
       month: MonthRef;
-      repeats?: boolean;
+      repeats: boolean;
     };
 
 export type MonthRule = Extract<DaySpec, { type: "nthWeekday" | "nthDay" }>;
@@ -115,6 +115,11 @@ const PLURAL_WEEKDAYS = new Map<string, number>(
 const MONTH_INDEX = new Map<string, number>(
   MONTHS.map((name, index) => [name, index + 1])
 );
+/** The weekday (1 = Monday) or month (1 = January) a token names. */
+const weekdayOf = (token: Token | undefined) =>
+  WEEKDAY_INDEX.get(word(token) ?? "");
+const monthOf = (token: Token | undefined) =>
+  MONTH_INDEX.get(word(token) ?? "");
 const UNITS: Record<string, Unit> = {
   day: "day",
   days: "day",
@@ -129,14 +134,13 @@ const UNITS: Record<string, Unit> = {
   year: "year",
   years: "year",
 };
+/** Minutes after an hour word ("nine forty five"). */
 const MINUTE_WORDS: Record<string, number> = {
   fifteen: 15,
-  five: 5,
   "forty five": 45,
   forty: 40,
   fifty: 50,
   "fifty five": 55,
-  ten: 10,
   thirty: 30,
   "twenty five": 25,
   twenty: 20,
@@ -205,6 +209,7 @@ const TIME_LEADS = new Set([
 
 /** Words after a bare hour that make it a clock time ("4 pm", "4ish"). */
 const CLOCK_MARKS = new Set(["am", "pm", "oclock", "ish", "sharp"]);
+const NAMED_HOURS: Record<string, number> = { midnight: 0, noon: 12 };
 
 interface Reader {
   /** The phrase is a repeat span: bare weekdays mean "every". */
@@ -234,13 +239,26 @@ const is = (token: Token | undefined, ...words: string[]) => {
   return text !== null && words.includes(text);
 };
 
-/** Whether the tokens from `i` read `words` in order; a list allows any of its words. */
-function wordsAt(tokens: Token[], i: number, ...words: (string | string[])[]) {
-  return words.every((expected, k) =>
-    typeof expected === "string"
-      ? is(tokens[i + k], expected)
-      : is(tokens[i + k], ...expected)
-  );
+/** A word to expect; a list allows any of its words. */
+type Expected = string | string[];
+
+const isExpected = (token: Token | undefined, expected: Expected) =>
+  typeof expected === "string" ? is(token, expected) : is(token, ...expected);
+
+/** Whether the tokens from `i` read `words` in order. */
+function wordsAt(tokens: Token[], i: number, ...words: Expected[]) {
+  return words.every((expected, k) => isExpected(tokens[i + k], expected));
+}
+
+/** `i` moved past each of `words` that is there, in order ("end - of the"). */
+function skipOptional(tokens: Token[], i: number, ...words: Expected[]) {
+  let at = i;
+  for (const expected of words) {
+    if (isExpected(tokens[at], expected)) {
+      at += 1;
+    }
+  }
+  return at;
 }
 
 /** A number written as digits or words ("twenty one", "forty-five"). */
@@ -249,12 +267,9 @@ function numberAt(tokens: Token[], i: number): Read<number> {
   if (token?.kind === "number" && !token.ordinal) {
     return { length: 1, value: token.value };
   }
-  const text = word(token);
-  if (text === null || text === "a" || text === "an") {
-    return null;
-  }
-  const value = lookup(NUMBER_WORDS, text);
-  if (value === undefined || text === "couple" || text === "few") {
+  // "a", "a couple", "a few" are amounts (amountAt), not numbers.
+  const value = lookup(NUMBER_WORDS, word(token));
+  if (value === undefined || is(token, "a", "an", "couple", "few")) {
     return null;
   }
   // "twenty one", "forty-five"
@@ -337,6 +352,13 @@ function readOffset(tokens: Token[], i: number): Read<DaySpec> {
   return spec && { length: at - i, value: spec };
 }
 
+/** The unit a fraction of a unit moves down to: "1.5 hours" is 90 minutes. */
+const SMALLER_UNITS: Partial<Record<Unit, [Unit, number]>> = {
+  day: ["hour", 24],
+  hour: ["minute", 60],
+  week: ["day", 7],
+};
+
 function toOffset(amount: number, unit: Unit | "fortnight"): DaySpec | null {
   if (unit === "fortnight") {
     return { amount: amount * 14, type: "offset", unit: "day" };
@@ -344,13 +366,7 @@ function toOffset(amount: number, unit: Unit | "fortnight"): DaySpec | null {
   if (Number.isInteger(amount)) {
     return { amount, type: "offset", unit };
   }
-  // Fractions move down a unit: "1.5 hours" is 90 minutes.
-  const smaller: Partial<Record<Unit, [Unit, number]>> = {
-    day: ["hour", 24],
-    hour: ["minute", 60],
-    week: ["day", 7],
-  };
-  const down = smaller[unit];
+  const down = SMALLER_UNITS[unit];
   return down
     ? { amount: Math.round(amount * down[1]), type: "offset", unit: down[0] }
     : null;
@@ -359,7 +375,7 @@ function toOffset(amount: number, unit: Unit | "fortnight"): DaySpec | null {
 /** A month name, with "of" before it allowed. */
 function monthAt(tokens: Token[], i: number): Read<number> {
   const of = is(tokens[i], "of") ? 1 : 0;
-  const month = MONTH_INDEX.get(word(tokens[i + of]) ?? "");
+  const month = monthOf(tokens[i + of]);
   // "may" is a month only next to a day number.
   return month ? { length: of + 1, value: month } : null;
 }
@@ -409,7 +425,7 @@ function readCalendarDate(tokens: Token[], i: number): Read<DaySpec> {
       },
     };
   }
-  const month = MONTH_INDEX.get(word(token) ?? "");
+  const month = monthOf(token);
   if (month) {
     const dot = is(tokens[i + 1], ".") ? 1 : 0;
     const day = dayNumberAt(tokens, i + 1 + dot);
@@ -452,6 +468,22 @@ function dateWithYear(
   };
 }
 
+/** Words after an ordinal word that make it a day ("the first of", "third at 4"). */
+const MONTH_DAY_FOLLOWERS = new Set([
+  "of",
+  "next",
+  "at",
+  "by",
+  "on",
+  "and",
+  "am",
+  "pm",
+  "in",
+  "this",
+  "every",
+  "each",
+]);
+
 /** "the 15th", "on the 3rd", "the 5th of next month", "15th". */
 function readMonthDay(tokens: Token[], i: number): Read<DaySpec> {
   const the = is(tokens[i], "the") ? 1 : 0;
@@ -465,24 +497,10 @@ function readMonthDay(tokens: Token[], i: number): Read<DaySpec> {
   if (
     tokens[i + the]?.kind === "word" &&
     follower?.kind === "word" &&
-    !is(
-      follower,
-      "of",
-      "next",
-      "at",
-      "by",
-      "on",
-      "and",
-      "am",
-      "pm",
-      "in",
-      "this",
-      "every",
-      "each"
-    ) &&
-    !WEEKDAY_INDEX.has(word(follower) ?? "") &&
-    !MONTH_INDEX.has(word(follower) ?? "") &&
-    !lookup(DAY_PART_ALIASES, word(follower))
+    !MONTH_DAY_FOLLOWERS.has(follower.text) &&
+    !weekdayOf(follower) &&
+    !monthOf(follower) &&
+    !lookup(DAY_PART_ALIASES, follower.text)
   ) {
     return null;
   }
@@ -511,7 +529,7 @@ function readWeekday(tokens: Token[], i: number): Read<DaySpec> {
   } else if (is(tokens[at], "this", "on", "upcoming")) {
     at += 1;
   }
-  const weekday = WEEKDAY_INDEX.get(word(tokens[at]) ?? "");
+  const weekday = weekdayOf(tokens[at]);
   if (!weekday) {
     return null;
   }
@@ -617,16 +635,7 @@ function readPeriodPart(tokens: Token[], i: number): Read<DaySpec> {
   // "the end of", "mid-", "early"
   const part = lookup(PART_WORDS, word(tokens[at])) ?? "whole";
   if (part !== "whole") {
-    at += 1;
-    if (is(tokens[at], "-")) {
-      at += 1;
-    }
-    if (is(tokens[at], "of")) {
-      at += 1;
-    }
-    if (is(tokens[at], "the")) {
-      at += 1;
-    }
+    at = skipOptional(tokens, at + 1, "-", "of", "the");
   }
   const endQuarter = part === "end" ? quarterAt(tokens, at) : null;
   if (endQuarter || (part === "end" && is(tokens[at], "quarter"))) {
@@ -635,18 +644,13 @@ function readPeriodPart(tokens: Token[], i: number): Read<DaySpec> {
       value: { quarter: endQuarter, type: "quarterEnd" },
     };
   }
-  let offset = 0;
-  let qualified = part !== "whole";
-  if (is(tokens[at], "next", "following", "coming")) {
-    offset = 1;
+  const offset = is(tokens[at], "next", "following", "coming") ? 1 : 0;
+  const named = offset === 1 || is(tokens[at], "this", "current");
+  if (named) {
     at += 1;
-    qualified = true;
-  } else if (is(tokens[at], "this", "current")) {
-    at += 1;
-    qualified = true;
   }
   // "recital week", "the month": not a date on their own.
-  if (!(qualified || is(tokens[at], "weekend"))) {
+  if (!(part !== "whole" || named || is(tokens[at], "weekend"))) {
     return null;
   }
   const period = periodOf(tokens, at, part, offset);
@@ -679,7 +683,7 @@ function periodOf(
   if (unit === "day" && part === "end") {
     return { length: 1, value: { days: 0, type: "relative" } };
   }
-  const month = MONTH_INDEX.get(unit ?? "");
+  const month = monthOf(tokens[at]);
   // "mid november", "end of october", "early dec" (a bare month is handled in readMonth).
   if (month && part !== "whole") {
     const year = yearAt(tokens, at + 1);
@@ -700,7 +704,7 @@ function quarterAt(tokens: Token[], i: number) {
 /** "november", "in november", "nov 2027", "next month" is a period. */
 function readMonth(tokens: Token[], i: number): Read<DaySpec> {
   const lead = is(tokens[i], "in", "this", "next") ? 1 : 0;
-  const month = MONTH_INDEX.get(word(tokens[i + lead]) ?? "");
+  const month = monthOf(tokens[i + lead]);
   // "may" alone is too often the verb or a name.
   if (!month || (month === 5 && !lead && !yearAt(tokens, i + 1))) {
     return null;
@@ -714,23 +718,23 @@ function readMonth(tokens: Token[], i: number): Read<DaySpec> {
 
 /** "1st and 3rd", "last", "2nd & final": the ordinals of a month rule. */
 function ordinalListAt(tokens: Token[], i: number): Read<number[]> {
+  const nthAt = (token: Token | undefined) =>
+    is(token, "final") ? -1 : ordinalAt(token, true);
   let at = i;
   const nths: number[] = [];
   for (;;) {
-    const nth = is(tokens[at], "final") ? -1 : ordinalAt(tokens[at], true);
+    const nth = nthAt(tokens[at]);
     if (nth === null || nth > 31) {
       break;
     }
     nths.push(nth);
     at += 1;
     if (
-      is(tokens[at], "and", "&", ",", "+") &&
-      (is(tokens[at + 1], "final") || ordinalAt(tokens[at + 1], true) !== null)
+      !(is(tokens[at], "and", "&", ",", "+") && nthAt(tokens[at + 1]) !== null)
     ) {
-      at += 1;
-      continue;
+      break;
     }
-    break;
+    at += 1;
   }
   return nths.length > 0 ? { length: at - i, value: nths } : null;
 }
@@ -740,7 +744,7 @@ function nthKindAt(
   tokens: Token[],
   i: number
 ): { business: boolean; length: number; weekday: number | null } {
-  const weekday = WEEKDAY_INDEX.get(word(tokens[i]) ?? "");
+  const weekday = weekdayOf(tokens[i]);
   if (weekday) {
     return { business: false, length: 1, weekday };
   }
@@ -780,7 +784,7 @@ function nthMonthAt(
     repeats = is(tokens[after], "each", "every");
     after += 1;
   }
-  const byName = MONTH_INDEX.get(word(tokens[after]) ?? "");
+  const byName = monthOf(tokens[after]);
   if (byName) {
     return { length: after + 1 - i, month: { month: byName }, repeats };
   }
@@ -835,10 +839,7 @@ function readNthOfMonth(
 
 /** Holidays by name; "christmas eve", "the day after thanksgiving". */
 function readHoliday(tokens: Token[], i: number): Read<DaySpec> {
-  let at = i;
-  if (is(tokens[at], "on", "the")) {
-    at += 1;
-  }
+  const at = skipOptional(tokens, i, ["on", "the"]);
   for (const [name, words] of HOLIDAY_WORDS) {
     if (words.every((text, k) => is(tokens[at + k], text, `${text}s`))) {
       let length = at - i + words.length;
@@ -882,12 +883,12 @@ function readTime(
       minute: first.minute,
     });
   }
-  const text = word(first);
-  if (text === "noon") {
-    return { length: lead + 1, value: { hour: 12, meridiem: "24", minute: 0 } };
-  }
-  if (text === "midnight") {
-    return { length: lead + 1, value: { hour: 0, meridiem: "24", minute: 0 } };
+  const named = lookup(NAMED_HOURS, word(first));
+  if (named !== undefined) {
+    return {
+      length: lead + 1,
+      value: { hour: named, meridiem: "24", minute: 0 },
+    };
   }
   const relative = relativeClock(tokens, at);
   if (relative) {
@@ -906,7 +907,7 @@ function readTime(
   }
   // "by 3 november", "bis zum 3. November": a day, not 3 o'clock.
   const dot = is(tokens[at + 1], ".") ? 1 : 0;
-  if (MONTH_INDEX.has(word(tokens[at + 1 + dot]) ?? "")) {
+  if (monthOf(tokens[at + 1 + dot])) {
     return null;
   }
   // "nine forty five", "four thirty", "6 30"
@@ -919,8 +920,8 @@ function readTime(
   };
   const marked = CLOCK_MARKS.has(word(tokens[i + length]) ?? "");
   // A bare number is a time after a clock lead ("at 4"), a day ("tmrw 3"),
-  // with minutes ("4 30"), or with am/pm.
-  // Or the start of a range ("2-3pm", "9 to 11:30").
+  // with minutes ("4 30"), with am/pm, at the start of a range ("2-3pm",
+  // "9 to 11:30"), or before a day part ("4 in the afternoon").
   if (
     !(
       lead ||
@@ -1071,7 +1072,7 @@ function minuteWordsAt(tokens: Token[], i: number): Read<number> {
   ) {
     return { length: 1, value: token.value };
   }
-  if (is(token, "oh", "o") && tokens[i + 1]) {
+  if (is(token, "oh", "o")) {
     const digit = numberAt(tokens, i + 1);
     return digit && digit.value < 10
       ? { length: 1 + digit.length, value: digit.value }
@@ -1090,9 +1091,7 @@ function minuteWordsAt(tokens: Token[], i: number): Read<number> {
     return { length: 2 + hyphen, value: pair };
   }
   const value = lookup(MINUTE_WORDS, text);
-  return value !== undefined && text !== "five" && text !== "ten"
-    ? { length: 1, value }
-    : null;
+  return value === undefined ? null : { length: 1, value };
 }
 
 function isPartAfter(tokens: Token[], i: number) {
@@ -1259,6 +1258,23 @@ function readDaySet(tokens: Token[], i: number): Read<number[]> {
 
 type RepeatRead = Read<{ repeat: RepeatSpec; time?: DayPart }>;
 
+/** A repeat read over `length` tokens; `time` is a day part it implies ("nightly"). */
+function repeatOf(
+  length: number,
+  freq: RepeatSpec["freq"],
+  fields: Partial<RepeatSpec> = {},
+  time?: DayPart
+): RepeatRead {
+  return { length, value: { repeat: newRepeat(freq, fields), time } };
+}
+
+const UNIT_FREQUENCIES: Partial<Record<Unit, RepeatSpec["freq"]>> = {
+  day: "DAILY",
+  month: "MONTHLY",
+  week: "WEEKLY",
+  year: "YEARLY",
+};
+
 /** The frequency a clinical-style unit letter means: "d", "w"/"wk", "m". */
 const CLINICAL_FREQUENCIES: Record<string, RepeatSpec["freq"]> = {
   d: "DAILY",
@@ -1275,18 +1291,11 @@ function readRepeat(
   i: number,
   repeating: boolean
 ): RepeatRead {
-  const text = word(tokens[i]) ?? "";
-  const simple =
-    readFrequencyWord(text) ??
-    readClinicalRepeat(tokens, i) ??
-    readOncePer(tokens, i);
-  if (simple) {
-    return simple;
-  }
-  if (text === "every" || text === "each" || text === "all") {
-    return readEvery(tokens, i);
-  }
   return (
+    readFrequencyWord(tokens, i) ??
+    readClinicalRepeat(tokens, i) ??
+    readOncePer(tokens, i) ??
+    readEvery(tokens, i) ??
     readWeekdayRepeat(tokens, i) ??
     readSpanRepeat(tokens, i, repeating) ??
     readMonthlyOrdinal(tokens, i)
@@ -1294,19 +1303,15 @@ function readRepeat(
 }
 
 /** "daily", "biweekly", "nightly" (which also says when). */
-function readFrequencyWord(text: string): RepeatRead {
+function readFrequencyWord(tokens: Token[], i: number): RepeatRead {
+  const text = word(tokens[i]);
   const frequency = lookup(FREQUENCY_WORDS, text);
   if (!frequency) {
     return null;
   }
   const [freq, interval] = frequency;
-  return {
-    length: 1,
-    value: {
-      repeat: newRepeat(freq, { interval }),
-      time: text === "nightly" ? "night" : undefined,
-    },
-  };
+  const time = text === "nightly" ? "night" : undefined;
+  return repeatOf(1, freq, { interval }, time);
 }
 
 /** q2 weeks, q3d, q14d */
@@ -1320,10 +1325,9 @@ function readClinicalRepeat(tokens: Token[], i: number): RepeatRead {
   if (!freq) {
     return null;
   }
-  return {
-    length: clinical[2] ? 1 : 2,
-    value: { repeat: newRepeat(freq, { interval: Number(clinical[1]) }) },
-  };
+  return repeatOf(clinical[2] ? 1 : 2, freq, {
+    interval: Number(clinical[1]),
+  });
 }
 
 /** "once a week", "once per month" */
@@ -1331,8 +1335,8 @@ function readOncePer(tokens: Token[], i: number): RepeatRead {
   if (!wordsAt(tokens, i, "once", ["a", "per", "every", "each"])) {
     return null;
   }
-  const freq = unitFrequency(lookup(UNITS, word(tokens[i + 2])));
-  return freq ? { length: 3, value: { repeat: newRepeat(freq) } } : null;
+  const freq = lookup(UNIT_FREQUENCIES, lookup(UNITS, word(tokens[i + 2])));
+  return freq ? repeatOf(3, freq) : null;
 }
 
 /** "mondays", "tuesdays and thursdays", "on weekdays", "weekday mornings" */
@@ -1346,13 +1350,8 @@ function readWeekdayRepeat(tokens: Token[], i: number): RepeatRead {
     return null;
   }
   const nights = is(tokens[i + lead], "weeknights", "weeknight");
-  return {
-    length: lead + list.length,
-    value: {
-      repeat: newRepeat("WEEKLY", { byDay: list.value }),
-      time: nights ? "night" : undefined,
-    },
-  };
+  const time = nights ? "night" : undefined;
+  return repeatOf(lead + list.length, "WEEKLY", { byDay: list.value }, time);
 }
 
 /** Inside a repeat span (after an "every" outside it): "[R:12 hours]", "[R:mon, wed]". */
@@ -1370,21 +1369,16 @@ function readSpanRepeat(
       ? lookup(UNITS, word(tokens[i + amount.length]))
       : undefined;
     if (amount && unit && Number.isInteger(amount.value)) {
-      const freq = unitFrequency(unit);
-      const repeat = newRepeat(freq ?? "DAILY", {
+      const freq = lookup(UNIT_FREQUENCIES, unit);
+      return repeatOf(amount.length + 1, freq ?? "DAILY", {
         interval: amount.value,
-        unsupported: freq === null,
+        unsupported: freq === undefined,
       });
-      return { length: amount.length + 1, value: { repeat } };
     }
   }
   const lead = is(tokens[i], "on") ? 1 : 0;
   const list = readWeekdayList(tokens, i + lead);
-  if (!list) {
-    return null;
-  }
-  const repeat = newRepeat("WEEKLY", { byDay: list.value });
-  return { length: lead + list.length, value: { repeat } };
+  return list && repeatOf(lead + list.length, "WEEKLY", { byDay: list.value });
 }
 
 /** "the 1st of every month", "15th of each month" */
@@ -1394,30 +1388,11 @@ function readMonthlyOrdinal(tokens: Token[], i: number): RepeatRead {
   if (ordinal === null || ordinal <= 0) {
     return null;
   }
-  let at = i + lead + 1;
-  if (is(tokens[at], "of")) {
-    at += 1;
-  }
+  const at = skipOptional(tokens, i + lead + 1, "of");
   if (!wordsAt(tokens, at, ["every", "each"], "month")) {
     return null;
   }
-  const repeat = newRepeat("MONTHLY", { byMonthDay: ordinal });
-  return { length: at + 2 - i, value: { repeat } };
-}
-
-function unitFrequency(unit: Unit | undefined): RepeatSpec["freq"] | null {
-  switch (unit) {
-    case "day":
-      return "DAILY";
-    case "week":
-      return "WEEKLY";
-    case "month":
-      return "MONTHLY";
-    case "year":
-      return "YEARLY";
-    default:
-      return null;
-  }
+  return repeatOf(at + 2 - i, "MONTHLY", { byMonthDay: ordinal });
 }
 
 /** "every other", "every 2nd week", "every 3": the interval and how many tokens say it. */
@@ -1428,8 +1403,7 @@ function everyIntervalAt(
   if (
     is(tokens[at], "other") ||
     (ordinalAt(tokens[at]) === 2 &&
-      (WEEKDAY_INDEX.has(word(tokens[at + 1]) ?? "") ||
-        lookup(UNITS, word(tokens[at + 1]))) &&
+      (weekdayOf(tokens[at + 1]) || lookup(UNITS, word(tokens[at + 1]))) &&
       !is(tokens[at + 2], "of"))
   ) {
     return { interval: 2, length: 1 };
@@ -1449,19 +1423,17 @@ function readEveryOrdinal(tokens: Token[], i: number): RepeatRead {
   }
   const rule = readNthOfMonth(tokens, i + 1, false);
   if (rule) {
-    const repeat = newRepeat("MONTHLY", { monthRule: rule.value });
-    return { length: 1 + rule.length, value: { repeat } };
+    return repeatOf(1 + rule.length, "MONTHLY", { monthRule: rule.value });
   }
   // "every 15th": monthly on that day.
-  if (day > 0) {
-    const repeat = newRepeat("MONTHLY", { byMonthDay: day });
-    return { length: 2, value: { repeat } };
-  }
-  return null;
+  return day > 0 ? repeatOf(2, "MONTHLY", { byMonthDay: day }) : null;
 }
 
-/** After "every"/"each": the interval and what repeats. */
+/** "every"/"each"/"all", then the interval and what repeats. */
 function readEvery(tokens: Token[], i: number): RepeatRead {
+  if (!is(tokens[i], "every", "each", "all")) {
+    return null;
+  }
   const { interval, length } = everyIntervalAt(tokens, i + 1);
   const ordinal = length === 0 ? readEveryOrdinal(tokens, i) : null;
   return ordinal ?? readEveryUnit(tokens, i, i + 1 + length, interval);
@@ -1477,47 +1449,37 @@ function readEveryUnit(
   // "every last friday of the month", "each first business day of the month"
   const nth = readNthOfMonth(tokens, at);
   if (nth) {
-    const repeat = newRepeat("MONTHLY", { monthRule: nth.value });
-    return { length: at - i + nth.length, value: { repeat } };
+    return repeatOf(at - i + nth.length, "MONTHLY", { monthRule: nth.value });
   }
+  const length = at - i + 1;
   const text = word(tokens[at]) ?? "";
   const unit = lookup(UNITS, text);
   if (unit === "hour" || unit === "minute") {
-    const repeat = newRepeat("DAILY", { unsupported: true });
-    return { length: at - i + 1, value: { repeat } };
+    return repeatOf(length, "DAILY", { unsupported: true });
   }
-  const freq = unitFrequency(unit);
+  const freq = lookup(UNIT_FREQUENCIES, unit);
   if (freq) {
-    const repeat = newRepeat(freq, { interval });
-    return { length: at - i + 1, value: { repeat } };
+    return repeatOf(length, freq, { interval });
   }
   if (text === "fortnight") {
-    const repeat = newRepeat("WEEKLY", { interval: 2 * interval });
-    return { length: at - i + 1, value: { repeat } };
+    return repeatOf(length, "WEEKLY", { interval: 2 * interval });
   }
   // "every morning", "every night", "every weekday morning"
   const part = lookup(DAY_PART_ALIASES, text);
   if (part) {
-    const repeat = newRepeat("DAILY", { interval });
-    return { length: at - i + 1, value: { repeat, time: part } };
+    return repeatOf(length, "DAILY", { interval }, part);
   }
   const set = readDaySet(tokens, at) ?? readWeekdayList(tokens, at);
   if (set) {
-    const repeat = newRepeat("WEEKLY", { byDay: set.value, interval });
-    return { length: at - i + set.length, value: { repeat } };
+    const byDay = set.value;
+    return repeatOf(at - i + set.length, "WEEKLY", { byDay, interval });
   }
-  // "every weekend"
   if (text === "weekend") {
-    const repeat = newRepeat("WEEKLY", { byDay: [6, 7], interval });
-    return { length: at - i + 1, value: { repeat } };
+    return repeatOf(length, "WEEKLY", { byDay: [6, 7], interval });
   }
   // "every year on march 3", "every march 3"
   const date = readCalendarDate(tokens, at);
-  if (date) {
-    const repeat = newRepeat("YEARLY", { interval });
-    return { length: at - i + date.length, value: { repeat } };
-  }
-  return null;
+  return date && repeatOf(at - i + date.length, "YEARLY", { interval });
 }
 
 /** Reads a whole phrase. */
@@ -1939,13 +1901,7 @@ function readSpan(
   tokens: Token[],
   i: number
 ): Read<{ amount: number; unit: Unit | "times" }> {
-  let at = i;
-  if (is(tokens[at], "the")) {
-    at += 1;
-  }
-  if (is(tokens[at], "next")) {
-    at += 1;
-  }
+  let at = skipOptional(tokens, i, "the", "next");
   const amount = amountAt(tokens, at);
   if (!amount) {
     return null;
@@ -1988,12 +1944,7 @@ function readTimes(tokens: Token[], i: number): Read<number> {
   return match ? { length: 1, value: Number(match[1]) } : null;
 }
 
-const SHIFT_UNIT_DAYS: Record<string, number> = {
-  day: 1,
-  days: 1,
-  week: 7,
-  weeks: 7,
-};
+const SHIFT_DAYS: Partial<Record<Unit, number>> = { day: 1, week: 7 };
 
 /** "a week from", "2 days after", "3 days before", "the day after". */
 function readShift(tokens: Token[], i: number): Read<number> {
@@ -2004,7 +1955,7 @@ function readShift(tokens: Token[], i: number): Read<number> {
     return null;
   }
   at += amount?.length ?? 0;
-  const days = lookup(SHIFT_UNIT_DAYS, word(tokens[at]));
+  const days = lookup(SHIFT_DAYS, lookup(UNITS, word(tokens[at])));
   if (days === undefined || !Number.isInteger(count)) {
     return null;
   }
@@ -2022,16 +1973,10 @@ function readShift(tokens: Token[], i: number): Read<number> {
 }
 
 function readPart(tokens: Token[], i: number): Read<DayPart> {
-  let at = i;
-  if (is(tokens[at], "in", "at", "this", "during")) {
-    at += 1;
-  }
-  if (is(tokens[at], "the")) {
-    at += 1;
-  }
-  if (is(tokens[at], "early", "late")) {
-    at += 1;
-  }
+  const at = skipOptional(tokens, i, ["in", "at", "this", "during"], "the", [
+    "early",
+    "late",
+  ]);
   const part = lookup(DAY_PART_ALIASES, word(tokens[at]));
   if (part) {
     return { length: at - i + 1, value: part };
@@ -2064,7 +2009,7 @@ function readDay(tokens: Token[], i: number): Read<DaySpec> {
 
 /** "wed 28 oct", "wednesday the 28th", "fri 10/30": the date wins. */
 function readWeekdayWithDate(tokens: Token[], i: number): Read<DaySpec> {
-  const weekday = WEEKDAY_INDEX.get(word(tokens[i]) ?? "");
+  const weekday = weekdayOf(tokens[i]);
   if (!weekday) {
     return null;
   }
