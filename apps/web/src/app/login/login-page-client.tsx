@@ -74,8 +74,19 @@ function DesktopSignIn() {
   );
 }
 
+/** True while an MCP client's OAuth authorization is waiting on sign-in. */
+function hasSignedOAuthQuery() {
+  return (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("sig")
+  );
+}
+
 export default function LoginPageClient() {
   const [isDesktop, setIsDesktop] = useState(false);
+  // The OAuth provider only sees sessions stored in Postgres, so sessions from
+  // before that are sent here; signing in again continues the authorization.
+  const [isOAuthSignIn] = useState(hasSignedOAuthQuery);
   useMountEffect(() => {
     setIsDesktop(isDesktopRuntime());
   });
@@ -106,7 +117,7 @@ export default function LoginPageClient() {
     );
   }
 
-  if (session?.user) {
+  if (session?.user && !isOAuthSignIn) {
     return <DashboardRedirect />;
   }
 

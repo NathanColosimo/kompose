@@ -11,6 +11,7 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@better-auth/electron": "catalog:",
+    "@better-auth/oauth-provider": "catalog:",
     "@dnd-kit/core": "^6.3.1",
     "@kompose/api": "workspace:*",
     "@kompose/auth": "workspace:*",

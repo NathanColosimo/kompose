@@ -2,6 +2,7 @@ import { linkMetaSchema } from "@kompose/db/schema/link";
 import {
   taskInsertSchema,
   taskSelectSchema,
+  taskStatusEnum,
   taskUpdateSchema,
 } from "@kompose/db/schema/task";
 import { oc } from "@orpc/contract";
@@ -130,31 +131,50 @@ export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 // API CONTRACTS (use base string schemas - no Temporal transformations)
 // ============================================================================
 
+export const taskStatusSchema = z.enum(taskStatusEnum.enumValues);
+
 export const listTasksParamsSchema = z.object({
   dueDateMax: z.iso
     .date()
-    .describe("Maximum task due date (YYYY-MM-DD).")
+    .describe("Latest due date to include (YYYY-MM-DD).")
     .nullable()
     .optional(),
   dueDateMin: z.iso
     .date()
-    .describe("Minimum task due date (YYYY-MM-DD).")
+    .describe("Earliest due date to include (YYYY-MM-DD).")
+    .nullable()
+    .optional(),
+  limit: z
+    .int()
+    .min(1)
+    .max(500)
+    .describe("Maximum number of tasks to return, newest created first.")
     .nullable()
     .optional(),
   query: z
     .string()
     .trim()
-    .describe("Text filter for task title or description.")
+    .describe("Case-insensitive text to match in the title or description.")
     .nullable()
     .optional(),
   startDateMax: z.iso
     .date()
-    .describe("Maximum task start date (YYYY-MM-DD).")
+    .describe("Latest start date to include (YYYY-MM-DD).")
     .nullable()
     .optional(),
   startDateMin: z.iso
     .date()
-    .describe("Minimum task start date (YYYY-MM-DD).")
+    .describe("Earliest start date to include (YYYY-MM-DD).")
+    .nullable()
+    .optional(),
+  status: z
+    .array(taskStatusSchema)
+    .describe("Only tasks with one of these statuses.")
+    .nullable()
+    .optional(),
+  tagIds: z
+    .array(z.uuidv7())
+    .describe("Only tasks that have at least one of these tag IDs.")
     .nullable()
     .optional(),
 });
@@ -195,6 +215,10 @@ export const deleteTask = oc
   )
   .output(z.null());
 
+export const getTask = oc
+  .input(z.object({ id: z.uuidv7() }))
+  .output(taskSelectSchemaWithTags);
+
 export const parseLink = oc
   .input(z.object({ url: z.string().url() }))
   .output(linkMetaSchema);
@@ -202,6 +226,7 @@ export const parseLink = oc
 export const taskContract = {
   create: createTask,
   delete: deleteTask,
+  get: getTask,
   list: listTasks,
   parseLink,
   update: updateTask,
