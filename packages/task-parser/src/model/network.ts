@@ -62,12 +62,12 @@ function linear(
   }
   const { cols, rows } = weight;
   const w = weight.data as Float32Array;
-  const b = model.weights.tensors.get(`${name}.bias`)?.data;
+  const b = tensor(model, `${name}.bias`).data;
   const out = new Float32Array(n * rows);
   for (let t = 0; t < n; t += 1) {
     for (let r = 0; r < rows; r += 1) {
       out[t * rows + r] =
-        dot(x, t * cols, w, r * cols, cols) + (b ? (b[r] as number) : 0);
+        dot(x, t * cols, w, r * cols, cols) + (b[r] as number);
     }
   }
   return out;
@@ -233,17 +233,13 @@ function forward(model: Model, encoded: Encoded): Logits {
  * The model over `weights`. Its int8 layers move into a new WebAssembly
  * kernel up front, so the weight file needn't be kept.
  */
-export function createNetwork(
-  weights: Weights,
-  options?: { relaxed?: boolean }
-) {
-  const kernel = new Kernel(options);
+export function createNetwork(weights: Weights) {
+  const model = { kernel: new Kernel(), weights };
   for (const [name, matrix] of weights.tensors) {
     if (name !== "words.weight" && matrix.scales) {
-      const bias = weights.tensors.get(name.replace(WEIGHT_SUFFIX, "bias"));
-      kernel.place(matrix, bias?.data as Float32Array | undefined);
+      const bias = tensor(model, name.replace(WEIGHT_SUFFIX, "bias"));
+      model.kernel.place(matrix, bias.data as Float32Array);
     }
   }
-  const model = { kernel, weights };
   return (encoded: Encoded) => forward(model, encoded);
 }

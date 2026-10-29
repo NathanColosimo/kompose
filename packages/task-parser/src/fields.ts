@@ -1,4 +1,4 @@
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import { parseDuration } from "./duration";
 import type { TaskRecurrence } from "./recurrence";
 import type { Label, Span } from "./spans";
@@ -128,11 +128,11 @@ function toLink(text: string) {
 
 /** Resolve labelled spans into task fields. Dates resolve against `now`. */
 export function resolveFields({
-  now = Temporal.Now.zonedDateTimeISO(),
+  now,
   spans,
   text,
 }: {
-  now?: Temporal.ZonedDateTime;
+  now: Temporal.ZonedDateTime;
   spans: Span[];
   /** The input, so split fields keep their punctuation. */
   text?: string;

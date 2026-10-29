@@ -7,13 +7,13 @@ import { readWeights } from "./weights";
 
 const run =
   process.env.TASK_PARSER_RUN ??
-  new URL("../../training/runs/v18q/", import.meta.url).pathname;
+  new URL("../../training/runs/v21q/", import.meta.url).pathname;
 const weightsFile = `${run}/task-parser.bin`;
 const casesFile = `${run}/logits-parity.json`;
 
 // The kernel rounds activations to 7 bits before each int8 layer
 // (kernel.ts): over 12 layers logits drift (median 0.05, worst ~0.75 on
-// v18q), and near-ties may decode differently.
+// v21q), and near-ties may decode differently.
 test.skipIf(!(existsSync(weightsFile) && existsSync(casesFile)))(
   "int8 logits stay close to the dequantized PyTorch model",
   () => {

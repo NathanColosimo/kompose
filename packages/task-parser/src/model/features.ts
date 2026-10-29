@@ -5,8 +5,8 @@
 import type { Span } from "../spans";
 import type { WordPiece } from "./tokenizer";
 
-export const LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"] as const;
-export const TAG_NAMES = [
+const LABELS = ["T", "D", "S", "U", "R", "M", "G", "F"] as const;
+const TAG_NAMES = [
   "O",
   ...LABELS.flatMap((label) => [`B-${label}`, `I-${label}`]),
 ];

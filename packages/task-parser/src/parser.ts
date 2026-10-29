@@ -39,7 +39,7 @@ function tagKey(name: string) {
     .toLowerCase();
 }
 
-export interface ParseOptions {
+interface ParseOptions {
   now?: Temporal.ZonedDateTime;
   tags?: TagOption[];
 }

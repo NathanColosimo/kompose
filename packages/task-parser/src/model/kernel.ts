@@ -106,19 +106,21 @@ export class Kernel {
    * scales, row sums and bias, then drops its own data so the weight file
    * it was read from can be freed.
    */
-  place(weight: Matrix, bias: Float32Array | undefined) {
+  place(weight: Matrix, bias: Float32Array) {
+    const { cols } = weight;
     const data = weight.data as Int8Array;
     const rows = pad4(weight.rows);
     const rowSums = new Float32Array(weight.rows);
-    for (let i = 0; i < data.length; i += 1) {
-      const r = Math.floor(i / weight.cols);
-      rowSums[r] = (rowSums[r] as number) + (data[i] as number);
+    for (let r = 0; r < weight.rows; r += 1) {
+      for (const value of data.subarray(r * cols, (r + 1) * cols)) {
+        rowSums[r] = (rowSums[r] as number) + value;
+      }
     }
     this.#placed.set(weight, {
-      bias: this.#append(bias ?? new Float32Array(0), rows),
+      bias: this.#append(bias, rows),
       rowSums: this.#append(rowSums, rows),
       scales: this.#append(weight.scales as Float32Array, rows),
-      weight: this.#append(data, rows * weight.cols),
+      weight: this.#append(data, rows * cols),
     });
     weight.data = new Int8Array(0);
   }

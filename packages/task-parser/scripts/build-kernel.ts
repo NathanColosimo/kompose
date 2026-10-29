@@ -91,7 +91,7 @@ const CONVERSIONS = `  (func (export "quantize")
     (local $t i32) (local $c i32) (local $row i32) (local $end i32) (local $out i32)
     (local $lo v128) (local $hi v128) (local $v v128) (local $mid v128) (local $inv v128)
     (local $min f32) (local $max f32) (local $half f32)
-    (local $a v128) (local $b v128) (local $c2 v128) (local $d v128)
+    ${BLOCK.map((i) => `(local $part${i} v128)`).join(" ")}
     ${loopStart("t", "n")}
       (local.set $row (i32.add (local.get $x) (i32.shl (i32.mul (local.get $t) (local.get $cols)) (i32.const 2))))
       (local.set $end (i32.add (local.get $row) (i32.shl (local.get $cols) (i32.const 2))))
@@ -113,11 +113,8 @@ const CONVERSIONS = `  (func (export "quantize")
       (local.set $out (i32.add (local.get $q) (i32.mul (local.get $t) (local.get $cols))))
       (local.set $c (local.get $row))
       ${loopStart("c", "end")}
-        (local.set $a (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load (local.get $c)) (local.get $mid)) (local.get $inv)))))
-        (local.set $b (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=16 (local.get $c)) (local.get $mid)) (local.get $inv)))))
-        (local.set $c2 (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=32 (local.get $c)) (local.get $mid)) (local.get $inv)))))
-        (local.set $d (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=48 (local.get $c)) (local.get $mid)) (local.get $inv)))))
-        (v128.store (local.get $out) (i8x16.narrow_i16x8_s (i16x8.narrow_i32x4_s (local.get $a) (local.get $b)) (i16x8.narrow_i32x4_s (local.get $c2) (local.get $d))))
+        ${BLOCK.map((i) => `(local.set $part${i} (i32x4.trunc_sat_f32x4_s (f32x4.nearest (f32x4.mul (f32x4.sub (v128.load offset=${i * 16} (local.get $c)) (local.get $mid)) (local.get $inv)))))`).join("\n        ")}
+        (v128.store (local.get $out) (i8x16.narrow_i16x8_s (i16x8.narrow_i32x4_s (local.get $part0) (local.get $part1)) (i16x8.narrow_i32x4_s (local.get $part2) (local.get $part3))))
         (local.set $out (i32.add (local.get $out) (i32.const 16)))
       ${loopEnd("c", 64)}
     ${loopEnd("t", 1)})

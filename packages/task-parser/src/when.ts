@@ -3,7 +3,7 @@
  * "mañana a las 5", "quarter to five", "9am PT". Deterministic and
  * synchronous.
  */
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import { parsePhrase } from "./datetime/grammar";
 import { resolvePhrase } from "./datetime/resolve";
 import { tokenize } from "./datetime/tokens";
@@ -16,9 +16,9 @@ import { tokenize } from "./datetime/tokens";
 export function resolveWhen(
   text: string,
   {
-    now = Temporal.Now.zonedDateTimeISO(),
+    now,
     repeating = false,
-  }: { now?: Temporal.ZonedDateTime; repeating?: boolean } = {}
+  }: { now: Temporal.ZonedDateTime; repeating?: boolean }
 ) {
   return resolvePhrase(parsePhrase(tokenize(text), repeating), now);
 }

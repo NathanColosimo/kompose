@@ -19,18 +19,13 @@ export const workerContract = {
 };
 
 /** A Temporal type, sent as its ISO string. */
-function temporal<T>(
-  Type: abstract new (...args: never[]) => T,
-  from: (text: string) => T
-): RPCJsonSerializerHandler {
+function temporal<T>(Type: {
+  from: (text: string) => T;
+  new (...args: never[]): T;
+}): RPCJsonSerializerHandler {
   return {
     condition: (value) => value instanceof Type,
-    deserialize(serialized) {
-      if (typeof serialized !== "string") {
-        throw new TypeError("Expected an ISO string");
-      }
-      return from(serialized);
-    },
+    deserialize: (serialized) => Type.from(serialized as string),
     isTerminal: true,
     serialize: (value: T) => String(value),
   };
@@ -38,14 +33,8 @@ function temporal<T>(
 
 export const serializer = new RPCSerializer({
   handlers: {
-    plainDate: temporal(Temporal.PlainDate, (text) =>
-      Temporal.PlainDate.from(text)
-    ),
-    plainTime: temporal(Temporal.PlainTime, (text) =>
-      Temporal.PlainTime.from(text)
-    ),
-    zonedDateTime: temporal(Temporal.ZonedDateTime, (text) =>
-      Temporal.ZonedDateTime.from(text)
-    ),
+    plainDate: temporal(Temporal.PlainDate),
+    plainTime: temporal(Temporal.PlainTime),
+    zonedDateTime: temporal(Temporal.ZonedDateTime),
   },
 });
