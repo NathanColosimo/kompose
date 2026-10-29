@@ -204,6 +204,12 @@ describe("resolveFields", () => {
     expect([result.recurrence, result.startDate]).toEqual([null, "2026-10-26"]);
   });
 
+  test("a weekly repeat with a deadline keeps its weekly rule", () => {
+    expect(
+      fields("[T:mow] [R:every other friday] before [U:nov 6]").recurrence
+    ).toEqual({ byDay: ["FR"], freq: "WEEKLY", interval: 2 });
+  });
+
   test("normalizes links", () => {
     const result = fields(
       "[T:review] [L:github.com/a/b/pull/1]. [L:https://x.dev/y]"
@@ -212,19 +218,5 @@ describe("resolveFields", () => {
       "https://github.com/a/b/pull/1",
       "https://x.dev/y",
     ]);
-  });
-});
-
-describe("resolveFields repeat anchors", () => {
-  test("a weekly repeat with a deadline keeps its weekly rule", () => {
-    const { spans } = parseMarkup(
-      "[T:mow] [R:every other friday] before [U:nov 6]"
-    );
-    const result = resolveFields({ now, spans });
-    expect(result.recurrence).toEqual({
-      byDay: ["FR"],
-      freq: "WEEKLY",
-      interval: 2,
-    });
   });
 });
