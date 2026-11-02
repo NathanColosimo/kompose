@@ -19,6 +19,13 @@ Kompose is a calendar and task manager with web, iOS, and macOS clients.
 
 ## Getting Started
 
+The task parser's model weights are in Git LFS. Install it before cloning,
+or run `git lfs pull` afterwards:
+
+```bash
+brew install git-lfs && git lfs install
+```
+
 Install dependencies:
 
 ```bash

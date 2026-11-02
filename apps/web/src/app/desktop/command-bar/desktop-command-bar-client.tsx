@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
+import { usePreloadTaskParser } from "@/lib/use-magic-task";
 
 /**
  * Dedicated command bar page for the desktop popup window.
@@ -21,6 +22,7 @@ import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
  */
 export default function DesktopCommandBarClient() {
   useHydrateAtoms([[commandBarOpenAtom, true]]);
+  usePreloadTaskParser();
   // Read after mount: rendering the surface during hydration would mismatch
   // the server HTML, and React's client re-render drops the preload's
   // data-desktop-runtime attribute that enables the drag styles.

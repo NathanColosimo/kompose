@@ -7,7 +7,7 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
 | Action | Description |
 | ------ | ----------- |
 | Search Tasks | Search uncompleted, non-recurring tasks by title. Select to navigate and edit. |
-| Create Task | Quick task creation with NLP syntax for duration, due date, and start date |
+| Create Task | Quick task creation from free text, read by an on-device model |
 
 ## Search Tasks Behavior
 
@@ -23,23 +23,25 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
   - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
 
-## Create Task Syntax
+## Create Task
 
-Type a task title followed by optional modifiers:
+Type the task as you'd say it: "call mom tomorrow at 4 for 30m #family",
+"pay rent every month on the 1st", "standup notes https://… due fri".
+A small model (`packages/task-parser`) reads the title, description, start
+and due dates, time, duration, repeat, links and tags, and a preview of the
+fields updates as you type. Typing `#` suggests your tags.
 
-| Symbol | Meaning | Examples |
-| ------ | ------- | -------- |
-| `=` | Duration | `=2h`, `=30m`, `=1h30m` |
-| `>` | Due date | `>monday`, `>tomorrow`, `>jan 15` |
-| `~` | Start date | `~friday`, `~next week`, `~tmrw` |
-
-**Example:** `Read that book =2h >monday ~tomorrow`
-
-Creates a task titled "Read that book" with 2 hour duration, due Monday, starting tomorrow.
+- The dashboard and the desktop popup start loading the model on mount
+  (`usePreloadTaskParser`), so it's ready by the time the command bar opens.
+  The weights (14 MB, Git LFS) are kept in the Cache API between sessions.
+- Parsing runs in a Web Worker behind an oRPC contract
+  (`packages/task-parser/src/worker-contract.ts`); Temporal values cross the
+  worker boundary as Temporal objects.
+- Enter before the model has a parse waits for it.
 
 ### URL detection
 
-The task input parser extracts all URLs from the title portion of the input into a `links: string[]` array. On task creation, `tasks.parseLink` is called for each URL to build the `links: LinkMeta[]` array. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
+The model returns the input's URLs as `links: string[]`. On task creation, `tasks.parseLink` is called for each URL to build the `links: LinkMeta[]` array. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
 
 ## Keyboard Navigation
 
@@ -87,7 +89,8 @@ The task input parser extracts all URLs from the title portion of the input into
 - **Root actions:** `apps/web/src/components/command-bar/command-bar-root.tsx`
 - **Search tasks:** `apps/web/src/components/command-bar/command-bar-search-tasks.tsx`
 - **Create task:** `apps/web/src/components/command-bar/command-bar-create-task.tsx`
-- **NLP parser:** `apps/web/src/lib/task-input-parser.ts`
+- **Model parse hook:** `apps/web/src/lib/use-magic-task.ts`
+- **Parser worker:** `packages/task-parser/src/worker.ts` (contract in `worker-contract.ts`, client in `worker-client.ts`)
 - **State atom:** `packages/state/src/atoms/command-bar.ts`
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
 - **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`
