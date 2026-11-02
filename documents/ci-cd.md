@@ -76,7 +76,8 @@ last *successful* release, not the previous commit.
 
 - **Mobile fingerprint**: `expo-updates runtimeversion:resolve`, the same value
   as the app's `runtimeVersion` (policy `fingerprint`). It changes with native
-  dependencies, config plugins, and app config, not with JS. If it matches the
+  dependencies, config plugins, and app config, not with JS or `package.json`
+  scripts (`apps/native/fingerprint.config.js`). If it matches the
   latest submitted binary (`shipped/ios-binary`), an OTA update reaches it;
   otherwise a new binary is built, including when a revert returns to an older
   fingerprint, since OTA updates only reach binaries with the same runtime. Server-only changes can also mark `native` as affected
