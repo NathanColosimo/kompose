@@ -59,8 +59,9 @@ jobs:
         run: bunx turbo run type-check --affected
       # Web is built by Vercel with production env. The native export
       # includes the Hermes bytecode compile, which catches syntax the
-      # engine rejects before it reaches a release build. Doctor checks native
-      # dependency versions against the installed Expo SDK.
+      # engine rejects before it reaches a release build. Doctor checks the
+      # app config and native dependencies (duplicates, peers, overrides);
+      # its "latest SDK patch" check is off (see the native doctor script).
       - name: Build iOS bundle, desktop shell, and Expo doctor
         run: bunx turbo run build doctor --affected --filter=native --filter=@kompose/electron
         env:

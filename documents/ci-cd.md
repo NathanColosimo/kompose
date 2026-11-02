@@ -12,7 +12,7 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | --- | --- |
 | Lint and format | `biome ci .` |
 | Lint workflows | `actionlint` (with `shellcheck` on `run:` blocks) on `.github/workflows/` |
-| Type-check and build | `turbo run type-check --affected`, then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (native dependency versions against the Expo SDK; it calls the Expo API, so it can fail on network issues) |
+| Type-check and build | `turbo run type-check --affected`, then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (app config and native dependencies; it calls the Expo API, so it can fail on network issues) |
 | Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
 `--affected` runs only the packages changed since the PR base
@@ -21,6 +21,12 @@ Turbo uses the Vercel remote cache when `TURBO_TOKEN`/`TURBO_TEAM` are set, so
 work done in CI, on Vercel, or locally (if logged in) is not repeated. Web is
 not built in CI: it needs production env vars, and Vercel builds it on deploy.
 `SKIP_ENV_VALIDATION=1` lets type-checks run without secrets.
+
+The native `doctor` script sets `EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK`.
+That check compares packages with the newest SDK patch releases, so every
+Expo patch would fail PRs that touch dependencies. Bump them on purpose with
+`npx expo install --check` in `apps/native`; a new native patch ships a new
+iOS binary, not an OTA update.
 
 ## Releases (`release.yml`)
 
