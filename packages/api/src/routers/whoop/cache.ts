@@ -155,8 +155,12 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
               }),
             try: async () => {
               const key = dayKey(accountId, day);
-              await redis.set(key, JSON.stringify(validatedPayload));
-              await redis.expire(key, ttlSeconds);
+              await redis.set(
+                key,
+                JSON.stringify(validatedPayload),
+                "EX",
+                String(ttlSeconds)
+              );
             },
           });
         }

@@ -480,21 +480,25 @@ export class WhoopService extends Context.Service<WhoopService>()(
             // starts on day N but its sleep ends on day N+1), overwriting
             // that day's complete cached data with an incomplete grouping.
             const missingDaySet = new Set(missingDays);
-            for (const [day, payload] of groupedDays) {
-              if (!missingDaySet.has(day)) {
-                continue;
-              }
-
+            const fetchedDays = [...groupedDays].filter(([day]) =>
+              missingDaySet.has(day)
+            );
+            for (const [day, payload] of fetchedDays) {
               allDays.set(day, payload);
-              yield* cache
-                .setCachedDay(
-                  params.accountId,
-                  day,
-                  payload,
-                  ttlForDay(day, params.timeZone)
-                )
-                .pipe(logAndSwallowWhoopCacheError);
             }
+            yield* Effect.forEach(
+              fetchedDays,
+              ([day, payload]) =>
+                cache
+                  .setCachedDay(
+                    params.accountId,
+                    day,
+                    payload,
+                    ttlForDay(day, params.timeZone)
+                  )
+                  .pipe(logAndSwallowWhoopCacheError),
+              { concurrency: "unbounded", discard: true }
+            );
           }
 
           return requestedDays
