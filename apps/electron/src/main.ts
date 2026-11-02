@@ -553,8 +553,11 @@ app
     registerBridge();
     setUpMenu();
     showMain();
-    // Kept loaded and hidden so the shortcut opens it instantly.
-    commandWindow = createCommandWindow();
+    // Kept loaded and hidden so the shortcut opens it instantly. It's a second
+    // full page load, so wait for the dashboard; an earlier shortcut creates it.
+    mainWindow?.webContents.once("did-finish-load", () => {
+      commandWindow ??= createCommandWindow();
+    });
     try {
       applyShortcut(settings.get("shortcut"));
     } catch (error) {
