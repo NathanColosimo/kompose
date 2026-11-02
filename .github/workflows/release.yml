@@ -222,6 +222,9 @@ jobs:
       # Expo and Apple email if that fails.
       # USE_CCACHE turns on React Native's ccache wrapper in pod install, and a
       # fixed working directory keeps compiler paths stable for cache hits.
+      # CI's check job already runs expo-doctor. EAS's own copy has a 30 s
+      # timeout, and when it trips, EAS kills a process that has already exited
+      # and the build crashes (kill ESRCH, @expo/build-tools setup.js).
       - name: Build and submit
         if: steps.fingerprint.outputs.build == 'true'
         working-directory: apps/native
@@ -232,6 +235,7 @@ jobs:
           CCACHE_DIR: ${{ runner.temp }}/ccache
           CCACHE_MAXSIZE: 2G
           EAS_LOCAL_BUILD_WORKINGDIR: ${{ runner.temp }}/eas-build
+          EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP: "1"
         run: |
           ccache --zero-stats
           bunx eas-cli@25.3.0 build -p ios --profile production --local --non-interactive \
