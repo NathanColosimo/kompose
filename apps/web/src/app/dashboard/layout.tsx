@@ -19,6 +19,7 @@ import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
 import { applyCommandBarTaskOpenRequest } from "@/lib/command-bar-task-routing";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
+import { usePreloadTaskParser } from "@/lib/use-magic-task";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
@@ -66,6 +67,7 @@ export default function DashboardLayout({
   const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   useWebRealtimeSync(sessionUser?.id);
+  usePreloadTaskParser();
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
   useLayoutEffect(() => {
