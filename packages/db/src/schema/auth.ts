@@ -12,11 +12,13 @@ import {
 export const user = pgTable("user", {
   createdAt: timestamp("created_at").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").notNull(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
   id: text("id").primaryKey(),
   image: text("image"),
   name: text("name").notNull(),
-  updatedAt: timestamp("updated_at").notNull(),
+  updatedAt: timestamp("updated_at")
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 export const session = pgTable(
@@ -27,7 +29,9 @@ export const session = pgTable(
     id: text("id").primaryKey(),
     ipAddress: text("ip_address"),
     token: text("token").notNull().unique(),
-    updatedAt: timestamp("updated_at").notNull(),
+    updatedAt: timestamp("updated_at")
+      .$onUpdate(() => new Date())
+      .notNull(),
     userAgent: text("user_agent"),
     userId: text("user_id")
       .notNull()
@@ -36,23 +40,29 @@ export const session = pgTable(
   (table) => [index("session_userId_idx").on(table.userId)]
 );
 
-export const account = pgTable("account", {
-  accessToken: text("access_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  accountId: text("account_id").notNull(),
-  createdAt: timestamp("created_at").notNull(),
-  id: text("id").primaryKey(),
-  idToken: text("id_token"),
-  password: text("password"),
-  providerId: text("provider_id").notNull(),
-  refreshToken: text("refresh_token"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-  scope: text("scope"),
-  updatedAt: timestamp("updated_at").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-});
+export const account = pgTable(
+  "account",
+  {
+    accessToken: text("access_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    accountId: text("account_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    id: text("id").primaryKey(),
+    idToken: text("id_token"),
+    password: text("password"),
+    providerId: text("provider_id").notNull(),
+    refreshToken: text("refresh_token"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    scope: text("scope"),
+    updatedAt: timestamp("updated_at")
+      .$onUpdate(() => new Date())
+      .notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("account_userId_idx").on(table.userId)]
+);
 
 export const verification = pgTable("verification", {
   createdAt: timestamp("created_at"),
