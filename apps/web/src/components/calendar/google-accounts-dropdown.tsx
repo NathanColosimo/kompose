@@ -17,7 +17,7 @@ import {
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -60,7 +60,13 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  // Profiles (email/name) only appear inside the menu, and each one costs the
+  // server a Google userinfo call, so load them on first hover or open.
+  const [profilesWanted, setProfilesWanted] = useState(false);
+  const wantProfiles = useCallback(() => setProfilesWanted(true), []);
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles({
+    enabled: profilesWanted,
+  });
   const accountProfilesById = useMemo(
     () =>
       new Map(
@@ -135,9 +141,21 @@ export function GoogleAccountsDropdown({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) {
+          wantProfiles();
+        }
+      }}
+    >
       <DropdownMenuTrigger asChild>
-        <Button className="gap-2" size="lg" variant="outline">
+        <Button
+          className="gap-2"
+          onFocus={wantProfiles}
+          onPointerEnter={wantProfiles}
+          size="lg"
+          variant="outline"
+        >
           <span className="text-sm">
             Calendars ({visibleCount}/{totalCount})
           </span>
