@@ -322,7 +322,15 @@ export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
     cause: Schema.Unknown,
     message: Schema.optional(Schema.String),
   },
-) {}
+) {
+  /** What the API sends the client; `cause` stays on the server. */
+  get publicError() {
+    return {
+      code: "BAD_GATEWAY",
+      message: "Google Calendar request failed. Try again.",
+    } as const;
+  }
+}
 
 export class GoogleCalendarZodError extends Schema.TaggedError<GoogleCalendarZodError>()(
   "GoogleCalendarZodError",

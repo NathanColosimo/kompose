@@ -179,6 +179,7 @@
       },
       "devDependencies": {
         "@kompose/config": "workspace:*",
+        "@orpc/client": "catalog:",
         "@types/node": "catalog:",
       },
     },
@@ -257,6 +258,7 @@
       "dependencies": {
         "@kompose/api": "workspace:*",
         "@kompose/google-cal": "workspace:*",
+        "@orpc/client": "catalog:",
         "@tanstack/query-core": "catalog:",
         "@tanstack/react-query": "catalog:",
         "better-auth": "catalog:",

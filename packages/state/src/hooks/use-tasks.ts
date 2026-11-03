@@ -38,7 +38,7 @@ interface UseTasksOptions {
  */
 export function useTasks(options: UseTasksOptions = {}) {
   const queryClient = useQueryClient();
-  const { orpc } = useStateConfig();
+  const { orpc, notifyError } = useStateConfig();
   const tags = useAtomValue(tagsDataAtom);
 
   // Fetch tasks using useQuery directly (same pattern as useGoogleEvents)
@@ -63,7 +63,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -151,7 +152,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -208,7 +210,8 @@ export function useTasks(options: UseTasksOptions = {}) {
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
       await orpc.tasks.delete({ id, scope }),
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
