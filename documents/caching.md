@@ -7,12 +7,20 @@ Google Calendar API data is cached in Redis to reduce latency. Webhooks handle r
 ```
 Client request
   ▼
-getGoogleCalendar (auth first, always)
+requireLinkedGoogleAccount (ownership check first, always)
   ▼
 Cache lookup (Redis GET)
   ├── HIT  → return cached data
-  └── MISS → fetch from Google API → populate cache → return
+  └── MISS → googleCalendarForAccount (access token, may refresh)
+             → fetch from Google API → populate cache → return
 ```
+
+Cache keys use the provider account ID, so the ownership check (one
+query) must run before the cache read. Getting an access token costs more DB
+queries (Better Auth's account lookup plus the WHOOP plugin's before-hook) and
+may refresh, so cached reads only do it on a miss. WHOOP day summaries follow
+the same order (`requireLinkedWhoopAccount`, then the day cache, then
+`whoopAccessTokenForAccount` only for missing days).
 
 ---
 

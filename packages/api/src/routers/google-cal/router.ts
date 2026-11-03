@@ -20,36 +20,65 @@ import {
 import { googleCalContract } from "./contract";
 import { AccountNotLinkedError, NonEditableGoogleEventError } from "./errors";
 
+/**
+ * Confirms the user owns this linked Google account and returns Better Auth's
+ * row ID for it. Cache keys use the provider account ID, so this check must
+ * run before any cache read.
+ */
+const requireLinkedGoogleAccount = Effect.fn("requireLinkedGoogleAccount")(
+  function* (userId: string, accountId: string) {
+    yield* Effect.annotateCurrentSpan("userId", userId);
+    yield* Effect.annotateCurrentSpan("accountId", accountId);
+
+    return yield* Effect.tryPromise({
+      catch: (cause) =>
+        new AccountNotLinkedError({
+          cause,
+          message: "Google account not linked",
+        }),
+      try: () =>
+        getLinkedAccountId({
+          providerAccountId: accountId,
+          providerId: "google",
+          userId,
+        }),
+    });
+  }
+);
+
+/**
+ * The Google Calendar client for an owned account row. Getting the access
+ * token takes more DB queries (and may refresh it), so cached reads call this
+ * only on a miss.
+ */
+const googleCalendarForAccount = Effect.fn("googleCalendarForAccount")(
+  function* (userId: string, authAccountId: string) {
+    const { accessToken } = yield* Effect.tryPromise({
+      catch: (cause) =>
+        new AccountNotLinkedError({
+          cause,
+          message: "Google access token unavailable",
+        }),
+      try: () =>
+        auth.api.getAccessToken({
+          body: {
+            accountId: authAccountId,
+            userId,
+          },
+        }),
+    });
+
+    return makeGoogleCalendarService(accessToken);
+  }
+);
+
 /** The Google Calendar client for one of the user's linked accounts. */
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   userId: string,
   accountId: string
 ) {
-  yield* Effect.annotateCurrentSpan("userId", userId);
-  yield* Effect.annotateCurrentSpan("accountId", accountId);
-
-  const { accessToken } = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new AccountNotLinkedError({
-        cause,
-        message: "Google account not linked or token unavailable",
-      }),
-    try: async () => {
-      const authAccountId = await getLinkedAccountId({
-        providerAccountId: accountId,
-        providerId: "google",
-        userId,
-      });
-      return auth.api.getAccessToken({
-        body: {
-          accountId: authAccountId,
-          userId,
-        },
-      });
-    },
-  });
-
-  return makeGoogleCalendarService(accessToken);
+  const authAccountId = yield* requireLinkedGoogleAccount(userId, accountId);
+  return yield* googleCalendarForAccount(userId, authAccountId);
 });
 
 function toORPCError(error: unknown) {
@@ -188,7 +217,10 @@ export const googleCalRouter = os.router({
     get: os.calendars.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const authAccountId = yield* requireLinkedGoogleAccount(
+        context.user.id,
+        input.accountId
+      );
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -199,6 +231,10 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
+      const google = yield* googleCalendarForAccount(
+        context.user.id,
+        authAccountId
+      );
       const calendar = yield* google.getCalendar(input.calendarId);
 
       // Populate cache (best effort)
@@ -211,7 +247,10 @@ export const googleCalRouter = os.router({
     list: os.calendars.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const authAccountId = yield* requireLinkedGoogleAccount(
+        context.user.id,
+        input.accountId
+      );
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -222,6 +261,10 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
+      const google = yield* googleCalendarForAccount(
+        context.user.id,
+        authAccountId
+      );
       const calendars = yield* google.listCalendars();
 
       // Populate cache (best effort)
@@ -260,7 +303,10 @@ export const googleCalRouter = os.router({
     list: os.colors.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const authAccountId = yield* requireLinkedGoogleAccount(
+        context.user.id,
+        input.accountId
+      );
 
       const cached = yield* cache
         .getCachedColors(input.accountId)
@@ -269,6 +315,10 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
+      const google = yield* googleCalendarForAccount(
+        context.user.id,
+        authAccountId
+      );
       const colors = yield* google.listColors();
 
       yield* cache
@@ -335,7 +385,10 @@ export const googleCalRouter = os.router({
     get: os.events.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const authAccountId = yield* requireLinkedGoogleAccount(
+        context.user.id,
+        input.accountId
+      );
 
       const cached = yield* cache
         .getCachedEvent(input.accountId, input.calendarId, input.eventId)
@@ -344,6 +397,10 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
+      const google = yield* googleCalendarForAccount(
+        context.user.id,
+        authAccountId
+      );
       const event = yield* google.getEvent(input.calendarId, input.eventId);
 
       yield* cache
@@ -357,7 +414,10 @@ export const googleCalRouter = os.router({
 
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const authAccountId = yield* requireLinkedGoogleAccount(
+        context.user.id,
+        input.accountId
+      );
 
       const cached = yield* cache
         .getCachedEvents(
@@ -374,6 +434,10 @@ export const googleCalRouter = os.router({
         return filterEventsBySearch(cached.value, searchQuery);
       }
 
+      const google = yield* googleCalendarForAccount(
+        context.user.id,
+        authAccountId
+      );
       const events = yield* google.listEvents(
         input.calendarId,
         input.params.timeMin,
