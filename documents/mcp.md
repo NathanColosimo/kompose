@@ -43,18 +43,18 @@ JWT access tokens can't be revoked, so `/api/mcp` looks up the user's `oauth_con
 
 ## Tools
 
-`packages/api/src/mcp/tools.ts` defines the tools as oRPC procedures with `mcp.tool()` meta, registered on each request's `McpServer` by `McpRegistrar` from `@orpc/mcp`. Each one calls the app's own `tasks` / `tags` routers through `createRouterClient`, so validation, recurrence handling, realtime sync events, and rate limits are the same as in the apps.
+`packages/api/src/mcp/tools.ts` exposes the app's own procedures as tools: `tool(procedure, meta)` copies a procedure from `taskRouter` / `tagRouter` and adds `mcp.tool()` meta (name, description, annotations). `McpRegistrar` from `@orpc/mcp` registers them on each request's `McpServer`. Inputs, outputs, validation, recurrence handling, realtime sync events, and rate limits are the apps' own; there are no MCP-specific schemas. `/api/mcp` puts the token's user in the context, so the procedures' `requireAuth` works unchanged.
 
-| Tool | Does |
-| --- | --- |
-| `search_tasks` | Filters by text, status, start and due date ranges, and tags. Includes done tasks unless `status` says otherwise. Newest created first, at most 50, with `truncated: true` when more matched. |
-| `get_task` | One task by ID. |
-| `create_task` | Creates a task, or a whole series when given a `recurrence`. Returns the first occurrence and `createdCount`. |
-| `update_task` | Changes only the given fields; `null` clears one. `scope` is `this` (default) or `following` for recurring tasks. |
-| `delete_task` | Marked destructive so clients confirm first. Same `scope` as update. |
-| `list_tags` | Tag IDs and names, for filtering and `tagIds`. |
+| Tool | Procedure | Does |
+| --- | --- | --- |
+| `search_tasks` | `tasks.list` | Filters by text, status, start and due date ranges, and tags; newest created first. The description tells agents to set `params.limit`, since the procedure returns every match without one. |
+| `get_task` | `tasks.get` | One task by ID. |
+| `create_task` | `tasks.create` | Creates a task, or a whole series when given a `recurrence`. Returns every created occurrence. |
+| `update_task` | `tasks.update` | Changes only the given fields; `null` clears one. `scope` is `this` or `following` for recurring tasks. |
+| `delete_task` | `tasks.delete` | Marked destructive so clients confirm first. Same `scope` as update. |
+| `list_tags` | `tags.list` | The user's tags, for filtering and `tagIds`. |
 
-Agents see a compact task shape (no user ID, series internals, or link metadata). They can't set links.
+Agents get the same task shape as the apps. Array results reach 2025-era clients as `{ "result": [...] }` (the SDK's SEP-2106 wrap). Format hints that the shared schemas don't carry (time format, all-day tasks, default duration) live in the tool descriptions. The full schemas make `tools/list` about 34 KB.
 
 ## Task filters
 

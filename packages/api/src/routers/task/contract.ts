@@ -51,9 +51,12 @@ const clientTaskInsertSchema = taskInsertSchemaWithTagIds.omit({
   userId: true,
 });
 
+// A task's ID and owner never change through an update.
 const clientTaskUpdateSchema = taskUpdateSchemaWithTagIds.omit({
   createdAt: true,
+  id: true,
   updatedAt: true,
+  userId: true,
 });
 
 // ============================================================================
@@ -131,7 +134,7 @@ export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 // API CONTRACTS (use base string schemas - no Temporal transformations)
 // ============================================================================
 
-export const taskStatusSchema = z.enum(taskStatusEnum.enumValues);
+const taskStatusSchema = z.enum(taskStatusEnum.enumValues);
 
 export const listTasksParamsSchema = z.object({
   dueDateMax: z.iso
