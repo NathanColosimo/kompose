@@ -14,10 +14,12 @@ import {
   toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
+import { GOOGLE_EVENTS_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
+import { useIsFetching } from "@tanstack/react-query";
 import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,6 +46,37 @@ interface GoogleAccountsDropdownProps {
   googleCalendars: CalendarWithSource[];
 }
 
+const PROFILES_FALLBACK_DELAY_MS = 3000;
+
+/**
+ * Account profiles (email/name) only appear inside the menu, and each one costs
+ * the server a Google userinfo call. Prefetch them in the background once the
+ * dashboard's first events load settles, so they don't compete with it. The
+ * timer covers loads where no event fetch runs (cached data, nothing visible).
+ */
+function useAfterFirstEventsLoad(): boolean {
+  const eventsFetching = useIsFetching({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
+  const [sawEventsFetch, setSawEventsFetch] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  if (!sawEventsFetch && eventsFetching > 0) {
+    setSawEventsFetch(true);
+  }
+  if (!ready && sawEventsFetch && eventsFetching === 0) {
+    setReady(true);
+  }
+
+  useEffect(() => {
+    const timeout = setTimeout(
+      () => setReady(true),
+      PROFILES_FALLBACK_DELAY_MS
+    );
+    return () => clearTimeout(timeout);
+  }, []);
+
+  return ready;
+}
+
 export function GoogleAccountsDropdown({
   googleAccounts,
   googleCalendars,
@@ -60,10 +93,7 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  // Profiles (email/name) only appear inside the menu, and each one costs the
-  // server a Google userinfo call, so load them on first hover or open.
-  const [profilesWanted, setProfilesWanted] = useState(false);
-  const wantProfiles = useCallback(() => setProfilesWanted(true), []);
+  const profilesWanted = useAfterFirstEventsLoad();
   const { profiles: googleAccountProfiles } = useGoogleAccountProfiles({
     enabled: profilesWanted,
   });
@@ -141,21 +171,9 @@ export function GoogleAccountsDropdown({
   }
 
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open) {
-          wantProfiles();
-        }
-      }}
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          className="gap-2"
-          onFocus={wantProfiles}
-          onPointerEnter={wantProfiles}
-          size="lg"
-          variant="outline"
-        >
+        <Button className="gap-2" size="lg" variant="outline">
           <span className="text-sm">
             Calendars ({visibleCount}/{totalCount})
           </span>
