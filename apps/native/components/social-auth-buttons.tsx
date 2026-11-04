@@ -13,26 +13,14 @@ import { invalidateAuthenticatedQueries } from "@/utils/orpc";
 
 type SocialProvider = "google" | "apple";
 
-interface SocialAuthButtonsProps {
-  mode: "sign-in" | "sign-up";
+function signInErrorMessage(error: unknown, provider: SocialProvider): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return `Failed to sign in with ${provider === "apple" ? "Apple" : "Google"}`;
 }
 
-const copyByMode = {
-  "sign-in": {
-    action: "sign in",
-    appleLabel: "Continue with Apple",
-    errorTitle: "Sign in failed",
-    googleLabel: "Continue with Google",
-  },
-  "sign-up": {
-    action: "sign up",
-    appleLabel: "Create with Apple",
-    errorTitle: "Sign up failed",
-    googleLabel: "Create with Google",
-  },
-} as const;
-
-export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
+export function SocialAuthButtons() {
   const { colorScheme } = useColorScheme();
   const theme = colorScheme === "dark" ? NAV_THEME.dark : NAV_THEME.light;
   const [activeProvider, setActiveProvider] = useState<SocialProvider | null>(
@@ -58,15 +46,10 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
           callbackURL,
           errorCallbackURL,
           provider,
-          ...(mode === "sign-up" ? { newUserCallbackURL: callbackURL } : {}),
         },
         {
           onError(err: unknown) {
-            setError(
-              err instanceof Error
-                ? err.message
-                : `Failed to ${copyByMode[mode].action} with ${provider === "apple" ? "Apple" : "Google"}`
-            );
+            setError(signInErrorMessage(err, provider));
             setActiveProvider(null);
           },
           onFinished() {
@@ -78,13 +61,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
         }
       );
     } catch (err) {
-      const fallbackMessage =
-        err instanceof Error
-          ? err.message
-          : `Failed to ${copyByMode[mode].action} with ${
-              provider === "apple" ? "Apple" : "Google"
-            }`;
-      setError(fallbackMessage);
+      setError(signInErrorMessage(err, provider));
       setActiveProvider(null);
     }
   }
@@ -93,7 +70,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
     <View className="gap-4">
       {error ? (
         <Alert icon={AlertCircle} variant="destructive">
-          <AlertTitle>{copyByMode[mode].errorTitle}</AlertTitle>
+          <AlertTitle>Sign in failed</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -106,7 +83,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
           <ActivityIndicator color={theme.colors.card} size="small" />
         ) : (
           <View className="flex-row items-center gap-2">
-            <Text>{copyByMode[mode].googleLabel}</Text>
+            <Text>Continue with Google</Text>
             {lastUsedMethod === "google" ? (
               <Badge style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
                 Last used
@@ -125,7 +102,7 @@ export function SocialAuthButtons({ mode }: SocialAuthButtonsProps) {
           <ActivityIndicator color={theme.colors.card} size="small" />
         ) : (
           <View className="flex-row items-center gap-2">
-            <Text>{copyByMode[mode].appleLabel}</Text>
+            <Text>Continue with Apple</Text>
             {lastUsedMethod === "apple" ? (
               <Badge style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
                 Last used

@@ -11,11 +11,3 @@ export class WhoopInvalidRangeError extends Schema.TaggedError<WhoopInvalidRange
     return { code: "BAD_REQUEST", message: this.message };
   }
 }
-
-export class WhoopCacheError extends Schema.TaggedError<WhoopCacheError>()(
-  "WhoopCacheError",
-  {
-    message: Schema.String,
-    operation: Schema.String,
-  }
-) {}

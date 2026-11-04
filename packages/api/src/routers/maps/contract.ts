@@ -14,8 +14,6 @@ export const SearchPlacesInputSchema = z.object({
   query: z.string().min(1),
 });
 
-export type SearchPlacesInput = z.infer<typeof SearchPlacesInputSchema>;
-
 /**
  * Search Google Places for location suggestions.
  */

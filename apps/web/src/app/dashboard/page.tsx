@@ -29,6 +29,7 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
+  todayPlainDate,
 } from "@/lib/temporal-utils";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
@@ -147,11 +148,18 @@ function CalendarGridPlaceholder() {
   );
 }
 
+/** How many years before and after today the date picker's year dropdown spans. */
+const PICKER_YEAR_SPAN = 100;
+
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const [open, setOpen] = useState(false);
 
   const selectedDate = temporalToPickerDate(currentDate);
+  // react-day-picker's dropdown stops at the end of the current year by default.
+  const thisYear = todayPlainDate().year;
+  const startMonth = new Date(thisYear - PICKER_YEAR_SPAN, 0);
+  const endMonth = new Date(thisYear + PICKER_YEAR_SPAN, 11);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
@@ -178,10 +186,13 @@ function DatePopover() {
       <PopoverContent className="w-auto p-0">
         <Calendar
           captionLayout="dropdown"
+          defaultMonth={selectedDate}
+          endMonth={endMonth}
           mode="single"
           onSelect={handleDateSelect}
           required
           selected={selectedDate}
+          startMonth={startMonth}
         />
       </PopoverContent>
     </Popover>

@@ -87,7 +87,6 @@ app/
     (settings)/
       _layout.tsx          <- Stack (for headers)
       index.tsx            <- Settings screen
-  modal.tsx
   +not-found.tsx
 ```
 
@@ -110,6 +109,9 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Layout: `apps/native/app/(tabs)/(tasks)/_layout.tsx`
 - Screen: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Data hook: `packages/state/src/hooks/use-tasks.ts` (imported via `@kompose/state/hooks`)
+- Editor flow (shared by the Tasks and Calendar tabs): `apps/native/hooks/use-task-editor-flow.ts`
+  owns the draft, create/save/delete/toggle-done, and the recurring-task scope prompts,
+  which render through `apps/native/components/tasks/task-scope-dialogs.tsx`.
 
 ### Google calendar visibility picker
 
@@ -137,7 +139,7 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(settings)/index.tsx`
   - Theme toggle and auth UI
 - Theme toggle component: `apps/native/components/mode-toggle.tsx`
-- Color scheme hook (shared state for theme switching + persistence):
+- Color scheme hook (derived from the Uniwind theme, with SecureStore persistence):
   - `apps/native/lib/color-scheme-context.tsx`
 - React Navigation theme tokens:
   - `apps/native/lib/theme.ts`
@@ -157,9 +159,8 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - Auth cache cleanup also clears the shared session query, linked-account,
     Google profile, and Google calendar caches so sign-out/account changes do
     not leave stale data behind.
-- Added Google social sign-in buttons:
-  - `apps/native/components/sign-in.tsx`
-  - `apps/native/components/sign-up.tsx`
+- Google / Apple social sign-in buttons (shown by the root layout when signed out):
+  - `apps/native/components/social-auth-buttons.tsx`
 
 ## Safe area handling
 
@@ -185,9 +186,9 @@ Example:
 Uniwind uses theme variants and CSS variables defined in `global.css`. To dynamically switch themes at runtime:
 
 1. **Color scheme hook** (`lib/color-scheme-context.tsx`)
-   - Hook-level state with SecureStore persistence
-   - Stores user preference in SecureStore (light/dark/system)
-   - Calls `Uniwind.setTheme()` to apply theme at runtime
+   - No React state of its own: preference and effective scheme are derived from `useUniwind()`
+   - `setColorScheme` calls `Uniwind.setTheme()` and saves the preference (light/dark/system) in SecureStore
+   - `restoreColorScheme()` re-applies the saved preference; the root layout calls it once on launch
 
 2. **Theme variables** (`global.css`)
    - Uses `@layer theme` with `@variant light` and `@variant dark`

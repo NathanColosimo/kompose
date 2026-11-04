@@ -13,7 +13,6 @@ import { z } from "zod";
 export const ListCalendarsInputSchema = z.object({
   accountId: z.string(),
 });
-export type ListCalendarsInput = z.infer<typeof ListCalendarsInputSchema>;
 
 /**
  * List all calendars for a given account.
@@ -26,7 +25,6 @@ export const GetCalendarInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
 });
-export type GetCalendarInput = z.infer<typeof GetCalendarInputSchema>;
 /**
  * Get a calendar by ID for a given account.
  */
@@ -38,7 +36,6 @@ export const CreateCalendarInputSchemaFull = z.object({
   accountId: z.string(),
   calendar: CreateCalendarInputSchema,
 });
-export type CreateCalendarInput = z.infer<typeof CreateCalendarInputSchemaFull>;
 /**
  * Create a new calendar for a given account.
  */
@@ -51,7 +48,6 @@ export const UpdateCalendarInputSchema = z.object({
   calendar: CreateCalendarInputSchema,
   calendarId: z.string(),
 });
-export type UpdateCalendarInput = z.infer<typeof UpdateCalendarInputSchema>;
 
 /**
  * Update a calendar by ID for a given account.
@@ -64,7 +60,6 @@ export const DeleteCalendarInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
 });
-export type DeleteCalendarInput = z.infer<typeof DeleteCalendarInputSchema>;
 
 /**
  * Delete a calendar by ID for a given account.
@@ -95,7 +90,6 @@ export const ListEventsInputSchema = z.object({
   calendarId: z.string(),
   params: listEventsParamsSchema,
 });
-export type ListEventsInput = z.infer<typeof ListEventsInputSchema>;
 
 export const listEvents = oc
   .input(ListEventsInputSchema)
@@ -106,7 +100,6 @@ export const GetEventInputSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
 });
-export type GetEventInput = z.infer<typeof GetEventInputSchema>;
 
 export const getEvent = oc.input(GetEventInputSchema).output(EventSchema);
 
@@ -115,7 +108,6 @@ export const CreateEventInputSchemaFull = z.object({
   calendarId: z.string(),
   event: CreateEventInputSchema,
 });
-export type CreateEventInput = z.infer<typeof CreateEventInputSchemaFull>;
 
 export const createEvent = oc
   .input(CreateEventInputSchemaFull)
@@ -128,7 +120,6 @@ export const UpdateEventInputSchema = z.object({
   eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
-export type UpdateEventInput = z.infer<typeof UpdateEventInputSchema>;
 
 export const updateEvent = oc.input(UpdateEventInputSchema).output(EventSchema);
 
@@ -139,7 +130,6 @@ export const MoveEventInputSchema = z.object({
   eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
-export type MoveEventInput = z.infer<typeof MoveEventInputSchema>;
 
 export const moveEvent = oc.input(MoveEventInputSchema).output(EventSchema);
 
@@ -149,6 +139,8 @@ export const DeleteEventInputSchema = z.object({
   eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
+export type CreateEventInput = z.infer<typeof CreateEventInputSchemaFull>;
+export type MoveEventInput = z.infer<typeof MoveEventInputSchema>;
 export type DeleteEventInput = z.infer<typeof DeleteEventInputSchema>;
 
 export const deleteEvent = oc.input(DeleteEventInputSchema).output(z.null());

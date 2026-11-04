@@ -1,6 +1,5 @@
-import { env } from "@kompose/env";
+import { createSubscriber, redis } from "@kompose/redis";
 import { trace } from "@opentelemetry/api";
-import { RedisClient } from "bun";
 import { Effect } from "effect";
 import { type SyncEvent, syncEventSchema } from "./events";
 
@@ -14,8 +13,6 @@ interface AsyncQueue<T> {
   next: () => Promise<IteratorResult<T>>;
   push: (value: T) => void;
 }
-
-const redisPublisher = new RedisClient(env.REDIS_URL);
 
 function createAsyncQueue<T>(): AsyncQueue<T> {
   const buffered: T[] = [];
@@ -64,32 +61,21 @@ export function getUserSyncChannel(userId: string): string {
 }
 
 /**
- * Publish a sync event to a user's Redis channel.
- * Uses Effect tracing so spans flow through the shared OTel layer.
+ * Publish a sync event to a user's Redis channel. Best effort: a failed
+ * publish is logged as SYNC_PUBLISH_ERROR and never fails the caller.
  */
-export const publishToUser = Effect.fn("sync.publish")(function* (
-  userId: string,
-  event: SyncEvent
-) {
-  yield* Effect.annotateCurrentSpan("userId", userId);
-  yield* Effect.annotateCurrentSpan("eventType", event.type);
-
-  const payload = yield* Effect.try({
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-    try: () => syncEventSchema.parse(event),
-  });
-
-  yield* Effect.tryPromise({
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-    try: () =>
-      redisPublisher.publish(
-        getUserSyncChannel(userId),
-        JSON.stringify(payload)
-      ),
-  });
-});
+export const publishToUser = Effect.fn("sync.publish")(
+  function* (userId: string, event: SyncEvent) {
+    yield* Effect.annotateCurrentSpan("userId", userId);
+    yield* Effect.annotateCurrentSpan("eventType", event.type);
+    yield* Effect.tryPromise({
+      catch: String,
+      try: () =>
+        redis.publish(getUserSyncChannel(userId), JSON.stringify(event)),
+    });
+  },
+  Effect.catch((message) => Effect.logError("SYNC_PUBLISH_ERROR", { message }))
+);
 
 /**
  * Long-lived async generator for SSE connections.
@@ -111,19 +97,10 @@ export async function* createUserSyncEventIterator(
   connectionSpan.setAttribute("channel", channel);
 
   const queue = createAsyncQueue<SyncEvent>();
-  const subscriber = await redisPublisher.duplicate();
+  const subscriber = createSubscriber();
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
-  let queueClosed = false;
   let messagesReceived = 0;
-
-  const closeQueue = () => {
-    if (queueClosed) {
-      return;
-    }
-    queueClosed = true;
-    queue.close();
-  };
 
   const listener = (message: string) => {
     try {
@@ -144,16 +121,19 @@ export async function* createUserSyncEventIterator(
     }
   };
 
-  subscriber.onclose = () => {
-    closeQueue();
-  };
+  // The connection carries only this channel. If it drops, end the stream so
+  // the client reconnects and catches up instead of missing events.
+  subscriber.on("message", (_channel: string, message: string) =>
+    listener(message)
+  );
+  subscriber.on("close", queue.close);
   if (signal?.aborted) {
-    closeQueue();
+    queue.close();
   }
-  signal?.addEventListener("abort", closeQueue, { once: true });
+  signal?.addEventListener("abort", queue.close, { once: true });
 
   try {
-    await subscriber.subscribe(channel, listener);
+    await subscriber.subscribe(channel);
     connectionSpan.addEvent("sync.subscribed");
 
     keepaliveTimer = setInterval(() => {
@@ -165,7 +145,7 @@ export async function* createUserSyncEventIterator(
         payload: {},
         type: "reconnect",
       });
-      closeQueue();
+      queue.close();
     }, RECONNECT_EVENT_AFTER_MS);
 
     while (true) {
@@ -184,28 +164,20 @@ export async function* createUserSyncEventIterator(
       }
     }
   } finally {
-    signal?.removeEventListener("abort", closeQueue);
+    signal?.removeEventListener("abort", queue.close);
     if (keepaliveTimer) {
       clearInterval(keepaliveTimer);
     }
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
     }
-    closeQueue();
+    queue.close();
 
     // Record total messages on the span before ending
     connectionSpan.setAttribute("messagesReceived", messagesReceived);
 
-    try {
-      await subscriber.unsubscribe(channel, listener);
-    } catch {
-      try {
-        await subscriber.unsubscribe(channel);
-      } catch {
-        // no-op
-      }
-    }
-    subscriber.close();
+    // Closing the connection drops its subscription.
+    subscriber.disconnect();
     connectionSpan.end();
   }
 }
