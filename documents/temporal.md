@@ -124,18 +124,21 @@ date1.equals(date2); // boolean
 
 ### Project Utilities
 
+`packages/state/src/temporal-utils.ts` (`@kompose/state/temporal-utils`) holds the
+helpers both apps share; `apps/web/src/lib/temporal-utils.ts` holds the web-only ones and
+imports the shared ones instead of copying them.
+
 ```typescript
-// Current time
+// Current time (shared)
 getSystemTimeZone()           // "America/New_York"
 todayPlainDate(timeZone?)     // PlainDate for today
 
 // Day bounds (for range queries)
-startOfDayZoned(date, timeZone)   // Start of day as ZonedDateTime
-endOfDayZoned(date, timeZone)     // Exclusive end (start of next day)
-getDayBoundsZoned(date, timeZone) // { dayStart, dayEnd }
+startOfDayZoned(date, timeZone)   // Start of day as ZonedDateTime (shared)
+endOfDayZoned(date, timeZone)     // Exclusive end (start of next day) (shared)
+getDayBoundsZoned(date, timeZone) // { dayStart, dayEnd } (web)
 
 // Comparison helpers
-isToday(date, timeZone?)      // Is PlainDate today?
 isSameDay(a, b)               // Same calendar day? (ZonedDateTime)
 
 // Clamping

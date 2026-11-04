@@ -26,28 +26,6 @@ export function StateProvider({
   storage,
   subscribeToResume,
 }: StateProviderProps) {
-  return (
-    <StateHydrator
-      config={config}
-      storage={storage}
-      subscribeToResume={subscribeToResume}
-    >
-      {children}
-    </StateHydrator>
-  );
-}
-
-function StateHydrator({
-  children,
-  config,
-  storage,
-  subscribeToResume,
-}: {
-  children: ReactNode;
-  config: StateConfig;
-  storage: StorageAdapter;
-  subscribeToResume?: SubscribeToResume;
-}) {
   // Ensure storage is available before any atom reads.
   setStorageAdapter(storage);
 

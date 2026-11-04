@@ -4,9 +4,10 @@ import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig } from "../config";
-import { WHOOP_DAYS_QUERY_KEY } from "../whoop-query-keys";
 import { currentDateAtom, timezoneAtom } from "./current-date";
 import { linkedAccountsDataAtom } from "./google-data";
+
+const WHOOP_DAYS_QUERY_KEY = ["whoop", "days"] as const;
 
 // --- Account ---
 

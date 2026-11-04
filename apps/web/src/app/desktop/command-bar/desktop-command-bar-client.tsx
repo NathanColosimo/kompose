@@ -141,7 +141,6 @@ export default function DesktopCommandBarClient() {
           className="h-auto"
           onRequestClose={handleRequestClose}
           selectionMode="desktop-popup"
-          size="lg"
         />
       ) : (
         <div className="rounded-xl border bg-popover p-4 text-popover-foreground text-sm">

@@ -59,7 +59,16 @@ push to main
   proves the route, auth context, and API code load. It doesn't touch the
   database, so it works before migrations run.
 - Vercel's Git integration stays off (`apps/web/vercel.json`), so there are no
-  preview deployments. `buildCommand` in `vercel.json` is `turbo run build`;
+  preview deployments.
+- Functions run on Node.js 26 (`engines.node` in `apps/web/package.json`),
+  which gets Vercel's bytecode caching on cold starts; Bun's function runtime
+  doesn't. Bun is still the package manager and runs the tooling and tests.
+  Without `bunVersion`, Vercel's default Bun is 1.3, so `installCommand`
+  runs `bunx bun@1.4.3 install` (Vercel's documented way to pin it). Bump it
+  together with `packageManager` in the root `package.json`.
+  Server packages (`api`, `auth`, `db`, `env`, `google-cal`, `whoop`, `redis`)
+  type-check against Node's types only, so a Bun-only API there fails
+  `tsc`. `buildCommand` in `vercel.json` is `turbo run build`;
   migrations only run in the workflow, never in a Vercel build.
 
 ### What "changed" means

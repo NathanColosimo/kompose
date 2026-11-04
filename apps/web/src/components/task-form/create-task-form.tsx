@@ -2,6 +2,7 @@
 
 import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { CalendarIcon, Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -31,7 +32,6 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
-  todayPlainDate,
 } from "@/lib/temporal-utils";
 import { RecurrenceEditor } from "./recurrence-editor";
 

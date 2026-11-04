@@ -16,9 +16,8 @@ type CommandBarView = "root" | "search-tasks" | "create-task";
 
 interface CommandBarContentProps {
   className?: string;
-  onRequestClose?: () => void;
+  onRequestClose: () => void;
   selectionMode?: "desktop-popup" | "local";
-  size?: "sm" | "md" | "lg";
 }
 
 function activateCommandItem(
@@ -44,7 +43,6 @@ function activateCommandItem(
  */
 export function CommandBarContent({
   onRequestClose,
-  size = "lg",
   selectionMode = "local",
   className,
 }: CommandBarContentProps) {
@@ -62,10 +60,8 @@ export function CommandBarContent({
           return;
         }
 
-        if (onRequestClose) {
-          e.preventDefault();
-          onRequestClose();
-        }
+        e.preventDefault();
+        onRequestClose();
         return;
       }
 
@@ -106,7 +102,7 @@ export function CommandBarContent({
       className={className}
       onKeyDown={handleKeyDown}
       shouldFilter={view === "root"}
-      size={size}
+      size="lg"
     >
       <CommandInput
         autoFocus

@@ -1,5 +1,4 @@
-import { implement, ORPCError } from "@orpc/server";
-import { Effect } from "effect";
+import { implement } from "@orpc/server";
 import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
@@ -13,14 +12,6 @@ const os = implement(accountContract)
 
 export const accountRouter = os.router({
   list: os.list.effect(function* ({ context }) {
-    return yield* listLinkedAccountsWithProfile(context.user.id).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ORPCError("INTERNAL_SERVER_ERROR", {
-            cause,
-            message: "Failed to list linked accounts",
-          })
-      )
-    );
+    return yield* listLinkedAccountsWithProfile(context.user.id);
   }),
 });
