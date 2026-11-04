@@ -33,6 +33,21 @@ export class SignedOutError extends Error {
   }
 }
 
+/**
+ * Refetches the session if one is loaded. A signed-in page that gets
+ * UNAUTHORIZED means the session ended (revoked or expired); the refetch
+ * returns no session and the dashboard layout redirects to /login. Better
+ * Auth doesn't poll the session, so nothing else would notice while the tab
+ * stays focused. With no session loaded yet the initial check is still in
+ * flight, and refetching would cancel and restart it.
+ */
+export function refetchSessionIfSignedIn() {
+  const session = authClient.$store.atoms.session.get();
+  if (session.data) {
+    session.refetch();
+  }
+}
+
 /** Only forward Better Auth's Electron PKCE parameters from browser sign-in pages. */
 export function getElectronAuthQuery() {
   if (typeof window === "undefined" || isDesktopRuntime()) {

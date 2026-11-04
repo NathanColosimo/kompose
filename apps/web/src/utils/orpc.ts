@@ -5,16 +5,17 @@ import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { SignedOutError } from "@/lib/auth-client";
+import { refetchSessionIfSignedIn, SignedOutError } from "@/lib/auth-client";
 
 interface CreateAppQueryClientOptions {
   suppressToasts: boolean;
 }
 
 /**
- * A request made without a session. The dashboard's session check redirects to
- * /login, so there's nothing to retry or report. Its queries start before that
+ * A request made without a session. There's nothing to retry or report: the
+ * dashboard's session check redirects to /login. Its queries start before that
  * check returns (see DashboardQueries), so a signed-out visitor gets these.
+ * After sign-in they mean the session ended, so the session is refetched.
  */
 function isSignedOut(error: unknown) {
   return (
@@ -34,7 +35,11 @@ export function createAppQueryClient({
     },
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (suppressToasts || isSignedOut(error)) {
+        if (isSignedOut(error)) {
+          refetchSessionIfSignedIn();
+          return;
+        }
+        if (suppressToasts) {
           return;
         }
 
