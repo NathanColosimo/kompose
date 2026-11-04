@@ -24,8 +24,8 @@ export interface MagicParse {
   task: ParsedTask | null;
 }
 
-/** The parser runs in a Worker so a parse never blocks typing. */
-async function loadParser() {
+/** A parser in a worker of its own. */
+async function loadDedicatedParser() {
   const worker = new Worker(
     new URL("./task-parser.worker.ts", import.meta.url),
     { type: "module" }
@@ -35,6 +35,27 @@ async function loadParser() {
   } catch (error) {
     worker.terminate();
     throw error;
+  }
+}
+
+/**
+ * The parser runs in a worker so a parse never blocks typing. A SharedWorker
+ * where available, so every window and tab of the app (the desktop dashboard
+ * and command bar, for one) shares one loaded model instead of one each.
+ */
+async function loadParser() {
+  if (typeof SharedWorker === "undefined") {
+    return loadDedicatedParser();
+  }
+  const worker = new SharedWorker(
+    new URL("./task-parser.shared-worker.ts", import.meta.url),
+    { name: "task-parser", type: "module" }
+  );
+  try {
+    return await connectTaskParser(worker.port);
+  } catch {
+    worker.port.close();
+    return loadDedicatedParser();
   }
 }
 

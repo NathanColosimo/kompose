@@ -1,9 +1,10 @@
 /**
- * The parser Worker's procedures (worker.ts implements them, worker-client.ts
- * calls them), and the serializer both sides use so Temporal values cross
- * as themselves.
+ * The parser worker's procedures (worker-server.ts implements them,
+ * worker-client.ts calls them), and the serializer both sides use so Temporal
+ * values cross as themselves.
  */
 import { type RPCJsonSerializerHandler, RPCSerializer } from "@orpc/client";
+import type { SupportedMessagePort } from "@orpc/client/message-port";
 import { oc, type } from "@orpc/contract";
 import { Temporal } from "temporal-polyfill";
 import type { ParsedTask, TagOption } from "./parser";
@@ -38,3 +39,13 @@ export const serializer = new RPCSerializer({
     zonedDateTime: temporal(Temporal.ZonedDateTime),
   },
 });
+
+/**
+ * Start `port` if it's a MessagePort: one listened to with addEventListener
+ * only delivers once started. A Worker or worker scope has no `start`.
+ */
+export function startPort(port: SupportedMessagePort) {
+  if ("start" in port && typeof port.start === "function") {
+    port.start();
+  }
+}
