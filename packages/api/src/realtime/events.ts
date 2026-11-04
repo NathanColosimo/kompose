@@ -2,13 +2,6 @@ import z from "zod";
 
 export const GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID = "__calendar_list__";
 
-export const syncEventTypeSchema = z.enum([
-  "google-calendar",
-  "tasks",
-  "reconnect",
-  "keepalive",
-]);
-
 export const googleCalendarSyncEventSchema = z.object({
   payload: z
     .object({
@@ -42,9 +35,3 @@ export const syncEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type SyncEvent = z.infer<typeof syncEventSchema>;
-export type SyncEventType = SyncEvent["type"];
-export type GoogleCalendarSyncEvent = z.infer<
-  typeof googleCalendarSyncEventSchema
->;
-export type TasksSyncEvent = z.infer<typeof tasksSyncEventSchema>;
-export type ReconnectSyncEvent = z.infer<typeof reconnectSyncEventSchema>;
