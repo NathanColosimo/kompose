@@ -50,7 +50,7 @@ packages/api/src/routers/whoop/   — oRPC router + Effect service
 ├── router.ts            — oRPC handler implementations
 ├── service.ts           — WhoopService (day summary aggregation, caching, grouping)
 ├── cache.ts             — WhoopCacheService (Redis per-day cache)
-└── errors.ts            — Service-level errors (AccountNotLinked, InvalidRange, CacheError)
+└── errors.ts            — Service-level errors (InvalidRange, CacheError)
 
 packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
 ```

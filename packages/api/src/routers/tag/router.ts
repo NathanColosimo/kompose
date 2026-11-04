@@ -1,39 +1,15 @@
-import { implement, ORPCError } from "@orpc/server";
-import { mapErrors, requireAuth } from "../..";
+import { implement } from "@orpc/server";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { TagService } from "./client";
 import type { TagSelect } from "./contract";
 import { tagContract, tagSelectSchemaWithIcon } from "./contract";
-import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
-
-function toORPCError(error: unknown) {
-  if (error instanceof InvalidTagError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof TagConflictError) {
-    return new ORPCError("CONFLICT", {
-      cause: error,
-      message: `Tag name already exists: ${error.name}`,
-    });
-  }
-  if (error instanceof TagNotFoundError) {
-    return new ORPCError("NOT_FOUND", {
-      cause: error,
-      message: `Tag not found: ${error.tagId}`,
-    });
-  }
-  return error;
-}
 
 const os = implement(tagContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 export const tagRouter = os.router({
   create: os.create.effect(function* ({ input, context }) {

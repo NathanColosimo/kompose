@@ -1,15 +1,10 @@
-import { auth } from "@kompose/auth";
-import { getLinkedAccountId } from "@kompose/auth/accounts";
-import {
-  GoogleApiError,
-  GoogleCalendarZodError,
-  makeGoogleCalendarService,
-} from "@kompose/google-cal/client";
+import { makeGoogleCalendarService } from "@kompose/google-cal/client";
 import { getGoogleEventEditBlockReason } from "@kompose/google-cal/schema";
-import { implement, ORPCError } from "@orpc/server";
+import { implement } from "@orpc/server";
 import { Effect, Option } from "effect";
-import { mapErrors, requireAuth } from "../..";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
+import { getLinkedAccessToken } from "../../lib/linked-account";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
 import {
@@ -18,103 +13,25 @@ import {
   logCacheErrorAndMiss,
 } from "./cache";
 import { googleCalContract } from "./contract";
-import { AccountNotLinkedError, NonEditableGoogleEventError } from "./errors";
-
-/**
- * Confirms the user owns this linked Google account and returns Better Auth's
- * row ID for it. Cache keys use the provider account ID, so this check must
- * run before any cache read.
- */
-const requireLinkedGoogleAccount = Effect.fn("requireLinkedGoogleAccount")(
-  function* (userId: string, accountId: string) {
-    yield* Effect.annotateCurrentSpan("userId", userId);
-    yield* Effect.annotateCurrentSpan("accountId", accountId);
-
-    return yield* Effect.tryPromise({
-      catch: (cause) =>
-        new AccountNotLinkedError({
-          cause,
-          message: "Google account not linked",
-        }),
-      try: () =>
-        getLinkedAccountId({
-          providerAccountId: accountId,
-          providerId: "google",
-          userId,
-        }),
-    });
-  }
-);
-
-/**
- * The Google Calendar client for an owned account row. Getting the access
- * token takes more DB queries (and may refresh it), so cached reads call this
- * only on a miss.
- */
-const googleCalendarForAccount = Effect.fn("googleCalendarForAccount")(
-  function* (userId: string, authAccountId: string) {
-    const { accessToken } = yield* Effect.tryPromise({
-      catch: (cause) =>
-        new AccountNotLinkedError({
-          cause,
-          message: "Google access token unavailable",
-        }),
-      try: () =>
-        auth.api.getAccessToken({
-          body: {
-            accountId: authAccountId,
-            userId,
-          },
-        }),
-    });
-
-    return makeGoogleCalendarService(accessToken);
-  }
-);
+import { NonEditableGoogleEventError } from "./errors";
 
 /** The Google Calendar client for one of the user's linked accounts. */
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   userId: string,
   accountId: string
 ) {
-  const authAccountId = yield* requireLinkedGoogleAccount(userId, accountId);
-  return yield* googleCalendarForAccount(userId, authAccountId);
+  const accessToken = yield* getLinkedAccessToken({
+    accountId,
+    providerId: "google",
+    userId,
+  });
+  return makeGoogleCalendarService(accessToken);
 });
-
-function toORPCError(error: unknown) {
-  if (error instanceof AccountNotLinkedError) {
-    return new ORPCError("ACCOUNT_NOT_LINKED", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleApiError) {
-    return new ORPCError("GOOGLE_API_ERROR", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleCalendarZodError) {
-    return new ORPCError("PARSE_ERROR", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof NonEditableGoogleEventError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      data: { eventId: error.eventId, eventType: error.eventType },
-      message: error.message,
-    });
-  }
-  return error;
-}
 
 export const os = implement(googleCalContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 function publishGoogleCalendarEvent(
   userId: string,
@@ -217,10 +134,7 @@ export const googleCalRouter = os.router({
     get: os.calendars.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const authAccountId = yield* requireLinkedGoogleAccount(
-        context.user.id,
-        input.accountId
-      );
+      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -231,10 +145,6 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
-      const google = yield* googleCalendarForAccount(
-        context.user.id,
-        authAccountId
-      );
       const calendar = yield* google.getCalendar(input.calendarId);
 
       // Populate cache (best effort)
@@ -247,10 +157,7 @@ export const googleCalRouter = os.router({
     list: os.calendars.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const authAccountId = yield* requireLinkedGoogleAccount(
-        context.user.id,
-        input.accountId
-      );
+      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -261,10 +168,6 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
-      const google = yield* googleCalendarForAccount(
-        context.user.id,
-        authAccountId
-      );
       const calendars = yield* google.listCalendars();
 
       // Populate cache (best effort)
@@ -303,10 +206,7 @@ export const googleCalRouter = os.router({
     list: os.colors.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const authAccountId = yield* requireLinkedGoogleAccount(
-        context.user.id,
-        input.accountId
-      );
+      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
       const cached = yield* cache
         .getCachedColors(input.accountId)
@@ -315,10 +215,6 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
-      const google = yield* googleCalendarForAccount(
-        context.user.id,
-        authAccountId
-      );
       const colors = yield* google.listColors();
 
       yield* cache
@@ -385,10 +281,7 @@ export const googleCalRouter = os.router({
     get: os.events.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const authAccountId = yield* requireLinkedGoogleAccount(
-        context.user.id,
-        input.accountId
-      );
+      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
       const cached = yield* cache
         .getCachedEvent(input.accountId, input.calendarId, input.eventId)
@@ -397,10 +290,6 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
-      const google = yield* googleCalendarForAccount(
-        context.user.id,
-        authAccountId
-      );
       const event = yield* google.getEvent(input.calendarId, input.eventId);
 
       yield* cache
@@ -414,10 +303,7 @@ export const googleCalRouter = os.router({
 
       const cache = yield* GoogleCalendarCacheService;
 
-      const authAccountId = yield* requireLinkedGoogleAccount(
-        context.user.id,
-        input.accountId
-      );
+      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
       const cached = yield* cache
         .getCachedEvents(
@@ -434,10 +320,6 @@ export const googleCalRouter = os.router({
         return filterEventsBySearch(cached.value, searchQuery);
       }
 
-      const google = yield* googleCalendarForAccount(
-        context.user.id,
-        authAccountId
-      );
       const events = yield* google.listEvents(
         input.calendarId,
         input.params.timeMin,

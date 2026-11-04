@@ -16,11 +16,13 @@
     }
   },
   "scripts": {
+    "test": "bun test",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@kompose/api": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@orpc/client": "catalog:",
     "@tanstack/query-core": "catalog:",
     "@tanstack/react-query": "catalog:",
     "better-auth": "catalog:",

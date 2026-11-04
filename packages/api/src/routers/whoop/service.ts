@@ -1,5 +1,3 @@
-import { auth } from "@kompose/auth";
-import { getLinkedAccountId } from "@kompose/auth/accounts";
 import { createWhoopClient } from "@kompose/whoop/client";
 import type {
   WhoopCachedDayRaw,
@@ -10,6 +8,7 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
+import { getLinkedAccessToken } from "../../lib/linked-account";
 import {
   logAndSwallowWhoopCacheError,
   logWhoopCacheErrorAndFallback,
@@ -17,7 +16,7 @@ import {
 } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
-import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
+import { WhoopInvalidRangeError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
 const TODAY_CACHE_TTL_SECONDS = 15 * 60;
@@ -333,70 +332,6 @@ function ttlForDay(day: string, timeZone: string): number {
     : PAST_CACHE_TTL_SECONDS;
 }
 
-/**
- * Confirms the user owns this linked WHOOP account and returns Better Auth's
- * row ID for it. Cache keys use the provider account ID, so this check must
- * run before any cache read.
- */
-const requireLinkedWhoopAccount = Effect.fn("requireLinkedWhoopAccount")(
-  function* (params: { accountId: string; userId: string }) {
-    yield* Effect.annotateCurrentSpan("userId", params.userId);
-    yield* Effect.annotateCurrentSpan("accountId", params.accountId);
-    return yield* Effect.tryPromise({
-      catch: (cause) =>
-        new WhoopTokenUnavailableError({
-          accountId: params.accountId,
-          cause,
-          message: "WHOOP account not linked",
-        }),
-      try: () =>
-        getLinkedAccountId({
-          providerAccountId: params.accountId,
-          providerId: "whoop",
-          userId: params.userId,
-        }),
-    });
-  }
-);
-
-/**
- * The access token for an owned WHOOP account row. This runs a locked
- * transaction (and may refresh), so cached reads call it only on a miss.
- */
-const whoopAccessTokenForAccount = Effect.fn("whoopAccessTokenForAccount")(
-  function* (params: {
-    accountId: string;
-    authAccountId: string;
-    userId: string;
-  }) {
-    const token = yield* Effect.tryPromise({
-      catch: (cause) =>
-        new WhoopTokenUnavailableError({
-          accountId: params.accountId,
-          cause,
-          message: "WHOOP token unavailable",
-        }),
-      try: () =>
-        auth.api.getAccessToken({
-          body: {
-            accountId: params.authAccountId,
-            userId: params.userId,
-          },
-        }),
-    });
-
-    if (!token.accessToken) {
-      return yield* new WhoopTokenUnavailableError({
-        accountId: params.accountId,
-        cause: new Error("WHOOP token not returned from Better Auth"),
-        message: "WHOOP token not returned from Better Auth",
-      });
-    }
-
-    return token.accessToken;
-  }
-);
-
 export class WhoopService extends Context.Service<WhoopService>()(
   "WhoopService",
   {
@@ -423,7 +358,8 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
-          const authAccountId = yield* requireLinkedWhoopAccount({
+          const accessToken = yield* getLinkedAccessToken({
+            providerId: "whoop",
             accountId: params.accountId,
             userId: params.userId,
           });
@@ -443,11 +379,6 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const allDays = new Map(cachedDays);
 
           if (missingDays.length > 0) {
-            const accessToken = yield* whoopAccessTokenForAccount({
-              accountId: params.accountId,
-              authAccountId,
-              userId: params.userId,
-            });
             const client = createWhoopClient(accessToken);
             const [missingStart] = missingDays;
             const missingEnd = missingDays.at(-1);
@@ -540,10 +471,10 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const authAccountId = yield* requireLinkedWhoopAccount(params);
-          const accessToken = yield* whoopAccessTokenForAccount({
-            ...params,
-            authAccountId,
+          const accessToken = yield* getLinkedAccessToken({
+            providerId: "whoop",
+            accountId: params.accountId,
+            userId: params.userId,
           });
 
           const client = createWhoopClient(accessToken);

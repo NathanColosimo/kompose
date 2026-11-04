@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "test": "bun test",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",
+    "@orpc/client": "catalog:",
     "@types/node": "catalog:"
   }
 }

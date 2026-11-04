@@ -1,6 +1,7 @@
 "use client";
 
 import { env } from "@kompose/env";
+import { errorMessage } from "@kompose/state/errors";
 import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
@@ -119,7 +120,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        toast.error(error.message);
+        toast.error(errorMessage(error));
       },
       orpc,
     }),
