@@ -1,6 +1,7 @@
 "use client";
 
 import type { DeleteEventInput } from "@kompose/api/routers/google-cal/contract";
+import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
@@ -25,18 +26,6 @@ export interface UpdateGoogleEventInput {
   event: Event;
   eventId: string;
   recurrenceScope?: "this" | "all" | "following";
-}
-
-function sanitizeEventPayload(event: Event): CreateEvent {
-  const {
-    id: _id,
-    htmlLink: _htmlLink,
-    organizer: _organizer,
-    recurringEventId: _recurringEventId,
-    originalStartTime: _originalStartTime,
-    ...rest
-  } = event;
-  return rest;
 }
 
 /**

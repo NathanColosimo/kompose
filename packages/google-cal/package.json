@@ -4,6 +4,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./recurrence-utils": "./src/recurrence-utils.ts",
     "./schema": "./src/schema.ts"
   },
   "main": "./src/index.ts",
