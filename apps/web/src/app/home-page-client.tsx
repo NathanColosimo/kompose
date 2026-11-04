@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
-import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 
 // Marketing bullets used to keep the hero punchy without extra copy.
 const highlights = [
@@ -113,13 +112,10 @@ function HomePageContent() {
             workflows in one place.
           </p>
           <div className="flex items-center justify-center gap-4 sm:justify-end">
-            <a
-              className="underline-offset-4 hover:underline"
-              href={PRIVACY_HREF}
-            >
+            <a className="underline-offset-4 hover:underline" href="/privacy">
               Privacy Policy
             </a>
-            <a className="underline-offset-4 hover:underline" href={TERMS_HREF}>
+            <a className="underline-offset-4 hover:underline" href="/terms">
               Terms of Service
             </a>
           </div>

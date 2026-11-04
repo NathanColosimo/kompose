@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
-import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 
 function DashboardRedirect() {
   const { replace } = useRouter();
@@ -139,16 +138,10 @@ export default function LoginPageClient() {
               </ul>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
-              <a
-                className="underline-offset-4 hover:underline"
-                href={PRIVACY_HREF}
-              >
+              <a className="underline-offset-4 hover:underline" href="/privacy">
                 Privacy Policy
               </a>
-              <a
-                className="underline-offset-4 hover:underline"
-                href={TERMS_HREF}
-              >
+              <a className="underline-offset-4 hover:underline" href="/terms">
                 Terms of Service
               </a>
             </div>

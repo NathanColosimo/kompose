@@ -1,4 +1,3 @@
-import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 import { SocialAccountButtons } from "./social-account-buttons";
 
 export default function SignInForm() {
@@ -16,11 +15,11 @@ export default function SignInForm() {
       <SocialAccountButtons mode="sign-in" />
       <p className="text-center text-muted-foreground text-xs">
         By continuing you agree to the Kompose{" "}
-        <a className="underline underline-offset-4" href={TERMS_HREF}>
+        <a className="underline underline-offset-4" href="/terms">
           Terms of Service
         </a>{" "}
         and{" "}
-        <a className="underline underline-offset-4" href={PRIVACY_HREF}>
+        <a className="underline underline-offset-4" href="/privacy">
           Privacy Policy
         </a>
         .

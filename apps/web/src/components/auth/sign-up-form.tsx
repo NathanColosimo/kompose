@@ -1,4 +1,3 @@
-import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 import { SocialAccountButtons } from "./social-account-buttons";
 
 export default function SignUpForm() {
@@ -17,11 +16,11 @@ export default function SignUpForm() {
       <SocialAccountButtons mode="sign-up" />
       <p className="text-center text-muted-foreground text-xs">
         No passwords to manage. Review the{" "}
-        <a className="underline underline-offset-4" href={PRIVACY_HREF}>
+        <a className="underline underline-offset-4" href="/privacy">
           Privacy Policy
         </a>{" "}
         and{" "}
-        <a className="underline underline-offset-4" href={TERMS_HREF}>
+        <a className="underline underline-offset-4" href="/terms">
           Terms of Service
         </a>
         , and you can revoke access anytime from your linked provider settings.
