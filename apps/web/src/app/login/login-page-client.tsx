@@ -1,6 +1,5 @@
 "use client";
 
-import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
+import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 
 function DashboardRedirect() {
   const { replace } = useRouter();
@@ -86,14 +86,6 @@ export default function LoginPageClient() {
     isRefetching,
     refetch,
   } = authClient.useSession();
-  const privacyHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
-      : "/privacy";
-  const termsHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
-      : "/terms";
   if (isPending || (!session?.user && error)) {
     return (
       <main className="flex min-h-svh items-center justify-center p-6 text-center text-sm">
@@ -149,13 +141,13 @@ export default function LoginPageClient() {
             <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
               <a
                 className="underline-offset-4 hover:underline"
-                href={privacyHref}
+                href={PRIVACY_HREF}
               >
                 Privacy Policy
               </a>
               <a
                 className="underline-offset-4 hover:underline"
-                href={termsHref}
+                href={TERMS_HREF}
               >
                 Terms of Service
               </a>

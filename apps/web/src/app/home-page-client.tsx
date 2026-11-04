@@ -1,6 +1,5 @@
 "use client";
 
-import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
+import { PRIVACY_HREF, TERMS_HREF } from "@/lib/legal-links";
 
 // Marketing bullets used to keep the hero punchy without extra copy.
 const highlights = [
@@ -60,14 +60,6 @@ function DesktopHomeSessionGate() {
 }
 
 function HomePageContent() {
-  const privacyHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
-      : "/privacy";
-  const termsHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
-      : "/terms";
   return (
     <main className="bg-background text-foreground">
       {/* Provide a drag handle on desktop (Electron) without affecting web behavior. */}
@@ -123,11 +115,11 @@ function HomePageContent() {
           <div className="flex items-center justify-center gap-4 sm:justify-end">
             <a
               className="underline-offset-4 hover:underline"
-              href={privacyHref}
+              href={PRIVACY_HREF}
             >
               Privacy Policy
             </a>
-            <a className="underline-offset-4 hover:underline" href={termsHref}>
+            <a className="underline-offset-4 hover:underline" href={TERMS_HREF}>
               Terms of Service
             </a>
           </div>
