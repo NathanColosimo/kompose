@@ -2,7 +2,7 @@
   "type": "diff",
   "version": "9",
   "dialect": "postgres",
-  "id": "cf96698f-594f-450f-be6b-1d2f5c0966cc",
+  "id": "7a5f28bd-9a0a-4320-ad62-f70e0f1312ad",
   "prevIds": [
     "6aa43d5d-158d-49c4-98a6-353f3f6d7ec3"
   ],
@@ -121,7 +121,7 @@
             "value": "created_at",
             "isExpression": false,
             "asc": false,
-            "nullsFirst": false,
+            "nullsFirst": true,
             "opclass": null
           }
         ],

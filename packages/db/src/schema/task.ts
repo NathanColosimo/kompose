@@ -112,7 +112,12 @@ export const taskTable = pgTable(
   },
   (table) => [
     // tasks.list: all of a user's tasks, newest first.
-    index("task_user_created_at_idx").on(table.userId, table.createdAt.desc()),
+    // DESC must stay NULLS FIRST (the Postgres default) to match the query's
+    // ORDER BY created_at DESC; NULLS LAST would make Postgres sort again.
+    index("task_user_created_at_idx").on(
+      table.userId,
+      table.createdAt.desc().nullsFirst()
+    ),
     // Recurring series edits and regeneration look up occurrences by master.
     index("task_series_master_idx").on(table.seriesMasterId),
   ]
