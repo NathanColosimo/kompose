@@ -10,13 +10,10 @@ import {
   type CreateEvent,
   type Event,
   EventSchema,
-  type GoogleUserInfo,
-  GoogleUserInfoSchema,
   RecurrenceScope,
 } from "./schema";
 import {
   sanitizeEventPayload,
-  stripRecurringLink,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
 
@@ -181,27 +178,6 @@ function buildThisOccurrenceUpdatePayload(
       ? { originalStartTime: currentEvent.originalStartTime }
       : {}),
   };
-}
-
-// -- Google User Info (standalone, no Effect) --
-
-const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
-
-/**
- * Fetch the authenticated user's profile from Google's userinfo endpoint.
- * Returns null when the token is invalid or the response can't be parsed.
- */
-export async function getGoogleUserInfo(
-  accessToken: string
-): Promise<GoogleUserInfo | null> {
-  const response = await fetch(GOOGLE_USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) {
-    return null;
-  }
-  const parsed = GoogleUserInfoSchema.safeParse(await response.json());
-  return parsed.success ? parsed.data : null;
 }
 
 // -- Service Definition --
@@ -636,15 +612,13 @@ export function makeGoogleCalendarService(
       );
 
       const recurrence = event.recurrence?.length ? event.recurrence : master.recurrence;
-      const payload = stripRecurringLink(
-        sanitizeEventPayload({
-          ...master,
-          ...event,
-          start: mergedStart,
-          end: mergedEnd,
-          recurrence,
-        })
-      );
+      const payload = sanitizeEventPayload({
+        ...master,
+        ...event,
+        start: mergedStart,
+        end: mergedEnd,
+        recurrence,
+      });
       yield* Effect.annotateCurrentSpan("eventType", payload.eventType ?? "default");
       const conferenceDataVersion = getConferenceDataVersion(payload);
 
@@ -714,12 +688,10 @@ export function makeGoogleCalendarService(
         Boolean(master.start.date)
       );
 
-      const truncatedPayload = stripRecurringLink(
-        sanitizeEventPayload({
-          ...master,
-          recurrence: truncatedRecurrence,
-        })
-      );
+      const truncatedPayload = sanitizeEventPayload({
+        ...master,
+        recurrence: truncatedRecurrence,
+      });
       yield* Effect.annotateCurrentSpan(
         "eventType",
         truncatedPayload.eventType ?? "default"
@@ -751,22 +723,18 @@ export function makeGoogleCalendarService(
 
       yield* parseEventResponse(truncateMasterResponse);
 
-      const newSeriesPayload = stripRecurringLink(
-        sanitizeEventPayload({
-          ...master,
-          ...event,
-          recurrence,
-        })
-      );
+      const newSeriesPayload = sanitizeEventPayload({
+        ...master,
+        ...event,
+        recurrence,
+      });
       const newSeriesConferenceDataVersion =
         getConferenceDataVersion(newSeriesPayload);
 
-      const restorePayload = stripRecurringLink(
-        sanitizeEventPayload({
-          ...master,
-          recurrence: originalRecurrence,
-        })
-      );
+      const restorePayload = sanitizeEventPayload({
+        ...master,
+        recurrence: originalRecurrence,
+      });
       const restoreConferenceDataVersion =
         getConferenceDataVersion(restorePayload);
 
@@ -959,12 +927,10 @@ export function makeGoogleCalendarService(
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
-            ...stripRecurringLink(
-              sanitizeEventPayload({
-                ...master,
-                recurrence: truncatedRecurrence,
-              })
-            ),
+            ...sanitizeEventPayload({
+              ...master,
+              recurrence: truncatedRecurrence,
+            }),
             calendarId,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
@@ -1085,12 +1051,10 @@ export function makeGoogleCalendarService(
         const truncatedMasterResponse = yield* Effect.tryPromise({
           try: () =>
             client.calendars.events.update(master.id, {
-              ...stripRecurringLink(
-                sanitizeEventPayload({
-                  ...master,
-                  recurrence: truncatedRecurrence,
-                })
-              ),
+              ...sanitizeEventPayload({
+                ...master,
+                recurrence: truncatedRecurrence,
+              }),
               calendarId,
             }),
           catch: (cause) => new GoogleApiError({ cause }),
@@ -1104,25 +1068,21 @@ export function makeGoogleCalendarService(
         }
 
         // 2) Create a new series in the destination calendar starting at this occurrence.
-        const newSeriesPayload = stripRecurringLink(
-          sanitizeEventPayload({
-            ...master,
-            ...instance,
-            start: instance.start,
-            end: instance.end,
-            recurrence: master.recurrence,
-          })
-        );
+        const newSeriesPayload = sanitizeEventPayload({
+          ...master,
+          ...instance,
+          start: instance.start,
+          end: instance.end,
+          recurrence: master.recurrence,
+        });
 
         const restoreMasterRecurrence = Effect.tryPromise({
           try: () =>
             client.calendars.events.update(master.id, {
-              ...stripRecurringLink(
-                sanitizeEventPayload({
-                  ...master,
-                  recurrence: originalRecurrence,
-                })
-              ),
+              ...sanitizeEventPayload({
+                ...master,
+                recurrence: originalRecurrence,
+              }),
               calendarId,
             }),
           catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),

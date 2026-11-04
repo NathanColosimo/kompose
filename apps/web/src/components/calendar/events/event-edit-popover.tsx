@@ -1,5 +1,6 @@
 "use client";
 
+import type { CreateEventInput } from "@kompose/api/routers/google-cal/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -14,7 +15,6 @@ import {
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
-  type CreateGoogleEventInput,
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
@@ -185,7 +185,7 @@ export type CloseSaveRequest =
   | {
       type: "create";
       /** Payload for creating a new event */
-      payload: CreateGoogleEventInput;
+      payload: CreateEventInput;
     };
 
 function parseTimeString(

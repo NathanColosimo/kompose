@@ -117,13 +117,11 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 
 - Shared persisted state:
   - `packages/state/src/atoms/visible-calendars.ts`
-- Shared hook:
-  - `packages/state/src/hooks/use-visible-calendars.ts`
 - Picker UI modal:
   - `apps/native/components/calendar/calendar-picker-modal.tsx`
 - Google accounts / calendars / events hooks:
   - `packages/state/src/hooks/use-google-accounts.ts` (imported via `@kompose/state/hooks`)
-  - `packages/state/src/hooks/use-google-calendars.ts` (imported via `@kompose/state/hooks`)
+  - `packages/state/src/atoms/google-data.ts` (calendars per account)
   - `packages/state/src/hooks/use-google-events.ts` (imported via `@kompose/state/hooks`)
 
 ### Calendar implementation

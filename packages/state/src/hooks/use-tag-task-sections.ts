@@ -7,7 +7,8 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "../atoms/current-date";
-import { isNonRecurring, isOverdue } from "./use-task-sections";
+import { isOverdueTask } from "../task-search-routing";
+import { isNonRecurring } from "./use-task-sections";
 import { useTasks } from "./use-tasks";
 
 const isTagged = (task: TaskSelectDecoded, tagId: string): boolean =>
@@ -65,7 +66,7 @@ const compareNullablePlainDate = (
 };
 
 export function useTagTaskSections(tagId: string | null) {
-  const { tasksQuery, updateTask, deleteTask } = useTasks();
+  const { tasksQuery } = useTasks();
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
   const nowZdt = useAtomValue(nowZonedDateTimeAtom);
@@ -81,7 +82,7 @@ export function useTagTaskSections(tagId: string | null) {
     );
 
     const overdue = taggedTasks
-      .filter((task) => isOverdue(task, today, nowZdt, timeZone))
+      .filter((task) => isOverdueTask(task, today, nowZdt, timeZone))
       .sort((a, b) => {
         const aOverdue = getOverdueAt(a, timeZone);
         const bOverdue = getOverdueAt(b, timeZone);
@@ -100,7 +101,8 @@ export function useTagTaskSections(tagId: string | null) {
     const todo = taggedTasks
       .filter(
         (task) =>
-          task.status !== "done" && !isOverdue(task, today, nowZdt, timeZone)
+          task.status !== "done" &&
+          !isOverdueTask(task, today, nowZdt, timeZone)
       )
       .sort((a, b) => {
         const dueCompare = compareNullablePlainDate(a.dueDate, b.dueDate);
@@ -121,12 +123,5 @@ export function useTagTaskSections(tagId: string | null) {
     return { doneTasks: done, overdueTasks: overdue, todoTasks: todo };
   }, [nowZdt, tagId, tasksQuery.data, timeZone, today]);
 
-  return {
-    deleteTask,
-    doneTasks,
-    overdueTasks,
-    tasksQuery,
-    todoTasks,
-    updateTask,
-  };
+  return { doneTasks, overdueTasks, todoTasks };
 }

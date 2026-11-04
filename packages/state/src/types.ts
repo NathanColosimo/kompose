@@ -1,4 +1,3 @@
-import type { AppRouterClient } from "@kompose/api/routers/index";
 import type { Account, OAuth2UserInfo } from "better-auth";
 
 export interface UnlinkAccountInput {
@@ -16,8 +15,3 @@ export interface AuthClient {
   listAccounts: () => Promise<Account[]>;
   unlinkAccount: (input: UnlinkAccountInput) => Promise<void>;
 }
-
-/**
- * Typed ORPC client for the app router.
- */
-export type OrpcUtils = AppRouterClient;
