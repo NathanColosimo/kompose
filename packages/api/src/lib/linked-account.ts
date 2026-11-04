@@ -1,6 +1,8 @@
 import { auth } from "@kompose/auth";
-import { getLinkedAccountId } from "@kompose/auth/accounts";
+import { Database } from "@kompose/db";
+import { account } from "@kompose/db/schema/auth";
 import { APIError } from "better-auth/api";
+import { and, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 import type { PublicError } from "../errors";
 
@@ -31,8 +33,12 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
 
 /**
  * A valid access token for one of the user's linked provider accounts.
- * Better Auth reports a missing account or a failed refresh as an `APIError`;
- * anything else (such as a database failure) is a defect.
+ *
+ * `accountId` is the provider's account ID, which the app uses everywhere
+ * (RPC inputs, cache keys). Better Auth's token API takes the local
+ * `account.id`, so this first finds the row the user owns. A missing row, or a
+ * Better Auth `APIError` (no account, failed refresh), is a
+ * `LinkedAccountError`; anything else, such as a database failure, is a defect.
  */
 export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
   function* (params: {
@@ -50,16 +56,32 @@ export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
         providerId: params.providerId,
       });
 
-    const { accessToken } = yield* Effect.tryPromise(async () => {
-      const authAccountId = await getLinkedAccountId({
-        providerAccountId: params.accountId,
-        providerId: params.providerId,
-        userId: params.userId,
-      });
-      return auth.api.getAccessToken({
-        body: { accountId: authAccountId, userId: params.userId },
-      });
-    }).pipe(
+    const db = yield* Database;
+    const rows = yield* db
+      .select({ id: account.id })
+      .from(account)
+      .where(
+        and(
+          eq(account.accountId, params.accountId),
+          eq(account.providerId, params.providerId),
+          eq(account.userId, params.userId)
+        )
+      )
+      .limit(2)
+      .pipe(Effect.orDie);
+
+    const [row] = rows;
+    if (!row || rows.length > 1) {
+      return yield* fail(
+        new Error(`Expected one linked account row, found ${rows.length}`)
+      );
+    }
+
+    const { accessToken } = yield* Effect.tryPromise(() =>
+      auth.api.getAccessToken({
+        body: { accountId: row.id, userId: params.userId },
+      })
+    ).pipe(
       Effect.catch(({ cause }) =>
         cause instanceof APIError ? Effect.fail(fail(cause)) : Effect.die(cause)
       )
