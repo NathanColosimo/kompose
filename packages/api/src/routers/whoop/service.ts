@@ -376,15 +376,9 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
-          const accessToken = yield* getLinkedAccessToken({
-            providerId: "whoop",
-            accountId: params.accountId,
-            userId: params.userId,
-          });
-
           const requestedDays = inclusiveDays(params.startDate, params.endDate);
           const cachedDays = yield* cache
-            .getCachedDays(params.accountId, requestedDays)
+            .getCachedDays(params.userId, params.accountId, requestedDays)
             .pipe(
               logWhoopCacheErrorAndFallback(
                 new Map<string, WhoopCachedDayRaw>()
@@ -400,6 +394,13 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const missingEnd = missingDays.at(-1);
 
           if (missingStart && missingEnd) {
+            // Only fetch a token on a cache miss; user-scoped cache keys
+            // already keep one user from reading another's cached days.
+            const accessToken = yield* getLinkedAccessToken({
+              accountId: params.accountId,
+              providerId: "whoop",
+              userId: params.userId,
+            });
             const client = createWhoopClient(accessToken);
 
             // Start 6 hours before midnight so WHOOP cycles/sleeps that
@@ -462,6 +463,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
               (payload) =>
                 cache
                   .setCachedDay(
+                    params.userId,
                     params.accountId,
                     payload.day,
                     payload,

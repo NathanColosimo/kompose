@@ -360,7 +360,7 @@ separate `Kompose Dev` profile.
 - **Cached resources**: Calendar list, single calendar, colors (24h TTL), event lists, single events (1h TTL).
 - **Invalidation**: Dual strategy — Google webhooks trigger broad invalidation (unknown which resource changed); local mutations use targeted invalidation (specific keys only).
 - **Error handling**: Cache errors are always caught, logged as `CACHE_ERROR` (visible in OTel), and swallowed. Cache failures degrade to API fetches, never fail requests.
-- **Auth-first**: Cache lookups happen *after* `getGoogleCalendar` to prevent serving cached data to unauthorized users.
+- **User-scoped keys**: cache keys start with the user ID and are written only after that user's ownership-checked token fetch, so reads check the cache first and fetch a token only on a miss.
 - See [`caching.md`](./caching.md) for full details.
 
 ### 6.11 Google Calendar Webhooks

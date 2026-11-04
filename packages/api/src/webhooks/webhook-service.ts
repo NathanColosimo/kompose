@@ -423,7 +423,10 @@ export class WebhookService extends Context.Service<WebhookService>()(
 
           // Cache keys and client query keys use Google's provider account id.
           yield* cache
-            .invalidateCalendars(subscription.providerAccountId)
+            .invalidateCalendars(
+              subscription.userId,
+              subscription.providerAccountId
+            )
             .pipe(logAndSwallowCacheError);
 
           yield* publishToUser(subscription.userId, {
@@ -454,6 +457,7 @@ export class WebhookService extends Context.Service<WebhookService>()(
           // Webhooks don't tell us which event changed, so we clear everything.
           yield* cache
             .invalidateAllEvents(
+              subscription.userId,
               subscription.providerAccountId,
               subscription.config.calendarId
             )
