@@ -48,9 +48,3 @@ export function sanitizeEventPayload(event: Event): CreateEvent {
   } = event;
   return rest;
 }
-
-export function stripRecurringLink(event: CreateEvent): CreateEvent {
-  const { recurringEventId: _recurringEventId, originalStartTime: _originalStartTime, ...rest } =
-    event;
-  return rest;
-}
