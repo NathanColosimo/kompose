@@ -475,6 +475,8 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 
 The Better Auth client (`packages/db/src/legacy.ts`, postgres.js) uses its defaults: no idle timeout, 60 s keepalive, and a lifetime of 30–60 minutes per connection. It already keeps idle connections across suspensions, so it's left as is.
 
+Better Auth reads through the Drizzle relations-v2 adapter with `advanced.database.joins` on. Where it needs a row together with its user (an OAuth sign-in looking up the account's owner, or a user by email with their accounts), it uses one joined query instead of two. The joins go through the auth relations in `packages/db/src/schema/relations.ts`, which follow Better Auth's naming (`account.user`, `session.user`, `user.accounts`, `user.sessions`). Sessions are read from Redis, so `session.user` is only used when a session isn't cached.
+
 ### Effect ↔ oRPC bridge
 
 - `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
