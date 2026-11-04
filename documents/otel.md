@@ -168,7 +168,9 @@ All OTel env vars are server-only (no `NEXT_PUBLIC_` prefix). When neither `OTEL
 
 Vercel freezes a function instance as soon as it responds, and `BatchSpanProcessor` exports on a 5 s timer. A batch still buffered at that point waits for the instance's next request, or is lost when the instance shuts down without one. Cold instances often serve only a request or two (a dashboard load after idle boots about one per parallel request), so before this most of their spans, including most root spans, never reached Axiom, and spans that did arrive were ingested minutes late.
 
-`FlushAtRequestEnd` calls `waitUntil(forceFlush())` (`@vercel/functions`) when a request's root span ends: a `SERVER` span with no local parent, including one parented by a remote `traceparent`. Vercel keeps the invocation alive until that export finishes. Boot spans (`register instrumentation`, `load route module`) are buffered by then and go out in the same export, so it's one export per request. Outside Vercel, `waitUntil` does nothing and the batch exports on its timer.
+On Vercel (`VERCEL=1`), `FlushAtRequestEnd` calls `waitUntil(flush)` (`@vercel/functions`) when a request's root span ends: a `SERVER` span with no local parent, including one parented by a remote `traceparent`. Vercel keeps the invocation alive until that export finishes. Boot spans (`register instrumentation`, `load route module`) are buffered by then and go out in the same export. Elsewhere (local dev) nothing changes: the batch exports on its timer.
+
+Flushes are coalesced: at most one export runs, with one more queued for spans that end meanwhile. The OTLP exporter drops batches beyond 30 concurrent exports, which a flush per request could reach on a busy instance with a slow export (40 concurrent requests against a 1.5 s export peaked at 2 in flight). A failed export is logged as `OTEL_FLUSH_FAILED`.
 
 `waitUntil` from `@vercel/functions` rather than Next's `after()`: span processors run inside Next's tracing code, where `after()` has no request scope to attach to, while `waitUntil` reads Vercel's request context from a global.
 

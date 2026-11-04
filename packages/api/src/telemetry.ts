@@ -99,15 +99,31 @@ class SpanAttributeFilter implements SpanProcessor {
 //    processor only exports every 5 s. A batch still buffered at that point
 //    waits for the instance's next request, or is lost when the instance is
 //    shut down without one. Most cold instances serve only a request or two,
-//    so most of their spans never reached Axiom. When a request's root span
-//    ends (a SERVER span with no local parent), export what's buffered,
-//    including boot spans such as "register instrumentation", and have
-//    Vercel keep the invocation alive until it's sent. One export per
-//    request. Outside Vercel, waitUntil does nothing and the batch exports
-//    on its usual schedule.
+//    so most of their spans never reached Axiom. On Vercel, when a request's
+//    root span ends (a SERVER span with no local parent), export what's
+//    buffered, including boot spans such as "register instrumentation", and
+//    have Vercel keep the invocation alive until it's sent. Elsewhere the
+//    batch exports on its timer as before.
+//
+//    Flushes are coalesced: at most one export runs, with one more queued
+//    behind it for spans that end meanwhile. The OTLP exporter drops batches
+//    beyond 30 concurrent exports, which one flush per request could reach
+//    on a busy instance with a slow export.
+
+const flushAtRequestEnd = env.VERCEL === "1";
+
+function isRequestRoot(span: ReadableSpan): boolean {
+  const parent = span.parentSpanContext;
+  return (
+    span.kind === SpanKind.SERVER &&
+    (parent === undefined || parent.isRemote === true)
+  );
+}
 
 class FlushAtRequestEnd implements SpanProcessor {
   readonly #delegate: SpanProcessor;
+  #running: Promise<void> | undefined;
+  #queued: Promise<void> | undefined;
 
   constructor(delegate: SpanProcessor) {
     this.#delegate = delegate;
@@ -119,13 +135,36 @@ class FlushAtRequestEnd implements SpanProcessor {
 
   onEnd(span: ReadableSpan): void {
     this.#delegate.onEnd(span);
-    const parent = span.parentSpanContext;
-    const isRequestRoot =
-      span.kind === SpanKind.SERVER &&
-      (parent === undefined || parent.isRemote === true);
-    if (isRequestRoot) {
-      waitUntil(this.#delegate.forceFlush());
+    if (flushAtRequestEnd && isRequestRoot(span)) {
+      waitUntil(this.#flush());
     }
+  }
+
+  /** Resolves once an export that started after this call has finished. */
+  #flush(): Promise<void> {
+    if (this.#queued) {
+      return this.#queued;
+    }
+    if (this.#running) {
+      this.#queued = this.#running.then(() => {
+        this.#queued = undefined;
+        return this.#startFlush();
+      });
+      return this.#queued;
+    }
+    return this.#startFlush();
+  }
+
+  #startFlush(): Promise<void> {
+    this.#running = this.#delegate
+      .forceFlush()
+      .catch((error: unknown) => {
+        console.error("OTEL_FLUSH_FAILED", error);
+      })
+      .finally(() => {
+        this.#running = undefined;
+      });
+    return this.#running;
   }
 
   forceFlush(): Promise<void> {
