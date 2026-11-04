@@ -16,6 +16,7 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { startOfDayZoned } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue } from "jotai";
 import {
   memo,
@@ -27,6 +28,8 @@ import {
 } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
+  clampZonedDateTime,
+  getDayBoundsZoned,
   isoStringToZonedDateTime,
   minutesFromMidnight,
   zonedDateTimeToDate,
@@ -92,11 +95,7 @@ function clampEventToDay(
   day: Temporal.PlainDate,
   timeZone: string
 ): PositionedGoogleEvent | null {
-  const dayStart = day.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const dayEnd = dayStart.add({ days: 1 });
+  const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
   if (
     Temporal.ZonedDateTime.compare(event.end, dayStart) <= 0 ||
@@ -105,14 +104,11 @@ function clampEventToDay(
     return null;
   }
 
-  const clampedStart =
-    Temporal.ZonedDateTime.compare(event.start, dayStart) < 0
-      ? dayStart
-      : event.start;
-  const clampedEnd =
-    Temporal.ZonedDateTime.compare(event.end, dayEnd) > 0 ? dayEnd : event.end;
-
-  return { ...event, end: clampedEnd, start: clampedStart };
+  return {
+    ...event,
+    end: clampZonedDateTime(event.end, dayStart, dayEnd),
+    start: clampZonedDateTime(event.start, dayStart, dayEnd),
+  };
 }
 
 function buildGoogleEventMaps({
@@ -238,11 +234,7 @@ function clampTaskToDay(
     timeZone,
   });
   const end = start.add({ minutes: task.durationMinutes });
-  const dayStart = day.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const dayEnd = dayStart.add({ days: 1 });
+  const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
   if (
     Temporal.ZonedDateTime.compare(end, dayStart) <= 0 ||
@@ -251,10 +243,8 @@ function clampTaskToDay(
     return null;
   }
 
-  const clampedStart =
-    Temporal.ZonedDateTime.compare(start, dayStart) < 0 ? dayStart : start;
-  const clampedEnd =
-    Temporal.ZonedDateTime.compare(end, dayEnd) > 0 ? dayEnd : end;
+  const clampedStart = clampZonedDateTime(start, dayStart, dayEnd);
+  const clampedEnd = clampZonedDateTime(end, dayStart, dayEnd);
 
   return {
     end: clampedEnd,
@@ -501,21 +491,17 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       // Convert WHOOP workouts to PositionedItems, clamped to this day.
       // Uses allWorkouts (collected from all summaries) so workouts that
       // cross midnight appear in both day columns.
-      const dayStart = day.toZonedDateTime({
-        plainTime: Temporal.PlainTime.from("00:00"),
-        timeZone,
-      });
-      const dayEndZdt = dayStart.add({ days: 1 });
+      const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
       const { compare } = Temporal.ZonedDateTime;
       const whoopItems: PositionedItem[] = allWorkouts.flatMap((workout) => {
         const wStart = isoStringToZonedDateTime(workout.start, timeZone);
         const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
-        if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEndZdt) >= 0) {
+        if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEnd) >= 0) {
           return [];
         }
-        const clampedStart = compare(wStart, dayStart) < 0 ? dayStart : wStart;
-        const clampedEnd = compare(wEnd, dayEndZdt) > 0 ? dayEndZdt : wEnd;
+        const clampedStart = clampZonedDateTime(wStart, dayStart, dayEnd);
+        const clampedEnd = clampZonedDateTime(wEnd, dayStart, dayEnd);
         const startMin = minutesFromMidnight(clampedStart);
         const rawEndMin = minutesFromMidnight(clampedEnd);
         const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
@@ -796,14 +782,8 @@ function AllDayEventChip({
     item.event.end.date && item.event.end.date !== item.date.toString()
       ? parseDateOnlyLocal(item.event.end.date)
       : item.date.add({ days: 1 });
-  const startZdt = item.date.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const endZdt = endDate.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
+  const startZdt = startOfDayZoned(item.date, timeZone);
+  const endZdt = startOfDayZoned(endDate, timeZone);
 
   return (
     <EventEditPopover
