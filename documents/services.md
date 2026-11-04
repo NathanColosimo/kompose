@@ -229,7 +229,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
-5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
@@ -240,8 +240,7 @@ Client note:
 
 | Function | Purpose |
 |----------|---------|
-| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel |
-| `publishToUserBestEffort` | Fire-and-forget version — logs errors, never throws |
+| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel. Best effort: a failure is logged as `SYNC_PUBLISH_ERROR` and never fails the caller |
 | `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
 
 ---

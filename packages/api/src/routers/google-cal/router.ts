@@ -37,7 +37,7 @@ function publishGoogleCalendarEvent(
   return publishToUser(userId, {
     payload: { accountId, calendarId },
     type: "google-calendar",
-  }).pipe(Effect.catch(() => Effect.void));
+  });
 }
 
 function includesSearchText(value: string | undefined, query: string): boolean {

@@ -373,7 +373,7 @@ separate `Kompose Dev` profile.
 
 ### 6.12 SSE Realtime Sync
 - **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
-- **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
+- **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUser` (best effort, never fails) to push typed events.
 - **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
 - **Keepalive**: Server sends `keepalive` events every 10 seconds. Client resets an inactivity timer (30s) on every event; if the timer fires (no events received), the connection is assumed dead and force-closed to trigger a reconnect.

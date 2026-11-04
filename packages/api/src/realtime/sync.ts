@@ -61,29 +61,21 @@ export function getUserSyncChannel(userId: string): string {
 }
 
 /**
- * Publish a sync event to a user's Redis channel.
- * Uses Effect tracing so spans flow through the shared OTel layer.
+ * Publish a sync event to a user's Redis channel. Best effort: a failed
+ * publish is logged as SYNC_PUBLISH_ERROR and never fails the caller.
  */
-export const publishToUser = Effect.fn("sync.publish")(function* (
-  userId: string,
-  event: SyncEvent
-) {
-  yield* Effect.annotateCurrentSpan("userId", userId);
-  yield* Effect.annotateCurrentSpan("eventType", event.type);
-
-  const payload = yield* Effect.try({
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-    try: () => syncEventSchema.parse(event),
-  });
-
-  yield* Effect.tryPromise({
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-    try: () =>
-      redis.publish(getUserSyncChannel(userId), JSON.stringify(payload)),
-  });
-});
+export const publishToUser = Effect.fn("sync.publish")(
+  function* (userId: string, event: SyncEvent) {
+    yield* Effect.annotateCurrentSpan("userId", userId);
+    yield* Effect.annotateCurrentSpan("eventType", event.type);
+    yield* Effect.tryPromise({
+      catch: String,
+      try: () =>
+        redis.publish(getUserSyncChannel(userId), JSON.stringify(event)),
+    });
+  },
+  Effect.catch((message) => Effect.logError("SYNC_PUBLISH_ERROR", { message }))
+);
 
 /**
  * Long-lived async generator for SSE connections.
@@ -108,16 +100,7 @@ export async function* createUserSyncEventIterator(
   const subscriber = createSubscriber();
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
-  let queueClosed = false;
   let messagesReceived = 0;
-
-  const closeQueue = () => {
-    if (queueClosed) {
-      return;
-    }
-    queueClosed = true;
-    queue.close();
-  };
 
   const listener = (message: string) => {
     try {
@@ -143,11 +126,11 @@ export async function* createUserSyncEventIterator(
   subscriber.on("message", (_channel: string, message: string) =>
     listener(message)
   );
-  subscriber.on("close", closeQueue);
+  subscriber.on("close", queue.close);
   if (signal?.aborted) {
-    closeQueue();
+    queue.close();
   }
-  signal?.addEventListener("abort", closeQueue, { once: true });
+  signal?.addEventListener("abort", queue.close, { once: true });
 
   try {
     await subscriber.subscribe(channel);
@@ -162,7 +145,7 @@ export async function* createUserSyncEventIterator(
         payload: {},
         type: "reconnect",
       });
-      closeQueue();
+      queue.close();
     }, RECONNECT_EVENT_AFTER_MS);
 
     while (true) {
@@ -181,14 +164,14 @@ export async function* createUserSyncEventIterator(
       }
     }
   } finally {
-    signal?.removeEventListener("abort", closeQueue);
+    signal?.removeEventListener("abort", queue.close);
     if (keepaliveTimer) {
       clearInterval(keepaliveTimer);
     }
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
     }
-    closeQueue();
+    queue.close();
 
     // Record total messages on the span before ending
     connectionSpan.setAttribute("messagesReceived", messagesReceived);
