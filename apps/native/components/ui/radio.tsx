@@ -15,7 +15,7 @@ export interface RadioOption {
 }
 
 interface RadioGroupProps {
-  options: RadioOption[];
+  options: readonly RadioOption[];
   value?: string;
   onValueChange?: (value: string) => void;
   disabled?: boolean;
