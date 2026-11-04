@@ -1,1 +1,0 @@
-DROP INDEX "account_userId_idx";
