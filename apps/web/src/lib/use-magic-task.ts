@@ -1,7 +1,10 @@
 "use client";
 
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
-import { connectTaskParser } from "@kompose/task-parser/worker-client";
+import {
+  connectTaskParser,
+  type TaskParserClient,
+} from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
@@ -39,6 +42,14 @@ function startupFailure(worker: Worker | SharedWorker): Promise<never> {
   });
 }
 
+/** Connects to the parser behind `port`, or rejects if `worker` fails to start. */
+function connect(
+  worker: Worker | SharedWorker,
+  port: Worker | MessagePort
+): Promise<TaskParserClient> {
+  return Promise.race([connectTaskParser(port), startupFailure(worker)]);
+}
+
 /**
  * The parser runs in a worker so a parse never blocks typing. A SharedWorker,
  * so every window of the app (the desktop dashboard and command bar, for one)
@@ -54,10 +65,7 @@ async function loadParser() {
       { name: "task-parser", type: "module" }
     );
     shared.port.start();
-    return await Promise.race([
-      connectTaskParser(shared.port),
-      startupFailure(shared),
-    ]);
+    return await connect(shared, shared.port);
   } catch {
     shared?.port.close();
   }
@@ -66,10 +74,7 @@ async function loadParser() {
     { type: "module" }
   );
   try {
-    return await Promise.race([
-      connectTaskParser(worker),
-      startupFailure(worker),
-    ]);
+    return await connect(worker, worker);
   } catch (error) {
     worker.terminate();
     throw error;
