@@ -3,7 +3,6 @@
 import type {
   ClientTaskInsertDecoded,
   DeleteScope,
-  LinkMeta,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
@@ -23,7 +22,7 @@ import { useAtomValue } from "jotai";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
-import { TASKS_QUERY_KEY } from "../atoms/tasks";
+import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
 
 interface UseTasksOptions {
@@ -38,20 +37,14 @@ interface UseTasksOptions {
  */
 export function useTasks(options: UseTasksOptions = {}) {
   const queryClient = useQueryClient();
-  const { orpc } = useStateConfig();
+  const { orpc, notifyError } = useStateConfig();
   const tags = useAtomValue(tagsDataAtom);
 
-  // Fetch tasks using useQuery directly (same pattern as useGoogleEvents)
   const tasksQuery = useQuery({
+    ...tasksQueryOptions(orpc),
     placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const tasks = await orpc.tasks.list();
-      return tasks.map((task) => taskSelectCodec.parse(task));
-    },
-    queryKey: TASKS_QUERY_KEY,
     refetchOnMount: options.refetchOnMount,
     refetchOnWindowFocus: options.refetchOnWindowFocus,
-    staleTime: 1000 * 60 * 5,
   });
 
   /**
@@ -63,7 +56,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -151,7 +145,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -208,7 +203,8 @@ export function useTasks(options: UseTasksOptions = {}) {
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
       await orpc.tasks.delete({ id, scope }),
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
+      notifyError?.(err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -236,10 +232,7 @@ export function useTasks(options: UseTasksOptions = {}) {
 
   /** Parse a URL to extract provider metadata (title, duration, etc.) */
   const parseLink = useMutation({
-    mutationFn: async (url: string): Promise<LinkMeta> => {
-      const result = await orpc.tasks.parseLink({ url });
-      return result as LinkMeta;
-    },
+    mutationFn: async (url: string) => await orpc.tasks.parseLink({ url }),
   });
 
   return { createTask, deleteTask, parseLink, tasksQuery, updateTask };

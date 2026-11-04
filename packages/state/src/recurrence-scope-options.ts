@@ -9,8 +9,6 @@ export interface RecurrenceScopeOption<TValue extends string = string> {
   value: TValue;
 }
 
-export type RecurrenceScopeValue = RecurrenceScope;
-
 export const RECURRENCE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<RecurrenceScope>[] =
   [
     { label: "Only this occurrence", value: "this" },
@@ -18,14 +16,14 @@ export const RECURRENCE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<Recurrence
     { label: "This and following", value: "following" },
   ] as const;
 
+// Task updates and deletes offer the same two scopes.
+const TASK_SCOPE_OPTIONS = [
+  { label: "Only this occurrence", value: "this" },
+  { label: "This and following", value: "following" },
+] as const;
+
 export const TASK_UPDATE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<UpdateScope>[] =
-  [
-    { label: "Only this occurrence", value: "this" },
-    { label: "This and following", value: "following" },
-  ] as const;
+  TASK_SCOPE_OPTIONS;
 
 export const TASK_DELETE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<DeleteScope>[] =
-  [
-    { label: "Only this occurrence", value: "this" },
-    { label: "This and following", value: "following" },
-  ] as const;
+  TASK_SCOPE_OPTIONS;

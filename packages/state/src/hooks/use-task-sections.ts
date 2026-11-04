@@ -7,35 +7,17 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "../atoms/current-date";
-import { isInboxTask } from "../task-search-routing";
+import {
+  isDoneOnDate,
+  isInboxTask,
+  isOverdueTask,
+  isUnplannedTodayTask,
+} from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
 /** Filter out recurring tasks (both masters and occurrences). */
 export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
   task.seriesMasterId === null;
-
-/** Overdue: uncompleted tasks with past due date or past end time (start + duration). */
-export const isOverdue = (
-  task: TaskSelectDecoded,
-  today: Temporal.PlainDate,
-  nowZdt: Temporal.ZonedDateTime,
-  timeZone: string
-): boolean => {
-  const hasPastDueDate =
-    task.dueDate !== null &&
-    Temporal.PlainDate.compare(task.dueDate, today) < 0;
-  const hasPastStartTime =
-    task.startDate !== null &&
-    task.startTime !== null &&
-    Temporal.ZonedDateTime.compare(
-      task.startDate
-        .toZonedDateTime({ plainTime: task.startTime, timeZone })
-        .add({ minutes: task.durationMinutes }),
-      nowZdt
-    ) < 0;
-
-  return task.status !== "done" && (hasPastDueDate || hasPastStartTime);
-};
 
 /** Planned: scheduled on the target calendar date. Today excludes overdue tasks. */
 const isPlanned = (
@@ -56,32 +38,7 @@ const isPlanned = (
 
   return (
     Temporal.PlainDate.compare(targetDate, today) !== 0 ||
-    !isOverdue(task, today, nowZdt, timeZone)
-  );
-};
-
-/**
- * Unplanned: unscheduled tasks with a start date and no start time.
- * Recurring occurrences stay scoped to today so older untouched instances do not
- * accumulate in the Today view.
- */
-const isUnplanned = (
-  task: TaskSelectDecoded,
-  today: Temporal.PlainDate
-): boolean => {
-  if (task.startDate === null || task.startTime !== null) {
-    return false;
-  }
-
-  const startsOnOrBeforeToday =
-    task.seriesMasterId === null
-      ? Temporal.PlainDate.compare(task.startDate, today) <= 0
-      : Temporal.PlainDate.compare(task.startDate, today) === 0;
-
-  return (
-    startsOnOrBeforeToday &&
-    (task.dueDate === null ||
-      Temporal.PlainDate.compare(task.dueDate, today) > 0)
+    !isOverdueTask(task, today, nowZdt, timeZone)
   );
 };
 
@@ -94,18 +51,6 @@ const isUnplannedOnDate = (
   task.startDate !== null &&
   task.startTime === null &&
   Temporal.PlainDate.compare(task.startDate, targetDate) === 0;
-
-/** Done on target date: completed tasks updated on that local date. */
-const isDoneOnDate = (
-  task: TaskSelectDecoded,
-  targetDate: Temporal.PlainDate,
-  timeZone: string
-): boolean =>
-  task.status === "done" &&
-  Temporal.PlainDate.compare(
-    task.updatedAt.toZonedDateTimeISO(timeZone).toPlainDate(),
-    targetDate
-  ) === 0;
 
 interface UseTaskSectionsOptions {
   targetDate?: Temporal.PlainDate;
@@ -143,18 +88,13 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
       // Date view sections. Overdue is only meaningful for real today.
       const isTargetToday = Temporal.PlainDate.compare(targetDate, today) === 0;
       const overdue = isTargetToday
-        ? tasks.filter(
-            (task) =>
-              task.status !== "done" && isOverdue(task, today, nowZdt, timeZone)
-          )
+        ? tasks.filter((task) => isOverdueTask(task, today, nowZdt, timeZone))
         : [];
       const planned = tasks.filter((task) =>
         isPlanned(task, targetDate, today, nowZdt, timeZone)
       );
       const unplanned = isTargetToday
-        ? tasks.filter(
-            (task) => task.status !== "done" && isUnplanned(task, today)
-          )
+        ? tasks.filter((task) => isUnplannedTodayTask(task, today))
         : tasks.filter((task) => isUnplannedOnDate(task, targetDate));
       // Done: completed on the target date in the user's timezone.
       const done = tasks.filter((task) =>

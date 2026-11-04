@@ -4,10 +4,17 @@ import {
   DefaultServices,
   make as makePgDrizzle,
 } from "drizzle-orm/effect-postgres";
-import { Context, Effect, Layer, Redacted } from "effect";
+import { Context, Duration, Effect, Layer, Redacted } from "effect";
 import { relations as dbRelations } from "./schema/relations";
 
 export const PgClientLive = pgClientLayer({
+  // The default is 60 s. An instance that wakes from a longer idle gap closes
+  // the pooled connection before the waking request runs, so that request
+  // opens a new one. See "Postgres connections" in documents/services.md.
+  idleTimeout: Duration.minutes(4),
+  // Matches postgres.js (legacy.ts). Probes keep a NAT mapping alive and
+  // detect a dead peer while the connection sits idle.
+  keepAlive: Duration.seconds(60),
   // Production connects through Supabase's transaction-mode pooler, which
   // can't keep named prepared statements across transactions. The previous
   // pg-based client never named its statements either.

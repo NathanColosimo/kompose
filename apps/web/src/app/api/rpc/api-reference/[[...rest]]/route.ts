@@ -1,5 +1,4 @@
 import { createContext } from "@kompose/api/context";
-import { errorStatusMap } from "@kompose/api/error-status";
 import { appRouter } from "@kompose/api/routers/index";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
@@ -12,7 +11,6 @@ const generator = new OpenAPIGenerator({
 });
 
 const apiHandler = new OpenAPIHandler(appRouter, {
-  errorStatusMap,
   plugins: [
     new OpenAPIReferenceHandlerPlugin({
       spec: () =>

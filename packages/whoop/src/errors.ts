@@ -8,7 +8,15 @@ export class WhoopApiError extends Schema.TaggedError<WhoopApiError>()(
     operation: Schema.String,
     status: Schema.NullOr(Schema.Number),
   }
-) {}
+) {
+  /** What the API sends the client; the other fields stay on the server. */
+  get publicError() {
+    return {
+      code: "BAD_GATEWAY",
+      message: "WHOOP request failed. Try again.",
+    } as const;
+  }
+}
 
 export class WhoopParseError extends Schema.TaggedError<WhoopParseError>()(
   "WhoopParseError",

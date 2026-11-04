@@ -1,30 +1,9 @@
 "use client";
 
-import type { RecurrenceScope } from "@kompose/google-cal/schema";
+import type { MoveEventInput } from "@kompose/api/routers/google-cal/contract";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
-
-interface MoveGoogleEventInput {
-  accountId: string;
-  calendarId: string;
-  destinationCalendarId: string;
-  eventId: string;
-  scope: RecurrenceScope;
-}
-
-function mergeQuerySnapshots(
-  left: readonly [readonly unknown[], unknown][],
-  right: readonly [readonly unknown[], unknown][]
-) {
-  const deduped = new Map<string, readonly [readonly unknown[], unknown]>();
-
-  for (const item of [...left, ...right]) {
-    deduped.set(JSON.stringify(item[0]), item);
-  }
-
-  return Array.from(deduped.values());
-}
 
 /**
  * Google event move mutation (supports recurrence scope).
@@ -34,16 +13,11 @@ export function useMoveGoogleEventMutation() {
   const { orpc, notifyError } = useStateConfig();
 
   return useMutation({
-    mutationFn: async (variables: MoveGoogleEventInput) =>
-      orpc.googleCal.events.move({
-        accountId: variables.accountId,
-        calendarId: variables.calendarId,
-        eventId: variables.eventId,
-        destinationCalendarId: variables.destinationCalendarId,
-        scope: variables.scope,
-      }),
+    mutationFn: async (variables: MoveEventInput) =>
+      orpc.googleCal.events.move(variables),
     onMutate: async (variables) => {
-      // Invalidate both calendars for "move" operations.
+      // Snapshot both calendars for "move" operations. The destination is only
+      // read when it differs from the source, so the two lists never overlap.
       const sourceKey = getGoogleEventsByCalendarQueryKey({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -73,7 +47,7 @@ export function useMoveGoogleEventMutation() {
             });
 
       return {
-        previousQueries: mergeQuerySnapshots(sourceQueries, destinationQueries),
+        previousQueries: [...sourceQueries, ...destinationQueries],
       };
     },
     onError: (err, _variables, context) => {

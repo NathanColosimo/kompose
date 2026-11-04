@@ -1,5 +1,6 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
 import { Schema } from "effect";
+import type { PublicError } from "../../errors";
 
 /** Identifies which provider a URL belongs to */
 export type LinkProvider = LinkMeta["provider"];
@@ -11,7 +12,15 @@ export class LinkParseError extends Schema.TaggedError<LinkParseError>()(
     message: Schema.String,
     url: Schema.String,
   }
-) {}
+) {
+  /** `message` describes the failure for logs, so users get a fixed one. */
+  get publicError(): PublicError {
+    return {
+      code: "UNPROCESSABLE_CONTENT",
+      message: "Couldn't load details for this link.",
+    };
+  }
+}
 
 const FIFTEEN_MINUTES_SECS = 900;
 

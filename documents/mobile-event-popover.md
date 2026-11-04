@@ -15,10 +15,8 @@ Mobile keeps the event sheet for event create/edit, but empty-slot creation now 
 
 ## Architecture and state
 
-- Uses `react-hook-form` in `EventEditorSheet` for event form state.
-- Uses a single `EventEditorSheet` for create/edit with thin wrappers:
-  - `CreateEventEditorSheet`
-  - `EditEventEditorSheet`
+- Uses `react-hook-form` in `EventEditorSheet` for event form state; the form values are the `EventDraft` itself.
+- Uses a single exported `EventEditorSheet` for create and edit. The calendar mounts it only while a draft is open.
 - Uses the existing `TaskEditorSheet` in `mode="create"` for task creation from the calendar tab.
 - Event-specific recurrence parsing/building and default scope logic are centralized in `@kompose/state`.
 
