@@ -403,8 +403,8 @@ separate `Kompose Dev` profile.
 
 ### 6.16 OpenTelemetry
 - **Server-side only**: No client-side OTel SDK in web or native. Network latency is measured via `x-request-start` header (injected by both clients, read on server).
-- **Stack**: `TracerProvider` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `BatchSpanProcessor` → `SpanAttributeFilter` → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
-- **Key config**: no resource detectors (no noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
+- **Stack**: `TracerProvider` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `ExportSpanProcessor` (batching) → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
+- **Key config**: no resource detectors (no noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `ExportSpanProcessor` strips `next.span_name`/`next.span_type` and flushes at request end on Vercel.
 - **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures the provider is registered before Next.js creates root request spans.
 - See [`otel.md`](./otel.md) for full details.
 
