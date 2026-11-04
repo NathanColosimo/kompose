@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { authClient, SignedOutError } from "@/lib/auth-client";
+import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
 import { isToastSuppressedPath } from "@/lib/toast-suppression";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
@@ -66,20 +66,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         });
         return result?.data?.user ?? null;
       },
-      listAccounts: async () => {
-        const result = await authClient.listAccounts();
-        if (result?.error?.status === 401) {
-          throw new SignedOutError();
-        }
-        if (
-          !(result && "data" in result) ||
-          result.data === null ||
-          result.data === undefined
-        ) {
-          return null;
-        }
-        return { data: result.data };
-      },
+      listAccounts: () =>
+        authClient.listAccounts({ fetchOptions: { throw: true } }),
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
         await new Promise<void>((resolve, reject) => {
           authClient

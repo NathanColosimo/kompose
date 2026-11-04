@@ -5,23 +5,22 @@ import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { refetchSessionIfSignedIn, SignedOutError } from "@/lib/auth-client";
+import { authClient } from "@/lib/auth-client";
 
 interface CreateAppQueryClientOptions {
   suppressToasts: boolean;
 }
 
 /**
- * A request made without a session. There's nothing to retry or report: the
- * dashboard's session check redirects to /login. Its queries start before that
- * check returns (see DashboardQueries), so a signed-out visitor gets these.
- * After sign-in they mean the session ended, so the session is refetched.
+ * The dashboard's queries start before its session check returns, so a
+ * signed-out visitor gets these; the layout redirects to /login.
  */
-function isSignedOut(error: unknown) {
-  return (
-    error instanceof SignedOutError ||
-    (error instanceof ORPCError && error.code === "UNAUTHORIZED")
-  );
+function isUnauthorized(error: Error) {
+  if (error instanceof ORPCError) {
+    return error.code === "UNAUTHORIZED";
+  }
+  // Better Auth's BetterFetchError (not exported at runtime) carries the status.
+  return "status" in error && error.status === 401;
 }
 
 export function createAppQueryClient({
@@ -30,13 +29,21 @@ export function createAppQueryClient({
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        retry: (failureCount, error) => !isSignedOut(error) && failureCount < 3,
+        retry: (failureCount, error) =>
+          !isUnauthorized(error) && failureCount < 3,
       },
     },
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (isSignedOut(error)) {
-          refetchSessionIfSignedIn();
+        if (isUnauthorized(error)) {
+          // With a session loaded, the session ended (revoked or expired), and
+          // Better Auth only rechecks on focus. Refetching shows no session and
+          // the layout redirects. Without one, the initial check is in flight
+          // and a refetch would restart it.
+          const session = authClient.$store.atoms.session.get();
+          if (session.data) {
+            session.refetch();
+          }
           return;
         }
         if (suppressToasts) {
