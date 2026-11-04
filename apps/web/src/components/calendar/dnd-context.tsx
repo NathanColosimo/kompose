@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  closestCenter,
   DndContext,
   type DragEndEvent,
-  type DragOverEvent,
+  type DragMoveEvent,
   DragOverlay,
   type DragStartEvent,
+  type DroppableContainer,
   PointerSensor,
-  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -19,7 +18,7 @@ import type {
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
@@ -34,7 +33,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
+import { calendarDropSlotAtom } from "@/state/calendar-drop-slot";
 import { PIXELS_PER_HOUR } from "./constants";
+import {
+  calendarCollisionDetection,
+  resolveDropSlot,
+} from "./dnd/day-column-slots";
 import {
   buildGoogleMoveUpdate,
   buildGoogleResizeUpdate,
@@ -47,7 +51,7 @@ import {
   durationInMinutes,
   MINUTES_STEP,
 } from "./dnd/helpers";
-import type { DragData, PreviewRect, SlotData } from "./dnd/types";
+import type { DragData, PreviewRect } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 
@@ -131,6 +135,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const { activeTask, activeGoogleEvent, isResizing, previewRect } = drag;
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
+  // Drop target the preview was last computed for; skips unchanged moves.
+  const lastDropTargetKeyRef = useRef<string | null>(null);
+  const setDropSlot = useSetAtom(calendarDropSlotAtom);
   const stableChildren = useMemo(() => children, [children]);
 
   // State for pending recurring task updates that need scope selection
@@ -155,16 +162,19 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
     dispatch({ rect: null, type: "set-preview" });
-  }, []);
+    setDropSlot(null);
+  }, [setDropSlot]);
 
   const resetDragState = useCallback(() => {
     dispatch({ type: "reset" });
+    setDropSlot(null);
+    lastDropTargetKeyRef.current = null;
     pendingPreviewRef.current = null;
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     }
-  }, []);
+  }, [setDropSlot]);
 
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
@@ -314,9 +324,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Route calendar slot drops to the correct drop handler based on drag type.
   const handleSlotDrop = useCallback(
-    (data: DragData, slotData: SlotData) => {
-      const targetDateTime = slotData.dateTime;
-
+    (data: DragData, targetDateTime: Temporal.ZonedDateTime) => {
       const isResizeEnd =
         (data.type === "task-resize" || data.type === "google-event-resize") &&
         data.direction === "end";
@@ -378,13 +386,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // Get slot data from droppable
-      const slotData = over.data?.current as SlotData | undefined;
-      if (!slotData?.dateTime) {
+      const slot = resolveDropSlot({
+        columnData: over.data.current,
+        columnRect: over.rect,
+        draggedRect: active.rect.current.translated,
+      });
+      if (!slot) {
         return;
       }
 
-      handleSlotDrop(data, slotData);
+      handleSlotDrop(data, slot.dateTime);
     },
     [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
@@ -588,15 +599,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [previewGoogleMove, previewGoogleResize, previewTaskMove, previewTaskResize]
   );
 
-  // Prefer droppables the pointer is inside; fall back to closest center.
-  const collisionDetection = useCallback<typeof closestCenter>((args) => {
-    const intersections = rectIntersection(args);
-    if (intersections.length > 0) {
-      return intersections;
-    }
-    return closestCenter(args);
-  }, []);
-
   const overlayContent = useMemo(() => {
     if (activeTask && !isResizing) {
       return (
@@ -623,37 +625,53 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     return null;
   }, [activeGoogleEvent, activeTask, isResizing]);
 
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { active, over } = event;
-
-      if (!(over && active)) {
-        clearPreview();
-        return;
-      }
-
+  // Runs on every pointer move. The slot within a column comes from geometry,
+  // so read the current top collision rather than waiting for `onDragOver`,
+  // which only fires when the hovered column changes.
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      const { active, collisions } = event;
       const data = active.data.current as DragData | undefined;
-      const overRect = over.rect;
-      const slotData = over.data?.current as SlotData | undefined;
+      const column = collisions?.[0]?.data?.droppableContainer as
+        | DroppableContainer
+        | undefined;
+      const slot = resolveDropSlot({
+        columnData: column?.data.current,
+        columnRect: column?.rect.current,
+        draggedRect: active.rect.current.translated,
+      });
 
-      // Only show preview when hovering over calendar slots (which have dateTime)
-      // Sidebar droppables have different data (e.g. activeTab) without dateTime
-      if (!(overRect && data && slotData?.dateTime)) {
-        clearPreview();
+      // Only show a preview over calendar columns; the sidebar has none.
+      if (!(data && slot)) {
+        if (lastDropTargetKeyRef.current !== null) {
+          lastDropTargetKeyRef.current = null;
+          clearPreview();
+        }
         return;
       }
 
-      const targetDateTime = slotData.dateTime;
+      const targetDateTime = slot.dateTime;
+      const slotRect = slot.rect;
+      const targetKey = `${targetDateTime.toString()}|${slotRect.top}|${slotRect.left}|${slotRect.width}`;
+      if (targetKey === lastDropTargetKeyRef.current) {
+        return;
+      }
+      lastDropTargetKeyRef.current = targetKey;
+      setDropSlot({
+        dayKey: targetDateTime.toPlainDate().toString(),
+        index: slot.index,
+      });
+
       const minutesFromDayStart =
         targetDateTime.hour * 60 + targetDateTime.minute;
       const columnTop =
-        overRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
+        slotRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
 
       pendingPreviewRef.current = computePreviewForDrag(
         data,
         targetDateTime,
         columnTop,
-        { left: overRect.left, width: overRect.width }
+        { left: slotRect.left, width: slotRect.width }
       );
 
       if (previewFrameRef.current === null) {
@@ -664,7 +682,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         });
       }
     },
-    [clearPreview, computePreviewForDrag]
+    [clearPreview, computePreviewForDrag, setDropSlot]
   );
 
   // Handle scope selection for recurring task updates
@@ -691,10 +709,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     <>
       <DndContext
         autoScroll={false}
-        collisionDetection={collisionDetection}
+        collisionDetection={calendarCollisionDetection}
         onDragCancel={handleDragCancel}
         onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
+        onDragMove={handleDragMove}
         onDragStart={handleDragStart}
         sensors={sensors}
       >

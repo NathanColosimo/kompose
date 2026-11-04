@@ -1,10 +1,14 @@
 "use client";
 
+import { useDroppable } from "@dnd-kit/core";
 import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
-import { useAtomValue } from "jotai";
-import { memo } from "react";
+import { atom, useAtomValue } from "jotai";
+import { memo, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
+import { calendarDropSlotAtom } from "@/state/calendar-drop-slot";
 import { PIXELS_PER_HOUR } from "../constants";
+import { SLOT_HEIGHT } from "../dnd/day-column-slots";
+import type { DayColumnDropData } from "../dnd/types";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
@@ -51,7 +55,6 @@ export const DayColumn = memo(function DayColumnInner({
           {SLOT_MINUTES.map((minutes) => (
             <TimeSlot
               date={date}
-              droppableDisabled={droppableDisabled}
               hour={hour}
               key={minutes}
               minutes={minutes}
@@ -65,11 +68,62 @@ export const DayColumn = memo(function DayColumnInner({
           ))}
         </div>
       ))}
+      <DayColumnDropTarget
+        date={date}
+        disabled={droppableDisabled}
+        timeZone={timeZone}
+      />
       <div className="pointer-events-none absolute inset-0">{children}</div>
       <CurrentTimeIndicator date={date} />
     </div>
   );
 });
+
+/**
+ * The column's one droppable, covering exactly the slot area. The highlight
+ * re-renders only when the hovered slot in this column changes.
+ */
+function DayColumnDropTarget({
+  date,
+  disabled,
+  timeZone,
+}: {
+  date: Temporal.PlainDate;
+  disabled: boolean;
+  timeZone: string;
+}) {
+  const dayKey = date.toString();
+  const data = useMemo(
+    (): DayColumnDropData => ({ date, timeZone, type: "day-column" }),
+    [date, timeZone]
+  );
+  const { setNodeRef } = useDroppable({
+    data,
+    disabled,
+    id: `day-column-${dayKey}`,
+  });
+  const highlightIndexAtom = useMemo(
+    () =>
+      atom((get) => {
+        const slot = get(calendarDropSlotAtom);
+        return slot?.dayKey === dayKey ? slot.index : null;
+      }),
+    [dayKey]
+  );
+  const highlightIndex = useAtomValue(highlightIndexAtom);
+
+  return (
+    <div className="pointer-events-none absolute inset-0" ref={setNodeRef}>
+      {highlightIndex === null ? null : (
+        <div
+          className="absolute inset-x-0 bg-primary/10"
+          data-drop-highlight
+          style={{ height: SLOT_HEIGHT, top: highlightIndex * SLOT_HEIGHT }}
+        />
+      )}
+    </div>
+  );
+}
 
 /** The now line, in the displayed time zone; it moves columns at midnight. */
 function CurrentTimeIndicator({ date }: { date: Temporal.PlainDate }) {
