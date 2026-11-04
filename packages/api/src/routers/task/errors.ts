@@ -23,5 +23,3 @@ export class InvalidTaskError extends Schema.TaggedError<InvalidTaskError>()(
     return { code: "BAD_REQUEST", message: this.message };
   }
 }
-
-export type TaskError = TaskNotFoundError | InvalidTaskError;

@@ -4,7 +4,7 @@ import {
   type TagUpdate,
   tagTable,
 } from "@kompose/db/schema/tag";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { Effect } from "effect";
 
 export const dbSelectTags = Effect.fn("TagDB.selectTags")(function* (
@@ -39,16 +39,6 @@ export const dbSelectTagById = Effect.fn("TagDB.selectTagById")(function* (
     .from(tagTable)
     .where(and(eq(tagTable.userId, userId), eq(tagTable.id, tagId)));
 });
-
-export const dbSelectTagIdsByIds = Effect.fn("TagDB.selectTagIdsByIds")(
-  function* (userId: string, tagIds: string[]) {
-    const db = yield* Database;
-    return yield* db
-      .select({ id: tagTable.id })
-      .from(tagTable)
-      .where(and(eq(tagTable.userId, userId), inArray(tagTable.id, tagIds)));
-  }
-);
 
 export const dbInsertTag = Effect.fn("TagDB.insertTag")(function* (
   values: TagInsertRow[]
