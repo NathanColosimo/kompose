@@ -46,7 +46,7 @@ const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
  * The user's tasks with their tags, newest first. Params left unset don't
  * filter (Drizzle needs `EmptyFilter` there; `undefined` throws).
  */
-const dbSelect = (userId: string, params: TaskListParams = {}) =>
+const dbSelect = (userId: string, params: TaskListParams) =>
   Effect.gen(function* () {
     const db = yield* Database;
     const text = params.query ? `%${escapeLike(params.query)}%` : null;
@@ -877,7 +877,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
   make: Effect.gen(function* () {
     const listTasks = Effect.fn("TaskService.listTasks")(function* (
       userId: string,
-      params: TaskListParams = {}
+      params: TaskListParams
     ) {
       yield* Effect.annotateCurrentSpan("userId", userId);
       return yield* dbSelect(userId, params);
