@@ -13,7 +13,7 @@ import { Temporal } from "temporal-polyfill";
 /**
  * The magic box: a small on-device model (packages/task-parser) labels the
  * text and code resolves the labels into task fields. Parsing takes a few
- * milliseconds in a Worker, so it runs on every keystroke without a debounce.
+ * milliseconds in a worker, so it runs on every keystroke without a debounce.
  */
 export interface MagicParse {
   /**
@@ -25,11 +25,17 @@ export interface MagicParse {
 }
 
 /**
- * Connects to the parser behind `port`, or rejects if `worker` fails to start
- * (e.g. its script can't be fetched). The port never hears about that, so
- * without the `error` listener `load` would wait forever.
+ * The parser runs in a SharedWorker, so a parse never blocks typing and every
+ * window of the app (the desktop dashboard and command bar, for one) shares
+ * one loaded model.
  */
-function connect(worker: Worker | SharedWorker, port: Worker | MessagePort) {
+function loadParser() {
+  const worker = new SharedWorker(
+    new URL("./task-parser.worker.ts", import.meta.url),
+    { name: "task-parser", type: "module" }
+  );
+  // A worker whose script can't load only fires `error`; the port never
+  // hears, so without this `load` would wait forever.
   const failedToStart = new Promise<never>((_, reject) => {
     worker.addEventListener(
       "error",
@@ -37,38 +43,7 @@ function connect(worker: Worker | SharedWorker, port: Worker | MessagePort) {
       { once: true }
     );
   });
-  return Promise.race([connectTaskParser(port), failedToStart]);
-}
-
-/**
- * The parser runs in a worker so a parse never blocks typing. A SharedWorker,
- * so every window of the app (the desktop dashboard and command bar, for one)
- * shares one loaded model. A page falls back to a worker of its own when
- * SharedWorker is missing (Chrome on Android), throws (Firefox when storage
- * access is denied) or fails to start.
- */
-async function loadParser() {
-  let shared: SharedWorker | undefined;
-  try {
-    shared = new SharedWorker(
-      new URL("./task-parser.worker.ts", import.meta.url),
-      { name: "task-parser", type: "module" }
-    );
-    shared.port.start();
-    return await connect(shared, shared.port);
-  } catch {
-    shared?.port.close();
-  }
-  const worker = new Worker(
-    new URL("./task-parser.worker.ts", import.meta.url),
-    { type: "module" }
-  );
-  try {
-    return await connect(worker, worker);
-  } catch (error) {
-    worker.terminate();
-    throw error;
-  }
+  return Promise.race([connectTaskParser(worker.port), failedToStart]);
 }
 
 const parserQuery = queryOptions({

@@ -1,8 +1,7 @@
 /// <reference lib="webworker" />
 /**
- * Serves workerContract off the main thread; `worker.ts` is the entry for a
- * dedicated Worker or a SharedWorker. Connect with `connectTaskParser`
- * (worker-client.ts).
+ * Serves workerContract off the main thread; `worker.ts` is the SharedWorker
+ * entry. Connect with `connectTaskParser` (worker-client.ts).
  */
 import { implement, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/message-port";
@@ -74,8 +73,5 @@ const router = os.router({
   }),
 });
 
-/**
- * Serves the parser on each port it upgrades: a dedicated worker's scope, or
- * a started MessagePort.
- */
+/** Serves the parser on each port it upgrades, once the port is started. */
 export const taskParserHandler = new RPCHandler(router, { serializer });

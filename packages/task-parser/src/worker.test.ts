@@ -11,27 +11,8 @@ const now = Temporal.ZonedDateTime.from(
 );
 
 describe("worker parser", () => {
-  test("parses like the in-thread parser", async () => {
-    const worker = new Worker(new URL("./worker.ts", import.meta.url).href, {
-      type: "module",
-    });
-    const client = await connectTaskParser(
-      worker,
-      pathToFileURL(WEIGHTS_FILE).href
-    );
-    const parseHere = createTaskParser(shippedWeights());
-    const tags = [{ id: "f", name: "Family" }];
-    const text = "call mom tomorrow at 4 for 30m #family";
-    const remote = await client.parse({ now, tags, text });
-    const here = parseHere(text, { now, tags });
-    // Stringified so the Temporal fields are compared too.
-    expect(JSON.stringify(remote)).toBe(JSON.stringify(here));
-    expect(remote.startDate).toBeInstanceOf(Temporal.PlainDate);
-    expect(remote.startTime).toBeInstanceOf(Temporal.PlainTime);
-    worker.terminate();
-  });
-
-  test("windows connected to one worker share one loaded model", async () => {
+  // One test: the server's loaded model is module state, shared by every port.
+  test("windows share one loaded model that parses like the in-thread parser", async () => {
     const fetchSpy = spyOn(globalThis, "fetch");
     // Each channel stands in for one window's SharedWorker port.
     const channels = [new MessageChannel(), new MessageChannel()];
@@ -40,16 +21,22 @@ describe("worker parser", () => {
         channels.map(({ port1, port2 }) => {
           taskParserHandler.upgrade(port1);
           port1.start();
-          port2.start();
           return connectTaskParser(port2, pathToFileURL(WEIGHTS_FILE).href);
         })
       );
-      const text = "call mom tomorrow at 4";
-      const [first, second] = await Promise.all(
-        clients.map((client) => client.parse({ now, tags: [], text }))
+      const tags = [{ id: "f", name: "Family" }];
+      const text = "call mom tomorrow at 4 for 30m #family";
+      const here = createTaskParser(shippedWeights())(text, { now, tags });
+      const remotes = await Promise.all(
+        clients.map((client) => client.parse({ now, tags, text }))
       );
+      for (const remote of remotes) {
+        // Stringified so the Temporal fields are compared too.
+        expect(JSON.stringify(remote)).toBe(JSON.stringify(here));
+        expect(remote.startDate).toBeInstanceOf(Temporal.PlainDate);
+        expect(remote.startTime).toBeInstanceOf(Temporal.PlainTime);
+      }
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(first)).toBe(JSON.stringify(second));
     } finally {
       fetchSpy.mockRestore();
       for (const { port1, port2 } of channels) {
