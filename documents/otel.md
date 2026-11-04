@@ -49,7 +49,7 @@ The resource is the OTel default (`telemetry.sdk.*`) plus `service.name`. No res
 
 ### Why not NodeSDK
 
-`@opentelemetry/sdk-node` statically imports every exporter it can build from env vars (gRPC, protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs. That put ~540 KB into the `/api/rpc` server bundle (2.67 MB → 2.13 MB without it). Vercel's Bun runtime has no bytecode cache, so every cold start parsed it again. Wiring the provider by hand halved `register instrumentation` locally (~21 ms → ~10 ms) and saves ~8 MB RSS per instance. Keep new OTel imports to the specific packages, not `sdk-node` or the `@effect/opentelemetry` barrel (import `@effect/opentelemetry/OtelTracer`).
+`@opentelemetry/sdk-node` statically imports every exporter it can build from env vars (gRPC, protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs. That put ~540 KB into the `/api/rpc` server bundle (2.67 MB → 2.13 MB without it). Every cold start loaded it, and on the Bun runtime (before Node 26) parsed it from source. Wiring the provider by hand halved `register instrumentation` locally (~21 ms → ~10 ms) and saves ~8 MB RSS per instance. Keep new OTel imports to the specific packages, not `sdk-node` or the `@effect/opentelemetry` barrel (import `@effect/opentelemetry/OtelTracer`).
 
 ### Effect telemetry layer
 

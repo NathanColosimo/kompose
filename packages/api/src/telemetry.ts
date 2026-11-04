@@ -28,8 +28,7 @@ import { Layer } from "effect";
  * This wires the provider by hand instead of using NodeSDK. NodeSDK
  * statically imports every exporter it can build from env vars (gRPC,
  * protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs, which put
- * ~540 KB into the /api/rpc server bundle. Each cold start on Vercel's
- * Bun runtime parses that again, since Bun functions get no bytecode cache.
+ * ~540 KB into the /api/rpc server bundle, which every cold start loads.
  *
  * Next.js auto-instruments fetch when it detects a global TracerProvider.
  * We disable that via NEXT_OTEL_FETCH_DISABLED=1 in .env since we rely
