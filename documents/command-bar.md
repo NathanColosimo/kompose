@@ -38,8 +38,10 @@ fields updates as you type. Typing `#` suggests your tags.
   (`packages/task-parser/src/worker-contract.ts`); Temporal values cross the
   worker boundary as Temporal objects. Where SharedWorker is available, every
   window and tab of a deploy shares one worker and one loaded model (the
-  desktop dashboard and popup used to hold about 25 MB each); otherwise each
-  page gets a dedicated Worker.
+  desktop dashboard and popup used to hold about 25 MB each). Each page gets a
+  dedicated Worker instead when SharedWorker is missing, throws on creation, or
+  fails to start; a worker's `error` event ends the wait, so a script that
+  can't load never leaves the magic box waiting.
 - Enter before the model has a parse waits for it.
 
 ### URL detection

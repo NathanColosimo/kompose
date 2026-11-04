@@ -24,6 +24,21 @@ export interface MagicParse {
   task: ParsedTask | null;
 }
 
+/**
+ * Rejects if `worker` fails to start, e.g. its script can't be fetched.
+ * The RPC port never hears about that, so without this `load` would wait
+ * forever and the magic box would never come on.
+ */
+function startupFailure(worker: Worker | SharedWorker): Promise<never> {
+  return new Promise((_, reject) => {
+    worker.addEventListener(
+      "error",
+      () => reject(new Error("The task parser worker failed to start")),
+      { once: true }
+    );
+  });
+}
+
 /** A parser in a worker of its own. */
 async function loadDedicatedParser() {
   const worker = new Worker(
@@ -31,7 +46,10 @@ async function loadDedicatedParser() {
     { type: "module" }
   );
   try {
-    return await connectTaskParser(worker);
+    return await Promise.race([
+      connectTaskParser(worker),
+      startupFailure(worker),
+    ]);
   } catch (error) {
     worker.terminate();
     throw error;
@@ -42,19 +60,25 @@ async function loadDedicatedParser() {
  * The parser runs in a worker so a parse never blocks typing. A SharedWorker
  * where available, so every window and tab of the app (the desktop dashboard
  * and command bar, for one) shares one loaded model instead of one each.
+ * Falls back to a dedicated worker if the SharedWorker can't be created
+ * (Firefox throws when storage access is denied) or fails to start.
  */
 async function loadParser() {
   if (typeof SharedWorker === "undefined") {
     return loadDedicatedParser();
   }
-  const worker = new SharedWorker(
-    new URL("./task-parser.shared-worker.ts", import.meta.url),
-    { name: "task-parser", type: "module" }
-  );
+  let worker: SharedWorker | undefined;
   try {
-    return await connectTaskParser(worker.port);
+    worker = new SharedWorker(
+      new URL("./task-parser.shared-worker.ts", import.meta.url),
+      { name: "task-parser", type: "module" }
+    );
+    return await Promise.race([
+      connectTaskParser(worker.port),
+      startupFailure(worker),
+    ]);
   } catch {
-    worker.port.close();
+    worker?.port.close();
     return loadDedicatedParser();
   }
 }
