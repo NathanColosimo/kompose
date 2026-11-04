@@ -4,7 +4,14 @@ import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
+import { SLOT_HEIGHT } from "../dnd/day-column-slots";
 import { MINUTES_STEP } from "../dnd/helpers";
+
+/**
+ * Pixels, not rem: event positions and drop targets use PIXELS_PER_HOUR, so
+ * the grid must not grow with the browser's default font size.
+ */
+const slotStyle = { height: SLOT_HEIGHT };
 
 interface TimeSlotProps {
   children?: React.ReactNode;
@@ -120,7 +127,7 @@ export const TimeSlot = memo(function TimeSlotInner({
   return (
     <button
       className={cn(
-        "block h-5 min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none",
+        "block min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none",
         isThirtyMinuteBoundary ? "border-border/50 border-t" : ""
       )}
       data-calendar-slot
@@ -129,6 +136,7 @@ export const TimeSlot = memo(function TimeSlotInner({
       onMouseLeave={onSlotLeave}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      style={slotStyle}
       type="button"
     >
       {children}

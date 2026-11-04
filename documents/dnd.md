@@ -4,7 +4,7 @@
 
 - DnD is powered by `@dnd-kit/core` via `CalendarDndProvider` wrapping dashboard layout.
 - Supports moving and resizing for tasks and Google events with 15-minute slot granularity.
-- Positioning uses `PIXELS_PER_HOUR` (80px) and 15-minute slots (20px) for layout math.
+- Positioning uses `PIXELS_PER_HOUR` (80px) and 15-minute slots (20px) for layout math. Slots and hour-gutter rows get those heights as inline pixel styles, not rem classes like `h-5`, so the grid, event positions and drop targets stay aligned when the browser's default font size isn't 16px.
 - Uses Temporal API (`ZonedDateTime`, `PlainDate`) for all date/time handling.
 
 ## Current structure
