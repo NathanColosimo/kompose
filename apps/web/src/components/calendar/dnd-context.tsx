@@ -6,7 +6,6 @@ import {
   type DragMoveEvent,
   DragOverlay,
   type DragStartEvent,
-  type DroppableContainer,
   PointerSensor,
   useSensor,
   useSensors,
@@ -33,11 +32,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
-import { calendarDropSlotAtom } from "@/state/calendar-drop-slot";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   calendarCollisionDetection,
-  resolveDropSlot,
+  dropSlotAtom,
+  getDropSlot,
+  slotDateTime,
 } from "./dnd/day-column-slots";
 import {
   buildGoogleMoveUpdate,
@@ -137,7 +137,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
   // Drop target the preview was last computed for; skips unchanged moves.
   const lastDropTargetKeyRef = useRef<string | null>(null);
-  const setDropSlot = useSetAtom(calendarDropSlotAtom);
+  const setDropSlot = useSetAtom(dropSlotAtom);
   const stableChildren = useMemo(() => children, [children]);
 
   // State for pending recurring task updates that need scope selection
@@ -386,16 +386,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      const slot = resolveDropSlot({
-        columnData: over.data.current,
-        columnRect: over.rect,
-        draggedRect: active.rect.current.translated,
-      });
-      if (!slot) {
-        return;
+      const slot = getDropSlot(event.collisions);
+      if (slot) {
+        handleSlotDrop(data, slotDateTime(slot));
       }
-
-      handleSlotDrop(data, slot.dateTime);
     },
     [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
@@ -625,21 +619,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     return null;
   }, [activeGoogleEvent, activeTask, isResizing]);
 
-  // Runs on every pointer move. The slot within a column comes from geometry,
-  // so read the current top collision rather than waiting for `onDragOver`,
-  // which only fires when the hovered column changes.
+  // `onDragOver` fires only when the hovered column changes, so the slot
+  // within a column is read from the collisions on every move.
   const handleDragMove = useCallback(
     (event: DragMoveEvent) => {
-      const { active, collisions } = event;
-      const data = active.data.current as DragData | undefined;
-      const column = collisions?.[0]?.data?.droppableContainer as
-        | DroppableContainer
-        | undefined;
-      const slot = resolveDropSlot({
-        columnData: column?.data.current,
-        columnRect: column?.rect.current,
-        draggedRect: active.rect.current.translated,
-      });
+      const data = event.active.data.current as DragData | undefined;
+      const slot = getDropSlot(event.collisions);
 
       // Only show a preview over calendar columns; the sidebar has none.
       if (!(data && slot)) {
@@ -650,28 +635,20 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      const targetDateTime = slot.dateTime;
-      const slotRect = slot.rect;
-      const targetKey = `${targetDateTime.toString()}|${slotRect.top}|${slotRect.left}|${slotRect.width}`;
+      // The column rect moves when the grid scrolls mid-drag.
+      const { column, columnRect, index } = slot;
+      const targetKey = `${column.date}|${index}|${columnRect.top}|${columnRect.left}|${columnRect.width}`;
       if (targetKey === lastDropTargetKeyRef.current) {
         return;
       }
       lastDropTargetKeyRef.current = targetKey;
-      setDropSlot({
-        dayKey: targetDateTime.toPlainDate().toString(),
-        index: slot.index,
-      });
-
-      const minutesFromDayStart =
-        targetDateTime.hour * 60 + targetDateTime.minute;
-      const columnTop =
-        slotRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
+      setDropSlot(slot);
 
       pendingPreviewRef.current = computePreviewForDrag(
         data,
-        targetDateTime,
-        columnTop,
-        { left: slotRect.left, width: slotRect.width }
+        slotDateTime(slot),
+        columnRect.top,
+        columnRect
       );
 
       if (previewFrameRef.current === null) {

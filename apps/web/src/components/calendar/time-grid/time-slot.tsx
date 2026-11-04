@@ -3,20 +3,15 @@
 import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
-import { PIXELS_PER_HOUR } from "../constants";
-import { SLOT_HEIGHT } from "../dnd/day-column-slots";
+import { PIXELS_PER_HOUR, SLOT_HEIGHT } from "../constants";
 import { MINUTES_STEP } from "../dnd/helpers";
 
-/**
- * Pixels, not rem: event positions and drop targets use PIXELS_PER_HOUR, so
- * the grid must not grow with the browser's default font size.
- */
+/** Pixels, not rem, so the grid matches PIXELS_PER_HOUR at any font size. */
 const slotStyle = { height: SLOT_HEIGHT };
 
 interface TimeSlotProps {
   children?: React.ReactNode;
   date: Temporal.PlainDate;
-  hour: number;
   minutes: number;
   /** Called when mouse moves over the slot during creation drag */
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
@@ -33,7 +28,6 @@ interface TimeSlotProps {
 
 export const TimeSlot = memo(function TimeSlotInner({
   date,
-  hour,
   minutes,
   timeZone,
   children,
@@ -49,17 +43,7 @@ export const TimeSlot = memo(function TimeSlotInner({
     (event: React.MouseEvent<HTMLButtonElement>) => {
       const column = event.currentTarget.closest(
         "[data-day-column]"
-      ) as HTMLElement | null;
-      if (!column) {
-        return Temporal.ZonedDateTime.from({
-          day: date.day,
-          hour,
-          minute: minutes,
-          month: date.month,
-          timeZone,
-          year: date.year,
-        });
-      }
+      ) as HTMLElement;
       const rect = column.getBoundingClientRect();
       const offsetY = Math.min(
         Math.max(event.clientY - rect.top, 0),
@@ -84,7 +68,7 @@ export const TimeSlot = memo(function TimeSlotInner({
         year: date.year,
       });
     },
-    [date, hour, minutes, timeZone]
+    [date, timeZone]
   );
 
   const handleMouseMove = useCallback(

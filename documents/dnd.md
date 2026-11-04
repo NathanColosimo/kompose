@@ -10,7 +10,7 @@
 ## Current structure
 
 - DnD helpers/types: `dnd/helpers.ts`, `dnd/types.ts`, and `dnd/drop-handlers.ts` (snap/clamp math, drag shapes, payload builders).
-- Drop targets: `dnd/day-column-slots.ts` (collision detection and slot resolution for day columns).
+- Drop targets: `dnd/day-column-slots.ts` (collision detection, the hovered-slot atom, slot to `ZonedDateTime`).
 - Provider: `dnd-context.tsx` wires sensors, preview, and mutations using shared helpers.
 - Events: `events/task-event.tsx` and `events/google-event.tsx` handle render + drag/resize handles.
 - Time grid: `time-slot.tsx` (click-to-create mouse handlers, grid lines), `day-column.tsx` (column + its droppable and slot highlight), `day-header.tsx`, `time-gutter.tsx`, `slot-utils.ts` (hours/minutes constants).
@@ -21,8 +21,9 @@ Each day column registers one droppable (`day-column-<date>`), covering exactly 
 
 The slot under a drag is derived from geometry in `dnd/day-column-slots.ts`, reproducing what one droppable per slot gave:
 
-- `calendarCollisionDetection` scores each column by its best 15-minute slot with dnd-kit's `rectIntersection` formula (dragged rect vs. slot rect, earliest slot wins ties), so columns compete with the sidebar droppable exactly as slots did. When the dragged rect overlaps nothing, it falls back to the nearest slot center, like `closestCenter`.
-- `resolveDropSlot` turns a column droppable plus `active.rect.current.translated` into `{ dateTime, index, rect }`. The target follows the dragged rect (overlay or resize handle), not the pointer.
+- `calendarCollisionDetection` runs dnd-kit's own `rectIntersection`, falling back to `closestCenter`, with each column measured as the slot that would win inside it. For intersection that is the earliest slot with the most vertical overlap (the first slot the dragged rect fully covers, else the one holding its center); for the fallback, the slot holding the dragged rect's center. Columns therefore compete with the sidebar droppable as the slots did.
+- The chosen slot is recorded on each column's collision as `data.slot` (`DropSlot`: `{ column, columnRect, index }`); `getDropSlot(collisions)` reads the winner's. The target follows the dragged rect (overlay or resize handle), not the pointer.
+- Picking the slot in closed form ignores dnd-kit's 4-decimal rounding of intersection ratios, so a dragged edge or center within ~0.01px of a slot boundary can land on the later of the two near-tied slots, where per-slot droppables picked the earlier one.
 
 ### DayColumnDropData
 
@@ -34,7 +35,7 @@ type DayColumnDropData = {
 };
 ```
 
-The slot `ZonedDateTime` is built from `date`, the slot index and `timeZone`.
+`slotDateTime(slot)` builds the slot's wall-clock `ZonedDateTime` from `date`, the index and `timeZone`.
 
 ### DragData
 
@@ -45,7 +46,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 ## Move behavior
 
-- Body drag uses `task`/`google-event` types; the target time comes from `resolveDropSlot`.
+- Body drag uses `task`/`google-event` types; the target time is `slotDateTime(getDropSlot(collisions))`.
 - Duration is preserved on move (end = start + duration).
 
 ## Resize behavior
@@ -58,8 +59,8 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 ## Preview logic
 
-- `handleDragMove` (dnd-kit `onDragMove`) resolves the slot from the top collision and builds previews via `computePreviewForDrag`. It skips moves whose target slot and slot rect are unchanged. `onDragOver` is not used, since it fires only when the hovered column changes.
-- Hovered-slot highlight: `handleDragMove` writes `{ dayKey, index }` to `calendarDropSlotAtom` (`state/calendar-drop-slot.ts`); each column renders one absolutely positioned highlight that re-renders only when its own slot changes.
+- `handleDragMove` (dnd-kit `onDragMove`) reads the slot from the top collision and builds previews via `computePreviewForDrag`, positioned from the column rect. It skips moves whose slot and column rect are unchanged. `onDragOver` is not used, since it fires only when the hovered column changes.
+- Hovered-slot highlight: `handleDragMove` writes the `DropSlot` to `dropSlotAtom`; each column renders one absolutely positioned highlight that re-renders only when its own slot changes.
 - Height = duration/60 \* `PIXELS_PER_HOUR`, min 24px.
 - Preview follows the same snapping/clamping rules (including end-handle +15min adjust).
 - Drag overlay (title pill) is shown only for move drags; hidden during resize drags.
@@ -86,7 +87,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 - Drag start: sets active item and resize flag for overlay visibility.
 - Drag move: resolves the target slot, updates the highlight and preview.
-- Drag end: resolves the slot from `over` (a day column) and the dragged rect, applies snapping/clamping, triggers mutation.
+- Drag end: reads the slot from the top collision, applies snapping/clamping, triggers mutation.
 
 ## Known behaviors
 

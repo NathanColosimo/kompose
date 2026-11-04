@@ -5,9 +5,8 @@ import { nowZonedDateTimeAtom } from "@kompose/state/atoms/current-date";
 import { atom, useAtomValue } from "jotai";
 import { memo, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { calendarDropSlotAtom } from "@/state/calendar-drop-slot";
-import { PIXELS_PER_HOUR } from "../constants";
-import { SLOT_HEIGHT } from "../dnd/day-column-slots";
+import { PIXELS_PER_HOUR, SLOT_HEIGHT } from "../constants";
+import { dropSlotAtom } from "../dnd/day-column-slots";
 import type { DayColumnDropData } from "../dnd/types";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
@@ -55,7 +54,6 @@ export const DayColumn = memo(function DayColumnInner({
           {SLOT_MINUTES.map((minutes) => (
             <TimeSlot
               date={date}
-              hour={hour}
               key={minutes}
               minutes={minutes}
               onSlotDragMove={onSlotDragMove}
@@ -92,7 +90,6 @@ function DayColumnDropTarget({
   disabled: boolean;
   timeZone: string;
 }) {
-  const dayKey = date.toString();
   const data = useMemo(
     (): DayColumnDropData => ({ date, timeZone, type: "day-column" }),
     [date, timeZone]
@@ -100,15 +97,15 @@ function DayColumnDropTarget({
   const { setNodeRef } = useDroppable({
     data,
     disabled,
-    id: `day-column-${dayKey}`,
+    id: `day-column-${date}`,
   });
   const highlightIndexAtom = useMemo(
     () =>
       atom((get) => {
-        const slot = get(calendarDropSlotAtom);
-        return slot?.dayKey === dayKey ? slot.index : null;
+        const slot = get(dropSlotAtom);
+        return slot?.column.date.equals(date) ? slot.index : null;
       }),
-    [dayKey]
+    [date]
   );
   const highlightIndex = useAtomValue(highlightIndexAtom);
 
