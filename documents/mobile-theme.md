@@ -47,8 +47,8 @@ Uniwind (setTheme)            ←  User toggles theme
 
 ### `lib/color-scheme-context.tsx`
 - Wraps Uniwind theme state (`useUniwind` + `Uniwind.setTheme`)
-- Persists preference in SecureStore
-- Tracks `userPreference` for toggle UI ("light", "dark", "system")
+- Persists preference in SecureStore; `restoreColorScheme()` re-applies it once from the root layout on launch
+- Derives `userPreference` for toggle UI ("light", "dark", "system") from the Uniwind theme
 - Resolves effective `colorScheme` for UI logic (`"light"` / `"dark"`)
 
 ### `theme/colors.ts`

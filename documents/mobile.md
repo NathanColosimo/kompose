@@ -136,7 +136,7 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(settings)/index.tsx`
   - Theme toggle and auth UI
 - Theme toggle component: `apps/native/components/mode-toggle.tsx`
-- Color scheme hook (shared state for theme switching + persistence):
+- Color scheme hook (derived from the Uniwind theme, with SecureStore persistence):
   - `apps/native/lib/color-scheme-context.tsx`
 - React Navigation theme tokens:
   - `apps/native/lib/theme.ts`
@@ -183,9 +183,9 @@ Example:
 Uniwind uses theme variants and CSS variables defined in `global.css`. To dynamically switch themes at runtime:
 
 1. **Color scheme hook** (`lib/color-scheme-context.tsx`)
-   - Hook-level state with SecureStore persistence
-   - Stores user preference in SecureStore (light/dark/system)
-   - Calls `Uniwind.setTheme()` to apply theme at runtime
+   - No React state of its own: preference and effective scheme are derived from `useUniwind()`
+   - `setColorScheme` calls `Uniwind.setTheme()` and saves the preference (light/dark/system) in SecureStore
+   - `restoreColorScheme()` re-applies the saved preference; the root layout calls it once on launch
 
 2. **Theme variables** (`global.css`)
    - Uses `@layer theme` with `@variant light` and `@variant dark`
