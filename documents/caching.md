@@ -177,19 +177,20 @@ const scanAndDelete = async (prefix: string) => {
 
 ---
 
-## Auth-First Pattern
+## Ownership-First Pattern
 
-Cache lookups happen **after** `getGoogleCalendar`, never before. This prevents serving cached data to unauthorized users:
+Cache lookups happen **after** the ownership check (`requireGoogleAccount`), never before, so cached data is never served for an account the user doesn't own. The access token is fetched only on a cache miss, because getting one can mean a database read and a token refresh:
 
 ```ts
-// 1. Auth check (always first)
-const google = yield* getGoogleCalendar(userId, accountId);
+// 1. Ownership check (always first)
+const account = yield* requireGoogleAccount({ accountId, userId });
 
-// 2. Cache lookup (only after auth passes)
+// 2. Cache lookup (only after the ownership check passes)
 const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
 if (Option.isSome(cached)) return cached.value;
 
-// 3. API fetch on miss
+// 3. On a miss, get the token and fetch from the API
+const google = yield* googleCalendarFor(account);
 const data = yield* google.listCalendars();
 
 // 4. Populate cache
