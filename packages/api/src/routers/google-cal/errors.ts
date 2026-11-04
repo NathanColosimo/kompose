@@ -1,12 +1,5 @@
 import { Schema } from "effect";
-
-export class AccountNotLinkedError extends Schema.TaggedError<AccountNotLinkedError>()(
-  "AccountNotLinkedError",
-  {
-    cause: Schema.Unknown,
-    message: Schema.String,
-  }
-) {}
+import type { PublicError } from "../../errors";
 
 export class NonEditableGoogleEventError extends Schema.TaggedError<NonEditableGoogleEventError>()(
   "NonEditableGoogleEventError",
@@ -15,7 +8,11 @@ export class NonEditableGoogleEventError extends Schema.TaggedError<NonEditableG
     eventType: Schema.optional(Schema.String),
     message: Schema.String,
   }
-) {}
+) {
+  get publicError(): PublicError {
+    return { code: "BAD_REQUEST", message: this.message };
+  }
+}
 
 /** Internal cache error — always caught and logged, never surfaces to the client. */
 export class CacheError extends Schema.TaggedError<CacheError>()("CacheError", {

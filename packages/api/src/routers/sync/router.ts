@@ -13,7 +13,7 @@ const os = implement(syncContract)
   .use(globalRateLimit);
 
 export const syncRouter = os.router({
-  events: os.events.handler(({ context }) => {
+  events: os.events.handler(({ context, signal }) => {
     // Fire-and-forget: the stream shouldn't wait on Google watch renewal.
     Effect.runForkWith(context["effect/context"])(
       WebhookService.use((service) =>
@@ -31,6 +31,6 @@ export const syncRouter = os.router({
       )
     );
 
-    return createUserSyncEventIterator(context.user.id);
+    return createUserSyncEventIterator(context.user.id, signal);
   }),
 });

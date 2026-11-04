@@ -1,6 +1,7 @@
 "use client";
 
 import { env } from "@kompose/env";
+import { errorMessage } from "@kompose/state/errors";
 import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
@@ -66,17 +67,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         });
         return result?.data?.user ?? null;
       },
-      listAccounts: async () => {
-        const result = await authClient.listAccounts();
-        if (
-          !(result && "data" in result) ||
-          result.data === null ||
-          result.data === undefined
-        ) {
-          return null;
-        }
-        return { data: result.data };
-      },
+      listAccounts: () =>
+        authClient.listAccounts({ fetchOptions: { throw: true } }),
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
         await new Promise<void>((resolve, reject) => {
           authClient
@@ -119,7 +111,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        toast.error(error.message);
+        toast.error(errorMessage(error));
       },
       orpc,
     }),

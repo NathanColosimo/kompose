@@ -7,7 +7,11 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
-import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
+import {
+  formatDuration,
+  formatPlainDate,
+  formatTime,
+} from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Badge } from "../ui/badge";
@@ -16,22 +20,6 @@ import { Checkbox } from "../ui/checkbox";
 interface TaskItemProps {
   /** The task to display */
   task: TaskSelectDecoded;
-}
-
-/**
- * Formats duration in minutes to a human-readable string.
- * e.g., 30 -> "30m", 90 -> "1h 30m", 120 -> "2h"
- */
-function formatDuration(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (remainingMinutes === 0) {
-    return `${hours}h`;
-  }
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 /**

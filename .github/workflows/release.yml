@@ -96,7 +96,11 @@ jobs:
       group: release-web
       cancel-in-progress: false
     steps:
+      # vercel deploy uploads this checkout, so it needs the task parser's
+      # weights from Git LFS rather than their pointer file.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
@@ -222,6 +226,9 @@ jobs:
       # Expo and Apple email if that fails.
       # USE_CCACHE turns on React Native's ccache wrapper in pod install, and a
       # fixed working directory keeps compiler paths stable for cache hits.
+      # CI's check job already runs expo-doctor. EAS's own copy has a 30 s
+      # timeout, and when it trips, EAS kills a process that has already exited
+      # and the build crashes (kill ESRCH, @expo/build-tools setup.js).
       - name: Build and submit
         if: steps.fingerprint.outputs.build == 'true'
         working-directory: apps/native
@@ -232,6 +239,7 @@ jobs:
           CCACHE_DIR: ${{ runner.temp }}/ccache
           CCACHE_MAXSIZE: 2G
           EAS_LOCAL_BUILD_WORKINGDIR: ${{ runner.temp }}/eas-build
+          EAS_BUILD_DISABLE_EXPO_DOCTOR_STEP: "1"
         run: |
           ccache --zero-stats
           bunx eas-cli@25.3.0 build -p ios --profile production --local --non-interactive \

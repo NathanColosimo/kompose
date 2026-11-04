@@ -1,5 +1,4 @@
 import { createContext } from "@kompose/api/context";
-import { errorStatusMap } from "@kompose/api/error-status";
 import { appRouter } from "@kompose/api/routers/index";
 import { trace } from "@opentelemetry/api";
 import { RateLimitHandlerPlugin } from "@orpc/ratelimit";
@@ -9,7 +8,6 @@ import type { NextRequest } from "next/server";
 const tracer = trace.getTracer("kompose-api");
 
 const rpcHandler = new RPCHandler(appRouter, {
-  errorStatusMap,
   plugins: [new RateLimitHandlerPlugin()],
 });
 

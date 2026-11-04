@@ -322,7 +322,15 @@ export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
     cause: Schema.Unknown,
     message: Schema.optional(Schema.String),
   },
-) {}
+) {
+  /** What the API sends the client; `cause` stays on the server. */
+  get publicError() {
+    return {
+      code: "BAD_GATEWAY",
+      message: "Google Calendar request failed. Try again.",
+    } as const;
+  }
+}
 
 export class GoogleCalendarZodError extends Schema.TaggedError<GoogleCalendarZodError>()(
   "GoogleCalendarZodError",
@@ -495,22 +503,28 @@ export function makeGoogleCalendarService(
   const listEvents = Effect.fn("GoogleCalendar.listEvents")(
     function* (calendarId: string, timeMin: string, timeMax: string) {
       yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.list(calendarId, {
-            timeMin,
-            timeMax,
-            singleEvents: true,
-            orderBy: "startTime",
-          }),
-        catch: (cause) => new GoogleApiError({ cause }),
-      });
+      // Google pages at 250 events by default; a padded month of expanded
+      // recurring events can exceed that, so ask for the max and follow pages.
+      const items: unknown[] = [];
+      let pageToken: string | undefined;
+      do {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            client.calendars.events.list(calendarId, {
+              timeMin,
+              timeMax,
+              singleEvents: true,
+              orderBy: "startTime",
+              maxResults: 2500,
+              pageToken,
+            }),
+          catch: (cause) => new GoogleApiError({ cause }),
+        });
+        items.push(...(response.items ?? []));
+        pageToken = response.nextPageToken ?? undefined;
+      } while (pageToken);
 
-      if (!response.items) {
-        return [];
-      }
-
-      const parsed = z.array(EventSchema).safeParse(response.items);
+      const parsed = z.array(EventSchema).safeParse(items);
       if (!parsed.success) {
         return yield* Effect.fail(new GoogleCalendarZodError({ cause: parsed.error }));
       }

@@ -306,20 +306,25 @@ export class WebhookService extends Context.Service<WebhookService>()(
         if (params.accountId) {
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
         }
-        const accounts = yield* getAccountsByProvider({
-          accountId: params.accountId,
-          providerId: GOOGLE_PROVIDER,
-          userId: params.userId,
-        });
+        // Independent lookups; both only need the user id.
+        const [accounts, existingSubscriptions] = yield* Effect.all(
+          [
+            getAccountsByProvider({
+              accountId: params.accountId,
+              providerId: GOOGLE_PROVIDER,
+              userId: params.userId,
+            }),
+            listSubscriptionsForUser({
+              provider: GOOGLE_PROVIDER,
+              userId: params.userId,
+            }),
+          ],
+          { concurrency: "unbounded" }
+        );
 
         if (accounts.length === 0) {
           return;
         }
-
-        const existingSubscriptions = yield* listSubscriptionsForUser({
-          provider: GOOGLE_PROVIDER,
-          userId: params.userId,
-        });
 
         // Process each account independently so one failure (e.g. revoked token)
         // doesn't prevent other accounts from being refreshed.

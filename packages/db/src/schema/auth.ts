@@ -61,7 +61,10 @@ export const account = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  (table) => [index("account_userId_idx").on(table.userId)]
+  // Every Google/WHOOP call resolves the caller's linked account by user and provider.
+  (table) => [
+    index("account_user_provider_idx").on(table.userId, table.providerId),
+  ]
 );
 
 export const verification = pgTable("verification", {

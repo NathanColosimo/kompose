@@ -1,48 +1,14 @@
-import { WhoopApiError, WhoopParseError } from "@kompose/whoop/errors";
-import { implement, ORPCError } from "@orpc/server";
-import { mapErrors, requireAuth } from "../..";
+import { implement } from "@orpc/server";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
 import { whoopContract } from "./contract";
-import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 import { WhoopService } from "./service";
-
-function toORPCError(error: unknown) {
-  if (error instanceof WhoopApiError) {
-    return new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { operation: error.operation, status: error.status },
-      message: error.message,
-    });
-  }
-  if (error instanceof WhoopInvalidRangeError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof WhoopParseError) {
-    return new ORPCError("PARSE_ERROR", {
-      cause: error,
-      data: { operation: error.operation },
-      message: error.message,
-    });
-  }
-  if (error instanceof WhoopTokenUnavailableError) {
-    return new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { accountId: error.accountId, whoopErrorCode: "TOKEN_UNAVAILABLE" },
-      message: error.message,
-    });
-  }
-  return error;
-}
 
 const os = implement(whoopContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 export const whoopRouter = os.router({
   days: {

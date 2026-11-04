@@ -1,4 +1,6 @@
 import { implement, type RouterClient } from "@orpc/server";
+import type { Context } from "../context";
+import { sendPublicErrors } from "../errors";
 import { accountContract } from "./account/contract";
 import { agentsContract } from "./agents/contract";
 import { googleCalContract } from "./google-cal/contract";
@@ -19,7 +21,7 @@ const appContract = {
   whoop: whoopContract,
 };
 
-const app = implement(appContract);
+const app = implement(appContract).$context<Context>().use(sendPublicErrors);
 
 export const appRouter = app.router({
   account: app.account.lazy(async () => ({

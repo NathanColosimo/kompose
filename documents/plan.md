@@ -257,7 +257,7 @@ separate `Kompose Dev` profile.
     2.  Constructs an Effect program using the `GoogleCalendar` service.
     3.  Provides the live service layer (`GoogleCalendarLive`) injected with the user's access token.
     4.  Runs the effect and returns the result.
-  - **Error Handling**: Maps internal errors (AccountNotLinked, GoogleApiError) to standard `ORPCError` types for the client.
+  - **Error Handling**: Errors that define `publicError` (such as `LinkedAccountError` and `GoogleApiError`) reach the client with a standard code and a message for users; the rest become a generic 500.
 
 ### 6.3 UI & Layout Implementation
 - **shadcn/ui Sidebar**: Integrated the new `shadcn/ui` sidebar components (`Sidebar`, `SidebarContent`, etc.).
@@ -351,7 +351,7 @@ separate `Kompose Dev` profile.
 ### 6.9 Effect-TS Service Architecture
 - **Pattern**: All backend services use `Effect.Service` with `accessors: true` and `Effect.fn("Service.method")` for automatic OTel tracing spans.
 - **Errors**: Each domain uses `Schema.TaggedError` for typed, compile-time-checked error channels. Callers handle errors with `Effect.catchTags`.
-- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/effect`) that get services from that runtime through the request context, and each router maps its errors with `mapErrors`.
+- **Layer composition**: All service layers are merged into `AppLayer` (`packages/api/src/runtime.ts`) and built once by a `ManagedRuntime`. oRPC handlers are Effect generators (`@orpc/effect`) that get services from that runtime through the request context. Errors reach the client through their class's `publicError` (see `services.md`, "Client errors").
 - **Services implemented**: `TaskService`, `TagService`, `GoogleCalendarCacheService`, `WebhookService`, `GoogleCalendarWebhookService`, `WebhookRepositoryService`.
 - See [`services.md`](./services.md) for full method/error tables.
 
@@ -403,9 +403,9 @@ separate `Kompose Dev` profile.
 
 ### 6.16 OpenTelemetry
 - **Server-side only**: No client-side OTel SDK in web or native. Network latency is measured via `x-request-start` header (injected by both clients, read on server).
-- **Stack**: `NodeSDK` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `BatchSpanProcessor` → `SpanAttributeFilter` → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
-- **Key config**: `autoDetectResources: false` (strips noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
-- **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures `NodeSDK.start()` runs before Next.js creates root request spans.
+- **Stack**: `TracerProvider` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `BatchSpanProcessor` → `SpanAttributeFilter` → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
+- **Key config**: no resource detectors (no noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
+- **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures the provider is registered before Next.js creates root request spans.
 - See [`otel.md`](./otel.md) for full details.
 
 ### 6.17 Production and desktop builds
