@@ -9,11 +9,7 @@ import type {
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { getLinkedAccessToken } from "../../lib/linked-account";
-import {
-  logAndSwallowWhoopCacheError,
-  logWhoopCacheErrorAndFallback,
-  WhoopCacheService,
-} from "./cache";
+import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
 import { WhoopInvalidRangeError } from "./errors";
@@ -377,13 +373,11 @@ export class WhoopService extends Context.Service<WhoopService>()(
           );
 
           const requestedDays = inclusiveDays(params.startDate, params.endDate);
-          const cachedDays = yield* cache
-            .getCachedDays(params.userId, params.accountId, requestedDays)
-            .pipe(
-              logWhoopCacheErrorAndFallback(
-                new Map<string, WhoopCachedDayRaw>()
-              )
-            );
+          const cachedDays = yield* cache.getCachedDays(
+            params.userId,
+            params.accountId,
+            requestedDays
+          );
 
           const missingDays = requestedDays.filter(
             (day) => !cachedDays.has(day)
@@ -461,15 +455,13 @@ export class WhoopService extends Context.Service<WhoopService>()(
             yield* Effect.forEach(
               fetchedDays,
               (payload) =>
-                cache
-                  .setCachedDay(
-                    params.userId,
-                    params.accountId,
-                    payload.day,
-                    payload,
-                    ttlForDay(payload, params.timeZone)
-                  )
-                  .pipe(logAndSwallowWhoopCacheError),
+                cache.setCachedDay(
+                  params.userId,
+                  params.accountId,
+                  payload.day,
+                  payload,
+                  ttlForDay(payload, params.timeZone)
+                ),
               { concurrency: "unbounded", discard: true }
             );
           }

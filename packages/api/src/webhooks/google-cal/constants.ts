@@ -16,9 +16,3 @@ export function isGoogleHolidayCalendarId(calendarId: string): boolean {
     calendarId.endsWith(GOOGLE_GROUP_CALENDAR_SUFFIX)
   );
 }
-
-export function isGoogleCalendarEventsWatchSupported(
-  calendarId: string
-): boolean {
-  return !isGoogleHolidayCalendarId(calendarId);
-}

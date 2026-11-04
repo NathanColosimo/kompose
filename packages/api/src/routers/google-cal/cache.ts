@@ -4,29 +4,8 @@ import {
   type Event,
   EventSchema,
 } from "@kompose/google-cal/schema";
-import { redis } from "@kompose/redis";
-import { Context, Effect, Layer, Option } from "effect";
-import { CacheError } from "./errors";
-
-// ── Shared error handlers ────────────────────────────────────────────
-
-/** Log a CacheError at error level (visible in OTel) then swallow it. */
-export const logAndSwallowCacheError = <A, R>(
-  self: Effect.Effect<A, CacheError, R>
-) =>
-  self.pipe(
-    Effect.catchTag("CacheError", (err) => Effect.logError("CACHE_ERROR", err))
-  );
-
-/** Same as above but recovers with Option.none() for cache reads. */
-export const logCacheErrorAndMiss = <A, R>(
-  self: Effect.Effect<A, CacheError, R>
-) =>
-  self.pipe(
-    Effect.catchTag("CacheError", (err) =>
-      Effect.logError("CACHE_ERROR", err).pipe(Effect.map(() => Option.none()))
-    )
-  );
+import { Context, Effect, Layer } from "effect";
+import { makeRedisJsonCache } from "../../lib/redis-cache";
 
 // ── Key prefixes & TTLs ─────────────────────────────────────────────
 
@@ -35,7 +14,7 @@ const KEY_PREFIX = "gcal";
 /** TTLs are safety nets — webhooks handle real invalidation. */
 const CALENDARS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 const COLORS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
-const EVENTS_TTL_SECONDS = 24 * 60 * 60; // 1 hour
+const EVENTS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 
 // ── Key builders ────────────────────────────────────────────────────
 //    Keys start with the user ID. An entry is written only after that user's
@@ -107,27 +86,8 @@ function eventSingleKeyPrefix(
 export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCacheService>()(
   "GoogleCalendarCacheService",
   {
-    make: Effect.gen(function* () {
-      /** SCAN + DEL all keys matching a prefix. Avoids KEYS to not block Redis. */
-      const scanAndDelete = async (prefix: string) => {
-        let cursor = 0;
-        do {
-          // Redis SCAN cursors are sequential: each request needs the cursor
-          // returned by the previous request.
-          // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
-          const [nextCursor, keys] = await redis.scan(
-            cursor,
-            "MATCH",
-            `${prefix}*`,
-            "COUNT",
-            100
-          );
-          cursor = Number(nextCursor);
-          if (keys.length > 0) {
-            await redis.del(...keys);
-          }
-        } while (cursor !== 0);
-      };
+    make: Effect.sync(() => {
+      const cache = makeRedisJsonCache("CACHE_ERROR");
 
       // ── Calendars ───────────────────────────────────────────────
 
@@ -135,58 +95,23 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         "GoogleCalendarCacheService.getCachedCalendars"
       )(function* (userId: string, accountId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
-        const raw = yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "getCachedCalendars",
-            }),
-          try: () => redis.get(calendarsKey(userId, accountId)),
-        });
-        if (raw === null) {
-          return Option.none();
-        }
-
-        const payload = yield* Effect.try({
-          catch: (cause) =>
-            new CacheError({
-              message: `Invalid cached JSON: ${String(cause)}`,
-              operation: "getCachedCalendars",
-            }),
-          try: () => JSON.parse(raw) as unknown,
-        });
-
-        const parsed = CalendarSchema.array().safeParse(payload);
-        if (!parsed.success) {
-          return yield* new CacheError({
-            message: `Invalid cached payload: ${parsed.error.message}`,
-            operation: "getCachedCalendars",
-          });
-        }
-
-        return Option.some(parsed.data);
+        return yield* cache.get(
+          "getCachedCalendars",
+          calendarsKey(userId, accountId),
+          CalendarSchema.array()
+        );
       });
 
       const setCachedCalendars = Effect.fn(
         "GoogleCalendarCacheService.setCachedCalendars"
       )(function* (userId: string, accountId: string, data: unknown) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
-        const key = calendarsKey(userId, accountId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "setCachedCalendars",
-            }),
-          try: async () => {
-            await redis.set(
-              key,
-              JSON.stringify(data),
-              "EX",
-              String(CALENDARS_TTL_SECONDS)
-            );
-          },
-        });
+        yield* cache.set(
+          "setCachedCalendars",
+          calendarsKey(userId, accountId),
+          data,
+          CALENDARS_TTL_SECONDS
+        );
       });
 
       /**
@@ -197,16 +122,9 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         "GoogleCalendarCacheService.invalidateCalendars"
       )(function* (userId: string, accountId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "invalidateCalendars",
-            }),
-          try: async () => {
-            await redis.del(calendarsKey(userId, accountId));
-            await scanAndDelete(calendarSingleKeyPrefix(userId, accountId));
-          },
+        yield* cache.remove("invalidateCalendars", {
+          keys: [calendarsKey(userId, accountId)],
+          prefixes: [calendarSingleKeyPrefix(userId, accountId)],
         });
       });
 
@@ -217,36 +135,11 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       )(function* (userId: string, accountId: string, calendarId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        const raw = yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "getCachedCalendar",
-            }),
-          try: () => redis.get(calendarKey(userId, accountId, calendarId)),
-        });
-        if (raw === null) {
-          return Option.none();
-        }
-
-        const payload = yield* Effect.try({
-          catch: (cause) =>
-            new CacheError({
-              message: `Invalid cached JSON: ${String(cause)}`,
-              operation: "getCachedCalendar",
-            }),
-          try: () => JSON.parse(raw) as unknown,
-        });
-
-        const parsed = CalendarSchema.safeParse(payload);
-        if (!parsed.success) {
-          return yield* new CacheError({
-            message: `Invalid cached payload: ${parsed.error.message}`,
-            operation: "getCachedCalendar",
-          });
-        }
-
-        return Option.some(parsed.data);
+        return yield* cache.get(
+          "getCachedCalendar",
+          calendarKey(userId, accountId, calendarId),
+          CalendarSchema
+        );
       });
 
       const setCachedCalendar = Effect.fn(
@@ -259,38 +152,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       ) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        const key = calendarKey(userId, accountId, calendarId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "setCachedCalendar",
-            }),
-          try: async () => {
-            await redis.set(
-              key,
-              JSON.stringify(data),
-              "EX",
-              String(CALENDARS_TTL_SECONDS)
-            );
-          },
-        });
-      });
-
-      /** Invalidate a single cached calendar by its exact key. */
-      const invalidateCalendar = Effect.fn(
-        "GoogleCalendarCacheService.invalidateCalendar"
-      )(function* (userId: string, accountId: string, calendarId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "invalidateCalendar",
-            }),
-          try: () => redis.del(calendarKey(userId, accountId, calendarId)),
-        });
+        yield* cache.set(
+          "setCachedCalendar",
+          calendarKey(userId, accountId, calendarId),
+          data,
+          CALENDARS_TTL_SECONDS
+        );
       });
 
       // ── Colors ──────────────────────────────────────────────────
@@ -299,58 +166,23 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         "GoogleCalendarCacheService.getCachedColors"
       )(function* (userId: string, accountId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
-        const raw = yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "getCachedColors",
-            }),
-          try: () => redis.get(colorsKey(userId, accountId)),
-        });
-        if (raw === null) {
-          return Option.none();
-        }
-
-        const payload = yield* Effect.try({
-          catch: (cause) =>
-            new CacheError({
-              message: `Invalid cached JSON: ${String(cause)}`,
-              operation: "getCachedColors",
-            }),
-          try: () => JSON.parse(raw) as unknown,
-        });
-
-        const parsed = ColorsSchema.safeParse(payload);
-        if (!parsed.success) {
-          return yield* new CacheError({
-            message: `Invalid cached payload: ${parsed.error.message}`,
-            operation: "getCachedColors",
-          });
-        }
-
-        return Option.some(parsed.data);
+        return yield* cache.get(
+          "getCachedColors",
+          colorsKey(userId, accountId),
+          ColorsSchema
+        );
       });
 
       const setCachedColors = Effect.fn(
         "GoogleCalendarCacheService.setCachedColors"
       )(function* (userId: string, accountId: string, data: unknown) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
-        const key = colorsKey(userId, accountId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "setCachedColors",
-            }),
-          try: async () => {
-            await redis.set(
-              key,
-              JSON.stringify(data),
-              "EX",
-              String(COLORS_TTL_SECONDS)
-            );
-          },
-        });
+        yield* cache.set(
+          "setCachedColors",
+          colorsKey(userId, accountId),
+          data,
+          COLORS_TTL_SECONDS
+        );
       });
 
       // ── Events ──────────────────────────────────────────────────
@@ -366,39 +198,11 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       ) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        const raw = yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "getCachedEvents",
-            }),
-          try: () =>
-            redis.get(
-              eventsKey(userId, accountId, calendarId, timeMin, timeMax)
-            ),
-        });
-        if (raw === null) {
-          return Option.none();
-        }
-
-        const payload = yield* Effect.try({
-          catch: (cause) =>
-            new CacheError({
-              message: `Invalid cached JSON: ${String(cause)}`,
-              operation: "getCachedEvents",
-            }),
-          try: () => JSON.parse(raw) as unknown,
-        });
-
-        const parsed = EventSchema.array().safeParse(payload);
-        if (!parsed.success) {
-          return yield* new CacheError({
-            message: `Invalid cached payload: ${parsed.error.message}`,
-            operation: "getCachedEvents",
-          });
-        }
-
-        return Option.some(parsed.data);
+        return yield* cache.get(
+          "getCachedEvents",
+          eventsKey(userId, accountId, calendarId, timeMin, timeMax),
+          EventSchema.array()
+        );
       });
 
       const setCachedEvents = Effect.fn(
@@ -413,22 +217,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       ) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        const key = eventsKey(userId, accountId, calendarId, timeMin, timeMax);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "setCachedEvents",
-            }),
-          try: async () => {
-            await redis.set(
-              key,
-              JSON.stringify(data),
-              "EX",
-              String(EVENTS_TTL_SECONDS)
-            );
-          },
-        });
+        yield* cache.set(
+          "setCachedEvents",
+          eventsKey(userId, accountId, calendarId, timeMin, timeMax),
+          data,
+          EVENTS_TTL_SECONDS
+        );
       });
 
       // ── Single event ────────────────────────────────────────────
@@ -444,37 +238,11 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
         yield* Effect.annotateCurrentSpan("eventId", eventId);
-        const raw = yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "getCachedEvent",
-            }),
-          try: () =>
-            redis.get(eventSingleKey(userId, accountId, calendarId, eventId)),
-        });
-        if (raw === null) {
-          return Option.none();
-        }
-
-        const payload = yield* Effect.try({
-          catch: (cause) =>
-            new CacheError({
-              message: `Invalid cached JSON: ${String(cause)}`,
-              operation: "getCachedEvent",
-            }),
-          try: () => JSON.parse(raw) as unknown,
-        });
-
-        const parsed = EventSchema.safeParse(payload);
-        if (!parsed.success) {
-          return yield* new CacheError({
-            message: `Invalid cached payload: ${parsed.error.message}`,
-            operation: "getCachedEvent",
-          });
-        }
-
-        return Option.some(parsed.data);
+        return yield* cache.get(
+          "getCachedEvent",
+          eventSingleKey(userId, accountId, calendarId, eventId),
+          EventSchema
+        );
       });
 
       const setCachedEvent = Effect.fn(
@@ -489,22 +257,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
         yield* Effect.annotateCurrentSpan("eventId", eventId);
-        const key = eventSingleKey(userId, accountId, calendarId, eventId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "setCachedEvent",
-            }),
-          try: async () => {
-            await redis.set(
-              key,
-              JSON.stringify(data),
-              "EX",
-              String(EVENTS_TTL_SECONDS)
-            );
-          },
-        });
+        yield* cache.set(
+          "setCachedEvent",
+          eventSingleKey(userId, accountId, calendarId, eventId),
+          data,
+          EVENTS_TTL_SECONDS
+        );
       });
 
       // ── Invalidation ────────────────────────────────────────────
@@ -518,20 +276,11 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       )(function* (userId: string, accountId: string, calendarId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "invalidateAllEvents",
-            }),
-          try: async () => {
-            await scanAndDelete(
-              eventsListKeyPrefix(userId, accountId, calendarId)
-            );
-            await scanAndDelete(
-              eventSingleKeyPrefix(userId, accountId, calendarId)
-            );
-          },
+        yield* cache.remove("invalidateAllEvents", {
+          prefixes: [
+            eventsListKeyPrefix(userId, accountId, calendarId),
+            eventSingleKeyPrefix(userId, accountId, calendarId),
+          ],
         });
       });
 
@@ -545,14 +294,8 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       )(function* (userId: string, accountId: string, calendarId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "invalidateEventLists",
-            }),
-          try: () =>
-            scanAndDelete(eventsListKeyPrefix(userId, accountId, calendarId)),
+        yield* cache.remove("invalidateEventLists", {
+          prefixes: [eventsListKeyPrefix(userId, accountId, calendarId)],
         });
       });
 
@@ -568,14 +311,8 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
         yield* Effect.annotateCurrentSpan("eventId", eventId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new CacheError({
-              message: String(cause),
-              operation: "invalidateEvent",
-            }),
-          try: () =>
-            redis.del(eventSingleKey(userId, accountId, calendarId, eventId)),
+        yield* cache.remove("invalidateEvent", {
+          keys: [eventSingleKey(userId, accountId, calendarId, eventId)],
         });
       });
 
@@ -586,7 +323,6 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         getCachedEvent,
         getCachedEvents,
         invalidateAllEvents,
-        invalidateCalendar,
         invalidateCalendars,
         invalidateEvent,
         invalidateEventLists,

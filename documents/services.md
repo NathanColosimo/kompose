@@ -149,7 +149,7 @@ Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods
 | `routers/google-cal/contract.ts` | oRPC contract (calendars, events, colors) |
 | `routers/google-cal/router.ts` | oRPC handler implementations |
 | `routers/google-cal/cache.ts` | `GoogleCalendarCacheService` — Redis caching layer |
-| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`NonEditableGoogleEventError`, `CacheError`) |
+| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`NonEditableGoogleEventError`) |
 
 The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/client.ts` — the router resolves an OAuth access token per-request and provides `GoogleCalendarLive(accessToken)`.
 
@@ -168,17 +168,13 @@ list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
 
   // Cache-first read, scoped to the user
-  const cached = yield* cache
-    .getCachedCalendars(context.user.id, input.accountId)
-    .pipe(logCacheErrorAndMiss);
+  const cached = yield* cache.getCachedCalendars(context.user.id, input.accountId);
   if (Option.isSome(cached)) return cached.value;
 
   // API fallback: ownership check + token only on a miss
   const google = yield* getGoogleCalendar(context.user.id, input.accountId);
   const data = yield* google.listCalendars();
-  yield* cache
-    .setCachedCalendars(context.user.id, input.accountId, data)
-    .pipe(logAndSwallowCacheError);
+  yield* cache.setCachedCalendars(context.user.id, input.accountId, data);
   return data;
 }),
 ```
@@ -192,7 +188,6 @@ Cache layer details are documented in [`caching.md`](./caching.md).
 | `LinkedAccountError` | `lib/linked-account.ts` | Account not linked, or Better Auth couldn't refresh its token |
 | `GoogleApiError` | `@kompose/google-cal` | Google API returned an error |
 | `GoogleCalendarZodError` | `@kompose/google-cal` | Response failed Zod parse |
-| `CacheError` | Cache service | Redis operation failed (always caught and logged, never surfaces to client) |
 
 ---
 
@@ -234,7 +229,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
-5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
@@ -245,8 +240,7 @@ Client note:
 
 | Function | Purpose |
 |----------|---------|
-| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel |
-| `publishToUserBestEffort` | Fire-and-forget version — logs errors, never throws |
+| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel. Best effort: a failure is logged as `SYNC_PUBLISH_ERROR` and never fails the caller |
 | `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
 
 ---
@@ -289,9 +283,11 @@ Google-specific watch management. Depends on `WebhookRepositoryService`.
 | Method | Purpose |
 |--------|---------|
 | `refreshListWatch` | Create or renew a calendar-list watch subscription |
-| `refreshEventsWatch` | Create or renew per-calendar event watch subscriptions |
+| `refreshEventsWatch` | Create or renew one calendar's event watch subscription (for IDs from `listCalendarIds`) |
 | `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
-| `listCalendarIds` | Fetch the user's calendar IDs from Google |
+| `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
+
+Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
@@ -397,7 +393,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 
 - Per-day raw data cached in Redis via `WhoopCacheService`.
 - Today's data: 15-minute TTL. Past days: 7-day TTL.
-- Cache errors are logged and swallowed (degrade to API fetch).
+- Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)
 
@@ -407,7 +403,6 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 | `WhoopApiError` | WHOOP API returned an error |
 | `WhoopParseError` | Response failed Zod parse |
 | `WhoopInvalidRangeError` | Date range invalid or exceeds 62-day limit |
-| `WhoopCacheError` | Redis operation failed (always caught and logged) |
 
 ---
 
