@@ -28,3 +28,11 @@ export const DatabaseLive = Layer.effect(Database, databaseEffect).pipe(
   Layer.provide(PgClientLive),
   Layer.orDie
 );
+
+/**
+ * Pass to every `ManagedRuntime` in the process (`appRuntime` in
+ * `@kompose/api`, the WHOOP token hook in `@kompose/auth`). Runtimes that
+ * share it build a shared layer such as `DatabaseLive` once, so they share one
+ * Postgres pool.
+ */
+export const runtimeMemoMap = Layer.makeMemoMapUnsafe();
