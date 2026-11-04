@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ClientRect,
   DndContext,
   type DragEndEvent,
   type DragMoveEvent,
@@ -138,7 +139,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   // Drop target the preview was last computed for; skips unchanged moves.
   const lastDropTargetKeyRef = useRef<string | null>(null);
   const setDropSlot = useSetAtom(dropSlotAtom);
-  const stableChildren = useMemo(() => children, [children]);
 
   // State for pending recurring task updates that need scope selection
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
@@ -402,14 +402,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     ({
       start,
       end,
-      columnTop,
-      overRect,
+      columnRect,
       minimum = MINUTES_STEP,
     }: {
       start: Temporal.ZonedDateTime;
       end: Temporal.ZonedDateTime;
-      columnTop: number;
-      overRect: Pick<PreviewRect, "left" | "width">;
+      columnRect: ClientRect;
       minimum?: number;
     }): PreviewRect => {
       const startMinutes = minutesFromMidnight(start);
@@ -419,9 +417,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       return {
         height,
-        left: overRect.left,
-        top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
-        width: overRect.width,
+        left: columnRect.left,
+        top: columnRect.top + (startMinutes / 60) * PIXELS_PER_HOUR,
+        width: columnRect.width,
       };
     },
     []
@@ -431,15 +429,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "task" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ) => {
       const duration = data.task.durationMinutes;
       const end = targetDateTime.add({ minutes: duration });
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end,
-        overRect,
         start: targetDateTime,
       });
     },
@@ -450,8 +446,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "task-resize" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       // Need both startDate and startTime for a scheduled task
       if (!(data.task.startDate && data.task.startTime)) {
@@ -479,18 +474,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          columnTop,
+          columnRect,
           end: originalEnd,
-          overRect,
           start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end: newEnd,
-        overRect,
         start: originalStart,
       });
     },
@@ -501,16 +494,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "google-event" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ) => {
       const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
       const end = targetDateTime.add({ minutes: eventDurationMinutes });
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end,
         minimum: 1,
-        overRect,
         start: targetDateTime,
       });
     },
@@ -521,8 +512,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "google-event-resize" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       const originalStart = data.start;
       const originalEnd = data.end;
@@ -538,20 +528,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          columnTop,
+          columnRect,
           end: originalEnd,
           minimum: 1,
-          overRect,
           start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end: newEnd,
         minimum: 1,
-        overRect,
         start: originalStart,
       });
     },
@@ -562,8 +550,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: DragData,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       const isResizeEnd =
         (data.type === "task-resize" || data.type === "google-event-resize") &&
@@ -574,18 +561,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       switch (data.type) {
         case "task":
-          return previewTaskMove(data, effectiveTarget, columnTop, overRect);
+          return previewTaskMove(data, effectiveTarget, columnRect);
         case "task-resize":
-          return previewTaskResize(data, effectiveTarget, columnTop, overRect);
+          return previewTaskResize(data, effectiveTarget, columnRect);
         case "google-event":
-          return previewGoogleMove(data, effectiveTarget, columnTop, overRect);
+          return previewGoogleMove(data, effectiveTarget, columnRect);
         case "google-event-resize":
-          return previewGoogleResize(
-            data,
-            effectiveTarget,
-            columnTop,
-            overRect
-          );
+          return previewGoogleResize(data, effectiveTarget, columnRect);
         default:
           return null;
       }
@@ -647,7 +629,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       pendingPreviewRef.current = computePreviewForDrag(
         data,
         slotDateTime(slot),
-        columnRect.top,
         columnRect
       );
 
@@ -693,7 +674,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         onDragStart={handleDragStart}
         sensors={sensors}
       >
-        {stableChildren}
+        {children}
 
         {/* Drop preview outline showing the eventual placement and duration */}
         {previewRect ? (
