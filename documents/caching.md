@@ -7,22 +7,11 @@ Google Calendar API data is cached in Redis to reduce latency. Webhooks handle r
 ```
 Client request
   ▼
-requireLinkedAccount (ownership check first, always)
-  ▼
-Cache lookup (Redis GET)
+Cache lookup (Redis GET, key scoped to the user)
   ├── HIT  → return cached data
-  └── MISS → get access token (may refresh)
+  └── MISS → getGoogleCalendar (ownership check + access token)
              → fetch from Google API → populate cache → return
 ```
-
-Cache keys use the provider's account ID, so the ownership check (one query)
-must run before the cache read. Getting an access token costs more DB queries
-(Better Auth's account lookup plus the WHOOP plugin's before-hook, and a locked
-transaction for WHOOP) and may refresh, so cached reads only do it on a miss.
-`requireLinkedAccount` (`packages/api/src/lib/linked-account.ts`) runs the check
-and returns the token fetch as an effect, so a token can't be fetched without
-the check. WHOOP day summaries follow the same order, fetching a token only
-when some days are missing from the cache.
 
 ---
 
@@ -42,11 +31,11 @@ An `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.fn
 
 | Resource | Key pattern | TTL | Used by |
 |----------|-------------|-----|---------|
-| Calendar list | `gcal:cals:{accountId}` | 24h | `calendars.list` |
-| Single calendar | `gcal:cal:{accountId}:{calendarId}` | 24h | `calendars.get` |
-| Colors | `gcal:colors:{accountId}` | 24h | `colors.list` |
-| Event list | `gcal:events:{accountId}:{calendarId}:{timeMin}:{timeMax}` | 1h | `events.list` |
-| Single event | `gcal:event:{accountId}:{calendarId}:{eventId}` | 1h | `events.get` |
+| Calendar list | `gcal:cals:{userId}:{accountId}` | 24h | `calendars.list` |
+| Single calendar | `gcal:cal:{userId}:{accountId}:{calendarId}` | 24h | `calendars.get` |
+| Colors | `gcal:colors:{userId}:{accountId}` | 24h | `colors.list` |
+| Event list | `gcal:events:{userId}:{accountId}:{calendarId}:{timeMin}:{timeMax}` | 1h | `events.list` |
+| Single event | `gcal:event:{userId}:{accountId}:{calendarId}:{eventId}` | 1h | `events.get` |
 
 TTLs are conservative safety nets. With active webhook subscriptions, data is invalidated in real-time and TTLs rarely trigger.
 
@@ -78,7 +67,7 @@ TTLs are conservative safety nets. With active webhook subscriptions, data is in
 
 | Method | Scope | Used by |
 |--------|-------|---------|
-| `invalidateCalendars(accountId)` | Deletes calendar list key + SCAN-deletes all `gcal:cal:{accountId}:*` single-calendar keys | Webhooks, local calendar mutations |
+| `invalidateCalendars(userId, accountId)` | Deletes calendar list key + SCAN-deletes all `gcal:cal:{userId}:{accountId}:*` single-calendar keys | Webhooks, local calendar mutations |
 | `invalidateCalendar(accountId, calendarId)` | Deletes a single calendar key | Targeted invalidation |
 | `invalidateAllEvents(accountId, calendarId)` | SCAN-deletes all event list keys + all single-event keys for a calendar | Webhooks (unknown which event changed) |
 | `invalidateEventLists(accountId, calendarId)` | SCAN-deletes event list keys only | Local mutations (single-event keys unaffected) |
@@ -94,7 +83,7 @@ Google push notifications trigger broad invalidation because they don't specify 
 
 | Webhook type | Invalidation |
 |-------------|--------------|
-| Calendar list changed | `invalidateCalendars(accountId)` |
+| Calendar list changed | `invalidateCalendars(userId, accountId)` |
 | Calendar events changed | `invalidateAllEvents(accountId, calendarId)` |
 
 Handled in `WebhookService.handleGoogleNotification` (`packages/api/src/webhooks/webhook-service.ts`).
@@ -177,33 +166,32 @@ const scanAndDelete = async (prefix: string) => {
 
 ---
 
-## Ownership-First Pattern
+## User-Scoped Keys
 
-Cache lookups happen **after** the ownership check (`requireGoogleAccount`), never before, so cached data is never served for an account the user doesn't own. The access token is fetched only on a cache miss, because getting one can mean a database read and a token refresh:
+Every cache key starts with the user ID (Google and WHOOP alike). An entry is written only after that user's own `getLinkedAccessToken` succeeded, which looks the account row up by user and so checks ownership. A hit therefore needs no ownership check or token, and a request for another user's account can only miss and then fail the lookup:
 
 ```ts
-// 1. Ownership check (always first)
-const getGoogle = yield* requireGoogleAccount(userId, accountId);
-
-// 2. Cache lookup (only after the ownership check passes)
-const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
+// 1. Cache lookup (scoped to this user)
+const cached = yield* cache.getCachedCalendars(userId, accountId).pipe(logCacheErrorAndMiss);
 if (Option.isSome(cached)) return cached.value;
 
-// 3. On a miss, get the token and fetch from the API
-const google = yield* getGoogle;
+// 2. On a miss: ownership check + access token, then the API
+const google = yield* getGoogleCalendar(userId, accountId);
 const data = yield* google.listCalendars();
 
-// 4. Populate cache
-yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
+// 3. Populate cache
+yield* cache.setCachedCalendars(userId, accountId, data).pipe(logAndSwallowCacheError);
 ```
+
+Webhook invalidation uses the subscription's `userId`. If two users link the same Google account, each has their own entries.
 
 ## Account ID Invariant
 
 Google Calendar cache keys use the Google provider account id (`account.account_id`),
 which is also the id used by client query keys and oRPC Google Calendar inputs.
 Better Auth 1.7 token, profile, and unlink selectors instead use the local
-`account.id`. Resolve the provider ID with `getLinkedAccountId` using the provider
-and current user before calling those APIs; keep provider IDs in calendar
+`account.id`. `getLinkedAccessToken` resolves the provider ID to the user's row
+before calling Better Auth; keep provider IDs in calendar
 preferences, bootstrap `accountId` fields, cache keys, and realtime events.
 Webhook subscription rows additionally store the Better Auth internal account row
 id (`webhook_subscription.account_id`) for database relations, but webhook cache

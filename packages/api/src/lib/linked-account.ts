@@ -1,6 +1,8 @@
 import { auth } from "@kompose/auth";
-import { getLinkedAccountId } from "@kompose/auth/accounts";
+import { Database } from "@kompose/db";
+import { account } from "@kompose/db/schema/auth";
 import { APIError } from "better-auth/api";
+import { and, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 import type { PublicError } from "../errors";
 
@@ -30,16 +32,14 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
 }
 
 /**
- * Confirms the user owns this provider account (one DB query) and returns an
- * effect that gets its access token. Cache keys use the provider's account ID,
- * so run this before any cache read. Getting the token means more queries and
- * maybe a refresh (the WHOOP plugin also takes a row lock), so cached reads run
- * it only on a miss.
+ * A valid access token for one of the user's linked provider accounts.
  *
- * Better Auth reports a missing account or a failed refresh as an `APIError`;
- * anything else (such as a database failure) is a defect.
+ * App APIs and cache keys use the provider's account ID, while Better Auth's
+ * token API wants its own row ID. Looking the row up by user also checks the
+ * user owns the account. Better Auth reports a failed refresh as an
+ * `APIError`; anything else (such as a database failure) is a defect.
  */
-export const requireLinkedAccount = Effect.fn("requireLinkedAccount")(
+export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
   function* (params: {
     accountId: string;
     providerId: LinkedProvider;
@@ -54,32 +54,37 @@ export const requireLinkedAccount = Effect.fn("requireLinkedAccount")(
         cause,
         providerId: params.providerId,
       });
-    const failOnAuthError = ({ cause }: { readonly cause?: unknown }) =>
-      cause instanceof APIError ? Effect.fail(fail(cause)) : Effect.die(cause);
 
-    const authAccountId = yield* Effect.tryPromise(() =>
-      getLinkedAccountId({
-        providerAccountId: params.accountId,
-        providerId: params.providerId,
-        userId: params.userId,
+    const db = yield* Database;
+    const [row] = yield* db
+      .select({ id: account.id })
+      .from(account)
+      .where(
+        and(
+          eq(account.accountId, params.accountId),
+          eq(account.providerId, params.providerId),
+          eq(account.userId, params.userId)
+        )
+      )
+      .limit(1)
+      .pipe(Effect.orDie);
+    if (!row) {
+      return yield* fail(new Error("Account not found"));
+    }
+
+    const { accessToken } = yield* Effect.tryPromise(() =>
+      auth.api.getAccessToken({
+        body: { accountId: row.id, userId: params.userId },
       })
-    ).pipe(Effect.catch(failOnAuthError));
-
-    return Effect.gen(function* () {
-      const { accessToken } = yield* Effect.tryPromise(() =>
-        auth.api.getAccessToken({
-          body: { accountId: authAccountId, userId: params.userId },
-        })
-      ).pipe(Effect.catch(failOnAuthError));
-
-      if (!accessToken) {
-        return yield* fail(new Error("Better Auth returned no access token"));
-      }
-      return accessToken;
-    }).pipe(
-      Effect.withSpan("getLinkedAccessToken", {
-        attributes: { accountId: params.accountId, userId: params.userId },
-      })
+    ).pipe(
+      Effect.catch(({ cause }) =>
+        cause instanceof APIError ? Effect.fail(fail(cause)) : Effect.die(cause)
+      )
     );
+
+    if (!accessToken) {
+      return yield* fail(new Error("Better Auth returned no access token"));
+    }
+    return accessToken;
   }
 );

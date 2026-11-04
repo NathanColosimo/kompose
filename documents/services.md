@@ -161,21 +161,24 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers call `requireGoogleAccount(userId, accountId)`, which checks that the user owns the account (`requireLinkedAccount` in `lib/linked-account.ts`) and returns an effect that builds the Google client. They check the cache, and run that effect (which fetches an access token) only on a miss. Mutating handlers use `getGoogleCalendar(userId, accountId)`, which does both at once, then invalidate relevant cache keys and publish a realtime `google-calendar` event.
+Read handlers check the user-scoped cache first and only on a miss call `getGoogleCalendar(userId, accountId)`, which fetches the access token with `getLinkedAccessToken` (`lib/linked-account.ts`, which also checks the user owns the account) and returns the Google client. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
-  const getGoogle = yield* requireGoogleAccount(context.user.id, input.accountId);
 
-  // Cache-first read
-  const cached = yield* cache.getCachedCalendars(input.accountId).pipe(logCacheErrorAndMiss);
+  // Cache-first read, scoped to the user
+  const cached = yield* cache
+    .getCachedCalendars(context.user.id, input.accountId)
+    .pipe(logCacheErrorAndMiss);
   if (Option.isSome(cached)) return cached.value;
 
-  // API fallback: only now fetch (and maybe refresh) the token
-  const google = yield* getGoogle;
+  // API fallback: ownership check + token only on a miss
+  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
   const data = yield* google.listCalendars();
-  yield* cache.setCachedCalendars(input.accountId, data).pipe(logAndSwallowCacheError);
+  yield* cache
+    .setCachedCalendars(context.user.id, input.accountId, data)
+    .pipe(logAndSwallowCacheError);
   return data;
 }),
 ```

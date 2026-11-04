@@ -8,7 +8,7 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { requireLinkedAccount } from "../../lib/linked-account";
+import { getLinkedAccessToken } from "../../lib/linked-account";
 import {
   logAndSwallowWhoopCacheError,
   logWhoopCacheErrorAndFallback,
@@ -358,15 +358,9 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
-          const getAccessToken = yield* requireLinkedAccount({
-            accountId: params.accountId,
-            providerId: "whoop",
-            userId: params.userId,
-          });
-
           const requestedDays = inclusiveDays(params.startDate, params.endDate);
           const cachedDays = yield* cache
-            .getCachedDays(params.accountId, requestedDays)
+            .getCachedDays(params.userId, params.accountId, requestedDays)
             .pipe(
               logWhoopCacheErrorAndFallback(
                 new Map<string, WhoopCachedDayRaw>()
@@ -379,7 +373,11 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const allDays = new Map(cachedDays);
 
           if (missingDays.length > 0) {
-            const accessToken = yield* getAccessToken;
+            const accessToken = yield* getLinkedAccessToken({
+              accountId: params.accountId,
+              providerId: "whoop",
+              userId: params.userId,
+            });
             const client = createWhoopClient(accessToken);
             const [missingStart] = missingDays;
             const missingEnd = missingDays.at(-1);
@@ -451,6 +449,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
               allDays.set(day, payload);
               yield* cache
                 .setCachedDay(
+                  params.userId,
                   params.accountId,
                   day,
                   payload,
@@ -472,12 +471,11 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const getAccessToken = yield* requireLinkedAccount({
-            accountId: params.accountId,
+          const accessToken = yield* getLinkedAccessToken({
             providerId: "whoop",
+            accountId: params.accountId,
             userId: params.userId,
           });
-          const accessToken = yield* getAccessToken;
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();

@@ -11,12 +11,14 @@ const KEY_PREFIX = "whoop";
 
 const redis = new RedisClient(env.REDIS_URL);
 
-function dayKey(accountId: string, day: string): string {
-  return `${KEY_PREFIX}:day:${accountId}:${day}`;
+// Keys start with the user ID. An entry is written only after that user's own
+// token fetch for the account succeeded, so a cache hit needs no ownership check.
+function dayKey(userId: string, accountId: string, day: string): string {
+  return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
 }
 
-function accountDayPrefix(accountId: string): string {
-  return `${KEY_PREFIX}:day:${accountId}:`;
+function accountDayPrefix(userId: string, accountId: string): string {
+  return `${KEY_PREFIX}:day:${userId}:${accountId}:`;
 }
 
 export const logAndSwallowWhoopCacheError = <A, R>(
@@ -66,7 +68,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
       };
 
       const getCachedDay = Effect.fn("WhoopCacheService.getCachedDay")(
-        function* (accountId: string, day: string) {
+        function* (userId: string, accountId: string, day: string) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           const raw = yield* Effect.tryPromise({
@@ -75,7 +77,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
                 message: String(cause),
                 operation: "getCachedDay",
               }),
-            try: () => redis.get(dayKey(accountId, day)),
+            try: () => redis.get(dayKey(userId, accountId, day)),
           });
 
           if (raw === null) {
@@ -104,14 +106,14 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
       );
 
       const getCachedDays = Effect.fn("WhoopCacheService.getCachedDays")(
-        function* (accountId: string, days: string[]) {
+        function* (userId: string, accountId: string, days: string[]) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("days", JSON.stringify(days));
 
           const entries = yield* Effect.forEach(
             days,
             (day) =>
-              getCachedDay(accountId, day).pipe(
+              getCachedDay(userId, accountId, day).pipe(
                 Effect.map((payload) => [day, payload] as const)
               ),
             { concurrency: "unbounded" }
@@ -131,6 +133,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
 
       const setCachedDay = Effect.fn("WhoopCacheService.setCachedDay")(
         function* (
+          userId: string,
           accountId: string,
           day: string,
           payload: WhoopCachedDayRaw,
@@ -154,7 +157,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
                 operation: "setCachedDay",
               }),
             try: async () => {
-              const key = dayKey(accountId, day);
+              const key = dayKey(userId, accountId, day);
               await redis.set(key, JSON.stringify(validatedPayload));
               await redis.expire(key, ttlSeconds);
             },
@@ -163,7 +166,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
       );
 
       const invalidateDay = Effect.fn("WhoopCacheService.invalidateDay")(
-        function* (accountId: string, day: string) {
+        function* (userId: string, accountId: string, day: string) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           yield* Effect.tryPromise({
@@ -172,14 +175,14 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
                 message: String(cause),
                 operation: "invalidateDay",
               }),
-            try: () => redis.del(dayKey(accountId, day)),
+            try: () => redis.del(dayKey(userId, accountId, day)),
           });
         }
       );
 
       const invalidateAccount = Effect.fn(
         "WhoopCacheService.invalidateAccount"
-      )(function* (accountId: string) {
+      )(function* (userId: string, accountId: string) {
         yield* Effect.annotateCurrentSpan("accountId", accountId);
         yield* Effect.tryPromise({
           catch: (cause) =>
@@ -187,7 +190,7 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
               message: String(cause),
               operation: "invalidateAccount",
             }),
-          try: () => scanAndDelete(accountDayPrefix(accountId)),
+          try: () => scanAndDelete(accountDayPrefix(userId, accountId)),
         });
       });
 

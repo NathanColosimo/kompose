@@ -25,7 +25,7 @@ callback route. Register `https://kompose.dev/api/auth/callback/whoop` in the
 default.
 
 The app's WHOOP RPC inputs and cache keys use the provider account ID
-(`account.accountId`). `getLinkedAccountId` resolves that ID to an account row
+(`account.accountId`). `getLinkedAccessToken` resolves that ID to an account row
 owned by the current user before calling Better Auth. Better Auth token,
 profile, and unlink APIs require the local row ID (`account.id`).
 
@@ -92,7 +92,7 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 
 | Resource | Key pattern | TTL |
 |----------|-------------|-----|
-| Per-day raw data | `whoop:day:{accountId}:{YYYY-MM-DD}` | 15 min (today), 7 days (past) |
+| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today), 7 days (past) |
 
 - Only days WITH data are cached. Days with no WHOOP data are never cached (they're always refetched in case data appears later).
 - Cache writes only target days that were actually missing. Cached days are never overwritten by data from an adjacent day's fetch.
