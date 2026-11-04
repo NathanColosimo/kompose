@@ -14,7 +14,6 @@ import { TimeSlot } from "./time-slot";
 interface DayColumnProps {
   children?: React.ReactNode;
   date: Temporal.PlainDate;
-  droppableDisabled?: boolean;
   /** Called when mouse moves over a slot during creation drag */
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
   /** Called when mouse enters a slot (for hover preview) */
@@ -34,7 +33,6 @@ export const DayColumn = memo(function DayColumnInner({
   timeZone,
   width,
   children,
-  droppableDisabled = false,
   onSlotHover,
   onSlotLeave,
   onSlotMouseDown,
@@ -66,11 +64,7 @@ export const DayColumn = memo(function DayColumnInner({
           ))}
         </div>
       ))}
-      <DayColumnDropTarget
-        date={date}
-        disabled={droppableDisabled}
-        timeZone={timeZone}
-      />
+      <DayColumnDropTarget date={date} timeZone={timeZone} />
       <div className="pointer-events-none absolute inset-0">{children}</div>
       <CurrentTimeIndicator date={date} />
     </div>
@@ -83,20 +77,14 @@ export const DayColumn = memo(function DayColumnInner({
  */
 function DayColumnDropTarget({
   date,
-  disabled,
   timeZone,
 }: {
   date: Temporal.PlainDate;
-  disabled: boolean;
   timeZone: string;
 }) {
-  const data = useMemo(
-    (): DayColumnDropData => ({ date, timeZone, type: "day-column" }),
-    [date, timeZone]
-  );
+  // dnd-kit keeps `data` in a ref, so a new object per render is fine.
   const { setNodeRef } = useDroppable({
-    data,
-    disabled,
+    data: { date, timeZone, type: "day-column" } satisfies DayColumnDropData,
     id: `day-column-${date}`,
   });
   const highlightIndexAtom = useMemo(
@@ -114,7 +102,6 @@ function DayColumnDropTarget({
       {highlightIndex === null ? null : (
         <div
           className="absolute inset-x-0 bg-primary/10"
-          data-drop-highlight
           style={{ height: SLOT_HEIGHT, top: highlightIndex * SLOT_HEIGHT }}
         />
       )}
