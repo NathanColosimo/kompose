@@ -22,6 +22,12 @@ import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 const MAX_RANGE_DAYS = 62;
 const TODAY_CACHE_TTL_SECONDS = 15 * 60;
 const PAST_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+/**
+ * Days WHOOP has nothing for: future days, today before the band syncs,
+ * or days the band was off. Data can still show up for them, so they're
+ * cached only as long as today's data.
+ */
+const EMPTY_DAY_CACHE_TTL_SECONDS = TODAY_CACHE_TTL_SECONDS;
 
 function dateFromOffset(dateTime: string, offset: string): string {
   return Temporal.Instant.from(dateTime)
@@ -162,6 +168,29 @@ function toSummary(payload: WhoopCachedDayRaw): WhoopDaySummary {
         strainScore: workout.score?.strain ?? null,
       })),
   });
+}
+
+function hasData(payload: WhoopCachedDayRaw): boolean {
+  return (
+    payload.cycle !== null ||
+    payload.recovery !== null ||
+    payload.sleeps.length > 0 ||
+    payload.workouts.length > 0
+  );
+}
+
+/** Summaries for the requested days that have data, in order. */
+function summariesWithData(
+  requestedDays: string[],
+  days: Map<string, WhoopCachedDayRaw>
+): WhoopDaySummary[] {
+  return requestedDays
+    .map((day) => days.get(day))
+    .filter(
+      (payload): payload is WhoopCachedDayRaw =>
+        payload !== undefined && hasData(payload)
+    )
+    .map(toSummary);
 }
 
 function initializeDay(day: string): WhoopCachedDayRaw {
@@ -422,12 +451,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
             const missingEnd = missingDays.at(-1);
 
             if (!(missingStart && missingEnd)) {
-              return requestedDays
-                .map((day) => allDays.get(day))
-                .filter((payload): payload is WhoopCachedDayRaw =>
-                  Boolean(payload)
-                )
-                .map(toSummary);
+              return summariesWithData(requestedDays, allDays);
             }
 
             // Start 6 hours before midnight so WHOOP cycles/sleeps that
@@ -495,12 +519,26 @@ export class WhoopService extends Context.Service<WhoopService>()(
                 )
                 .pipe(logAndSwallowWhoopCacheError);
             }
+
+            // Cache the days that came back empty too. Otherwise any window
+            // that includes a future day misses the cache on every load and
+            // calls the WHOOP API again.
+            yield* Effect.forEach(
+              missingDays.filter((day) => !groupedDays.has(day)),
+              (day) =>
+                cache
+                  .setCachedDay(
+                    params.accountId,
+                    day,
+                    initializeDay(day),
+                    EMPTY_DAY_CACHE_TTL_SECONDS
+                  )
+                  .pipe(logAndSwallowWhoopCacheError),
+              { concurrency: "unbounded", discard: true }
+            );
           }
 
-          return requestedDays
-            .map((day) => allDays.get(day))
-            .filter((payload): payload is WhoopCachedDayRaw => Boolean(payload))
-            .map(toSummary);
+          return summariesWithData(requestedDays, allDays);
         }
       );
 
