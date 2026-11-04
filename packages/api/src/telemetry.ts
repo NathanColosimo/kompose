@@ -1,13 +1,19 @@
-import { OtelTracer } from "@effect/opentelemetry";
+import { layerGlobal } from "@effect/opentelemetry/OtelTracer";
 import { env } from "@kompose/env";
-import { SpanKind } from "@opentelemetry/api";
+import { context, propagation, SpanKind, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import type {
-  ReadableSpan,
-  SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import {
+  defaultResource,
+  resourceFromAttributes,
+} from "@opentelemetry/resources";
+import {
+  BatchSpanProcessor,
+  type ReadableSpan,
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { ORPCInstrumentation } from "@orpc/opentelemetry";
 import { waitUntil } from "@vercel/functions";
 import { Layer } from "effect";
@@ -15,9 +21,15 @@ import { Layer } from "effect";
 /**
  * Backend telemetry setup for OpenTelemetry + Effect tracing.
  *
- * A single NodeSDK instance owns the global TracerProvider and exporter.
+ * A single TracerProvider owns the global tracer and exporter.
  * Effect bridges into it via Tracer.layerGlobal (reads the global provider)
  * so that oRPC spans AND Effect.fn spans flow through the same exporter.
+ *
+ * This wires the provider by hand instead of using NodeSDK. NodeSDK
+ * statically imports every exporter it can build from env vars (gRPC,
+ * protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs, which put
+ * ~540 KB into the /api/rpc server bundle. Each cold start on Vercel's
+ * Bun runtime parses that again, since Bun functions get no bytecode cache.
  *
  * Next.js auto-instruments fetch when it detects a global TracerProvider.
  * We disable that via NEXT_OTEL_FETCH_DISABLED=1 in .env since we rely
@@ -61,93 +73,52 @@ function getExporterConfig(): OtlpExporterConfig | null {
 
 const exporterConfig = getExporterConfig();
 
-// ── Span attribute filter ────────────────────────────────────────────
-//    Strips noisy Next.js internal attributes before export.
-
-const STRIP_ATTRIBUTES = new Set(["next.span_name", "next.span_type"]);
-
-class SpanAttributeFilter implements SpanProcessor {
-  readonly #delegate: SpanProcessor;
-
-  constructor(delegate: SpanProcessor) {
-    this.#delegate = delegate;
-  }
-
-  onStart(span: unknown, parentContext: unknown): void {
-    this.#delegate.onStart(span as never, parentContext as never);
-  }
-
-  onEnd(span: ReadableSpan): void {
-    // Mutate the attributes object before the delegate serializes the span
-    const attrs = span.attributes as Record<string, unknown>;
-    for (const key of STRIP_ATTRIBUTES) {
-      delete attrs[key];
-    }
-    this.#delegate.onEnd(span);
-  }
-
-  forceFlush(): Promise<void> {
-    return this.#delegate.forceFlush();
-  }
-  shutdown(): Promise<void> {
-    return this.#delegate.shutdown();
-  }
-}
-
-// ── Flush when a request's root span ends ─────────────────────────────
-//    Vercel freezes an instance as soon as it responds, and the batch
-//    processor only exports every 5 s. A batch still buffered at that point
-//    waits for the instance's next request, or is lost when the instance is
-//    shut down without one. Most cold instances serve only a request or two,
-//    so most of their spans never reached Axiom. On Vercel, when a request's
-//    root span ends (a SERVER span with no local parent), export what's
-//    buffered, including boot spans such as "register instrumentation", and
-//    have Vercel keep the invocation alive until it's sent. Elsewhere the
-//    batch exports on its timer as before.
+// ── Span processor ───────────────────────────────────────────────────
+//    The batch processor, with two additions:
 //
-//    Flushes are coalesced: at most one export runs, with one more queued
-//    behind it for spans that end meanwhile. The OTLP exporter drops batches
-//    beyond 30 concurrent exports, which one flush per request could reach
-//    on a busy instance with a slow export. Each flush also waits on the
-//    exporter itself, since the processor's forceFlush only waits for the
-//    batches it starts, not an automatic one (at 512 spans) already sending.
+//    - It strips noisy Next.js internal attributes before export.
+//
+//    - On Vercel, it flushes when a request's root span ends (a SERVER span
+//      with no local parent). Vercel freezes an instance as soon as it
+//      responds and the batch only exports every 5 s, so a batch still
+//      buffered waited for the instance's next request, or was lost when the
+//      instance shut down without one. waitUntil keeps the invocation alive
+//      until the export finishes; boot spans go out in the same export.
+//      Flushes are coalesced (one running, at most one queued) because the
+//      exporter drops batches beyond 30 concurrent exports. Each flush also
+//      waits on the exporter: forceFlush only waits for the batches it
+//      starts, not an automatic 512-span export already sending.
 
+const STRIP_ATTRIBUTES = ["next.span_name", "next.span_type"];
 const flushAtRequestEnd = env.VERCEL === "1";
-
-function isRequestRoot(span: ReadableSpan): boolean {
-  const parent = span.parentSpanContext;
-  return (
-    span.kind === SpanKind.SERVER &&
-    (parent === undefined || parent.isRemote === true)
-  );
-}
-
-interface Flushable {
-  forceFlush(): Promise<void>;
-}
 
 function logFlushError(error: unknown) {
   console.error("OTEL_FLUSH_FAILED", error);
 }
 
-class FlushAtRequestEnd implements SpanProcessor {
-  readonly #delegate: SpanProcessor;
-  readonly #exporter: Flushable;
+class ExportSpanProcessor extends BatchSpanProcessor {
+  readonly #exporter: OTLPTraceExporter;
   #running: Promise<void> | undefined;
   #queued: Promise<void> | undefined;
 
-  constructor(delegate: SpanProcessor, exporter: Flushable) {
-    this.#delegate = delegate;
+  constructor(exporter: OTLPTraceExporter) {
+    super({ exporter });
     this.#exporter = exporter;
   }
 
-  onStart(span: unknown, parentContext: unknown): void {
-    this.#delegate.onStart(span as never, parentContext as never);
-  }
+  override onEnd(span: ReadableSpan): void {
+    // Mutate the attributes before the batch serializes the span.
+    const attributes = span.attributes as Record<string, unknown>;
+    for (const key of STRIP_ATTRIBUTES) {
+      delete attributes[key];
+    }
+    super.onEnd(span);
 
-  onEnd(span: ReadableSpan): void {
-    this.#delegate.onEnd(span);
-    if (flushAtRequestEnd && isRequestRoot(span)) {
+    const parent = span.parentSpanContext;
+    const isRequestRoot =
+      span.kind === SpanKind.SERVER &&
+      (parent === undefined || parent.isRemote === true);
+    if (flushAtRequestEnd && isRequestRoot) {
       waitUntil(this.#flush());
     }
   }
@@ -168,8 +139,7 @@ class FlushAtRequestEnd implements SpanProcessor {
   }
 
   #startFlush(): Promise<void> {
-    this.#running = this.#delegate
-      .forceFlush()
+    this.#running = this.forceFlush()
       .catch(logFlushError)
       .then(() => this.#exporter.forceFlush())
       .catch(logFlushError)
@@ -178,55 +148,53 @@ class FlushAtRequestEnd implements SpanProcessor {
       });
     return this.#running;
   }
-
-  forceFlush(): Promise<void> {
-    return this.#delegate.forceFlush();
-  }
-  shutdown(): Promise<void> {
-    return this.#delegate.shutdown();
-  }
 }
 
-// ── 1. Single NodeSDK — global TracerProvider + exporter ────────────
+// ── 1. Global TracerProvider + exporter ─────────────────────────────
 //    Owns the only TracerProvider. ORPCInstrumentation hooks into it for
 //    oRPC handler/middleware spans. The same provider is reused by
 //    Effect via Tracer.layerGlobal below.
 //
-//    autoDetectResources: false disables host/process/runtime resource
-//    attributes that add noise without actionable value.
+//    Also registers the async-hooks context manager (so spans nest across
+//    awaits) and W3C traceparent propagation. The resource is the default
+//    one plus service.name; no host/process/runtime detectors run.
 
 if (exporterConfig) {
-  const exporter = new OTLPTraceExporter({
-    headers: exporterConfig.headers,
-    url: exporterConfig.url,
-  });
-  const sdk = new NodeSDK({
-    autoDetectResources: false,
-    instrumentations: [new ORPCInstrumentation()],
-    serviceName: "kompose-api",
-    spanProcessors: [
-      new FlushAtRequestEnd(
-        new SpanAttributeFilter(new BatchSpanProcessor(exporter)),
-        exporter
+  context.setGlobalContextManager(
+    new AsyncLocalStorageContextManager().enable()
+  );
+  propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+  trace.setGlobalTracerProvider(
+    new TracerProvider({
+      resource: defaultResource().merge(
+        resourceFromAttributes({ "service.name": "kompose-api" })
       ),
-    ],
-  });
-  sdk.start();
+      spanProcessors: [
+        new ExportSpanProcessor(
+          new OTLPTraceExporter({
+            headers: exporterConfig.headers,
+            url: exporterConfig.url,
+          })
+        ),
+      ],
+    })
+  );
+  registerInstrumentations({ instrumentations: [new ORPCInstrumentation()] });
 }
 
 // ── 2. Effect telemetry layer ───────────────────────────────────────
-//    Tracer.layerGlobal reads the global TracerProvider (registered by
-//    the NodeSDK above) instead of creating a separate provider.
+//    Tracer.layerGlobal reads the global TracerProvider (registered
+//    above) instead of creating a separate provider.
 //    This means Effect.fn spans are exported through the same exporter
 //    as oRPC spans, keeping parent-child links intact. The service name
-//    comes from the NodeSDK resource.
+//    comes from the provider's resource.
 
 function buildTelemetryLayer(): Layer.Layer<never> {
   if (!exporterConfig) {
     return Layer.empty;
   }
 
-  return OtelTracer.layerGlobal;
+  return layerGlobal;
 }
 
 export const TelemetryLive = buildTelemetryLayer();
