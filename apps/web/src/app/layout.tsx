@@ -1,29 +1,7 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Libre_Baskerville, Lora } from "next/font/google";
+import { preload } from "react-dom";
 import "../index.css";
 import Providers from "@/components/providers";
-
-// Preload the custom font trio so the CSS variables resolve immediately.
-const libreBaskerville = Libre_Baskerville({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-sans",
-  weight: ["400", "700"],
-});
-
-const lora = Lora({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-serif",
-  weight: ["400", "500", "600", "700"],
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500", "600"],
-});
 
 export const metadata: Metadata = {
   description:
@@ -36,11 +14,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Every page's text is Sentient (index.css), so fetch it with the HTML
+  // instead of after the CSS is parsed.
+  preload("/fonts/Sentient-Variable.woff2", {
+    as: "font",
+    crossOrigin: "anonymous",
+    type: "font/woff2",
+  });
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${libreBaskerville.variable} ${lora.variable} ${ibmPlexMono.variable} antialiased`}
-      >
+      <body className="antialiased">
         <Providers>
           <div className="min-h-svh bg-background text-foreground">
             {children}
