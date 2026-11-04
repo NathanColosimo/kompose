@@ -11,6 +11,7 @@ import {
 } from "@kompose/state/atoms/google-data";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -29,7 +30,6 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
-  todayPlainDate,
 } from "@/lib/temporal-utils";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
