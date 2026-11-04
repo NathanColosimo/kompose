@@ -1,10 +1,7 @@
 "use client";
 
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
-import {
-  connectTaskParser,
-  type TaskParserClient,
-} from "@kompose/task-parser/worker-client";
+import { connectTaskParser } from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
@@ -28,26 +25,19 @@ export interface MagicParse {
 }
 
 /**
- * Rejects if `worker` fails to start, e.g. its script can't be fetched.
- * The RPC port never hears about that, so without this `load` would wait
- * forever and the magic box would never come on.
+ * Connects to the parser behind `port`, or rejects if `worker` fails to start
+ * (e.g. its script can't be fetched). The port never hears about that, so
+ * without the `error` listener `load` would wait forever.
  */
-function startupFailure(worker: Worker | SharedWorker): Promise<never> {
-  return new Promise((_, reject) => {
+function connect(worker: Worker | SharedWorker, port: Worker | MessagePort) {
+  const failedToStart = new Promise<never>((_, reject) => {
     worker.addEventListener(
       "error",
       () => reject(new Error("The task parser worker failed to start")),
       { once: true }
     );
   });
-}
-
-/** Connects to the parser behind `port`, or rejects if `worker` fails to start. */
-function connect(
-  worker: Worker | SharedWorker,
-  port: Worker | MessagePort
-): Promise<TaskParserClient> {
-  return Promise.race([connectTaskParser(port), startupFailure(worker)]);
+  return Promise.race([connectTaskParser(port), failedToStart]);
 }
 
 /**

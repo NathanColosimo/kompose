@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { pathToFileURL } from "node:url";
 import { Temporal } from "temporal-polyfill";
 import { createTaskParser } from "./parser";
@@ -32,12 +32,7 @@ describe("worker parser", () => {
   });
 
   test("windows connected to one worker share one loaded model", async () => {
-    const realFetch = globalThis.fetch;
-    let weightFetches = 0;
-    globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
-      weightFetches += 1;
-      return realFetch(...args);
-    }) as typeof fetch;
+    const fetchSpy = spyOn(globalThis, "fetch");
     // Each channel stands in for one window's SharedWorker port.
     const channels = [new MessageChannel(), new MessageChannel()];
     try {
@@ -53,10 +48,10 @@ describe("worker parser", () => {
       const [first, second] = await Promise.all(
         clients.map((client) => client.parse({ now, tags: [], text }))
       );
-      expect(weightFetches).toBe(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(JSON.stringify(first)).toBe(JSON.stringify(second));
     } finally {
-      globalThis.fetch = realFetch;
+      fetchSpy.mockRestore();
       for (const { port1, port2 } of channels) {
         port1.close();
         port2.close();
