@@ -63,6 +63,9 @@ push to main
 - Functions run on Node.js 26 (`engines.node` in `apps/web/package.json`),
   which gets Vercel's bytecode caching on cold starts; Bun's function runtime
   doesn't. Bun is still the package manager and runs the tooling and tests.
+  Without `bunVersion`, Vercel's default Bun is 1.3, so `installCommand`
+  runs `bunx bun@1.4.3 install` (Vercel's documented way to pin it). Bump it
+  together with `packageManager` in the root `package.json`.
   Server packages (`api`, `auth`, `db`, `env`, `google-cal`, `whoop`, `redis`)
   type-check against Node's types only, so a Bun-only API there fails
   `tsc`. `buildCommand` in `vercel.json` is `turbo run build`;
