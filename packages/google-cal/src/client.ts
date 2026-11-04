@@ -10,8 +10,6 @@ import {
   type CreateEvent,
   type Event,
   EventSchema,
-  type GoogleUserInfo,
-  GoogleUserInfoSchema,
   RecurrenceScope,
 } from "./schema";
 import {
@@ -180,27 +178,6 @@ function buildThisOccurrenceUpdatePayload(
       ? { originalStartTime: currentEvent.originalStartTime }
       : {}),
   };
-}
-
-// -- Google User Info (standalone, no Effect) --
-
-const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
-
-/**
- * Fetch the authenticated user's profile from Google's userinfo endpoint.
- * Returns null when the token is invalid or the response can't be parsed.
- */
-export async function getGoogleUserInfo(
-  accessToken: string
-): Promise<GoogleUserInfo | null> {
-  const response = await fetch(GOOGLE_USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) {
-    return null;
-  }
-  const parsed = GoogleUserInfoSchema.safeParse(await response.json());
-  return parsed.success ? parsed.data : null;
 }
 
 // -- Service Definition --

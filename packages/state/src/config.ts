@@ -1,4 +1,4 @@
-import { atom, getDefaultStore, useAtomValue } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import type { AuthClient, OrpcUtils } from "./types";
 
 /**
@@ -33,17 +33,6 @@ export function getStateConfig(
  */
 export function useStateConfig(): StateConfig {
   const config = useAtomValue(stateConfigAtom);
-  if (!config) {
-    throw new Error("State config is not configured.");
-  }
-  return config;
-}
-
-/**
- * Access config from the default store (non-hook contexts).
- */
-export function getStateConfigFromStore(): StateConfig {
-  const config = getDefaultStore().get(stateConfigAtom);
   if (!config) {
     throw new Error("State config is not configured.");
   }

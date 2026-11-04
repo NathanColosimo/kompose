@@ -2,7 +2,6 @@ import {
   type TaskSelectDecoded,
   taskSelectCodec,
 } from "@kompose/api/routers/task/contract";
-import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig } from "../config";
 
@@ -24,8 +23,3 @@ export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
     staleTime: 1000 * 60 * 5,
   };
 });
-
-/**
- * Convenience atom for just the task data.
- */
-export const tasksDataAtom = atom((get) => get(tasksQueryAtom).data ?? []);

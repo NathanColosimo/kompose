@@ -187,5 +187,3 @@ export function createWhoopClient(accessToken: string) {
       ),
   };
 }
-
-export type WhoopClient = ReturnType<typeof createWhoopClient>;

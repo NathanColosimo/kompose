@@ -1,11 +1,11 @@
 import { normalizedGoogleColorsAtomFamily } from "@kompose/state/atoms/google-colors";
+import type { CalendarWithSource } from "@kompose/state/atoms/google-data";
 import {
   isCalendarVisible,
   toggleCalendarSelection,
   type VisibleCalendars,
 } from "@kompose/state/atoms/visible-calendars";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
-import type { CalendarWithSource } from "@kompose/state/hooks/use-google-calendars";
 import type { Account, OAuth2UserInfo } from "better-auth";
 import { useAtomValue } from "jotai";
 import { Check } from "lucide-react-native";
