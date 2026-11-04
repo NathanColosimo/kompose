@@ -513,16 +513,8 @@ function registerBridge() {
   });
 }
 
-/**
- * Updates download in the background; the web app offers a restart once ready.
- * electron-updater is imported here rather than at startup, where evaluating it
- * would delay the first window.
- */
-async function setUpAutoUpdates() {
-  if (!app.isPackaged) {
-    return;
-  }
-  const { autoUpdater } = await import("electron-updater");
+/** Updates download in the background; the web app offers a restart once ready. */
+function startAutoUpdates(autoUpdater: AppUpdater) {
   updater = autoUpdater;
   autoUpdater.on("update-downloaded", ({ version }) => {
     readyUpdate = version;
@@ -536,6 +528,21 @@ async function setUpAutoUpdates() {
   const check = () => autoUpdater.checkForUpdates().catch(() => undefined);
   check();
   setInterval(check, 30 * 60_000).unref();
+}
+
+/**
+ * electron-updater is imported here, after the windows are created, rather
+ * than at startup, where evaluating it would delay the first window.
+ */
+function setUpAutoUpdates() {
+  if (!app.isPackaged) {
+    return;
+  }
+  import("electron-updater")
+    .then(({ autoUpdater }) => startAutoUpdates(autoUpdater))
+    .catch((error: unknown) =>
+      console.warn("Update setup failed", String(error))
+    );
 }
 
 function setUpMenu() {
@@ -577,9 +584,7 @@ app
     } catch (error) {
       console.warn(String(error));
     }
-    setUpAutoUpdates().catch((error: unknown) =>
-      console.warn("Update setup failed", String(error))
-    );
+    setUpAutoUpdates();
   })
   .catch((error: unknown) => {
     console.error(error);
