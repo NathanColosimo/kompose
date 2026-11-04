@@ -34,10 +34,12 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
 /**
  * A valid access token for one of the user's linked provider accounts.
  *
- * App APIs and cache keys use the provider's account ID, while Better Auth's
- * token API wants its own row ID. Looking the row up by user also checks the
- * user owns the account. Better Auth reports a failed refresh as an
- * `APIError`; anything else (such as a database failure) is a defect.
+ * `accountId` is the provider's account ID, which the app uses everywhere
+ * (RPC inputs, cache keys). Better Auth's token API takes the local
+ * `account.id`, so this first finds the row, which also checks the user owns
+ * the account. A missing row, or a Better Auth `APIError` (no account, failed
+ * refresh), is a `LinkedAccountError`; anything else, such as a database
+ * failure, is a defect.
  */
 export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
   function* (params: {
@@ -56,7 +58,7 @@ export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
       });
 
     const db = yield* Database;
-    const [row] = yield* db
+    const rows = yield* db
       .select({ id: account.id })
       .from(account)
       .where(
@@ -66,10 +68,14 @@ export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
           eq(account.userId, params.userId)
         )
       )
-      .limit(1)
+      .limit(2)
       .pipe(Effect.orDie);
-    if (!row) {
-      return yield* fail(new Error("Account not found"));
+
+    const [row] = rows;
+    if (!row || rows.length > 1) {
+      return yield* fail(
+        new Error(`Expected one linked account row, found ${rows.length}`)
+      );
     }
 
     const { accessToken } = yield* Effect.tryPromise(() =>

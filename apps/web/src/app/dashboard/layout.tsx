@@ -10,6 +10,7 @@ import { AppHeader } from "@/components/app-header";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
 import { CommandBar } from "@/components/command-bar/command-bar";
+import { DashboardQueries } from "@/components/dashboard-queries";
 import { CalendarHotkeys } from "@/components/hotkeys/calendar-hotkeys";
 import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
@@ -137,6 +138,7 @@ export default function DashboardLayout({
           onRetry={refetchSession}
           retrying={isRefetching}
         />
+        {isSessionPending ? <DashboardQueries /> : null}
       </main>
     );
   }

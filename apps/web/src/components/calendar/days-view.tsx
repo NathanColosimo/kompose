@@ -205,6 +205,29 @@ function isScheduledTask(task: TaskSelectDecoded): task is ScheduledTask {
   return task.startDate !== null && task.startTime !== null;
 }
 
+/**
+ * Whether `task` could touch a day from `first` to `last`, using cheap date
+ * math: wall-clock days, widened by one so DST shifts can't hide a day. It
+ * may keep a task that doesn't touch the range (`clampTaskToDay` decides),
+ * but never drops one that does.
+ */
+function mayTouchDays(
+  task: ScheduledTask,
+  first: Temporal.PlainDate,
+  last: Temporal.PlainDate
+): boolean {
+  if (Temporal.PlainDate.compare(task.startDate, last) > 0) {
+    return false;
+  }
+  const startMinutes = task.startTime.hour * 60 + task.startTime.minute;
+  const spanDays =
+    Math.floor((startMinutes + task.durationMinutes) / (24 * 60)) + 1;
+  return (
+    Temporal.PlainDate.compare(task.startDate.add({ days: spanDays }), first) >=
+    0
+  );
+}
+
 function clampTaskToDay(
   task: ScheduledTask,
   day: Temporal.PlainDate,
@@ -357,7 +380,19 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     return () => observer.disconnect();
   }, []);
 
-  const scheduledTasks = useMemo(() => tasks.filter(isScheduledTask), [tasks]);
+  // Every scheduled task in the list (all history, plus recurring occurrences)
+  // would otherwise go through time-zone math for each visible day.
+  const nearbyScheduledTasks = useMemo(() => {
+    const first = visibleDays[0];
+    const last = visibleDays.at(-1);
+    if (!(first && last)) {
+      return [];
+    }
+    return tasks.filter(
+      (task): task is ScheduledTask =>
+        isScheduledTask(task) && mayTouchDays(task, first, last)
+    );
+  }, [tasks, visibleDays]);
 
   // Split scheduled tasks into per-day display segments so tasks that cross
   // midnight render in each touched day without overflowing the grid.
@@ -367,7 +402,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     for (const day of visibleDays) {
       grouped.set(
         day.toString(),
-        scheduledTasks.flatMap((task) => {
+        nearbyScheduledTasks.flatMap((task) => {
           const segment = clampTaskToDay(task, day, timeZone);
           return segment ? [segment] : [];
         })
@@ -375,7 +410,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     }
 
     return grouped;
-  }, [visibleDays, scheduledTasks, timeZone]);
+  }, [visibleDays, nearbyScheduledTasks, timeZone]);
 
   // Group Google events by day (timed vs all-day) and keep them separate from tasks
   const { timedEventsByDay, allDayEventsByDay } = useMemo(

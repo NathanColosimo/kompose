@@ -190,8 +190,8 @@ Webhook invalidation uses the subscription's `userId`. If two users link the sam
 Google Calendar cache keys use the Google provider account id (`account.account_id`),
 which is also the id used by client query keys and oRPC Google Calendar inputs.
 Better Auth 1.7 token, profile, and unlink selectors instead use the local
-`account.id`. `getLinkedAccessToken` resolves the provider ID to the user's row
-before calling Better Auth; keep provider IDs in calendar
+`account.id`. `getLinkedAccessToken` (`packages/api/src/lib/linked-account.ts`)
+resolves the provider ID to the user's row before calling Better Auth; keep provider IDs in calendar
 preferences, bootstrap `accountId` fields, cache keys, and realtime events.
 Webhook subscription rows additionally store the Better Auth internal account row
 id (`webhook_subscription.account_id`) for database relations, but webhook cache

@@ -12,7 +12,7 @@ Two GitHub Actions workflows run everything; nothing ships from a laptop.
 | --- | --- |
 | Lint and format | `biome ci .` |
 | Lint workflows | `actionlint` (with `shellcheck` on `run:` blocks) on `.github/workflows/` |
-| Type-check and build | `turbo run type-check test --affected` (tests: `bun test` in packages with a `test` script, today `packages/api`, `packages/state`, and `packages/task-parser`, whose weights come from Git LFS through `actions/cache`), then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (app config and native dependencies; it calls the Expo API, so it can fail on network issues) |
+| Type-check and build | `turbo run type-check test --affected` (tests: `bun test` in packages with a `test` script, today `packages/task-parser`, whose weights come from Git LFS through `actions/cache`), then `turbo run build doctor --affected`: the iOS bundle (`expo export`, including the Hermes bytecode compile), the Electron main/preload build, and `expo-doctor` (app config and native dependencies; it calls the Expo API, so it can fail on network issues) |
 | Migrations | `bun run db:check`: `drizzle-kit check` validates the migrations and fails if the schema differs from them |
 
 `--affected` runs only the packages changed since the PR base

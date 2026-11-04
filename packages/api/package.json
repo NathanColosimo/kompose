@@ -10,7 +10,6 @@
     }
   },
   "scripts": {
-    "test": "bun test",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,9 +20,12 @@
     "@kompose/google-cal": "workspace:*",
     "@kompose/whoop": "workspace:*",
     "@opentelemetry/api": "catalog:",
+    "@opentelemetry/context-async-hooks": "catalog:",
+    "@opentelemetry/core": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/sdk-node": "catalog:",
-    "@opentelemetry/sdk-trace-base": "catalog:",
+    "@opentelemetry/instrumentation": "catalog:",
+    "@opentelemetry/resources": "catalog:",
+    "@opentelemetry/sdk-trace": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/effect": "catalog:",
     "@orpc/opentelemetry": "catalog:",
@@ -39,7 +41,6 @@
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",
-    "@orpc/client": "catalog:",
     "@types/node": "catalog:"
   }
 }

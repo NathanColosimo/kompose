@@ -173,6 +173,21 @@ function initializeDay(day: string): WhoopCachedDayRaw {
   };
 }
 
+function hasData(
+  payload: WhoopCachedDayRaw | undefined
+): payload is WhoopCachedDayRaw {
+  if (!payload) {
+    return false;
+  }
+
+  return (
+    payload.cycle !== null ||
+    payload.recovery !== null ||
+    payload.sleeps.length > 0 ||
+    payload.workouts.length > 0
+  );
+}
+
 function chooseMoreRecent<
   T extends {
     updated_at: string;
@@ -323,11 +338,14 @@ function groupRawDataByDay(params: {
   return byDay;
 }
 
-function ttlForDay(day: string, timeZone: string): number {
-  const today = Temporal.Now.plainDateISO(timeZone);
-  const current = Temporal.PlainDate.from(day);
+// Today and days with no data yet (future days, band off) can still gain
+// data, so they expire quickly. Caching empty days at all keeps windows that
+// include future days from refetching WHOOP on every load.
+function ttlForDay(payload: WhoopCachedDayRaw, timeZone: string): number {
+  const isToday =
+    payload.day === Temporal.Now.plainDateISO(timeZone).toString();
 
-  return Temporal.PlainDate.compare(current, today) === 0
+  return isToday || !hasData(payload)
     ? TODAY_CACHE_TTL_SECONDS
     : PAST_CACHE_TTL_SECONDS;
 }
@@ -372,24 +390,18 @@ export class WhoopService extends Context.Service<WhoopService>()(
           );
           const allDays = new Map(cachedDays);
 
-          if (missingDays.length > 0) {
+          const [missingStart] = missingDays;
+          const missingEnd = missingDays.at(-1);
+
+          if (missingStart && missingEnd) {
+            // Only fetch a token on a cache miss; user-scoped cache keys
+            // already keep one user from reading another's cached days.
             const accessToken = yield* getLinkedAccessToken({
               accountId: params.accountId,
               providerId: "whoop",
               userId: params.userId,
             });
             const client = createWhoopClient(accessToken);
-            const [missingStart] = missingDays;
-            const missingEnd = missingDays.at(-1);
-
-            if (!(missingStart && missingEnd)) {
-              return requestedDays
-                .map((day) => allDays.get(day))
-                .filter((payload): payload is WhoopCachedDayRaw =>
-                  Boolean(payload)
-                )
-                .map(toSummary);
-            }
 
             // Start 6 hours before midnight so WHOOP cycles/sleeps that
             // begin in the late evening (typically ~11pm when the user
@@ -435,33 +447,36 @@ export class WhoopService extends Context.Service<WhoopService>()(
               workouts,
             });
 
-            // Only populate days that were actually missing from cache.
-            // Without this guard, a cycle fetched for a missing day can
-            // get grouped to an adjacent CACHED day (e.g., the active cycle
-            // starts on day N but its sleep ends on day N+1), overwriting
-            // that day's complete cached data with an incomplete grouping.
-            const missingDaySet = new Set(missingDays);
-            for (const [day, payload] of groupedDays) {
-              if (!missingDaySet.has(day)) {
-                continue;
-              }
-
-              allDays.set(day, payload);
-              yield* cache
-                .setCachedDay(
-                  params.userId,
-                  params.accountId,
-                  day,
-                  payload,
-                  ttlForDay(day, params.timeZone)
-                )
-                .pipe(logAndSwallowWhoopCacheError);
+            // Only write days that were actually missing from cache. A cycle
+            // fetched for a missing day can get grouped to an adjacent CACHED
+            // day (e.g., the active cycle starts on day N but its sleep ends
+            // on day N+1), which would overwrite that day's complete cached
+            // data with an incomplete grouping.
+            const fetchedDays = missingDays.map(
+              (day) => groupedDays.get(day) ?? initializeDay(day)
+            );
+            for (const payload of fetchedDays) {
+              allDays.set(payload.day, payload);
             }
+            yield* Effect.forEach(
+              fetchedDays,
+              (payload) =>
+                cache
+                  .setCachedDay(
+                    params.userId,
+                    params.accountId,
+                    payload.day,
+                    payload,
+                    ttlForDay(payload, params.timeZone)
+                  )
+                  .pipe(logAndSwallowWhoopCacheError),
+              { concurrency: "unbounded", discard: true }
+            );
           }
 
           return requestedDays
             .map((day) => allDays.get(day))
-            .filter((payload): payload is WhoopCachedDayRaw => Boolean(payload))
+            .filter(hasData)
             .map(toSummary);
         }
       );

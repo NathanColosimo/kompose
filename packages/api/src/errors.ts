@@ -25,7 +25,7 @@ function isPublicError(value: unknown): value is PublicError {
 }
 
 /** The `publicError` of `error`, if its class defines one. */
-export function publicErrorOf(error: unknown): PublicError | undefined {
+function publicErrorOf(error: unknown): PublicError | undefined {
   if (error instanceof Error && "publicError" in error) {
     const { publicError } = error;
     return isPublicError(publicError) ? publicError : undefined;

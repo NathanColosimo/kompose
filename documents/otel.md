@@ -31,7 +31,7 @@ BatchSpanProcessor → SpanAttributeFilter → OTLPTraceExporter → Axiom (or J
 
 ### Components
 
-1. **NodeSDK** — owns the single global `TracerProvider` and `OTLPTraceExporter`. Registers `ORPCInstrumentation` for automatic oRPC handler/middleware spans.
+1. **`TracerProvider`** (`@opentelemetry/sdk-trace`) — the single global provider, with a `BatchSpanProcessor` and `OTLPTraceExporter`. `telemetry.ts` also registers the async-hooks context manager, W3C `traceparent` propagation, and `ORPCInstrumentation` for automatic oRPC handler/middleware spans.
 2. **Effect `Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same global `TracerProvider` so oRPC and Effect spans share parent-child links.
 3. **`SpanAttributeFilter`** — custom `SpanProcessor` wrapper that strips noisy Next.js internal attributes (`next.span_name`, `next.span_type`) before export.
 
@@ -45,7 +45,11 @@ BatchSpanProcessor → SpanAttributeFilter → OTLPTraceExporter → Axiom (or J
 
 ### Resource attributes
 
-`autoDetectResources: false` is set on `NodeSDK` to suppress host/process/runtime resource attributes that add noise without actionable value.
+The resource is the OTel default (`telemetry.sdk.*`) plus `service.name`. No resource detectors run, so there are no host/process/runtime attributes adding noise without actionable value.
+
+### Why not NodeSDK
+
+`@opentelemetry/sdk-node` statically imports every exporter it can build from env vars (gRPC, protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs. That put ~540 KB into the `/api/rpc` server bundle (2.67 MB → 2.13 MB without it). Vercel's Bun runtime has no bytecode cache, so every cold start parsed it again. Wiring the provider by hand halved `register instrumentation` locally (~21 ms → ~10 ms) and saves ~8 MB RSS per instance. Keep new OTel imports to the specific packages, not `sdk-node` or the `@effect/opentelemetry` barrel (import `@effect/opentelemetry/OtelTracer`).
 
 ### Effect telemetry layer
 
@@ -69,7 +73,7 @@ export async function register() {
 }
 ```
 
-This ensures `NodeSDK.start()` runs at Next.js server startup, **before** Next.js creates its internal root spans (e.g. `BaseServer.handleRequest`, `resolve page components`). Without this, those root spans are created against a no-op provider and never exported, causing "missing parent span" issues in the OTel backend.
+This ensures the `TracerProvider` is registered at Next.js server startup, **before** Next.js creates its internal root spans (e.g. `BaseServer.handleRequest`, `resolve page components`). Without this, those root spans are created against a no-op provider and never exported, causing "missing parent span" issues in the OTel backend.
 
 ---
 
@@ -180,9 +184,9 @@ This keeps the Axiom UI clean without losing meaningful data.
 
 2. **Single TracerProvider** — both oRPC (via `ORPCInstrumentation`) and Effect (via `Tracer.layerGlobal`) share the same provider, so parent-child links are preserved across the oRPC → Effect boundary.
 
-3. **`instrumentation.ts` hook** — without this, Next.js creates root request spans before the `NodeSDK` registers its provider, causing orphaned spans. The hook ensures early initialization.
+3. **`instrumentation.ts` hook** — without this, Next.js creates root request spans before `telemetry.ts` registers its provider, causing orphaned spans. The hook ensures early initialization.
 
-4. **`autoDetectResources: false`** — suppresses `resource.host.*`, `resource.process.*`, `resource.process.runtime.*` attributes that add noise in Axiom without providing useful debugging info.
+4. **No resource detectors** — suppresses `resource.host.*`, `resource.process.*`, `resource.process.runtime.*` attributes that add noise in Axiom without providing useful debugging info.
 
 5. **Fetch instrumentation disabled** — Next.js fetch auto-instrumentation creates high-cardinality spans (one per URL including query params). `Effect.fn` wrapping the Google Calendar client provides the same observability with controlled span names.
 
