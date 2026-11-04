@@ -7,20 +7,22 @@ Google Calendar API data is cached in Redis to reduce latency. Webhooks handle r
 ```
 Client request
   ▼
-requireLinkedGoogleAccount (ownership check first, always)
+requireLinkedAccount (ownership check first, always)
   ▼
 Cache lookup (Redis GET)
   ├── HIT  → return cached data
-  └── MISS → googleCalendarForAccount (access token, may refresh)
+  └── MISS → getLinkedAccessToken (may refresh)
              → fetch from Google API → populate cache → return
 ```
 
-Cache keys use the provider account ID, so the ownership check (one
-query) must run before the cache read. Getting an access token costs more DB
-queries (Better Auth's account lookup plus the WHOOP plugin's before-hook) and
-may refresh, so cached reads only do it on a miss. WHOOP day summaries follow
-the same order (`requireLinkedWhoopAccount`, then the day cache, then
-`whoopAccessTokenForAccount` only for missing days).
+Cache keys use the provider's account ID, so the ownership check (one query)
+must run before the cache read. Getting an access token costs more DB queries
+(Better Auth's account lookup plus the WHOOP plugin's before-hook, and a locked
+transaction for WHOOP) and may refresh, so cached reads only do it on a miss.
+Both live in `packages/api/src/lib/linked-account.ts`: `getLinkedAccessToken`
+only accepts the branded `LinkedAccount` that `requireLinkedAccount` returns, so
+a token can't be fetched without the check. WHOOP day summaries follow the same
+order, fetching a token only when some days are missing from the cache.
 
 ---
 

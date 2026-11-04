@@ -4,7 +4,11 @@ import { implement } from "@orpc/server";
 import { Effect, Option } from "effect";
 import { requireAuth } from "../..";
 import type { Context } from "../../context";
-import { getLinkedAccessToken } from "../../lib/linked-account";
+import {
+  getLinkedAccessToken,
+  type LinkedAccount,
+  requireLinkedAccount,
+} from "../../lib/linked-account";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
 import {
@@ -15,17 +19,26 @@ import {
 import { googleCalContract } from "./contract";
 import { NonEditableGoogleEventError } from "./errors";
 
+/** Confirms the user owns this Google account. Run before any cache read. */
+function requireGoogleAccount(params: { accountId: string; userId: string }) {
+  return requireLinkedAccount({ ...params, providerId: "google" });
+}
+
+/** The Google Calendar client for an owned account (fetches its token). */
+const googleCalendarFor = Effect.fn("googleCalendarFor")(function* (
+  account: LinkedAccount
+) {
+  const accessToken = yield* getLinkedAccessToken(account);
+  return makeGoogleCalendarService(accessToken);
+});
+
 /** The Google Calendar client for one of the user's linked accounts. */
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   userId: string,
   accountId: string
 ) {
-  const accessToken = yield* getLinkedAccessToken({
-    accountId,
-    providerId: "google",
-    userId,
-  });
-  return makeGoogleCalendarService(accessToken);
+  const account = yield* requireGoogleAccount({ accountId, userId });
+  return yield* googleCalendarFor(account);
 });
 
 export const os = implement(googleCalContract)
@@ -134,7 +147,10 @@ export const googleCalRouter = os.router({
     get: os.calendars.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const account = yield* requireGoogleAccount({
+        accountId: input.accountId,
+        userId: context.user.id,
+      });
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -145,6 +161,7 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
+      const google = yield* googleCalendarFor(account);
       const calendar = yield* google.getCalendar(input.calendarId);
 
       // Populate cache (best effort)
@@ -157,7 +174,10 @@ export const googleCalRouter = os.router({
     list: os.calendars.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const account = yield* requireGoogleAccount({
+        accountId: input.accountId,
+        userId: context.user.id,
+      });
 
       // Check cache — log errors, fall through to API on failure
       const cached = yield* cache
@@ -168,6 +188,7 @@ export const googleCalRouter = os.router({
       }
 
       // Cache miss — fetch from Google API
+      const google = yield* googleCalendarFor(account);
       const calendars = yield* google.listCalendars();
 
       // Populate cache (best effort)
@@ -206,7 +227,10 @@ export const googleCalRouter = os.router({
     list: os.colors.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const account = yield* requireGoogleAccount({
+        accountId: input.accountId,
+        userId: context.user.id,
+      });
 
       const cached = yield* cache
         .getCachedColors(input.accountId)
@@ -215,6 +239,7 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
+      const google = yield* googleCalendarFor(account);
       const colors = yield* google.listColors();
 
       yield* cache
@@ -281,7 +306,10 @@ export const googleCalRouter = os.router({
     get: os.events.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const account = yield* requireGoogleAccount({
+        accountId: input.accountId,
+        userId: context.user.id,
+      });
 
       const cached = yield* cache
         .getCachedEvent(input.accountId, input.calendarId, input.eventId)
@@ -290,6 +318,7 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
+      const google = yield* googleCalendarFor(account);
       const event = yield* google.getEvent(input.calendarId, input.eventId);
 
       yield* cache
@@ -303,7 +332,10 @@ export const googleCalRouter = os.router({
 
       const cache = yield* GoogleCalendarCacheService;
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const account = yield* requireGoogleAccount({
+        accountId: input.accountId,
+        userId: context.user.id,
+      });
 
       const cached = yield* cache
         .getCachedEvents(
@@ -320,6 +352,7 @@ export const googleCalRouter = os.router({
         return filterEventsBySearch(cached.value, searchQuery);
       }
 
+      const google = yield* googleCalendarFor(account);
       const events = yield* google.listEvents(
         input.calendarId,
         input.params.timeMin,
