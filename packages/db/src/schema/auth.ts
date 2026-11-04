@@ -61,10 +61,9 @@ export const account = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  // Every Google/WHOOP call resolves the caller's linked account by user and provider.
-  (table) => [
-    index("account_user_provider_idx").on(table.userId, table.providerId),
-  ]
+  // As Better Auth generates it. A user has a few accounts, so this also serves
+  // the user + provider lookups on every Google and WHOOP call.
+  (table) => [index("account_userId_idx").on(table.userId)]
 );
 
 export const verification = pgTable("verification", {
