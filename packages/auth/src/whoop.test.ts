@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 // Runs against a real Postgres. CI has none, so these skip without
 // DATABASE_URL. Locally, with `bun run db:start`:
-//   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kompose bun test src
+//   DATABASE_URL=postgresql://postgres:password@localhost:5432/kompose bun test src
 const databaseUrl = process.env.DATABASE_URL;
 
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
