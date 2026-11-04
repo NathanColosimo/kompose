@@ -1,5 +1,6 @@
 import { mcp } from "@orpc/mcp";
 import { type AnyProcedure, DecoratedProcedure } from "@orpc/server";
+import { sendPublicErrors } from "../errors";
 import { tagRouter } from "../routers/tag/router";
 import { taskRouter } from "../routers/task/router";
 
@@ -12,12 +13,17 @@ import { taskRouter } from "../routers/task/router";
 
 const readOnly = { openWorldHint: false, readOnlyHint: true };
 
-/** Exposes an app procedure as an MCP tool, keeping its schemas and middleware. */
+/**
+ * Exposes an app procedure as an MCP tool, keeping its schemas and middleware.
+ * These procedures skip `appRouter`, so each one sends public errors itself.
+ */
 function tool<T extends AnyProcedure>(
   procedure: T,
   meta: Parameters<typeof mcp.tool>[0]
 ) {
-  return new DecoratedProcedure(procedure["~orpc"]).meta(mcp.tool(meta));
+  return new DecoratedProcedure(procedure["~orpc"])
+    .use(sendPublicErrors)
+    .meta(mcp.tool(meta));
 }
 
 export const mcpRouter = {
