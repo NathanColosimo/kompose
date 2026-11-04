@@ -52,14 +52,6 @@ describe("overlappingCachedEvents", () => {
     ]);
   });
 
-  test("returns a single overlapping window's array as is", () => {
-    const client = new QueryClient();
-    const events = [event("nov-20")];
-    cache(client, november, events, 1);
-
-    expect(overlappingCachedEvents(client, calendar, december)).toBe(events);
-  });
-
   test("ignores windows that don't overlap", () => {
     const client = new QueryClient();
     cache(client, windowOf("2027-03-01", "2027-04-01"), [event("mar")], 1);

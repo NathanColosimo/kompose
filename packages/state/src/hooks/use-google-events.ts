@@ -23,16 +23,14 @@ export interface GoogleEventWithSource {
 }
 
 /**
- * Placeholder events for `calendar` while `window` loads: the cached events
- * from every window that overlaps it, keeping the most recently fetched copy
- * of each event.
+ * Placeholder events for `calendar` while `window` loads: the cached events of
+ * every window that overlaps it, the most recently fetched copy of each event
+ * winning.
  *
- * `useQueries` matches observers by query key, so when the window changes each
- * calendar gets a new observer and `keepPreviousData` has nothing to keep: the
- * grid went blank until the new window loaded. Windows are padded months, so
- * cached neighbours usually cover the days on screen. Merging matters when
- * both neighbours are cached (load November, jump to January, then step back
- * to December): either one alone would leave half of December empty.
+ * `useQueries` matches observers by query key, so a new window gets a new
+ * observer and `keepPreviousData` has nothing to keep. Merging matters when
+ * both neighbouring months are cached: either one alone leaves half the month
+ * empty.
  */
 export function overlappingCachedEvents(
   queryClient: QueryClient,
@@ -41,34 +39,24 @@ export function overlappingCachedEvents(
 ): GoogleEvent[] | undefined {
   const start = Date.parse(window.timeMin);
   const end = Date.parse(window.timeMax);
-  const overlapping = queryClient
+  const events = queryClient
     .getQueryCache()
-    .findAll({ queryKey: getGoogleEventsByCalendarQueryKey(calendar) })
-    .filter((query) => {
-      const [, , , timeMin, timeMax] = query.queryKey as ReturnType<
-        typeof getGoogleEventsQueryKey
-      >;
-      return (
-        query.state.data !== undefined &&
-        Date.parse(timeMin) < end &&
-        Date.parse(timeMax) > start
-      );
+    .findAll({
+      predicate: ({ queryKey }) => {
+        const [, , , timeMin, timeMax] = queryKey as ReturnType<
+          typeof getGoogleEventsQueryKey
+        >;
+        return Date.parse(timeMin) < end && Date.parse(timeMax) > start;
+      },
+      queryKey: getGoogleEventsByCalendarQueryKey(calendar),
     })
-    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
-
-  const [newest] = overlapping;
-  if (overlapping.length <= 1) {
-    // Hand back the cached array itself so its reference stays stable.
-    return newest?.state.data as GoogleEvent[] | undefined;
+    // Oldest first, so newer copies overwrite older ones in `byId` below.
+    .sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt)
+    .flatMap((query) => (query.state.data as GoogleEvent[] | undefined) ?? []);
+  if (events.length === 0) {
+    return;
   }
-  const byId = new Map<string, GoogleEvent>();
-  for (const query of overlapping) {
-    for (const event of query.state.data as GoogleEvent[]) {
-      if (!byId.has(event.id)) {
-        byId.set(event.id, event);
-      }
-    }
-  }
+  const byId = new Map(events.map((event) => [event.id, event]));
   return [...byId.values()];
 }
 
