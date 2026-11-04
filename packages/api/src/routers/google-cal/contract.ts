@@ -139,6 +139,8 @@ export const DeleteEventInputSchema = z.object({
   eventId: z.string(),
   scope: RecurrenceScopeSchema,
 });
+export type CreateEventInput = z.infer<typeof CreateEventInputSchemaFull>;
+export type MoveEventInput = z.infer<typeof MoveEventInputSchema>;
 export type DeleteEventInput = z.infer<typeof DeleteEventInputSchema>;
 
 export const deleteEvent = oc.input(DeleteEventInputSchema).output(z.null());
