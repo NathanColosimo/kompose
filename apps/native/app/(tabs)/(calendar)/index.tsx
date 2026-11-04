@@ -67,10 +67,7 @@ import type {
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
-import {
-  CreateEventEditorSheet,
-  EditEventEditorSheet,
-} from "@/components/calendar/calendar-event-editor-sheet";
+import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import {
   type TaskDraft,
@@ -1538,32 +1535,19 @@ function CalendarTabContent() {
         visibleCalendars={effectiveVisibleCalendars}
       />
 
-      {eventDraft?.mode === "create" ? (
-        <CreateEventEditorSheet
-          calendarOptions={allCalendarOptions}
+      {eventDraft ? (
+        <EventEditorSheet
+          calendarOptions={
+            eventDraft.mode === "edit"
+              ? editCalendarOptions
+              : allCalendarOptions
+          }
           draft={eventDraft}
-          isVisible
           onClose={closeEventModal}
-          onCreate={(draft) => {
+          onDelete={requestDeleteEvent}
+          onSubmit={(draft) => {
             saveEvent(draft).catch(() => null);
           }}
-          timeZone={timeZone}
-        />
-      ) : null}
-
-      {eventDraft?.mode === "edit" ? (
-        <EditEventEditorSheet
-          calendarOptions={editCalendarOptions}
-          draft={eventDraft}
-          isVisible
-          onClose={closeEventModal}
-          onDelete={(draft) => {
-            requestDeleteEvent(draft);
-          }}
-          onSave={(draft) => {
-            saveEvent(draft).catch(() => null);
-          }}
-          timeZone={timeZone}
         />
       ) : null}
 
