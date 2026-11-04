@@ -1,4 +1,5 @@
 import { atom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import { Temporal } from "temporal-polyfill";
 import { createPersistedAtom } from "../storage";
 import {
@@ -111,10 +112,18 @@ export const todayTickAtom = atom(0);
  * Unlike the stale useMemo approach, this stays correct across midnight
  * boundaries when the app is left open overnight.
  */
-export const todayPlainDateAtom = atom((get) => {
+const todayPlainDateTickAtom = atom((get) => {
   get(todayTickAtom);
   return todayPlainDate(get(timezoneAtom));
 });
+
+// The tick fires every minute and on focus; only hand out a new date (and
+// re-render subscribers) when the day actually changes.
+export const todayPlainDateAtom = selectAtom(
+  todayPlainDateTickAtom,
+  (date) => date,
+  (previous, next) => previous.equals(next)
+);
 
 /**
  * Current ZonedDateTime in the user's timezone, reactively refreshed via
