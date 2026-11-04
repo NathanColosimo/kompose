@@ -1,9 +1,9 @@
 "use client";
 
+import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
-  type RecurrenceScopeValue,
 } from "@kompose/state/recurrence-scope-options";
 import { useId } from "react";
 import { Button } from "@/components/ui/button";
@@ -37,14 +37,14 @@ export function RecurrenceScopeDialog({
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
-  value: RecurrenceScopeValue;
-  onValueChange: (value: RecurrenceScopeValue) => void;
+  value: RecurrenceScope;
+  onValueChange: (value: RecurrenceScope) => void;
   confirmLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
   onConfirm: () => void | Promise<void>;
-  disabledScopes?: Partial<Record<RecurrenceScopeValue, boolean>>;
-  options?: readonly RecurrenceScopeOption<RecurrenceScopeValue>[];
+  disabledScopes?: Partial<Record<RecurrenceScope, boolean>>;
+  options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
 
@@ -59,7 +59,7 @@ export function RecurrenceScopeDialog({
         </DialogHeader>
 
         <RadioGroup
-          onValueChange={(next) => onValueChange(next as RecurrenceScopeValue)}
+          onValueChange={(next) => onValueChange(next as RecurrenceScope)}
           value={value}
         >
           {options.map((opt) => {

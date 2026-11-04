@@ -1,20 +1,8 @@
-import type {
-  DeleteScope,
-  TaskSelectDecoded,
-  UpdateScope,
-} from "@kompose/api/routers/task/contract";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
-import {
-  TASK_DELETE_SCOPE_OPTIONS,
-  TASK_UPDATE_SCOPE_OPTIONS,
-} from "@kompose/state/recurrence-scope-options";
-import {
-  getTaskUpdateScopeDecision,
-  haveTaskCoreFieldsChanged,
-  resolveTaskRecurrenceForEditor,
-} from "@kompose/state/task-recurrence";
+import { getSystemTimeZone } from "@kompose/state/temporal-utils";
 import { Stack } from "expo-router/stack";
 import { Plus, Tag } from "lucide-react-native";
 import React from "react";
@@ -26,17 +14,13 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import { AlertDialog } from "@/components/ui/alert-dialog";
+import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
-import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
+import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
-
-function getSystemTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-}
 
 function formatPlainDateLong(date: Temporal.PlainDate): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -57,7 +41,6 @@ interface TaskSection {
 }
 
 type BaseTaskTab = "Inbox" | "Today";
-type TaskListMode = BaseTaskTab | "Tag";
 
 type TaskListItem =
   | { type: "header"; title: string }
@@ -104,7 +87,7 @@ function buildTagSections(
   return sections;
 }
 
-function buildTodayItems(sections: TaskSection[]): TaskListItem[] {
+function buildSectionItems(sections: TaskSection[]): TaskListItem[] {
   const items: TaskListItem[] = [];
   for (const section of sections) {
     if (section.data.length === 0) {
@@ -189,26 +172,20 @@ function TaskRow({
 }
 
 interface TaskListProps {
-  inboxTasks: TaskSelectDecoded[];
+  emptyMessage: string;
   isLoading: boolean;
   isRefreshing: boolean;
-  mode: TaskListMode;
+  items: TaskListItem[];
   onPressTask: (task: TaskSelectDecoded) => void;
   onRefresh: () => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
-  tagName: string | null;
-  tagSections: TaskSection[];
   tintColor: string;
-  todaySections: TaskSection[];
 }
 
-// Shared list renderer for Inbox and Today views.
+// Shared list renderer for the Inbox, Today and tag views.
 function TaskList({
-  mode,
-  inboxTasks,
-  todaySections,
-  tagSections,
-  tagName,
+  items,
+  emptyMessage,
   isLoading,
   isRefreshing,
   tintColor,
@@ -216,72 +193,18 @@ function TaskList({
   onPressTask,
   onToggleStatus,
 }: TaskListProps) {
-  if (mode === "Inbox") {
-    return (
-      <FlatList
-        contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
-        contentInsetAdjustmentBehavior="automatic"
-        data={inboxTasks}
-        keyExtractor={(t) => t.id}
-        ListEmptyComponent={
-          isLoading ? (
-            <Text className="pt-8 text-center text-muted-foreground">
-              Loading...
-            </Text>
-          ) : (
-            <Text className="pt-8 text-center text-muted-foreground">
-              No tasks in inbox.
-            </Text>
-          )
-        }
-        refreshControl={
-          <RefreshControl
-            onRefresh={onRefresh}
-            refreshing={isRefreshing}
-            tintColor={tintColor}
-          />
-        }
-        renderItem={({ item }) => (
-          <TaskRow
-            item={item}
-            onPress={onPressTask}
-            onToggleStatus={onToggleStatus}
-          />
-        )}
-      />
-    );
-  }
-
-  const sectionItems = buildTodayItems(
-    mode === "Today" ? todaySections : tagSections
-  );
-  let emptyMessage: string;
-  if (mode === "Today") {
-    emptyMessage = "Nothing for today.";
-  } else if (tagName) {
-    emptyMessage = `No tasks for tag ${tagName}.`;
-  } else {
-    emptyMessage = "No tasks for this tag.";
-  }
-
   return (
     <FlatList
       contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
       contentInsetAdjustmentBehavior="automatic"
-      data={sectionItems}
+      data={items}
       keyExtractor={(item) =>
         item.type === "header" ? `header-${item.title}` : item.task.id
       }
       ListEmptyComponent={
-        isLoading ? (
-          <Text className="pt-8 text-center text-muted-foreground">
-            Loading...
-          </Text>
-        ) : (
-          <Text className="pt-8 text-center text-muted-foreground">
-            {emptyMessage}
-          </Text>
-        )
+        <Text className="pt-8 text-center text-muted-foreground">
+          {isLoading ? "Loading..." : emptyMessage}
+        </Text>
       }
       refreshControl={
         <RefreshControl
@@ -305,25 +228,6 @@ function TaskList({
       }
     />
   );
-}
-
-function buildDraftFromTask(
-  task: TaskSelectDecoded,
-  recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
-): TaskDraft {
-  return {
-    description: task.description ?? "",
-    dueDate: task.dueDate,
-    durationMinutes: task.durationMinutes,
-    linkInput: "",
-    links: task.links ?? [],
-    recurrence: recurrence ?? null,
-    startDate: task.startDate,
-    startTime: task.startTime,
-    status: task.status,
-    tagIds: task.tags.map((tag) => tag.id),
-    title: task.title,
-  };
 }
 
 function buildEmptyDraft(timeZone: string): TaskDraft {
@@ -351,9 +255,7 @@ export default function TasksScreen() {
 
   const {
     tasksQuery,
-    createTask,
     updateTask,
-    deleteTask,
     inboxTasks,
     overdueTasks,
     plannedTasks,
@@ -394,215 +296,26 @@ export default function TasksScreen() {
     [tagDoneTasks, tagOverdueTasks, tagTodoTasks]
   );
 
-  // Modal state (create/edit).
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isTagManagerOpen, setIsTagManagerOpen] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [editingTask, setEditingTask] =
-    React.useState<TaskSelectDecoded | null>(null);
-  const [pendingTaskSaveDraft, setPendingTaskSaveDraft] =
-    React.useState<TaskDraft | null>(null);
-  const [taskSaveScope, setTaskSaveScope] = React.useState<UpdateScope>("this");
-  const [isTaskSaveScopeDialogVisible, setIsTaskSaveScopeDialogVisible] =
-    React.useState(false);
-  const [taskDeleteScope, setTaskDeleteScope] =
-    React.useState<DeleteScope>("this");
-  const [isTaskDeleteScopeDialogVisible, setIsTaskDeleteScopeDialogVisible] =
-    React.useState(false);
-  const [draft, setDraft] = React.useState<TaskDraft>(() =>
-    buildEmptyDraft(timeZone)
-  );
+  const taskFlow = useTaskEditorFlow();
 
-  // Memoize to keep the header action stable.
-  const openCreate = React.useCallback(() => {
-    const emptyDraft = buildEmptyDraft(timeZone);
-    setEditingTask(null);
-    setDraft(emptyDraft);
-    setIsModalOpen(true);
-  }, [timeZone]);
-
-  function openEdit(task: TaskSelectDecoded) {
-    const allTasks = tasksQuery.data ?? [];
-    const resolvedRecurrence = resolveTaskRecurrenceForEditor(task, allTasks);
-    const nextEditingTask: TaskSelectDecoded = {
-      ...task,
-      recurrence: resolvedRecurrence,
-    };
-    const nextDraft = buildDraftFromTask(nextEditingTask, resolvedRecurrence);
-    setEditingTask(nextEditingTask);
-    setDraft(nextDraft);
-    setIsModalOpen(true);
-  }
-
-  function closeModal() {
-    setIsModalOpen(false);
-    setEditingTask(null);
-    setPendingTaskSaveDraft(null);
-    setIsTaskSaveScopeDialogVisible(false);
-    setIsTaskDeleteScopeDialogVisible(false);
-  }
-
-  function commitTaskUpdate(nextDraft: TaskDraft, scope: UpdateScope) {
-    if (!editingTask) {
-      return;
-    }
-
-    updateTask.mutate({
-      id: editingTask.id,
-      scope,
-      task: {
-        description: nextDraft.description.trim()
-          ? nextDraft.description.trim()
-          : null,
-        dueDate: nextDraft.dueDate,
-        durationMinutes: nextDraft.durationMinutes,
-        links: nextDraft.links,
-        recurrence: nextDraft.recurrence,
-        startDate: nextDraft.startDate,
-        startTime: nextDraft.startTime,
-        tagIds: nextDraft.tagIds,
-        title: nextDraft.title.trim(),
-      },
-    });
-  }
-
-  function handleSave() {
-    if (!draft.title.trim() && draft.links.length === 0) {
-      return;
-    }
-    if (draft.durationMinutes <= 0) {
-      return;
-    }
-
-    if (editingTask) {
-      const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-        next: {
-          description: draft.description,
-          dueDate: draft.dueDate,
-          durationMinutes: draft.durationMinutes,
-          startDate: draft.startDate,
-          startTime: draft.startTime,
-          title: draft.title,
-        },
-        previous: {
-          description: editingTask.description,
-          dueDate: editingTask.dueDate,
-          durationMinutes: editingTask.durationMinutes,
-          startDate: editingTask.startDate,
-          startTime: editingTask.startTime,
-          title: editingTask.title,
-        },
-      });
-
-      const decision = getTaskUpdateScopeDecision({
-        hasCoreFieldChanges,
-        isRecurring: editingTask.seriesMasterId !== null,
-        isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-        nextRecurrence: draft.recurrence,
-        nextTagIds: draft.tagIds,
-        previousRecurrence: editingTask.recurrence,
-        previousTagIds: editingTask.tags.map((tag) => tag.id),
-      });
-
-      if (decision.action === "prompt") {
-        setPendingTaskSaveDraft(draft);
-        setTaskSaveScope(decision.defaultScope);
-        setIsModalOpen(false);
-        setIsTaskSaveScopeDialogVisible(true);
-        return;
-      }
-
-      commitTaskUpdate(draft, decision.scope);
-    } else {
-      // Derive a title from the first link if the user didn't type one
-      let title = draft.title.trim();
-      if (!title && draft.links.length > 0) {
-        const first = draft.links[0];
-        title = first.title ?? new URL(first.url).hostname;
-      }
-
-      createTask.mutate({
-        description: draft.description.trim() ? draft.description.trim() : null,
-        dueDate: draft.dueDate,
-        durationMinutes: draft.durationMinutes,
-        isException: false,
-        links: draft.links,
-        recurrence: draft.recurrence,
-        seriesMasterId: null,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
-        status: "todo",
-        tagIds: draft.tagIds,
-        title,
-      });
-    }
-
-    closeModal();
-  }
-
-  function handleDelete() {
-    if (!editingTask) {
-      return;
-    }
-
-    if (editingTask.seriesMasterId) {
-      setTaskDeleteScope("this");
-      setIsModalOpen(false);
-      setIsTaskDeleteScopeDialogVisible(true);
-      return;
-    }
-
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    closeModal();
-  }
-
-  function confirmScopedTaskSave() {
-    if (!(editingTask && pendingTaskSaveDraft)) {
-      return;
-    }
-    commitTaskUpdate(pendingTaskSaveDraft, taskSaveScope);
-    closeModal();
-  }
-
-  function confirmScopedTaskDelete() {
-    if (!editingTask) {
-      return;
-    }
-    deleteTask.mutate({ id: editingTask.id, scope: taskDeleteScope });
-    closeModal();
-  }
-
-  function handleToggleDone(nextStatus: TaskDraft["status"]) {
-    if (!editingTask) {
-      return;
-    }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: nextStatus },
-    });
-    closeModal();
-  }
-
-  const handleRefresh = React.useCallback(() => {
+  function handleRefresh() {
     setIsRefreshing(true);
     tasksQuery.refetch().finally(() => {
       setIsRefreshing(false);
     });
-  }, [tasksQuery]);
+  }
 
   // Toggle task status directly from the list (without opening modal)
-  const handleToggleStatus = React.useCallback(
-    (task: TaskSelectDecoded) => {
-      const newStatus = task.status === "done" ? "todo" : "done";
-      updateTask.mutate({
-        id: task.id,
-        scope: "this",
-        task: { status: newStatus },
-      });
-    },
-    [updateTask]
-  );
+  function handleToggleStatus(task: TaskSelectDecoded) {
+    const newStatus = task.status === "done" ? "todo" : "done";
+    updateTask.mutate({
+      id: task.id,
+      scope: "this",
+      task: { status: newStatus },
+    });
+  }
 
   const selectBaseTab = React.useCallback((tab: BaseTaskTab) => {
     setSelectedTagId(null);
@@ -612,7 +325,21 @@ export default function TasksScreen() {
   // Get the selected tag's icon component (or default Tag icon)
   const SelectedTagIcon = selectedTag ? tagIconMap[selectedTag.icon] : Tag;
   const isTagView = selectedTagId !== null;
-  const taskListMode: TaskListMode = isTagView ? "Tag" : activeTab;
+
+  let listItems: TaskListItem[];
+  let emptyMessage: string;
+  if (isTagView) {
+    listItems = buildSectionItems(tagSections);
+    emptyMessage = selectedTag?.name
+      ? `No tasks for tag ${selectedTag.name}.`
+      : "No tasks for this tag.";
+  } else if (activeTab === "Today") {
+    listItems = buildSectionItems(todaySections);
+    emptyMessage = "Nothing for today.";
+  } else {
+    listItems = inboxTasks.map((task) => ({ task, type: "task" }));
+    emptyMessage = "No tasks in inbox.";
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -672,7 +399,7 @@ export default function TasksScreen() {
               <Pressable
                 accessibilityLabel="New task"
                 className="items-center justify-center rounded-lg p-1.5 active:opacity-70"
-                onPress={openCreate}
+                onPress={() => taskFlow.openCreate(buildEmptyDraft(timeZone))}
               >
                 <Icon as={Plus} size={18} />
               </Pressable>
@@ -684,71 +411,29 @@ export default function TasksScreen() {
 
       {/* Task list */}
       <TaskList
-        inboxTasks={inboxTasks}
+        emptyMessage={emptyMessage}
         isLoading={tasksQuery.isLoading}
         isRefreshing={isRefreshing}
-        mode={taskListMode}
-        onPressTask={openEdit}
+        items={listItems}
+        onPressTask={taskFlow.openEdit}
         onRefresh={handleRefresh}
         onToggleStatus={handleToggleStatus}
-        tagName={selectedTag?.name ?? null}
-        tagSections={tagSections}
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
-        todaySections={todaySections}
       />
 
       <TaskEditorSheet
-        draft={draft}
-        isVisible={isModalOpen}
-        mode={editingTask ? "edit" : "create"}
-        onClose={closeModal}
-        onDelete={editingTask ? handleDelete : undefined}
-        onSave={handleSave}
-        onToggleDone={editingTask ? handleToggleDone : undefined}
-        setDraft={setDraft}
+        draft={taskFlow.draft}
+        isVisible={taskFlow.isEditorOpen}
+        mode={taskFlow.editingTask ? "edit" : "create"}
+        onClose={taskFlow.close}
+        onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
+        onSave={taskFlow.save}
+        onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
 
-      <AlertDialog
-        confirmText="Apply"
-        description="This is a recurring task. Choose how broadly to apply these updates."
-        isVisible={isTaskSaveScopeDialogVisible}
-        onCancel={closeModal}
-        onClose={closeModal}
-        onConfirm={confirmScopedTaskSave}
-        title="Apply task update"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
-            options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskSaveScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring task. Choose what to delete."
-        isVisible={isTaskDeleteScopeDialogVisible}
-        onClose={closeModal}
-        onConfirm={confirmScopedTaskDelete}
-        title="Delete recurring task"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
-            options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskDeleteScope}
-          />
-        </View>
-      </AlertDialog>
+      <TaskScopeDialogs flow={taskFlow} />
 
       <TagManagerPopover
         onChange={setSelectedTagId}

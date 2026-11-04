@@ -72,9 +72,7 @@ interface TaskEditorSheetProps {
   onSave: () => void;
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
-  snapPoints?: number[];
   timeZone: string;
-  title?: string;
 }
 
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];
@@ -99,7 +97,7 @@ function plainTimeToDate(plainTime: Temporal.PlainTime): Date {
   return date;
 }
 
-function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
+function dateToPlainDate(date: Date): Temporal.PlainDate {
   return Temporal.PlainDate.from({
     day: date.getDate(),
     month: date.getMonth() + 1,
@@ -107,7 +105,7 @@ function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
   });
 }
 
-function dateToPlainTime(date: Date, _timeZone: string): Temporal.PlainTime {
+function dateToPlainTime(date: Date): Temporal.PlainTime {
   return Temporal.PlainTime.from({
     hour: date.getHours(),
     minute: date.getMinutes(),
@@ -150,12 +148,10 @@ function formatDurationMinutes(minutes: number): string {
 function TaskRecurrenceEndSection({
   recurrenceState,
   fallbackUntil,
-  timeZone,
   updateRecurrence,
 }: {
   recurrenceState: TaskRecurrenceEditorState;
   fallbackUntil: Temporal.PlainDate;
-  timeZone: string;
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
   return (
@@ -213,7 +209,7 @@ function TaskRecurrenceEndSection({
             mode="date"
             onChange={(date) =>
               updateRecurrence({
-                until: date ? dateToPlainDate(date, timeZone) : null,
+                until: date ? dateToPlainDate(date) : null,
               })
             }
             placeholder="Until date"
@@ -261,7 +257,6 @@ function TaskRecurrenceEditor({
   activeFrequency,
   hasRecurrence,
   fallbackUntil,
-  timeZone,
   handleSelectFrequency,
   updateRecurrence,
 }: {
@@ -270,7 +265,6 @@ function TaskRecurrenceEditor({
   activeFrequency: TaskRecurrenceFrequency | "NONE";
   hasRecurrence: boolean;
   fallbackUntil: Temporal.PlainDate;
-  timeZone: string;
   handleSelectFrequency: (freq: TaskRecurrenceFrequency | "NONE") => void;
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
@@ -373,7 +367,6 @@ function TaskRecurrenceEditor({
           <TaskRecurrenceEndSection
             fallbackUntil={fallbackUntil}
             recurrenceState={recurrenceState}
-            timeZone={timeZone}
             updateRecurrence={updateRecurrence}
           />
         </>
@@ -489,8 +482,6 @@ export function TaskEditorSheet({
   onDelete,
   onToggleDone,
   timeZone,
-  title,
-  snapPoints = [0.84, 0.95, 0.99],
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
   const { parseLink } = useTasks();
@@ -610,8 +601,8 @@ export function TaskEditorSheet({
       }
       isVisible={isVisible}
       onClose={handleClose}
-      snapPoints={snapPoints}
-      title={title ?? (mode === "edit" ? "Edit task" : "New task")}
+      snapPoints={[0.84, 0.95, 0.99]}
+      title={mode === "edit" ? "Edit task" : "New task"}
     >
       <View className="mb-3 flex-row items-center gap-1.5">
         <View style={{ width: 86 }}>
@@ -649,7 +640,7 @@ export function TaskEditorSheet({
               onChange={(date) =>
                 setDraft((current) => ({
                   ...current,
-                  startDate: date ? dateToPlainDate(date, timeZone) : null,
+                  startDate: date ? dateToPlainDate(date) : null,
                   startTime: date ? current.startTime : null,
                 }))
               }
@@ -675,7 +666,7 @@ export function TaskEditorSheet({
               onChange={(date) =>
                 setDraft((current) => ({
                   ...current,
-                  startTime: date ? dateToPlainTime(date, timeZone) : null,
+                  startTime: date ? dateToPlainTime(date) : null,
                 }))
               }
               placeholder="--:--"
@@ -704,7 +695,7 @@ export function TaskEditorSheet({
             onChange={(date) =>
               setDraft((current) => ({
                 ...current,
-                dueDate: date ? dateToPlainDate(date, timeZone) : null,
+                dueDate: date ? dateToPlainDate(date) : null,
               }))
             }
             placeholder="Due"
@@ -742,7 +733,6 @@ export function TaskEditorSheet({
           hasRecurrence={draft.recurrence !== null}
           recurrenceState={recurrenceState}
           recurrenceSummary={recurrenceSummary}
-          timeZone={timeZone}
           updateRecurrence={updateRecurrence}
         />
       ) : null}

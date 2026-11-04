@@ -20,13 +20,6 @@ const LazyCommandBarContent = dynamic(
 export function CommandBar() {
   const [open, setOpen] = useAtom(commandBarOpenAtom);
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      setOpen(nextOpen);
-    },
-    [setOpen]
-  );
-
   const handleRequestClose = useCallback(() => setOpen(false), [setOpen]);
   const handleEscapeKeyDown = useCallback((event: KeyboardEvent) => {
     // Loaded content owns Escape: nested modes go back; the root closes. Until
@@ -42,12 +35,12 @@ export function CommandBar() {
   return (
     <CommandDialog
       onEscapeKeyDown={handleEscapeKeyDown}
-      onOpenChange={handleOpenChange}
+      onOpenChange={setOpen}
       open={open}
       size="lg"
     >
       {open ? (
-        <LazyCommandBarContent onRequestClose={handleRequestClose} size="lg" />
+        <LazyCommandBarContent onRequestClose={handleRequestClose} />
       ) : null}
     </CommandDialog>
   );

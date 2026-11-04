@@ -77,8 +77,8 @@ Used for click-and-drag creation on the calendar.
 6. User clicks **Save** (or Cmd/Ctrl+Enter) to create the event/task, or **Cancel** / Escape to discard
 
 #### Components
-- `EventCreationProvider` — Context provider for creation state
-- `useEventCreation` — Hook for managing creation state and actions
+- `DaysView` — Holds creation state (`useEventCreationState`) and provides `EventCreationContext`
+- `useEventCreation` — Reads creation state and actions from that context
 - `CreationPreview` — Visual preview during hover/drag
 - `EventCreationPopover` — Renders the shared create popover with `Event` / `Task` tabs and Save/Cancel buttons
 

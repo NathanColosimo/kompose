@@ -56,9 +56,7 @@ export class TagService extends Context.Service<TagService>()("TagService", {
       const [created] = yield* dbInsertTag([insertRow]);
 
       if (!created) {
-        return yield* Effect.fail(
-          new InvalidTagError({ message: "Failed to create tag" })
-        );
+        return yield* Effect.die(new Error("Tag insert returned no row"));
       }
 
       return created;

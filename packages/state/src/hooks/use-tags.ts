@@ -10,21 +10,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { TAGS_QUERY_KEY } from "../atoms/tags";
+import { TAGS_QUERY_KEY, tagsQueryOptions } from "../atoms/tags";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
 import { useStateConfig } from "../config";
 
 export function useTags() {
   const queryClient = useQueryClient();
-  const { orpc } = useStateConfig();
+  const { orpc, notifyError } = useStateConfig();
 
   const tagsQuery = useQuery({
-    queryKey: TAGS_QUERY_KEY,
-    queryFn: async () => {
-      const tags = await orpc.tags.list();
-      return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));
-    },
-    staleTime: 1000 * 60 * 5,
+    ...tagsQueryOptions(orpc),
     placeholderData: keepPreviousData,
   });
 
@@ -33,6 +28,7 @@ export function useTags() {
       const tag = await orpc.tags.create(input);
       return tagSelectSchemaWithIcon.parse(tag);
     },
+    onError: (err) => notifyError?.(err),
     onSuccess: (created) => {
       queryClient.setQueryData<TagSelect[]>(TAGS_QUERY_KEY, (old) => {
         const next = [...(old ?? []), created];
@@ -51,7 +47,8 @@ export function useTags() {
       );
       return { previous };
     },
-    onError: (_err, _id, context) => {
+    onError: (err, _id, context) => {
+      notifyError?.(err);
       if (context?.previous) {
         queryClient.setQueryData(TAGS_QUERY_KEY, context.previous);
       }
@@ -76,7 +73,8 @@ export function useTags() {
       );
       return { previous };
     },
-    onError: (_err, _input, context) => {
+    onError: (err, _input, context) => {
+      notifyError?.(err);
       if (context?.previous) {
         queryClient.setQueryData(TAGS_QUERY_KEY, context.previous);
       }

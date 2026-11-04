@@ -76,11 +76,7 @@ import { TagIconPickerPopover } from "./tags/tag-icon-picker";
  * The header is draggable in Electron for window movement.
  * On web, looks identical but without drag functionality.
  */
-export function AppHeader({ user }: { user: User | null }) {
-  // Keep the header independent from linked-account profile fetches so
-  // accountInfo only affects surfaces that actually render linked accounts.
-  const avatarSrc = user?.image || "";
-
+export function AppHeader({ user }: { user: User }) {
   return (
     // The whole header drags the window; app-region is inherited, and the
     // index.css rule opts buttons and other controls out.
@@ -100,22 +96,10 @@ export function AppHeader({ user }: { user: User | null }) {
           <RightSidebarToggleButton />
           <UpdatePromptButton />
           <TagsMenu />
-          {user ? (
-            <UserMenu avatarSrc={avatarSrc} user={user} />
-          ) : (
-            <SignedOutAvatar />
-          )}
+          <UserMenu user={user} />
         </div>
       </div>
     </header>
-  );
-}
-
-function SignedOutAvatar() {
-  return (
-    <Avatar className="size-7">
-      <AvatarFallback className="text-xs">?</AvatarFallback>
-    </Avatar>
   );
 }
 
@@ -188,7 +172,7 @@ function SearchButton() {
 /**
  * User avatar dropdown with account options and logout.
  */
-function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
+function UserMenu({ user }: { user: User }) {
   const { push, replace } = useRouter();
   const queryClient = useQueryClient();
   const { refetch: refetchSession } = authClient.useSession();
@@ -197,7 +181,8 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
     try {
       const { error } = await authClient.signOut();
       if (error) {
-        throw new Error(error.message || "Failed to sign out.");
+        toast.error(error.message || "Failed to sign out.");
+        return;
       }
 
       await refetchSession();
@@ -209,6 +194,10 @@ function UserMenu({ avatarSrc, user }: { avatarSrc: string; user: User }) {
       );
     }
   };
+
+  // Keep the header independent from linked-account profile fetches so
+  // accountInfo only affects surfaces that actually render linked accounts.
+  const avatarSrc = user.image || "";
 
   // Get initials for avatar fallback
   const initials = user.name
