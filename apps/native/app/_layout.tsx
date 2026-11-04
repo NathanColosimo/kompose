@@ -8,7 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { ActivityIndicator, Alert, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SignIn } from "@/components/sign-in";
+import { SocialAuthButtons } from "@/components/social-auth-buttons";
 import { Text } from "@/components/ui/text";
 import { useNativeRealtimeSync } from "@/hooks/use-realtime-sync";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
@@ -66,7 +66,7 @@ function RootLayoutContent() {
               Sign in to access your calendar and tasks
             </Text>
           </View>
-          <SignIn />
+          <SocialAuthButtons />
         </View>
       </View>
     );
@@ -83,10 +83,6 @@ function RootLayoutContent() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
-        />
       </Stack>
     </View>
   );

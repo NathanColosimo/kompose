@@ -87,7 +87,6 @@ app/
     (settings)/
       _layout.tsx          <- Stack (for headers)
       index.tsx            <- Settings screen
-  modal.tsx
   +not-found.tsx
 ```
 
@@ -157,9 +156,8 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - Auth cache cleanup also clears the shared session query, linked-account,
     Google profile, and Google calendar caches so sign-out/account changes do
     not leave stale data behind.
-- Added Google social sign-in buttons:
-  - `apps/native/components/sign-in.tsx`
-  - `apps/native/components/sign-up.tsx`
+- Google / Apple social sign-in buttons (shown by the root layout when signed out):
+  - `apps/native/components/social-auth-buttons.tsx`
 
 ## Safe area handling
 
