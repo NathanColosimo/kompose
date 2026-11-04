@@ -1,15 +1,12 @@
-import { env } from "@kompose/env";
+import { redis } from "@kompose/redis";
 import {
   type WhoopCachedDayRaw,
   whoopCachedDayRawSchema,
 } from "@kompose/whoop/schema";
-import { RedisClient } from "bun";
 import { Context, Effect, Layer } from "effect";
 import { WhoopCacheError } from "./errors";
 
 const KEY_PREFIX = "whoop";
-
-const redis = new RedisClient(env.REDIS_URL);
 
 // Keys start with the user ID. An entry is written only after that user's own
 // token fetch for the account succeeded, so a cache hit needs no ownership check.
@@ -51,18 +48,18 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
           // Redis SCAN cursors are sequential: each request needs the cursor
           // returned by the previous request.
           // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
-          const [nextCursor, keys] = (await redis.send("SCAN", [
-            cursor.toString(),
+          const [nextCursor, keys] = await redis.scan(
+            cursor,
             "MATCH",
             `${prefix}*`,
             "COUNT",
-            "100",
-          ])) as [string, string[]];
+            100
+          );
 
           cursor = Number(nextCursor);
 
           if (keys.length > 0) {
-            await redis.send("DEL", keys);
+            await redis.del(...keys);
           }
         } while (cursor !== 0);
       };

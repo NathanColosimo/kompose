@@ -1,6 +1,5 @@
-import { env } from "@kompose/env";
+import { redis } from "@kompose/redis";
 import type { SecondaryStorage } from "better-auth";
-import { RedisClient } from "bun";
 
 const KEY_PREFIX = "better-auth:";
 const INCREMENT_WITH_TTL_SCRIPT = `
@@ -11,9 +10,6 @@ end
 return value
 `;
 
-/** Redis client dedicated to Better Auth secondary storage (sessions, rate limits). */
-const redisClient = new RedisClient(env.REDIS_URL);
-
 /**
  * Redis-backed secondary storage for Better Auth.
  *
@@ -23,21 +19,21 @@ const redisClient = new RedisClient(env.REDIS_URL);
  */
 export const redisSecondaryStorage: SecondaryStorage = {
   async delete(key) {
-    await redisClient.del(`${KEY_PREFIX}${key}`);
+    await redis.del(`${KEY_PREFIX}${key}`);
   },
   async get(key) {
-    const value = await redisClient.get(`${KEY_PREFIX}${key}`);
+    const value = await redis.get(`${KEY_PREFIX}${key}`);
     return value ?? null;
   },
   async getAndDelete(key) {
-    return await redisClient.getdel(`${KEY_PREFIX}${key}`);
+    return await redis.getdel(`${KEY_PREFIX}${key}`);
   },
   async increment(key, ttl) {
     if (!(Number.isInteger(ttl) && ttl > 0)) {
       throw new TypeError("Redis increment TTL must be a positive integer.");
     }
 
-    const value = await redisClient.eval(
+    const value = await redis.eval(
       INCREMENT_WITH_TTL_SCRIPT,
       1,
       `${KEY_PREFIX}${key}`,
@@ -48,9 +44,9 @@ export const redisSecondaryStorage: SecondaryStorage = {
   async set(key, value, ttl) {
     const prefixedKey = `${KEY_PREFIX}${key}`;
     if (ttl) {
-      await redisClient.set(prefixedKey, value, "EX", String(ttl));
+      await redis.set(prefixedKey, value, "EX", ttl);
       return;
     }
-    await redisClient.set(prefixedKey, value);
+    await redis.set(prefixedKey, value);
   },
 };
