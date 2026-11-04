@@ -1,5 +1,5 @@
 import { Database, DatabaseLive } from "@kompose/db";
-import type { TagSelect, TaskTagInsert } from "@kompose/db/schema/tag";
+import type { TaskTagInsert } from "@kompose/db/schema/tag";
 import { tagTable, taskTagTable } from "@kompose/db/schema/tag";
 import type {
   TaskInsert,
@@ -42,23 +42,15 @@ function stripSystemManagedTaskFields<
 /** Escape LIKE wildcards so a search for "50%" matches literally. */
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
 
-/** Loads each task's tags through task_tag; `flattenTags` turns that into `tags`. */
-const withTags = { taskTags: { with: { tag: true } } } as const;
-
-const flattenTags = <T extends { taskTags: { tag: TagSelect }[] }>({
-  taskTags,
-  ...task
-}: T) => ({ ...task, tags: taskTags.map(({ tag }) => tag) });
-
 /**
- * Tasks matching `tasks.list` / `search_tasks` params, with their tags, newest
- * created first. Unset params don't filter.
+ * The user's tasks with their tags, newest first. Params left unset don't
+ * filter (Drizzle needs `EmptyFilter` there; `undefined` throws).
  */
 const dbSelect = (userId: string, params: TaskListParams = {}) =>
   Effect.gen(function* () {
     const db = yield* Database;
     const text = params.query ? `%${escapeLike(params.query)}%` : null;
-    const tasks = yield* db.query.taskTable.findMany({
+    return yield* db.query.taskTable.findMany({
       limit: params.limit ?? undefined,
       orderBy: { createdAt: "desc", id: "asc" },
       where: {
@@ -74,15 +66,14 @@ const dbSelect = (userId: string, params: TaskListParams = {}) =>
           lte: params.startDateMax ?? EmptyFilter,
         },
         status: params.status?.length ? { in: params.status } : EmptyFilter,
-        // Tasks carrying any of the given tags
-        taskTags: params.tagIds?.length
-          ? { tagId: { in: params.tagIds } }
+        // Tasks with any of the given tags
+        tags: params.tagIds?.length
+          ? { id: { in: params.tagIds } }
           : EmptyFilter,
         userId,
       },
-      with: withTags,
+      with: { tags: true },
     });
-    return tasks.map(flattenTags);
   });
 
 const dbSelectById = (userId: string, taskId: string) =>
@@ -120,11 +111,10 @@ const dbSelectByIdsWithTags = (userId: string, taskIds: string[]) =>
       return [];
     }
     const db = yield* Database;
-    const tasks = yield* db.query.taskTable.findMany({
+    return yield* db.query.taskTable.findMany({
       where: { id: { in: taskIds }, userId },
-      with: withTags,
+      with: { tags: true },
     });
-    return tasks.map(flattenTags);
   });
 
 const dbInsert = (values: TaskInsertRow[]) =>

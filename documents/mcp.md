@@ -58,7 +58,7 @@ Agents get the same task shape as the apps. Array results reach 2025-era clients
 
 ## Task filters
 
-`tasks.list` accepts `params` with `query`, `status`, `startDateMin/Max`, `dueDateMin/Max`, `tagIds`, and `limit`. `TaskService.listTasks` passes them to one Drizzle relational query (`db.query.taskTable.findMany`), which loads tags with `with` and applies `limit` per task, so tasks with several tags still count once. Unset params become `EmptyFilter`; relational queries reject `undefined`. The apps still call `tasks.list()` with no params.
+`tasks.list` accepts `params` with `query`, `status`, `startDateMin/Max`, `dueDateMin/Max`, `tagIds`, and `limit`. `TaskService.listTasks` passes them to one Drizzle relational query (`db.query.taskTable.findMany`), which loads tags through the many-to-many `tags` relation in `packages/db/src/schema/relations.ts` (`with: { tags: true }`) and applies `limit` per task, so tasks with several tags still count once. Unset params become `EmptyFilter`; relational queries reject `undefined`. The apps still call `tasks.list()` with no params.
 
 ## Transport
 
