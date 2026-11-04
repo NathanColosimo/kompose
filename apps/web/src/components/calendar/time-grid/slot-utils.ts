@@ -4,7 +4,7 @@ import { MINUTES_STEP } from "../dnd/helpers";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-/** Minutes within each hour that have droppable slots */
+/** Start minute of each 15-minute slot within an hour */
 export const SLOT_MINUTES = [
   0,
   MINUTES_STEP,
