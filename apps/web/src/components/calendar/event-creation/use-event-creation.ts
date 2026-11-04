@@ -136,8 +136,9 @@ export function useEventCreationState(): EventCreationContextValue {
   // Update hover preview position
   const onSlotHover = useCallback((dateTime: Temporal.ZonedDateTime) => {
     setState((prev) => {
-      // Don't update hover if we're in creation mode
-      if (prev.isCreating) {
+      // Don't update hover if we're in creation mode. Mouse moves within the
+      // same 15-minute slot snap to the same time; keep state so nothing re-renders.
+      if (prev.isCreating || prev.hoverDateTime?.equals(dateTime)) {
         return prev;
       }
       return { ...prev, hoverDateTime: dateTime };

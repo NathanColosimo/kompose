@@ -22,12 +22,6 @@ import { WhoopInvalidRangeError, WhoopTokenUnavailableError } from "./errors";
 const MAX_RANGE_DAYS = 62;
 const TODAY_CACHE_TTL_SECONDS = 15 * 60;
 const PAST_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
-/**
- * Days WHOOP has nothing for: future days, today before the band syncs,
- * or days the band was off. Data can still show up for them, so they're
- * cached only as long as today's data.
- */
-const EMPTY_DAY_CACHE_TTL_SECONDS = TODAY_CACHE_TTL_SECONDS;
 
 function dateFromOffset(dateTime: string, offset: string): string {
   return Temporal.Instant.from(dateTime)
@@ -170,29 +164,6 @@ function toSummary(payload: WhoopCachedDayRaw): WhoopDaySummary {
   });
 }
 
-function hasData(payload: WhoopCachedDayRaw): boolean {
-  return (
-    payload.cycle !== null ||
-    payload.recovery !== null ||
-    payload.sleeps.length > 0 ||
-    payload.workouts.length > 0
-  );
-}
-
-/** Summaries for the requested days that have data, in order. */
-function summariesWithData(
-  requestedDays: string[],
-  days: Map<string, WhoopCachedDayRaw>
-): WhoopDaySummary[] {
-  return requestedDays
-    .map((day) => days.get(day))
-    .filter(
-      (payload): payload is WhoopCachedDayRaw =>
-        payload !== undefined && hasData(payload)
-    )
-    .map(toSummary);
-}
-
 function initializeDay(day: string): WhoopCachedDayRaw {
   return {
     cycle: null,
@@ -201,6 +172,21 @@ function initializeDay(day: string): WhoopCachedDayRaw {
     sleeps: [],
     workouts: [],
   };
+}
+
+function hasData(
+  payload: WhoopCachedDayRaw | undefined
+): payload is WhoopCachedDayRaw {
+  if (!payload) {
+    return false;
+  }
+
+  return (
+    payload.cycle !== null ||
+    payload.recovery !== null ||
+    payload.sleeps.length > 0 ||
+    payload.workouts.length > 0
+  );
 }
 
 function chooseMoreRecent<
@@ -353,11 +339,14 @@ function groupRawDataByDay(params: {
   return byDay;
 }
 
-function ttlForDay(day: string, timeZone: string): number {
-  const today = Temporal.Now.plainDateISO(timeZone);
-  const current = Temporal.PlainDate.from(day);
+// Today and days with no data yet (future days, band off) can still gain
+// data, so they expire quickly. Caching empty days at all keeps windows that
+// include future days from refetching WHOOP on every load.
+function ttlForDay(payload: WhoopCachedDayRaw, timeZone: string): number {
+  const isToday =
+    payload.day === Temporal.Now.plainDateISO(timeZone).toString();
 
-  return Temporal.PlainDate.compare(current, today) === 0
+  return isToday || !hasData(payload)
     ? TODAY_CACHE_TTL_SECONDS
     : PAST_CACHE_TTL_SECONDS;
 }
@@ -445,14 +434,11 @@ export class WhoopService extends Context.Service<WhoopService>()(
           );
           const allDays = new Map(cachedDays);
 
-          if (missingDays.length > 0) {
-            const client = createWhoopClient(accessToken);
-            const [missingStart] = missingDays;
-            const missingEnd = missingDays.at(-1);
+          const [missingStart] = missingDays;
+          const missingEnd = missingDays.at(-1);
 
-            if (!(missingStart && missingEnd)) {
-              return summariesWithData(requestedDays, allDays);
-            }
+          if (missingStart && missingEnd) {
+            const client = createWhoopClient(accessToken);
 
             // Start 6 hours before midnight so WHOOP cycles/sleeps that
             // begin in the late evening (typically ~11pm when the user
@@ -498,47 +484,36 @@ export class WhoopService extends Context.Service<WhoopService>()(
               workouts,
             });
 
-            // Only populate days that were actually missing from cache.
-            // Without this guard, a cycle fetched for a missing day can
-            // get grouped to an adjacent CACHED day (e.g., the active cycle
-            // starts on day N but its sleep ends on day N+1), overwriting
-            // that day's complete cached data with an incomplete grouping.
-            const missingDaySet = new Set(missingDays);
-            for (const [day, payload] of groupedDays) {
-              if (!missingDaySet.has(day)) {
-                continue;
-              }
-
-              allDays.set(day, payload);
-              yield* cache
-                .setCachedDay(
-                  params.accountId,
-                  day,
-                  payload,
-                  ttlForDay(day, params.timeZone)
-                )
-                .pipe(logAndSwallowWhoopCacheError);
+            // Only write days that were actually missing from cache. A cycle
+            // fetched for a missing day can get grouped to an adjacent CACHED
+            // day (e.g., the active cycle starts on day N but its sleep ends
+            // on day N+1), which would overwrite that day's complete cached
+            // data with an incomplete grouping.
+            const fetchedDays = missingDays.map(
+              (day) => groupedDays.get(day) ?? initializeDay(day)
+            );
+            for (const payload of fetchedDays) {
+              allDays.set(payload.day, payload);
             }
-
-            // Cache the days that came back empty too. Otherwise any window
-            // that includes a future day misses the cache on every load and
-            // calls the WHOOP API again.
             yield* Effect.forEach(
-              missingDays.filter((day) => !groupedDays.has(day)),
-              (day) =>
+              fetchedDays,
+              (payload) =>
                 cache
                   .setCachedDay(
                     params.accountId,
-                    day,
-                    initializeDay(day),
-                    EMPTY_DAY_CACHE_TTL_SECONDS
+                    payload.day,
+                    payload,
+                    ttlForDay(payload, params.timeZone)
                   )
                   .pipe(logAndSwallowWhoopCacheError),
               { concurrency: "unbounded", discard: true }
             );
           }
 
-          return summariesWithData(requestedDays, allDays);
+          return requestedDays
+            .map((day) => allDays.get(day))
+            .filter(hasData)
+            .map(toSummary);
         }
       );
 
