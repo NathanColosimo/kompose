@@ -240,6 +240,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
 
