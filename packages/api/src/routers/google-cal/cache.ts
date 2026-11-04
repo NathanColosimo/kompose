@@ -168,8 +168,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
               operation: "setCachedCalendars",
             }),
           try: async () => {
-            await redis.set(key, JSON.stringify(data));
-            await redis.expire(key, CALENDARS_TTL_SECONDS);
+            await redis.set(
+              key,
+              JSON.stringify(data),
+              "EX",
+              String(CALENDARS_TTL_SECONDS)
+            );
           },
         });
       });
@@ -247,8 +251,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
               operation: "setCachedCalendar",
             }),
           try: async () => {
-            await redis.set(key, JSON.stringify(data));
-            await redis.expire(key, CALENDARS_TTL_SECONDS);
+            await redis.set(
+              key,
+              JSON.stringify(data),
+              "EX",
+              String(CALENDARS_TTL_SECONDS)
+            );
           },
         });
       });
@@ -319,8 +327,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
               operation: "setCachedColors",
             }),
           try: async () => {
-            await redis.set(key, JSON.stringify(data));
-            await redis.expire(key, COLORS_TTL_SECONDS);
+            await redis.set(
+              key,
+              JSON.stringify(data),
+              "EX",
+              String(COLORS_TTL_SECONDS)
+            );
           },
         });
       });
@@ -389,8 +401,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
               operation: "setCachedEvents",
             }),
           try: async () => {
-            await redis.set(key, JSON.stringify(data));
-            await redis.expire(key, EVENTS_TTL_SECONDS);
+            await redis.set(
+              key,
+              JSON.stringify(data),
+              "EX",
+              String(EVENTS_TTL_SECONDS)
+            );
           },
         });
       });
@@ -454,8 +470,12 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
               operation: "setCachedEvent",
             }),
           try: async () => {
-            await redis.set(key, JSON.stringify(data));
-            await redis.expire(key, EVENTS_TTL_SECONDS);
+            await redis.set(
+              key,
+              JSON.stringify(data),
+              "EX",
+              String(EVENTS_TTL_SECONDS)
+            );
           },
         });
       });
