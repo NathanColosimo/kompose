@@ -179,7 +179,6 @@
       },
       "devDependencies": {
         "@kompose/config": "workspace:*",
-        "@orpc/client": "catalog:",
         "@types/node": "catalog:",
       },
     },

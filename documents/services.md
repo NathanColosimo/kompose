@@ -488,7 +488,7 @@ export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
 - `sendPublicErrors` (`errors.ts`) runs once at the root of `appRouter`. It turns an error with a `publicError` into that `ORPCError` and passes everything else through. oRPC sends those as a generic 500 and keeps the details on the server and in traces.
 - Put details for logs and traces in the other fields (`message`, `cause`), never in `publicError`. Errors whose `message` is internal, such as `LinkParseError` and `GoogleApiError`, return a fixed public message.
 - An `ORPCError` thrown directly (such as `UNAUTHORIZED` from `requireAuth`) is sent unchanged.
-- `@kompose/google-cal` and `@kompose/whoop` can't import `PublicError`, so `errors.test.ts` checks their codes.
+- `@kompose/google-cal` and `@kompose/whoop` can't import `PublicError`, so their codes aren't type-checked. An unknown code is ignored and the error is sent as a 500.
 - Clients show `errorMessage(error)` from `@kompose/state/errors`: the API's message, a generic one for 500s, or a connection message when the request never reached the API. Shared mutation hooks report failures through the host app's `notifyError` (a toast on web, an alert on native) and roll back optimistic updates.
 
 | Error | Code |
