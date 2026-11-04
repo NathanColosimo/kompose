@@ -85,10 +85,6 @@ function eventSingleKeyPrefix(accountId: string, calendarId: string): string {
   return `${KEY_PREFIX}:event:${accountId}:${calendarId}:`;
 }
 
-// ── Redis client ────────────────────────────────────────────────────
-
-/** Dedicated Redis client for Google Calendar caching. */
-
 // ── Service ─────────────────────────────────────────────────────────
 
 export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCacheService>()(
