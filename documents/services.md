@@ -474,6 +474,17 @@ await appRuntime.runPromise(
 
 Don't `Effect.provide` a service layer per request: each call builds the layer again, including a new Postgres pool.
 
+### Postgres connections
+
+`PgClientLive` (`@effect/sql-pg`, `packages/db/src/index.ts`) closes a pooled connection after 4 minutes unused (`idleTimeout`; the library default is 60 s) and enables TCP keepalive after 60 s idle (`keepAlive`; off by default).
+
+- The pool checks for idle connections on a timer. Vercel suspends an instance that has no requests in flight, so the timer doesn't fire while the instance sleeps. In a local test that froze the process with `SIGSTOP`, the overdue check ran as soon as the process woke, before the waking request's query, and it closed anything idle for longer than `idleTimeout`. With 60 s, any request after a gap of more than a minute opened a new connection (TCP, TLS, startup and SCRAM).
+- Supabase doesn't document an idle timeout for client connections to its pooler. Supavisor's own `client_idle_timeout` defaults to 0 (off). In transaction mode an idle client holds no Postgres connection, so keeping it open only uses a pooler client slot.
+- If the pooler closes the connection while the instance sleeps, the pool replaces it on the next checkout and the request still succeeds. A connection dropped without a close (for example by a NAT) is what keepalive is for. Vercel doesn't document an idle timeout for its egress. 4 minutes stays under the 350 s that AWS NAT gateways use, which matters if a sleeping instance can't send keepalive probes.
+- Vercel's own guide suggests a short idle timeout (about 5 s) with `attachDatabasePool`. That guidance is about connections leaking from suspended instances when the database has few connection slots. `@effect/sql-pg`'s pool isn't one of the pool types `attachDatabasePool` lists, and here the transaction pooler sits between the instances and Postgres.
+
+The Better Auth client (`packages/db/src/legacy.ts`, postgres.js) uses its defaults: no idle timeout, 60 s keepalive, and a lifetime of 30–60 minutes per connection. It already keeps idle connections across suspensions, so it's left as is.
+
 ### Effect ↔ oRPC bridge
 
 - `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
