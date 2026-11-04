@@ -16,14 +16,10 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import {
-  googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import {
-  isCalendarVisible,
-  visibleCalendarsAtom,
-} from "@kompose/state/atoms/visible-calendars";
+import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -376,7 +372,6 @@ export default function CalendarTab() {
   );
 
   // Google accounts/calendars/events.
-  const googleAccounts = useAtomValue(googleAccountsDataAtom);
 
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
   const calendarMetadataByKey = useMemo(() => {
@@ -400,7 +395,6 @@ export default function CalendarTab() {
     return metadata;
   }, [googleCalendars]);
 
-  const setVisibleCalendars = useSetAtom(visibleCalendarsAtom);
   const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const isFetchingAccounts = useIsFetching({
     queryKey: LINKED_ACCOUNTS_QUERY_KEY,
@@ -1436,12 +1430,8 @@ export default function CalendarTab() {
 
       {/* Calendar visibility picker */}
       <CalendarPickerModal
-        googleAccounts={googleAccounts}
-        googleCalendars={googleCalendars}
         onClose={() => setIsPickerOpen(false)}
         open={isPickerOpen}
-        setVisibleCalendars={setVisibleCalendars}
-        visibleCalendars={visibleCalendarIds}
       />
 
       {eventDraft ? (

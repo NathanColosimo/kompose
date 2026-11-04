@@ -1,13 +1,19 @@
 import { normalizedGoogleColorsAtomFamily } from "@kompose/state/atoms/google-colors";
 import {
+  googleAccountsDataAtom,
+  googleCalendarsDataAtom,
+  resolvedVisibleCalendarIdsAtom,
+} from "@kompose/state/atoms/google-data";
+import {
   isCalendarVisible,
   toggleCalendarSelection,
   type VisibleCalendars,
+  visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import type { CalendarWithSource } from "@kompose/state/hooks/use-google-calendars";
 import type { Account, OAuth2UserInfo } from "better-auth";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { Check } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -17,14 +23,8 @@ import { Text } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
 
 interface CalendarPickerModalProps {
-  googleAccounts: Account[];
-  googleCalendars: CalendarWithSource[];
   onClose: () => void;
   open: boolean;
-  setVisibleCalendars: (
-    next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
-  ) => void;
-  visibleCalendars: VisibleCalendars;
 }
 
 interface CalendarId {
@@ -43,11 +43,11 @@ interface CalendarId {
 export function CalendarPickerModal({
   open,
   onClose,
-  googleAccounts,
-  googleCalendars,
-  visibleCalendars,
-  setVisibleCalendars,
 }: CalendarPickerModalProps) {
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const googleCalendars = useAtomValue(googleCalendarsDataAtom);
+  const visibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
+  const setVisibleCalendars = useSetAtom(visibleCalendarsAtom);
   const primaryColor = useColor("primary");
   const primaryForegroundColor = useColor("primaryForeground");
   const borderColor = useColor("border");
