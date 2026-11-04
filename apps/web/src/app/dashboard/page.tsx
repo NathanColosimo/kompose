@@ -11,10 +11,10 @@ import {
 } from "@kompose/state/atoms/google-data";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-import type { Temporal } from "temporal-polyfill";
+import { useCallback, useState } from "react";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -30,60 +30,23 @@ import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
-  todayPlainDate,
 } from "@/lib/temporal-utils";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysCountAtom } from "@/state/sidebar";
 
 export default function Page() {
-  return <DashboardPageContent />;
-}
-
-function DashboardPageContent() {
   const [hydrated, setHydrated] = useState(false);
-  const currentDate = useAtomValue(currentDateAtom);
-  const effectiveVisibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
 
   useMountEffect(() => {
     setHydrated(true);
   });
 
-  const effectiveVisibleDays = useMemo(
-    () =>
-      Array.from({ length: effectiveVisibleDaysCount }, (_, index) =>
-        currentDate.add({ days: index })
-      ),
-    [currentDate, effectiveVisibleDaysCount]
-  );
-
-  return (
-    <DashboardCalendarContent
-      effectiveVisibleDays={effectiveVisibleDays}
-      effectiveVisibleDaysCount={effectiveVisibleDaysCount}
-      hydrated={hydrated}
-    />
-  );
-}
-
-function DashboardCalendarContent({
-  effectiveVisibleDaysCount,
-  effectiveVisibleDays,
-  hydrated,
-}: {
-  effectiveVisibleDaysCount: number;
-  effectiveVisibleDays: Temporal.PlainDate[];
-  hydrated: boolean;
-}) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <DashboardCalendarToolbar />
 
       <main className="min-h-0 flex-1">
-        {!hydrated || effectiveVisibleDaysCount === 0 ? (
-          <CalendarGridPlaceholder />
-        ) : (
-          <DashboardCalendarGrid effectiveVisibleDays={effectiveVisibleDays} />
-        )}
+        {hydrated ? <DashboardCalendarGrid /> : <CalendarGridPlaceholder />}
       </main>
     </div>
   );
@@ -147,11 +110,7 @@ function DashboardCalendarToolbar() {
   );
 }
 
-function DashboardCalendarGrid({
-  effectiveVisibleDays,
-}: {
-  effectiveVisibleDays: Temporal.PlainDate[];
-}) {
+function DashboardCalendarGrid() {
   const window = useAtomValue(eventWindowAtom);
   const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const { tasksQuery } = useTasks();
@@ -162,13 +121,7 @@ function DashboardCalendarGrid({
 
   const tasks = tasksQuery.data ?? [];
 
-  return (
-    <DaysView
-      googleEvents={googleEvents}
-      tasks={tasks}
-      visibleDays={effectiveVisibleDays}
-    />
-  );
+  return <DaysView googleEvents={googleEvents} tasks={tasks} />;
 }
 
 function CalendarGridPlaceholder() {
