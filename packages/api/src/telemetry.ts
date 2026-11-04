@@ -1,21 +1,35 @@
-import { OtelTracer } from "@effect/opentelemetry";
+import { layerGlobal } from "@effect/opentelemetry/OtelTracer";
 import { env } from "@kompose/env";
+import { context, propagation, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import type {
-  ReadableSpan,
-  SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import {
+  defaultResource,
+  resourceFromAttributes,
+} from "@opentelemetry/resources";
+import {
+  BatchSpanProcessor,
+  type ReadableSpan,
+  type SpanProcessor,
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { ORPCInstrumentation } from "@orpc/opentelemetry";
 import { Layer } from "effect";
 
 /**
  * Backend telemetry setup for OpenTelemetry + Effect tracing.
  *
- * A single NodeSDK instance owns the global TracerProvider and exporter.
+ * A single TracerProvider owns the global tracer and exporter.
  * Effect bridges into it via Tracer.layerGlobal (reads the global provider)
  * so that oRPC spans AND Effect.fn spans flow through the same exporter.
+ *
+ * This wires the provider by hand instead of using NodeSDK. NodeSDK
+ * statically imports every exporter it can build from env vars (gRPC,
+ * protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs, which put
+ * ~540 KB into the /api/rpc server bundle. Each cold start on Vercel's
+ * Bun runtime parses that again, since Bun functions get no bytecode cache.
  *
  * Next.js auto-instruments fetch when it detects a global TracerProvider.
  * We disable that via NEXT_OTEL_FETCH_DISABLED=1 in .env since we rely
@@ -92,46 +106,53 @@ class SpanAttributeFilter implements SpanProcessor {
   }
 }
 
-// ── 1. Single NodeSDK — global TracerProvider + exporter ────────────
+// ── 1. Global TracerProvider + exporter ─────────────────────────────
 //    Owns the only TracerProvider. ORPCInstrumentation hooks into it for
 //    oRPC handler/middleware spans. The same provider is reused by
 //    Effect via Tracer.layerGlobal below.
 //
-//    autoDetectResources: false disables host/process/runtime resource
-//    attributes that add noise without actionable value.
+//    Also registers the async-hooks context manager (so spans nest across
+//    awaits) and W3C traceparent propagation. The resource is the default
+//    one plus service.name; no host/process/runtime detectors run.
 
 if (exporterConfig) {
-  const sdk = new NodeSDK({
-    autoDetectResources: false,
-    instrumentations: [new ORPCInstrumentation()],
-    serviceName: "kompose-api",
-    spanProcessors: [
-      new SpanAttributeFilter(
-        new BatchSpanProcessor(
-          new OTLPTraceExporter({
-            headers: exporterConfig.headers,
-            url: exporterConfig.url,
-          })
-        )
+  context.setGlobalContextManager(
+    new AsyncLocalStorageContextManager().enable()
+  );
+  propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+  trace.setGlobalTracerProvider(
+    new TracerProvider({
+      resource: defaultResource().merge(
+        resourceFromAttributes({ "service.name": "kompose-api" })
       ),
-    ],
-  });
-  sdk.start();
+      spanProcessors: [
+        new SpanAttributeFilter(
+          new BatchSpanProcessor({
+            exporter: new OTLPTraceExporter({
+              headers: exporterConfig.headers,
+              url: exporterConfig.url,
+            }),
+          })
+        ),
+      ],
+    })
+  );
+  registerInstrumentations({ instrumentations: [new ORPCInstrumentation()] });
 }
 
 // ── 2. Effect telemetry layer ───────────────────────────────────────
-//    Tracer.layerGlobal reads the global TracerProvider (registered by
-//    the NodeSDK above) instead of creating a separate provider.
+//    Tracer.layerGlobal reads the global TracerProvider (registered
+//    above) instead of creating a separate provider.
 //    This means Effect.fn spans are exported through the same exporter
 //    as oRPC spans, keeping parent-child links intact. The service name
-//    comes from the NodeSDK resource.
+//    comes from the provider's resource.
 
 function buildTelemetryLayer(): Layer.Layer<never> {
   if (!exporterConfig) {
     return Layer.empty;
   }
 
-  return OtelTracer.layerGlobal;
+  return layerGlobal;
 }
 
 export const TelemetryLive = buildTelemetryLayer();
