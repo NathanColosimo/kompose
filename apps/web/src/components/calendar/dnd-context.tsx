@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  closestCenter,
+  type ClientRect,
   DndContext,
   type DragEndEvent,
-  type DragOverEvent,
+  type DragMoveEvent,
   DragOverlay,
   type DragStartEvent,
   PointerSensor,
-  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -19,7 +18,7 @@ import type {
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
@@ -36,6 +35,12 @@ import {
 import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
+  calendarCollisionDetection,
+  dropSlotAtom,
+  getDropSlot,
+  slotDateTime,
+} from "./dnd/day-column-slots";
+import {
   buildGoogleMoveUpdate,
   buildGoogleResizeUpdate,
   buildTaskMoveUpdate,
@@ -47,7 +52,7 @@ import {
   durationInMinutes,
   MINUTES_STEP,
 } from "./dnd/helpers";
-import type { DragData, PreviewRect, SlotData } from "./dnd/types";
+import type { DragData, PreviewRect } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 
@@ -131,7 +136,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const { activeTask, activeGoogleEvent, isResizing, previewRect } = drag;
   const previewFrameRef = useRef<number | null>(null);
   const pendingPreviewRef = useRef<PreviewRect | null>(null);
-  const stableChildren = useMemo(() => children, [children]);
+  // Drop target the preview was last computed for; skips unchanged moves.
+  const lastDropTargetKeyRef = useRef<string | null>(null);
+  const setDropSlot = useSetAtom(dropSlotAtom);
 
   // State for pending recurring task updates that need scope selection
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
@@ -155,16 +162,19 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
     dispatch({ rect: null, type: "set-preview" });
-  }, []);
+    setDropSlot(null);
+  }, [setDropSlot]);
 
   const resetDragState = useCallback(() => {
     dispatch({ type: "reset" });
+    setDropSlot(null);
+    lastDropTargetKeyRef.current = null;
     pendingPreviewRef.current = null;
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     }
-  }, []);
+  }, [setDropSlot]);
 
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
@@ -314,9 +324,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   // Route calendar slot drops to the correct drop handler based on drag type.
   const handleSlotDrop = useCallback(
-    (data: DragData, slotData: SlotData) => {
-      const targetDateTime = slotData.dateTime;
-
+    (data: DragData, targetDateTime: Temporal.ZonedDateTime) => {
       const isResizeEnd =
         (data.type === "task-resize" || data.type === "google-event-resize") &&
         data.direction === "end";
@@ -378,13 +386,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // Get slot data from droppable
-      const slotData = over.data?.current as SlotData | undefined;
-      if (!slotData?.dateTime) {
-        return;
+      const slot = getDropSlot(event.collisions);
+      if (slot) {
+        handleSlotDrop(data, slotDateTime(slot));
       }
-
-      handleSlotDrop(data, slotData);
     },
     [handleSidebarDrop, handleSlotDrop, resetDragState]
   );
@@ -397,14 +402,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     ({
       start,
       end,
-      columnTop,
-      overRect,
+      columnRect,
       minimum = MINUTES_STEP,
     }: {
       start: Temporal.ZonedDateTime;
       end: Temporal.ZonedDateTime;
-      columnTop: number;
-      overRect: Pick<PreviewRect, "left" | "width">;
+      columnRect: ClientRect;
       minimum?: number;
     }): PreviewRect => {
       const startMinutes = minutesFromMidnight(start);
@@ -414,9 +417,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       return {
         height,
-        left: overRect.left,
-        top: columnTop + (startMinutes / 60) * PIXELS_PER_HOUR,
-        width: overRect.width,
+        left: columnRect.left,
+        top: columnRect.top + (startMinutes / 60) * PIXELS_PER_HOUR,
+        width: columnRect.width,
       };
     },
     []
@@ -426,15 +429,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "task" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ) => {
       const duration = data.task.durationMinutes;
       const end = targetDateTime.add({ minutes: duration });
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end,
-        overRect,
         start: targetDateTime,
       });
     },
@@ -445,8 +446,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "task-resize" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       // Need both startDate and startTime for a scheduled task
       if (!(data.task.startDate && data.task.startTime)) {
@@ -474,18 +474,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          columnTop,
+          columnRect,
           end: originalEnd,
-          overRect,
           start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end: newEnd,
-        overRect,
         start: originalStart,
       });
     },
@@ -496,16 +494,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "google-event" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ) => {
       const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
       const end = targetDateTime.add({ minutes: eventDurationMinutes });
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end,
         minimum: 1,
-        overRect,
         start: targetDateTime,
       });
     },
@@ -516,8 +512,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: Extract<DragData, { type: "google-event-resize" }>,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       const originalStart = data.start;
       const originalEnd = data.end;
@@ -533,20 +528,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           originalEnd
         );
         return buildPreviewRect({
-          columnTop,
+          columnRect,
           end: originalEnd,
           minimum: 1,
-          overRect,
           start: newStart,
         });
       }
 
       const newEnd = clampResizeEnd(targetDateTime, originalStart);
       return buildPreviewRect({
-        columnTop,
+        columnRect,
         end: newEnd,
         minimum: 1,
-        overRect,
         start: originalStart,
       });
     },
@@ -557,8 +550,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (
       data: DragData,
       targetDateTime: Temporal.ZonedDateTime,
-      columnTop: number,
-      overRect: Pick<PreviewRect, "left" | "width">
+      columnRect: ClientRect
     ): PreviewRect | null => {
       const isResizeEnd =
         (data.type === "task-resize" || data.type === "google-event-resize") &&
@@ -569,33 +561,19 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       switch (data.type) {
         case "task":
-          return previewTaskMove(data, effectiveTarget, columnTop, overRect);
+          return previewTaskMove(data, effectiveTarget, columnRect);
         case "task-resize":
-          return previewTaskResize(data, effectiveTarget, columnTop, overRect);
+          return previewTaskResize(data, effectiveTarget, columnRect);
         case "google-event":
-          return previewGoogleMove(data, effectiveTarget, columnTop, overRect);
+          return previewGoogleMove(data, effectiveTarget, columnRect);
         case "google-event-resize":
-          return previewGoogleResize(
-            data,
-            effectiveTarget,
-            columnTop,
-            overRect
-          );
+          return previewGoogleResize(data, effectiveTarget, columnRect);
         default:
           return null;
       }
     },
     [previewGoogleMove, previewGoogleResize, previewTaskMove, previewTaskResize]
   );
-
-  // Prefer droppables the pointer is inside; fall back to closest center.
-  const collisionDetection = useCallback<typeof closestCenter>((args) => {
-    const intersections = rectIntersection(args);
-    if (intersections.length > 0) {
-      return intersections;
-    }
-    return closestCenter(args);
-  }, []);
 
   const overlayContent = useMemo(() => {
     if (activeTask && !isResizing) {
@@ -623,37 +601,35 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     return null;
   }, [activeGoogleEvent, activeTask, isResizing]);
 
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { active, over } = event;
+  // `onDragOver` fires only when the hovered column changes, so the slot
+  // within a column is read from the collisions on every move.
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      const data = event.active.data.current as DragData | undefined;
+      const slot = getDropSlot(event.collisions);
 
-      if (!(over && active)) {
-        clearPreview();
+      // Only show a preview over calendar columns; the sidebar has none.
+      if (!(data && slot)) {
+        if (lastDropTargetKeyRef.current !== null) {
+          lastDropTargetKeyRef.current = null;
+          clearPreview();
+        }
         return;
       }
 
-      const data = active.data.current as DragData | undefined;
-      const overRect = over.rect;
-      const slotData = over.data?.current as SlotData | undefined;
-
-      // Only show preview when hovering over calendar slots (which have dateTime)
-      // Sidebar droppables have different data (e.g. activeTab) without dateTime
-      if (!(overRect && data && slotData?.dateTime)) {
-        clearPreview();
+      // The column rect moves when the grid scrolls mid-drag.
+      const { column, columnRect, index } = slot;
+      const targetKey = `${column.date}|${index}|${columnRect.top}|${columnRect.left}|${columnRect.width}`;
+      if (targetKey === lastDropTargetKeyRef.current) {
         return;
       }
-
-      const targetDateTime = slotData.dateTime;
-      const minutesFromDayStart =
-        targetDateTime.hour * 60 + targetDateTime.minute;
-      const columnTop =
-        overRect.top - (minutesFromDayStart / 60) * PIXELS_PER_HOUR;
+      lastDropTargetKeyRef.current = targetKey;
+      setDropSlot(slot);
 
       pendingPreviewRef.current = computePreviewForDrag(
         data,
-        targetDateTime,
-        columnTop,
-        { left: overRect.left, width: overRect.width }
+        slotDateTime(slot),
+        columnRect
       );
 
       if (previewFrameRef.current === null) {
@@ -664,7 +640,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         });
       }
     },
-    [clearPreview, computePreviewForDrag]
+    [clearPreview, computePreviewForDrag, setDropSlot]
   );
 
   // Handle scope selection for recurring task updates
@@ -691,14 +667,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     <>
       <DndContext
         autoScroll={false}
-        collisionDetection={collisionDetection}
+        collisionDetection={calendarCollisionDetection}
         onDragCancel={handleDragCancel}
         onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
+        onDragMove={handleDragMove}
         onDragStart={handleDragStart}
         sensors={sensors}
       >
-        {stableChildren}
+        {children}
 
         {/* Drop preview outline showing the eventual placement and duration */}
         {previewRect ? (
