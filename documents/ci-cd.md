@@ -68,7 +68,9 @@ push to main
   together with `packageManager` in the root `package.json`.
   Server packages (`api`, `auth`, `db`, `env`, `google-cal`, `whoop`, `redis`)
   type-check against Node's types only, so a Bun-only API there fails
-  `tsc`. `buildCommand` in `vercel.json` is `turbo run build`;
+  `tsc`. Their `*.test.ts` files run under Bun, so `type-check` checks them
+  in a second pass with Bun's types (`tsconfig.test.json` in `auth`).
+  `buildCommand` in `vercel.json` is `turbo run build`;
   migrations only run in the workflow, never in a Vercel build.
 
 ### What "changed" means

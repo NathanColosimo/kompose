@@ -1,4 +1,4 @@
-import { DatabaseLive } from "@kompose/db";
+import { DatabaseLive, runtimeMemoMap } from "@kompose/db";
 import { Layer, ManagedRuntime } from "effect";
 import { GoogleCalendarCacheService } from "./routers/google-cal/cache";
 import { TagService } from "./routers/tag/client";
@@ -12,7 +12,8 @@ import { WebhookService } from "./webhooks/webhook-service";
  * Every service the API serves requests with. Built once per process by
  * `appRuntime`, so layers like `DatabaseLive` (and its Postgres pool) are
  * shared across requests instead of being rebuilt by each
- * `Effect.provide(layer)` call.
+ * `Effect.provide(layer)` call. `runtimeMemoMap` also shares them with the
+ * other runtimes in the process.
  */
 const AppLayer = Layer.mergeAll(
   DatabaseLive,
@@ -34,6 +35,7 @@ type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 const globalForRuntime = globalThis as { komposeAppRuntime?: AppRuntime };
 
 export const appRuntime: AppRuntime =
-  globalForRuntime.komposeAppRuntime ?? ManagedRuntime.make(AppLayer);
+  globalForRuntime.komposeAppRuntime ??
+  ManagedRuntime.make(AppLayer, { memoMap: runtimeMemoMap });
 
 globalForRuntime.komposeAppRuntime = appRuntime;
