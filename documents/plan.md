@@ -357,7 +357,7 @@ separate `Kompose Dev` profile.
 
 ### 6.10 Redis Caching Layer (Google Calendar)
 - **Service**: `GoogleCalendarCacheService` — an `Effect.Service` in `packages/api/src/routers/google-cal/cache.ts`.
-- **Cached resources**: Calendar list, single calendar, colors (24h TTL), event lists, single events (1h TTL).
+- **Cached resources**: Calendar list, single calendar, colors, event lists, single events (all 24h TTL).
 - **Invalidation**: Dual strategy — Google webhooks trigger broad invalidation (unknown which resource changed); local mutations use targeted invalidation (specific keys only).
 - **Error handling**: Cache errors are always caught, logged as `CACHE_ERROR` (visible in OTel), and swallowed. Cache failures degrade to API fetches, never fail requests.
 - **User-scoped keys**: cache keys start with the user ID and are written only after that user's ownership-checked token fetch, so reads check the cache first and fetch a token only on a miss.

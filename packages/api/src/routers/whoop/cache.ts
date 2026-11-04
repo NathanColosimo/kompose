@@ -1,10 +1,9 @@
-import { redis } from "@kompose/redis";
 import {
   type WhoopCachedDayRaw,
   whoopCachedDayRawSchema,
 } from "@kompose/whoop/schema";
-import { Context, Effect, Layer } from "effect";
-import { WhoopCacheError } from "./errors";
+import { Context, Effect, Layer, Option } from "effect";
+import { makeRedisJsonCache } from "../../lib/redis-cache";
 
 const KEY_PREFIX = "whoop";
 
@@ -14,94 +13,38 @@ function dayKey(userId: string, accountId: string, day: string): string {
   return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
 }
 
-function accountDayPrefix(userId: string, accountId: string): string {
-  return `${KEY_PREFIX}:day:${userId}:${accountId}:`;
-}
-
-export const logAndSwallowWhoopCacheError = <A, R>(
-  self: Effect.Effect<A, WhoopCacheError, R>
-) =>
-  self.pipe(
-    Effect.catchTag("WhoopCacheError", (error) =>
-      Effect.logError("WHOOP_CACHE_ERROR", error)
-    )
-  );
+/**
+ * Cache methods log their own failures and never fail, so these are no-ops.
+ * They stay exported because `routers/whoop/service.ts` still pipes into them.
+ */
+export const logAndSwallowWhoopCacheError = <A, E, R>(
+  self: Effect.Effect<A, E, R>
+) => self;
 
 export const logWhoopCacheErrorAndFallback =
-  <A>(fallback: A) =>
-  <R>(self: Effect.Effect<A, WhoopCacheError, R>) =>
-    self.pipe(
-      Effect.catchTag("WhoopCacheError", (error) =>
-        Effect.logError("WHOOP_CACHE_ERROR", error).pipe(
-          Effect.map(() => fallback)
-        )
-      )
-    );
+  <A>(_fallback: A) =>
+  <E, R>(self: Effect.Effect<A, E, R>) =>
+    self;
 
 export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
   "WhoopCacheService",
   {
-    make: Effect.gen(function* () {
-      const scanAndDelete = async (prefix: string) => {
-        let cursor = 0;
-        do {
-          // Redis SCAN cursors are sequential: each request needs the cursor
-          // returned by the previous request.
-          // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
-          const [nextCursor, keys] = await redis.scan(
-            cursor,
-            "MATCH",
-            `${prefix}*`,
-            "COUNT",
-            100
-          );
-
-          cursor = Number(nextCursor);
-
-          if (keys.length > 0) {
-            await redis.del(...keys);
-          }
-        } while (cursor !== 0);
-      };
+    make: Effect.sync(() => {
+      const cache = makeRedisJsonCache("WHOOP_CACHE_ERROR");
 
       const getCachedDay = Effect.fn("WhoopCacheService.getCachedDay")(
         function* (userId: string, accountId: string, day: string) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
-          const raw = yield* Effect.tryPromise({
-            catch: (cause) =>
-              new WhoopCacheError({
-                message: String(cause),
-                operation: "getCachedDay",
-              }),
-            try: () => redis.get(dayKey(userId, accountId, day)),
-          });
-
-          if (raw === null) {
-            return null;
-          }
-
-          const payload = yield* Effect.try({
-            catch: (cause) =>
-              new WhoopCacheError({
-                message: `Invalid cached JSON: ${String(cause)}`,
-                operation: "getCachedDay",
-              }),
-            try: () => JSON.parse(raw) as unknown,
-          });
-
-          const parsed = whoopCachedDayRawSchema.safeParse(payload);
-          if (!parsed.success) {
-            return yield* new WhoopCacheError({
-              message: `Invalid cached payload: ${parsed.error.message}`,
-              operation: "getCachedDay",
-            });
-          }
-
-          return parsed.data;
+          return yield* cache.get(
+            "getCachedDay",
+            dayKey(userId, accountId, day),
+            whoopCachedDayRawSchema
+          );
         }
       );
 
+      /** The cached days among `days`; a day that fails to load is left out. */
       const getCachedDays = Effect.fn("WhoopCacheService.getCachedDays")(
         function* (userId: string, accountId: string, days: string[]) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
@@ -117,13 +60,11 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
           );
 
           const result = new Map<string, WhoopCachedDayRaw>();
-
           for (const [day, payload] of entries) {
-            if (payload) {
-              result.set(day, payload);
+            if (Option.isSome(payload)) {
+              result.set(day, payload.value);
             }
           }
-
           return result;
         }
       );
@@ -138,70 +79,16 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
         ) {
           yield* Effect.annotateCurrentSpan("accountId", accountId);
           yield* Effect.annotateCurrentSpan("day", day);
-          const validatedPayload = yield* Effect.try({
-            catch: (cause) =>
-              new WhoopCacheError({
-                message: `Invalid cache payload: ${String(cause)}`,
-                operation: "setCachedDay",
-              }),
-            try: () => whoopCachedDayRawSchema.parse(payload),
-          });
-
-          yield* Effect.tryPromise({
-            catch: (cause) =>
-              new WhoopCacheError({
-                message: String(cause),
-                operation: "setCachedDay",
-              }),
-            try: async () => {
-              const key = dayKey(userId, accountId, day);
-              await redis.set(
-                key,
-                JSON.stringify(validatedPayload),
-                "EX",
-                String(ttlSeconds)
-              );
-            },
-          });
+          yield* cache.set(
+            "setCachedDay",
+            dayKey(userId, accountId, day),
+            payload,
+            ttlSeconds
+          );
         }
       );
 
-      const invalidateDay = Effect.fn("WhoopCacheService.invalidateDay")(
-        function* (userId: string, accountId: string, day: string) {
-          yield* Effect.annotateCurrentSpan("accountId", accountId);
-          yield* Effect.annotateCurrentSpan("day", day);
-          yield* Effect.tryPromise({
-            catch: (cause) =>
-              new WhoopCacheError({
-                message: String(cause),
-                operation: "invalidateDay",
-              }),
-            try: () => redis.del(dayKey(userId, accountId, day)),
-          });
-        }
-      );
-
-      const invalidateAccount = Effect.fn(
-        "WhoopCacheService.invalidateAccount"
-      )(function* (userId: string, accountId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.tryPromise({
-          catch: (cause) =>
-            new WhoopCacheError({
-              message: String(cause),
-              operation: "invalidateAccount",
-            }),
-          try: () => scanAndDelete(accountDayPrefix(userId, accountId)),
-        });
-      });
-
-      return {
-        getCachedDay,
-        getCachedDays,
-        invalidateAccount,
-        invalidateDay,
-        setCachedDay,
-      };
+      return { getCachedDays, setCachedDay };
     }),
   }
 ) {

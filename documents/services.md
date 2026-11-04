@@ -149,7 +149,7 @@ Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods
 | `routers/google-cal/contract.ts` | oRPC contract (calendars, events, colors) |
 | `routers/google-cal/router.ts` | oRPC handler implementations |
 | `routers/google-cal/cache.ts` | `GoogleCalendarCacheService` — Redis caching layer |
-| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`NonEditableGoogleEventError`, `CacheError`) |
+| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`NonEditableGoogleEventError`) |
 
 The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/client.ts` — the router resolves an OAuth access token per-request and provides `GoogleCalendarLive(accessToken)`.
 
@@ -168,17 +168,13 @@ list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
 
   // Cache-first read, scoped to the user
-  const cached = yield* cache
-    .getCachedCalendars(context.user.id, input.accountId)
-    .pipe(logCacheErrorAndMiss);
+  const cached = yield* cache.getCachedCalendars(context.user.id, input.accountId);
   if (Option.isSome(cached)) return cached.value;
 
   // API fallback: ownership check + token only on a miss
   const google = yield* getGoogleCalendar(context.user.id, input.accountId);
   const data = yield* google.listCalendars();
-  yield* cache
-    .setCachedCalendars(context.user.id, input.accountId, data)
-    .pipe(logAndSwallowCacheError);
+  yield* cache.setCachedCalendars(context.user.id, input.accountId, data);
   return data;
 }),
 ```
@@ -192,7 +188,6 @@ Cache layer details are documented in [`caching.md`](./caching.md).
 | `LinkedAccountError` | `lib/linked-account.ts` | Account not linked, or Better Auth couldn't refresh its token |
 | `GoogleApiError` | `@kompose/google-cal` | Google API returned an error |
 | `GoogleCalendarZodError` | `@kompose/google-cal` | Response failed Zod parse |
-| `CacheError` | Cache service | Redis operation failed (always caught and logged, never surfaces to client) |
 
 ---
 
@@ -397,7 +392,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 
 - Per-day raw data cached in Redis via `WhoopCacheService`.
 - Today's data: 15-minute TTL. Past days: 7-day TTL.
-- Cache errors are logged and swallowed (degrade to API fetch).
+- Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)
 
@@ -407,7 +402,6 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 | `WhoopApiError` | WHOOP API returned an error |
 | `WhoopParseError` | Response failed Zod parse |
 | `WhoopInvalidRangeError` | Date range invalid or exceeds 62-day limit |
-| `WhoopCacheError` | Redis operation failed (always caught and logged) |
 
 ---
 
