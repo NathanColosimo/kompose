@@ -22,7 +22,7 @@ Cache lookup (Redis GET)
 
 An `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility.
 
-**Redis client:** Dedicated `RedisClient` from Bun, connecting via `REDIS_URL`.
+**Redis client:** the shared `redis` connection from `@kompose/redis` (ioredis, `REDIS_URL`), which Better Auth, the rate limiters, the WHOOP cache and sync publishes use too.
 
 **Error type:** `CacheError` (`Schema.TaggedError`) — always caught and logged, never surfaces to the client.
 
