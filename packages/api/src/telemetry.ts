@@ -74,31 +74,28 @@ function getExporterConfig(): OtlpExporterConfig | null {
 const exporterConfig = getExporterConfig();
 
 // ── Span processor ───────────────────────────────────────────────────
-//    The batch processor, with two additions:
+//    The batch processor, plus two things:
 //
 //    - It strips noisy Next.js internal attributes before export.
 //
 //    - On Vercel, it flushes when a request's root span ends (a SERVER span
-//      with no local parent). Vercel freezes an instance as soon as it
-//      responds and the batch only exports every 5 s, so a batch still
-//      buffered waited for the instance's next request, or was lost when the
-//      instance shut down without one. waitUntil keeps the invocation alive
-//      until the export finishes; boot spans go out in the same export.
-//      Flushes are coalesced (one running, at most one queued) because the
-//      exporter drops batches beyond 30 concurrent exports. Each flush also
-//      waits on the exporter: forceFlush only waits for the batches it
-//      starts, not an automatic 512-span export already sending.
+//      with no local parent), inside waitUntil. Vercel freezes an instance as
+//      soon as it responds, so spans left for the 5 s timer arrived late or
+//      never. Flushes are coalesced (one running, at most one queued) because
+//      the exporter drops batches beyond 30 concurrent exports. Each also
+//      waits on the exporter, since the batch's forceFlush doesn't wait for
+//      an automatic 512-span export already sending. See otel.md.
 
 const STRIP_ATTRIBUTES = ["next.span_name", "next.span_type"];
 const flushAtRequestEnd = env.VERCEL === "1";
 
-function logFlushError(error: unknown) {
+function logFlushError(error: unknown): void {
   console.error("OTEL_FLUSH_FAILED", error);
 }
 
 class ExportSpanProcessor extends BatchSpanProcessor {
   readonly #exporter: OTLPTraceExporter;
-  #running: Promise<void> | undefined;
+  #lastFlush: Promise<void> = Promise.resolve();
   #queued: Promise<void> | undefined;
 
   constructor(exporter: OTLPTraceExporter) {
@@ -125,28 +122,18 @@ class ExportSpanProcessor extends BatchSpanProcessor {
 
   /** Resolves once an export that started after this call has finished. */
   #flush(): Promise<void> {
-    if (this.#queued) {
-      return this.#queued;
+    if (!this.#queued) {
+      this.#queued = this.#flushAfter(this.#lastFlush);
+      this.#lastFlush = this.#queued;
     }
-    if (this.#running) {
-      this.#queued = this.#running.then(() => {
-        this.#queued = undefined;
-        return this.#startFlush();
-      });
-      return this.#queued;
-    }
-    return this.#startFlush();
+    return this.#queued;
   }
 
-  #startFlush(): Promise<void> {
-    this.#running = this.forceFlush()
-      .catch(logFlushError)
-      .then(() => this.#exporter.forceFlush())
-      .catch(logFlushError)
-      .finally(() => {
-        this.#running = undefined;
-      });
-    return this.#running;
+  async #flushAfter(previous: Promise<void>): Promise<void> {
+    await previous;
+    this.#queued = undefined;
+    await this.forceFlush().catch(logFlushError);
+    await this.#exporter.forceFlush().catch(logFlushError);
   }
 }
 
