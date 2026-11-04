@@ -283,9 +283,11 @@ Google-specific watch management. Depends on `WebhookRepositoryService`.
 | Method | Purpose |
 |--------|---------|
 | `refreshListWatch` | Create or renew a calendar-list watch subscription |
-| `refreshEventsWatch` | Create or renew per-calendar event watch subscriptions |
+| `refreshEventsWatch` | Create or renew one calendar's event watch subscription (for IDs from `listCalendarIds`) |
 | `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
-| `listCalendarIds` | Fetch the user's calendar IDs from Google |
+| `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
+
+Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
