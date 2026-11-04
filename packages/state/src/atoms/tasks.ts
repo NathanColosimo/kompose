@@ -1,19 +1,13 @@
-import {
-  type TaskSelectDecoded,
-  taskSelectCodec,
-} from "@kompose/api/routers/task/contract";
+import type { AppRouterClient } from "@kompose/api/routers/index";
+import { taskSelectCodec } from "@kompose/api/routers/task/contract";
 import { atomWithQuery } from "jotai-tanstack-query";
 import { getStateConfig } from "../config";
 
 /** Shared query key for tasks. */
 export const TASKS_QUERY_KEY = ["tasks", "list"] as const;
 
-/**
- * Tasks query atom for shared data access across app surfaces.
- */
-export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
-  const { orpc } = getStateConfig(get);
-
+/** Tasks query shared by the atom below and `useTasks`. */
+export function tasksQueryOptions(orpc: AppRouterClient) {
   return {
     queryFn: async () => {
       const tasks = await orpc.tasks.list();
@@ -22,4 +16,11 @@ export const tasksQueryAtom = atomWithQuery<TaskSelectDecoded[]>((get) => {
     queryKey: TASKS_QUERY_KEY,
     staleTime: 1000 * 60 * 5,
   };
-});
+}
+
+/**
+ * Tasks query atom for shared data access across app surfaces.
+ */
+export const tasksQueryAtom = atomWithQuery((get) =>
+  tasksQueryOptions(getStateConfig(get).orpc)
+);
