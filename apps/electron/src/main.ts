@@ -28,15 +28,20 @@ import {
   session,
   shell,
 } from "electron";
-import { autoUpdater } from "electron-updater";
+import type { AppUpdater } from "electron-updater";
 
-// Main's requests (the sign-in token exchange) use Node's TLS, which only knows
-// its bundled CA list. Also trust the macOS keychain, as the windows do, so
-// locally trusted and organization-installed CAs work the same in both.
-tls.setDefaultCACertificates([
-  ...tls.getCACertificates("default"),
-  ...tls.getCACertificates("system"),
-]);
+/**
+ * Main's requests (the sign-in token exchange) use Node's TLS, which only knows
+ * its bundled CA list. Also trust the macOS keychain, as the windows do, so
+ * locally trusted and organization-installed CAs work the same in both.
+ * Reading the keychain takes ~15 ms, so it runs after the windows are created.
+ */
+function trustSystemCertificates() {
+  tls.setDefaultCACertificates([
+    ...tls.getCACertificates("default"),
+    ...tls.getCACertificates("system"),
+  ]);
+}
 
 const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +72,8 @@ let commandBarReady = false;
 let commandBarRequested = false;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
+// Loaded after launch; set once the update check has started.
+let updater: AppUpdater | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
 // the display shifts the window up without moving this anchor.
 let commandBarAnchor: Point | undefined;
@@ -499,18 +506,24 @@ function registerBridge() {
     }
   });
   handle("installUpdate", () => {
-    if (readyUpdate) {
+    if (readyUpdate && updater) {
       quitting = true;
-      autoUpdater.quitAndInstall();
+      updater.quitAndInstall();
     }
   });
 }
 
-/** Updates download in the background; the web app offers a restart once ready. */
-function setUpAutoUpdates() {
+/**
+ * Updates download in the background; the web app offers a restart once ready.
+ * electron-updater is imported here rather than at startup, where evaluating it
+ * would delay the first window.
+ */
+async function setUpAutoUpdates() {
   if (!app.isPackaged) {
     return;
   }
+  const { autoUpdater } = await import("electron-updater");
+  updater = autoUpdater;
   autoUpdater.on("update-downloaded", ({ version }) => {
     readyUpdate = version;
     if (mainWindow) {
@@ -555,12 +568,18 @@ app
     showMain();
     // Kept loaded and hidden so the shortcut opens it instantly.
     commandWindow = createCommandWindow();
+    // Main's one request, the token exchange, can start in Better Auth's ready
+    // handler, which runs just before this one. Its TLS handshake waits for
+    // the socket to connect, so the certificates are in place by then.
+    trustSystemCertificates();
     try {
       applyShortcut(settings.get("shortcut"));
     } catch (error) {
       console.warn(String(error));
     }
-    setUpAutoUpdates();
+    setUpAutoUpdates().catch((error: unknown) =>
+      console.warn("Update setup failed", String(error))
+    );
   })
   .catch((error: unknown) => {
     console.error(error);
