@@ -1,8 +1,4 @@
-import type {
-  DeleteScope,
-  TaskSelectDecoded,
-  UpdateScope,
-} from "@kompose/api/routers/task/contract";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -47,16 +43,7 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import {
-  RECURRENCE_SCOPE_OPTIONS,
-  TASK_DELETE_SCOPE_OPTIONS,
-  TASK_UPDATE_SCOPE_OPTIONS,
-} from "@kompose/state/recurrence-scope-options";
-import {
-  getTaskUpdateScopeDecision,
-  haveTaskCoreFieldsChanged,
-  resolveTaskRecurrenceForEditor,
-} from "@kompose/state/task-recurrence";
+import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -89,12 +76,14 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
+import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
+import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
 
 const PIXELS_PER_HOUR = 60;
@@ -223,25 +212,6 @@ interface AllDayGoogleEvent {
     calendarColorId: string | null;
     calendarBackgroundColor: string | null;
     calendarForegroundColor: string | null;
-  };
-}
-
-function buildDraftFromTask(
-  task: TaskSelectDecoded,
-  recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
-): TaskDraft {
-  return {
-    description: task.description ?? "",
-    dueDate: task.dueDate,
-    durationMinutes: task.durationMinutes,
-    linkInput: "",
-    links: task.links ?? [],
-    recurrence: recurrence ?? null,
-    startDate: task.startDate,
-    startTime: task.startTime,
-    status: task.status,
-    tagIds: task.tags.map((tag) => tag.id),
-    title: task.title,
   };
 }
 
@@ -418,7 +388,7 @@ function CalendarTabContent() {
   const window = useAtomValue(eventWindowAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
-  const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
+  const { tasksQuery } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
@@ -658,19 +628,9 @@ function CalendarTabContent() {
     );
   }, [editingEventDraft, masterRecurrence]);
 
-  // Edit scheduled task modal state.
-  const [editingTask, setEditingTask] = useState<TaskSelectDecoded | null>(
-    null
-  );
-  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
-  const [pendingTaskSaveDraft, setPendingTaskSaveDraft] =
-    useState<TaskDraft | null>(null);
-  const [taskSaveScope, setTaskSaveScope] = useState<UpdateScope>("this");
-  const [isTaskSaveScopeDialogVisible, setIsTaskSaveScopeDialogVisible] =
-    useState(false);
-  const [taskDeleteScope, setTaskDeleteScope] = useState<DeleteScope>("this");
-  const [isTaskDeleteScopeDialogVisible, setIsTaskDeleteScopeDialogVisible] =
-    useState(false);
+  // Scheduled task editor (create from a slot, edit from a task block).
+  const taskFlow = useTaskEditorFlow();
+  const openCreateTask = taskFlow.openCreate;
   const [createSlotSelection, setCreateSlotSelection] = useState<{
     day: Temporal.PlainDate;
     minutes: number;
@@ -790,13 +750,9 @@ function CalendarTabContent() {
 
   const openCreateTaskAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
-      setEditingTask(null);
-      setPendingTaskSaveDraft(null);
-      setIsTaskSaveScopeDialogVisible(false);
-      setIsTaskDeleteScopeDialogVisible(false);
-      setTaskDraft(buildCreateTaskDraftFromSlot(day, minutes));
+      openCreateTask(buildCreateTaskDraftFromSlot(day, minutes));
     },
-    []
+    [openCreateTask]
   );
 
   // Native stays lighter than web here: choose event vs task first,
@@ -1177,187 +1133,6 @@ function CalendarTabContent() {
     closeEventModal();
   }, [closeEventModal, deleteEvent, eventDeleteScope, pendingEventDeleteDraft]);
 
-  const openEditTask = useCallback(
-    (task: TaskSelectDecoded) => {
-      const resolvedRecurrence = resolveTaskRecurrenceForEditor(task, tasks);
-      const nextEditingTask: TaskSelectDecoded = {
-        ...task,
-        recurrence: resolvedRecurrence,
-      };
-      setEditingTask(nextEditingTask);
-      setTaskDraft(buildDraftFromTask(nextEditingTask, resolvedRecurrence));
-    },
-    [tasks]
-  );
-
-  const closeTaskModal = useCallback(() => {
-    setEditingTask(null);
-    setTaskDraft(null);
-    setPendingTaskSaveDraft(null);
-    setIsTaskSaveScopeDialogVisible(false);
-    setIsTaskDeleteScopeDialogVisible(false);
-  }, []);
-
-  const commitTaskUpdate = useCallback(
-    (nextDraft: TaskDraft, scope: UpdateScope) => {
-      if (!editingTask) {
-        return;
-      }
-
-      updateTask.mutate({
-        id: editingTask.id,
-        scope,
-        task: {
-          description: nextDraft.description.trim()
-            ? nextDraft.description.trim()
-            : null,
-          dueDate: nextDraft.dueDate,
-          durationMinutes: nextDraft.durationMinutes,
-          links: nextDraft.links,
-          recurrence: nextDraft.recurrence,
-          startDate: nextDraft.startDate,
-          startTime: nextDraft.startTime,
-          tagIds: nextDraft.tagIds,
-          title: nextDraft.title.trim(),
-        },
-      });
-    },
-    [editingTask, updateTask]
-  );
-
-  const saveTask = useCallback(() => {
-    if (!taskDraft) {
-      return;
-    }
-    if (!taskDraft.title.trim() && taskDraft.links.length === 0) {
-      return;
-    }
-    if (taskDraft.durationMinutes <= 0) {
-      return;
-    }
-
-    if (!editingTask) {
-      let title = taskDraft.title.trim();
-      if (!title && taskDraft.links.length > 0) {
-        const first = taskDraft.links[0];
-        title = first.title ?? new URL(first.url).hostname;
-      }
-
-      createTask.mutate({
-        description: taskDraft.description.trim()
-          ? taskDraft.description.trim()
-          : null,
-        dueDate: taskDraft.dueDate,
-        durationMinutes: taskDraft.durationMinutes,
-        isException: false,
-        links: taskDraft.links,
-        recurrence: taskDraft.recurrence,
-        seriesMasterId: null,
-        startDate: taskDraft.startDate,
-        startTime: taskDraft.startTime,
-        status: "todo",
-        tagIds: taskDraft.tagIds,
-        title,
-      });
-      closeTaskModal();
-      return;
-    }
-
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: taskDraft.description,
-        dueDate: taskDraft.dueDate,
-        durationMinutes: taskDraft.durationMinutes,
-        startDate: taskDraft.startDate,
-        startTime: taskDraft.startTime,
-        title: taskDraft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      nextRecurrence: taskDraft.recurrence,
-      nextTagIds: taskDraft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
-
-    if (decision.action === "prompt") {
-      setPendingTaskSaveDraft(taskDraft);
-      setTaskSaveScope(decision.defaultScope);
-      setTaskDraft(null);
-      setIsTaskSaveScopeDialogVisible(true);
-      return;
-    }
-
-    commitTaskUpdate(taskDraft, decision.scope);
-    closeTaskModal();
-  }, [closeTaskModal, commitTaskUpdate, createTask, editingTask, taskDraft]);
-
-  const confirmScopedTaskSave = useCallback(() => {
-    if (!(editingTask && pendingTaskSaveDraft)) {
-      return;
-    }
-    commitTaskUpdate(pendingTaskSaveDraft, taskSaveScope);
-    closeTaskModal();
-  }, [
-    closeTaskModal,
-    commitTaskUpdate,
-    editingTask,
-    pendingTaskSaveDraft,
-    taskSaveScope,
-  ]);
-
-  const deleteTaskFromCalendar = useCallback(() => {
-    if (!editingTask) {
-      return;
-    }
-
-    if (editingTask.seriesMasterId) {
-      setTaskDeleteScope("this");
-      setTaskDraft(null);
-      setIsTaskDeleteScopeDialogVisible(true);
-      return;
-    }
-
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    closeTaskModal();
-  }, [closeTaskModal, deleteTask, editingTask]);
-
-  const confirmScopedTaskDelete = useCallback(() => {
-    if (!editingTask) {
-      return;
-    }
-
-    deleteTask.mutate({ id: editingTask.id, scope: taskDeleteScope });
-    closeTaskModal();
-  }, [closeTaskModal, deleteTask, editingTask, taskDeleteScope]);
-
-  const toggleTaskStatusFromCalendar = useCallback(
-    (nextStatus: TaskDraft["status"]) => {
-      if (!editingTask) {
-        return;
-      }
-      updateTask.mutate({
-        id: editingTask.id,
-        scope: "this",
-        task: { status: nextStatus },
-      });
-      closeTaskModal();
-    },
-    [closeTaskModal, editingTask, updateTask]
-  );
-
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollViewInstance>(null);
 
@@ -1707,7 +1482,7 @@ function CalendarTabContent() {
                             key={task.id}
                             onPress={(e) => {
                               e.stopPropagation();
-                              openEditTask(task);
+                              taskFlow.openEdit(task);
                             }}
                             style={{
                               borderColor: EVENT_OUTLINE_COLOR,
@@ -1844,16 +1619,15 @@ function CalendarTabContent() {
       </BottomSheet>
 
       <TaskEditorSheet
-        draft={taskDraft}
-        isVisible={taskDraft !== null}
-        mode={editingTask ? "edit" : "create"}
-        onClose={closeTaskModal}
-        onDelete={editingTask ? deleteTaskFromCalendar : undefined}
-        onSave={saveTask}
-        onToggleDone={editingTask ? toggleTaskStatusFromCalendar : undefined}
-        setDraft={(updater) =>
-          setTaskDraft((current) => (current ? updater(current) : current))
-        }
+        // Drop the content as soon as it closes rather than animating it out.
+        draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
+        isVisible={taskFlow.isEditorOpen}
+        mode={taskFlow.editingTask ? "edit" : "create"}
+        onClose={taskFlow.close}
+        onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
+        onSave={taskFlow.save}
+        onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
 
@@ -1947,46 +1721,7 @@ function CalendarTabContent() {
         title="Delete event"
       />
 
-      <AlertDialog
-        confirmText="Apply"
-        description="This is a recurring task. Choose how broadly to apply these updates."
-        isVisible={isTaskSaveScopeDialogVisible}
-        onCancel={closeTaskModal}
-        onClose={closeTaskModal}
-        onConfirm={confirmScopedTaskSave}
-        title="Apply task update"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
-            options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskSaveScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring task. Choose what to delete."
-        isVisible={isTaskDeleteScopeDialogVisible}
-        onClose={closeTaskModal}
-        onConfirm={confirmScopedTaskDelete}
-        title="Delete recurring task"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
-            options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskDeleteScope}
-          />
-        </View>
-      </AlertDialog>
+      <TaskScopeDialogs flow={taskFlow} />
     </View>
   );
 }
