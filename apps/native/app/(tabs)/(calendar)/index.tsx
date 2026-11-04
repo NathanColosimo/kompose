@@ -6,7 +6,7 @@ import type {
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
-  eventWindowAtom,
+  eventWindowsAtom,
   mobileVisibleDaysAtom,
   mobileVisibleDaysCountAtom,
   timezoneAtom,
@@ -27,7 +27,7 @@ import {
 } from "@kompose/state/collision-utils";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
-  getGoogleEventsQueryKey,
+  getGoogleEventsByCalendarQueryKey,
 } from "@kompose/state/google-calendar-query-keys";
 import {
   getDefaultRecurrenceScopeForEvent,
@@ -360,7 +360,7 @@ export default function CalendarTab() {
     mobileVisibleDaysCountAtom
   );
   const visibleDays = useAtomValue(mobileVisibleDaysAtom);
-  const window = useAtomValue(eventWindowAtom);
+  const windows = useAtomValue(eventWindowsAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
   const { tasksQuery } = useTasks();
@@ -406,7 +406,7 @@ export default function CalendarTab() {
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({
       visibleCalendars: visibleCalendarIds,
-      window,
+      windows,
     });
 
   // Calendar picker modal.
@@ -1051,13 +1051,13 @@ export default function CalendarTab() {
       queryKey: GOOGLE_CALENDARS_QUERY_KEY,
     });
 
-    // Only refresh visible calendars and the active window to avoid broad invalidation.
+    // Only visible calendars; of those, only the months on screen refetch.
     for (const calendar of visibleCalendarIds) {
       queryClient.invalidateQueries({
-        queryKey: getGoogleEventsQueryKey(calendar, window),
+        queryKey: getGoogleEventsByCalendarQueryKey(calendar),
       });
     }
-  }, [queryClient, tasksQuery, visibleCalendarIds, window]);
+  }, [queryClient, tasksQuery, visibleCalendarIds]);
 
   const isRefreshing =
     tasksQuery.isFetching ||

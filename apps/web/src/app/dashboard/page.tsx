@@ -2,7 +2,7 @@
 
 import {
   currentDateAtom,
-  eventWindowAtom,
+  eventWindowsAtom,
 } from "@kompose/state/atoms/current-date";
 import {
   googleAccountsDataAtom,
@@ -111,12 +111,12 @@ function DashboardCalendarToolbar() {
 }
 
 function DashboardCalendarGrid() {
-  const window = useAtomValue(eventWindowAtom);
+  const windows = useAtomValue(eventWindowsAtom);
   const visibleGoogleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const { tasksQuery } = useTasks();
   const { events: googleEvents } = useGoogleEvents({
     visibleCalendars: visibleGoogleCalendars,
-    window,
+    windows,
   });
 
   const tasks = tasksQuery.data ?? [];
