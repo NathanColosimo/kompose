@@ -27,15 +27,7 @@ const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
 
   return {
     placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const result = await authClient.listAccounts();
-      if (!result || result.error || !result.data) {
-        throw new Error(
-          result?.error?.message ?? "Could not load linked accounts"
-        );
-      }
-      return result.data;
-    },
+    queryFn: () => authClient.listAccounts(),
     queryKey: LINKED_ACCOUNTS_QUERY_KEY,
     staleTime: 1000 * 60 * 5,
   };

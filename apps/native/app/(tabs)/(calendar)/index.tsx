@@ -1,8 +1,4 @@
-import type {
-  DeleteScope,
-  TaskSelectDecoded,
-  UpdateScope,
-} from "@kompose/api/routers/task/contract";
+import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -20,15 +16,10 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import {
-  googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
-import {
-  isCalendarVisible,
-  type VisibleCalendars,
-  visibleCalendarsAtom,
-} from "@kompose/state/atoms/visible-calendars";
+import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -47,16 +38,8 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import {
-  RECURRENCE_SCOPE_OPTIONS,
-  TASK_DELETE_SCOPE_OPTIONS,
-  TASK_UPDATE_SCOPE_OPTIONS,
-} from "@kompose/state/recurrence-scope-options";
-import {
-  getTaskUpdateScopeDecision,
-  haveTaskCoreFieldsChanged,
-  resolveTaskRecurrenceForEditor,
-} from "@kompose/state/task-recurrence";
+import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -80,21 +63,20 @@ import type {
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
-import {
-  CreateEventEditorSheet,
-  EditEventEditorSheet,
-} from "@/components/calendar/calendar-event-editor-sheet";
+import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
+import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
+import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
 
 const PIXELS_PER_HOUR = 60;
@@ -112,10 +94,6 @@ const TIME_GUTTER_WIDTH_PX = 56;
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
-
-function todayPlainDate(timeZone: string): Temporal.PlainDate {
-  return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
-}
 
 function combineDateTime(
   date: Temporal.PlainDate,
@@ -201,48 +179,47 @@ function calendarLookupKey(accountId: string, calendarId: string): string {
   return `${accountId}:${calendarId}`;
 }
 
+type EventDialog = "save" | "delete" | "simple-delete" | null;
+
+interface GoogleEventSource {
+  accountId: string;
+  calendarBackgroundColor: string | null;
+  calendarColorId: string | null;
+  calendarForegroundColor: string | null;
+  calendarId: string;
+  event: GoogleEvent;
+}
+
 interface PositionedGoogleEvent {
   end: Temporal.ZonedDateTime;
-  source: {
-    accountId: string;
-    calendarId: string;
-    event: GoogleEvent;
-    calendarColorId: string | null;
-    calendarBackgroundColor: string | null;
-    calendarForegroundColor: string | null;
-  };
+  source: GoogleEventSource;
   start: Temporal.ZonedDateTime;
 }
 
 interface AllDayGoogleEvent {
   date: Temporal.PlainDate;
-  source: {
-    accountId: string;
-    calendarId: string;
-    event: GoogleEvent;
-    calendarColorId: string | null;
-    calendarBackgroundColor: string | null;
-    calendarForegroundColor: string | null;
-  };
+  source: GoogleEventSource;
 }
 
-function buildDraftFromTask(
-  task: TaskSelectDecoded,
-  recurrence: TaskSelectDecoded["recurrence"] = task.recurrence
-): TaskDraft {
-  return {
-    description: task.description ?? "",
-    dueDate: task.dueDate,
-    durationMinutes: task.durationMinutes,
-    linkInput: "",
-    links: task.links ?? [],
-    recurrence: recurrence ?? null,
-    startDate: task.startDate,
-    startTime: task.startTime,
-    status: task.status,
-    tagIds: task.tags.map((tag) => tag.id),
-    title: task.title,
-  };
+// Resolve an event's colors from its own color, then its calendar's.
+function useGoogleEventColors(
+  source: GoogleEventSource
+): ReturnType<typeof resolveGoogleEventColors> {
+  const palette = useAtomValue(
+    normalizedGoogleColorsAtomFamily(source.accountId)
+  );
+  const calendarPaletteColor =
+    source.calendarColorId && palette?.calendar
+      ? palette.calendar[source.calendarColorId]
+      : undefined;
+  return resolveGoogleEventColors({
+    calendarBackgroundColor:
+      source.calendarBackgroundColor ?? calendarPaletteColor?.background,
+    calendarForegroundColor:
+      source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
+    colorId: source.event.colorId,
+    palette: palette?.event,
+  });
 }
 
 function buildCreateTaskDraftFromSlot(
@@ -277,21 +254,7 @@ function AllDayEventChip({
   item: AllDayGoogleEvent;
   onPress: () => void;
 }) {
-  const palette = useAtomValue(
-    normalizedGoogleColorsAtomFamily(item.source.accountId)
-  );
-  const calendarPaletteColor =
-    item.source.calendarColorId && palette?.calendar
-      ? palette.calendar[item.source.calendarColorId]
-      : undefined;
-  const { background, foreground } = resolveGoogleEventColors({
-    calendarBackgroundColor:
-      item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
-    calendarForegroundColor:
-      item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
-    colorId: item.source.event.colorId,
-    palette: palette?.event,
-  });
+  const { background, foreground } = useGoogleEventColors(item.source);
 
   return (
     <Pressable
@@ -336,21 +299,7 @@ function TimedGoogleEventBlock({
   zIndex?: number;
   onPress: () => void;
 }) {
-  const palette = useAtomValue(
-    normalizedGoogleColorsAtomFamily(item.source.accountId)
-  );
-  const calendarPaletteColor =
-    item.source.calendarColorId && palette?.calendar
-      ? palette.calendar[item.source.calendarColorId]
-      : undefined;
-  const { background, foreground } = resolveGoogleEventColors({
-    calendarBackgroundColor:
-      item.source.calendarBackgroundColor ?? calendarPaletteColor?.background,
-    calendarForegroundColor:
-      item.source.calendarForegroundColor ?? calendarPaletteColor?.foreground,
-    colorId: item.source.event.colorId,
-    palette: palette?.event,
-  });
+  const { background, foreground } = useGoogleEventColors(item.source);
 
   // Calculate horizontal positioning based on collision layout.
   // columnSpan lets items expand into adjacent empty columns.
@@ -399,10 +348,6 @@ function TimedGoogleEventBlock({
 }
 
 export default function CalendarTab() {
-  return <CalendarTabContent />;
-}
-
-function CalendarTabContent() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
@@ -410,7 +355,7 @@ function CalendarTabContent() {
 
   // Shared atoms for calendar state (mobile variants clamp to 1-3 days).
   const timeZone = useAtomValue(timezoneAtom);
-  const [, setCurrentDate] = useAtom(currentDateAtom);
+  const setCurrentDate = useSetAtom(currentDateAtom);
   const [visibleDaysCount, setVisibleDaysCount] = useAtom(
     mobileVisibleDaysCountAtom
   );
@@ -418,7 +363,7 @@ function CalendarTabContent() {
   const window = useAtomValue(eventWindowAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
-  const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
+  const { tasksQuery } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
@@ -427,7 +372,6 @@ function CalendarTabContent() {
   );
 
   // Google accounts/calendars/events.
-  const googleAccounts = useAtomValue(googleAccountsDataAtom);
 
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
   const calendarMetadataByKey = useMemo(() => {
@@ -451,9 +395,7 @@ function CalendarTabContent() {
     return metadata;
   }, [googleCalendars]);
 
-  const setVisibleCalendars = useSetAtom(visibleCalendarsAtom);
   const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
-  const effectiveVisibleCalendars: VisibleCalendars = visibleCalendarIds;
   const isFetchingAccounts = useIsFetching({
     queryKey: LINKED_ACCOUNTS_QUERY_KEY,
   });
@@ -614,29 +556,26 @@ function CalendarTabContent() {
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
   const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
-  const [isEventSaveScopeDialogVisible, setIsEventSaveScopeDialogVisible] =
-    useState(false);
   const [eventDeleteScope, setEventDeleteScope] =
     useState<RecurrenceScope>("this");
-  const [isEventDeleteScopeDialogVisible, setIsEventDeleteScopeDialogVisible] =
-    useState(false);
-  const [
-    isSimpleEventDeleteDialogVisible,
-    setIsSimpleEventDeleteDialogVisible,
-  ] = useState(false);
+  const [eventDialog, setEventDialog] = useState<EventDialog>(null);
   const [pendingEventSaveDraft, setPendingEventSaveDraft] =
     useState<EditEventDraft | null>(null);
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
-  const openEventDialog = useCallback(
-    (dialog: "save" | "delete" | "simple-delete") => {
-      setIsEventSaveScopeDialogVisible(dialog === "save");
-      setIsEventDeleteScopeDialogVisible(dialog === "delete");
-      setIsSimpleEventDeleteDialogVisible(dialog === "simple-delete");
-    },
-    []
-  );
+  // Open the event editor on a draft (or close it with null), clearing any
+  // pending scope dialog.
+  const showEventEditor = useCallback((draft: EventDraft | null) => {
+    setEventDialog(null);
+    setPendingEventSaveDraft(null);
+    setPendingEventDeleteDraft(null);
+    setEventDraft(draft);
+  }, []);
+
+  const closeEventModal = useCallback(() => {
+    showEventEditor(null);
+  }, [showEventEditor]);
 
   useEffect(() => {
     if (
@@ -658,19 +597,9 @@ function CalendarTabContent() {
     );
   }, [editingEventDraft, masterRecurrence]);
 
-  // Edit scheduled task modal state.
-  const [editingTask, setEditingTask] = useState<TaskSelectDecoded | null>(
-    null
-  );
-  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
-  const [pendingTaskSaveDraft, setPendingTaskSaveDraft] =
-    useState<TaskDraft | null>(null);
-  const [taskSaveScope, setTaskSaveScope] = useState<UpdateScope>("this");
-  const [isTaskSaveScopeDialogVisible, setIsTaskSaveScopeDialogVisible] =
-    useState(false);
-  const [taskDeleteScope, setTaskDeleteScope] = useState<DeleteScope>("this");
-  const [isTaskDeleteScopeDialogVisible, setIsTaskDeleteScopeDialogVisible] =
-    useState(false);
+  // Scheduled task editor (create from a slot, edit from a task block).
+  const taskFlow = useTaskEditorFlow();
+  const openCreateTask = taskFlow.openCreate;
   const [createSlotSelection, setCreateSlotSelection] = useState<{
     day: Temporal.PlainDate;
     minutes: number;
@@ -686,32 +615,28 @@ function CalendarTabContent() {
       googleCalendars.map((calendar) => ({
         accountId: calendar.accountId,
         calendarId: calendar.calendar.id,
-        color:
-          calendarMetadataByKey.get(
-            calendarLookupKey(calendar.accountId, calendar.calendar.id)
-          )?.backgroundColor ?? null,
+        color: calendar.calendar.backgroundColor ?? null,
         label: calendar.calendar.summary ?? "Calendar",
       })),
-    [calendarMetadataByKey, googleCalendars]
+    [googleCalendars]
   );
-  const visibleCalendarOptions = useMemo<CalendarOption[]>(() => {
-    const visible = googleCalendars.filter((c) =>
-      isCalendarVisible(effectiveVisibleCalendars, c.accountId, c.calendar.id)
-    );
-    return visible.map((c) => ({
-      accountId: c.accountId,
-      calendarId: c.calendar.id,
-      color:
-        calendarMetadataByKey.get(calendarLookupKey(c.accountId, c.calendar.id))
-          ?.backgroundColor ?? null,
-      label: c.calendar.summary ?? "Calendar",
-    }));
-  }, [calendarMetadataByKey, effectiveVisibleCalendars, googleCalendars]);
+  const visibleCalendarOptions = useMemo(
+    () =>
+      allCalendarOptions.filter((option) =>
+        isCalendarVisible(
+          visibleCalendarIds,
+          option.accountId,
+          option.calendarId
+        )
+      ),
+    [allCalendarOptions, visibleCalendarIds]
+  );
 
   const defaultCalendar = visibleCalendarOptions[0] ?? allCalendarOptions[0];
-  const editCalendarOptions = useMemo(() => {
+  // Editing keeps the event within its account; creating can use any calendar.
+  const eventCalendarOptions = useMemo(() => {
     if (!editingEventDraft) {
-      return [];
+      return allCalendarOptions;
     }
     return allCalendarOptions.filter(
       (option) =>
@@ -778,25 +703,16 @@ function CalendarTabContent() {
         startTime,
         summary: "",
       };
-      setIsEventSaveScopeDialogVisible(false);
-      setIsEventDeleteScopeDialogVisible(false);
-      setIsSimpleEventDeleteDialogVisible(false);
-      setPendingEventSaveDraft(null);
-      setPendingEventDeleteDraft(null);
-      setEventDraft(createDraft);
+      showEventEditor(createDraft);
     },
-    [defaultCalendar]
+    [defaultCalendar, showEventEditor]
   );
 
   const openCreateTaskAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
-      setEditingTask(null);
-      setPendingTaskSaveDraft(null);
-      setIsTaskSaveScopeDialogVisible(false);
-      setIsTaskDeleteScopeDialogVisible(false);
-      setTaskDraft(buildCreateTaskDraftFromSlot(day, minutes));
+      openCreateTask(buildCreateTaskDraftFromSlot(day, minutes));
     },
-    []
+    [openCreateTask]
   );
 
   // Native stays lighter than web here: choose event vs task first,
@@ -838,93 +754,80 @@ function CalendarTabContent() {
     pendingCreateAction,
   ]);
 
-  const openEditTimedEvent = useCallback((item: PositionedGoogleEvent) => {
-    const editDraft: EditEventDraft = {
-      allDay: false,
-      calendar: {
-        accountId: item.source.accountId,
-        calendarId: item.source.calendarId,
-      },
-      colorId: item.source.event.colorId ?? null,
-      conferenceData: item.source.event.conferenceData ?? null,
-      description: item.source.event.description ?? "",
-      endDate: item.end.toPlainDate(),
-      endTime: item.end.toPlainTime(),
-      eventId: item.source.event.id,
-      location: item.source.event.location ?? "",
-      mode: "edit",
-      recurrence: item.source.event.recurrence ?? [],
-      sourceCalendar: {
-        accountId: item.source.accountId,
-        calendarId: item.source.calendarId,
-      },
-      sourceEvent: item.source.event,
-      startDate: item.start.toPlainDate(),
-      startTime: item.start.toPlainTime(),
-      summary: item.source.event.summary ?? "",
-    };
-    setIsEventSaveScopeDialogVisible(false);
-    setIsEventDeleteScopeDialogVisible(false);
-    setIsSimpleEventDeleteDialogVisible(false);
-    setPendingEventSaveDraft(null);
-    setPendingEventDeleteDraft(null);
-    setEventDraft(editDraft);
-  }, []);
+  const openEditTimedEvent = useCallback(
+    (item: PositionedGoogleEvent) => {
+      const editDraft: EditEventDraft = {
+        allDay: false,
+        calendar: {
+          accountId: item.source.accountId,
+          calendarId: item.source.calendarId,
+        },
+        colorId: item.source.event.colorId ?? null,
+        conferenceData: item.source.event.conferenceData ?? null,
+        description: item.source.event.description ?? "",
+        endDate: item.end.toPlainDate(),
+        endTime: item.end.toPlainTime(),
+        eventId: item.source.event.id,
+        location: item.source.event.location ?? "",
+        mode: "edit",
+        recurrence: item.source.event.recurrence ?? [],
+        sourceCalendar: {
+          accountId: item.source.accountId,
+          calendarId: item.source.calendarId,
+        },
+        sourceEvent: item.source.event,
+        startDate: item.start.toPlainDate(),
+        startTime: item.start.toPlainTime(),
+        summary: item.source.event.summary ?? "",
+      };
+      showEventEditor(editDraft);
+    },
+    [showEventEditor]
+  );
 
-  const openEditAllDayEvent = useCallback((item: AllDayGoogleEvent) => {
-    const startDate = item.source.event.start.date
-      ? Temporal.PlainDate.from(item.source.event.start.date)
-      : item.date;
-    // Google all-day events use exclusive end dates.
-    const endDateExclusive = item.source.event.end.date;
-    const rawEndDate = endDateExclusive
-      ? Temporal.PlainDate.from(endDateExclusive).subtract({ days: 1 })
-      : startDate;
-    const endDate =
-      Temporal.PlainDate.compare(rawEndDate, startDate) < 0
-        ? startDate
-        : rawEndDate;
+  const openEditAllDayEvent = useCallback(
+    (item: AllDayGoogleEvent) => {
+      const startDate = item.source.event.start.date
+        ? Temporal.PlainDate.from(item.source.event.start.date)
+        : item.date;
+      // Google all-day events use exclusive end dates.
+      const endDateExclusive = item.source.event.end.date;
+      const rawEndDate = endDateExclusive
+        ? Temporal.PlainDate.from(endDateExclusive).subtract({ days: 1 })
+        : startDate;
+      const endDate =
+        Temporal.PlainDate.compare(rawEndDate, startDate) < 0
+          ? startDate
+          : rawEndDate;
 
-    const editDraft: EditEventDraft = {
-      allDay: true,
-      calendar: {
-        accountId: item.source.accountId,
-        calendarId: item.source.calendarId,
-      },
-      colorId: item.source.event.colorId ?? null,
-      conferenceData: item.source.event.conferenceData ?? null,
-      description: item.source.event.description ?? "",
-      endDate,
-      endTime: null,
-      eventId: item.source.event.id,
-      location: item.source.event.location ?? "",
-      mode: "edit",
-      recurrence: item.source.event.recurrence ?? [],
-      sourceCalendar: {
-        accountId: item.source.accountId,
-        calendarId: item.source.calendarId,
-      },
-      sourceEvent: item.source.event,
-      startDate,
-      startTime: null,
-      summary: item.source.event.summary ?? "",
-    };
-    setIsEventSaveScopeDialogVisible(false);
-    setIsEventDeleteScopeDialogVisible(false);
-    setIsSimpleEventDeleteDialogVisible(false);
-    setPendingEventSaveDraft(null);
-    setPendingEventDeleteDraft(null);
-    setEventDraft(editDraft);
-  }, []);
-
-  const closeEventModal = useCallback(() => {
-    setIsEventSaveScopeDialogVisible(false);
-    setIsEventDeleteScopeDialogVisible(false);
-    setIsSimpleEventDeleteDialogVisible(false);
-    setPendingEventSaveDraft(null);
-    setPendingEventDeleteDraft(null);
-    setEventDraft(null);
-  }, []);
+      const editDraft: EditEventDraft = {
+        allDay: true,
+        calendar: {
+          accountId: item.source.accountId,
+          calendarId: item.source.calendarId,
+        },
+        colorId: item.source.event.colorId ?? null,
+        conferenceData: item.source.event.conferenceData ?? null,
+        description: item.source.event.description ?? "",
+        endDate,
+        endTime: null,
+        eventId: item.source.event.id,
+        location: item.source.event.location ?? "",
+        mode: "edit",
+        recurrence: item.source.event.recurrence ?? [],
+        sourceCalendar: {
+          accountId: item.source.accountId,
+          calendarId: item.source.calendarId,
+        },
+        sourceEvent: item.source.event,
+        startDate,
+        startTime: null,
+        summary: item.source.event.summary ?? "",
+      };
+      showEventEditor(editDraft);
+    },
+    [showEventEditor]
+  );
 
   const buildEventPayload = useCallback(
     (currentDraft: EventDraft) => {
@@ -972,12 +875,8 @@ function CalendarTabContent() {
     [timeZone]
   );
 
-  const commitRecurringEventSave = useCallback(
-    async (
-      draft: EditEventDraft,
-      scope: RecurrenceScope,
-      closeAfter = true
-    ) => {
+  const commitEventUpdate = useCallback(
+    async (draft: EditEventDraft, scope: RecurrenceScope) => {
       const sourceCalendar = draft.sourceCalendar;
       const destinationCalendarId =
         draft.calendar.calendarId === sourceCalendar.calendarId
@@ -1013,9 +912,7 @@ function CalendarTabContent() {
         });
       }
 
-      if (closeAfter) {
-        closeEventModal();
-      }
+      closeEventModal();
     },
     [buildEventPayload, closeEventModal, moveEvent, updateEvent]
   );
@@ -1026,23 +923,16 @@ function CalendarTabContent() {
         return;
       }
 
-      const eventPayload = buildEventPayload(draft);
-
       if (draft.mode === "create") {
         await createEvent.mutateAsync({
           accountId: draft.calendar.accountId,
           calendarId: draft.calendar.calendarId,
-          event: eventPayload,
+          event: buildEventPayload(draft),
         });
         closeEventModal();
         return;
       }
 
-      const sourceCalendar = draft.sourceCalendar;
-      const destinationCalendarId =
-        draft.calendar.calendarId === sourceCalendar.calendarId
-          ? null
-          : draft.calendar.calendarId;
       const masterSeriesRecurrence =
         draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
       const recurring =
@@ -1055,7 +945,7 @@ function CalendarTabContent() {
         // Google API doesn't allow moving individual recurring instances,
         // so force scope to "all" when a calendar move is pending.
         const hasCalendarChange =
-          draft.calendar.calendarId !== sourceCalendar.calendarId;
+          draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
         const defaultScope = hasCalendarChange
           ? "all"
           : getDefaultRecurrenceScopeForEvent({
@@ -1065,49 +955,18 @@ function CalendarTabContent() {
         setPendingEventSaveDraft(draft);
         setEventSaveScope(defaultScope);
         setEventDraft(null);
-        openEventDialog("save");
+        setEventDialog("save");
         return;
       }
 
-      await updateEvent.mutateAsync({
-        accountId: sourceCalendar.accountId,
-        calendarId: sourceCalendar.calendarId,
-        event: {
-          ...draft.sourceEvent,
-          ...eventPayload,
-          end: {
-            ...draft.sourceEvent.end,
-            ...eventPayload.end,
-          },
-          start: {
-            ...draft.sourceEvent.start,
-            ...eventPayload.start,
-          },
-        },
-        eventId: draft.eventId,
-        recurrenceScope: "this",
-      });
-
-      if (destinationCalendarId) {
-        await moveEvent.mutateAsync({
-          accountId: sourceCalendar.accountId,
-          calendarId: sourceCalendar.calendarId,
-          destinationCalendarId,
-          eventId: draft.eventId,
-          scope: "this",
-        });
-      }
-
-      closeEventModal();
+      await commitEventUpdate(draft, "this");
     },
     [
       buildEventPayload,
       closeEventModal,
+      commitEventUpdate,
       createEvent,
       masterRecurrence,
-      moveEvent,
-      openEventDialog,
-      updateEvent,
     ]
   );
 
@@ -1115,10 +974,8 @@ function CalendarTabContent() {
     if (!pendingEventSaveDraft) {
       return;
     }
-    await commitRecurringEventSave(pendingEventSaveDraft, eventSaveScope);
-    setPendingEventSaveDraft(null);
-    setIsEventSaveScopeDialogVisible(false);
-  }, [commitRecurringEventSave, eventSaveScope, pendingEventSaveDraft]);
+    await commitEventUpdate(pendingEventSaveDraft, eventSaveScope);
+  }, [commitEventUpdate, eventSaveScope, pendingEventSaveDraft]);
 
   const requestDeleteEvent = useCallback(
     (draft: EditEventDraft) => {
@@ -1140,222 +997,30 @@ function CalendarTabContent() {
             masterRecurrence: recurringMasterRecurrence,
           })
         );
-        openEventDialog("delete");
+        setEventDialog("delete");
         return;
       }
 
-      openEventDialog("simple-delete");
+      setEventDialog("simple-delete");
     },
-    [masterRecurrence, openEventDialog]
+    [masterRecurrence]
   );
 
-  const confirmSimpleEventDelete = useCallback(async () => {
-    if (!pendingEventDeleteDraft) {
-      return;
-    }
-
-    await deleteEvent.mutateAsync({
-      accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
-      calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
-      eventId: pendingEventDeleteDraft.eventId,
-      scope: "this",
-    });
-    closeEventModal();
-  }, [closeEventModal, deleteEvent, pendingEventDeleteDraft]);
-
-  const confirmScopedEventDelete = useCallback(async () => {
-    if (!pendingEventDeleteDraft) {
-      return;
-    }
-
-    await deleteEvent.mutateAsync({
-      accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
-      calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
-      eventId: pendingEventDeleteDraft.eventId,
-      scope: eventDeleteScope,
-    });
-    closeEventModal();
-  }, [closeEventModal, deleteEvent, eventDeleteScope, pendingEventDeleteDraft]);
-
-  const openEditTask = useCallback(
-    (task: TaskSelectDecoded) => {
-      const resolvedRecurrence = resolveTaskRecurrenceForEditor(task, tasks);
-      const nextEditingTask: TaskSelectDecoded = {
-        ...task,
-        recurrence: resolvedRecurrence,
-      };
-      setEditingTask(nextEditingTask);
-      setTaskDraft(buildDraftFromTask(nextEditingTask, resolvedRecurrence));
-    },
-    [tasks]
-  );
-
-  const closeTaskModal = useCallback(() => {
-    setEditingTask(null);
-    setTaskDraft(null);
-    setPendingTaskSaveDraft(null);
-    setIsTaskSaveScopeDialogVisible(false);
-    setIsTaskDeleteScopeDialogVisible(false);
-  }, []);
-
-  const commitTaskUpdate = useCallback(
-    (nextDraft: TaskDraft, scope: UpdateScope) => {
-      if (!editingTask) {
+  const confirmEventDelete = useCallback(
+    async (scope: RecurrenceScope) => {
+      if (!pendingEventDeleteDraft) {
         return;
       }
 
-      updateTask.mutate({
-        id: editingTask.id,
+      await deleteEvent.mutateAsync({
+        accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
+        calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
+        eventId: pendingEventDeleteDraft.eventId,
         scope,
-        task: {
-          description: nextDraft.description.trim()
-            ? nextDraft.description.trim()
-            : null,
-          dueDate: nextDraft.dueDate,
-          durationMinutes: nextDraft.durationMinutes,
-          links: nextDraft.links,
-          recurrence: nextDraft.recurrence,
-          startDate: nextDraft.startDate,
-          startTime: nextDraft.startTime,
-          tagIds: nextDraft.tagIds,
-          title: nextDraft.title.trim(),
-        },
       });
+      closeEventModal();
     },
-    [editingTask, updateTask]
-  );
-
-  const saveTask = useCallback(() => {
-    if (!taskDraft) {
-      return;
-    }
-    if (!taskDraft.title.trim() && taskDraft.links.length === 0) {
-      return;
-    }
-    if (taskDraft.durationMinutes <= 0) {
-      return;
-    }
-
-    if (!editingTask) {
-      let title = taskDraft.title.trim();
-      if (!title && taskDraft.links.length > 0) {
-        const first = taskDraft.links[0];
-        title = first.title ?? new URL(first.url).hostname;
-      }
-
-      createTask.mutate({
-        description: taskDraft.description.trim()
-          ? taskDraft.description.trim()
-          : null,
-        dueDate: taskDraft.dueDate,
-        durationMinutes: taskDraft.durationMinutes,
-        isException: false,
-        links: taskDraft.links,
-        recurrence: taskDraft.recurrence,
-        seriesMasterId: null,
-        startDate: taskDraft.startDate,
-        startTime: taskDraft.startTime,
-        status: "todo",
-        tagIds: taskDraft.tagIds,
-        title,
-      });
-      closeTaskModal();
-      return;
-    }
-
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: taskDraft.description,
-        dueDate: taskDraft.dueDate,
-        durationMinutes: taskDraft.durationMinutes,
-        startDate: taskDraft.startDate,
-        startTime: taskDraft.startTime,
-        title: taskDraft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      nextRecurrence: taskDraft.recurrence,
-      nextTagIds: taskDraft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
-
-    if (decision.action === "prompt") {
-      setPendingTaskSaveDraft(taskDraft);
-      setTaskSaveScope(decision.defaultScope);
-      setTaskDraft(null);
-      setIsTaskSaveScopeDialogVisible(true);
-      return;
-    }
-
-    commitTaskUpdate(taskDraft, decision.scope);
-    closeTaskModal();
-  }, [closeTaskModal, commitTaskUpdate, createTask, editingTask, taskDraft]);
-
-  const confirmScopedTaskSave = useCallback(() => {
-    if (!(editingTask && pendingTaskSaveDraft)) {
-      return;
-    }
-    commitTaskUpdate(pendingTaskSaveDraft, taskSaveScope);
-    closeTaskModal();
-  }, [
-    closeTaskModal,
-    commitTaskUpdate,
-    editingTask,
-    pendingTaskSaveDraft,
-    taskSaveScope,
-  ]);
-
-  const deleteTaskFromCalendar = useCallback(() => {
-    if (!editingTask) {
-      return;
-    }
-
-    if (editingTask.seriesMasterId) {
-      setTaskDeleteScope("this");
-      setTaskDraft(null);
-      setIsTaskDeleteScopeDialogVisible(true);
-      return;
-    }
-
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    closeTaskModal();
-  }, [closeTaskModal, deleteTask, editingTask]);
-
-  const confirmScopedTaskDelete = useCallback(() => {
-    if (!editingTask) {
-      return;
-    }
-
-    deleteTask.mutate({ id: editingTask.id, scope: taskDeleteScope });
-    closeTaskModal();
-  }, [closeTaskModal, deleteTask, editingTask, taskDeleteScope]);
-
-  const toggleTaskStatusFromCalendar = useCallback(
-    (nextStatus: TaskDraft["status"]) => {
-      if (!editingTask) {
-        return;
-      }
-      updateTask.mutate({
-        id: editingTask.id,
-        scope: "this",
-        task: { status: nextStatus },
-      });
-      closeTaskModal();
-    },
-    [closeTaskModal, editingTask, updateTask]
+    [closeEventModal, deleteEvent, pendingEventDeleteDraft]
   );
 
   const totalHeight = 24 * PIXELS_PER_HOUR;
@@ -1423,6 +1088,16 @@ function CalendarTabContent() {
       });
     });
   }, []);
+
+  function dismissEventSaveDialog() {
+    setEventDialog(null);
+    setPendingEventSaveDraft(null);
+  }
+
+  function dismissEventDeleteDialog() {
+    setEventDialog(null);
+    setPendingEventDeleteDraft(null);
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -1707,7 +1382,7 @@ function CalendarTabContent() {
                             key={task.id}
                             onPress={(e) => {
                               e.stopPropagation();
-                              openEditTask(task);
+                              taskFlow.openEdit(task);
                             }}
                             style={{
                               borderColor: EVENT_OUTLINE_COLOR,
@@ -1755,40 +1430,19 @@ function CalendarTabContent() {
 
       {/* Calendar visibility picker */}
       <CalendarPickerModal
-        googleAccounts={googleAccounts}
-        googleCalendars={googleCalendars}
         onClose={() => setIsPickerOpen(false)}
         open={isPickerOpen}
-        setVisibleCalendars={setVisibleCalendars}
-        visibleCalendars={effectiveVisibleCalendars}
       />
 
-      {eventDraft?.mode === "create" ? (
-        <CreateEventEditorSheet
-          calendarOptions={allCalendarOptions}
+      {eventDraft ? (
+        <EventEditorSheet
+          calendarOptions={eventCalendarOptions}
           draft={eventDraft}
-          isVisible
           onClose={closeEventModal}
-          onCreate={(draft) => {
+          onDelete={requestDeleteEvent}
+          onSubmit={(draft) => {
             saveEvent(draft).catch(() => null);
           }}
-          timeZone={timeZone}
-        />
-      ) : null}
-
-      {eventDraft?.mode === "edit" ? (
-        <EditEventEditorSheet
-          calendarOptions={editCalendarOptions}
-          draft={eventDraft}
-          isVisible
-          onClose={closeEventModal}
-          onDelete={(draft) => {
-            requestDeleteEvent(draft);
-          }}
-          onSave={(draft) => {
-            saveEvent(draft).catch(() => null);
-          }}
-          timeZone={timeZone}
         />
       ) : null}
 
@@ -1844,16 +1498,15 @@ function CalendarTabContent() {
       </BottomSheet>
 
       <TaskEditorSheet
-        draft={taskDraft}
-        isVisible={taskDraft !== null}
-        mode={editingTask ? "edit" : "create"}
-        onClose={closeTaskModal}
-        onDelete={editingTask ? deleteTaskFromCalendar : undefined}
-        onSave={saveTask}
-        onToggleDone={editingTask ? toggleTaskStatusFromCalendar : undefined}
-        setDraft={(updater) =>
-          setTaskDraft((current) => (current ? updater(current) : current))
-        }
+        // Drop the content as soon as it closes rather than animating it out.
+        draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
+        isVisible={taskFlow.isEditorOpen}
+        mode={taskFlow.editingTask ? "edit" : "create"}
+        onClose={taskFlow.close}
+        onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
+        onSave={taskFlow.save}
+        onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
 
@@ -1866,15 +1519,9 @@ function CalendarTabContent() {
             ? "Moving to a different calendar applies to all events in the series."
             : "This is a recurring event. Choose how broadly to apply these changes."
         }
-        isVisible={isEventSaveScopeDialogVisible}
-        onCancel={() => {
-          setIsEventSaveScopeDialogVisible(false);
-          setPendingEventSaveDraft(null);
-        }}
-        onClose={() => {
-          setIsEventSaveScopeDialogVisible(false);
-          setPendingEventSaveDraft(null);
-        }}
+        isVisible={eventDialog === "save"}
+        onCancel={dismissEventSaveDialog}
+        onClose={dismissEventSaveDialog}
         onConfirm={() => {
           confirmScopedEventSave().catch(() => null);
         }}
@@ -1909,13 +1556,10 @@ function CalendarTabContent() {
       <AlertDialog
         confirmText="Delete"
         description="This is a recurring event. Choose what to delete."
-        isVisible={isEventDeleteScopeDialogVisible}
-        onClose={() => {
-          setIsEventDeleteScopeDialogVisible(false);
-          setPendingEventDeleteDraft(null);
-        }}
+        isVisible={eventDialog === "delete"}
+        onClose={dismissEventDeleteDialog}
         onConfirm={() => {
-          confirmScopedEventDelete().catch(() => null);
+          confirmEventDelete(eventDeleteScope).catch(() => null);
         }}
         title="Delete recurring event"
       >
@@ -1924,10 +1568,7 @@ function CalendarTabContent() {
             onValueChange={(value) =>
               setEventDeleteScope(value as RecurrenceScope)
             }
-            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
+            options={RECURRENCE_SCOPE_OPTIONS}
             value={eventDeleteScope}
           />
         </View>
@@ -1936,57 +1577,15 @@ function CalendarTabContent() {
       <AlertDialog
         confirmText="Delete"
         description="This action cannot be undone."
-        isVisible={isSimpleEventDeleteDialogVisible}
-        onClose={() => {
-          setIsSimpleEventDeleteDialogVisible(false);
-          setPendingEventDeleteDraft(null);
-        }}
+        isVisible={eventDialog === "simple-delete"}
+        onClose={dismissEventDeleteDialog}
         onConfirm={() => {
-          confirmSimpleEventDelete().catch(() => null);
+          confirmEventDelete("this").catch(() => null);
         }}
         title="Delete event"
       />
 
-      <AlertDialog
-        confirmText="Apply"
-        description="This is a recurring task. Choose how broadly to apply these updates."
-        isVisible={isTaskSaveScopeDialogVisible}
-        onCancel={closeTaskModal}
-        onClose={closeTaskModal}
-        onConfirm={confirmScopedTaskSave}
-        title="Apply task update"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskSaveScope(value as UpdateScope)}
-            options={TASK_UPDATE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskSaveScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring task. Choose what to delete."
-        isVisible={isTaskDeleteScopeDialogVisible}
-        onClose={closeTaskModal}
-        onConfirm={confirmScopedTaskDelete}
-        title="Delete recurring task"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => setTaskDeleteScope(value as DeleteScope)}
-            options={TASK_DELETE_SCOPE_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            value={taskDeleteScope}
-          />
-        </View>
-      </AlertDialog>
+      <TaskScopeDialogs flow={taskFlow} />
     </View>
   );
 }

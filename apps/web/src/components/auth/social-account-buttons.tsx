@@ -34,8 +34,7 @@ const copyByMode = {
 } as const;
 
 function buildSocialAuthUrls() {
-  const origin = window.location.origin;
-  const baseUrl = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  const baseUrl = window.location.origin;
   return {
     callbackURL: `${baseUrl}/dashboard`,
     errorCallbackURL: `${baseUrl}/login`,

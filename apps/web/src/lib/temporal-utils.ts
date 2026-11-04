@@ -1,33 +1,8 @@
+import { endOfDayZoned, startOfDayZoned } from "@kompose/state/temporal-utils";
 import { Temporal } from "temporal-polyfill";
 
 /** Regex pattern to match timezone offsets at the end of ISO strings (e.g., "+05:00", "-05:00") */
 const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/;
-
-/** Get the system/browser timezone identifier (e.g., "America/New_York") */
-function getSystemTimeZone() {
-  return Temporal.Now.zonedDateTimeISO().timeZoneId;
-}
-
-/** Get today's date as a PlainDate in the given timezone */
-export function todayPlainDate(
-  timeZone = getSystemTimeZone()
-): Temporal.PlainDate {
-  return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
-}
-
-/**
- * Convert a PlainDate to a ZonedDateTime at midnight (start of day).
- * Use this for building range query start bounds.
- */
-function startOfDayZoned(
-  date: Temporal.PlainDate,
-  timeZone: string
-): Temporal.ZonedDateTime {
-  return date.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-}
 
 /**
  * Parse a timestamp string to ZonedDateTime.
@@ -105,14 +80,6 @@ export function isSameDay(
   return a.toPlainDate().equals(b.toPlainDate());
 }
 
-/** Check if a PlainDate is today in the given timezone */
-export function isToday(
-  date: Temporal.PlainDate,
-  timeZone = getSystemTimeZone()
-): boolean {
-  return date.equals(todayPlainDate(timeZone));
-}
-
 /** Format hour as "8 AM" style label */
 export function formatHourLabel(hour: number): string {
   const time = new Temporal.PlainTime(hour, 0);
@@ -129,9 +96,10 @@ export function getDayBoundsZoned(
   date: Temporal.PlainDate,
   timeZone: string
 ): { dayStart: Temporal.ZonedDateTime; dayEnd: Temporal.ZonedDateTime } {
-  const dayStart = startOfDayZoned(date, timeZone);
-  const dayEnd = dayStart.add({ days: 1 });
-  return { dayEnd, dayStart };
+  return {
+    dayEnd: endOfDayZoned(date, timeZone),
+    dayStart: startOfDayZoned(date, timeZone),
+  };
 }
 
 /** Clamp a ZonedDateTime between min and max */

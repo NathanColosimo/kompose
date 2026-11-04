@@ -62,22 +62,13 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 
 ### Router pattern
 
-Handlers are Effect generators (`.effect(function* ...)` from `@orpc/effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Each router maps its own errors to `ORPCError` once with `mapErrors(toORPCError)`, and mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
+Handlers are Effect generators (`.effect(function* ...)` from `@orpc/effect`). Services come from the shared `appRuntime` through the oRPC context, so handlers never provide layers. Handlers don't map errors: a failure reaches the client through its class's `publicError` (see [Client errors](#client-errors)). Mutating operations publish a realtime `tasks` event. See [Effect ↔ oRPC bridge](#effect--orpc-bridge).
 
 ```ts
-function toORPCError(error: unknown) {
-  if (error instanceof TaskNotFoundError) {
-    return new ORPCError("NOT_FOUND", { cause: error, message: `Task not found: ${error.taskId}` });
-  }
-  // ...one branch per error the router knows about
-  return error;
-}
-
 const os = implement(taskContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 list: os.list.effect(function* ({ context }) {
   const tasks = yield* TaskService.use((service) => service.listTasks(context.user.id));
@@ -158,7 +149,7 @@ Same pattern as TaskService — `Effect.Service` with `accessors: true`, methods
 | `routers/google-cal/contract.ts` | oRPC contract (calendars, events, colors) |
 | `routers/google-cal/router.ts` | oRPC handler implementations |
 | `routers/google-cal/cache.ts` | `GoogleCalendarCacheService` — Redis caching layer |
-| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`AccountNotLinkedError`, `CacheError`) |
+| `routers/google-cal/errors.ts` | `Schema.TaggedError` error types (`NonEditableGoogleEventError`) |
 
 The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/client.ts` — the router resolves an OAuth access token per-request and provides `GoogleCalendarLive(accessToken)`.
 
@@ -170,20 +161,20 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check auth first, then cache, then fall through to the Google API on miss. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event. `getGoogleCalendar(userId, accountId)` fetches the account's access token and returns the Google client. Google errors are mapped once on the router with `mapErrors`.
+Read handlers check the user-scoped cache first and only on a miss call `getGoogleCalendar(userId, accountId)`, which fetches the access token with `getLinkedAccessToken` (`lib/linked-account.ts`, which also checks the user owns the account) and returns the Google client. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
   const cache = yield* GoogleCalendarCacheService;
-  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
 
-  // Cache-first read
-  const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
+  // Cache-first read, scoped to the user
+  const cached = yield* cache.getCachedCalendars(context.user.id, input.accountId);
   if (Option.isSome(cached)) return cached.value;
 
-  // API fallback
+  // API fallback: ownership check + token only on a miss
+  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
   const data = yield* google.listCalendars();
-  yield* cache.setCachedCalendars(accountId, data).pipe(logAndSwallowCacheError);
+  yield* cache.setCachedCalendars(context.user.id, input.accountId, data);
   return data;
 }),
 ```
@@ -194,10 +185,9 @@ Cache layer details are documented in [`caching.md`](./caching.md).
 
 | Error | Source | Meaning |
 |-------|--------|---------|
-| `AccountNotLinkedError` | Router | OAuth token retrieval failed |
+| `LinkedAccountError` | `lib/linked-account.ts` | Account not linked, or Better Auth couldn't refresh its token |
 | `GoogleApiError` | `@kompose/google-cal` | Google API returned an error |
 | `GoogleCalendarZodError` | `@kompose/google-cal` | Response failed Zod parse |
-| `CacheError` | Cache service | Redis operation failed (always caught and logged, never surfaces to client) |
 
 ---
 
@@ -237,9 +227,9 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 1. Client opens SSE connection via `sync.events` endpoint
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
-3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive
+3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
-5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUserBestEffort` to push events to the channel
+5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
@@ -250,8 +240,7 @@ Client note:
 
 | Function | Purpose |
 |----------|---------|
-| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel |
-| `publishToUserBestEffort` | Fire-and-forget version — logs errors, never throws |
+| `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel. Best effort: a failure is logged as `SYNC_PUBLISH_ERROR` and never fails the caller |
 | `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
 
 ---
@@ -294,9 +283,11 @@ Google-specific watch management. Depends on `WebhookRepositoryService`.
 | Method | Purpose |
 |--------|---------|
 | `refreshListWatch` | Create or renew a calendar-list watch subscription |
-| `refreshEventsWatch` | Create or renew per-calendar event watch subscriptions |
+| `refreshEventsWatch` | Create or renew one calendar's event watch subscription (for IDs from `listCalendarIds`) |
 | `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
-| `listCalendarIds` | Fetch the user's calendar IDs from Google |
+| `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
+
+Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
@@ -346,7 +337,7 @@ A plain Next.js `POST` handler (not an oRPC route). It:
 
 **File:** `ratelimit.ts`
 
-Redis-backed rate limiters using `@orpc/ratelimit`, with a small `BunRedisRateLimiter` adapter that runs its Lua script through Bun's `RedisClient`.
+Redis-backed rate limiters using `@orpc/ratelimit`, with a small `RedisRateLimiter` adapter that runs its Lua script (`EVAL`) on the shared `@kompose/redis` connection.
 
 | Limiter | Limit | Applied to |
 |---------|-------|------------|
@@ -402,17 +393,16 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 
 - Per-day raw data cached in Redis via `WhoopCacheService`.
 - Today's data: 15-minute TTL. Past days: 7-day TTL.
-- Cache errors are logged and swallowed (degrade to API fetch).
+- Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)
 
 | Error | Meaning |
 |-------|---------|
-| `WhoopAccountNotLinkedError` | OAuth token retrieval failed |
+| `LinkedAccountError` | Account not linked, or Better Auth couldn't refresh its token (`lib/linked-account.ts`) |
 | `WhoopApiError` | WHOOP API returned an error |
 | `WhoopParseError` | Response failed Zod parse |
 | `WhoopInvalidRangeError` | Date range invalid or exceeds 62-day limit |
-| `WhoopCacheError` | Redis operation failed (always caught and logged) |
 
 ---
 
@@ -488,8 +478,39 @@ The Better Auth client (`packages/db/src/legacy.ts`, postgres.js) uses its defau
 ### Effect ↔ oRPC bridge
 
 - `createContext` adds `effect/context` (from `appRuntime.context()`) to the oRPC context. `@orpc/effect` runs every `.effect(...)` handler with that context and the request's abort signal, so a cancelled request interrupts its fiber.
-- `mapErrors(toORPCError)` (in `index.ts`) is a router middleware that sets `effect/wrap` to run every handler failure through the router's `toORPCError`. Unmapped failures (including `EffectDrizzleQueryError`) become a generic `INTERNAL_SERVER_ERROR`; the cause is recorded on the span but not sent to the client.
+- `@orpc/effect` throws a failed handler's error as-is, so middleware sees Effect failures and thrown errors alike.
 - Routers start from `implement(contract).$context<Context>()` so the Effect services in the context are typed.
+
+### Client errors
+
+An error reaches the client only if its class says how, with a `publicError` getter: one of oRPC's standard codes (which sets the HTTP status) and a message written for users.
+
+```ts
+export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
+  "TagConflictError",
+  { name: Schema.String }
+) {
+  get publicError(): PublicError {
+    return { code: "CONFLICT", message: `A tag named "${this.name}" already exists.` };
+  }
+}
+```
+
+- `sendPublicErrors` (`errors.ts`) runs once at the root of `appRouter`. It turns an error with a `publicError` into that `ORPCError` and passes everything else through. oRPC sends those as a generic 500 and keeps the details on the server and in traces.
+- Put details for logs and traces in the other fields (`message`, `cause`), never in `publicError`. Errors whose `message` is internal, such as `LinkParseError` and `GoogleApiError`, return a fixed public message.
+- An `ORPCError` thrown directly (such as `UNAUTHORIZED` from `requireAuth`) is sent unchanged.
+- `@kompose/google-cal` and `@kompose/whoop` can't import `PublicError`, so their codes aren't type-checked. An unknown code is ignored and the error is sent as a 500.
+- Clients show `errorMessage(error)` from `@kompose/state/errors`: the API's message, a generic one for 500s, or a connection message when the request never reached the API. Shared mutation hooks report failures through the host app's `notifyError` (a toast on web, an alert on native) and roll back optimistic updates.
+
+| Error | Code |
+|-------|------|
+| `InvalidTagError`, `InvalidTaskError`, `NonEditableGoogleEventError`, `WhoopInvalidRangeError` | `BAD_REQUEST` |
+| `TagNotFoundError`, `TaskNotFoundError` | `NOT_FOUND` |
+| `TagConflictError` | `CONFLICT` |
+| `LinkedAccountError` | `PRECONDITION_FAILED` |
+| `LinkParseError` | `UNPROCESSABLE_CONTENT` |
+| `GoogleApiError`, `WhoopApiError`, `GoogleMapsError` | `BAD_GATEWAY` |
+| Everything else (database, parse, and cache errors, defects) | Generic `INTERNAL_SERVER_ERROR` |
 
 ---
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -60,14 +59,6 @@ function DesktopHomeSessionGate() {
 }
 
 function HomePageContent() {
-  const privacyHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
-      : "/privacy";
-  const termsHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
-      : "/terms";
   return (
     <main className="bg-background text-foreground">
       {/* Provide a drag handle on desktop (Electron) without affecting web behavior. */}
@@ -121,13 +112,10 @@ function HomePageContent() {
             workflows in one place.
           </p>
           <div className="flex items-center justify-center gap-4 sm:justify-end">
-            <a
-              className="underline-offset-4 hover:underline"
-              href={privacyHref}
-            >
+            <a className="underline-offset-4 hover:underline" href="/privacy">
               Privacy Policy
             </a>
-            <a className="underline-offset-4 hover:underline" href={termsHref}>
+            <a className="underline-offset-4 hover:underline" href="/terms">
               Terms of Service
             </a>
           </div>

@@ -1,18 +1,20 @@
 import "../global.css";
 
+import type { StateConfig } from "@kompose/state/config";
+import { errorMessage } from "@kompose/state/errors";
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, Alert, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SignIn } from "@/components/sign-in";
+import { SocialAuthButtons } from "@/components/social-auth-buttons";
 import { Text } from "@/components/ui/text";
 import { useNativeRealtimeSync } from "@/hooks/use-realtime-sync";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
 import { authClient } from "@/lib/auth-client";
-import { useColorScheme } from "@/lib/color-scheme-context";
+import { restoreColorScheme, useColorScheme } from "@/lib/color-scheme-context";
 import { createSecureStoreAdapter } from "@/lib/state-storage";
 import { NAV_THEME } from "@/lib/theme";
 import { orpc, queryClient } from "@/utils/orpc";
@@ -34,9 +36,7 @@ function RootLayoutContent() {
 
   // Update Android nav bar when color scheme changes
   React.useEffect(() => {
-    if (Platform.OS === "android") {
-      setAndroidNavigationBar(colorScheme);
-    }
+    setAndroidNavigationBar(colorScheme);
   }, [colorScheme]);
 
   // Theme for React Navigation's native components (headers, tabs)
@@ -65,7 +65,7 @@ function RootLayoutContent() {
               Sign in to access your calendar and tasks
             </Text>
           </View>
-          <SignIn />
+          <SocialAuthButtons />
         </View>
       </View>
     );
@@ -82,14 +82,35 @@ function RootLayoutContent() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
-        />
       </Stack>
     </View>
   );
 }
+
+const storage = createSecureStoreAdapter();
+
+const stateConfig: StateConfig = {
+  authClient: {
+    accountInfo: async (accountId: string) => {
+      const result = await authClient.accountInfo({
+        query: { accountId },
+      });
+      return result?.data?.user ?? null;
+    },
+    listAccounts: () =>
+      authClient.listAccounts({ fetchOptions: { throw: true } }),
+    unlinkAccount: async ({ accountId }: { accountId: string }) => {
+      const { error } = await authClient.unlinkAccount({ accountId });
+      if (error) {
+        throw new Error(error.message || "Failed to unlink account.");
+      }
+    },
+  },
+  notifyError: (error: Error) => {
+    Alert.alert(errorMessage(error));
+  },
+  orpc,
+};
 
 /**
  * Root layout with providers.
@@ -97,70 +118,13 @@ function RootLayoutContent() {
  * Uniwind handles theme variants internally via setTheme.
  */
 export default function RootLayout() {
-  const storage = React.useMemo(() => createSecureStoreAdapter(), []);
-  const stateAuthClient = React.useMemo(
-    () => ({
-      accountInfo: async (accountId: string) => {
-        const result = await authClient.accountInfo({
-          query: { accountId },
-        });
-        return result?.data?.user ?? null;
-      },
-      listAccounts: async () => {
-        const result = await authClient.listAccounts();
-        if (
-          !(result && "data" in result) ||
-          result.data === null ||
-          result.data === undefined
-        ) {
-          return null;
-        }
-        return { data: result.data };
-      },
-      unlinkAccount: async ({ accountId }: { accountId: string }) => {
-        await new Promise<void>((resolve, reject) => {
-          authClient
-            .unlinkAccount(
-              { accountId },
-              {
-                onError: (error: unknown) => {
-                  reject(
-                    error instanceof Error
-                      ? error
-                      : new Error("Failed to unlink account.")
-                  );
-                },
-                onSuccess: () => {
-                  resolve();
-                },
-              }
-            )
-            .catch((error: unknown) => {
-              reject(
-                error instanceof Error
-                  ? error
-                  : new Error("Failed to unlink account.")
-              );
-            });
-        });
-      },
-    }),
-    []
-  );
-  const config = React.useMemo(
-    () => ({
-      authClient: stateAuthClient,
-      notifyError: (error: Error) => {
-        console.log(error);
-      },
-      orpc,
-    }),
-    [stateAuthClient]
-  );
+  React.useEffect(() => {
+    restoreColorScheme();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StateProvider config={config} storage={storage}>
+      <StateProvider config={stateConfig} storage={storage}>
         {/* Stable wrapper - className is static, theme changes are handled globally */}
         <GestureHandlerRootView className="flex-1">
           <RootLayoutContent />

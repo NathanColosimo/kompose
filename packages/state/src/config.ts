@@ -1,5 +1,6 @@
-import { atom, getDefaultStore, useAtomValue } from "jotai";
-import type { AuthClient, OrpcUtils } from "./types";
+import type { AppRouterClient } from "@kompose/api/routers/index";
+import { atom, useAtomValue } from "jotai";
+import type { AuthClient } from "./types";
 
 /**
  * Shared state configuration provided by the host app.
@@ -7,7 +8,7 @@ import type { AuthClient, OrpcUtils } from "./types";
 export interface StateConfig {
   authClient: AuthClient;
   notifyError?: (error: Error) => void;
-  orpc: OrpcUtils;
+  orpc: AppRouterClient;
 }
 
 /**
@@ -33,17 +34,6 @@ export function getStateConfig(
  */
 export function useStateConfig(): StateConfig {
   const config = useAtomValue(stateConfigAtom);
-  if (!config) {
-    throw new Error("State config is not configured.");
-  }
-  return config;
-}
-
-/**
- * Access config from the default store (non-hook contexts).
- */
-export function getStateConfigFromStore(): StateConfig {
-  const config = getDefaultStore().get(stateConfigAtom);
   if (!config) {
     throw new Error("State config is not configured.");
   }

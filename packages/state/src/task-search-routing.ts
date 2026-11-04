@@ -43,7 +43,8 @@ export function isInboxTask(task: TaskSelectDecoded): boolean {
   );
 }
 
-function isOverdueTask(
+/** Overdue: uncompleted tasks with past due date or past end time (start + duration). */
+export function isOverdueTask(
   task: TaskSelectDecoded,
   today: Temporal.PlainDate,
   now: Temporal.ZonedDateTime,
@@ -65,7 +66,12 @@ function isOverdueTask(
   return task.status !== "done" && (hasPastDueDate || hasPastStartTime);
 }
 
-function isUnplannedTodayTask(
+/**
+ * Unplanned today: uncompleted tasks with a start date and no start time.
+ * Recurring occurrences stay scoped to today so older untouched instances do not
+ * accumulate in the Today view.
+ */
+export function isUnplannedTodayTask(
   task: TaskSelectDecoded,
   today: Temporal.PlainDate
 ): boolean {
@@ -94,16 +100,17 @@ function isDatedUnplannedTask(task: TaskSelectDecoded): boolean {
   );
 }
 
-function isDoneTodayTask(
+/** Done on a date: completed tasks last updated on that local date. */
+export function isDoneOnDate(
   task: TaskSelectDecoded,
-  today: Temporal.PlainDate,
+  date: Temporal.PlainDate,
   timeZone: string
 ): boolean {
   return (
     task.status === "done" &&
     Temporal.PlainDate.compare(
       task.updatedAt.toZonedDateTimeISO(timeZone).toPlainDate(),
-      today
+      date
     ) === 0
   );
 }
@@ -137,7 +144,7 @@ export function resolveTaskSearchDestination(
   if (
     isOverdueTask(task, today, now, timeZone) ||
     isUnplannedTodayTask(task, today) ||
-    isDoneTodayTask(task, today, timeZone)
+    isDoneOnDate(task, today, timeZone)
   ) {
     return {
       kind: "sidebar",

@@ -1,10 +1,7 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import {
-  timezoneAtom,
-  visibleDaysAtom,
-} from "@kompose/state/atoms/current-date";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -19,10 +16,10 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { startOfDayZoned } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue } from "jotai";
 import {
   memo,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -31,16 +28,22 @@ import {
 } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
+  clampZonedDateTime,
+  getDayBoundsZoned,
   isoStringToZonedDateTime,
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
 import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
+import { effectiveVisibleDaysAtom } from "@/state/sidebar";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
-import { EventCreationProvider } from "./event-creation/event-creation-provider";
-import { useEventCreation } from "./event-creation/use-event-creation";
+import {
+  EventCreationContext,
+  useEventCreation,
+  useEventCreationState,
+} from "./event-creation/use-event-creation";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -92,11 +95,7 @@ function clampEventToDay(
   day: Temporal.PlainDate,
   timeZone: string
 ): PositionedGoogleEvent | null {
-  const dayStart = day.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const dayEnd = dayStart.add({ days: 1 });
+  const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
   if (
     Temporal.ZonedDateTime.compare(event.end, dayStart) <= 0 ||
@@ -105,14 +104,11 @@ function clampEventToDay(
     return null;
   }
 
-  const clampedStart =
-    Temporal.ZonedDateTime.compare(event.start, dayStart) < 0
-      ? dayStart
-      : event.start;
-  const clampedEnd =
-    Temporal.ZonedDateTime.compare(event.end, dayEnd) > 0 ? dayEnd : event.end;
-
-  return { ...event, end: clampedEnd, start: clampedStart };
+  return {
+    ...event,
+    end: clampZonedDateTime(event.end, dayStart, dayEnd),
+    start: clampZonedDateTime(event.start, dayStart, dayEnd),
+  };
 }
 
 function buildGoogleEventMaps({
@@ -238,11 +234,7 @@ function clampTaskToDay(
     timeZone,
   });
   const end = start.add({ minutes: task.durationMinutes });
-  const dayStart = day.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const dayEnd = dayStart.add({ days: 1 });
+  const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
   if (
     Temporal.ZonedDateTime.compare(end, dayStart) <= 0 ||
@@ -251,10 +243,8 @@ function clampTaskToDay(
     return null;
   }
 
-  const clampedStart =
-    Temporal.ZonedDateTime.compare(start, dayStart) < 0 ? dayStart : start;
-  const clampedEnd =
-    Temporal.ZonedDateTime.compare(end, dayEnd) > 0 ? dayEnd : end;
+  const clampedStart = clampZonedDateTime(start, dayStart, dayEnd);
+  const clampedEnd = clampZonedDateTime(end, dayStart, dayEnd);
 
   return {
     end: clampedEnd,
@@ -270,27 +260,21 @@ interface DaysViewProps {
   googleEvents?: GoogleEventWithSource[];
   /** All tasks to display (will be filtered to scheduled ones) */
   tasks: TaskSelectDecoded[];
-  /** Optional externally clamped day slice for responsive layouts */
-  visibleDays?: Temporal.PlainDate[];
 }
 
 /**
  * DaysView - Displays 1-7 days starting from the current date.
- * Wrapped with EventCreationProvider to enable click-and-drag event creation.
+ * Provides the event creation context for click-and-drag event creation.
  */
 export const DaysView = memo(function DaysViewComponent({
   tasks,
   googleEvents = EMPTY_GOOGLE_EVENTS,
-  visibleDays,
 }: DaysViewProps) {
+  const eventCreation = useEventCreationState();
   return (
-    <EventCreationProvider>
-      <DaysViewInner
-        googleEvents={googleEvents}
-        tasks={tasks}
-        visibleDays={visibleDays}
-      />
-    </EventCreationProvider>
+    <EventCreationContext.Provider value={eventCreation}>
+      <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+    </EventCreationContext.Provider>
   );
 });
 
@@ -300,10 +284,8 @@ export const DaysView = memo(function DaysViewComponent({
 const DaysViewInner = memo(function DaysViewInnerComponent({
   tasks,
   googleEvents = EMPTY_GOOGLE_EVENTS,
-  visibleDays: visibleDaysProp,
 }: DaysViewProps) {
-  const atomVisibleDays = useAtomValue(visibleDaysAtom);
-  const visibleDays = visibleDaysProp ?? atomVisibleDays;
+  const visibleDays = useAtomValue(effectiveVisibleDaysAtom);
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -315,36 +297,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
   // Event creation context for click-and-drag
   const { actions } = useEventCreation();
-
-  // Memoize handlers to avoid recreating on each render
-  const handleSlotHover = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotHover(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotLeave = useCallback(() => {
-    actions.onSlotLeave();
-  }, [actions]);
-
-  const handleSlotMouseDown = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotMouseDown(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotDragMove = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotDragMove(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotMouseUp = useCallback(() => {
-    actions.onSlotMouseUp();
-  }, [actions]);
 
   // Scroll vertically to 8am on mount for a sensible default view
   useLayoutEffect(() => {
@@ -539,21 +491,17 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       // Convert WHOOP workouts to PositionedItems, clamped to this day.
       // Uses allWorkouts (collected from all summaries) so workouts that
       // cross midnight appear in both day columns.
-      const dayStart = day.toZonedDateTime({
-        plainTime: Temporal.PlainTime.from("00:00"),
-        timeZone,
-      });
-      const dayEndZdt = dayStart.add({ days: 1 });
+      const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
       const { compare } = Temporal.ZonedDateTime;
       const whoopItems: PositionedItem[] = allWorkouts.flatMap((workout) => {
         const wStart = isoStringToZonedDateTime(workout.start, timeZone);
         const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
-        if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEndZdt) >= 0) {
+        if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEnd) >= 0) {
           return [];
         }
-        const clampedStart = compare(wStart, dayStart) < 0 ? dayStart : wStart;
-        const clampedEnd = compare(wEnd, dayEndZdt) > 0 ? dayEndZdt : wEnd;
+        const clampedStart = clampZonedDateTime(wStart, dayStart, dayEnd);
+        const clampedEnd = clampZonedDateTime(wEnd, dayStart, dayEnd);
         const startMin = minutesFromMidnight(clampedStart);
         const rawEndMin = minutesFromMidnight(clampedEnd);
         const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
@@ -663,11 +611,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                 <DayColumn
                   date={day}
                   key={dayKey}
-                  onSlotDragMove={handleSlotDragMove}
-                  onSlotHover={handleSlotHover}
-                  onSlotLeave={handleSlotLeave}
-                  onSlotMouseDown={handleSlotMouseDown}
-                  onSlotMouseUp={handleSlotMouseUp}
+                  onSlotDragMove={actions.onSlotDragMove}
+                  onSlotHover={actions.onSlotHover}
+                  onSlotLeave={actions.onSlotLeave}
+                  onSlotMouseDown={actions.onSlotMouseDown}
+                  onSlotMouseUp={actions.onSlotMouseUp}
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
@@ -834,14 +782,8 @@ function AllDayEventChip({
     item.event.end.date && item.event.end.date !== item.date.toString()
       ? parseDateOnlyLocal(item.event.end.date)
       : item.date.add({ days: 1 });
-  const startZdt = item.date.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
-  const endZdt = endDate.toZonedDateTime({
-    plainTime: Temporal.PlainTime.from("00:00"),
-    timeZone,
-  });
+  const startZdt = startOfDayZoned(item.date, timeZone);
+  const endZdt = startOfDayZoned(endDate, timeZone);
 
   return (
     <EventEditPopover

@@ -26,12 +26,11 @@ import {
 import { useAtomValue } from "jotai";
 import { Check, MapPin, Repeat2, Trash2, Video, X } from "lucide-react-native";
 import React from "react";
-import { useForm } from "react-hook-form";
+import { type UseFormSetValue, useForm } from "react-hook-form";
 import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type {
   CalendarOption,
-  CreateEventDraft,
   EditEventDraft,
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
@@ -60,63 +59,7 @@ const RECURRENCE_FREQUENCIES: Array<{
   { label: "Monthly", value: "MONTHLY" },
 ];
 
-interface EventEditorFormValues {
-  allDay: boolean;
-  calendar: {
-    accountId: string;
-    calendarId: string;
-  };
-  colorId: string | null;
-  conferenceData: EventDraft["conferenceData"];
-  description: string;
-  endDate: Temporal.PlainDate;
-  endTime: Temporal.PlainTime | null;
-  location: string;
-  recurrence: string[];
-  startDate: Temporal.PlainDate;
-  startTime: Temporal.PlainTime | null;
-  summary: string;
-}
-
-function toFormValues(draft: EventDraft): EventEditorFormValues {
-  return {
-    allDay: draft.allDay,
-    calendar: draft.calendar,
-    colorId: draft.colorId ?? null,
-    conferenceData: draft.conferenceData ?? null,
-    description: draft.description,
-    endDate: draft.endDate,
-    endTime: draft.endTime,
-    location: draft.location,
-    recurrence: draft.recurrence,
-    startDate: draft.startDate,
-    startTime: draft.startTime,
-    summary: draft.summary,
-  };
-}
-
-function applyFormValuesToDraft(
-  draft: EventDraft,
-  values: EventEditorFormValues
-): EventDraft {
-  return {
-    ...draft,
-    allDay: values.allDay,
-    calendar: values.calendar,
-    colorId: values.colorId,
-    conferenceData: values.conferenceData,
-    description: values.description,
-    endDate: values.endDate,
-    endTime: values.endTime,
-    location: values.location,
-    recurrence: values.recurrence,
-    startDate: values.startDate,
-    startTime: values.startTime,
-    summary: values.summary,
-  };
-}
-
-function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
+function dateToPlainDate(date: Date): Temporal.PlainDate {
   return Temporal.PlainDate.from({
     day: date.getDate(),
     month: date.getMonth() + 1,
@@ -124,7 +67,7 @@ function dateToPlainDate(date: Date, _timeZone: string): Temporal.PlainDate {
   });
 }
 
-function dateToPlainTime(date: Date, _timeZone: string): Temporal.PlainTime {
+function dateToPlainTime(date: Date): Temporal.PlainTime {
   return Temporal.PlainTime.from({
     hour: date.getHours(),
     minute: date.getMinutes(),
@@ -640,7 +583,6 @@ function EventDateTimeRow({
   startDate,
   startDatePickerValue,
   startTimePickerValue,
-  timeZone,
 }: {
   allDay: boolean;
   canEditRecurrence: boolean;
@@ -649,11 +591,10 @@ function EventDateTimeRow({
   endTimePickerValue: Date;
   isRecurrenceExpanded: boolean;
   onToggleRecurrence: () => void;
-  setValue: ReturnType<typeof useForm<EventEditorFormValues>>["setValue"];
+  setValue: UseFormSetValue<EventDraft>;
   startDate: Temporal.PlainDate;
   startDatePickerValue: Date;
   startTimePickerValue: Date;
-  timeZone: string;
 }) {
   return (
     <View className="mb-2.5 flex-row items-center gap-1.5">
@@ -665,7 +606,7 @@ function EventDateTimeRow({
             if (!date) {
               return;
             }
-            const nextDate = dateToPlainDate(date, timeZone);
+            const nextDate = dateToPlainDate(date);
             const nextEndDate =
               Temporal.PlainDate.compare(nextDate, endDate) > 0
                 ? nextDate
@@ -689,7 +630,7 @@ function EventDateTimeRow({
               if (!date) {
                 return;
               }
-              const nextTime = dateToPlainTime(date, timeZone);
+              const nextTime = dateToPlainTime(date);
               setValue("startTime", nextTime, { shouldDirty: true });
               setValue("endTime", nextTime.add({ minutes: 30 }), {
                 shouldDirty: true,
@@ -713,7 +654,7 @@ function EventDateTimeRow({
             if (!date) {
               return;
             }
-            setValue("endDate", dateToPlainDate(date, timeZone), {
+            setValue("endDate", dateToPlainDate(date), {
               shouldDirty: true,
             });
           }}
@@ -733,7 +674,7 @@ function EventDateTimeRow({
               if (!date) {
                 return;
               }
-              setValue("endTime", dateToPlainTime(date, timeZone), {
+              setValue("endTime", dateToPlainTime(date), {
                 shouldDirty: true,
               });
             }}
@@ -772,15 +713,12 @@ function EventDateTimeRow({
 const DEFAULT_START_TIME = Temporal.PlainTime.from("09:00");
 const DEFAULT_END_TIME = Temporal.PlainTime.from("10:00");
 
-function useEventDatePickerValues(
-  values: EventEditorFormValues,
-  draft: EventDraft
-) {
-  const startDate = values.startDate ?? draft.startDate;
-  const endDate = values.endDate ?? draft.endDate;
-  const startTime = values.startTime ?? draft.startTime;
-  const endTime = values.endTime ?? draft.endTime;
-
+function useEventDatePickerValues({
+  startDate,
+  endDate,
+  startTime,
+  endTime,
+}: EventDraft) {
   const startDatePickerValue = React.useMemo(
     () => plainDateToPickerDate(startDate),
     [startDate]
@@ -805,16 +743,6 @@ function useEventDatePickerValues(
     startDate,
     startDatePickerValue,
     startTimePickerValue,
-  };
-}
-
-function resolveFormDefaults(values: EventEditorFormValues) {
-  return {
-    allDay: Boolean(values.allDay),
-    description: values.description ?? "",
-    location: values.location ?? "",
-    recurrence: values.recurrence ?? [],
-    summary: values.summary ?? "",
   };
 }
 
@@ -846,39 +774,36 @@ function useEventMeeting(ctx: {
 interface EventEditorSheetProps {
   calendarOptions: CalendarOption[];
   draft: EventDraft;
-  isVisible: boolean;
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
-  timeZone: string;
 }
 
-function EventEditorSheet({
+/**
+ * Create / edit sheet for a Google event. Render it only while a draft is
+ * open; it is always visible when mounted.
+ */
+export function EventEditorSheet({
   draft,
-  isVisible,
   onClose,
   onSubmit,
   onDelete,
-  timeZone,
   calendarOptions,
 }: EventEditorSheetProps) {
   const { getValues, handleSubmit, reset, setValue, watch } =
-    useForm<EventEditorFormValues>({
-      defaultValues: toFormValues(draft),
-    });
+    useForm<EventDraft>({ defaultValues: draft });
   const values = watch();
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isLocationSuggestionsOpen, setIsLocationSuggestionsOpen] =
     React.useState(false);
 
   React.useEffect(() => {
-    reset(toFormValues(draft));
+    reset(draft);
     setIsRecurrenceExpanded(false);
     setIsLocationSuggestionsOpen(false);
   }, [draft, reset]);
 
-  const { summary, description, location, recurrence, allDay } =
-    resolveFormDefaults(values);
+  const { summary, description, location, recurrence, allDay } = values;
 
   const canSubmit = summary.trim().length > 0;
   const isCreateMode = draft.mode === "create";
@@ -898,7 +823,7 @@ function EventEditorSheet({
   const mutedColor = useColor("muted");
   const borderColor = useColor("border");
 
-  const selectedCalendar = values.calendar ?? draft.calendar;
+  const selectedCalendar = values.calendar;
   const selectedCalendarValue = toCalendarOptionValue(selectedCalendar);
   const selectedCalendarOption = React.useMemo(
     () => findCalendarOptionByValue(selectedCalendarValue, calendarOptions),
@@ -929,7 +854,7 @@ function EventEditorSheet({
     endDatePickerValue,
     startTimePickerValue,
     endTimePickerValue,
-  } = useEventDatePickerValues(values, draft);
+  } = useEventDatePickerValues(values);
 
   const locationSearch = useLocationSearch(location);
   const locationSuggestions = locationSearch.data ?? [];
@@ -1007,20 +932,14 @@ function EventEditorSheet({
     [calendarOptions, setValue]
   );
 
-  const handleSheetSubmit = handleSubmit((nextValues) => {
-    onSubmit(applyFormValuesToDraft(draft, nextValues));
-  });
+  const handleSheetSubmit = handleSubmit(onSubmit);
 
   const handleDelete = React.useCallback(() => {
-    if (!(draft.mode === "edit" && onDelete)) {
-      return;
+    const currentDraft = getValues();
+    if (currentDraft.mode === "edit" && onDelete) {
+      onDelete(currentDraft);
     }
-    const nextDraft = applyFormValuesToDraft(
-      draft,
-      getValues()
-    ) as EditEventDraft;
-    onDelete(nextDraft);
-  }, [draft, getValues, onDelete]);
+  }, [getValues, onDelete]);
 
   const headerRight = (
     <EventEditorHeaderRight
@@ -1035,7 +954,7 @@ function EventEditorSheet({
   return (
     <BottomSheet
       headerRight={headerRight}
-      isVisible={isVisible}
+      isVisible
       onClose={onClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
@@ -1054,7 +973,6 @@ function EventEditorSheet({
         startDate={startDate}
         startDatePickerValue={startDatePickerValue}
         startTimePickerValue={startTimePickerValue}
-        timeZone={timeZone}
       />
 
       {recurrenceEditor}
@@ -1129,51 +1047,5 @@ function EventEditorSheet({
         variant="outline"
       />
     </BottomSheet>
-  );
-}
-
-interface CreateEventEditorSheetProps {
-  calendarOptions: CalendarOption[];
-  draft: CreateEventDraft;
-  isVisible: boolean;
-  onClose: () => void;
-  onCreate: (draft: CreateEventDraft) => void;
-  timeZone: string;
-}
-
-export function CreateEventEditorSheet(props: CreateEventEditorSheetProps) {
-  return (
-    <EventEditorSheet
-      calendarOptions={props.calendarOptions}
-      draft={props.draft}
-      isVisible={props.isVisible}
-      onClose={props.onClose}
-      onSubmit={(draft) => props.onCreate(draft as CreateEventDraft)}
-      timeZone={props.timeZone}
-    />
-  );
-}
-
-interface EditEventEditorSheetProps {
-  calendarOptions: CalendarOption[];
-  draft: EditEventDraft;
-  isVisible: boolean;
-  onClose: () => void;
-  onDelete: (draft: EditEventDraft) => void;
-  onSave: (draft: EditEventDraft) => void;
-  timeZone: string;
-}
-
-export function EditEventEditorSheet(props: EditEventEditorSheetProps) {
-  return (
-    <EventEditorSheet
-      calendarOptions={props.calendarOptions}
-      draft={props.draft}
-      isVisible={props.isVisible}
-      onClose={props.onClose}
-      onDelete={props.onDelete}
-      onSubmit={(draft) => props.onSave(draft as EditEventDraft)}
-      timeZone={props.timeZone}
-    />
   );
 }

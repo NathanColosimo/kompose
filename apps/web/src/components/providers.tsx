@@ -1,6 +1,7 @@
 "use client";
 
 import { env } from "@kompose/env";
+import { errorMessage } from "@kompose/state/errors";
 import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
@@ -8,14 +9,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Analytics } from "@vercel/analytics/next";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
+import { ThemeProvider } from "next-themes";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
-import { isToastSuppressedPath } from "@/lib/toast-suppression";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
 import { DesktopAuth } from "./desktop-auth";
-import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
 /** Web resume subscriber: refreshes today/now atoms on tab visibility and window focus. */
@@ -53,9 +53,10 @@ function VercelAnalytics() {
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const suppressToasts = isToastSuppressedPath(pathname);
+  // The desktop command bar window never renders or emits toasts.
+  const isCommandBarRoute = pathname === "/desktop/command-bar";
   const [queryClient] = useState(() =>
-    createAppQueryClient({ suppressToasts })
+    createAppQueryClient({ suppressToasts: isCommandBarRoute })
   );
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
@@ -66,47 +67,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         });
         return result?.data?.user ?? null;
       },
-      listAccounts: async () => {
-        const result = await authClient.listAccounts();
-        if (
-          !(result && "data" in result) ||
-          result.data === null ||
-          result.data === undefined
-        ) {
-          return null;
-        }
-        return { data: result.data };
-      },
+      listAccounts: () =>
+        authClient.listAccounts({ fetchOptions: { throw: true } }),
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
-        await new Promise<void>((resolve, reject) => {
-          authClient
-            .unlinkAccount(
-              { accountId },
-              {
-                onError: (error: {
-                  error?: { message?: string; statusText?: string };
-                }) => {
-                  reject(
-                    new Error(
-                      error.error?.message ||
-                        error.error?.statusText ||
-                        "Failed to unlink account."
-                    )
-                  );
-                },
-                onSuccess: () => {
-                  resolve();
-                },
-              }
-            )
-            .catch((error: unknown) => {
-              reject(
-                error instanceof Error
-                  ? error
-                  : new Error("Failed to unlink account.")
-              );
-            });
-        });
+        const { error } = await authClient.unlinkAccount({ accountId });
+        if (error) {
+          throw new Error(
+            error.message || error.statusText || "Failed to unlink account."
+          );
+        }
       },
     }),
     []
@@ -115,17 +84,16 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     () => ({
       authClient: stateAuthClient,
       notifyError: (error: Error) => {
-        if (suppressToasts) {
+        if (isCommandBarRoute) {
           return;
         }
 
-        toast.error(error.message);
+        toast.error(errorMessage(error));
       },
       orpc,
     }),
-    [stateAuthClient, suppressToasts]
+    [isCommandBarRoute, stateAuthClient]
   );
-  const isCommandBarRoute = suppressToasts;
   const showReactQueryDevtools =
     env.NEXT_PUBLIC_DEPLOYMENT_ENV !== "production" && !isCommandBarRoute;
 

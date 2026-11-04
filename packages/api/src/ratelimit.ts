@@ -1,21 +1,12 @@
-import { env } from "@kompose/env";
+import { redis } from "@kompose/redis";
 import { ratelimit } from "@orpc/ratelimit";
 import { BaseRedisRateLimiter } from "@orpc/ratelimit/base-redis";
 import type { User } from "better-auth";
-import { RedisClient } from "bun";
 
-/** Dedicated Redis client for rate limiting (separate from pub/sub client) */
-const redisClient = new RedisClient(env.REDIS_URL);
-
-/** oRPC's Redis rate limiter, run through Bun's Redis client */
-class BunRedisRateLimiter extends BaseRedisRateLimiter {
+/** oRPC's Redis rate limiter, run through the shared Redis connection */
+class RedisRateLimiter extends BaseRedisRateLimiter {
   protected evalScript(script: string, keys: string[], args: string[]) {
-    return redisClient.send("EVAL", [
-      script,
-      String(keys.length),
-      ...keys,
-      ...args,
-    ]);
+    return redis.eval(script, keys.length, ...keys, ...args);
   }
 }
 
@@ -24,7 +15,7 @@ class BunRedisRateLimiter extends BaseRedisRateLimiter {
  * Covers all authenticated endpoints as a baseline protection
  * against runaway clients or compromised accounts.
  */
-const globalLimiter = new BunRedisRateLimiter({
+const globalLimiter = new RedisRateLimiter({
   maxRequests: 200,
   prefix: "orpc:ratelimit:global:",
   window: 60_000,
@@ -35,7 +26,7 @@ const globalLimiter = new BunRedisRateLimiter({
  * Tighter limit because maps search hits the external Google Places API
  * which has per-request costs.
  */
-const mapsLimiter = new BunRedisRateLimiter({
+const mapsLimiter = new RedisRateLimiter({
   maxRequests: 20,
   prefix: "orpc:ratelimit:maps:",
   window: 60_000,
