@@ -1,18 +1,17 @@
 "use client";
 
-import { useDroppable } from "@dnd-kit/core";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
-import { PIXELS_PER_HOUR } from "../constants";
+import { PIXELS_PER_HOUR, SLOT_HEIGHT } from "../constants";
 import { MINUTES_STEP } from "../dnd/helpers";
-import type { SlotData } from "../dnd/types";
+
+/** Pixels, not rem, so the grid matches PIXELS_PER_HOUR at any font size. */
+const slotStyle = { height: SLOT_HEIGHT };
 
 interface TimeSlotProps {
   children?: React.ReactNode;
   date: Temporal.PlainDate;
-  droppableDisabled?: boolean;
-  hour: number;
   minutes: number;
   /** Called when mouse moves over the slot during creation drag */
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
@@ -29,52 +28,22 @@ interface TimeSlotProps {
 
 export const TimeSlot = memo(function TimeSlotInner({
   date,
-  hour,
   minutes,
   timeZone,
   children,
-  droppableDisabled,
   onSlotHover,
   onSlotLeave,
   onSlotMouseDown,
   onSlotDragMove,
   onSlotMouseUp,
 }: TimeSlotProps) {
-  // Build slot ID for droppable identification
-  const slotId = `slot-${date.toString()}-${hour}-${minutes}`;
-
-  // Memoize the ZonedDateTime to avoid recreating on every render
-  const dateTime = useMemo(
-    () =>
-      Temporal.ZonedDateTime.from({
-        day: date.day,
-        hour,
-        minute: minutes,
-        month: date.month,
-        timeZone,
-        year: date.year,
-      }),
-    [date, hour, minutes, timeZone]
-  );
-
-  const slotData: SlotData = useMemo(() => ({ dateTime }), [dateTime]);
-
-  const { setNodeRef, isOver } = useDroppable({
-    data: slotData,
-    disabled: droppableDisabled,
-    id: slotId,
-  });
-
   const isThirtyMinuteBoundary = minutes === 0 || minutes === 30;
 
   const getSnappedDateTimeFromPointer = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       const column = event.currentTarget.closest(
         "[data-day-column]"
-      ) as HTMLElement | null;
-      if (!column) {
-        return dateTime;
-      }
+      ) as HTMLElement;
       const rect = column.getBoundingClientRect();
       const offsetY = Math.min(
         Math.max(event.clientY - rect.top, 0),
@@ -99,7 +68,7 @@ export const TimeSlot = memo(function TimeSlotInner({
         year: date.year,
       });
     },
-    [date, timeZone, dateTime]
+    [date, timeZone]
   );
 
   const handleMouseMove = useCallback(
@@ -142,9 +111,8 @@ export const TimeSlot = memo(function TimeSlotInner({
   return (
     <button
       className={cn(
-        "block h-5 min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none transition-colors",
-        isThirtyMinuteBoundary ? "border-border/50 border-t" : "",
-        isOver ? "bg-primary/10" : ""
+        "block min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none",
+        isThirtyMinuteBoundary ? "border-border/50 border-t" : ""
       )}
       data-calendar-slot
       onMouseDown={handleMouseDown}
@@ -152,7 +120,7 @@ export const TimeSlot = memo(function TimeSlotInner({
       onMouseLeave={onSlotLeave}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      ref={setNodeRef}
+      style={slotStyle}
       type="button"
     >
       {children}
