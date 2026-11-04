@@ -4,7 +4,7 @@ import { Temporal } from "temporal-polyfill";
 import { createTaskParser } from "./parser";
 import { shippedWeights, WEIGHTS_FILE } from "./test-fixtures";
 import { connectTaskParser } from "./worker-client";
-import { serveTaskParser } from "./worker-server";
+import { taskParserHandler } from "./worker-server";
 
 const now = Temporal.ZonedDateTime.from(
   "2026-10-23T10:00:00-04:00[America/New_York]"
@@ -43,7 +43,9 @@ describe("worker parser", () => {
     try {
       const clients = await Promise.all(
         channels.map(({ port1, port2 }) => {
-          serveTaskParser(port1);
+          taskParserHandler.upgrade(port1);
+          port1.start();
+          port2.start();
           return connectTaskParser(port2, pathToFileURL(WEIGHTS_FILE).href);
         })
       );

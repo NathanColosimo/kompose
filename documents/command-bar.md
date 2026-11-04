@@ -39,9 +39,9 @@ fields updates as you type. Typing `#` suggests your tags.
   worker boundary as Temporal objects. Where SharedWorker is available, every
   window and tab of a deploy shares one worker and one loaded model (the
   desktop dashboard and popup used to hold about 25 MB each). Each page gets a
-  dedicated Worker instead when SharedWorker is missing, throws on creation, or
-  fails to start; a worker's `error` event ends the wait, so a script that
-  can't load never leaves the magic box waiting.
+  dedicated Worker from the same entry instead when SharedWorker is missing,
+  throws on creation, or fails to start; a worker's `error` event ends the
+  wait, so a script that can't load never leaves the magic box waiting.
 - Enter before the model has a parse waits for it.
 
 ### URL detection
@@ -95,7 +95,7 @@ The model returns the input's URLs as `links: string[]`. On task creation, `task
 - **Search tasks:** `apps/web/src/components/command-bar/command-bar-search-tasks.tsx`
 - **Create task:** `apps/web/src/components/command-bar/command-bar-create-task.tsx`
 - **Model parse hook:** `apps/web/src/lib/use-magic-task.ts`
-- **Parser worker:** `packages/task-parser/src/worker-server.ts`, served by `shared-worker.ts` or `worker.ts` (contract in `worker-contract.ts`, client in `worker-client.ts`)
+- **Parser worker:** `packages/task-parser/src/worker.ts`, dedicated or shared (server in `worker-server.ts`, contract in `worker-contract.ts`, client in `worker-client.ts`)
 - **State atom:** `packages/state/src/atoms/command-bar.ts`
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
 - **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`

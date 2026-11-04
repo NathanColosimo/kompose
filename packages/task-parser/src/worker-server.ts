@@ -1,14 +1,13 @@
 /// <reference lib="webworker" />
 /**
- * Serves workerContract off the main thread. `worker.ts` serves a dedicated
- * Worker and `shared-worker.ts` every window connected to a SharedWorker;
- * connect with `connectTaskParser` (worker-client.ts).
+ * Serves workerContract off the main thread; `worker.ts` is the entry for a
+ * dedicated Worker or a SharedWorker. Connect with `connectTaskParser`
+ * (worker-client.ts).
  */
-import type { SupportedMessagePort } from "@orpc/client/message-port";
 import { implement, ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/message-port";
 import { createTaskParser, type TaskParser } from "./parser";
-import { serializer, startPort, workerContract } from "./worker-contract";
+import { serializer, workerContract } from "./worker-contract";
 
 const CACHE_NAME = "task-parser";
 
@@ -75,10 +74,8 @@ const router = os.router({
   }),
 });
 
-const handler = new RPCHandler(router, { serializer });
-
-/** Serve the parser on `port`: a dedicated worker's scope or a connected port. */
-export function serveTaskParser(port: SupportedMessagePort) {
-  handler.upgrade(port);
-  startPort(port);
-}
+/**
+ * Serves the parser on each port it upgrades: a dedicated worker's scope, or
+ * a started MessagePort.
+ */
+export const taskParserHandler = new RPCHandler(router, { serializer });
