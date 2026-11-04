@@ -10,7 +10,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { TAGS_QUERY_KEY } from "../atoms/tags";
+import { TAGS_QUERY_KEY, tagsQueryOptions } from "../atoms/tags";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
 import { useStateConfig } from "../config";
 
@@ -19,12 +19,7 @@ export function useTags() {
   const { orpc, notifyError } = useStateConfig();
 
   const tagsQuery = useQuery({
-    queryKey: TAGS_QUERY_KEY,
-    queryFn: async () => {
-      const tags = await orpc.tags.list();
-      return tags.map((tag) => tagSelectSchemaWithIcon.parse(tag));
-    },
-    staleTime: 1000 * 60 * 5,
+    ...tagsQueryOptions(orpc),
     placeholderData: keepPreviousData,
   });
 

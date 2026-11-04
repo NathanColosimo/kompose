@@ -78,7 +78,6 @@ export const taskSelectCodec = taskSelectSchemaWithTags.extend({
 });
 
 /** Task type with Temporal date/time fields (decoded from API) */
-export type TaskSelectEncoded = z.input<typeof taskSelectCodec>;
 export type TaskSelectDecoded = z.output<typeof taskSelectCodec>;
 
 // ============================================================================
@@ -98,7 +97,6 @@ export const taskUpdateCodec = clientTaskUpdateSchema.extend({
   startTime: plainTimeCodec.nullable().optional(),
 });
 
-export type TaskUpdateEncoded = z.input<typeof taskUpdateCodec>;
 export type TaskUpdateDecoded = z.output<typeof taskUpdateCodec>;
 
 // ============================================================================
@@ -112,22 +110,12 @@ export type TaskUpdateDecoded = z.output<typeof taskUpdateCodec>;
  * - z.output = Temporal types (for app use)
  * - schema.encode(temporalData) = converts to strings for API
  */
-export const taskInsertCodec = clientTaskInsertSchema.extend({
+export const clientTaskInsertCodec = clientTaskInsertSchema.extend({
   dueDate: plainDateCodec.nullable().optional(),
   startDate: plainDateCodec.nullable().optional(),
   startTime: plainTimeCodec.nullable().optional(),
 });
 
-export type TaskInsertEncoded = z.input<typeof taskInsertCodec>;
-export type TaskInsertDecoded = z.output<typeof taskInsertCodec>;
-
-// ============================================================================
-// CLIENT-SIDE CODECS (for encoding before API calls)
-// ============================================================================
-
-/** Client insert codec - use .encode() to convert Temporal → strings */
-export const clientTaskInsertCodec = taskInsertCodec;
-export type ClientTaskInsertEncoded = z.input<typeof clientTaskInsertCodec>;
 export type ClientTaskInsertDecoded = z.output<typeof clientTaskInsertCodec>;
 
 // ============================================================================

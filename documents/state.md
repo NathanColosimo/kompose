@@ -23,19 +23,16 @@
 - `atoms/whoop-data.ts`: WHOOP account derivation from the shared linked-account query, month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
-- `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
 - `hooks/use-google-events.ts`: Query hook for events per calendar and bounded time window.
 - `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. It can fetch eagerly, but only surfaces that actually render linked-account metadata should depend on it for display.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
-- `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
+- `hooks/use-recurring-event-master.ts`: Recurring master query hook.
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
-- `hooks/use-visible-calendars.ts`: Hook wrapper around visible calendars atom.
-- `whoop-query-keys.ts`: Shared query keys for WHOOP day summaries.
-- `state-provider.tsx`: State hydrator/provider wiring, session gating, and today-tick refresh lifecycle.
+- `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh.
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
-- `types.ts`: Shared types for auth client and ORPC utils.
+- `types.ts`: Shared auth client types.

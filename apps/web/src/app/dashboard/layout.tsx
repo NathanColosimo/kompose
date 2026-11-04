@@ -1,7 +1,6 @@
 "use client";
 
-import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
-import { currentDateAtom } from "@kompose/state/atoms/current-date";
+import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
 import { useAtom, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
@@ -16,17 +15,14 @@ import { SidebarLeft } from "@/components/sidebar/sidebar-left";
 import { SidebarRight } from "@/components/sidebar/sidebar-right";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useMountEffect } from "@/hooks/use-mount-effect";
-import { useWebRealtimeSync } from "@/hooks/use-realtime-sync";
 import { authClient } from "@/lib/auth-client";
-import { applyCommandBarTaskOpenRequest } from "@/lib/command-bar-task-routing";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { usePreloadTaskParser } from "@/lib/use-magic-task";
+import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
-  sidebarLeftOpenAtom,
-  sidebarLeftViewSelectionAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
@@ -61,13 +57,10 @@ export default function DashboardLayout({
   const { push } = useRouter();
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
   const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
-  const setCommandBarTaskOpenRequest = useSetAtom(
-    commandBarTaskOpenRequestAtom
+  const applyCommandBarTaskOpenRequest = useSetAtom(
+    applyCommandBarTaskOpenRequestAtom
   );
-  const setCurrentDate = useSetAtom(currentDateAtom);
-  const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
-  const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
-  useWebRealtimeSync(sessionUser?.id);
+  useRealtimeSync({ userId: sessionUser?.id });
   usePreloadTaskParser();
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
@@ -115,20 +108,9 @@ export default function DashboardLayout({
     return desktopBridge().onOpenTask((payload) => {
       const request = deserializeCommandBarTaskOpenRequest(payload);
       push("/dashboard");
-      applyCommandBarTaskOpenRequest(request, {
-        setCommandBarTaskOpenRequest,
-        setCurrentDate,
-        setSidebarLeftOpen,
-        setSidebarLeftViewSelection,
-      });
+      applyCommandBarTaskOpenRequest(request);
     });
-  }, [
-    push,
-    setCommandBarTaskOpenRequest,
-    setCurrentDate,
-    setSidebarLeftOpen,
-    setSidebarLeftViewSelection,
-  ]);
+  }, [applyCommandBarTaskOpenRequest, push]);
 
   if (isSessionPending || (!sessionUser && sessionError)) {
     return (

@@ -7,18 +7,16 @@ import {
   webhookSubscriptionTable,
 } from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
-import { GoogleCalendar, GoogleCalendarLive } from "@kompose/google-cal/client";
+import {
+  GoogleCalendar,
+  makeGoogleCalendarService,
+} from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
 import { and, eq } from "drizzle-orm";
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Context, Effect, Layer } from "effect";
 import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "../realtime/events";
 import { publishToUser } from "../realtime/sync";
-import {
-  GoogleCalendarCacheService,
-  logAndSwallowCacheError,
-} from "../routers/google-cal/cache";
-import type { WebhookProviderError } from "./errors";
+import { GoogleCalendarCacheService } from "../routers/google-cal/cache";
 import {
   formatUnknownCause,
   WebhookAuthError,
@@ -42,20 +40,6 @@ export interface RefreshAllWebhooksInput {
 export interface HandleGoogleNotificationInput {
   headers: Headers;
 }
-
-export interface HandleGoogleNotificationResult {
-  followUpRefresh?: {
-    accountId: string;
-    userId: string;
-  };
-}
-
-export type WebhookServiceError =
-  | WebhookAuthError
-  | EffectDrizzleQueryError
-  | WebhookProviderError
-  | WebhookRepositoryError
-  | WebhookValidationError;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -203,9 +187,7 @@ export class WebhookService extends Context.Service<WebhookService>()(
             });
           }
 
-          return yield* GoogleCalendar.pipe(
-            Effect.provide(GoogleCalendarLive(result.accessToken))
-          );
+          return makeGoogleCalendarService(result.accessToken);
         }
       );
 
@@ -422,9 +404,10 @@ export class WebhookService extends Context.Service<WebhookService>()(
           });
 
           // Cache keys and client query keys use Google's provider account id.
-          yield* cache
-            .invalidateCalendars(subscription.providerAccountId)
-            .pipe(logAndSwallowCacheError);
+          yield* cache.invalidateCalendars(
+            subscription.userId,
+            subscription.providerAccountId
+          );
 
           yield* publishToUser(subscription.userId, {
             payload: {
@@ -432,7 +415,7 @@ export class WebhookService extends Context.Service<WebhookService>()(
               calendarId: GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID,
             },
             type: "google-calendar",
-          }).pipe(Effect.catch(() => Effect.void));
+          });
 
           return {
             followUpRefresh: {
@@ -452,12 +435,11 @@ export class WebhookService extends Context.Service<WebhookService>()(
 
           // Invalidate all cached events for this calendar (best effort).
           // Webhooks don't tell us which event changed, so we clear everything.
-          yield* cache
-            .invalidateAllEvents(
-              subscription.providerAccountId,
-              subscription.config.calendarId
-            )
-            .pipe(logAndSwallowCacheError);
+          yield* cache.invalidateAllEvents(
+            subscription.userId,
+            subscription.providerAccountId,
+            subscription.config.calendarId
+          );
 
           yield* publishToUser(subscription.userId, {
             payload: {
@@ -465,7 +447,7 @@ export class WebhookService extends Context.Service<WebhookService>()(
               calendarId: subscription.config.calendarId,
             },
             type: "google-calendar",
-          }).pipe(Effect.catch(() => Effect.void));
+          });
         }
 
         return {};

@@ -357,10 +357,10 @@ separate `Kompose Dev` profile.
 
 ### 6.10 Redis Caching Layer (Google Calendar)
 - **Service**: `GoogleCalendarCacheService` — an `Effect.Service` in `packages/api/src/routers/google-cal/cache.ts`.
-- **Cached resources**: Calendar list, single calendar, colors (24h TTL), event lists, single events (1h TTL).
+- **Cached resources**: Calendar list, single calendar, colors, event lists, single events (all 24h TTL).
 - **Invalidation**: Dual strategy — Google webhooks trigger broad invalidation (unknown which resource changed); local mutations use targeted invalidation (specific keys only).
 - **Error handling**: Cache errors are always caught, logged as `CACHE_ERROR` (visible in OTel), and swallowed. Cache failures degrade to API fetches, never fail requests.
-- **Auth-first**: Cache lookups happen *after* `getGoogleCalendar` to prevent serving cached data to unauthorized users.
+- **User-scoped keys**: cache keys start with the user ID and are written only after that user's ownership-checked token fetch, so reads check the cache first and fetch a token only on a miss.
 - See [`caching.md`](./caching.md) for full details.
 
 ### 6.11 Google Calendar Webhooks
@@ -373,14 +373,14 @@ separate `Kompose Dev` profile.
 
 ### 6.12 SSE Realtime Sync
 - **Endpoint**: `sync.events` returns an `AsyncGenerator<SyncEvent>` (Server-Sent Events).
-- **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUserBestEffort` to push typed events.
+- **Mechanism**: Redis pub/sub — each user has a channel `user:{userId}`. Mutations across routers call `publishToUser` (best effort, never fails) to push typed events.
 - **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
 - **Keepalive**: Server sends `keepalive` events every 10 seconds. Client resets an inactivity timer (30s) on every event; if the timer fires (no events received), the connection is assumed dead and force-closed to trigger a reconnect.
 - **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
 
 ### 6.13 Rate Limiting
-- **Implementation**: Redis-backed via `@orpc/ratelimit` with Lua script evaluation (`EVAL`) through Bun's `RedisClient`.
+- **Implementation**: Redis-backed via `@orpc/ratelimit` with Lua script evaluation (`EVAL`) on the shared `@kompose/redis` (ioredis) connection.
 - **Limiters**:
   - Global: 200 req/60s per user — applied to all authenticated endpoints.
   - Maps: 20 req/60s per user — stacked on top of global for Google Places search (per-request cost).

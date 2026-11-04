@@ -1,6 +1,5 @@
 "use client";
 
-import { env } from "@kompose/env";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -97,14 +96,6 @@ export default function LoginPageClient() {
     isRefetching,
     refetch,
   } = authClient.useSession();
-  const privacyHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/privacy`
-      : "/privacy";
-  const termsHref =
-    env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production"
-      ? `${env.NEXT_PUBLIC_WEB_URL}/terms`
-      : "/terms";
   if (isPending || (!session?.user && error)) {
     return (
       <main className="flex min-h-svh items-center justify-center p-6 text-center text-sm">
@@ -158,16 +149,10 @@ export default function LoginPageClient() {
               </ul>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
-              <a
-                className="underline-offset-4 hover:underline"
-                href={privacyHref}
-              >
+              <a className="underline-offset-4 hover:underline" href="/privacy">
                 Privacy Policy
               </a>
-              <a
-                className="underline-offset-4 hover:underline"
-                href={termsHref}
-              >
+              <a className="underline-offset-4 hover:underline" href="/terms">
                 Terms of Service
               </a>
             </div>

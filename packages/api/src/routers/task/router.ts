@@ -1,6 +1,5 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
 import { implement } from "@orpc/server";
-import { Effect } from "effect";
 import { requireAuth } from "../..";
 import type { Context } from "../../context";
 import { globalRateLimit } from "../../ratelimit";
@@ -38,7 +37,7 @@ function publishTasksEvent(userId: string) {
   return publishToUser(userId, {
     payload: {},
     type: "tasks",
-  }).pipe(Effect.catch(() => Effect.void));
+  });
 }
 
 export const taskRouter = os.router({

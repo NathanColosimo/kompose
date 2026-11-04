@@ -50,7 +50,7 @@ packages/api/src/routers/whoop/   — oRPC router + Effect service
 ├── router.ts            — oRPC handler implementations
 ├── service.ts           — WhoopService (day summary aggregation, caching, grouping)
 ├── cache.ts             — WhoopCacheService (Redis per-day cache)
-└── errors.ts            — Service-level errors (InvalidRange, CacheError)
+└── errors.ts            — Service-level errors (InvalidRange)
 
 packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
 ```
@@ -92,12 +92,12 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 
 | Resource | Key pattern | TTL |
 |----------|-------------|-----|
-| Per-day raw data | `whoop:day:{accountId}:{YYYY-MM-DD}` | 15 min (today, or no data yet), 7 days (past) |
+| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today, or no data yet), 7 days (past) |
 
 - Days with no WHOOP data (future days, today before the band syncs, days the band was off) are cached as empty for 15 min and left out of `days.list` responses. Without this, any window containing a future day (the current week or month always does) refetched from WHOOP on every load.
 - Cache writes only target days that were actually missing. Cached days are never overwritten by data from an adjacent day's fetch.
 - Fetch window starts 6 hours before midnight local time to capture cycles/sleeps that begin in the late evening.
-- Cache errors are logged and swallowed — cache failures degrade to API fetches, never fail requests.
+- Cache failures are logged as `WHOOP_CACHE_ERROR` and degrade to API fetches; they never fail requests.
 
 ## oRPC Endpoints
 

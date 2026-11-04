@@ -1,12 +1,8 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import {
-  commandBarOpenAtom,
-  commandBarTaskOpenRequestAtom,
-} from "@kompose/state/atoms/command-bar";
-import {
-  currentDateAtom,
   nowZonedDateTimeAtom,
   timezoneAtom,
   todayPlainDateAtom,
@@ -34,13 +30,9 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { applyCommandBarTaskOpenRequest } from "@/lib/command-bar-task-routing";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { formatPlainDate } from "@/lib/temporal-utils";
-import {
-  sidebarLeftOpenAtom,
-  sidebarLeftViewSelectionAtom,
-} from "@/state/sidebar";
+import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 
 interface CommandBarSearchTasksProps {
   search: string;
@@ -171,12 +163,9 @@ export function CommandBarSearchTasks({
   const timeZone = useAtomValue(timezoneAtom);
 
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
-  const setCommandBarTaskOpenRequest = useSetAtom(
-    commandBarTaskOpenRequestAtom
+  const applyCommandBarTaskOpenRequest = useSetAtom(
+    applyCommandBarTaskOpenRequestAtom
   );
-  const setCurrentDate = useSetAtom(currentDateAtom);
-  const setSidebarLeftOpen = useSetAtom(sidebarLeftOpenAtom);
-  const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
 
   // Filter tasks: exclude completed, exclude recurring, match search query
   const filteredTasks = useMemo(() => {
@@ -232,12 +221,7 @@ export function CommandBarSearchTasks({
         return;
       }
 
-      applyCommandBarTaskOpenRequest(request, {
-        setCommandBarTaskOpenRequest,
-        setCurrentDate,
-        setSidebarLeftOpen,
-        setSidebarLeftViewSelection,
-      });
+      applyCommandBarTaskOpenRequest(request);
 
       // Close the command bar
       setCommandBarOpen(false);
@@ -245,11 +229,8 @@ export function CommandBarSearchTasks({
     [
       now,
       selectionMode,
+      applyCommandBarTaskOpenRequest,
       setCommandBarOpen,
-      setCommandBarTaskOpenRequest,
-      setCurrentDate,
-      setSidebarLeftOpen,
-      setSidebarLeftViewSelection,
       timeZone,
       today,
     ]

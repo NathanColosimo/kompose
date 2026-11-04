@@ -40,15 +40,6 @@ export const visibleDaysCountAtom = atom(
 );
 
 /**
- * Array of PlainDates starting from the current date.
- */
-export const visibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
-  const start = get(currentDateAtom);
-  const count = get(visibleDaysCountAtom);
-  return Array.from({ length: count }, (_, i) => start.add({ days: i }));
-});
-
-/**
  * Mobile-specific visible days count, clamped to 1-3.
  * Derives from the shared atom but enforces mobile screen constraints.
  */

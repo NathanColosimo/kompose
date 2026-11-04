@@ -9,16 +9,14 @@ import type {
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
 import { and, asc, EmptyFilter, eq, gte, inArray } from "drizzle-orm";
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
 import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
-import { InvalidTaskError, type TaskError, TaskNotFoundError } from "./errors";
+import { InvalidTaskError, TaskNotFoundError } from "./errors";
 
 type TaskInsertRow = typeof taskTable.$inferInsert;
-type TaskDbError = EffectDrizzleQueryError;
 
 type SystemManagedTaskField = "createdAt" | "updatedAt";
 type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
@@ -218,14 +216,21 @@ function buildTaskTagRows(
   );
 }
 
-const resolveTagIdsForUser = (userId: string, tagIds: string[]) =>
+/**
+ * The given tag IDs, deduplicated and limited to tags this user owns, or
+ * undefined when the input sets no tags.
+ */
+const resolveTagIdsForUser = (userId: string, tagIds: string[] | undefined) =>
   Effect.gen(function* () {
-    // Only keep tag IDs that belong to this user.
-    if (tagIds.length === 0) {
+    if (tagIds === undefined) {
+      return;
+    }
+    const uniqueTagIds = normalizeTagIds(tagIds);
+    if (uniqueTagIds.length === 0) {
       return [] as string[];
     }
 
-    const rows = yield* dbSelectTagIdsForUser(userId, tagIds);
+    const rows = yield* dbSelectTagIdsForUser(userId, uniqueTagIds);
     return rows.map((row) => row.id);
   });
 
@@ -321,6 +326,23 @@ const resolveComparableRecurrence = Effect.fn("resolveComparableRecurrence")(
   }
 );
 
+/** Whether an edit to `task` changes its series' recurrence pattern. */
+const changesSeriesRecurrence = (
+  userId: string,
+  task: TaskSelect,
+  input: TaskUpdateInput
+) =>
+  Effect.gen(function* () {
+    if (!shouldCompareFollowingRecurrenceChange(task, input)) {
+      return false;
+    }
+    const comparableRecurrence = yield* resolveComparableRecurrence(
+      userId,
+      task
+    );
+    return !isSameRecurrence(input.recurrence, comparableRecurrence);
+  });
+
 /** Remove per-occurrence fields when updating a series in bulk. */
 function buildSeriesUpdateBase(input: TaskUpdateInput): TaskUpdate {
   return Object.fromEntries(
@@ -348,32 +370,6 @@ function parsePlainTime(
   value: string | null | undefined
 ): Temporal.PlainTime | null {
   return value ? Temporal.PlainTime.from(value) : null;
-}
-
-/** Resolve the next date value using input presence rules. */
-function getNextPlainDate(
-  hasValue: boolean,
-  value: string | null | undefined,
-  fallback: Temporal.PlainDate | null
-): Temporal.PlainDate | null {
-  if (!hasValue) {
-    return fallback;
-  }
-
-  return parsePlainDate(value);
-}
-
-/** Resolve the next time value using input presence rules. */
-function getNextPlainTime(
-  hasValue: boolean,
-  value: string | null | undefined,
-  fallback: Temporal.PlainTime | null
-): Temporal.PlainTime | null {
-  if (!hasValue) {
-    return fallback;
-  }
-
-  return parsePlainTime(value);
 }
 
 interface DueDateScaleBase {
@@ -417,12 +413,10 @@ function getDateScaleContext(
   const startDateChanged = hasStartDate && input.startDate !== task.startDate;
   const dueDateChanged = hasDueDate && input.dueDate !== task.dueDate;
 
-  const nextStartDate = getNextPlainDate(
-    hasStartDate,
-    input.startDate,
-    baseStartDate
-  );
-  const nextDueDate = getNextPlainDate(hasDueDate, input.dueDate, baseDueDate);
+  const nextStartDate = hasStartDate
+    ? parsePlainDate(input.startDate)
+    : baseStartDate;
+  const nextDueDate = hasDueDate ? parsePlainDate(input.dueDate) : baseDueDate;
 
   // Compute a shift delta when the start date changes.
   let startDateDelta: Temporal.Duration | null = null;
@@ -475,11 +469,9 @@ function getTimeScaleContext(
   const baseStartTime = parsePlainTime(task.startTime);
   const hasStartTime = input.startTime !== undefined;
   const startTimeChanged = hasStartTime && input.startTime !== task.startTime;
-  const nextStartTime = getNextPlainTime(
-    hasStartTime,
-    input.startTime,
-    baseStartTime
-  );
+  const nextStartTime = hasStartTime
+    ? parsePlainTime(input.startTime)
+    : baseStartTime;
 
   // Decide how to apply the time change across the series.
   let startTimeMode: "none" | "clear" | "set" | "shift" = "none";
@@ -607,95 +599,91 @@ function buildRecurringTaskRows(
   });
 }
 
-/** Build task rows for regenerating a series with new recurrence */
-function buildRegeneratedTaskRows(
-  userId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput,
-  recurrence: TaskRecurrence,
-  taskStartDate: string
-): TaskInsertRow[] {
-  const newMasterId = uuidv7();
-  const startDate = Temporal.PlainDate.from(taskStartDate);
-  const dueDate = input.dueDate ?? task.dueDate;
-  const parsedDueDate = dueDate ? Temporal.PlainDate.from(dueDate) : null;
-  const occurrenceDates = generateOccurrences(recurrence, startDate);
+/**
+ * Insert rows for occurrences of a series built from an edited task. Each
+ * field takes the edit's value, else the task's, and due dates keep the
+ * series' start-to-due offset.
+ */
+function buildOccurrenceRowsFromTask(params: {
+  input: TaskUpdateInput;
+  occurrenceDates: Temporal.PlainDate[];
+  seriesMasterId: string;
+  seriesStartDate: Temporal.PlainDate;
+  task: TaskSelect;
+  userId: string;
+}): TaskInsertRow[] {
+  const { input, task } = params;
+  const baseDueDate = parsePlainDate(input.dueDate ?? task.dueDate);
 
-  return occurrenceDates.map((date, index) => {
-    const id = index === 0 ? newMasterId : uuidv7();
-    return {
-      description: input.description ?? task.description,
-      dueDate: getDueDateForOccurrence({
-        baseDueDate: parsedDueDate,
-        baseStartDate: startDate,
-        occurrenceDate: date,
-      }),
-      durationMinutes: input.durationMinutes ?? task.durationMinutes,
-      id,
-      isException: false,
-      links: input.links ?? task.links,
-      recurrence: index === 0 ? recurrence : null,
-      seriesMasterId: newMasterId,
-      startDate: date.toString(),
-      startTime: input.startTime ?? task.startTime,
-      status: input.status ?? task.status,
-      title: input.title ?? task.title,
-      userId,
-    };
-  });
+  return params.occurrenceDates.map((date) => ({
+    description: input.description ?? task.description,
+    dueDate: getDueDateForOccurrence({
+      baseDueDate,
+      baseStartDate: params.seriesStartDate,
+      occurrenceDate: date,
+    }),
+    durationMinutes: input.durationMinutes ?? task.durationMinutes,
+    id: uuidv7(),
+    isException: false,
+    links: input.links ?? task.links,
+    recurrence: null,
+    seriesMasterId: params.seriesMasterId,
+    startDate: date.toString(),
+    startTime: input.startTime ?? task.startTime,
+    status: input.status ?? task.status,
+    title: input.title ?? task.title,
+    userId: params.userId,
+  }));
 }
 
-/** Regenerate occurrences with a new recurrence pattern */
+/** A series occurrence with a start date, which "following" edits need. */
+type DatedSeriesTask = TaskSelect & {
+  seriesMasterId: string;
+  startDate: string;
+};
+
+function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
+  return Boolean(task.seriesMasterId && task.startDate);
+}
+
+/** Replace this and later non-exception occurrences with a new recurrence pattern. */
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
-  task: TaskSelect,
+  task: DatedSeriesTask,
   input: TaskUpdateInput
 ) {
-  if (!task.startDate) {
-    return yield* Effect.fail(
-      new InvalidTaskError({
-        message: "Task must have startDate to regenerate occurrences",
-      })
-    );
-  }
-
-  // Delete future non-exception tasks from this date onward
-  if (task.seriesMasterId) {
-    yield* dbDeleteNonExceptionsBySeriesFrom(
-      userId,
-      task.seriesMasterId,
-      task.startDate
-    );
-  }
+  yield* dbDeleteNonExceptionsBySeriesFrom(
+    userId,
+    task.seriesMasterId,
+    task.startDate
+  );
 
   // If recurrence is being removed, we're done
   if (!input.recurrence) {
     return [] as TaskSelect[];
   }
 
-  // Generate and insert new occurrences
-  const taskRows = buildRegeneratedTaskRows(
-    userId,
-    task,
+  // The first new occurrence is the new series master.
+  const seriesMasterId = uuidv7();
+  const seriesStartDate = Temporal.PlainDate.from(task.startDate);
+  const taskRows = buildOccurrenceRowsFromTask({
     input,
-    input.recurrence,
-    task.startDate
+    occurrenceDates: generateOccurrences(input.recurrence, seriesStartDate),
+    seriesMasterId,
+    seriesStartDate,
+    task,
+    userId,
+  }).map((row, index) =>
+    index === 0
+      ? { ...row, id: seriesMasterId, recurrence: input.recurrence }
+      : row
   );
   return yield* dbInsert(taskRows);
 });
 
 /** Update a recurring series by scaling date/time offsets across occurrences. */
 const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
-  function* (userId: string, task: TaskSelect, input: TaskUpdateInput) {
-    if (!task.seriesMasterId) {
-      return yield* dbUpdate(userId, task.id, input);
-    }
-
-    if (!task.startDate) {
-      return yield* dbUpdate(userId, task.id, { ...input, isException: true });
-    }
-
-    // Scope is following-only for recurring task updates.
+  function* (userId: string, task: DatedSeriesTask, input: TaskUpdateInput) {
     const seriesTasks = yield* dbSelectBySeriesFrom(
       userId,
       task.seriesMasterId,
@@ -757,12 +745,10 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   }
 
   // Generate occurrence dates (first one is the existing task's date)
-  const parsedStartDate = Temporal.PlainDate.from(startDate);
-  const dueDate = input.dueDate ?? task.dueDate;
-  const parsedDueDate = dueDate ? Temporal.PlainDate.from(dueDate) : null;
+  const seriesStartDate = Temporal.PlainDate.from(startDate);
   const occurrenceDates = generateOccurrences(
     input.recurrence,
-    parsedStartDate
+    seriesStartDate
   );
 
   // Update the existing task to be the master
@@ -778,25 +764,14 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   }
 
   // Build additional occurrence rows (skip first since that's the master)
-  const additionalRows = occurrenceDates.slice(1).map((date) => ({
-    description: input.description ?? task.description,
-    dueDate: getDueDateForOccurrence({
-      baseDueDate: parsedDueDate,
-      baseStartDate: parsedStartDate,
-      occurrenceDate: date,
-    }),
-    durationMinutes: input.durationMinutes ?? task.durationMinutes,
-    id: uuidv7(),
-    isException: false,
-    links: input.links ?? task.links,
-    recurrence: null,
+  const additionalRows = buildOccurrenceRowsFromTask({
+    input,
+    occurrenceDates: occurrenceDates.slice(1),
     seriesMasterId: task.id,
-    startDate: date.toString(),
-    startTime: input.startTime ?? task.startTime,
-    status: input.status ?? task.status,
-    title: input.title ?? task.title,
+    seriesStartDate,
+    task,
     userId,
-  }));
+  });
 
   const insertedOccurrences = yield* dbInsert(additionalRows);
   return [...updatedMaster, ...insertedOccurrences];
@@ -809,11 +784,8 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
   input: TaskUpdateInput,
   recurrenceChanged: boolean
 ) {
-  // Guard: need both startDate and seriesMasterId for series update
-  if (!task.startDate) {
-    return yield* dbUpdate(userId, task.id, { ...input, isException: true });
-  }
-  if (!task.seriesMasterId) {
+  // Without a start date there is no "following"; edit this occurrence alone.
+  if (!isDatedSeriesTask(task)) {
     return yield* dbUpdate(userId, task.id, { ...input, isException: true });
   }
 
@@ -825,49 +797,6 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
   // No recurrence change: update this and following with scaled date/time offsets.
   return yield* updateSeriesWithScaledDates(userId, task, input);
 });
-
-const updateSingleTask = (
-  userId: string,
-  taskId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput,
-  hasDbUpdates: boolean
-): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> =>
-  hasDbUpdates
-    ? dbUpdate(userId, taskId, { ...input, isException: true })
-    : Effect.succeed([task]);
-
-const updateNonRecurringTask = (
-  userId: string,
-  taskId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput,
-  hasDbUpdates: boolean
-): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> => {
-  if (input.recurrence) {
-    return convertToRecurring(userId, task, input);
-  }
-
-  return updateSingleTask(userId, taskId, task, input, hasDbUpdates);
-};
-
-const resolveUpdatedTasks = (
-  userId: string,
-  taskId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput,
-  hasDbUpdates: boolean,
-  scope: UpdateScope,
-  recurrenceChanged: boolean
-): Effect.Effect<TaskSelect[], TaskError | TaskDbError, Database> => {
-  if (!task.seriesMasterId) {
-    return updateNonRecurringTask(userId, taskId, task, input, hasDbUpdates);
-  }
-
-  return scope === "following"
-    ? updateFollowing(userId, task, input, recurrenceChanged)
-    : updateSingleTask(userId, taskId, task, input, hasDbUpdates);
-};
 
 // ============================================================================
 // Service Definition (Effect.Service + Effect.fn pattern)
@@ -902,10 +831,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       yield* Effect.annotateCurrentSpan("userId", userId);
       const { tagIds, ...unsafeTaskInput } = input;
       const taskInput = stripSystemManagedTaskFields(unsafeTaskInput);
-      const normalizedTagIds =
-        tagIds === undefined
-          ? undefined
-          : yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds));
+      const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
 
       // Non-recurring task: simple insert
       if (!taskInput.recurrence) {
@@ -967,53 +893,47 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { tagIds, ...unsafeDbInput } = input;
       const dbInput = stripSystemManagedTaskFields(unsafeDbInput);
       const hasDbUpdates = Object.keys(dbInput).length > 0;
-      const normalizedTagIds =
-        tagIds === undefined
-          ? undefined
-          : yield* resolveTagIdsForUser(userId, normalizeTagIds(tagIds));
-      let recurrenceChanged = false;
-      if (
+      const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
+      const recurrenceChanged =
         scope === "following" &&
-        shouldCompareFollowingRecurrenceChange(task, dbInput)
-      ) {
-        const comparableRecurrence = yield* resolveComparableRecurrence(
-          userId,
-          task
-        );
-        recurrenceChanged = !isSameRecurrence(
-          dbInput.recurrence,
-          comparableRecurrence
-        );
-      }
+        (yield* changesSeriesRecurrence(userId, task, dbInput));
 
-      const fallbackTagIds =
-        normalizedTagIds === undefined &&
-        scope === "following" &&
-        recurrenceChanged
+      // Regenerating a series replaces its rows. When the edit doesn't set
+      // tags, read this task's tags now so the new rows can keep them.
+      const carriedTagIds =
+        normalizedTagIds === undefined && recurrenceChanged
           ? ((yield* dbSelectByIdsWithTags(userId, [taskId]))[0]?.tags.map(
               (tag) => tag.id
             ) ?? [])
           : [];
 
-      const updatedTasks = yield* resolveUpdatedTasks(
-        userId,
-        taskId,
-        task,
-        dbInput,
-        hasDbUpdates,
-        scope,
-        recurrenceChanged
-      );
-
-      if (normalizedTagIds !== undefined) {
-        yield* replaceTaskTagsForTasks(
-          updatedTasks.map((updated) => updated.id),
-          normalizedTagIds
+      let updatedTasks: TaskSelect[];
+      if (task.seriesMasterId && scope === "following") {
+        updatedTasks = yield* updateFollowing(
+          userId,
+          task,
+          dbInput,
+          recurrenceChanged
         );
-      } else if (recurrenceChanged && fallbackTagIds.length > 0) {
+      } else if (!task.seriesMasterId && dbInput.recurrence) {
+        updatedTasks = yield* convertToRecurring(userId, task, dbInput);
+      } else if (hasDbUpdates) {
+        // Edit this task alone, marked as an exception to its series.
+        updatedTasks = yield* dbUpdate(userId, taskId, {
+          ...dbInput,
+          isException: true,
+        });
+      } else {
+        updatedTasks = [task];
+      }
+
+      const tagIdsToSet =
+        normalizedTagIds ??
+        (carriedTagIds.length > 0 ? carriedTagIds : undefined);
+      if (tagIdsToSet !== undefined) {
         yield* replaceTaskTagsForTasks(
           updatedTasks.map((updated) => updated.id),
-          fallbackTagIds
+          tagIdsToSet
         );
       }
 
