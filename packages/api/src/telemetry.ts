@@ -1,5 +1,6 @@
 import { OtelTracer } from "@effect/opentelemetry";
 import { env } from "@kompose/env";
+import { SpanKind } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import type {
@@ -8,6 +9,7 @@ import type {
 } from "@opentelemetry/sdk-trace-base";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { ORPCInstrumentation } from "@orpc/opentelemetry";
+import { waitUntil } from "@vercel/functions";
 import { Layer } from "effect";
 
 /**
@@ -92,6 +94,48 @@ class SpanAttributeFilter implements SpanProcessor {
   }
 }
 
+// ── Flush when a request's root span ends ─────────────────────────────
+//    Vercel freezes an instance as soon as it responds, and the batch
+//    processor only exports every 5 s. A batch still buffered at that point
+//    waits for the instance's next request, or is lost when the instance is
+//    shut down without one. Most cold instances serve only a request or two,
+//    so most of their spans never reached Axiom. When a request's root span
+//    ends (a SERVER span with no local parent), export what's buffered,
+//    including boot spans such as "register instrumentation", and have
+//    Vercel keep the invocation alive until it's sent. One export per
+//    request. Outside Vercel, waitUntil does nothing and the batch exports
+//    on its usual schedule.
+
+class FlushAtRequestEnd implements SpanProcessor {
+  readonly #delegate: SpanProcessor;
+
+  constructor(delegate: SpanProcessor) {
+    this.#delegate = delegate;
+  }
+
+  onStart(span: unknown, parentContext: unknown): void {
+    this.#delegate.onStart(span as never, parentContext as never);
+  }
+
+  onEnd(span: ReadableSpan): void {
+    this.#delegate.onEnd(span);
+    const parent = span.parentSpanContext;
+    const isRequestRoot =
+      span.kind === SpanKind.SERVER &&
+      (parent === undefined || parent.isRemote === true);
+    if (isRequestRoot) {
+      waitUntil(this.#delegate.forceFlush());
+    }
+  }
+
+  forceFlush(): Promise<void> {
+    return this.#delegate.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.#delegate.shutdown();
+  }
+}
+
 // ── 1. Single NodeSDK — global TracerProvider + exporter ────────────
 //    Owns the only TracerProvider. ORPCInstrumentation hooks into it for
 //    oRPC handler/middleware spans. The same provider is reused by
@@ -106,12 +150,14 @@ if (exporterConfig) {
     instrumentations: [new ORPCInstrumentation()],
     serviceName: "kompose-api",
     spanProcessors: [
-      new SpanAttributeFilter(
-        new BatchSpanProcessor(
-          new OTLPTraceExporter({
-            headers: exporterConfig.headers,
-            url: exporterConfig.url,
-          })
+      new FlushAtRequestEnd(
+        new SpanAttributeFilter(
+          new BatchSpanProcessor(
+            new OTLPTraceExporter({
+              headers: exporterConfig.headers,
+              url: exporterConfig.url,
+            })
+          )
         )
       ),
     ],

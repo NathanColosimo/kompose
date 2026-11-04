@@ -20,7 +20,7 @@ Effect.fn spans
   │  ← each service method is wrapped in Effect.fn("Service.method")
   │  ← all spans flow through the same global TracerProvider
   ▼
-BatchSpanProcessor → SpanAttributeFilter → OTLPTraceExporter → Axiom (or Jaeger)
+FlushAtRequestEnd → SpanAttributeFilter → BatchSpanProcessor → OTLPTraceExporter → Axiom (or Jaeger)
 ```
 
 ---
@@ -34,6 +34,7 @@ BatchSpanProcessor → SpanAttributeFilter → OTLPTraceExporter → Axiom (or J
 1. **NodeSDK** — owns the single global `TracerProvider` and `OTLPTraceExporter`. Registers `ORPCInstrumentation` for automatic oRPC handler/middleware spans.
 2. **Effect `Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same global `TracerProvider` so oRPC and Effect spans share parent-child links.
 3. **`SpanAttributeFilter`** — custom `SpanProcessor` wrapper that strips noisy Next.js internal attributes (`next.span_name`, `next.span_type`) before export.
+4. **`FlushAtRequestEnd`** — custom `SpanProcessor` wrapper that flushes the batch when a request's root span ends (see [Flushing before Vercel freezes the instance](#flushing-before-vercel-freezes-the-instance)).
 
 ### Exporter priority
 
@@ -160,6 +161,16 @@ Reads `x-request-start`, computes one-way latency (subject to clock skew), and s
 | `NEXT_OTEL_FETCH_DISABLED` | No | `apps/web/.env` | Set to `1` to disable Next.js fetch auto-instrumentation |
 
 All OTel env vars are server-only (no `NEXT_PUBLIC_` prefix). When neither `OTEL_EXPORTER_OTLP_ENDPOINT` nor `AXIOM_*` are set, tracing is entirely disabled.
+
+---
+
+## Flushing before Vercel freezes the instance
+
+Vercel freezes a function instance as soon as it responds, and `BatchSpanProcessor` exports on a 5 s timer. A batch still buffered at that point waits for the instance's next request, or is lost when the instance shuts down without one. Cold instances often serve only a request or two (a dashboard load after idle boots about one per parallel request), so before this most of their spans, including most root spans, never reached Axiom, and spans that did arrive were ingested minutes late.
+
+`FlushAtRequestEnd` calls `waitUntil(forceFlush())` (`@vercel/functions`) when a request's root span ends: a `SERVER` span with no local parent, including one parented by a remote `traceparent`. Vercel keeps the invocation alive until that export finishes. Boot spans (`register instrumentation`, `load route module`) are buffered by then and go out in the same export, so it's one export per request. Outside Vercel, `waitUntil` does nothing and the batch exports on its timer.
+
+`waitUntil` from `@vercel/functions` rather than Next's `after()`: span processors run inside Next's tracing code, where `after()` has no request scope to attach to, while `waitUntil` reads Vercel's request context from a global.
 
 ---
 
