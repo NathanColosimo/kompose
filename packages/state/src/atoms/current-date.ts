@@ -1,9 +1,9 @@
 import { atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { Temporal } from "temporal-polyfill";
+import type { GoogleEventsWindow } from "../google-calendar-query-keys";
 import { createPersistedAtom } from "../storage";
 import {
-  endOfDayZoned,
   getSystemTimeZone,
   startOfDayZoned,
   todayPlainDate,
@@ -57,39 +57,51 @@ export const mobileVisibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   return Array.from({ length: count }, (_, i) => start.add({ days: i }));
 });
 
-const EVENTS_WINDOW_PADDING_DAYS = 15;
+/**
+ * Days loaded past each end of the visible days. At least one page (up to 7
+ * days), so paging forward or back finds the next page's events cached.
+ */
+const EVENTS_PRELOAD_DAYS = 7;
 
-function buildEventWindow(center: Temporal.PlainDate, timeZone: string) {
-  const monthStart = center.with({ day: 1 });
-  const monthEnd = center.with({ day: center.daysInMonth });
-
-  const start = startOfDayZoned(
-    monthStart.subtract({ days: EVENTS_WINDOW_PADDING_DAYS }),
-    timeZone
-  );
-  const end = endOfDayZoned(
-    monthEnd.add({ days: EVENTS_WINDOW_PADDING_DAYS }),
-    timeZone
-  );
-
-  return { end, start };
+/** The calendar months, in `timeZone`, that the days from `start` to `end` touch. */
+export function monthWindows(
+  start: Temporal.PlainDate,
+  end: Temporal.PlainDate,
+  timeZone: string
+): GoogleEventsWindow[] {
+  const windows: GoogleEventsWindow[] = [];
+  const last = end.toPlainYearMonth();
+  for (
+    let month = start.toPlainYearMonth();
+    Temporal.PlainYearMonth.compare(month, last) <= 0;
+    month = month.add({ months: 1 })
+  ) {
+    const next = month.add({ months: 1 });
+    windows.push({
+      timeMax: startOfDayZoned(next.toPlainDate({ day: 1 }), timeZone)
+        .toInstant()
+        .toString(),
+      timeMin: startOfDayZoned(month.toPlainDate({ day: 1 }), timeZone)
+        .toInstant()
+        .toString(),
+    });
+  }
+  return windows;
 }
 
 /**
- * Time window (timeMin/timeMax) around the current date for event queries.
+ * The windows event queries cover: each calendar month that the visible days,
+ * plus EVENTS_PRELOAD_DAYS on each side, touch. Each month is one cached query
+ * per calendar, shared by every view that shows part of it.
  */
-export const eventWindowAtom = atom<{ timeMin: string; timeMax: string }>(
-  (get) => {
-    const { start, end } = buildEventWindow(
-      get(currentDateAtom),
-      get(timezoneAtom)
-    );
-    return {
-      timeMax: end.toInstant().toString(),
-      timeMin: start.toInstant().toString(),
-    };
-  }
-);
+export const eventWindowsAtom = atom((get) => {
+  const start = get(currentDateAtom);
+  return monthWindows(
+    start.subtract({ days: EVENTS_PRELOAD_DAYS }),
+    start.add({ days: get(visibleDaysCountAtom) - 1 + EVENTS_PRELOAD_DAYS }),
+    get(timezoneAtom)
+  );
+});
 
 /**
  * Tick counter incremented every 60s and on window focus/visibility to keep
