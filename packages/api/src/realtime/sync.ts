@@ -95,9 +95,15 @@ export const publishToUser = Effect.fn("sync.publish")(function* (
  * Long-lived async generator for SSE connections.
  * Creates an OTel span for the connection lifetime, with span events
  * for each message received and exceptions for parse failures.
+ *
+ * `signal` aborts when the client disconnects (clients close the stream 30 s
+ * after their window loses focus). It ends the stream at once; otherwise the
+ * generator, waiting on the queue, would only notice at its next keepalive,
+ * keeping the function and its Redis subscription for up to 10 more seconds.
  */
 export async function* createUserSyncEventIterator(
-  userId: string
+  userId: string,
+  signal?: AbortSignal
 ): AsyncGenerator<SyncEvent, void, unknown> {
   const channel = getUserSyncChannel(userId);
   const connectionSpan = tracer.startSpan("sync.connection");
@@ -141,6 +147,10 @@ export async function* createUserSyncEventIterator(
   subscriber.onclose = () => {
     closeQueue();
   };
+  if (signal?.aborted) {
+    closeQueue();
+  }
+  signal?.addEventListener("abort", closeQueue, { once: true });
 
   try {
     await subscriber.subscribe(channel, listener);
@@ -174,6 +184,7 @@ export async function* createUserSyncEventIterator(
       }
     }
   } finally {
+    signal?.removeEventListener("abort", closeQueue);
     if (keepaliveTimer) {
       clearInterval(keepaliveTimer);
     }
