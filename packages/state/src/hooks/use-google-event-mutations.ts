@@ -1,21 +1,15 @@
 "use client";
 
-import type { DeleteEventInput } from "@kompose/api/routers/google-cal/contract";
+import type {
+  CreateEventInput,
+  DeleteEventInput,
+} from "@kompose/api/routers/google-cal/contract";
 import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
-import type { CreateEvent, Event } from "@kompose/google-cal/schema";
+import type { Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
-
-/**
- * Input for creating a new Google Calendar event.
- */
-export interface CreateGoogleEventInput {
-  accountId: string;
-  calendarId: string;
-  event: CreateEvent;
-}
 
 /**
  * Extended update input that includes the full Event for client-side sanitization.
@@ -36,12 +30,8 @@ export function useGoogleEventMutations() {
   const { orpc, notifyError } = useStateConfig();
 
   const createEvent = useMutation({
-    mutationFn: async (variables: CreateGoogleEventInput) =>
-      orpc.googleCal.events.create({
-        accountId: variables.accountId,
-        calendarId: variables.calendarId,
-        event: variables.event,
-      }),
+    mutationFn: async (variables: CreateEventInput) =>
+      orpc.googleCal.events.create(variables),
     onMutate: async (variables) => {
       // Skip optimistic update for recurring events
       if (variables.event.recurrence?.length) {
@@ -180,12 +170,7 @@ export function useGoogleEventMutations() {
 
   const deleteEvent = useMutation({
     mutationFn: async (variables: DeleteEventInput) =>
-      orpc.googleCal.events.delete({
-        accountId: variables.accountId,
-        calendarId: variables.calendarId,
-        eventId: variables.eventId,
-        scope: variables.scope,
-      }),
+      orpc.googleCal.events.delete(variables),
     onMutate: async (variables) => {
       const queryKey = getGoogleEventsByCalendarQueryKey({
         accountId: variables.accountId,
