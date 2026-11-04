@@ -8,10 +8,7 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
-import {
-  getLinkedAccessToken,
-  requireLinkedAccount,
-} from "../../lib/linked-account";
+import { requireLinkedAccount } from "../../lib/linked-account";
 import {
   logAndSwallowWhoopCacheError,
   logWhoopCacheErrorAndFallback,
@@ -361,7 +358,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
-          const account = yield* requireLinkedAccount({
+          const getAccessToken = yield* requireLinkedAccount({
             accountId: params.accountId,
             providerId: "whoop",
             userId: params.userId,
@@ -382,7 +379,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const allDays = new Map(cachedDays);
 
           if (missingDays.length > 0) {
-            const accessToken = yield* getLinkedAccessToken(account);
+            const accessToken = yield* getAccessToken;
             const client = createWhoopClient(accessToken);
             const [missingStart] = missingDays;
             const missingEnd = missingDays.at(-1);
@@ -475,12 +472,12 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const account = yield* requireLinkedAccount({
+          const getAccessToken = yield* requireLinkedAccount({
             accountId: params.accountId,
             providerId: "whoop",
             userId: params.userId,
           });
-          const accessToken = yield* getLinkedAccessToken(account);
+          const accessToken = yield* getAccessToken;
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();

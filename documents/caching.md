@@ -11,7 +11,7 @@ requireLinkedAccount (ownership check first, always)
   ▼
 Cache lookup (Redis GET)
   ├── HIT  → return cached data
-  └── MISS → getLinkedAccessToken (may refresh)
+  └── MISS → get access token (may refresh)
              → fetch from Google API → populate cache → return
 ```
 
@@ -19,10 +19,10 @@ Cache keys use the provider's account ID, so the ownership check (one query)
 must run before the cache read. Getting an access token costs more DB queries
 (Better Auth's account lookup plus the WHOOP plugin's before-hook, and a locked
 transaction for WHOOP) and may refresh, so cached reads only do it on a miss.
-Both live in `packages/api/src/lib/linked-account.ts`: `getLinkedAccessToken`
-only accepts the branded `LinkedAccount` that `requireLinkedAccount` returns, so
-a token can't be fetched without the check. WHOOP day summaries follow the same
-order, fetching a token only when some days are missing from the cache.
+`requireLinkedAccount` (`packages/api/src/lib/linked-account.ts`) runs the check
+and returns the token fetch as an effect, so a token can't be fetched without
+the check. WHOOP day summaries follow the same order, fetching a token only
+when some days are missing from the cache.
 
 ---
 
@@ -183,14 +183,14 @@ Cache lookups happen **after** the ownership check (`requireGoogleAccount`), nev
 
 ```ts
 // 1. Ownership check (always first)
-const account = yield* requireGoogleAccount({ accountId, userId });
+const getGoogle = yield* requireGoogleAccount(userId, accountId);
 
 // 2. Cache lookup (only after the ownership check passes)
 const cached = yield* cache.getCachedCalendars(accountId).pipe(logCacheErrorAndMiss);
 if (Option.isSome(cached)) return cached.value;
 
 // 3. On a miss, get the token and fetch from the API
-const google = yield* googleCalendarFor(account);
+const google = yield* getGoogle;
 const data = yield* google.listCalendars();
 
 // 4. Populate cache
