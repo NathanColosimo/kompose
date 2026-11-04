@@ -33,7 +33,7 @@
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
 - `whoop-query-keys.ts`: Shared query keys for WHOOP day summaries.
-- `state-provider.tsx`: State hydrator/provider wiring, session gating, and today-tick refresh lifecycle.
+- `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh.
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared types for auth client and ORPC utils.
