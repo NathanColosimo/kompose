@@ -1,11 +1,10 @@
-import { env } from "@kompose/env";
 import {
   CalendarSchema,
   ColorsSchema,
   type Event,
   EventSchema,
 } from "@kompose/google-cal/schema";
-import { RedisClient } from "bun";
+import { redis } from "@kompose/redis";
 import { Context, Effect, Layer, Option } from "effect";
 import { CacheError } from "./errors";
 
@@ -103,11 +102,6 @@ function eventSingleKeyPrefix(
   return `${KEY_PREFIX}:event:${userId}:${accountId}:${calendarId}:`;
 }
 
-// ── Redis client ────────────────────────────────────────────────────
-
-/** Dedicated Redis client for Google Calendar caching. */
-const redis = new RedisClient(env.REDIS_URL);
-
 // ── Service ─────────────────────────────────────────────────────────
 
 export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCacheService>()(
@@ -121,16 +115,16 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
           // Redis SCAN cursors are sequential: each request needs the cursor
           // returned by the previous request.
           // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
-          const [nextCursor, keys] = (await redis.send("SCAN", [
-            cursor.toString(),
+          const [nextCursor, keys] = await redis.scan(
+            cursor,
             "MATCH",
             `${prefix}*`,
             "COUNT",
-            "100",
-          ])) as [string, string[]];
+            100
+          );
           cursor = Number(nextCursor);
           if (keys.length > 0) {
-            await redis.send("DEL", keys);
+            await redis.del(...keys);
           }
         } while (cursor !== 0);
       };
