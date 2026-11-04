@@ -1,4 +1,7 @@
-import { visibleDaysCountAtom } from "@kompose/state/atoms/current-date";
+import {
+  currentDateAtom,
+  visibleDaysCountAtom,
+} from "@kompose/state/atoms/current-date";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
@@ -196,3 +199,11 @@ export const effectiveVisibleDaysCountAtom = atom((get) =>
     )
   )
 );
+
+/** The days the calendar grid renders, starting from the current date. */
+export const effectiveVisibleDaysAtom = atom((get) => {
+  const start = get(currentDateAtom);
+  return Array.from({ length: get(effectiveVisibleDaysCountAtom) }, (_, i) =>
+    start.add({ days: i })
+  );
+});

@@ -1,10 +1,7 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import {
-  timezoneAtom,
-  visibleDaysAtom,
-} from "@kompose/state/atoms/current-date";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -22,7 +19,6 @@ import {
 import { useAtom, useAtomValue } from "jotai";
 import {
   memo,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -36,11 +32,15 @@ import {
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
 import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
+import { effectiveVisibleDaysAtom } from "@/state/sidebar";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
-import { EventCreationProvider } from "./event-creation/event-creation-provider";
-import { useEventCreation } from "./event-creation/use-event-creation";
+import {
+  EventCreationContext,
+  useEventCreation,
+  useEventCreationState,
+} from "./event-creation/use-event-creation";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -270,27 +270,21 @@ interface DaysViewProps {
   googleEvents?: GoogleEventWithSource[];
   /** All tasks to display (will be filtered to scheduled ones) */
   tasks: TaskSelectDecoded[];
-  /** Optional externally clamped day slice for responsive layouts */
-  visibleDays?: Temporal.PlainDate[];
 }
 
 /**
  * DaysView - Displays 1-7 days starting from the current date.
- * Wrapped with EventCreationProvider to enable click-and-drag event creation.
+ * Provides the event creation context for click-and-drag event creation.
  */
 export const DaysView = memo(function DaysViewComponent({
   tasks,
   googleEvents = EMPTY_GOOGLE_EVENTS,
-  visibleDays,
 }: DaysViewProps) {
+  const eventCreation = useEventCreationState();
   return (
-    <EventCreationProvider>
-      <DaysViewInner
-        googleEvents={googleEvents}
-        tasks={tasks}
-        visibleDays={visibleDays}
-      />
-    </EventCreationProvider>
+    <EventCreationContext.Provider value={eventCreation}>
+      <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+    </EventCreationContext.Provider>
   );
 });
 
@@ -300,10 +294,8 @@ export const DaysView = memo(function DaysViewComponent({
 const DaysViewInner = memo(function DaysViewInnerComponent({
   tasks,
   googleEvents = EMPTY_GOOGLE_EVENTS,
-  visibleDays: visibleDaysProp,
 }: DaysViewProps) {
-  const atomVisibleDays = useAtomValue(visibleDaysAtom);
-  const visibleDays = visibleDaysProp ?? atomVisibleDays;
+  const visibleDays = useAtomValue(effectiveVisibleDaysAtom);
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -315,36 +307,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
   // Event creation context for click-and-drag
   const { actions } = useEventCreation();
-
-  // Memoize handlers to avoid recreating on each render
-  const handleSlotHover = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotHover(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotLeave = useCallback(() => {
-    actions.onSlotLeave();
-  }, [actions]);
-
-  const handleSlotMouseDown = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotMouseDown(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotDragMove = useCallback(
-    (dateTime: Temporal.ZonedDateTime) => {
-      actions.onSlotDragMove(dateTime);
-    },
-    [actions]
-  );
-
-  const handleSlotMouseUp = useCallback(() => {
-    actions.onSlotMouseUp();
-  }, [actions]);
 
   // Scroll vertically to 8am on mount for a sensible default view
   useLayoutEffect(() => {
@@ -663,11 +625,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                 <DayColumn
                   date={day}
                   key={dayKey}
-                  onSlotDragMove={handleSlotDragMove}
-                  onSlotHover={handleSlotHover}
-                  onSlotLeave={handleSlotLeave}
-                  onSlotMouseDown={handleSlotMouseDown}
-                  onSlotMouseUp={handleSlotMouseUp}
+                  onSlotDragMove={actions.onSlotDragMove}
+                  onSlotHover={actions.onSlotHover}
+                  onSlotLeave={actions.onSlotLeave}
+                  onSlotMouseDown={actions.onSlotMouseDown}
+                  onSlotMouseUp={actions.onSlotMouseUp}
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
