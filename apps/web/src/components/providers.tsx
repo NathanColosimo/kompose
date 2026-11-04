@@ -15,6 +15,7 @@ import { isDesktopRuntime } from "@/lib/desktop";
 import { isToastSuppressedPath } from "@/lib/toast-suppression";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
 import { DesktopAuth } from "./desktop-auth";
+import { SessionCache } from "./session-cache";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
 
@@ -142,6 +143,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           storage={storage}
           subscribeToResume={webSubscribeToResume}
         >
+          <SessionCache />
           <DesktopAuth />
           {children}
         </StateProvider>

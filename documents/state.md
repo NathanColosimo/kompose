@@ -38,3 +38,30 @@
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared types for auth client and ORPC utils.
+
+## Instant load on web and desktop
+
+The web app (and so the Electron app) paints the dashboard from the last
+session and data, then checks both in the background.
+
+- **Session.** `apps/web/src/components/session-cache.tsx` keeps the last
+  session in `localStorage` (`kompose.session`) without its token, IP address
+  or user agent; the token stays in the httpOnly cookie. Before the first paint
+  it hands the stored session to Better Auth's `hydrateSession`, so the
+  dashboard renders and its queries start without waiting for `get-session`.
+  The real check still runs. If it returns no user, the dashboard redirects to
+  `/login` as before, and the stored session and query cache are deleted. A
+  different user replaces the stored session and resets every query. Signed-out
+  (`UNAUTHORIZED`) query errors are neither retried nor toasted, since the
+  redirect handles them.
+- **Queries.** `apps/web/src/lib/query-persistence.ts` sets TanStack Query's
+  per-query persister as the web default. The queries in
+  `PERSISTED_QUERY_ROOTS` (accounts, calendars, colors, events, tags, tasks,
+  WHOOP) are written to IndexedDB (`kompose-query-cache`) after each fetch,
+  keyed by user id. A query's first fetch restores its stored data and then
+  always refetches, because realtime sync wasn't listening while the app was
+  closed. Entries expire after 7 days; bump `CACHE_VERSION` when a persisted
+  data shape changes. Tasks are stored in their wire format, because Temporal
+  values can't be structured-cloned.
+
+Native doesn't use either; it keeps its own session handling.
