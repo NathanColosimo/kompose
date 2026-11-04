@@ -32,7 +32,7 @@ function overlappingCachedEvents(
   queryClient: QueryClient,
   calendar: CalendarIdentifier,
   window: GoogleEventsWindow
-) {
+): GoogleEvent[] | undefined {
   const start = Date.parse(window.timeMin);
   const end = Date.parse(window.timeMax);
   let best: GoogleEvent[] | undefined;
