@@ -361,10 +361,10 @@ Redis-backed rate limiters using `@orpc/ratelimit`, with a small `BunRedisRateLi
 
 Full details in [`otel.md`](./otel.md). Summary:
 
-1. **`NodeSDK`** — single global `TracerProvider` with `ORPCInstrumentation` for automatic oRPC handler/middleware spans. Exports to Axiom (or local Jaeger) via OTLP HTTP.
+1. **`TracerProvider`** — single global provider (wired by hand, not `NodeSDK`, to keep cold starts small) with `ORPCInstrumentation` for automatic oRPC handler/middleware spans. Exports to Axiom (or local Jaeger) via OTLP HTTP.
 2. **`Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same provider. Exported as `TelemetryLive` layer, merged into `AppLayer` in `runtime.ts`.
 3. **`SpanAttributeFilter`** — strips noisy Next.js internal attributes before export.
-4. **`instrumentation.ts`** — Next.js hook ensuring early `NodeSDK.start()` to prevent orphaned root spans.
+4. **`instrumentation.ts`** — Next.js hook ensuring the provider is registered early to prevent orphaned root spans.
 
 No client-side OTel SDK. Network latency is measured via `x-request-start` headers from both web and native clients.
 
