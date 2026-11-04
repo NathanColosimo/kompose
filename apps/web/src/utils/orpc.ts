@@ -1,22 +1,40 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { env } from "@kompose/env";
-import { createORPCClient } from "@orpc/client";
+import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { SignedOutError } from "@/lib/auth-client";
 
 interface CreateAppQueryClientOptions {
   suppressToasts: boolean;
+}
+
+/**
+ * A request made without a session. The dashboard's session check redirects to
+ * /login, so there's nothing to retry or report. Its queries start before that
+ * check returns (see DashboardQueries), so a signed-out visitor gets these.
+ */
+function isSignedOut(error: unknown) {
+  return (
+    error instanceof SignedOutError ||
+    (error instanceof ORPCError && error.code === "UNAUTHORIZED")
+  );
 }
 
 export function createAppQueryClient({
   suppressToasts,
 }: CreateAppQueryClientOptions) {
   const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: (failureCount, error) => !isSignedOut(error) && failureCount < 3,
+      },
+    },
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (suppressToasts) {
+        if (suppressToasts || isSignedOut(error)) {
           return;
         }
 

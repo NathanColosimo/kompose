@@ -25,6 +25,14 @@ export const authClient = createAuthClient({
   ],
 });
 
+/** A Better Auth call made without a session (HTTP 401). */
+export class SignedOutError extends Error {
+  constructor() {
+    super("Not signed in");
+    this.name = "SignedOutError";
+  }
+}
+
 /** Only forward Better Auth's Electron PKCE parameters from browser sign-in pages. */
 export function getElectronAuthQuery() {
   if (typeof window === "undefined" || isDesktopRuntime()) {
