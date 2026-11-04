@@ -36,10 +36,9 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
  *
  * `accountId` is the provider's account ID, which the app uses everywhere
  * (RPC inputs, cache keys). Better Auth's token API takes the local
- * `account.id`, so this first finds the row, which also checks the user owns
- * the account. A missing row, or a Better Auth `APIError` (no account, failed
- * refresh), is a `LinkedAccountError`; anything else, such as a database
- * failure, is a defect.
+ * `account.id`, so this first finds the row the user owns. A missing row, or a
+ * Better Auth `APIError` (no account, failed refresh), is a
+ * `LinkedAccountError`; anything else, such as a database failure, is a defect.
  */
 export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
   function* (params: {
