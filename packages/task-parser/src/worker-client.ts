@@ -1,5 +1,5 @@
 /**
- * The parser behind a Worker (worker.ts): a typed oRPC client for
+ * The parser in the SharedWorker (worker.ts): a typed oRPC client for
  * workerContract, so a parse never lands on the typing thread.
  */
 import { createORPCClient } from "@orpc/client";
@@ -12,14 +12,16 @@ const WEIGHTS_URL = new URL("../task-parser.bin", import.meta.url).href;
 
 export type TaskParserClient = ContractRouterClient<typeof workerContract>;
 
-/** A client for the parser in `worker`, once it has loaded the weights at `url`. */
+/** A client for the parser behind `port`, once it has loaded the weights at `url`. */
 export async function connectTaskParser(
-  worker: Worker,
+  port: MessagePort,
   url = WEIGHTS_URL
 ): Promise<TaskParserClient> {
   const client: TaskParserClient = createORPCClient(
-    new RPCLink({ port: worker, serializer })
+    new RPCLink({ port, serializer })
   );
+  // oRPC listens with addEventListener, which only delivers once started.
+  port.start();
   await client.load({ url });
   return client;
 }

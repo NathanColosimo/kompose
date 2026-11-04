@@ -1,6 +1,6 @@
 import { layerGlobal } from "@effect/opentelemetry/OtelTracer";
 import { env } from "@kompose/env";
-import { context, propagation, trace } from "@opentelemetry/api";
+import { context, propagation, SpanKind, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -12,10 +12,10 @@ import {
 import {
   BatchSpanProcessor,
   type ReadableSpan,
-  type SpanProcessor,
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
 import { ORPCInstrumentation } from "@orpc/opentelemetry";
+import { waitUntil } from "@vercel/functions";
 import { Layer } from "effect";
 
 /**
@@ -28,8 +28,7 @@ import { Layer } from "effect";
  * This wires the provider by hand instead of using NodeSDK. NodeSDK
  * statically imports every exporter it can build from env vars (gRPC,
  * protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs, which put
- * ~540 KB into the /api/rpc server bundle. Each cold start on Vercel's
- * Bun runtime parses that again, since Bun functions get no bytecode cache.
+ * ~540 KB into the /api/rpc server bundle, which every cold start loads.
  *
  * Next.js auto-instruments fetch when it detects a global TracerProvider.
  * We disable that via NEXT_OTEL_FETCH_DISABLED=1 in .env since we rely
@@ -73,36 +72,67 @@ function getExporterConfig(): OtlpExporterConfig | null {
 
 const exporterConfig = getExporterConfig();
 
-// ── Span attribute filter ────────────────────────────────────────────
-//    Strips noisy Next.js internal attributes before export.
+// ── Span processor ───────────────────────────────────────────────────
+//    The batch processor, plus two things:
+//
+//    - It strips noisy Next.js internal attributes before export.
+//
+//    - On Vercel, it flushes when a request's root span ends (a SERVER span
+//      with no local parent), inside waitUntil. Vercel freezes an instance as
+//      soon as it responds, so spans left for the 5 s timer arrived late or
+//      never. Flushes are coalesced (one running, at most one queued) because
+//      the exporter drops batches beyond 30 concurrent exports. Each also
+//      waits on the exporter, since the batch's forceFlush doesn't wait for
+//      an automatic 512-span export already sending. See otel.md.
 
-const STRIP_ATTRIBUTES = new Set(["next.span_name", "next.span_type"]);
+const STRIP_ATTRIBUTES = ["next.span_name", "next.span_type"];
+const flushAtRequestEnd = env.VERCEL === "1";
 
-class SpanAttributeFilter implements SpanProcessor {
-  readonly #delegate: SpanProcessor;
+function logFlushError(error: unknown): void {
+  console.error("OTEL_FLUSH_FAILED", error);
+}
 
-  constructor(delegate: SpanProcessor) {
-    this.#delegate = delegate;
+class ExportSpanProcessor extends BatchSpanProcessor {
+  readonly #exporter: OTLPTraceExporter;
+  #lastFlush: Promise<void> = Promise.resolve();
+  #queued: Promise<void> | undefined;
+
+  constructor(exporter: OTLPTraceExporter) {
+    super({ exporter });
+    this.#exporter = exporter;
   }
 
-  onStart(span: unknown, parentContext: unknown): void {
-    this.#delegate.onStart(span as never, parentContext as never);
-  }
-
-  onEnd(span: ReadableSpan): void {
-    // Mutate the attributes object before the delegate serializes the span
-    const attrs = span.attributes as Record<string, unknown>;
+  override onEnd(span: ReadableSpan): void {
+    // Mutate the attributes before the batch serializes the span.
+    const attributes = span.attributes as Record<string, unknown>;
     for (const key of STRIP_ATTRIBUTES) {
-      delete attrs[key];
+      delete attributes[key];
     }
-    this.#delegate.onEnd(span);
+    super.onEnd(span);
+
+    const parent = span.parentSpanContext;
+    const isRequestRoot =
+      span.kind === SpanKind.SERVER &&
+      (parent === undefined || parent.isRemote === true);
+    if (flushAtRequestEnd && isRequestRoot) {
+      waitUntil(this.#flush());
+    }
   }
 
-  forceFlush(): Promise<void> {
-    return this.#delegate.forceFlush();
+  /** Resolves once an export that started after this call has finished. */
+  #flush(): Promise<void> {
+    if (!this.#queued) {
+      this.#queued = this.#flushAfter(this.#lastFlush);
+      this.#lastFlush = this.#queued;
+    }
+    return this.#queued;
   }
-  shutdown(): Promise<void> {
-    return this.#delegate.shutdown();
+
+  async #flushAfter(previous: Promise<void>): Promise<void> {
+    await previous;
+    this.#queued = undefined;
+    await this.forceFlush().catch(logFlushError);
+    await this.#exporter.forceFlush().catch(logFlushError);
   }
 }
 
@@ -126,12 +156,10 @@ if (exporterConfig) {
         resourceFromAttributes({ "service.name": "kompose-api" })
       ),
       spanProcessors: [
-        new SpanAttributeFilter(
-          new BatchSpanProcessor({
-            exporter: new OTLPTraceExporter({
-              headers: exporterConfig.headers,
-              url: exporterConfig.url,
-            }),
+        new ExportSpanProcessor(
+          new OTLPTraceExporter({
+            headers: exporterConfig.headers,
+            url: exporterConfig.url,
           })
         ),
       ],

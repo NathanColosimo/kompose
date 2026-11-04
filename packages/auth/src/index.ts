@@ -1,4 +1,4 @@
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
 import { db } from "@kompose/db/legacy";
@@ -26,6 +26,9 @@ export const auth = betterAuth({
   },
   advanced: {
     cookiePrefix: "kompose",
+    // One query instead of two where Better Auth reads a row with its user
+    // (OAuth sign-in). Uses the auth relations in @kompose/db's relations.ts.
+    database: { joins: true },
   },
   baseURL: env.NEXT_PUBLIC_WEB_URL,
   database: drizzleAdapter(db, {

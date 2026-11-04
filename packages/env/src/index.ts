@@ -31,6 +31,8 @@ export const env = createEnv({
     // Takes priority over Axiom when set
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
     REDIS_URL: z.string().min(1),
+    // Set to "1" by Vercel at build and run time; unset locally.
+    VERCEL: z.literal("1").optional(),
     // Link parsing provider keys (optional — parsing degrades gracefully when missing)
     SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
     SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),

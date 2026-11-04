@@ -13,7 +13,7 @@ import { Temporal } from "temporal-polyfill";
 /**
  * The magic box: a small on-device model (packages/task-parser) labels the
  * text and code resolves the labels into task fields. Parsing takes a few
- * milliseconds in a Worker, so it runs on every keystroke without a debounce.
+ * milliseconds in a worker, so it runs on every keystroke without a debounce.
  */
 export interface MagicParse {
   /**
@@ -24,18 +24,26 @@ export interface MagicParse {
   task: ParsedTask | null;
 }
 
-/** The parser runs in a Worker so a parse never blocks typing. */
-async function loadParser() {
-  const worker = new Worker(
+/**
+ * The parser runs in a SharedWorker, so a parse never blocks typing and every
+ * window of the app (the desktop dashboard and command bar, for one) shares
+ * one loaded model.
+ */
+function loadParser() {
+  const worker = new SharedWorker(
     new URL("./task-parser.worker.ts", import.meta.url),
-    { type: "module" }
+    { name: "task-parser", type: "module" }
   );
-  try {
-    return await connectTaskParser(worker);
-  } catch (error) {
-    worker.terminate();
-    throw error;
-  }
+  // A worker whose script can't load only fires `error`; the port never
+  // hears, so without this `load` would wait forever.
+  const failedToStart = new Promise<never>((_, reject) => {
+    worker.addEventListener(
+      "error",
+      () => reject(new Error("The task parser worker failed to start")),
+      { once: true }
+    );
+  });
+  return Promise.race([connectTaskParser(worker.port), failedToStart]);
 }
 
 const parserQuery = queryOptions({

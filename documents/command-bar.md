@@ -34,9 +34,12 @@ fields updates as you type. Typing `#` suggests your tags.
 - The dashboard and the desktop popup start loading the model on mount
   (`usePreloadTaskParser`), so it's ready by the time the command bar opens.
   The weights (14 MB, Git LFS) are kept in the Cache API between sessions.
-- Parsing runs in a Web Worker behind an oRPC contract
+- Parsing runs in a SharedWorker behind an oRPC contract
   (`packages/task-parser/src/worker-contract.ts`); Temporal values cross the
-  worker boundary as Temporal objects.
+  worker boundary as Temporal objects. Every window and tab of a deploy
+  shares one worker and one loaded model (the desktop dashboard and popup
+  used to hold about 25 MB each). If the worker's script can't load, its
+  `error` event fails the load, and the command bar creates plain tasks.
 - Enter before the model has a parse waits for it.
 
 ### URL detection
@@ -90,7 +93,7 @@ The model returns the input's URLs as `links: string[]`. On task creation, `task
 - **Search tasks:** `apps/web/src/components/command-bar/command-bar-search-tasks.tsx`
 - **Create task:** `apps/web/src/components/command-bar/command-bar-create-task.tsx`
 - **Model parse hook:** `apps/web/src/lib/use-magic-task.ts`
-- **Parser worker:** `packages/task-parser/src/worker.ts` (contract in `worker-contract.ts`, client in `worker-client.ts`)
+- **Parser worker:** `packages/task-parser/src/worker.ts`, a SharedWorker (server in `worker-server.ts`, contract in `worker-contract.ts`, client in `worker-client.ts`)
 - **State atom:** `packages/state/src/atoms/command-bar.ts`
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
 - **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`
