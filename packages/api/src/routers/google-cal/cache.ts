@@ -7,16 +7,6 @@ import {
 import { Context, Effect, Layer } from "effect";
 import { makeRedisJsonCache } from "../../lib/redis-cache";
 
-// ── Compatibility ───────────────────────────────────────────────────
-
-/**
- * Cache methods log their own failures and never fail, so this is a no-op.
- * It stays exported because `webhooks/webhook-service.ts` still pipes into it.
- */
-export const logAndSwallowCacheError = <A, E, R>(
-  self: Effect.Effect<A, E, R>
-) => self;
-
 // ── Key prefixes & TTLs ─────────────────────────────────────────────
 
 const KEY_PREFIX = "gcal";

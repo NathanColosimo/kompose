@@ -13,19 +13,6 @@ function dayKey(userId: string, accountId: string, day: string): string {
   return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
 }
 
-/**
- * Cache methods log their own failures and never fail, so these are no-ops.
- * They stay exported because `routers/whoop/service.ts` still pipes into them.
- */
-export const logAndSwallowWhoopCacheError = <A, E, R>(
-  self: Effect.Effect<A, E, R>
-) => self;
-
-export const logWhoopCacheErrorAndFallback =
-  <A>(_fallback: A) =>
-  <E, R>(self: Effect.Effect<A, E, R>) =>
-    self;
-
 export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
   "WhoopCacheService",
   {
