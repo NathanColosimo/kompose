@@ -1,8 +1,17 @@
 import { env } from "@kompose/env";
 import { Redis } from "ioredis";
 
+/**
+ * Logs a connection or command error without its `command`: ioredis attaches
+ * the failed command's arguments to server errors, and a failed handshake's
+ * are `HELLO 3 AUTH <user> <password>`.
+ */
 function logError(error: Error) {
-  console.error("REDIS_ERROR", error);
+  console.error("REDIS_ERROR", {
+    message: error.message,
+    name: error.name,
+    stack: error.stack,
+  });
 }
 
 /**
