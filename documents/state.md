@@ -24,7 +24,7 @@
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
 - `hooks/use-google-calendars.ts`: Query hook for calendars per account.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
-- `hooks/use-google-events.ts`: Query hook for events per calendar and bounded time window.
+- `hooks/use-google-events.ts`: Query hook for events per calendar and bounded time window. While a new window loads, each calendar shows its cached window that overlaps the new one most. `keepPreviousData` can't do this in `useQueries`, which matches observers by query key, so a changed window gets a fresh observer with no previous data.
 - `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. It can fetch eagerly, but only surfaces that actually render linked-account metadata should depend on it for display.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
 - `hooks/use-recurring-event-master.ts`: Recurring master query options and hook.
