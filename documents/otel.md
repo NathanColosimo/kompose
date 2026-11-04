@@ -170,7 +170,7 @@ Vercel freezes a function instance as soon as it responds, and `BatchSpanProcess
 
 On Vercel (`VERCEL=1`), `FlushAtRequestEnd` calls `waitUntil(flush)` (`@vercel/functions`) when a request's root span ends: a `SERVER` span with no local parent, including one parented by a remote `traceparent`. Vercel keeps the invocation alive until that export finishes. Boot spans (`register instrumentation`, `load route module`) are buffered by then and go out in the same export. Elsewhere (local dev) nothing changes: the batch exports on its timer.
 
-Flushes are coalesced: at most one export runs, with one more queued for spans that end meanwhile. The OTLP exporter drops batches beyond 30 concurrent exports, which a flush per request could reach on a busy instance with a slow export (40 concurrent requests against a 1.5 s export peaked at 2 in flight). A failed export is logged as `OTEL_FLUSH_FAILED`.
+Flushes are coalesced: at most one export runs, with one more queued for spans that end meanwhile. The OTLP exporter drops batches beyond 30 concurrent exports, which a flush per request could reach on a busy instance with a slow export (40 concurrent requests against a 1.5 s export peaked at 2 in flight). Each flush also waits on the exporter's own `forceFlush()`: the processor's only waits for batches it starts, not an automatic export (at 512 buffered spans) already sending, which can carry the request's spans. A failed export is logged as `OTEL_FLUSH_FAILED`.
 
 `waitUntil` from `@vercel/functions` rather than Next's `after()`: span processors run inside Next's tracing code, where `after()` has no request scope to attach to, while `waitUntil` reads Vercel's request context from a global.
 

@@ -108,7 +108,9 @@ class SpanAttributeFilter implements SpanProcessor {
 //    Flushes are coalesced: at most one export runs, with one more queued
 //    behind it for spans that end meanwhile. The OTLP exporter drops batches
 //    beyond 30 concurrent exports, which one flush per request could reach
-//    on a busy instance with a slow export.
+//    on a busy instance with a slow export. Each flush also waits on the
+//    exporter itself, since the processor's forceFlush only waits for the
+//    batches it starts, not an automatic one (at 512 spans) already sending.
 
 const flushAtRequestEnd = env.VERCEL === "1";
 
@@ -120,13 +122,23 @@ function isRequestRoot(span: ReadableSpan): boolean {
   );
 }
 
+interface Flushable {
+  forceFlush(): Promise<void>;
+}
+
+function logFlushError(error: unknown) {
+  console.error("OTEL_FLUSH_FAILED", error);
+}
+
 class FlushAtRequestEnd implements SpanProcessor {
   readonly #delegate: SpanProcessor;
+  readonly #exporter: Flushable;
   #running: Promise<void> | undefined;
   #queued: Promise<void> | undefined;
 
-  constructor(delegate: SpanProcessor) {
+  constructor(delegate: SpanProcessor, exporter: Flushable) {
     this.#delegate = delegate;
+    this.#exporter = exporter;
   }
 
   onStart(span: unknown, parentContext: unknown): void {
@@ -158,9 +170,9 @@ class FlushAtRequestEnd implements SpanProcessor {
   #startFlush(): Promise<void> {
     this.#running = this.#delegate
       .forceFlush()
-      .catch((error: unknown) => {
-        console.error("OTEL_FLUSH_FAILED", error);
-      })
+      .catch(logFlushError)
+      .then(() => this.#exporter.forceFlush())
+      .catch(logFlushError)
       .finally(() => {
         this.#running = undefined;
       });
@@ -184,20 +196,18 @@ class FlushAtRequestEnd implements SpanProcessor {
 //    attributes that add noise without actionable value.
 
 if (exporterConfig) {
+  const exporter = new OTLPTraceExporter({
+    headers: exporterConfig.headers,
+    url: exporterConfig.url,
+  });
   const sdk = new NodeSDK({
     autoDetectResources: false,
     instrumentations: [new ORPCInstrumentation()],
     serviceName: "kompose-api",
     spanProcessors: [
       new FlushAtRequestEnd(
-        new SpanAttributeFilter(
-          new BatchSpanProcessor(
-            new OTLPTraceExporter({
-              headers: exporterConfig.headers,
-              url: exporterConfig.url,
-            })
-          )
-        )
+        new SpanAttributeFilter(new BatchSpanProcessor(exporter)),
+        exporter
       ),
     ],
   });
