@@ -1,11 +1,12 @@
 import "../global.css";
 
+import { errorMessage } from "@kompose/state/errors";
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SignIn } from "@/components/sign-in";
 import { Text } from "@/components/ui/text";
@@ -142,7 +143,7 @@ export default function RootLayout() {
     () => ({
       authClient: stateAuthClient,
       notifyError: (error: Error) => {
-        console.log(error);
+        Alert.alert(errorMessage(error));
       },
       orpc,
     }),

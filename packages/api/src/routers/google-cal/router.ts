@@ -1,15 +1,10 @@
-import { auth } from "@kompose/auth";
-import { getLinkedAccountId } from "@kompose/auth/accounts";
-import {
-  GoogleApiError,
-  GoogleCalendarZodError,
-  makeGoogleCalendarService,
-} from "@kompose/google-cal/client";
+import { makeGoogleCalendarService } from "@kompose/google-cal/client";
 import { getGoogleEventEditBlockReason } from "@kompose/google-cal/schema";
-import { implement, ORPCError } from "@orpc/server";
+import { implement } from "@orpc/server";
 import { Effect, Option } from "effect";
-import { mapErrors, requireAuth } from "../..";
+import { requireAuth } from "../..";
 import type { Context } from "../../context";
+import { getLinkedAccessToken } from "../../lib/linked-account";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
 import {
@@ -18,74 +13,25 @@ import {
   logCacheErrorAndMiss,
 } from "./cache";
 import { googleCalContract } from "./contract";
-import { AccountNotLinkedError, NonEditableGoogleEventError } from "./errors";
+import { NonEditableGoogleEventError } from "./errors";
 
 /** The Google Calendar client for one of the user's linked accounts. */
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   userId: string,
   accountId: string
 ) {
-  yield* Effect.annotateCurrentSpan("userId", userId);
-  yield* Effect.annotateCurrentSpan("accountId", accountId);
-
-  const { accessToken } = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new AccountNotLinkedError({
-        cause,
-        message: "Google account not linked or token unavailable",
-      }),
-    try: async () => {
-      const authAccountId = await getLinkedAccountId({
-        providerAccountId: accountId,
-        providerId: "google",
-        userId,
-      });
-      return auth.api.getAccessToken({
-        body: {
-          accountId: authAccountId,
-          userId,
-        },
-      });
-    },
+  const accessToken = yield* getLinkedAccessToken({
+    accountId,
+    providerId: "google",
+    userId,
   });
-
   return makeGoogleCalendarService(accessToken);
 });
-
-function toORPCError(error: unknown) {
-  if (error instanceof AccountNotLinkedError) {
-    return new ORPCError("ACCOUNT_NOT_LINKED", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleApiError) {
-    return new ORPCError("GOOGLE_API_ERROR", {
-      cause: error,
-      message: JSON.stringify(error.cause),
-    });
-  }
-  if (error instanceof GoogleCalendarZodError) {
-    return new ORPCError("PARSE_ERROR", {
-      cause: error,
-      message: error.message,
-    });
-  }
-  if (error instanceof NonEditableGoogleEventError) {
-    return new ORPCError("BAD_REQUEST", {
-      cause: error,
-      data: { eventId: error.eventId, eventType: error.eventType },
-      message: error.message,
-    });
-  }
-  return error;
-}
 
 export const os = implement(googleCalContract)
   .$context<Context>()
   .use(requireAuth)
-  .use(globalRateLimit)
-  .use(mapErrors(toORPCError));
+  .use(globalRateLimit);
 
 function publishGoogleCalendarEvent(
   userId: string,

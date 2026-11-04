@@ -25,7 +25,7 @@ callback route. Register `https://kompose.dev/api/auth/callback/whoop` in the
 default.
 
 The app's WHOOP RPC inputs and cache keys use the provider account ID
-(`account.accountId`). `getLinkedAccountId` resolves that ID to an account row
+(`account.accountId`). `getLinkedAccessToken` resolves that ID to an account row
 owned by the current user before calling Better Auth. Better Auth token,
 profile, and unlink APIs require the local row ID (`account.id`).
 
@@ -50,7 +50,7 @@ packages/api/src/routers/whoop/   — oRPC router + Effect service
 ├── router.ts            — oRPC handler implementations
 ├── service.ts           — WhoopService (day summary aggregation, caching, grouping)
 ├── cache.ts             — WhoopCacheService (Redis per-day cache)
-└── errors.ts            — Service-level errors (AccountNotLinked, InvalidRange, CacheError)
+└── errors.ts            — Service-level errors (InvalidRange, CacheError)
 
 packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
 ```

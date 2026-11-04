@@ -1,5 +1,6 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { env } from "@kompose/env";
+import { errorMessage } from "@kompose/state/errors";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
@@ -51,7 +52,7 @@ export function createAppQueryClient({
         }
 
         const queryKey = query.queryKey;
-        toast.error(`Error: ${error.message}`, {
+        toast.error(errorMessage(error), {
           action: {
             label: "retry",
             onClick: () => {
