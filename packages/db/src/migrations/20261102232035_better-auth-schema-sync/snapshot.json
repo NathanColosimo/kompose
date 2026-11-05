@@ -1,0 +1,38 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "284172c2-dc65-471d-a32f-ea4f02d1b4ad",
+  "prevIds": [
+    "04d27228-c29f-47c4-bb29-fc989a8bfffe"
+  ],
+  "footprints": [
+    {
+      "statementType": "alter_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "user",
+        "email_verified"
+      ],
+      "writes": [
+        "s|colprop|public.user.email_verified.default"
+      ],
+      "reads": [
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.user.email_verified"
+      ],
+      "sqlHash": "68ddd1dbe110d58d"
+    }
+  ],
+  "deltas": [
+    {
+      "op": "alter",
+      "key": "columns\u0000[\"public\",\"user\",\"email_verified\"]",
+      "set": {
+        "default": "false"
+      }
+    }
+  ]
+}

@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@better-auth/mcp": "catalog:",
     "@effect/opentelemetry": "catalog:",
     "@kompose/auth": "workspace:*",
     "@kompose/db": "workspace:*",
@@ -20,6 +21,7 @@
     "@kompose/google-cal": "workspace:*",
     "@kompose/redis": "workspace:*",
     "@kompose/whoop": "workspace:*",
+    "@modelcontextprotocol/server": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/context-async-hooks": "catalog:",
     "@opentelemetry/core": "catalog:",
@@ -29,6 +31,7 @@
     "@opentelemetry/sdk-trace": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/effect": "catalog:",
+    "@orpc/mcp": "catalog:",
     "@orpc/opentelemetry": "catalog:",
     "@orpc/ratelimit": "catalog:",
     "@orpc/server": "catalog:",

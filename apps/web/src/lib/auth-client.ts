@@ -1,4 +1,5 @@
 import { electronProxyClient } from "@better-auth/electron/proxy";
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import type { auth } from "@kompose/auth";
 import {
   ELECTRON_AUTH_CLIENT_ID,
@@ -17,6 +18,8 @@ export const authClient = createAuthClient({
   plugins: [
     inferAdditionalFields<typeof auth>(),
     lastLoginMethodClient({ cookieName: "kompose.last_used_login_method" }),
+    // Sends the signed OAuth query from /login and /oauth/consent during MCP authorization.
+    oauthProviderClient(),
     electronProxyClient({
       clientID: ELECTRON_AUTH_CLIENT_ID,
       cookiePrefix: "kompose",

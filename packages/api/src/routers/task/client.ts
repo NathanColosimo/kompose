@@ -1,5 +1,5 @@
 import { Database, DatabaseLive } from "@kompose/db";
-import type { TagSelect, TaskTagInsert } from "@kompose/db/schema/tag";
+import type { TaskTagInsert } from "@kompose/db/schema/tag";
 import { tagTable, taskTagTable } from "@kompose/db/schema/tag";
 import type {
   TaskInsert,
@@ -8,17 +8,15 @@ import type {
   TaskUpdate,
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, EmptyFilter, eq, gte, inArray } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
-import type { DeleteScope, UpdateScope } from "./contract";
+import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, TaskNotFoundError } from "./errors";
 
-type TaskSelectRow = typeof taskTable.$inferSelect;
 type TaskInsertRow = typeof taskTable.$inferInsert;
-type TaskWithTagsRow = TaskSelectRow & { tags: TagSelect[] };
 
 type SystemManagedTaskField = "createdAt" | "updatedAt";
 type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
@@ -39,33 +37,41 @@ function stripSystemManagedTaskFields<
   return rest;
 }
 
-const groupTaskTagRows = (
-  rows: Array<{ tag: TagSelect | null; task: TaskSelectRow }>
-): TaskWithTagsRow[] => {
-  const tasks = new Map<string, TaskWithTagsRow>();
+/** Escape LIKE wildcards so a search for "50%" matches literally. */
+const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
 
-  for (const row of rows) {
-    const current = tasks.get(row.task.id) ?? { ...row.task, tags: [] };
-    if (row.tag) {
-      current.tags.push(row.tag);
-    }
-    tasks.set(row.task.id, current);
-  }
-
-  return [...tasks.values()];
-};
-
-const dbSelect = (userId: string) =>
+/**
+ * The user's tasks with their tags, newest first. Params left unset don't
+ * filter (Drizzle needs `EmptyFilter` there; `undefined` throws).
+ */
+const dbSelect = (userId: string, params: TaskListParams) =>
   Effect.gen(function* () {
     const db = yield* Database;
-    const rows = yield* db
-      .select({ tag: tagTable, task: taskTable })
-      .from(taskTable)
-      .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
-      .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
-      .where(eq(taskTable.userId, userId))
-      .orderBy(desc(taskTable.createdAt));
-    return groupTaskTagRows(rows);
+    const text = params.query ? `%${escapeLike(params.query)}%` : null;
+    return yield* db.query.taskTable.findMany({
+      limit: params.limit ?? undefined,
+      orderBy: { createdAt: "desc", id: "asc" },
+      where: {
+        dueDate: {
+          gte: params.dueDateMin ?? EmptyFilter,
+          lte: params.dueDateMax ?? EmptyFilter,
+        },
+        OR: text
+          ? [{ title: { ilike: text } }, { description: { ilike: text } }]
+          : EmptyFilter,
+        startDate: {
+          gte: params.startDateMin ?? EmptyFilter,
+          lte: params.startDateMax ?? EmptyFilter,
+        },
+        status: params.status?.length ? { in: params.status } : EmptyFilter,
+        // Tasks with any of the given tags
+        tags: params.tagIds?.length
+          ? { id: { in: params.tagIds } }
+          : EmptyFilter,
+        userId,
+      },
+      with: { tags: true },
+    });
   });
 
 const dbSelectById = (userId: string, taskId: string) =>
@@ -102,16 +108,11 @@ const dbSelectByIdsWithTags = (userId: string, taskIds: string[]) =>
     if (taskIds.length === 0) {
       return [];
     }
-
     const db = yield* Database;
-    const rows = yield* db
-      .select({ tag: tagTable, task: taskTable })
-      .from(taskTable)
-      .leftJoin(taskTagTable, eq(taskTagTable.taskId, taskTable.id))
-      .leftJoin(tagTable, eq(tagTable.id, taskTagTable.tagId))
-      .where(and(eq(taskTable.userId, userId), inArray(taskTable.id, taskIds)));
-
-    return groupTaskTagRows(rows);
+    return yield* db.query.taskTable.findMany({
+      where: { id: { in: taskIds }, userId },
+      with: { tags: true },
+    });
   });
 
 const dbInsert = (values: TaskInsertRow[]) =>
@@ -804,10 +805,23 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
 export class TaskService extends Context.Service<TaskService>()("TaskService", {
   make: Effect.gen(function* () {
     const listTasks = Effect.fn("TaskService.listTasks")(function* (
-      userId: string
+      userId: string,
+      params: TaskListParams
     ) {
       yield* Effect.annotateCurrentSpan("userId", userId);
-      return yield* dbSelect(userId);
+      return yield* dbSelect(userId, params);
+    });
+
+    const getTask = Effect.fn("TaskService.getTask")(function* (
+      userId: string,
+      taskId: string
+    ) {
+      yield* Effect.annotateCurrentSpan("userId", userId);
+      const [task] = yield* dbSelectByIdsWithTags(userId, [taskId]);
+      if (!task) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
+      return task;
     });
 
     const createTask = Effect.fn("TaskService.createTask")(function* (
@@ -961,7 +975,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
     });
 
-    return { createTask, deleteTask, listTasks, updateTask };
+    return { createTask, deleteTask, getTask, listTasks, updateTask };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make).pipe(

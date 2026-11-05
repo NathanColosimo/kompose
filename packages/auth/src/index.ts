@@ -1,6 +1,9 @@
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
+import { mcp } from "@better-auth/mcp";
 import { db } from "@kompose/db/legacy";
 // biome-ignore lint/performance/noNamespaceImport: Auth Schema
 import * as schema from "@kompose/db/schema/auth";
@@ -11,7 +14,8 @@ import {
 import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
-import { genericOAuth, lastLoginMethod } from "better-auth/plugins";
+import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
+import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { redisSecondaryStorage } from "./redis-storage";
 import { whoopOAuthTokens } from "./whoop";
 
@@ -35,6 +39,8 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
+  disabledPaths: ["/token"],
   emailAndPassword: {
     enabled: false,
   },
@@ -110,6 +116,19 @@ export const auth = betterAuth({
       ],
     }),
     whoopOAuthTokens(),
+    // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
+    jwt(),
+    mcp({
+      accessTokenExpiresIn: 15 * 60, // seconds; revoking still takes effect at once
+      consentPage: "/oauth/consent",
+      loginPage: "/login",
+      resource: MCP_RESOURCE,
+      scopes: ["openid", "profile", "email", "offline_access", MCP_SCOPE],
+    }),
+    cimd({
+      fetchClientMetadataResource,
+      metadataProfile: "mcp-2026-07-28",
+    }),
     nextCookies(),
   ],
   /** Rate limiting for auth endpoints (sign-in, token refresh, etc.). */
@@ -121,6 +140,11 @@ export const auth = betterAuth({
   },
   /** Redis-backed storage for sessions and rate limit counters. */
   secondaryStorage: redisSecondaryStorage,
+  session: {
+    // The MCP OAuth provider links grants to session rows, so sessions are
+    // also written to Postgres. Reads still hit Redis first.
+    storeSessionInDatabase: true,
+  },
   socialProviders: {
     apple: {
       appBundleIdentifier: env.APPLE_APP_BUNDLE_IDENTIFIER,

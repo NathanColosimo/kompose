@@ -1,0 +1,84 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "36f075e0-2769-45e6-8e3a-239be39fc1e7",
+  "prevIds": [
+    "7a5f28bd-9a0a-4320-ad62-f70e0f1312ad",
+    "284172c2-dc65-471d-a32f-ea4f02d1b4ad"
+  ],
+  "footprints": [
+    {
+      "statementType": "drop_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "account",
+        "account_user_provider_idx"
+      ],
+      "writes": [
+        "s|idx|public.account_user_provider_idx",
+        "n|idx|public.account_user_provider_idx",
+        "e|idx|public.account_user_provider_idx",
+        "n|rel|public.account_user_provider_idx"
+      ],
+      "reads": [
+        "e|tbl|public.account",
+        "n|sch|public",
+        "e|col|public.account.user_id",
+        "e|col|public.account.provider_id"
+      ],
+      "sharedWrites": []
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "account",
+        "account_userId_idx"
+      ],
+      "writes": [
+        "s|idx|public.account_userId_idx",
+        "n|idx|public.account_userId_idx",
+        "e|idx|public.account_userId_idx",
+        "n|rel|public.account_userId_idx"
+      ],
+      "reads": [
+        "n|tbl|public.account",
+        "n|sch|public",
+        "n|col|public.account.user_id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "account",
+        "name": "account_userId_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "user_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "drop",
+      "key": "indexes\u0000[\"public\",\"account_user_provider_idx\"]"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import { Unlink2 } from "lucide-react-native";
 import { useState } from "react";
 import { Image, Alert as RNAlert, ScrollView, View } from "react-native";
 import { ModeToggle } from "@/components/mode-toggle";
+import { ConnectedAgentsCard } from "@/components/settings/connected-agents-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -198,6 +199,8 @@ export default function SettingsScreen() {
             </CardContent>
           </Card>
         ) : null}
+
+        {session?.user ? <ConnectedAgentsCard /> : null}
 
         {session?.user ? (
           <Card className="mb-4">

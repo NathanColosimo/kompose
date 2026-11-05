@@ -30,28 +30,11 @@ export const relations = defineRelations(relationalSchema, (r) => ({
       to: r.user.id,
     }),
   },
-  tagTable: {
-    taskTags: r.many.taskTagTable({
-      from: r.tagTable.id,
-      to: r.taskTagTable.tagId,
-    }),
-  },
   taskTable: {
-    taskTags: r.many.taskTagTable({
-      from: r.taskTable.id,
-      to: r.taskTagTable.taskId,
-    }),
-  },
-  taskTagTable: {
-    tag: r.one.tagTable({
-      from: r.taskTagTable.tagId,
-      optional: false,
-      to: r.tagTable.id,
-    }),
-    task: r.one.taskTable({
-      from: r.taskTagTable.taskId,
-      optional: false,
-      to: r.taskTable.id,
+    // A task's tags, joined through task_tag
+    tags: r.many.tagTable({
+      from: r.taskTable.id.through(r.taskTagTable.taskId),
+      to: r.tagTable.id.through(r.taskTagTable.tagId),
     }),
   },
   user: {
