@@ -38,8 +38,6 @@ type BottomSheetContentProps = {
   onHandlePress?: () => void;
 };
 
-// Component for the bottom sheet content
-// It now includes a ScrollView by default for better form handling.
 const BottomSheetContent = ({
   children,
   title,
@@ -66,7 +64,6 @@ const BottomSheetContent = ({
         style,
       ]}
     >
-      {/* Handle */}
       <TouchableWithoutFeedback onPress={onHandlePress}>
         <View
           style={{
@@ -86,7 +83,6 @@ const BottomSheetContent = ({
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Title row */}
       {(title || headerRight) && (
         <View
           style={{
@@ -115,7 +111,6 @@ const BottomSheetContent = ({
         </View>
       )}
 
-      {/* Content wrapped in a ScrollView with native keyboard inset adjustment */}
       <ScrollView
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={{ padding: 16, paddingBottom: 88 }}
@@ -165,7 +160,6 @@ export function BottomSheet({
 
   const [modalVisible, setModalVisible] = React.useState(false);
 
-  // Effect to handle opening and closing the bottom sheet
   useEffect(() => {
     if (isVisible) {
       setModalVisible(true);
@@ -330,7 +324,6 @@ export function BottomSheet({
   );
 }
 
-// Hook for managing bottom sheet state
 export function useBottomSheet() {
   const [isVisible, setIsVisible] = React.useState(false);
 

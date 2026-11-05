@@ -59,7 +59,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
   ) => {
     const [isFocused, setIsFocused] = useState(false);
 
-    // Theme colors
     const cardColor = useColor("card");
     const textColor = useColor("text");
     const muted = useColor("textMuted");
@@ -69,16 +68,13 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
 
     const isTextarea = type === "textarea";
 
-    // Calculate height based on type
     const getHeight = () => {
       if (isTextarea) {
-        // Compact mode is used by chat composer to better match action buttons.
         return rows * 18 + (compact ? 24 : 32);
       }
       return HEIGHT;
     };
 
-    // Variant styles
     const getVariantStyle = (): ViewStyle => {
       const baseStyle: ViewStyle = {
         borderRadius: pill ? CORNERS : isTextarea ? BORDER_RADIUS : CORNERS,
@@ -128,11 +124,9 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
       onBlur?.(e);
     };
 
-    // Render right component - supports both direct components and functions
     const renderRightComponent = () => {
       if (!rightComponent) return null;
 
-      // If it's a function, call it. Otherwise, render directly
       return typeof rightComponent === "function"
         ? rightComponent()
         : rightComponent;
@@ -140,7 +134,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
 
     const renderInputContent = () => (
       <View style={containerStyle}>
-        {/* Input Container */}
         <Pressable
           disabled={disabled}
           onPress={() => {
@@ -151,9 +144,7 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
           style={[getVariantStyle(), disabled && { opacity: 0.6 }]}
         >
           {isTextarea ? (
-            // Textarea Layout (Column)
             <>
-              {/* Header section with icon, label, and right component */}
               {(icon || label || rightComponent) && (
                 <View
                   style={{
@@ -163,7 +154,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
                     gap: 8,
                   }}
                 >
-                  {/* Left section - Icon + Label */}
                   <View
                     pointerEvents="none"
                     style={{
@@ -198,12 +188,10 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
                     )}
                   </View>
 
-                  {/* Right Component */}
                   {renderRightComponent()}
                 </View>
               )}
 
-              {/* TextInput section */}
               <TextInput
                 editable={!disabled}
                 multiline
@@ -219,7 +207,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
               />
             </>
           ) : (
-            // Input Layout (Row)
             <View
               style={{
                 flexDirection: "row",
@@ -227,7 +214,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
                 gap: 8,
               }}
             >
-              {/* Left section - Icon + Label (fixed width to simulate grid column) */}
               <View
                 pointerEvents="none"
                 style={{
@@ -258,7 +244,6 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
                 )}
               </View>
 
-              {/* TextInput section - takes remaining space */}
               <View style={{ flex: 1 }}>
                 <TextInput
                   editable={!disabled}
@@ -273,13 +258,11 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
                 />
               </View>
 
-              {/* Right Component */}
               {renderRightComponent()}
             </View>
           )}
         </Pressable>
 
-        {/* Error Message */}
         {error && (
           <Text
             style={[
@@ -461,9 +444,7 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
           }}
         >
           {isTextarea ? (
-            // Textarea Layout (Column)
             <>
-              {/* Header section with icon, label, and right component */}
               {(icon || label || rightComponent) && (
                 <View
                   style={{
@@ -473,7 +454,6 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
                     gap: 8,
                   }}
                 >
-                  {/* Icon & Label */}
                   <View
                     pointerEvents="none"
                     style={{
@@ -508,12 +488,10 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
                     )}
                   </View>
 
-                  {/* Right Component */}
                   {renderRightComponent()}
                 </View>
               )}
 
-              {/* Textarea Input */}
               <TextInput
                 editable={!disabled}
                 multiline
@@ -540,7 +518,6 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
               />
             </>
           ) : (
-            // Input Layout (Row)
             <View
               style={{
                 flex: 1,
@@ -549,7 +526,6 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
                 gap: 8,
               }}
             >
-              {/* Icon & Label */}
               <View
                 pointerEvents="none"
                 style={{
@@ -580,7 +556,6 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
                 )}
               </View>
 
-              {/* Input */}
               <View style={{ flex: 1 }}>
                 <TextInput
                   editable={!disabled}
@@ -604,7 +579,6 @@ export const GroupedInputItem = forwardRef<TextInputInstance, GroupedInputItemPr
                 />
               </View>
 
-              {/* Right Component */}
               {renderRightComponent()}
             </View>
           )}

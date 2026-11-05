@@ -101,7 +101,6 @@ function buildSectionItems(sections: TaskSection[]): TaskListItem[] {
   return items;
 }
 
-// Shared row renderer for task list items.
 function TaskRow({
   item,
   onPress,
@@ -116,7 +115,6 @@ function TaskRow({
 
   return (
     <View className="flex-row items-start gap-3 border-border border-b py-3">
-      {/* Checkbox to toggle done/todo status */}
       <Checkbox
         accessibilityLabel={isDone ? "Mark as todo" : "Mark as done"}
         checked={isDone}
@@ -124,7 +122,6 @@ function TaskRow({
         onCheckedChange={() => onToggleStatus(item)}
       />
 
-      {/* Task content - tappable to open edit modal */}
       <Pressable
         className="flex-1 active:opacity-70"
         onPress={() => onPress(item)}
@@ -182,7 +179,6 @@ interface TaskListProps {
   tintColor: string;
 }
 
-// Shared list renderer for the Inbox, Today and tag views.
 function TaskList({
   items,
   emptyMessage,
@@ -263,11 +259,9 @@ export default function TasksScreen() {
     doneTasks,
   } = useTaskSections();
 
-  // Get tags for the filter popover and header display
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? [];
 
-  // Currently selected tag for filtering (null = show all)
   const [selectedTagId, setSelectedTagId] = React.useState<string | null>(null);
 
   const {
@@ -276,16 +270,13 @@ export default function TasksScreen() {
     doneTasks: tagDoneTasks,
   } = useTagTaskSections(selectedTagId);
 
-  // Find the selected tag object to display its icon and name in the header
   const selectedTag = React.useMemo(
     () => tags.find((tag) => tag.id === selectedTagId) ?? null,
     [tags, selectedTagId]
   );
 
-  // Track the active task view to mirror the web sidebar.
   const [activeTab, setActiveTab] = React.useState<BaseTaskTab>("Inbox");
 
-  // Build the Today sections so the list can render headers.
   const todaySections = React.useMemo(
     () =>
       buildTodaySections(overdueTasks, plannedTasks, unplannedTasks, doneTasks),
@@ -307,7 +298,6 @@ export default function TasksScreen() {
     });
   }
 
-  // Toggle task status directly from the list (without opening modal)
   function handleToggleStatus(task: TaskSelectDecoded) {
     const newStatus = task.status === "done" ? "todo" : "done";
     updateTask.mutate({
@@ -322,7 +312,6 @@ export default function TasksScreen() {
     setActiveTab(tab);
   }, []);
 
-  // Get the selected tag's icon component (or default Tag icon)
   const SelectedTagIcon = selectedTag ? tagIconMap[selectedTag.icon] : Tag;
   const isTagView = selectedTagId !== null;
 
@@ -343,7 +332,6 @@ export default function TasksScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Configure header options via Stack.Screen */}
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -409,7 +397,6 @@ export default function TasksScreen() {
         }}
       />
 
-      {/* Task list */}
       <TaskList
         emptyMessage={emptyMessage}
         isLoading={tasksQuery.isLoading}

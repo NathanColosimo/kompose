@@ -12,7 +12,6 @@ function isColorSchemePreference(
   return value === "light" || value === "dark" || value === "system";
 }
 
-// Apply the scheme safely so a bad config doesn't crash the app.
 function applyColorScheme(scheme: ColorSchemePreference): void {
   try {
     Uniwind.setTheme(scheme);
@@ -32,13 +31,12 @@ export function restoreColorScheme(): void {
       }
     })
     .catch(() => {
-      // Ignore restore errors
+      // Keep the default theme if SecureStore is unavailable.
     });
 }
 
 function setColorScheme(scheme: ColorSchemePreference): void {
   applyColorScheme(scheme);
-  // Persist the preference so it restores on next launch.
   setItemAsync(THEME_STORAGE_KEY, scheme).catch(console.error);
 }
 
@@ -58,7 +56,6 @@ export function useColorScheme() {
     userPreference = "light";
   }
 
-  // Adaptive mode follows system appearance.
   const activeScheme = hasAdaptiveThemes ? systemColorScheme : theme;
   const colorScheme: "light" | "dark" =
     activeScheme === "dark" ? "dark" : "light";
@@ -66,11 +63,9 @@ export function useColorScheme() {
   return {
     /** Current effective color scheme ("light" or "dark") */
     colorScheme,
-    /** Whether dark mode is active */
     isDarkColorScheme: colorScheme === "dark",
     /** Set color scheme with persistence */
     setColorScheme,
-    /** Toggle between light and dark */
     toggleColorScheme: () =>
       setColorScheme(colorScheme === "dark" ? "light" : "dark"),
     /** User's preference ("light", "dark", or "system") */

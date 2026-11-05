@@ -1,10 +1,8 @@
 import { DarkTheme, DefaultTheme } from "expo-router";
 
 /**
- * Theme tokens for React Navigation.
- *
- * These values must match the CSS variables in global.css.
- * React Native requires comma-separated HSL format: hsl(h, s%, l%)
+ * Rounded HSL equivalents of global.css for native navigation. Keep them in
+ * sync with the CSS tokens; see documents/mobile-theme.md.
  */
 export const THEME = {
   dark: {

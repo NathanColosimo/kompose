@@ -15,7 +15,6 @@ import { type TagIconName, tagIconMap } from "./tag-icon-map";
 import { TagIconPicker } from "./tag-icon-picker";
 
 interface TagManagerPopoverProps {
-  /** Called when the user selects a tag or clears selection */
   onChange: (next: string | null) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -93,14 +92,12 @@ export function TagManagerPopover({
     );
   };
 
-  // Single-select: set the tag as the active filter or toggle off if already selected
   const handleSelectTag = (tag: TagSelect) => {
     const next = value === tag.id ? null : tag.id;
     onChange(next);
     onOpenChange(false);
   };
 
-  // Clear filter to show all tasks
   const handleShowAll = () => {
     onChange(null);
     onOpenChange(false);
@@ -113,7 +110,6 @@ export function TagManagerPopover({
     deleteTag.mutate(deleteTarget.id, {
       onSettled: () => {
         setDeleteTarget(null);
-        // If the deleted tag was selected, clear the filter
         if (value === deleteTarget.id) {
           onChange(null);
         }
@@ -163,7 +159,6 @@ export function TagManagerPopover({
       <Text className="text-muted-foreground text-sm">No tags yet.</Text>
     );
   } else if (isEditMode) {
-    // Edit mode: show editable tag list
     tagListContent = (
       <View className="gap-2">
         {tags.map((tag) => {
@@ -274,10 +269,8 @@ export function TagManagerPopover({
       </View>
     );
   } else {
-    // Selection mode: show selectable tag list with "Show all" option
     tagListContent = (
       <View className="gap-2">
-        {/* "Show all" option at top */}
         <Pressable
           accessibilityRole="radio"
           accessibilityState={{ selected: value === null }}
@@ -289,7 +282,6 @@ export function TagManagerPopover({
           <SelectionRadio selected={value === null} />
         </Pressable>
 
-        {/* Individual tag options */}
         {tags.map((tag) => {
           const IconComponent = tagIconMap[tag.icon];
           const isSelected = value === tag.id;

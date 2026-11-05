@@ -30,7 +30,6 @@ import { BORDER_RADIUS, CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 const { width: screenWidth } = Dimensions.get("window");
 
-// Types
 interface TabsContextType {
   activeTab: string;
   setActiveTab: (value: string) => void;
@@ -74,7 +73,6 @@ interface TabsContentProps {
   style?: ViewStyle;
 }
 
-// Context
 const TabsContext = createContext<TabsContextType | undefined>(undefined);
 
 const useTabsContext = () => {
@@ -98,11 +96,9 @@ export function Tabs({
   const [tabValues, setTabValues] = useState<string[]>([]);
   const tabContentsRef = useRef<Record<string, React.ReactNode>>({});
 
-  // Determine if we're in controlled or uncontrolled mode
   const isControlled = value !== undefined;
   const activeTab = isControlled ? value : internalActiveTab;
 
-  // Update internal state when value prop changes (controlled mode)
   useEffect(() => {
     if (isControlled && value !== internalActiveTab) {
       setInternalActiveTab(value);
@@ -111,11 +107,9 @@ export function Tabs({
 
   const setActiveTab = (newValue: string) => {
     if (!isControlled) {
-      // Uncontrolled mode: update internal state
       setInternalActiveTab(newValue);
     }
 
-    // Call onValueChange callback if provided (works in both controlled and uncontrolled modes)
     if (onValueChange) {
       onValueChange(newValue);
     }
@@ -157,10 +151,10 @@ export function Tabs({
       let nextIndex;
       if (direction === "next") {
         nextIndex = currentIndex + 1;
-        if (nextIndex >= tabValues.length) nextIndex = 0; // Loop to first
+        if (nextIndex >= tabValues.length) nextIndex = 0;
       } else {
         nextIndex = currentIndex - 1;
-        if (nextIndex < 0) nextIndex = tabValues.length - 1; // Loop to last
+        if (nextIndex < 0) nextIndex = tabValues.length - 1;
       }
 
       const nextTab = tabValues[nextIndex];
@@ -201,7 +195,6 @@ export function Tabs({
   );
 }
 
-// Add this after the existing interfaces
 interface CarouselTabContentProps {
   children: React.ReactNode;
   value: string;
@@ -230,7 +223,6 @@ function CarouselTabContent({
     };
   }, [removeTabContent, value]);
 
-  // Only render the carousel container for the active tab
   if (activeTab !== value) {
     return null;
   }
@@ -278,20 +270,17 @@ function CarouselContainer({
     .onEnd((event) => {
       isGestureActive.value = false;
 
-      const threshold = screenWidth * 0.15; // Lower threshold for easier swiping
+      const threshold = screenWidth * 0.15;
       const velocity = Math.abs(event.velocityX);
       const translation = event.translationX;
 
-      // Determine if we should change tabs based on distance or velocity
       const shouldChangeTab =
         Math.abs(translation) > threshold || velocity > 500;
 
       if (shouldChangeTab) {
         if (translation > 0 && currentIndex > 0) {
-          // Swiped right - go to previous tab
           runOnJS(onSwipe)("prev");
         } else if (translation < 0 && currentIndex < tabValues.length - 1) {
-          // Swiped left - go to next tab
           runOnJS(onSwipe)("next");
         }
       }
@@ -347,7 +336,6 @@ function CarouselContainer({
   return (
     <GestureDetector gesture={panGesture}>
       <View style={{ overflow: "hidden" }}>
-        {/* Previous content */}
         {previousTab && (
           <Animated.View
             pointerEvents="none"
@@ -365,7 +353,6 @@ function CarouselContainer({
           </Animated.View>
         )}
 
-        {/* Current content */}
         <Animated.View
           style={[
             {
@@ -378,7 +365,6 @@ function CarouselContainer({
           {getTabContent(activeTab)}
         </Animated.View>
 
-        {/* Next content */}
         {nextTab && (
           <Animated.View
             pointerEvents="none"
@@ -441,7 +427,6 @@ export function TabsTrigger({
     useTabsContext();
   const isActive = activeTab === value;
 
-  // Register/unregister tab for swipe navigation
   useEffect(() => {
     registerTab(value);
     return () => unregisterTab(value);
@@ -505,7 +490,6 @@ export function TabsContent({ children, value, style }: TabsContentProps) {
   } = useTabsContext();
   const isActive = activeTab === value;
 
-  // For carousel mode, we need to render all content but only show active one
   if (enableSwipe && orientation === "horizontal" && navigateToAdjacentTab) {
     return (
       <CarouselTabContent style={style} value={value}>
@@ -514,7 +498,6 @@ export function TabsContent({ children, value, style }: TabsContentProps) {
     );
   }
 
-  // Regular mode - only render active content
   if (!isActive) {
     return null;
   }

@@ -2,11 +2,7 @@ import { NativeTabs } from "expo-router/native-tabs";
 
 export const unstable_settings = { initialRouteName: "(tasks)" };
 
-/**
- * Tab layout using NativeTabs for native iOS/Android tab bar experience.
- * Uses SF Symbols for icons on iOS, with automatic Material 3 styling on Android.
- * Each tab wraps a Stack navigator for native header support.
- */
+// Each tab uses a Stack for headers, which NativeTabs does not render.
 export default function TabLayout() {
   return (
     <NativeTabs>

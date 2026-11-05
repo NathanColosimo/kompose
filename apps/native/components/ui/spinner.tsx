@@ -20,7 +20,6 @@ import { Text } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS, CORNERS, FONT_SIZE } from "@/theme/globals";
 
-// Types
 type SpinnerSize = "default" | "sm" | "lg" | "icon";
 export type SpinnerVariant = "default" | "circle" | "dots" | "pulse" | "bars";
 
@@ -31,7 +30,7 @@ interface SpinnerProps {
   showLabel?: boolean;
   style?: ViewStyle;
   color?: string;
-  thickness?: number; // Note: thickness is not used in the original component logic
+  thickness?: number; // Currently unused.
   speed?: "slow" | "normal" | "fast";
 }
 
@@ -51,7 +50,6 @@ interface SpinnerConfig {
   thickness: number;
 }
 
-// Configuration
 const sizeConfig: Record<SpinnerSize, SpinnerConfig> = {
   sm: { size: 16, iconSize: 16, fontSize: 12, gap: 6, thickness: 2 },
   default: {
@@ -114,7 +112,6 @@ const AnimatedBar = React.memo(
   }
 );
 
-// Main Spinner Component
 export function Spinner({
   size = "default",
   variant = "default",
@@ -124,12 +121,10 @@ export function Spinner({
   color,
   speed = "normal",
 }: SpinnerProps) {
-  // Reanimated shared values
   const rotate = useSharedValue(0);
   const pulse = useSharedValue(1);
 
-  // --- FIX: Call hooks at the top level ---
-  // 1. Call useSharedValue at the top level for each dot/bar
+  // Keep shared-value hooks unconditional when the spinner variant changes.
   const dotAnim1 = useSharedValue(0.3);
   const dotAnim2 = useSharedValue(0.3);
   const dotAnim3 = useSharedValue(0.3);
@@ -139,7 +134,6 @@ export function Spinner({
   const barAnim3 = useSharedValue(0.3);
   const barAnim4 = useSharedValue(0.3);
 
-  // 2. Use useMemo to create a stable array reference from the values
   const dotsAnims = useMemo(
     () => [dotAnim1, dotAnim2, dotAnim3],
     [dotAnim1, dotAnim2, dotAnim3]
@@ -148,9 +142,7 @@ export function Spinner({
     () => [barAnim1, barAnim2, barAnim3, barAnim4],
     [barAnim1, barAnim2, barAnim3, barAnim4]
   );
-  // --- END FIX ---
 
-  // Theme colors
   const primaryColor = useColor("text");
   const textColor = useColor("text");
 
@@ -166,7 +158,7 @@ export function Spinner({
         -1
       );
     } else {
-      rotate.value = 0; // Reset
+      rotate.value = 0;
     }
   }, [rotate, variant, animationDuration]);
 
@@ -182,7 +174,7 @@ export function Spinner({
         true
       );
     } else {
-      pulse.value = 1; // Reset
+      pulse.value = 1;
     }
   }, [pulse, variant, animationDuration]);
 
@@ -202,7 +194,7 @@ export function Spinner({
         );
       });
     } else {
-      dotsAnims.forEach((anim) => (anim.value = 0.3)); // Reset
+      dotsAnims.forEach((anim) => (anim.value = 0.3));
     }
   }, [dotsAnims, variant, animationDuration]);
 
@@ -222,7 +214,7 @@ export function Spinner({
         );
       });
     } else {
-      barsAnims.forEach((anim) => (anim.value = 0.3)); // Reset
+      barsAnims.forEach((anim) => (anim.value = 0.3));
     }
   }, [barsAnims, variant, animationDuration]);
 
@@ -335,7 +327,6 @@ export function Spinner({
   );
 }
 
-// Loading Overlay Component
 export function LoadingOverlay({
   visible,
   backdrop = true,
@@ -381,7 +372,6 @@ export function LoadingOverlay({
   );
 }
 
-// Inline Loader Component (for buttons, etc.)
 export function InlineLoader({
   size = "sm",
   variant = "default",
@@ -397,7 +387,6 @@ export function InlineLoader({
   );
 }
 
-// Button Spinner Component - optimized for button usage
 export function ButtonSpinner({
   size = "sm",
   variant = "default",

@@ -38,7 +38,6 @@ export type AlertDialogProps = {
   style?: ViewStyle;
 };
 
-// A simple card-like dialog overlay with fade-in animation similar to BottomSheet's backdrop
 export function AlertDialog({
   isVisible,
   onClose,
@@ -126,10 +125,8 @@ export function AlertDialog({
         <View
           style={[styles.roundedWrapper, { backgroundColor: cardColor }, style]}
         >
-          {/* Only fade the inner content */}
           <Animated.View style={[styles.innerContent, rCardFadeStyle]}>
             <Card
-              // Card has no rounded corners, background or shadow (delegated to wrapper)
               style={{ backgroundColor: "transparent", elevation: 0 }}
             >
               {(title || description) && (
@@ -174,13 +171,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // Rounded corners and clipping consolidated here (non-animated)
   roundedWrapper: {
     width: "100%",
     borderRadius: 16,
     overflow: "hidden",
   },
-  // Inner content can render freely (only opacity is animated)
   innerContent: {
     width: "100%",
   },

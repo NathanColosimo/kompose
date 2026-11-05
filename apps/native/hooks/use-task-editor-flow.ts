@@ -34,10 +34,7 @@ function trimmedDescription(draft: TaskDraft): string | null {
   return draft.description.trim() ? draft.description.trim() : null;
 }
 
-/**
- * Create / edit / delete flow for the task editor sheet, including the
- * recurring-task scope prompts rendered by `TaskScopeDialogs`.
- */
+/** Shared task editor orchestration; see documents/mobile-task-popover.md. */
 export function useTaskEditorFlow() {
   const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
   const [draft, setDraft] = useState<TaskDraft | null>(null);
@@ -105,7 +102,6 @@ export function useTaskEditorFlow() {
   }
 
   function create(nextDraft: TaskDraft) {
-    // Derive a title from the first link if the user didn't type one
     let title = nextDraft.title.trim();
     if (!title && nextDraft.links.length > 0) {
       const first = nextDraft.links[0];

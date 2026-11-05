@@ -47,13 +47,11 @@ export function SearchBar({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<TextInputInstance>(null);
 
-  // Theme colors
   const cardColor = useColor("card");
   const textColor = useColor("text");
   const muted = useColor("textMuted");
   const icon = useColor("icon");
 
-  // Handle text change with debouncing
   const handleTextChange = useCallback(
     (text: string) => {
       setInternalValue(text);
@@ -73,7 +71,6 @@ export function SearchBar({
     [onChangeText, onSearch, debounceMs]
   );
 
-  // Handle clear button press
   const handleClear = useCallback(() => {
     setInternalValue("");
     onChangeText?.("");
@@ -84,7 +81,6 @@ export function SearchBar({
     }
   }, [onChangeText, onClear, onSearch]);
 
-  // Get container style based on variant and size
   const baseStyle: ViewStyle = {
     flexDirection: "row",
     alignItems: "center",
@@ -106,10 +102,8 @@ export function SearchBar({
 
   return (
     <View style={[baseStyle, containerStyle]}>
-      {/* Left Icon */}
       {leftIcon || <Icon as={Search} color={muted} size={16} />}
 
-      {/* Text Input */}
       <TextInput
         onChangeText={handleTextChange}
         placeholder={placeholder}
@@ -120,7 +114,6 @@ export function SearchBar({
         {...props}
       />
 
-      {/* Loading Indicator */}
       {loading && (
         <ActivityIndicator
           color={muted}
@@ -129,7 +122,6 @@ export function SearchBar({
         />
       )}
 
-      {/* Clear Button */}
       {showClear && !loading && (
         <TouchableOpacity
           activeOpacity={0.7}
@@ -145,13 +137,11 @@ export function SearchBar({
         </TouchableOpacity>
       )}
 
-      {/* Right Icon */}
       {rightIcon && !showClear && !loading && rightIcon}
     </View>
   );
 }
 
-// SearchBar with suggestions dropdown
 interface SearchBarWithSuggestionsProps extends SearchBarProps {
   suggestions?: string[];
   onSuggestionPress?: (suggestion: string) => void;
@@ -205,7 +195,6 @@ export function SearchBarWithSuggestions({
         }}
       />
 
-      {/* Suggestions Dropdown */}
       {shouldShowSuggestions && (
         <View
           style={{

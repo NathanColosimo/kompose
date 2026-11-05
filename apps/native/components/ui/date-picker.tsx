@@ -29,7 +29,6 @@ export interface DateRange {
   endDate: Date | null;
 }
 
-// Conditional typing based on mode
 interface BaseDatePickerProps {
   label?: string;
   error?: string;
@@ -84,11 +83,9 @@ const LIST_ITEM_MARGIN_VERTICAL = 2;
 const TIME_ITEM_EXTENT = TIME_ITEM_HEIGHT + LIST_ITEM_MARGIN_VERTICAL * 2;
 const YEAR_ITEM_EXTENT = YEAR_ITEM_HEIGHT + LIST_ITEM_MARGIN_VERTICAL * 2;
 
-// Generate year range (current year ± 50 years)
 const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 101 }, (_, i) => currentYear - 50 + i);
 
-// Type guard to check if value is DateRange
 const isDateRange = (
   value: Date | DateRange | undefined
 ): value is DateRange => {
@@ -125,7 +122,6 @@ export function DatePicker(props: DatePickerProps) {
 
   const { isVisible, open, close } = useBottomSheet();
 
-  // Get the current date for navigation, prioritizing single date or range start date
   const getCurrentDate = useCallback(() => {
     if (mode === "range") {
       const rangeValue = isDateRange(value)
@@ -146,14 +142,12 @@ export function DatePicker(props: DatePickerProps) {
   const minutesScrollRef = useRef<ScrollViewInstance>(null);
   const yearScrollRef = useRef<ScrollViewInstance>(null);
 
-  // Range selection state for temporary storage during selection
   const [tempRange, setTempRange] = useState<DateRange>(() =>
     mode === "range" && isDateRange(value)
       ? value
       : { startDate: null, endDate: null }
   );
 
-  // Theme colors
   const cardColor = useColor("card");
   const borderColor = useColor("border");
   const primaryColor = useColor("primary");
@@ -230,7 +224,6 @@ export function DatePicker(props: DatePickerProps) {
     }
   }, [value, mode, placeholder, timeFormat]);
 
-  // Helper function to check if a date is disabled
   const isDateDisabled = useCallback(
     (date: Date) => {
       if (minimumDate && date < minimumDate) return true;
@@ -240,19 +233,17 @@ export function DatePicker(props: DatePickerProps) {
     [minimumDate, maximumDate]
   );
 
-  // Helper function to check if a date is in range
   const isDateInRange = useCallback(
     (date: Date) => {
       if (mode !== "range" || !tempRange.startDate || !tempRange.endDate) {
         return false;
       }
 
-      // Create new date objects to avoid mutation
+      // Compare calendar days without mutating the selected range.
       const startDate = new Date(tempRange.startDate);
       const endDate = new Date(tempRange.endDate);
       const checkDate = new Date(date);
 
-      // Normalize dates for comparison (remove time)
       startDate.setHours(0, 0, 0, 0);
       endDate.setHours(0, 0, 0, 0);
       checkDate.setHours(0, 0, 0, 0);
@@ -262,7 +253,6 @@ export function DatePicker(props: DatePickerProps) {
     [mode, tempRange]
   );
 
-  // Helper function to check if a date is a range endpoint
   const isRangeEndpoint = useCallback(
     (date: Date) => {
       if (mode !== "range") {
@@ -286,38 +276,30 @@ export function DatePicker(props: DatePickerProps) {
     [mode, tempRange]
   );
 
-  // Memoized calendar calculations
   const calendarData = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
-    // Get first day of month and number of days
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Create calendar grid with proper positioning
     const weeks: (number | null)[][] = [];
     let currentWeek: (number | null)[] = [];
 
-    // Fill empty cells for days before month starts
     for (let i = 0; i < firstDay; i++) {
       currentWeek.push(null);
     }
 
-    // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       currentWeek.push(day);
 
-      // If week is complete (7 days) or it's the last day, start a new week
       if (currentWeek.length === 7) {
         weeks.push([...currentWeek]);
         currentWeek = [];
       }
     }
 
-    // Add the last incomplete week if it exists
     if (currentWeek.length > 0) {
-      // Fill remaining cells with null
       while (currentWeek.length < 7) {
         currentWeek.push(null);
       }
@@ -428,27 +410,22 @@ export function DatePicker(props: DatePickerProps) {
       day
     );
 
-    // Check if date is disabled
     if (isDateDisabled(selectedDate)) return;
 
-    // If no start date or both dates are selected, start fresh
     if (!tempRange.startDate || (tempRange.startDate && tempRange.endDate)) {
       setTempRange({
         startDate: selectedDate,
         endDate: null,
       });
     } else {
-      // We have a start date but no end date
       const startDate = tempRange.startDate;
 
       if (selectedDate < startDate) {
-        // If selected date is before start date, make it the new start date
         setTempRange({
           startDate: selectedDate,
           endDate: null,
         });
       } else {
-        // Selected date is after start date, make it the end date
         setTempRange({
           startDate,
           endDate: selectedDate,
@@ -469,7 +446,6 @@ export function DatePicker(props: DatePickerProps) {
       day
     );
 
-    // Check if date is disabled
     if (isDateDisabled(newDate)) return;
 
     setCurrentDate(newDate);
@@ -682,7 +658,6 @@ export function DatePicker(props: DatePickerProps) {
 
               const disabled = dayDate ? isDateDisabled(dayDate) : false;
 
-              // Range-specific styling
               const inRange = dayDate ? isDateInRange(dayDate) : false;
               const rangeEndpoints = dayDate
                 ? isRangeEndpoint(dayDate)
@@ -1184,7 +1159,6 @@ export function DatePicker(props: DatePickerProps) {
               )
             ) : null}
 
-            {/* Label takes 1/3 of available width when present */}
             {label && (
               <View style={{ flex: 1 }}>
                 <Text
@@ -1204,7 +1178,6 @@ export function DatePicker(props: DatePickerProps) {
             )}
           </View>
 
-          {/* Text takes 2/3 of available width when label is present, or full width when no label */}
           <View style={{ flex: 1 }}>
             <Text
               ellipsizeMode="tail"
