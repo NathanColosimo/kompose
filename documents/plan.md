@@ -319,7 +319,7 @@ separate `Kompose Dev` profile.
   - API contracts validate with `z.uuidv7()`.
 
 ### 6.6 Calendar Event Fetch Window & Client-Side Caching
-- **Month-anchored fetch window**: Google events fetched in a month-anchored window (start of month ±15 days) to avoid refetching when moving between days in the same month.
+- **Month fetch windows**: Google events are fetched one calendar month per query, for every month the visible days ±7 touch (`eventWindowsAtom`). Every view within a month shares its query, and paging into the next month finds it already loaded.
 - **Stable query keys**: TanStack Query keys include the month anchor so intra-month navigation reuses cache; crossing into a new month triggers a single refresh.
 - **Simplified layout**: Horizontal buffering/snap removed; week view uses a stable 7-day slice derived from `currentDate`.
 - Note: This is the *client-side* TanStack Query cache. For the *server-side* Redis cache, see section 6.10.
@@ -403,8 +403,8 @@ separate `Kompose Dev` profile.
 
 ### 6.16 OpenTelemetry
 - **Server-side only**: No client-side OTel SDK in web or native. Network latency is measured via `x-request-start` header (injected by both clients, read on server).
-- **Stack**: `TracerProvider` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `BatchSpanProcessor` → `SpanAttributeFilter` → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
-- **Key config**: no resource detectors (no noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `SpanAttributeFilter` strips `next.span_name`/`next.span_type`.
+- **Stack**: `TracerProvider` + `ORPCInstrumentation` + Effect `Tracer.layerGlobal` → all spans flow through a single `TracerProvider` → `ExportSpanProcessor` (batching) → `OTLPTraceExporter` → Axiom (prod) or Jaeger (local).
+- **Key config**: no resource detectors (no noisy resource attributes), `NEXT_OTEL_FETCH_DISABLED=1` (disables Next.js fetch auto-instrumentation), `ExportSpanProcessor` strips `next.span_name`/`next.span_type` and flushes at request end on Vercel.
 - **Instrumentation hook**: `apps/web/src/instrumentation.ts` ensures the provider is registered before Next.js creates root request spans.
 - See [`otel.md`](./otel.md) for full details.
 

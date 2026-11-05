@@ -1,4 +1,4 @@
-import { Database, DatabaseLive } from "@kompose/db";
+import { Database, DatabaseLive, runtimeMemoMap } from "@kompose/db";
 import { account as accountTable } from "@kompose/db/schema/auth";
 import { env } from "@kompose/env";
 import type { BetterAuthPlugin } from "better-auth";
@@ -61,7 +61,10 @@ const accountSelectionSchema = z.strictObject({
   userId: z.string().optional(),
 });
 
-const whoopDatabaseRuntime = ManagedRuntime.make(DatabaseLive);
+// Shares the API runtime's Postgres pool through the memo map.
+const whoopDatabaseRuntime = ManagedRuntime.make(DatabaseLive, {
+  memoMap: runtimeMemoMap,
+});
 
 function scopes(scope: string) {
   return scope.split(",");
@@ -155,23 +158,50 @@ const refreshWhoopTokens = Effect.fn("WhoopOAuth.refreshTokens")(function* (
   };
 });
 
+type AccountRow = typeof accountTable.$inferSelect;
+
+/** The stored tokens, if all are present and the access token isn't about to expire. */
+function freshStoredTokens(account: AccountRow | undefined) {
+  if (!account) {
+    return;
+  }
+  const { accessToken, accessTokenExpiresAt, refreshToken, scope } = account;
+  if (!(accessToken && accessTokenExpiresAt && refreshToken && scope)) {
+    return;
+  }
+  if (accessTokenExpiresAt.getTime() - Date.now() <= TOKEN_REFRESH_WINDOW_MS) {
+    return;
+  }
+  return { accessToken, accessTokenExpiresAt, refreshToken, scope };
+}
+
 const getWhoopTokensEffect = Effect.fn("WhoopOAuth.getTokens")(function* (
   request: WhoopTokenRequest
 ) {
   const db = yield* Database;
+  const accountRow = and(
+    eq(accountTable.id, request.accountId),
+    eq(accountTable.providerId, WHOOP_PROVIDER_ID),
+    eq(accountTable.userId, request.userId)
+  );
+
+  // Most calls find a token that is still valid. Read it without a
+  // transaction or row lock, so concurrent requests don't queue on the row.
+  // Only a refresh takes the lock.
+  if (request.type === "accessToken") {
+    const [account] = yield* db.select().from(accountTable).where(accountRow);
+    const stored = freshStoredTokens(account);
+    if (stored) {
+      return stored;
+    }
+  }
 
   return yield* db.transaction((tx) =>
     Effect.gen(function* () {
       const [account] = yield* tx
         .select()
         .from(accountTable)
-        .where(
-          and(
-            eq(accountTable.id, request.accountId),
-            eq(accountTable.providerId, WHOOP_PROVIDER_ID),
-            eq(accountTable.userId, request.userId)
-          )
-        )
+        .where(accountRow)
         .for("update");
 
       if (!account) {
@@ -219,17 +249,13 @@ const getWhoopTokensEffect = Effect.fn("WhoopOAuth.getTokens")(function* (
         );
       }
 
-      if (
-        request.type === "accessToken" &&
-        account.accessTokenExpiresAt.getTime() - Date.now() >
-          TOKEN_REFRESH_WINDOW_MS
-      ) {
-        return {
-          accessToken: account.accessToken,
-          accessTokenExpiresAt: account.accessTokenExpiresAt,
-          refreshToken: account.refreshToken,
-          scope: account.scope,
-        };
+      // Check again under the lock: a concurrent caller may have refreshed
+      // while this one waited, so use its token instead of refreshing again.
+      // A refresh only ever uses the refresh token read under the lock,
+      // because WHOOP refresh tokens are single-use.
+      const stored = freshStoredTokens(account);
+      if (request.type === "accessToken" && stored) {
+        return stored;
       }
 
       const token = yield* refreshWhoopTokens(account.refreshToken);

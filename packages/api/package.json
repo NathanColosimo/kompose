@@ -35,6 +35,7 @@
     "@orpc/opentelemetry": "catalog:",
     "@orpc/ratelimit": "catalog:",
     "@orpc/server": "catalog:",
+    "@vercel/functions": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

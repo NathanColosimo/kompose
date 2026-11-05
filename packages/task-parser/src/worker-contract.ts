@@ -1,7 +1,7 @@
 /**
- * The parser Worker's procedures (worker.ts implements them, worker-client.ts
- * calls them), and the serializer both sides use so Temporal values cross
- * as themselves.
+ * The parser worker's procedures (worker-server.ts implements them,
+ * worker-client.ts calls them), and the serializer both sides use so Temporal
+ * values cross as themselves.
  */
 import { type RPCJsonSerializerHandler, RPCSerializer } from "@orpc/client";
 import { oc, type } from "@orpc/contract";
