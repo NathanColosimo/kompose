@@ -1,4 +1,11 @@
-/** Shared calendar layout; see documents/state.md for the column and stacking rules. */
+/**
+ * Horizontal layout for overlapping calendar items (web + native):
+ * - Overlapping items that start within 30 minutes of each other sit side by
+ *   side, up to 3 columns.
+ * - Items that start 30+ minutes later stack on top of the earlier one.
+ * - An item widens into columns to its right that are free (or stackable)
+ *   for its time range.
+ */
 
 /** Threshold in minutes: events starting closer than this are displayed side-by-side */
 const SIDE_BY_SIDE_THRESHOLD_MINUTES = 30;
@@ -105,7 +112,11 @@ function assignColumnsToCluster(
   return result;
 }
 
-/** Use the column-assignment threshold for expansion too, so stackable items can share width. */
+/**
+ * How many columns each item spans: it widens into each column to its right
+ * whose items it doesn't overlap or can stack on (it started at least
+ * SIDE_BY_SIDE_THRESHOLD_MINUTES later), the same rule column assignment uses.
+ */
 function calculateColumnSpans(
   cluster: PositionedItem[],
   columnAssignments: Map<string, { columnIndex: number; zIndex: number }>,
