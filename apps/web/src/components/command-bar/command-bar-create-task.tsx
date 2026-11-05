@@ -45,7 +45,6 @@ const TAG_QUERY_PATTERN = /#([^#]*)$/;
 const URL_PATTERN = /https?:\/\/\S+/g;
 const EMPTY_TAGS: TagSelect[] = [];
 
-/** Fallback title when no typed title and no metadata */
 function fallbackTitle(link: string): string {
   try {
     return new URL(link).hostname;
@@ -54,7 +53,6 @@ function fallbackTitle(link: string): string {
   }
 }
 
-/** What the create item shows and creates. */
 interface TaskDraft extends TaskFields {
   tags: TagOption[];
 }
@@ -77,7 +75,7 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
   };
 }
 
-/** A linked video's length in minutes, if its metadata has one. */
+/** Round link media durations up to whole minutes. */
 function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
   if (meta && "durationSeconds" in meta && meta.durationSeconds > 0) {
     return Math.ceil(meta.durationSeconds / 60);
@@ -85,7 +83,6 @@ function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
   return null;
 }
 
-/** Build task data from parsed input and resolved link metadata */
 function buildTaskDataFromParsed(
   parsed: TaskDraft,
   linkMetaMap: Record<string, LinkMeta>,
@@ -156,7 +153,6 @@ function PreviewBadge({
   );
 }
 
-/** Label for a start date, with the time when one was given. */
 function startLabel(date: Temporal.PlainDate, time: Temporal.PlainTime | null) {
   const day = formatPlainDate(date, DATE_FORMAT);
   return time ? `${day} · ${time.toLocaleString(undefined, TIME_FORMAT)}` : day;
@@ -173,21 +169,12 @@ function smartFieldClassName(parse: MagicParse) {
 }
 
 interface CommandBarCreateTaskProps {
-  /** Callback when a task is successfully created (to clear/reset input) */
   onCreated: () => void;
-  /** Callback to update the search input */
   onUpdateSearch: (next: string) => void;
   search: string;
 }
 
-/**
- * CommandBarCreateTask - Create task sub-view.
- *
- * The on-device model (useMagicTask) reads the title, dates, duration,
- * repeat, links, description and tags from free text ("call mom tomorrow
- * at 4 for 30m #family"); typing # suggests the user's tags. Shows a live
- * preview and creates the task on Enter.
- */
+/** See documents/command-bar.md for parsing, link enrichment, and submit behavior. */
 export function CommandBarCreateTask({
   search,
   onCreated,
@@ -210,14 +197,12 @@ export function CommandBarCreateTask({
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
 
-  // Track parsed metadata for each URL, keyed by URL string
   const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
   const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
   const lastParsedUrls = useRef<string[]>([]);
 
   const parseLinkMutate = parseLink.mutate;
 
-  // Fire parse requests for any newly detected URLs
   const dispatchParses = useCallback(
     (urls: string[]) => {
       const previous = lastParsedUrls.current;
@@ -255,10 +240,7 @@ export function CommandBarCreateTask({
     [parseLinkMutate]
   );
 
-  // Debounce URL parsing so partial URLs typed mid-keystroke don't trigger
-  // backend calls — only fire once the URL token stabilises (500ms idle).
-  // The timer resets on every keystroke; dispatchParses internally skips
-  // URLs that have already been parsed.
+  // Wait for 500ms idle so partially typed URLs do not trigger backend calls.
   useEffect(() => {
     const urls = parsed.links;
     const timer = setTimeout(() => {
@@ -267,7 +249,6 @@ export function CommandBarCreateTask({
     return () => clearTimeout(timer);
   }, [parsed.links, dispatchParses]);
 
-  // First link's metadata is used for auto-fill
   const firstLinkMeta =
     parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
 
@@ -322,11 +303,9 @@ export function CommandBarCreateTask({
     });
   };
 
-  // Duration for display; a parsed one takes priority over the link's
   const effectiveDuration =
     parsed.durationMinutes ?? linkDurationMinutes(firstLinkMeta);
 
-  // Keep the rendered label free to update from link metadata.
   const createItemLabel =
     parsed.title ||
     firstLinkMeta?.title ||
@@ -407,7 +386,6 @@ export function CommandBarCreateTask({
                   </PreviewBadge>
                 )}
 
-                {/* Link badges — one per detected URL */}
                 {parsed.links.map((url) => {
                   const meta = linkMetaMap[url];
                   return (

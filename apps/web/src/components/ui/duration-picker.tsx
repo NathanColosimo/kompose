@@ -105,7 +105,6 @@ export function DurationPicker({
             })}
           </div>
 
-          {/* Custom input for non-preset values */}
           <div className="flex items-center gap-2">
             <Input
               className="h-7 flex-1 text-xs"

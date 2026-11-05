@@ -3,7 +3,6 @@ import { clampZonedDateTime, getDayBoundsZoned } from "@/lib/temporal-utils";
 
 export const MINUTES_STEP = 15;
 
-/** Clamp resize start to valid bounds */
 export function clampResizeStart(
   target: Temporal.ZonedDateTime,
   originalStart: Temporal.ZonedDateTime,
@@ -20,7 +19,6 @@ export function clampResizeStart(
     : clampedToDay;
 }
 
-/** Clamp resize end to valid bounds */
 export function clampResizeEnd(
   target: Temporal.ZonedDateTime,
   originalStart: Temporal.ZonedDateTime
@@ -33,7 +31,6 @@ export function clampResizeEnd(
   return clampZonedDateTime(target, earliestEnd, dayEnd);
 }
 
-/** Calculate duration in minutes between two ZonedDateTimes */
 export function durationInMinutes(
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime,

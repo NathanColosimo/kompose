@@ -10,8 +10,6 @@ import { notFound } from "next/navigation";
 import { source } from "@/lib/source";
 import { getMDXComponents } from "@/mdx-components";
 
-// Catch-all route that renders individual doc pages.
-// Fumadocs' DocsPage provides TOC, breadcrumbs, and prev/next pagination.
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
 }) {
@@ -43,7 +41,6 @@ export default async function Page(props: {
   );
 }
 
-// Pre-render all doc pages at build time for static export compatibility.
 export async function generateStaticParams() {
   return source.generateParams();
 }

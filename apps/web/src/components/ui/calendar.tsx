@@ -12,7 +12,6 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// Calendar component sub-components (moved outside to avoid nested definitions)
 function CalendarRoot({
   className: rootClassName,
   rootRef,

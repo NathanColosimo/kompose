@@ -14,12 +14,7 @@ import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { usePreloadTaskParser } from "@/lib/use-magic-task";
 
-/**
- * Dedicated command bar page for the desktop popup window.
- * Renders only the command-bar surface for the popup window. The web dialog
- * wrapper is intentionally skipped here because the popup already owns its own
- * native window and should size directly to the command surface.
- */
+/** The native window owns sizing, so render the surface without a dialog shell. */
 export default function DesktopCommandBarClient() {
   useHydrateAtoms([[commandBarOpenAtom, true]]);
   usePreloadTaskParser();
@@ -48,7 +43,6 @@ export default function DesktopCommandBarClient() {
     view = "content";
   }
 
-  // Open the command bar when the window gains focus.
   useMountEffect(() => {
     if (!isDesktopRuntime()) {
       return;

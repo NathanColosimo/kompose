@@ -33,17 +33,14 @@ const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 interface SidebarContextProps {
-  // Left sidebar state
   leftState: "expanded" | "collapsed";
   leftOpen: boolean;
   setLeftOpen: (open: boolean) => void;
   toggleLeftSidebar: () => void;
-  // Right sidebar state
   rightState: "expanded" | "collapsed";
   rightOpen: boolean;
   setRightOpen: (open: boolean) => void;
   toggleRightSidebar: () => void;
-  // Mobile state (shared)
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
@@ -56,7 +53,6 @@ interface SidebarContextProps {
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
-/** Context to track which side (left/right) the current Sidebar is on */
 const SidebarSideContext = React.createContext<"left" | "right">("left");
 
 function useSidebar() {
@@ -68,7 +64,6 @@ function useSidebar() {
   return context;
 }
 
-/** Hook to get the current sidebar's side (left or right) */
 function useSidebarSide() {
   return React.use(SidebarSideContext);
 }
@@ -89,13 +84,11 @@ function SidebarProvider({
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // Use Jotai atoms for left and right sidebar state with localStorage persistence.
   const [leftOpenAtomValue, setLeftOpenAtomValue] =
     useAtom(sidebarLeftOpenAtom);
   const [rightOpenAtomValue, setRightOpenAtomValue] =
     useAtom(sidebarRightOpenAtom);
 
-  // Left sidebar state (controlled via openProp or atom)
   const leftOpen = openProp ?? leftOpenAtomValue;
   const setLeftOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
@@ -109,7 +102,6 @@ function SidebarProvider({
     [setOpenProp, leftOpen, setLeftOpenAtomValue]
   );
 
-  // Right sidebar state (always uses atom)
   const rightOpen = rightOpenAtomValue;
   const setRightOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
@@ -119,7 +111,6 @@ function SidebarProvider({
     [rightOpen, setRightOpenAtomValue]
   );
 
-  // Helpers to toggle each sidebar
   const toggleLeftSidebar = React.useCallback(
     () =>
       isMobile
@@ -136,7 +127,6 @@ function SidebarProvider({
     [isMobile, setRightOpen]
   );
 
-  // Legacy toggle (defaults to left sidebar)
   const toggleSidebar = toggleLeftSidebar;
 
   // Adds a keyboard shortcut to toggle the left sidebar (Cmd/Ctrl+B).
@@ -155,27 +145,22 @@ function SidebarProvider({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleLeftSidebar]);
 
-  // State strings for data attributes
   const leftState = leftOpen ? "expanded" : "collapsed";
   const rightState = rightOpen ? "expanded" : "collapsed";
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
-      // Left sidebar
       leftState,
       leftOpen,
       setLeftOpen,
       toggleLeftSidebar,
-      // Right sidebar
       rightState,
       rightOpen,
       setRightOpen,
       toggleRightSidebar,
-      // Mobile (shared)
       isMobile,
       openMobile,
       setOpenMobile,
-      // Legacy compatibility (defaults to left)
       state: leftState,
       open: leftOpen,
       setOpen: setLeftOpen,
@@ -239,10 +224,8 @@ function Sidebar({
   const { isMobile, leftState, rightState, openMobile, setOpenMobile } =
     useSidebar();
 
-  // Pick the correct state based on which side this sidebar is on
   const state = side === "right" ? rightState : leftState;
 
-  // Wrap children with side context so child components know which sidebar they're in
   const wrappedChildren = (
     <SidebarSideContext.Provider value={side}>
       {children}
@@ -322,7 +305,6 @@ function Sidebar({
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:-left-(--sidebar-width)"
             : "right-0 group-data-[collapsible=offcanvas]:-right-(--sidebar-width)",
-          // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
@@ -374,7 +356,6 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleLeftSidebar, toggleRightSidebar } = useSidebar();
   const side = useSidebarSide();
 
-  // Use the correct toggle function based on which sidebar this rail belongs to
   const toggleSidebar =
     side === "right" ? toggleRightSidebar : toggleLeftSidebar;
 

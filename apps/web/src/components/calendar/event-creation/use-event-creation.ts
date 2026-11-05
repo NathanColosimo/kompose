@@ -19,46 +19,28 @@ import { isSameDay } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import { MINUTES_STEP } from "../dnd/helpers";
 
-/** Default event duration in minutes when clicking (not dragging) */
 export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
-/** State for event creation via click-and-drag */
 interface EventCreationState {
-  /** Which Google account to use */
   accountId: string | null;
-  /** Which calendar to create on */
   calendarId: string | null;
-  /** Current drag end position (null when not creating) */
   endDateTime: Temporal.ZonedDateTime | null;
-  /** Hover preview position when not dragging */
   hoverDateTime: Temporal.ZonedDateTime | null;
-  /** Currently in creation drag mode */
   isCreating: boolean;
   /** Reference to the preview element for popover positioning */
   previewElement: HTMLDivElement | null;
-  /** Whether the popover should be open after creation ends */
   showPopover: boolean;
-  /** Where the drag started (null when not creating) */
   startDateTime: Temporal.ZonedDateTime | null;
 }
 
-/** Actions for managing event creation */
 interface EventCreationActions {
-  /** Cancel creation (e.g., Escape key) */
   cancelCreation: () => void;
-  /** Close the popover */
   closePopover: () => void;
-  /** Called when mouse moves to a different slot during drag */
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse enters a time slot (for hover preview) */
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse leaves the calendar area */
   onSlotLeave: () => void;
-  /** Called when mouse down on a time slot (start creation) */
   onSlotMouseDown: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse up to end creation */
   onSlotMouseUp: () => void;
-  /** Set the preview element ref for popover positioning */
   setPreviewElement: (element: HTMLDivElement | null) => void;
 }
 
@@ -86,10 +68,7 @@ const initialState: EventCreationState = {
 export const EventCreationContext =
   createContext<EventCreationContextValue | null>(null);
 
-/**
- * Hook to access event creation context.
- * Must be used within EventCreationProvider.
- */
+/** Read the EventCreationContext supplied by DaysView. */
 export function useEventCreation(): EventCreationContextValue {
   const context = use(EventCreationContext);
   if (!context) {
@@ -100,22 +79,17 @@ export function useEventCreation(): EventCreationContextValue {
   return context;
 }
 
-/**
- * Hook to manage event creation state.
- * Returns state and actions for the EventCreationProvider.
- */
+/** State and actions that DaysView provides through EventCreationContext. */
 export function useEventCreationState(): EventCreationContextValue {
   const visibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const allCalendars = useAtomValue(googleCalendarsDataAtom);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
-  // Get the first visible calendar (primary preference) for creating events
   const defaultCalendar = useMemo(() => {
     if (visibleCalendars.length === 0) {
       return null;
     }
-    // Try to find a primary calendar first
     const primaryCalendar = allCalendars.find(
       (c) =>
         c.calendar.primary &&
@@ -129,11 +103,9 @@ export function useEventCreationState(): EventCreationContextValue {
         calendarId: primaryCalendar.calendar.id,
       };
     }
-    // Fall back to first visible calendar
     return visibleCalendars[0];
   }, [visibleCalendars, allCalendars]);
 
-  // Update hover preview position
   const onSlotHover = useCallback((dateTime: Temporal.ZonedDateTime) => {
     setState((prev) => {
       // Don't update hover if we're in creation mode. Mouse moves within the
@@ -145,7 +117,6 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Clear hover preview when leaving calendar
   const onSlotLeave = useCallback(() => {
     setState((prev) => {
       if (prev.isCreating) {
@@ -155,24 +126,18 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Refs for document-level drag listeners. The slot-level React listeners
-  // stop firing when the cursor crosses an existing event (events render with
-  // `pointer-events-auto` above the slots). Document-level native listeners
-  // aren't blocked, so we attach them on mousedown and remove on mouseup.
+  // Document listeners keep creation dragging across events that cover slot elements.
   const startDateTimeRef = useRef<Temporal.ZonedDateTime | null>(null);
   const documentListenerCleanupRef = useRef<(() => void) | null>(null);
 
-  // Safety: remove any leaked document listeners on unmount.
   useEffect(() => () => documentListenerCleanupRef.current?.(), []);
 
-  // Update end position during drag
   const onSlotDragMove = useCallback((dateTime: Temporal.ZonedDateTime) => {
     setState((prev) => {
       if (!(prev.isCreating && prev.startDateTime)) {
         return prev;
       }
       const dragStartDateTime = startDateTimeRef.current ?? prev.startDateTime;
-      // Only allow same-day creation
       if (!isSameDay(dragStartDateTime, dateTime)) {
         return prev;
       }
@@ -180,7 +145,6 @@ export function useEventCreationState(): EventCreationContextValue {
       // Add MINUTES_STEP to get the bottom of the slot
       const slotEnd = dateTime.add({ minutes: MINUTES_STEP });
 
-      // Determine if dragging forward or backward
       const isForward =
         Temporal.ZonedDateTime.compare(slotEnd, dragStartDateTime) > 0;
 
@@ -203,7 +167,6 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // End creation on mouse up, show popover
   const onSlotMouseUp = useCallback(() => {
     documentListenerCleanupRef.current?.();
     setState((prev) => {
@@ -218,9 +181,7 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Start creation on mouse down, centered on cursor position.
-  // Also attaches document-level mousemove/mouseup so the drag stays
-  // continuous even when the cursor passes over existing events.
+  // Center the initial range on the cursor.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
@@ -308,19 +269,16 @@ export function useEventCreationState(): EventCreationContextValue {
     [defaultCalendar, onSlotDragMove, onSlotMouseUp]
   );
 
-  // Cancel creation entirely
   const cancelCreation = useCallback(() => {
     documentListenerCleanupRef.current?.();
     setState(initialState);
   }, []);
 
-  // Close popover (after save or discard)
   const closePopover = useCallback(() => {
     documentListenerCleanupRef.current?.();
     setState(initialState);
   }, []);
 
-  // Set the preview element ref for popover positioning
   const setPreviewElement = useCallback((element: HTMLDivElement | null) => {
     setState((prev) => ({ ...prev, previewElement: element }));
   }, []);
@@ -348,7 +306,6 @@ export function useEventCreationState(): EventCreationContextValue {
     ]
   );
 
-  // Compute popover times with minimum duration applied
   const popoverTimes = useMemo(() => {
     if (!(state.startDateTime && state.endDateTime)) {
       return null;
@@ -356,7 +313,6 @@ export function useEventCreationState(): EventCreationContextValue {
     const start = state.startDateTime;
     let end = state.endDateTime;
 
-    // Ensure minimum duration
     const duration = end.since(start).total({ unit: "minutes" });
     if (duration < MINUTES_STEP) {
       end = start.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES });

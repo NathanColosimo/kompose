@@ -72,7 +72,6 @@ export function GoogleAccountsDropdown({
     [googleAccountProfiles]
   );
 
-  // Merge account info with accounts
   const accountsWithInfo: AccountWithInfo[] = useMemo(
     () =>
       googleAccounts.map((account) => {
@@ -87,7 +86,6 @@ export function GoogleAccountsDropdown({
     [accountProfilesById, googleAccounts]
   );
 
-  // Group calendars by account
   const calendarsByAccount = useMemo(() => {
     const grouped = new Map<string, CalendarWithSource[]>();
     for (const account of googleAccounts) {
@@ -102,7 +100,6 @@ export function GoogleAccountsDropdown({
     return grouped;
   }, [googleAccounts, googleCalendars]);
 
-  // Toggle a calendar's visibility
   const toggleCalendar = useCallback(
     (accountId: string, calendarId: string) => {
       setVisibleCalendars((prev) =>
@@ -121,7 +118,6 @@ export function GoogleAccountsDropdown({
     [resolvedVisibleCalendars]
   );
 
-  // Count of visible calendars
   const visibleCount = resolvedVisibleCalendars.length;
 
   const totalCount = googleCalendars.length;
@@ -234,7 +230,6 @@ function AccountCalendarsSection({
         </div>
       </div>
 
-      {/* Individual calendars for this account */}
       <div className="ml-3 border-l pl-2">
         {calendarItems}
         {calendars.length === 0 && (

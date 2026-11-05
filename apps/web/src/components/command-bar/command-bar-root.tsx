@@ -20,10 +20,6 @@ interface Action {
   view: Exclude<CommandBarView, "root">;
 }
 
-/**
- * Available actions in the command bar root view.
- * Each action can either navigate to a sub-view or execute directly.
- */
 const actions: Action[] = [
   {
     icon: ListTodoIcon,
@@ -39,12 +35,6 @@ const actions: Action[] = [
   },
 ];
 
-/**
- * CommandBarRoot - The main actions list shown when the command bar opens.
- *
- * Lists available actions that users can navigate with arrow keys and select with Enter.
- * Selecting an action with a `view` property navigates to that sub-view.
- */
 export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
   const handleSelect = (action: Action) => {
     onNavigate(action.view);

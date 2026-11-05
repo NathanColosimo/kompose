@@ -4,7 +4,6 @@ import type { Temporal } from "temporal-polyfill";
 
 export type DragDirection = "start" | "end";
 
-/** Data attached to each day column droppable */
 export interface DayColumnDropData {
   date: Temporal.PlainDate;
   timeZone: string;

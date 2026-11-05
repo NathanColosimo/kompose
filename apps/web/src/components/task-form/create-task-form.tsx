@@ -79,7 +79,6 @@ export function CreateTaskForm({
     defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
   });
 
-  // Watch startDate for recurrence editor reference
   const startDate = useWatch({ control, name: "startDate" });
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -316,7 +315,6 @@ export function CreateTaskForm({
                 )}
               />
             </div>
-            {/* Recurrence */}
             <div className="grid gap-2">
               <Label>Repeat</Label>
               <Controller

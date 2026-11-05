@@ -10,14 +10,10 @@ import {
 } from "@tanstack/react-query";
 import { Temporal } from "temporal-polyfill";
 
-/**
- * The magic box: a small on-device model (packages/task-parser) labels the
- * text and code resolves the labels into task fields. Parsing takes a few
- * milliseconds in a worker, so it runs on every keystroke without a debounce.
- */
+/** Live parser state; previous results remain visible while newer text is parsed. */
 export interface MagicParse {
   /**
-   * "off": the model isn't loaded yet, or there's no text.
+   * "off": no text, the model is unavailable, or parsing failed.
    * "reading": running; `task` is the result for earlier text, if any.
    */
   status: "off" | "reading" | "done";
@@ -25,9 +21,8 @@ export interface MagicParse {
 }
 
 /**
- * The parser runs in a SharedWorker, so a parse never blocks typing and every
- * window of the app (the desktop dashboard and command bar, for one) shares
- * one loaded model.
+ * Share one model across app windows without blocking typing.
+ * See documents/command-bar.md for worker loading and failure behavior.
  */
 function loadParser() {
   const worker = new SharedWorker(

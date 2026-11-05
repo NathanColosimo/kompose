@@ -6,12 +6,6 @@ import { CommandBarCreateTask } from "./command-bar-create-task";
 import { CommandBarRoot } from "./command-bar-root";
 import { CommandBarSearchTasks } from "./command-bar-search-tasks";
 
-/**
- * Available views in the command bar.
- * - root: Main actions list
- * - search-tasks: Task search sub-view
- * - create-task: Create task with NLP input
- */
 type CommandBarView = "root" | "search-tasks" | "create-task";
 
 interface CommandBarContentProps {
@@ -36,11 +30,7 @@ function activateCommandItem(
   selected.click();
 }
 
-/**
- * Reusable command bar body shared by the dashboard dialog and the
- * desktop popup window. Renders the Command surface with input, list,
- * and view-switching logic.
- */
+/** Shared by the dashboard dialog and desktop popup window. */
 export function CommandBarContent({
   onRequestClose,
   selectionMode = "local",
@@ -49,7 +39,6 @@ export function CommandBarContent({
   const [view, setView] = useState<CommandBarView>("root");
   const [search, setSearch] = useState("");
 
-  // Handle keyboard events at the Command level.
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -82,14 +71,12 @@ export function CommandBarContent({
     [onRequestClose, selectionMode, view]
   );
 
-  // Navigate to a specific view.
   const navigateToView = useCallback((targetView: CommandBarView) => {
     setView(targetView);
     setSearch("");
   }, []);
   const handleCreated = useCallback(() => setSearch(""), []);
 
-  // Derive placeholder text directly from the active command-bar mode.
   let placeholder = "Type a command or search...";
   if (view === "search-tasks") {
     placeholder = "Search tasks...";

@@ -8,7 +8,6 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
 
-// Marketing bullets used to keep the hero punchy without extra copy.
 const highlights = [
   {
     body: "Plan deep work blocks, drag tasks into your day, and keep commitments realistic.",

@@ -11,14 +11,9 @@ import {
 } from "./use-event-creation";
 
 interface CreationPreviewProps {
-  /** The PlainDate of this column */
   columnDate: Temporal.PlainDate;
 }
 
-/**
- * CreationPreview - Shows a preview rectangle during event creation.
- * Renders a faint 30-min block on hover, or a more prominent block during drag.
- */
 export const CreationPreview = memo(function CreationPreviewComponent({
   columnDate,
 }: CreationPreviewProps) {
@@ -26,12 +21,9 @@ export const CreationPreview = memo(function CreationPreviewComponent({
   const { isCreating, hoverDateTime, startDateTime, endDateTime } = state;
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // Determine which preview to show
   const previewData = useMemo(() => {
-    // During creation drag, show the creation preview
     if (isCreating && startDateTime && endDateTime) {
       const startDate = startDateTime.toPlainDate();
-      // Only show in the column that matches the start date
       if (!startDate.equals(columnDate)) {
         return null;
       }
@@ -42,7 +34,6 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       };
     }
 
-    // When popover is about to show, keep the preview visible
     if (state.showPopover && popoverTimes) {
       const startDate = popoverTimes.start.toPlainDate();
       if (!startDate.equals(columnDate)) {
@@ -55,13 +46,11 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       };
     }
 
-    // Show hover preview when not creating, centered on cursor
     if (hoverDateTime && !isCreating) {
       const hoverDate = hoverDateTime.toPlainDate();
       if (!hoverDate.equals(columnDate)) {
         return null;
       }
-      // Offset start by half duration to center preview on cursor
       const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
       return {
         end: hoverDateTime.add({ minutes: halfDuration }),
@@ -102,7 +91,6 @@ export const CreationPreview = memo(function CreationPreviewComponent({
 
   const { type, start, end } = previewData;
 
-  // Calculate position
   const startMinutes = minutesFromMidnight(start);
   const durationMinutes = Math.round(
     end.since(start).total({ unit: "minutes" })

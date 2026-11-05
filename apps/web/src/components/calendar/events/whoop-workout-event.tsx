@@ -46,7 +46,6 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
   });
   const dayEnd = dayStart.add({ days: 1 });
 
-  // Clamp to column day boundaries
   const clampedStart =
     Temporal.ZonedDateTime.compare(workoutStart, dayStart) < 0
       ? dayStart
@@ -62,7 +61,6 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
     rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
   const durationMinutes = Math.max(15, endMinutes - startMinutes);
 
-  // Use unclamped times for the display label
   const displayStart = workoutStart;
   const displayEnd = workoutEnd;
 

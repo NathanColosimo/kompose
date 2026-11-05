@@ -2,7 +2,6 @@ import type { Temporal } from "temporal-polyfill";
 import { minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 
-/** Calculate an event's vertical position and height in the day grid. */
 export function calculateEventPosition(
   startTime: Temporal.ZonedDateTime,
   durationMinutes: number
