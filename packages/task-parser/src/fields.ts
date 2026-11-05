@@ -4,7 +4,6 @@ import type { TaskRecurrence } from "./recurrence";
 import type { Label, Span } from "./spans";
 import { isClockOnly, resolveWhen } from "./when";
 
-/** A task built from labelled spans. */
 export interface TaskFields {
   description: string | null;
   dueDate: Temporal.PlainDate | null;

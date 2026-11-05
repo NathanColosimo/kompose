@@ -1,5 +1,5 @@
 /**
- * Span labels; see training/SPEC.md. Words outside any span are dropped.
+ * Span labels; see training/SPEC.md. Unlabelled text is preserved in markup.
  */
 const LABELS = ["T", "D", "S", "U", "R", "M", "L", "G", "F"] as const;
 export type Label = (typeof LABELS)[number];

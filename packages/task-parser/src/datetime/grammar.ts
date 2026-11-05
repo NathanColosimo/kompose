@@ -376,7 +376,6 @@ function toOffset(amount: number, unit: Unit | "fortnight"): DaySpec | null {
 function monthAt(tokens: Token[], i: number): Read<number> {
   const of = is(tokens[i], "of") ? 1 : 0;
   const month = monthOf(tokens[i + of]);
-  // "may" is a month only next to a day number.
   return month ? { length: of + 1, value: month } : null;
 }
 
@@ -701,7 +700,7 @@ function quarterAt(tokens: Token[], i: number) {
   return match ? Number(match[1]) : null;
 }
 
-/** "november", "in november", "nov 2027", "next month" is a period. */
+/** A named month as a period: "november", "in november", "nov 2027". */
 function readMonth(tokens: Token[], i: number): Read<DaySpec> {
   const lead = is(tokens[i], "in", "this", "next") ? 1 : 0;
   const month = monthOf(tokens[i + lead]);
@@ -1482,7 +1481,6 @@ function readEveryUnit(
   return date && repeatOf(at - i + date.length, "YEARLY", { interval });
 }
 
-/** Reads a whole phrase. */
 export function parsePhrase(tokens: Token[], repeating = false): Phrase {
   const phrase: Phrase = {
     day: null,
@@ -2020,7 +2018,6 @@ function readWeekdayWithDate(tokens: Token[], i: number): Read<DaySpec> {
   return date ? { length: 1 + comma + date.length, value: date.value } : null;
 }
 
-/** Where a day read after a marker goes. */
 function placeDay(phrase: Phrase, day: DaySpec, marker: Marker) {
   if (marker === "until") {
     if (phrase.repeat) {

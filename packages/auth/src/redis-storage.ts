@@ -11,11 +11,8 @@ return value
 `;
 
 /**
- * Redis-backed secondary storage for Better Auth.
- *
- * Stores session data and rate limit counters in Redis instead of Postgres,
- * reducing database load on high-frequency operations like getSession
- * (called on every oRPC request via createContext).
+ * Keep frequent session reads and rate limit counters off Postgres.
+ * See documents/caching.md.
  */
 export const redisSecondaryStorage: SecondaryStorage = {
   async delete(key) {
