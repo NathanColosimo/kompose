@@ -50,7 +50,6 @@ function combineDateAndTime(
   if (master.date) {
     return { date: master.date };
   }
-  // If either is missing, fall back to edited or master as-is
   if (!master.dateTime || !edited.dateTime) {
     return {
       dateTime: edited.dateTime ?? master.dateTime,
@@ -66,7 +65,7 @@ function combineDateAndTime(
       timeZone: pickTimeZone(edited, master),
     };
   }
-  const timePartWithOffset = edited.dateTime.slice(11); // includes offset
+  const timePartWithOffset = edited.dateTime.slice(11);
   return {
     dateTime: `${masterDatePart}T${timePartWithOffset}`,
     timeZone: pickTimeZone(edited, master),
@@ -249,7 +248,7 @@ export type GoogleCalendarService = {
    * - `all`: deletes the series master
    * - `following`: truncates the original series at the occurrence date
    *
-   * If `scope !== "this"` and the event is not recurring, this returns an error.
+   * Non-recurring events accept `all`; only `following` requires a series.
    */
   readonly deleteEvent: (
     calendarId: string,
@@ -261,7 +260,6 @@ export type GoogleCalendarService = {
     event: Event
   ) => Effect.Effect<Event, GoogleApiError | GoogleCalendarZodError>;
 
-  // Colors
   readonly listColors: () => Effect.Effect<
     Colors,
     GoogleApiError | GoogleCalendarZodError
@@ -479,8 +477,7 @@ export function makeGoogleCalendarService(
   const listEvents = Effect.fn("GoogleCalendar.listEvents")(
     function* (calendarId: string, timeMin: string, timeMax: string) {
       yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-      // Google pages at 250 events by default; a padded month of expanded
-      // recurring events can exceed that, so ask for the max and follow pages.
+      // Expanded recurring events can exceed one page; request the maximum and follow page tokens.
       const items: unknown[] = [];
       let pageToken: string | undefined;
       do {
@@ -553,9 +550,6 @@ export function makeGoogleCalendarService(
       return parsed.data;
     });
 
-  /**
-   * Parse an event response and standardize Zod errors.
-   */
   const parseEventResponse = (response: unknown) =>
     Effect.gen(function* () {
       const parsed = EventSchema.safeParse(response);
@@ -774,7 +768,7 @@ export function makeGoogleCalendarService(
         },
       }).pipe(
         Effect.catch((createError) =>
-          // Restores master recurrence on error while returning the original error.
+          // Best-effort rollback; keep the create failure even if restoring recurrence fails.
           restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
         )
       );
@@ -807,17 +801,12 @@ export function makeGoogleCalendarService(
       }
     });
 
-  /**
-   * Delete a single instance by cancelling it (setting status to "cancelled").
-   * This creates an exception within the series without affecting other occurrences.
-   */
+  /** Cancel an occurrence without affecting the rest of its series. */
   const deleteEventThis = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
-      // Get the instance first to ensure it exists and preserve its structure
       const instance = yield* getEvent(calendarId, eventId);
 
-      // Update the instance to set status to "cancelled"
-      // The API requires preserving essential fields for recurring event exceptions
+      // Preserve the occurrence identity and time bounds when cancelling an exception.
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(eventId, {
@@ -836,45 +825,33 @@ export function makeGoogleCalendarService(
       });
     }).pipe(Effect.asVoid);
 
-  /**
-   * Delete the entire series by deleting the master event.
-   */
   const deleteEventAll = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
-      // Get the instance to resolve the master if needed
       const instance = yield* getEvent(calendarId, eventId);
 
-      // Determine if this is already the master or an instance
       const isRecurring = Boolean(
         instance.recurringEventId || instance.recurrence?.length
       );
 
       let masterId = eventId;
       if (instance.recurringEventId) {
-        // This is an instance, get the master
         const master = yield* getMasterRecurrence(calendarId, instance);
         masterId = master.id;
       } else if (!isRecurring) {
-        // Not a recurring event, just delete it directly
         return yield* Effect.tryPromise({
           try: () => client.calendars.events.delete(eventId, { calendarId }),
           catch: (cause) => new GoogleApiError({ cause }),
         }).pipe(Effect.asVoid);
       }
 
-      // Delete the master event
       return yield* Effect.tryPromise({
         try: () => client.calendars.events.delete(masterId, { calendarId }),
         catch: (cause) => new GoogleApiError({ cause }),
       }).pipe(Effect.asVoid);
     });
 
-  /**
-   * Delete all following instances by truncating the recurrence rule at the occurrence date.
-   */
   const deleteEventFollowing = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
-      // Get the instance to resolve the master and occurrence start
       const instance = yield* getEvent(calendarId, eventId);
 
       const isRecurring = Boolean(
@@ -899,7 +876,6 @@ export function makeGoogleCalendarService(
         );
       }
 
-      // Get the occurrence start time
       const originalStartIso =
         instance.originalStartTime?.dateTime ??
         instance.originalStartTime?.date ??
@@ -916,14 +892,12 @@ export function makeGoogleCalendarService(
 
       const occurrenceStart = new Date(originalStartIso);
 
-      // Truncate the recurrence rule at the occurrence date
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
         occurrenceStart,
         Boolean(master.start.date)
       );
 
-      // Update the master event with the truncated recurrence
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
@@ -937,9 +911,6 @@ export function makeGoogleCalendarService(
       });
     }).pipe(Effect.asVoid);
 
-  /**
-   * Delete an event with scope handling for recurring events.
-   */
   const deleteEvent = Effect.fn("GoogleCalendar.deleteEvent")(
     function* (calendarId: string, eventId: string, scope: RecurrenceScope) {
       yield* Effect.annotateCurrentSpan("calendarId", calendarId);
@@ -993,7 +964,6 @@ export function makeGoogleCalendarService(
         return yield* moveSingleEvent(calendarId, eventId, destinationCalendarId);
       }
 
-      // Fetch the instance so we can resolve the series master and occurrence start.
       const instance = yield* getEvent(calendarId, eventId);
 
       const isRecurring = Boolean(
@@ -1101,7 +1071,7 @@ export function makeGoogleCalendarService(
           },
         }).pipe(
           Effect.catch((createError) =>
-            // Restores master recurrence on error while returning the original error.
+            // Best-effort rollback; keep the create failure even if restoring recurrence fails.
             restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
           )
         );
@@ -1148,13 +1118,11 @@ export function makeGoogleCalendarService(
 
       const recurringEventId = parsed.data.recurringEventId;
       if (!recurringEventId) {
-        // Is single event with no recurrence
         if (!parsed.data.recurrence) {
           return yield* Effect.fail(
             new GoogleApiError({ cause: new Error("Event is not a recurring event") })
           );
         }
-        // Is master event already
         return parsed.data;
       }
 

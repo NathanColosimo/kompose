@@ -10,9 +10,6 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const PASTEL_MAX_SATURATION = 0.55;
 const PASTEL_MIN_LIGHTNESS = 0.78;
 
-/**
- * Colors palette per Google account, backed by TanStack Query cache.
- */
 const googleColorsAtomFamily = atomFamily((accountId: string) =>
   atomWithQuery<Colors>((get) => {
     const { orpc } = getStateConfig(get);

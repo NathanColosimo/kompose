@@ -9,9 +9,6 @@ import { linkedAccountsDataAtom } from "./google-data";
 
 const WHOOP_DAYS_QUERY_KEY = ["whoop", "days"] as const;
 
-// --- Account ---
-
-/** The linked WHOOP account, or null if none linked. */
 export const whoopAccountDataAtom = atom<Account | null>(
   (get) =>
     get(linkedAccountsDataAtom).find(
@@ -22,8 +19,6 @@ export const whoopAccountDataAtom = atom<Account | null>(
 export const whoopAccountIdAtom = atom<string | null>(
   (get) => get(whoopAccountDataAtom)?.accountId ?? null
 );
-
-// --- Day Summaries ---
 
 /**
  * Month-anchored window with ±7 day padding so a week view straddling a
@@ -67,10 +62,7 @@ const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
   };
 });
 
-/**
- * WHOOP day summaries keyed by YYYY-MM-DD date string.
- * Components read this directly via useAtomValue — no prop drilling needed.
- */
+/** Keys are local dates in YYYY-MM-DD format. */
 export const whoopSummariesByDayAtom = atom<Map<string, WhoopDaySummary>>(
   (get) => {
     const data = get(whoopSummariesQueryAtom).data;

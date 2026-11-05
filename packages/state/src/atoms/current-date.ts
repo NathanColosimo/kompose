@@ -9,19 +9,10 @@ import {
   todayPlainDate,
 } from "../temporal-utils";
 
-/**
- * User's timezone - defaults to system timezone.
- */
 export const timezoneAtom = atom<string>(getSystemTimeZone());
 
-/**
- * Currently selected/visible date for calendar view - defaults to today.
- */
 export const currentDateAtom = atom<Temporal.PlainDate>(todayPlainDate());
 
-/**
- * Number of visible days in the calendar view (1-7) with validation.
- */
 const visibleDaysCountBaseAtom = createPersistedAtom<number>(
   "visible-days-count",
   7
@@ -30,7 +21,6 @@ const visibleDaysCountBaseAtom = createPersistedAtom<number>(
 export const visibleDaysCountAtom = atom(
   (get) => get(visibleDaysCountBaseAtom),
   (_get, set, newValue: number) => {
-    // Clamp value to valid range 1-7, defaulting to 7 for invalid inputs.
     const rounded = Math.round(newValue);
     const clamped = Number.isNaN(rounded)
       ? 7
@@ -39,18 +29,12 @@ export const visibleDaysCountAtom = atom(
   }
 );
 
-/**
- * Mobile-specific visible days count, clamped to 1-3.
- * Derives from the shared atom but enforces mobile screen constraints.
- */
+/** Cap the shared preference at three days for mobile screens. */
 export const mobileVisibleDaysCountAtom = atom(
   (get) => Math.min(3, Math.max(1, get(visibleDaysCountAtom))) as 1 | 2 | 3,
   (_get, set, newValue: number) => set(visibleDaysCountAtom, newValue)
 );
 
-/**
- * Mobile-specific visible days array, limited to 1-3 days.
- */
 export const mobileVisibleDaysAtom = atom<Temporal.PlainDate[]>((get) => {
   const start = get(currentDateAtom);
   const count = get(mobileVisibleDaysCountAtom);
@@ -89,11 +73,7 @@ export function monthWindows(
   return windows;
 }
 
-/**
- * The windows event queries cover: each calendar month that the visible days,
- * plus EVENTS_PRELOAD_DAYS on each side, touch. Each month is one cached query
- * per calendar, shared by every view that shows part of it.
- */
+/** Cache one query per calendar and month so views reuse loaded events. See documents/state.md. */
 export const eventWindowsAtom = atom((get) => {
   const start = get(currentDateAtom);
   return monthWindows(
@@ -103,18 +83,9 @@ export const eventWindowsAtom = atom((get) => {
   );
 });
 
-/**
- * Tick counter incremented every 60s and on window focus/visibility to keep
- * today/now atoms fresh. Components should never read this directly — use
- * todayPlainDateAtom or nowZonedDateTimeAtom instead.
- */
+/** Internal refresh signal; components read todayPlainDateAtom or nowZonedDateTimeAtom. See useTodayTick. */
 export const todayTickAtom = atom(0);
 
-/**
- * Today's date in the user's timezone, reactively refreshed via todayTickAtom.
- * Unlike the stale useMemo approach, this stays correct across midnight
- * boundaries when the app is left open overnight.
- */
 const todayPlainDateTickAtom = atom((get) => {
   get(todayTickAtom);
   return todayPlainDate(get(timezoneAtom));
@@ -128,10 +99,6 @@ export const todayPlainDateAtom = selectAtom(
   (previous, next) => previous.equals(next)
 );
 
-/**
- * Current ZonedDateTime in the user's timezone, reactively refreshed via
- * todayTickAtom. Used for overdue detection (has a task's end time passed?).
- */
 export const nowZonedDateTimeAtom = atom((get) => {
   get(todayTickAtom);
   return Temporal.Now.zonedDateTimeISO(get(timezoneAtom));

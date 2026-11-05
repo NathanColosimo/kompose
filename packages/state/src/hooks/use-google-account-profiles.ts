@@ -13,9 +13,6 @@ export interface GoogleAccountProfile {
   profile: OAuth2UserInfo | null;
 }
 
-/**
- * Returns linked Google accounts enriched with profile metadata from provider.
- */
 export function useGoogleAccountProfiles({
   enabled = true,
 }: {

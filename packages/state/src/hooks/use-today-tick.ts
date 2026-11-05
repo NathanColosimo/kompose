@@ -6,22 +6,10 @@ import { todayTickAtom } from "../atoms/current-date";
 
 const REFRESH_INTERVAL_MS = 60_000;
 
-/**
- * Platform-specific resume subscriber type.
- * Called with a refresh callback; returns an unsubscribe function.
- *
- * Web: listen to visibilitychange + focus.
- * Native: listen to AppState "active" transitions.
- */
+/** Web subscribes to focus/visibility; native subscribes to AppState active transitions. */
 export type SubscribeToResume = (refresh: () => void) => () => void;
 
-/**
- * Keeps todayPlainDateAtom and nowZonedDateTimeAtom fresh by incrementing
- * todayTickAtom every 60 seconds. Optionally accepts a platform-specific
- * resume subscriber for immediate refresh on app foreground.
- *
- * Mounted in StateProvider — each platform passes its own subscriber.
- */
+/** Refresh today/now every minute and on resume so an open app stays correct across midnight. */
 export function useTodayTick(subscribeToResume?: SubscribeToResume) {
   const setTick = useSetAtom(todayTickAtom);
 

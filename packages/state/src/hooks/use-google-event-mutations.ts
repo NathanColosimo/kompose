@@ -22,9 +22,6 @@ export interface UpdateGoogleEventInput {
   recurrenceScope?: "this" | "all" | "following";
 }
 
-/**
- * Google event mutations for create, update, and delete operations.
- */
 export function useGoogleEventMutations() {
   const queryClient = useQueryClient();
   const { orpc, notifyError } = useStateConfig();
@@ -33,7 +30,6 @@ export function useGoogleEventMutations() {
     mutationFn: async (variables: CreateEventInput) =>
       orpc.googleCal.events.create(variables),
     onMutate: async (variables) => {
-      // Skip optimistic update for recurring events
       if (variables.event.recurrence?.length) {
         return { previousQueries: undefined, optimisticId: undefined };
       }
@@ -55,7 +51,6 @@ export function useGoogleEventMutations() {
         ...variables.event,
       };
 
-      // Append the optimistic event to every matching time-window query
       for (const [qk, data] of previousQueries) {
         if (Array.isArray(data)) {
           queryClient.setQueryData<Event[]>(qk, [...data, optimisticEvent]);
@@ -71,7 +66,6 @@ export function useGoogleEventMutations() {
       if (!createdEvent) {
         return;
       }
-      // Replace the optimistic placeholder with the real server event
       const queryKey = getGoogleEventsByCalendarQueryKey({
         accountId: _variables.accountId,
         calendarId: _variables.calendarId,

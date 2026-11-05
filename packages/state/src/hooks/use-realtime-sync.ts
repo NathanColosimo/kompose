@@ -78,17 +78,14 @@ export function useRealtimeSync({
   const { orpc } = useStateConfig();
 
   const invalidateTaskQueries = React.useCallback(() => {
-    // Tasks can be consumed via both useQuery and atomWithQuery. Refetching
-    // keeps atom-backed consumers in sync immediately across devices.
+    // Refresh inactive cached task lists too, as with calendar lists below.
     return queryClient.refetchQueries({ queryKey: TASKS_QUERY_KEY });
   }, [queryClient]);
 
   const invalidateGoogleCalendarQueries = React.useCallback(
     (event: Extract<SyncEvent, { type: "google-calendar" }>) => {
       if (event.payload.calendarId === GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID) {
-        // Calendars use atomWithQuery (Jotai), which doesn't auto-refetch on
-        // invalidateQueries (unlike useQueries hooks). refetchQueries forces an
-        // immediate refetch so the atom observer sees the new cache data.
+        // Refetch cached calendar lists even when no view currently observes them.
         return queryClient.refetchQueries({
           queryKey: GOOGLE_CALENDARS_QUERY_KEY,
         });
@@ -107,7 +104,7 @@ export function useRealtimeSync({
   const invalidateCriticalQueries = React.useCallback(() => {
     return Promise.all([
       invalidateTaskQueries(),
-      // Calendars use atomWithQuery — need refetch, not just invalidate
+      // Include inactive calendar lists, as in invalidateGoogleCalendarQueries.
       queryClient.refetchQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY }),
     ]);
@@ -214,9 +211,7 @@ export function useRealtimeSync({
         return;
       }
       inactivityTimer = setTimeout(() => {
-        // No events received within the timeout window — connection is
-        // likely dead. Force-close the iterator so the consume loop exits
-        // and triggers a reconnect.
+        // Close a silent stream so the consume loop can exit and reconnect.
         closeActiveIterator();
       }, INACTIVITY_TIMEOUT_MS);
     };
@@ -227,13 +222,10 @@ export function useRealtimeSync({
       }
       const current = activeIterator;
       activeIterator = null;
-      // Expo's fetch ReadableStream may already be closed when the server
-      // ends the SSE connection, causing a "stream is not in a state that
-      // permits close" error. This is safe to ignore during cleanup.
       try {
         await current.return?.();
       } catch {
-        // Expected on mobile when the stream is already closed.
+        // Expo may throw when the server has already closed the ReadableStream.
       }
     };
 

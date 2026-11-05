@@ -30,11 +30,6 @@ interface UseTasksOptions {
   refetchOnWindowFocus?: boolean | "always";
 }
 
-/**
- * Centralized hook for task fetching and mutations.
- * Follows the same pattern as Google events: useQuery for fetching,
- * optimistic updates in onMutate, rollback in onError, invalidate in onSettled.
- */
 export function useTasks(options: UseTasksOptions = {}) {
   const queryClient = useQueryClient();
   const { orpc, notifyError } = useStateConfig();
@@ -47,9 +42,6 @@ export function useTasks(options: UseTasksOptions = {}) {
     refetchOnWindowFocus: options.refetchOnWindowFocus,
   });
 
-  /**
-   * Create task mutation with optimistic updates.
-   */
   const createTask = useMutation({
     mutationFn: async (task: ClientTaskInsertDecoded) => {
       const encoded = clientTaskInsertCodec.encode(task);
@@ -111,7 +103,6 @@ export function useTasks(options: UseTasksOptions = {}) {
       if (!context?.optimisticId) {
         return;
       }
-      // Replace the optimistic placeholder with the real server response
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) => {
         if (!old) {
           return createdTasks;
@@ -124,9 +115,6 @@ export function useTasks(options: UseTasksOptions = {}) {
     },
   });
 
-  /**
-   * Update task mutation with optimistic updates.
-   */
   const updateTask = useMutation({
     mutationFn: async ({
       id,
@@ -197,9 +185,6 @@ export function useTasks(options: UseTasksOptions = {}) {
     },
   });
 
-  /**
-   * Delete task mutation with optimistic updates.
-   */
   const deleteTask = useMutation({
     mutationFn: async ({ id, scope }: { id: string; scope: DeleteScope }) =>
       await orpc.tasks.delete({ id, scope }),
@@ -230,7 +215,6 @@ export function useTasks(options: UseTasksOptions = {}) {
     },
   });
 
-  /** Parse a URL to extract provider metadata (title, duration, etc.) */
   const parseLink = useMutation({
     mutationFn: async (url: string) => await orpc.tasks.parseLink({ url }),
   });

@@ -5,9 +5,6 @@ export interface UnlinkAccountInput {
   accountId: string;
 }
 
-/**
- * Minimal auth client shape used by shared state.
- */
 export interface AuthClient {
   /** Select a local Better Auth account row by its ID. */
   accountInfo: (accountId: string) => Promise<OAuth2UserInfo | null>;

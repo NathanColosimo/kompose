@@ -5,9 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
 
-/**
- * Google event move mutation (supports recurrence scope).
- */
 export function useMoveGoogleEventMutation() {
   const queryClient = useQueryClient();
   const { orpc, notifyError } = useStateConfig();

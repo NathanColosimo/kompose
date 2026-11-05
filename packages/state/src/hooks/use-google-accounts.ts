@@ -4,9 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
 import { useStateConfig } from "../config";
 
-/**
- * Returns linked Better Auth accounts filtered to Google provider.
- */
 export function useGoogleAccounts() {
   const { authClient } = useStateConfig();
 

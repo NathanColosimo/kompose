@@ -4,9 +4,6 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useQuery } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 
-/**
- * Query key for a recurring series master event.
- */
 function recurringEventMasterQueryKey(params: {
   accountId: string;
   calendarId: string;
@@ -20,9 +17,6 @@ function recurringEventMasterQueryKey(params: {
   ] as const;
 }
 
-/**
- * Fetches the recurring master event for a recurring instance.
- */
 export function useRecurringEventMaster(params: {
   accountId: string;
   calendarId: string;

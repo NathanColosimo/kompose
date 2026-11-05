@@ -2,23 +2,14 @@ import type { AppRouterClient } from "@kompose/api/routers/index";
 import { atom, useAtomValue } from "jotai";
 import type { AuthClient } from "./types";
 
-/**
- * Shared state configuration provided by the host app.
- */
 export interface StateConfig {
   authClient: AuthClient;
   notifyError?: (error: Error) => void;
   orpc: AppRouterClient;
 }
 
-/**
- * Holds the host app configuration for shared state.
- */
 export const stateConfigAtom = atom<StateConfig | null>(null);
 
-/**
- * Helper for atoms that need access to config via `get`.
- */
 export function getStateConfig(
   get: (atom: typeof stateConfigAtom) => StateConfig | null
 ) {
@@ -29,9 +20,6 @@ export function getStateConfig(
   return config;
 }
 
-/**
- * Hook for accessing config in React components/hooks.
- */
 export function useStateConfig(): StateConfig {
   const config = useAtomValue(stateConfigAtom);
   if (!config) {
