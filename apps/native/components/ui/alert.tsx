@@ -16,7 +16,6 @@ interface AlertProps {
   style?: ViewStyle;
 }
 
-// Visual Alert Component (existing functionality)
 export function Alert({
   children,
   variant = "default",
@@ -114,7 +113,6 @@ interface NativeAlertOptions {
   cancelable?: boolean;
 }
 
-// Two-button native alert
 export const createTwoButtonAlert = (options: NativeAlertOptions) => {
   const { title, message, buttons } = options;
 
@@ -133,7 +131,6 @@ export const createTwoButtonAlert = (options: NativeAlertOptions) => {
   RNAlert.alert(title, message, buttons || defaultButtons);
 };
 
-// Three-button native alert
 export const createThreeButtonAlert = (options: NativeAlertOptions) => {
   const { title, message, buttons } = options;
 
@@ -156,12 +153,10 @@ export const createThreeButtonAlert = (options: NativeAlertOptions) => {
   RNAlert.alert(title, message, buttons || defaultButtons);
 };
 
-// Generic native alert function
 export const showNativeAlert = (options: NativeAlertOptions) => {
   const { title, message, buttons, cancelable = true } = options;
 
   if (!buttons || buttons.length === 0) {
-    // Simple alert with just OK button
     RNAlert.alert(title, message, [
       {
         text: "OK",
@@ -173,7 +168,6 @@ export const showNativeAlert = (options: NativeAlertOptions) => {
   }
 };
 
-// Convenience functions for common alert types
 export const showSuccessAlert = (
   title: string,
   message?: string,
@@ -232,5 +226,4 @@ export const showConfirmAlert = (
   });
 };
 
-// Export the React Native Alert for direct use
 export { RNAlert as NativeAlert };

@@ -113,28 +113,25 @@ export function SheetContent({ children, style }: SheetContentProps) {
   const borderColor = useColor("border");
   const iconColor = useColor("text");
 
-  // Animation values using Reanimated's useSharedValue
   const initialPosition = side === "left" ? -sheetWidth : sheetWidth;
   const translateX = useSharedValue(initialPosition);
   const overlayOpacity = useSharedValue(0);
 
-  // Effect to handle the animation based on the `open` prop
   useEffect(() => {
-    // Reset position if side changes while closed
+    // Reset the off-screen position when reopening, using the current side.
     if (open && !isVisible) {
       translateX.value = side === "left" ? -sheetWidth : sheetWidth;
     }
 
     if (open) {
-      setIsVisible(true); // Mount the modal
-      // Animate in
+      setIsVisible(true);
       translateX.value = withTiming(0, {
         duration: 300,
         easing: Easing.out(Easing.quad),
       });
       overlayOpacity.value = withTiming(1, { duration: 300 });
     } else if (isVisible) {
-      // Animate out, then hide modal in the callback
+      // Keep the modal mounted until its exit animation finishes.
       translateX.value = withTiming(
         initialPosition,
         { duration: 250 },
@@ -147,16 +144,14 @@ export function SheetContent({ children, style }: SheetContentProps) {
       );
       overlayOpacity.value = withTiming(0, { duration: 250 });
     }
-  }, [open, side, sheetWidth]); // Rerun if these change
+  }, [open, side, sheetWidth]);
 
-  // Animated style for the sheet content
   const animatedSheetStyle = useAnimatedStyle(() => {
     return {
       transform: [{ translateX: translateX.value }],
     };
   });
 
-  // Animated style for the overlay
   const animatedOverlayStyle = useAnimatedStyle(() => {
     return {
       opacity: interpolate(overlayOpacity.value, [0, 1], [0, 0.3]),
@@ -180,12 +175,10 @@ export function SheetContent({ children, style }: SheetContentProps) {
       visible={isVisible}
     >
       <View style={styles.modalContainer}>
-        {/* Semi-transparent overlay */}
         <Animated.View style={[styles.overlay, animatedOverlayStyle]}>
           <Pressable onPress={handleClose} style={styles.overlayPressable} />
         </Animated.View>
 
-        {/* Sheet */}
         <Animated.View
           style={[
             styles.sheet,
@@ -196,11 +189,10 @@ export function SheetContent({ children, style }: SheetContentProps) {
               width: sheetWidth,
               [side]: 0,
             },
-            animatedSheetStyle, // Apply the animated style
+            animatedSheetStyle,
             style,
           ]}
         >
-          {/* Close button */}
           <TouchableOpacity
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={handleClose}
@@ -215,15 +207,12 @@ export function SheetContent({ children, style }: SheetContentProps) {
             <X color={iconColor} size={20} />
           </TouchableOpacity>
 
-          {/* Content */}
           <View style={styles.contentContainer}>{children}</View>
         </Animated.View>
       </View>
     </Modal>
   );
 }
-
-// Unchanged components below
 
 export function SheetHeader({ children, style }: SheetHeaderProps) {
   return <View style={[styles.header, style]}>{children}</View>;
@@ -282,7 +271,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 50,
     zIndex: 1,
-    borderRadius: 999, // Make it circular
+    borderRadius: 999,
     width: 32,
     height: 32,
     alignItems: "center",

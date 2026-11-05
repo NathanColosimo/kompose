@@ -33,12 +33,8 @@ interface CalendarId {
 }
 
 /**
- * Calendar visibility picker for mobile.
- *
- * Behavior:
- * - `visibleCalendars === null` => selection is still materializing
- * - `visibleCalendars === []` => hide all
- * - else => show selected set
+ * A null stored preference selects all calendars; the resolved display value
+ * is always an array.
  */
 export function CalendarPickerModal({
   open,
@@ -99,7 +95,6 @@ export function CalendarPickerModal({
       snapPoints={[0.45, 0.75, 0.95]}
       title="Calendars"
     >
-      {/* Show all / Hide all actions */}
       <View className="mb-3 flex-row gap-2">
         <Button
           onPress={() => setVisibleCalendars(allCalendarIds)}
@@ -112,7 +107,6 @@ export function CalendarPickerModal({
         </Button>
       </View>
 
-      {/* Calendar list */}
       <ScrollView style={{ maxHeight: 520 }}>
         {googleAccounts.length === 0 ? (
           <Text className="py-2 text-muted-foreground">

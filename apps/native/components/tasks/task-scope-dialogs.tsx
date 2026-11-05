@@ -11,9 +11,6 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { RadioGroup } from "@/components/ui/radio";
 import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
-/**
- * Scope prompts shown when saving or deleting a recurring task.
- */
 export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
   return (
     <>

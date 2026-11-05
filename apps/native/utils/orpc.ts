@@ -19,13 +19,7 @@ import { uuidv7 } from "uuidv7";
 import { authClient } from "@/lib/auth-client";
 import { env } from "@/lib/env";
 
-/**
- * Generate a W3C traceparent header for distributed tracing.
- * Uses uuidv7 for time-ordered trace IDs, making it easier to
- * correlate traces with request timing in Axiom.
- * Lightweight alternative to a full OTel SDK on React Native --
- * gives trace correlation on the backend without client-side spans.
- */
+/** Correlate server traces without a native OTel SDK; see documents/otel.md. */
 function generateTraceparent(): string {
   const traceId = uuidv7().replace(/-/g, "");
   const parentId = uuidv7().replace(/-/g, "").slice(0, 16);
@@ -54,9 +48,8 @@ export const link = new RPCLink({
   async fetch(url, init) {
     const response = await expoFetch(url, {
       ...(init as ExpoFetchInit),
-      // Better Auth Expo already injects the session cookie manually.
-      // On iOS, letting fetch use native cookie handling can interfere
-      // with that header and break server-side session resolution.
+      // headers() attaches the Better Auth cookie. Native cookie handling on
+      // iOS can interfere with that header and break session resolution.
       credentials: "omit",
     });
     return response as unknown as Response;
@@ -67,7 +60,6 @@ export const link = new RPCLink({
     if (cookies) {
       headers.set("Cookie", cookies);
     }
-    // Inject traceparent for distributed tracing correlation
     headers.set("traceparent", generateTraceparent());
     // Client timestamp for network latency measurement on the server
     headers.set("x-request-start", Date.now().toString());

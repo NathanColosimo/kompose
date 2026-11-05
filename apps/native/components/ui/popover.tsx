@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { useColor } from "@/hooks/use-color";
 import { BORDER_RADIUS } from "@/theme/globals";
 
-// Context for sharing state between popover components
 interface PopoverContextType {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
@@ -37,7 +36,6 @@ const usePopover = () => {
   return context;
 };
 
-// Main Popover wrapper
 interface PopoverProps {
   children: ReactNode;
   open?: boolean;
@@ -57,7 +55,6 @@ export function Popover({
     height: 0,
   });
 
-  // Sync with external open state
   useEffect(() => {
     setIsOpenState(open);
   }, [open]);
@@ -81,7 +78,6 @@ export function Popover({
   );
 }
 
-// Popover Trigger
 interface PopoverTriggerProps {
   children: ReactNode;
   asChild?: boolean;
@@ -122,7 +118,6 @@ export function PopoverTrigger({
   };
 
   if (asChild && React.isValidElement(children)) {
-    // Clone the child and add onPress handler
     return React.cloneElement(children, {
       ref: triggerRef,
       onPress: handlePress,
@@ -137,7 +132,6 @@ export function PopoverTrigger({
   );
 }
 
-// Popover Content
 interface PopoverContentProps {
   children: ReactNode;
   align?: "start" | "center" | "end";
@@ -168,12 +162,10 @@ export function PopoverContent({
     setIsOpen(false);
   };
 
-  // Calculate position based on side and align props
   const getPosition = () => {
     const screenDimensions = Dimensions.get("window");
     const { x, y, width, height } = triggerLayout;
 
-    // Use actual content size if available, otherwise use maxWidth/maxHeight
     const contentWidth = contentSize.width || maxWidth;
     const contentHeight = Math.min(
       contentSize.height || maxHeight,
@@ -232,51 +224,42 @@ export function PopoverContent({
     // Screen boundary adjustments with side flipping
     const padding = 16;
 
-    // Check if we need to flip sides due to space constraints
     if (side === "top" && top < padding) {
-      // Not enough space on top, try bottom
       const bottomSpace = screenDimensions.height - (y + height + sideOffset);
       if (bottomSpace >= contentHeight) {
         actualSide = "bottom";
         top = y + height + sideOffset;
       } else {
-        // Keep top but adjust position
         top = padding;
       }
     } else if (
       side === "bottom" &&
       top + contentHeight > screenDimensions.height - padding
     ) {
-      // Not enough space on bottom, try top
       const topSpace = y - sideOffset;
       if (topSpace >= contentHeight) {
         actualSide = "top";
         top = y - contentHeight - sideOffset;
       } else {
-        // Keep bottom but adjust position
         top = screenDimensions.height - contentHeight - padding;
       }
     } else if (side === "left" && left < padding) {
-      // Not enough space on left, try right
       const rightSpace = screenDimensions.width - (x + width + sideOffset);
       if (rightSpace >= contentWidth) {
         actualSide = "right";
         left = x + width + sideOffset;
       } else {
-        // Keep left but adjust position
         left = padding;
       }
     } else if (
       side === "right" &&
       left + contentWidth > screenDimensions.width - padding
     ) {
-      // Not enough space on right, try left
       const leftSpace = x - sideOffset;
       if (leftSpace >= contentWidth) {
         actualSide = "left";
         left = x - contentWidth - sideOffset;
       } else {
-        // Keep right but adjust position
         left = screenDimensions.width - contentWidth - padding;
       }
     }
@@ -341,7 +324,6 @@ export function PopoverContent({
   );
 }
 
-// Popover Header
 interface PopoverHeaderProps {
   children: ReactNode;
   style?: ViewStyle;
@@ -357,7 +339,6 @@ export function PopoverHeader({ children, style }: PopoverHeaderProps) {
   );
 }
 
-// Popover Body
 interface PopoverBodyProps {
   children: ReactNode;
   style?: ViewStyle;
@@ -367,7 +348,6 @@ export function PopoverBody({ children, style }: PopoverBodyProps) {
   return <View style={[styles.body, style]}>{children}</View>;
 }
 
-// Popover Footer
 interface PopoverFooterProps {
   children: ReactNode;
   style?: ViewStyle;
@@ -383,7 +363,6 @@ export function PopoverFooter({ children, style }: PopoverFooterProps) {
   );
 }
 
-// Popover Close (utility component)
 interface PopoverCloseProps {
   children: ReactNode;
   asChild?: boolean;
@@ -432,7 +411,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 8,
-    minWidth: 200, // Ensure minimum width
+    minWidth: 200,
   },
   header: {
     paddingHorizontal: 16,

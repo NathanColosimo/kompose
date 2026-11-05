@@ -26,19 +26,19 @@ export function Switch({ label, error, labelStyle, ...props }: SwitchProps) {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          minHeight: 32, // Ensure consistent height
+          minHeight: 32,
         }}
       >
         {label && (
           <Text
-            ellipsizeMode="tail" // Allow wrapping for longer labels
+            ellipsizeMode="tail"
             numberOfLines={2}
             pointerEvents="none"
             style={[
               {
                 color: error ? danger : primary,
-                flex: 1, // Take available space
-                marginRight: 12, // Add spacing between label and switch
+                flex: 1,
+                marginRight: 12,
               },
               labelStyle,
             ]}
@@ -61,9 +61,9 @@ export function Switch({ label, error, labelStyle, ...props }: SwitchProps) {
           pointerEvents="none"
           style={[
             {
-              fontSize: 12, // Slightly smaller for error text
-              color: danger, // Always use danger color for errors
-              marginTop: 4, // Add spacing above error text
+              fontSize: 12,
+              color: danger,
+              marginTop: 4,
             },
           ]}
         >

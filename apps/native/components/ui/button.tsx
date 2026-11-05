@@ -76,7 +76,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
     const greenColor = useColor("green");
     const borderColor = useColor("border");
 
-    // Animation values for liquid glass effect
     const scale = useSharedValue(1);
     const brightness = useSharedValue(1);
 
@@ -88,7 +87,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
         justifyContent: "center",
       };
 
-      // Size variants
       switch (size) {
         case "sm":
           Object.assign(baseStyle, { height: 44, paddingHorizontal: 24 });
@@ -107,7 +105,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
           Object.assign(baseStyle, { height: HEIGHT, paddingHorizontal: 32 });
       }
 
-      // Variant styles
       switch (variant) {
         case "destructive":
           return { ...baseStyle, backgroundColor: destructiveColor };
@@ -183,7 +180,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       }
     };
 
-    // Helper function to get icon size based on button size
     const getIconSize = (): number => {
       switch (size) {
         case "sm":
@@ -214,32 +210,26 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       );
     };
 
-    // Improved animation handlers for liquid glass effect
     const handlePressIn = (ev?: any) => {
       "worklet";
-      // Trigger haptic feedback
       triggerHapticFeedback();
 
-      // Scale up with bouncy spring animation
       scale.value = withSpring(1.05, {
         damping: 15,
         stiffness: 400,
         mass: 0.5,
       });
 
-      // Slight brightness increase for glass effect
       brightness.value = withSpring(1.1, {
         damping: 20,
         stiffness: 300,
       });
 
-      // Call original onPressIn if provided
       props.onPressIn?.(ev);
     };
 
     const handlePressOut = (ev?: any) => {
       "worklet";
-      // Return to original size with smooth spring
       scale.value = withSpring(1, {
         damping: 20,
         stiffness: 400,
@@ -247,30 +237,25 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
         overshootClamping: false,
       });
 
-      // Return brightness to normal
       brightness.value = withSpring(1, {
         damping: 20,
         stiffness: 300,
       });
 
-      // Call original onPressOut if provided
       props.onPressOut?.(ev);
     };
 
-    // Handle actual press action
     const handlePress = () => {
       if (onPress && !disabled && !loading) {
         onPress();
       }
     };
 
-    // Handle press for TouchableOpacity (non-animated version)
     const handleTouchablePress = () => {
       triggerHapticFeedback();
       handlePress();
     };
 
-    // Animated styles using useAnimatedStyle
     const animatedStyle = useAnimatedStyle(() => {
       return {
         transform: [{ scale: scale.value }],
@@ -278,7 +263,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       };
     });
 
-    // Extract flex value from style prop
     const getFlexFromStyle = () => {
       if (!style) return null;
 
@@ -294,10 +278,9 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       return null;
     };
 
-    // Alternative simpler solution - replace flex with alignSelf
+    // Apply flex to the outer Pressable so the parent lays out the whole button.
     const getPressableStyle = (): ViewStyle => {
       const flexValue = getFlexFromStyle();
-      // If flex: 1 is applied, use alignSelf: 'stretch' instead to only affect width
       return flexValue === 1
         ? {
             flex: 1,
@@ -311,7 +294,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
           : {};
     };
 
-    // Updated getStyleWithoutFlex function
     const getStyleWithoutFlex = () => {
       if (!style) return style;
 
@@ -393,5 +375,4 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
   }
 );
 
-// Add display name for better debugging
 Button.displayName = "Button";

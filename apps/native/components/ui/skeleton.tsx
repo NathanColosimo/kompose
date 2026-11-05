@@ -24,7 +24,6 @@ export function Skeleton({
   variant = "default",
 }: SkeletonProps) {
   const mutedColor = useColor("muted");
-  // Start the opacity at its lowest point
   const opacity = useSharedValue(0.5);
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -34,16 +33,13 @@ export function Skeleton({
   });
 
   useEffect(() => {
-    // We only define the animation going from 0.5 -> 1.
-    // The `withRepeat` function will handle reversing it automatically.
     opacity.value = withRepeat(
-      // Animate to an opacity of 1
       withTiming(1, {
         duration: 1000,
         easing: Easing.inOut(Easing.quad),
       }),
-      -1, // Loop infinitely
-      true // Set to true to automatically reverse the animation (yoyo effect)
+      -1,
+      true
     );
   }, []); // Use an empty dependency array as the shared value object is stable
 

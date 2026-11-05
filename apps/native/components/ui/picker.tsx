@@ -43,7 +43,6 @@ interface PickerProps {
   values?: string[];
   onValuesChange?: (values: string[]) => void;
 
-  // Styling props
   label?: string;
   icon?: LucideIcon;
   rightComponent?: React.ReactNode | (() => React.ReactNode);
@@ -51,7 +50,6 @@ interface PickerProps {
   labelStyle?: TextStyle;
   errorStyle?: TextStyle;
 
-  // Modal props
   modalTitle?: string;
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -85,7 +83,6 @@ export function Picker({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Move ALL theme color hooks to the top level
   const borderColor = useColor("border");
   const text = useColor("text");
   const muted = useColor("mutedForeground");
@@ -98,11 +95,9 @@ export function Picker({
   const mutedBg = useColor("muted");
   const textMutedColor = useColor("textMuted");
 
-  // Normalize data structure - convert options to sections format
   const normalizedSections: PickerSection[] =
     sections.length > 0 ? sections : [{ options }];
 
-  // Filter sections based on search query
   const filteredSections =
     searchable && searchQuery
       ? normalizedSections
@@ -115,7 +110,6 @@ export function Picker({
           .filter((section) => section.options.length > 0)
       : normalizedSections;
 
-  // Get selected options for display
   const getSelectedOptions = () => {
     const allOptions = normalizedSections.flatMap((section) => section.options);
 
@@ -252,7 +246,6 @@ export function Picker({
         onPress={() => !disabled && setIsOpen(true)}
         style={[triggerStyle, style]}
       >
-        {/* Icon & Label */}
         <View
           pointerEvents="none"
           style={{
@@ -352,7 +345,6 @@ export function Picker({
         </View>
       </TouchableOpacity>
 
-      {/* Error message */}
       {error && (
         <Text
           style={[
@@ -394,7 +386,6 @@ export function Picker({
               overflow: "hidden",
             }}
           >
-            {/* Header */}
             {(modalTitle || multiple) && (
               <View
                 style={{
@@ -425,7 +416,6 @@ export function Picker({
               </View>
             )}
 
-            {/* Search */}
             {searchable && (
               <View
                 style={{
@@ -452,7 +442,6 @@ export function Picker({
               </View>
             )}
 
-            {/* Options - Updated to match date-picker styling */}
             <View style={{ height: 300 }}>
               <ScrollView
                 contentContainerStyle={{

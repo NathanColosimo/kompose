@@ -131,7 +131,6 @@ function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
   );
 
   useEffect(() => {
-    // Update position immediately, then every minute.
     setTopPosition(calculateTimePosition(timeZone));
     const interval = setInterval(() => {
       setTopPosition(calculateTimePosition(timeZone));
@@ -201,7 +200,6 @@ interface AllDayGoogleEvent {
   source: GoogleEventSource;
 }
 
-// Resolve an event's colors from its own color, then its calendar's.
 function useGoogleEventColors(
   source: GoogleEventSource
 ): ReturnType<typeof resolveGoogleEventColors> {
@@ -301,8 +299,7 @@ function TimedGoogleEventBlock({
 }) {
   const { background, foreground } = useGoogleEventColors(item.source);
 
-  // Calculate horizontal positioning based on collision layout.
-  // columnSpan lets items expand into adjacent empty columns.
+  // Shared column-span layout: see packages/state/src/collision-utils.ts.
   const singleColumnWidth = 100 / totalColumns;
   const columnWidthPercent = singleColumnWidth * columnSpan;
   const leftPercent = columnIndex * singleColumnWidth;
@@ -333,7 +330,6 @@ function TimedGoogleEventBlock({
       >
         {item.source.event.summary ?? "Event"}
       </Text>
-      {/* Show time for events 30 minutes or longer */}
       {durationMinutes >= 30 ? (
         <Text
           className="text-[9px] opacity-80"
@@ -371,8 +367,6 @@ export default function CalendarTab() {
     [tasks]
   );
 
-  // Google accounts/calendars/events.
-
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
   const calendarMetadataByKey = useMemo(() => {
     const metadata = new Map<
@@ -409,7 +403,6 @@ export default function CalendarTab() {
       windows,
     });
 
-  // Calendar picker modal.
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MVP grouping logic kept inline for now.
@@ -504,7 +497,6 @@ export default function CalendarTab() {
       const dayTasks = tasksByDay.get(dayKey) ?? [];
       const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
 
-      // Convert tasks to PositionedItems.
       const taskItems: PositionedItem[] = dayTasks
         .filter((task) => task.startDate !== null && task.startTime !== null)
         .map((task) => {
@@ -524,7 +516,6 @@ export default function CalendarTab() {
           };
         });
 
-      // Convert google events to PositionedItems.
       const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
         const startMinutes = minutesFromMidnight(ge.start);
         const endMinutes = minutesFromMidnight(ge.end);
@@ -544,7 +535,6 @@ export default function CalendarTab() {
     return layoutsByDay;
   }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
 
-  // Create/Edit event modal state.
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const editingEventDraft =
     eventDraft && isEditEventDraft(eventDraft) ? eventDraft : null;
@@ -564,8 +554,6 @@ export default function CalendarTab() {
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
-  // Open the event editor on a draft (or close it with null), clearing any
-  // pending scope dialog.
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
     setPendingEventSaveDraft(null);
@@ -597,7 +585,6 @@ export default function CalendarTab() {
     );
   }, [editingEventDraft, masterRecurrence]);
 
-  // Scheduled task editor (create from a slot, edit from a task block).
   const taskFlow = useTaskEditorFlow();
   const openCreateTask = taskFlow.openCreate;
   const [createSlotSelection, setCreateSlotSelection] = useState<{
@@ -715,8 +702,6 @@ export default function CalendarTab() {
     [openCreateTask]
   );
 
-  // Native stays lighter than web here: choose event vs task first,
-  // then hand off to the existing editor sheet for that item type.
   const openCreateChooserAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
       setCreateSlotSelection({ day, minutes: snapMinutes(minutes) });
@@ -1051,7 +1036,7 @@ export default function CalendarTab() {
       queryKey: GOOGLE_CALENDARS_QUERY_KEY,
     });
 
-    // Only visible calendars; of those, only the months on screen refetch.
+    // Invalidate visible calendars; active month queries include preloaded days.
     for (const calendar of visibleCalendarIds) {
       queryClient.invalidateQueries({
         queryKey: getGoogleEventsByCalendarQueryKey(calendar),
@@ -1078,8 +1063,7 @@ export default function CalendarTab() {
     isRefreshingRef.current = isRefreshing;
   }, [isRefreshing]);
 
-  // Scroll to the last known position on mount (defaults to 8 AM).
-  // Deferred to the next frame so the ScrollView content has finished layout.
+  // Defer the initial 8 AM scroll until the time grid has laid out.
   useEffect(() => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
@@ -1101,7 +1085,6 @@ export default function CalendarTab() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Configure header options via Stack.Screen */}
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -1364,8 +1347,6 @@ export default function CalendarTab() {
                           20
                         );
 
-                        // Calculate horizontal positioning based on collision layout.
-                        // columnSpan lets items expand into adjacent empty columns.
                         const columnIndex = layout?.columnIndex ?? 0;
                         const totalColumns = layout?.totalColumns ?? 1;
                         const columnSpan = layout?.columnSpan ?? 1;
@@ -1401,7 +1382,6 @@ export default function CalendarTab() {
                             >
                               {task.title}
                             </Text>
-                            {/* Show time for tasks 30 minutes or longer */}
                             {durationMinutes >= 30 ? (
                               <Text
                                 className="text-[9px] text-primary-foreground/80"
@@ -1428,7 +1408,6 @@ export default function CalendarTab() {
         </View>
       </GestureDetector>
 
-      {/* Calendar visibility picker */}
       <CalendarPickerModal
         onClose={() => setIsPickerOpen(false)}
         open={isPickerOpen}
@@ -1533,8 +1512,6 @@ export default function CalendarTab() {
               setEventSaveScope(value as RecurrenceScope)
             }
             options={RECURRENCE_SCOPE_OPTIONS.map((option) => {
-              // Google API only supports moving the entire series,
-              // so disable "this" and "following" when calendar changed.
               const isMoving =
                 pendingEventSaveDraft != null &&
                 pendingEventSaveDraft.calendar.calendarId !==

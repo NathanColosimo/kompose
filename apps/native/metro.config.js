@@ -1,5 +1,3 @@
-// Learn more https://docs.expo.io/guides/customizing-metro
-
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);

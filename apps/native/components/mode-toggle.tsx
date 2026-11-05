@@ -3,11 +3,6 @@ import { Pressable, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { useColorScheme } from "@/lib/color-scheme-context";
 
-/**
- * Theme mode toggle component.
- *
- * Simple three-way toggle: Light / Dark / System
- */
 export function ModeToggle() {
   const { userPreference, setColorScheme, isDarkColorScheme } =
     useColorScheme();

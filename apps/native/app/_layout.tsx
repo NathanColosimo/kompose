@@ -23,10 +23,6 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-/**
- * Inner layout that consumes the color scheme and auth state.
- * Shows sign-in screen when not authenticated.
- */
 function RootLayoutContent() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
   const { data: session, isPending: isSessionPending } =
@@ -34,15 +30,12 @@ function RootLayoutContent() {
   const sessionUser = session?.user;
   useNativeRealtimeSync(sessionUser?.id);
 
-  // Update Android nav bar when color scheme changes
   React.useEffect(() => {
     setAndroidNavigationBar(colorScheme);
   }, [colorScheme]);
 
-  // Theme for React Navigation's native components (headers, tabs)
   const theme = isDarkColorScheme ? NAV_THEME.dark : NAV_THEME.light;
 
-  // Wait for session to load
   if (isSessionPending) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -51,7 +44,6 @@ function RootLayoutContent() {
     );
   }
 
-  // Show sign-in screen when not authenticated
   if (!sessionUser) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
@@ -112,11 +104,6 @@ const stateConfig: StateConfig = {
   orpc,
 };
 
-/**
- * Root layout with providers.
- * Uses stable wrapper structure - GestureHandlerRootView has a static className.
- * Uniwind handles theme variants internally via setTheme.
- */
 export default function RootLayout() {
   React.useEffect(() => {
     restoreColorScheme();
@@ -125,7 +112,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <StateProvider config={stateConfig} storage={storage}>
-        {/* Stable wrapper - className is static, theme changes are handled globally */}
+        {/* Keep the gesture root stable; Uniwind applies theme changes globally. */}
         <GestureHandlerRootView className="flex-1">
           <RootLayoutContent />
         </GestureHandlerRootView>

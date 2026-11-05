@@ -31,10 +31,9 @@ import {
 import type { AppUpdater } from "electron-updater";
 
 /**
- * Main's requests (the sign-in token exchange) use Node's TLS, which only knows
- * its bundled CA list. Also trust the macOS keychain, as the windows do, so
- * locally trusted and organization-installed CAs work the same in both.
- * Reading the keychain takes ~15 ms, so it runs after the windows are created.
+ * Add macOS keychain CAs to Node TLS so the token exchange trusts the same
+ * certificates as the windows. Keychain reads take ~15 ms, so this runs after
+ * window creation.
  */
 function trustSystemCertificates() {
   tls.setDefaultCACertificates([
@@ -45,7 +44,6 @@ function trustSystemCertificates() {
 
 const isMac = process.platform === "darwin";
 const here = dirname(fileURLToPath(import.meta.url));
-// Windows load the hosted web app; development points at the local Next server.
 const serverURL = app.isPackaged
   ? "https://kompose.dev"
   : (process.env.KOMPOSE_SERVER_URL ?? "https://local.kompose.dev");
@@ -72,7 +70,6 @@ let commandBarReady = false;
 let commandBarRequested = false;
 let pendingTask: DesktopTaskSelection | null = null;
 let readyUpdate: string | null = null;
-// Loaded after launch; set once the update check has started.
 let updater: AppUpdater | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
 // the display shifts the window up without moving this anchor.
@@ -173,7 +170,7 @@ createAuthClient({
   scheme: true,
 });
 
-/** Open http(s)/mailto links in the system browser; anything else is dropped. */
+/** Only allow http(s)/mailto URLs without embedded credentials. */
 function openExternal(url: string) {
   const parsed = URL.parse(url);
   if (
@@ -346,7 +343,6 @@ function createCommandWindow() {
   return window;
 }
 
-/** Place the popup at its anchor, sized to its content. */
 function placeCommandBar(window: BrowserWindow, height: number) {
   if (!commandBarAnchor) {
     // Not opened yet; keep the size so the first open fits its content.
@@ -530,10 +526,7 @@ function startAutoUpdates(autoUpdater: AppUpdater) {
   setInterval(check, 30 * 60_000).unref();
 }
 
-/**
- * electron-updater is imported here, after the windows are created, rather
- * than at startup, where evaluating it would delay the first window.
- */
+/** Defer electron-updater evaluation until after window creation to avoid delaying launch. */
 function setUpAutoUpdates() {
   if (!app.isPackaged) {
     return;
@@ -575,9 +568,8 @@ app
     showMain();
     // Kept loaded and hidden so the shortcut opens it instantly.
     commandWindow = createCommandWindow();
-    // Main's one request, the token exchange, can start in Better Auth's ready
-    // handler, which runs just before this one. Its TLS handshake waits for
-    // the socket to connect, so the certificates are in place by then.
+    // Better Auth can start its token exchange in an earlier ready handler.
+    // Install CAs now, before that request's socket connects.
     trustSystemCertificates();
     try {
       applyShortcut(settings.get("shortcut"));

@@ -53,7 +53,6 @@ export interface TaskDraft {
   durationMinutes: number;
   /** Current text in the link input field (not yet added to links array) */
   linkInput: string;
-  /** Array of parsed link metadata objects */
   links: LinkMeta[];
   recurrence: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null;
@@ -807,7 +806,6 @@ export function TaskEditorSheet({
             ]),
           }));
 
-          // Upgrade the placeholder in-place when metadata arrives
           parseLink.mutate(url, {
             onSuccess: (meta) => {
               setDraft((current) => {
@@ -844,7 +842,6 @@ export function TaskEditorSheet({
   );
 }
 
-/** Extracted link list + add-input for native, delegates mutations to parent */
 function NativeLinkListEditor({
   links,
   linkInput,

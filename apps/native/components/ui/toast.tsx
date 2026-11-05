@@ -55,7 +55,6 @@ const TOAST_MARGIN = 8;
 const DYNAMIC_ISLAND_WIDTH = 126;
 const EXPANDED_WIDTH = screenWidth - 32;
 
-// Reanimated spring configuration
 const SPRING_CONFIG = {
   stiffness: 120,
   damping: 8,
@@ -72,7 +71,6 @@ export function Toast({
 }: ToastProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Reanimated shared values
   const translateY = useSharedValue(-100);
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(0);
@@ -90,23 +88,18 @@ export function Toast({
     const hasContentToShow = Boolean(title || description || action);
 
     if (hasContentToShow) {
-      // If there's content, start directly with expanded state
       width.value = EXPANDED_WIDTH;
       height.value = EXPANDED_HEIGHT;
       borderRadius.value = 20;
       setIsExpanded(true);
 
-      // Animate in expanded toast
       translateY.value = withSpring(0, SPRING_CONFIG);
       opacity.value = withTiming(1, { duration: 300 });
       scale.value = withSpring(1, SPRING_CONFIG);
-      // CORRECTED LINE: Use withDelay to wrap withTiming
       contentOpacity.value = withDelay(100, withTiming(1, { duration: 300 }));
     } else {
-      // If no content, show compact Dynamic Island with icon only
       setIsExpanded(false);
 
-      // Animate in compact toast
       translateY.value = withSpring(0, SPRING_CONFIG);
       opacity.value = withTiming(1, { duration: 200 });
       scale.value = withSpring(1, SPRING_CONFIG);
@@ -178,7 +171,6 @@ export function Toast({
           runOnJS(onDismiss)(id);
         };
 
-        // Animate out horizontally
         translateX.value = withTiming(
           translationX > 0 ? screenWidth : -screenWidth,
           { duration: 250 }
@@ -189,7 +181,6 @@ export function Toast({
           }
         });
       } else {
-        // Snap back with spring animation
         translateX.value = withSpring(0, SPRING_CONFIG);
       }
     });
@@ -199,7 +190,6 @@ export function Toast({
     return statusBarHeight + index * (EXPANDED_HEIGHT + TOAST_MARGIN);
   };
 
-  // Animated styles
   const animatedContainerStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [
@@ -239,14 +229,12 @@ export function Toast({
     <GestureDetector gesture={panGesture}>
       <Animated.View style={[toastStyle, animatedContainerStyle]}>
         <Animated.View style={animatedIslandStyle}>
-          {/* Compact state - just icon or indicator */}
           {!isExpanded && (
             <View style={{ justifyContent: "center", alignItems: "center" }}>
               {getIcon()}
             </View>
           )}
 
-          {/* Expanded state - full content */}
           {isExpanded && (
             <Animated.View
               style={[
@@ -371,7 +359,6 @@ export function ToastProvider({ children, maxToasts = 3 }: ToastProviderProps) {
         return updated.slice(0, maxToasts);
       });
 
-      // Auto dismiss after duration
       if (newToast.duration && newToast.duration > 0) {
         setTimeout(() => {
           dismissToast(id);
@@ -442,7 +429,6 @@ export function ToastProvider({ children, maxToasts = 3 }: ToastProviderProps) {
   );
 }
 
-// Hook to use toast
 export function useToast() {
   const context = useContext(ToastContext);
 
