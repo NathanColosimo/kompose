@@ -114,7 +114,7 @@ The sync endpoint returns a long-lived `AsyncGenerator` for Server-Sent Events. 
 
 ## Network Latency Measurement
 
-Instead of a client-side OTel SDK, both web and native inject a lightweight header:
+There is no client-side OTel SDK: Axiom's ingest endpoint sends no CORS headers, an SDK would add bundle size, and stitching browser spans to server spans suffers from clock skew. Instead, both web and native inject a lightweight header:
 
 ### Client side
 
