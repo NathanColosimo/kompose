@@ -40,7 +40,6 @@ export type GoogleCalendarEventsSubscription = WebhookSubscriptionSelect & {
 
 // ── Private helpers ──────────────────────────────────────────────────
 
-/** Returns true if the subscription is active and won't expire within the renewal buffer. */
 function isSubscriptionActiveAndFresh(
   subscription: WebhookSubscriptionSelect
 ): boolean {
@@ -55,7 +54,7 @@ function isSubscriptionActiveAndFresh(
   );
 }
 
-/** Validates the callback URL is a public HTTPS endpoint. */
+/** Require HTTPS and reject localhost/127.0.0.1; this isn't a public-address check. */
 function validateCallbackUrl() {
   const callbackHost = new URL(GOOGLE_WEBHOOK_CALLBACK_URL).hostname;
   if (
@@ -72,7 +71,7 @@ function validateCallbackUrl() {
   return Effect.void;
 }
 
-/** Derives an ISO expiration string from the Google watch channel response. */
+/** Fall back to our requested TTL if Google omits a usable expiration. */
 function computeExpiresAt(channelExpiration?: string): string {
   const expiresMs = channelExpiration ? Number(channelExpiration) : Number.NaN;
 
@@ -90,7 +89,6 @@ function toProviderError(operation: string) {
     });
 }
 
-/** Detects Google's "push not supported" error for certain calendar types. */
 function isPushNotSupportedError(error: WebhookProviderError): boolean {
   return (
     error.operation === "google-calendar-events-watch" &&
@@ -161,10 +159,8 @@ type WatchChannel = Effect.Success<
 >;
 
 /**
- * Keep one watch channel current. Does nothing while the existing channel is
- * active and fresh. Otherwise stops it (best effort), opens a new channel
- * with `watch` under the same subscription ID, and saves it. `watch` returns
- * undefined when the resource doesn't support push.
+ * Reuse the subscription ID across renewals. An unsupported watch returns
+ * undefined and must not be persisted. See documents/services.md.
  */
 const renewWatch = <E, R>(params: {
   account: Account;
@@ -261,7 +257,6 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
         });
       });
 
-      /** Watch a calendar's events. Callers pass IDs from `listCalendarIds`, which drops calendars Google can't watch. */
       const refreshEventsWatch = Effect.fn(
         "GoogleCalendarWebhookService.refreshEventsWatch"
       )(function* (params: {
@@ -288,8 +283,7 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
           watch: (channel) =>
             client.watchCalendarEvents(params.calendarId, channel).pipe(
               Effect.mapError(toProviderError("google-calendar-events-watch")),
-              // Certain calendar types don't support push notifications;
-              // there is then nothing to save.
+              // Other non-holiday calendars can also reject push notifications.
               Effect.catchTag("WebhookProviderError", (error) => {
                 if (!isPushNotSupportedError(error)) {
                   return Effect.fail(error);
@@ -304,7 +298,6 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
         });
       });
 
-      /** Stop watching and deactivate a subscription for a calendar that was removed. */
       const deactivateEventsWatch = Effect.fn(
         "GoogleCalendarWebhookService.deactivateEventsWatch"
       )(function* (params: { subscription: GoogleCalendarEventsSubscription }) {
@@ -327,7 +320,7 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
         });
       });
 
-      /** List the IDs of the user's calendars that Google can watch (holiday calendars can't be). */
+      /** Exclude known holiday calendars; other unsupported watches are handled at renewal. */
       const listCalendarIds = Effect.fn(
         "GoogleCalendarWebhookService.listCalendarIds"
       )(function* () {

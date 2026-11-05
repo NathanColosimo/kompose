@@ -2,7 +2,7 @@ import type { LinkMeta } from "@kompose/db/schema/link";
 import { Effect } from "effect";
 import { LinkParseError } from "../types";
 
-/** Extract content of a meta tag by property or name attribute */
+/** Accept property/name and content in either attribute order. */
 function extractMeta(html: string, attr: string): string | undefined {
   const regex = new RegExp(
     `<meta\\s+(?:[^>]*?(?:property|name)=["']${attr}["'][^>]*?content=["']([^"']*?)["']|[^>]*?content=["']([^"']*?)["'][^>]*?(?:property|name)=["']${attr}["'])`,
@@ -12,7 +12,6 @@ function extractMeta(html: string, attr: string): string | undefined {
   return match?.[1] ?? match?.[2];
 }
 
-/** Fallback parser: fetch page and extract Open Graph meta tags */
 export const parseUnknownLink = Effect.fn("Unknown.parseLink")(function* (
   url: string
 ) {

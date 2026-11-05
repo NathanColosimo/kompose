@@ -14,9 +14,6 @@ export const ListCalendarsInputSchema = z.object({
   accountId: z.string(),
 });
 
-/**
- * List all calendars for a given account.
- */
 export const listCalendars = oc
   .input(ListCalendarsInputSchema)
   .output(z.array(CalendarSchema));
@@ -25,9 +22,6 @@ export const GetCalendarInputSchema = z.object({
   accountId: z.string(),
   calendarId: z.string(),
 });
-/**
- * Get a calendar by ID for a given account.
- */
 export const getCalendar = oc
   .input(GetCalendarInputSchema)
   .output(CalendarSchema);
@@ -36,9 +30,6 @@ export const CreateCalendarInputSchemaFull = z.object({
   accountId: z.string(),
   calendar: CreateCalendarInputSchema,
 });
-/**
- * Create a new calendar for a given account.
- */
 export const createCalendar = oc
   .input(CreateCalendarInputSchemaFull)
   .output(CalendarSchema);
@@ -49,9 +40,6 @@ export const UpdateCalendarInputSchema = z.object({
   calendarId: z.string(),
 });
 
-/**
- * Update a calendar by ID for a given account.
- */
 export const updateCalendar = oc
   .input(UpdateCalendarInputSchema)
   .output(CalendarSchema);
@@ -61,9 +49,6 @@ export const DeleteCalendarInputSchema = z.object({
   calendarId: z.string(),
 });
 
-/**
- * Delete a calendar by ID for a given account.
- */
 export const deleteCalendar = oc
   .input(DeleteCalendarInputSchema)
   .output(z.null());

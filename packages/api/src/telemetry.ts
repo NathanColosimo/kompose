@@ -19,28 +19,10 @@ import { waitUntil } from "@vercel/functions";
 import { Layer } from "effect";
 
 /**
- * Backend telemetry setup for OpenTelemetry + Effect tracing.
- *
- * A single TracerProvider owns the global tracer and exporter.
- * Effect bridges into it via Tracer.layerGlobal (reads the global provider)
- * so that oRPC spans AND Effect.fn spans flow through the same exporter.
- *
- * This wires the provider by hand instead of using NodeSDK. NodeSDK
- * statically imports every exporter it can build from env vars (gRPC,
- * protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs, which put
- * ~540 KB into the /api/rpc server bundle, which every cold start loads.
- *
- * Next.js auto-instruments fetch when it detects a global TracerProvider.
- * We disable that via NEXT_OTEL_FETCH_DISABLED=1 in .env since we rely
- * on Effect.fn spans for observability into HTTP calls instead.
- *
- * Export target priority:
- * - OTEL_EXPORTER_OTLP_ENDPOINT (local dev, e.g. Jaeger at http://localhost:4318)
- * - AXIOM_API_TOKEN + AXIOM_DATASET (production, Axiom)
- * - Neither set → tracing disabled (no-op)
+ * Share one provider between oRPC and Effect to preserve span parentage.
+ * Wiring it directly avoids ~540 KB of NodeSDK exporter/SDK imports on cold
+ * starts. See documents/otel.md for setup, export targets and measurements.
  */
-
-// ── Shared exporter config ──────────────────────────────────────────
 
 interface OtlpExporterConfig {
   headers?: Record<string, string>;
@@ -48,13 +30,11 @@ interface OtlpExporterConfig {
 }
 
 function getExporterConfig(): OtlpExporterConfig | null {
-  // Local/custom OTLP endpoint takes priority (e.g. Jaeger)
   const otlpEndpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (otlpEndpoint) {
     return { url: `${otlpEndpoint}/v1/traces` };
   }
 
-  // Axiom remote backend
   const token = env.AXIOM_API_TOKEN;
   const dataset = env.AXIOM_DATASET;
   if (token !== undefined && dataset !== undefined) {
@@ -71,19 +51,6 @@ function getExporterConfig(): OtlpExporterConfig | null {
 }
 
 const exporterConfig = getExporterConfig();
-
-// ── Span processor ───────────────────────────────────────────────────
-//    The batch processor, plus two things:
-//
-//    - It strips noisy Next.js internal attributes before export.
-//
-//    - On Vercel, it flushes when a request's root span ends (a SERVER span
-//      with no local parent), inside waitUntil. Vercel freezes an instance as
-//      soon as it responds, so spans left for the 5 s timer arrived late or
-//      never. Flushes are coalesced (one running, at most one queued) because
-//      the exporter drops batches beyond 30 concurrent exports. Each also
-//      waits on the exporter, since the batch's forceFlush doesn't wait for
-//      an automatic 512-span export already sending. See otel.md.
 
 const STRIP_ATTRIBUTES = ["next.span_name", "next.span_type"];
 const flushAtRequestEnd = env.VERCEL === "1";
@@ -115,11 +82,13 @@ class ExportSpanProcessor extends BatchSpanProcessor {
       span.kind === SpanKind.SERVER &&
       (parent === undefined || parent.isRemote === true);
     if (flushAtRequestEnd && isRequestRoot) {
+      // Keep Vercel alive until buffered spans export; the batch timer can freeze.
+      // See documents/otel.md for why waitUntil is needed here.
       waitUntil(this.#flush());
     }
   }
 
-  /** Resolves once an export that started after this call has finished. */
+  /** Coalesce flushes to stay below the exporter's 30-concurrent-export limit. */
   #flush(): Promise<void> {
     if (!this.#queued) {
       this.#queued = this.#flushAfter(this.#lastFlush);
@@ -132,18 +101,10 @@ class ExportSpanProcessor extends BatchSpanProcessor {
     await previous;
     this.#queued = undefined;
     await this.forceFlush().catch(logFlushError);
+    // The processor doesn't wait for an automatic 512-span export already in flight.
     await this.#exporter.forceFlush().catch(logFlushError);
   }
 }
-
-// ── 1. Global TracerProvider + exporter ─────────────────────────────
-//    Owns the only TracerProvider. ORPCInstrumentation hooks into it for
-//    oRPC handler/middleware spans. The same provider is reused by
-//    Effect via Tracer.layerGlobal below.
-//
-//    Also registers the async-hooks context manager (so spans nest across
-//    awaits) and W3C traceparent propagation. The resource is the default
-//    one plus service.name; no host/process/runtime detectors run.
 
 if (exporterConfig) {
   context.setGlobalContextManager(
@@ -167,13 +128,6 @@ if (exporterConfig) {
   );
   registerInstrumentations({ instrumentations: [new ORPCInstrumentation()] });
 }
-
-// ── 2. Effect telemetry layer ───────────────────────────────────────
-//    Tracer.layerGlobal reads the global TracerProvider (registered
-//    above) instead of creating a separate provider.
-//    This means Effect.fn spans are exported through the same exporter
-//    as oRPC spans, keeping parent-child links intact. The service name
-//    comes from the provider's resource.
 
 function buildTelemetryLayer(): Layer.Layer<never> {
   if (!exporterConfig) {

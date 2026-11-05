@@ -4,7 +4,6 @@ import type { User } from "better-auth";
 import type { NextRequest } from "next/server";
 import { type AppServices, appRuntime } from "./runtime";
 
-// used in RPCHandler in api route
 export async function createContext(req: NextRequest): Promise<Context> {
   const [result, effectContext] = await Promise.all([
     auth.api.getSession({

@@ -1,9 +1,6 @@
 import type { WebhookSubscriptionProvider } from "@kompose/db/schema/webhook-subscription";
 import { Schema } from "effect";
 
-/**
- * Extracts a human-readable message from an unknown error cause.
- */
 export function formatUnknownCause(cause: unknown): string {
   if (cause instanceof Error) {
     return cause.message?.trim() || cause.name || "Unknown error";

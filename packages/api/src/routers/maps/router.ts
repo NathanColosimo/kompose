@@ -13,7 +13,6 @@ const tracer = trace.getTracer("kompose-api");
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const MIN_QUERY_LENGTH = 2;
 
-/** Zod schema for Google Places Autocomplete API response */
 const PlacesAutocompleteResponseSchema = z.object({
   error: z.object({ message: z.string().optional() }).optional(),
   message: z.string().optional(),
@@ -40,7 +39,6 @@ const PlacesAutocompleteResponseSchema = z.object({
     .optional(),
 });
 
-/** Map raw Places API suggestions into LocationSuggestion objects */
 function mapSuggestions(
   data: z.infer<typeof PlacesAutocompleteResponseSchema>
 ): LocationSuggestion[] {
@@ -64,7 +62,7 @@ function mapSuggestions(
       return [];
     }
 
-    // Use || to treat empty strings as falsy and fall through to next option
+    // Empty IDs should fall back to the resource name, just like missing IDs.
     const placeId =
       prediction.placeId || prediction.place?.split("/").pop() || undefined;
 
@@ -74,7 +72,6 @@ function mapSuggestions(
   });
 }
 
-/** Extract error details from a non-OK Google Places response */
 async function extractPlacesErrorMessage(res: Response): Promise<string> {
   let errorDetails = "";
   try {
@@ -84,12 +81,11 @@ async function extractPlacesErrorMessage(res: Response): Promise<string> {
     };
     errorDetails = errorBody.error?.message ?? errorBody.message ?? "";
   } catch {
-    // Response body not JSON, ignore
+    // Keep the HTTP status when the error body isn't JSON.
   }
   return `Places API error (${res.status})${errorDetails ? `: ${errorDetails}` : ""}`;
 }
 
-/** Fetch and parse the Google Places Autocomplete API */
 function fetchAutocomplete(query: string) {
   return tracer.startActiveSpan("GooglePlaces.autocomplete", async (span) => {
     span.setAttribute("query", query);

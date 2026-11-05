@@ -7,8 +7,8 @@ import { makeRedisJsonCache } from "../../lib/redis-cache";
 
 const KEY_PREFIX = "whoop";
 
-// Keys start with the user ID. An entry is written only after that user's own
-// token fetch for the account succeeded, so a cache hit needs no ownership check.
+// User-scoped keys allow ownership-checked data to be reused without a token fetch.
+// See documents/caching.md for the shared ownership invariant.
 function dayKey(userId: string, accountId: string, day: string): string {
   return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
 }
