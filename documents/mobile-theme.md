@@ -18,7 +18,7 @@ Uniwind (setTheme)            ←  User toggles theme
 ## Design System
 
 - **Color palette**: Warm, paper-like HSL palette with yellowish/brownish tints (hue ~40-52). Shared with web (web's `index.css` is the source of truth; mobile uses the same HSL values).
-- **Typography**: Sentient (Fontshare) — variable serif font used for both `--font-sans` and `--font-serif`. Bundled via `expo-font` plugin. Font files live in `assets/fonts/`.
+- **Typography**: Sentient (Fontshare), bundled as static `.ttf` files via the `expo-font` plugin. Native `--font-sans` uses `Sentient-Regular`; `--font-serif` uses `Sentient-Italic`. Font files live in `apps/native/assets/fonts/`.
 - **Border radius**: 0.5rem base with derived sm/md/lg/xl/2xl/3xl/4xl scale (matches web).
 
 ## Key Difference: Web vs React Native
@@ -28,7 +28,7 @@ Uniwind (setTheme)            ←  User toggles theme
 | CSS Variables | Cascade via `:root` and `.dark` in CSS | Uniwind resolves `@layer theme` + `@variant light/dark` |
 | Theme switching | CSS class / app state | Uniwind runtime via `setTheme("light" \| "dark" \| "system")` |
 | Navigation styling | CSS classes | Native props require explicit color values |
-| Font loading | Fontshare CDN `@import` in CSS | `expo-font` plugin in `app.json` with bundled `.ttf` files |
+| Font loading | Self-hosted variable `.woff2` files via `@font-face` | `expo-font` plugin in `app.json` with bundled static `.ttf` files |
 | Shadows | CSS `box-shadow` tokens in `:root` / `.dark` | React Native `shadowOffset`/`shadowRadius`/`shadowColor` style props (no CSS shadow tokens) |
 
 ## Files
@@ -36,7 +36,7 @@ Uniwind (setTheme)            ←  User toggles theme
 ### `global.css`
 - Tailwind v4 + Uniwind entry (`@import "tailwindcss"; @import "uniwind";`)
 - `@theme` block defines radius scale (0.5rem base)
-- Platform-specific font families via `@media ios` / `@media android`
+- Sentient families in `@theme`; platform-specific monospace families via `@media ios` / `@media android`
 - Theme variables defined in `@layer theme` using `@variant light` and `@variant dark`
 - Semantic tokens (`--color-background`, `--color-foreground`, etc.) drive class names
 
@@ -52,7 +52,7 @@ Uniwind (setTheme)            ←  User toggles theme
 - Resolves effective `colorScheme` for UI logic (`"light"` / `"dark"`)
 
 ### `theme/colors.ts`
-- `Fonts` object maps platform-specific font family names (Sentient-Variable on native, 'Sentient' on web)
+- `Fonts` object maps platform-specific font family names (`Sentient-Regular` / `Sentient-Italic` on native, `Sentient` on web)
 - `lightColors` / `darkColors` / `Colors` derive from `THEME` for imperative JS use via `useColor`
 
 ## Usage
@@ -85,7 +85,7 @@ When changing theme colors:
 When changing fonts:
 1. Place `.ttf` files in `assets/fonts/`
 2. List them in `app.json` under the `expo-font` plugin config
-3. Update `global.css` `@media ios` / `@media android` font-family references
+3. Update `global.css` `@theme` font-family references
 4. Update `theme/colors.ts` `Fonts` object
 
 ## References

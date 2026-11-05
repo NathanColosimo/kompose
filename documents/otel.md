@@ -2,12 +2,12 @@
 
 ## Architecture Overview
 
-All tracing lives server-side. There is no client-side OTel SDK in either the web or native app — network latency is measured via a lightweight `x-request-start` header instead.
+All tracing lives server-side. Web and native use an `x-request-start` header for network latency measurement, avoiding client SDK bundle cost and cross-origin exporter requests.
 
 ```
 Client (web/native)
   │  x-request-start: Date.now()
-  │  traceparent: 00-{traceId}-{spanId}-01
+  │  traceparent: 00-{traceId}-{spanId}-01 (native)
   ▼
 Next.js API route (apps/web/src/app/api/rpc/[[...rest]]/route.ts)
   │  ← reads x-request-start, sets network.latency_ms on active span
@@ -32,7 +32,7 @@ ExportSpanProcessor (a BatchSpanProcessor) → OTLPTraceExporter → Axiom (or J
 ### Components
 
 1. **`TracerProvider`** (`@opentelemetry/sdk-trace`) — the single global provider, with a `BatchSpanProcessor` and `OTLPTraceExporter`. `telemetry.ts` also registers the async-hooks context manager, W3C `traceparent` propagation, and `ORPCInstrumentation` for automatic oRPC handler/middleware spans.
-2. **Effect `Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same global `TracerProvider` so oRPC and Effect spans share parent-child links.
+2. **Effect `layerGlobal` from `@effect/opentelemetry/OtelTracer`** — bridges `Effect.fn` spans into the same global `TracerProvider` so oRPC and Effect spans share parent-child links.
 3. **`ExportSpanProcessor`** — a `BatchSpanProcessor` subclass that strips noisy Next.js internal attributes (`next.span_name`, `next.span_type`) and, on Vercel, flushes when a request's root span ends (see [Flushing before Vercel freezes the instance](#flushing-before-vercel-freezes-the-instance)).
 
 ### Exporter priority
@@ -49,7 +49,7 @@ The resource is the OTel default (`telemetry.sdk.*`) plus `service.name`. No res
 
 ### Why not NodeSDK
 
-`@opentelemetry/sdk-node` statically imports every exporter it can build from env vars (gRPC, protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs. That put ~540 KB into the `/api/rpc` server bundle (2.67 MB → 2.13 MB without it). Every cold start loaded it, and on the Bun runtime (before Node 26) parsed it from source. Wiring the provider by hand halved `register instrumentation` locally (~21 ms → ~10 ms) and saves ~8 MB RSS per instance. Keep new OTel imports to the specific packages, not `sdk-node` or the `@effect/opentelemetry` barrel (import `@effect/opentelemetry/OtelTracer`).
+`@opentelemetry/sdk-node` statically imports every exporter it can build from env vars (gRPC, protobuf, Prometheus, Zipkin) plus the logs and metrics SDKs. That put ~540 KB into the `/api/rpc` server bundle (2.67 MB → 2.13 MB without it). The API runs on Node 26 on Vercel; every cold start loads the server bundle. Wiring the provider by hand halved `register instrumentation` locally (~21 ms → ~10 ms) and saves ~8 MB RSS per instance. Keep new OTel imports to the specific packages, not `sdk-node` or the `@effect/opentelemetry` barrel (import `@effect/opentelemetry/OtelTracer`).
 
 ### Effect telemetry layer
 
@@ -150,7 +150,7 @@ Reads `x-request-start`, computes one-way latency (subject to clock skew), and s
 
 **Native:** Injects a `traceparent` header via `generateTraceparent()` (UUID v7-based) so server traces link back to the client request.
 
-**Web:** oRPC handles `traceparent` propagation automatically via the browser `fetch` integration.
+**Web:** The browser client sets `x-request-start` but does not inject `traceparent`; the server starts the request trace.
 
 ---
 
@@ -176,31 +176,6 @@ On Vercel (`VERCEL=1`), `ExportSpanProcessor` calls `waitUntil(flush)` (`@vercel
 Flushes are coalesced: at most one export runs, with one more queued for spans that end meanwhile. The OTLP exporter drops batches beyond 30 concurrent exports, which a flush per request could reach on a busy instance with a slow export (40 concurrent requests against a 1.5 s export peaked at 2 in flight). Each flush also waits on the exporter's own `forceFlush()`: the processor's only waits for batches it starts, not an automatic export (at 512 buffered spans) already sending, which can carry the request's spans. A failed export is logged as `OTEL_FLUSH_FAILED`.
 
 `waitUntil` from `@vercel/functions` rather than Next's `after()`: span processors run inside Next's tracing code, where `after()` has no request scope to attach to, while `waitUntil` reads Vercel's request context from a global.
-
----
-
-## Span Attribute Cleanup
-
-`ExportSpanProcessor` strips these attributes before export:
-
-- `next.span_name` — redundant with the span's own `name` field
-- `next.span_type` — internal Next.js classification, not actionable
-
-This keeps the Axiom UI clean without losing meaningful data.
-
----
-
-## Key Design Decisions
-
-1. **No client-side OTel SDK** — avoids CORS issues (Axiom doesn't serve `Access-Control-Allow-Origin`), eliminates bundle size cost, and sidesteps clock skew in cross-origin span stitching. The `x-request-start` header gives sufficient network latency visibility.
-
-2. **Single TracerProvider** — both oRPC (via `ORPCInstrumentation`) and Effect (via `Tracer.layerGlobal`) share the same provider, so parent-child links are preserved across the oRPC → Effect boundary.
-
-3. **`instrumentation.ts` hook** — without this, Next.js creates root request spans before `telemetry.ts` registers its provider, causing orphaned spans. The hook ensures early initialization.
-
-4. **No resource detectors** — suppresses `resource.host.*`, `resource.process.*`, `resource.process.runtime.*` attributes that add noise in Axiom without providing useful debugging info.
-
-5. **Fetch instrumentation disabled** — Next.js fetch auto-instrumentation creates high-cardinality spans (one per URL including query params). `Effect.fn` wrapping the Google Calendar client provides the same observability with controlled span names.
 
 ---
 

@@ -1,11 +1,11 @@
-# Mobile app (Expo / React Native) status
+# Mobile app (Expo / React Native)
 
-## What we built (MVP)
+## Screens
 
-We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
+`apps/native` has three tabs:
 
 - **Tasks tab**
-  - Inbox-style list (non-done, non-scheduled tasks).
+  - Inbox, Today, and tag-filtered task lists.
   - Create / edit / delete tasks.
   - Mark done / mark todo.
   - Uses the existing `tasks.*` oRPC endpoints.
@@ -16,7 +16,7 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
     - **Scheduled tasks** (tasks with `startDate` + `startTime`).
     - **Google Calendar timed events** (all-day events display in a small row).
   - Calendar visibility picker (per-account calendars, persisted).
-  - Empty-slot tap now offers `New event` or `New task`.
+  - Empty-slot tap offers `New event` or `New task`.
   - Create / edit / delete **Google Calendar** timed events.
   - Create scheduled tasks directly from the calendar tab.
   - Tap-to-edit scheduled tasks (basic edit/delete from calendar).
@@ -26,10 +26,9 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
   - Sign in / Sign out functionality.
   - Account info display when signed in.
 
-## Key architecture decisions (current)
+## Architecture
 
-- **Expo SDK 57** with React Native 0.86.x.
-- **New Architecture always on** in the SDK 57 development client.
+- **Expo SDK 58** with React Native 0.88.1 and the New Architecture.
 - **Online-first**: no SQLite/offline sync yet; everything goes through `/api/rpc`.
 - **Auth**: Better Auth Expo plugin + cookie header injection + client-side
   last-login-method tracking via Expo storage.
@@ -38,9 +37,9 @@ We implemented the initial mobile MVP inside `apps/native` with **three tabs**:
     handling does not interfere with session resolution on `/api/rpc`.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
 - **Styling**: Uniwind + Tailwind CSS v4 + BNA UI components.
-- **Theming**: Uniwind CSS theme variables in `global.css` + runtime `Uniwind.setTheme()` for light/dark/system switching.
+- **Theming**: see [mobile-theme.md](./mobile-theme.md) for tokens, fonts, switching, and persistence.
 - **Sizing scale**: Uniwind default `rem` base (16px), with no NativeWind compatibility polyfill.
-- **Navigation**: NativeTabs from `expo-router/unstable-native-tabs` for native iOS/Android tab bar.
+- **Navigation**: NativeTabs from `expo-router/native-tabs` for native iOS/Android tab bar.
 
 ## UI components
 
@@ -67,7 +66,7 @@ Components live in `apps/native/components/ui/`:
 - `date-picker.tsx` - Date/time picker for all scheduling flows
 - `bottom-sheet.tsx`, `tabs.tsx`, `switch.tsx`, `alert-dialog.tsx` - Core app interaction patterns
 
-## Major changes + where
+## Implementation
 
 ### App structure / navigation
 
@@ -92,15 +91,15 @@ app/
 
 Key files:
 - `apps/native/app/(tabs)/_layout.tsx` - NativeTabs with SF Symbol icons
-- `apps/native/app/_layout.tsx` - Root layout with QueryClient, StateProvider, and shared session-query auth gating
+- `apps/native/app/_layout.tsx` - Root layout with QueryClient, StateProvider, and Better Auth session gating
 
 ### NativeTabs implementation
 
-Uses `expo-router/unstable-native-tabs` for platform-native tab bars:
+Uses `expo-router/native-tabs` for platform-native tab bars:
 - iOS: Native UITabBar with SF Symbols, liquid glass on iOS 26+
 - Android: Material 3 bottom navigation
 
-On SDK 55+, tab labels/icons should use `NativeTabs.Trigger.Label` and `NativeTabs.Trigger.Icon`.
+Tab labels/icons use `NativeTabs.Trigger.Label` and `NativeTabs.Trigger.Icon`.
 
 Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Screen` with `headerLeft`/`headerRight` options.
 
@@ -146,17 +145,15 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 
 - Better Auth client: `apps/native/lib/auth-client.ts`
   - Includes Expo `lastLoginMethodClient` for "Last used" auth UI hints.
-- Shared session ownership:
-  - Native root layout now uses the shared `sessionQueryAtom` / `sessionUserAtom`
-    from `packages/state` instead of a separate Better Auth `useSession()`
-    subscriber for first-load gating.
-- oRPC client (cookie injection + URL fallback):
+- Session gating:
+  - The root layout subscribes through `authClient.useSession()` and starts
+    realtime sync with the authenticated user's ID.
+- oRPC client (cookie injection + required server URL):
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.
   - `apps/native/utils/orpc.ts`
-  - Auth cache cleanup also clears the shared session query, linked-account,
-    Google profile, and Google calendar caches so sign-out/account changes do
-    not leave stale data behind.
+  - Settings calls `clearAuthenticatedQueries` on sign-out to remove tasks,
+    linked accounts, Google profiles, calendars, colors, and events.
 - Google / Apple social sign-in buttons (shown by the root layout when signed out):
   - `apps/native/components/social-auth-buttons.tsx`
 
@@ -177,91 +174,28 @@ Example:
 />
 ```
 
-## Theming architecture
+## Editor behavior
 
-### How dark mode works
+See [mobile-task-popover.md](./mobile-task-popover.md) and
+[mobile-event-popover.md](./mobile-event-popover.md) for editor layouts,
+creation flows, and recurrence scope prompts.
 
-Uniwind uses theme variants and CSS variables defined in `global.css`. To dynamically switch themes at runtime:
+## Dependency baseline
 
-1. **Color scheme hook** (`lib/color-scheme-context.tsx`)
-   - No React state of its own: preference and effective scheme are derived from `useUniwind()`
-   - `setColorScheme` calls `Uniwind.setTheme()` and saves the preference (light/dark/system) in SecureStore
-   - `restoreColorScheme()` re-applies the saved preference; the root layout calls it once on launch
+Expo and React Native versions are listed above; exact Expo package versions
+and the Uniwind version live in `apps/native/package.json`. Tailwind CSS uses
+the root workspace catalog.
 
-2. **Theme variables** (`global.css`)
-   - Uses `@layer theme` with `@variant light` and `@variant dark`
-   - Exposes semantic tokens like `--color-background`, `--color-foreground`, etc.
+## Local troubleshooting
 
-3. **Root layout** (`app/_layout.tsx`)
-   - Imports `global.css` once at the app root
-   - Reads effective scheme from `useColorScheme()`
-   - Provides React Navigation theme via ThemeProvider
+Restart Metro with `bun run dev:native` after route-resolution problems.
+Use `bunx expo start --clear` from `apps/native` only when troubleshooting a
+stale Metro cache; clearing it on every normal start makes startup slower.
 
-### Custom font (Sentient)
-
-Sentient is loaded at build time via the `expo-font` plugin in `app.json`. It is applied in two ways:
-
-- **Uniwind components** (e.g. `Text`): `global.css` maps `--font-sans` to `"Sentient-Regular"`, so the `font-sans` class applies it automatically.
-- **Raw `TextInput` components** (e.g. `Input`, `Textarea`): These bypass Uniwind and must set `fontFamily: Fonts.sans` from `@/theme/colors` in their inline style objects.
-
-### Adding new theme colors
-
-1. Add the color variable to both `@variant light` and `@variant dark` in `global.css`
-2. Keep variable names consistent across themes (same keys in both variants)
-3. Use semantic classes in components (for example, `bg-background`, `text-foreground`)
-
-## Expo SDK 57 baseline
-
-Current versions in `apps/native/package.json`:
-- `expo@57.0.10`
-- `react-native@0.86.2`
-- SDK57-pinned Expo packages (`expo-constants`, `expo-linking`, etc.).
-- `tailwindcss@^4`
-- `uniwind@^1.10.1`
-
-## Build + bundling issues we hit (and fixes)
-
-### 1) iOS build failed: Node pinned to Homebrew Cellar path
-
-Error was basically: Node path not found during a CocoaPods script phase.
-
-Fix:
-- Updated `apps/native/ios/.xcode.env.local` to use the stable shim:
-  - `export NODE_BINARY=/opt/homebrew/bin/node`
-
-Note:
-- `expo prebuild --clean` regenerated `.xcode.env.local` again later, so we re-applied the stable path.
-
-### 2) Metro bundling failed (old router path)
-
-We confirmed runtime resolution was correct, and the fix was to fully restart Metro:
-- stop the running Expo CLI (Ctrl+C)
-- restart from the repo root with `bun run dev:native`
-
-Use `bunx expo start --clear` only when troubleshooting a genuinely stale
-Metro cache; clearing it on every normal start makes startup slower.
-
-### 3) Metro bundling failed: missing `expo-network`
-
-`@better-auth/expo` dynamically imports `expo-network`.
-
-Fix:
-- Installed `expo-network` into `apps/native`.
-
-### 4) iOS simulator Google OAuth "Something went wrong" (local only)
-
-Symptoms:
-- Google sign-in works in TestFlight/real device but fails in iOS Simulator with a Google "Something went wrong" / unknown error page.
-- Server logs show auth start/proxy requests, but local simulator flow can still fail unexpectedly.
-
-If the simulator itself is corrupted, shut down and erase the affected device
-from Xcode's Devices and Simulators window, then reinstall with
-`bun run --cwd apps/native ios`.
-Avoid routinely erasing every simulator and all DerivedData.
-
-Notes:
-- Keep host usage consistent during a test run (`localhost` only, or ngrok only).
-- This issue appears simulator-state related; production/TestFlight auth can remain healthy.
+If simulator Google OAuth fails while device sign-in works, keep the server
+hostname consistent throughout the flow. For a corrupted simulator, erase only
+the affected device in Xcode's Devices and Simulators window, then reinstall
+with `bun run --cwd apps/native ios`.
 
 ## Environment variables
 
@@ -270,11 +204,11 @@ Notes:
   - A physical device needs a URL that is resolvable and trusted from that
     device; the Mac-only Portless hostname is intended for the simulator.
 
-## How to run (current recommended workflow)
+## How to run
 
 ### 1) Start the Next.js server (serves `/api/rpc`)
 
-From repo root:
+Start the Portless proxy once with `bun run portless:proxy`, then from the repo root:
 
 ```bash
 bun run dev:web
@@ -296,29 +230,7 @@ From repo root:
 bun run --cwd apps/native ios
 ```
 
-## Production release flow (iOS)
+## Production releases
 
-Releases run in CI on every merge to `main` (`.github/workflows/release.yml`,
-see `documents/ci-cd.md`). The workflow compares the app's fingerprint
-(`runtimeVersion` policy `fingerprint`) with the latest submitted binary:
-
-- **Same fingerprint**: only JS changed, so it publishes an OTA update with
-  `eas update --channel production --environment production`. Installed
-  binaries with that runtime version pick it up on next launch.
-- **New fingerprint**: native code, config plugins, or native dependencies
-  changed, so a GitHub macOS runner builds the IPA with
-  `eas build --profile production --local` and uploads it with `eas submit`.
-  Signing credentials and the build number (`autoIncrement`, remote app
-  version source) still come from EAS, but the build itself does not use
-  EAS cloud build minutes. Releasing the build to the App Store after
-  review is still done in App Store Connect.
-
-`EXPO_PUBLIC_SERVER_URL` comes from the EAS `production` environment for both
-paths.
-
-To build locally (e.g. a dev client), use `bun run --cwd apps/native ios`.
-
-## Notes / limitations (v1)
-
-- Recurrence scope is treated as `"this"` on mobile for now.
-- No offline-first/local DB yet (online-first only).
+See [ci-cd.md](./ci-cd.md) for fingerprint-based OTA updates, native builds,
+submission, and production environment configuration.

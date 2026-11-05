@@ -7,6 +7,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - Task editor UI: `apps/native/components/tasks/task-editor-sheet.tsx`
 - Tasks tab orchestration: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Calendar tab task-edit orchestration: `apps/native/app/(tabs)/(calendar)/index.tsx`
+- Shared editor flow: `apps/native/hooks/use-task-editor-flow.ts`
 - Shared task recurrence logic: `packages/state/src/task-recurrence.ts`
 - Shared recurrence scope options: `packages/state/src/recurrence-scope-options.ts`
 
@@ -15,6 +16,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 `TaskDraft` includes:
 
 - `title`
+- `status`
 - `description`
 - `tagIds`
 - `durationMinutes`
@@ -25,22 +27,19 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - `links` (array of `LinkMeta` objects)
 - `linkInput` (current add-link input value)
 
-## Form sections
+## Form layout
 
-- Title
-- Description
-- Tags (`TagPicker`)
-- Duration (hours/minutes picker sheet)
-- **Links**: Multi-link UI. Existing links are displayed as pressable cards (opens URL) with remove buttons. An "Add link" input at the bottom accepts new URLs on blur. Each URL is parsed via `tasks.parseLink` and appended to the `links` array. Title and duration auto-fill from the first link's metadata when the fields are empty.
-- Due date
-- Start date
-- Start time
-- Repeat block:
+- Compact schedule row: duration picker, start date, start time, due date, repeat toggle.
+- Collapsible repeat block below the schedule row:
   - Frequency: none/daily/weekly/monthly/yearly
   - Interval
   - Weekly days
   - Monthly day-of-month
   - End mode: never/date/count
+- Title row with completion checkbox (edit mode can toggle status).
+- Tags (`TaskTagPicker`).
+- Description.
+- Links: pressable cards with remove buttons and an "Add link" input that accepts URLs on blur. Adding a URL inserts a placeholder immediately; `tasks.parseLink` upgrades it when metadata arrives. The first link fills an empty title and replaces duration when duration metadata is available.
 
 ## Header/footer actions
 
@@ -57,8 +56,8 @@ Create:
 Edit:
 - Calls `getTaskUpdateScopeDecision(...)` from `@kompose/state`.
 - Decision behavior:
-  - Recurring task edits prompt for scope with default `this`.
-  - Recurrence rule changes still support applying to `following`.
+  - Changes to recurring task core fields, tags, or recurrence prompt for scope.
+  - Defaults to `this`, except recurrence changes on a non-master occurrence default to `following`.
   - Non-recurring edits apply immediately with scope `this`.
 - Scoped update dialog options use shared constants:
   - Only this occurrence
@@ -71,26 +70,9 @@ Edit:
   - Only this occurrence
   - This and following
 
-## Calendar integration behavior
-
-When editing a scheduled task from Calendar tab:
-
-- Opens the same `TaskEditorSheet`.
-- Uses the same recurrence update/delete scope decision flow as Tasks tab.
-- Uses the same shared scope labels/options from `@kompose/state`.
-
-## Shared-state extraction summary
-
-Task recurrence and scope behavior is centralized in `packages/state`:
-
-- `task-recurrence.ts` (editor state, normalization, comparison, scope decision)
-- `recurrence-scope-options.ts` (task update/delete scope labels)
-
-This keeps task behavior aligned across mobile and web.
-
 ## Quick QA checklist
 
-- Editing any recurring task fields prompts for update scope (default `this`).
+- Editing recurring task core fields or tags prompts for update scope (default `this`).
 - Editing recurrence on recurring task supports applying to `following`.
 - Recurring delete prompts for scope; non-recurring delete does not.
 - Save closes sheet and updates task list/calendar entry.

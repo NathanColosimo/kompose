@@ -8,7 +8,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - **Save**: validates and submits the form, then closes the popover.
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving.
 - Uses React Hook Form; values stay in sync while open.
-- Updates task via `useTaskMutations().updateTask`.
+- Updates task via `useTasks().updateTask`.
 
 ## Usage
 ```tsx
@@ -21,7 +21,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - Popover component: `apps/web/src/components/task-form/task-edit-popover.tsx`
 - Sidebar trigger: `apps/web/src/components/sidebar/task-item.tsx`
 - Calendar trigger: `apps/web/src/components/calendar/events/task-event.tsx`
-- Task update hook: `apps/web/src/hooks/use-update-task-mutation.ts`
+- Task query/mutation hook: `packages/state/src/hooks/use-tasks.ts`
 
 ## Field order
 1. **Title** — inline input, no label (placeholder only).
@@ -36,8 +36,9 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 10. **Action row** (edit mode): `[Delete] ... [Cancel] [Save]` in a single row. Delete opens a confirmation dialog with scope options for recurring tasks.
 
 ## Keyboard shortcuts
-- **Cmd+Enter** (Mac) / **Ctrl+Enter** (Windows/Linux): Save — available in the sidebar `CreateTaskForm` dialog and the `EventCreationPopover` calendar creation popover. Works even when focus is inside form fields.
+
+See [hotkeys.md](./hotkeys.md#contextual-hotkeys) for form save and delete shortcuts.
 
 ## Notes
 - Calendar drag/resize still works; edit popover wraps the event element.
-- When `TaskEditForm` is used inside `EventCreationPopover` (create mode), `onRegisterSubmit` is provided and the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
+- When `TaskEditForm` is used inside `EventCreationPopover` (create mode), `submitRef` lets the creation popover header submit the form; the form hides its own action buttons.
