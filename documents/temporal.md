@@ -1,305 +1,128 @@
 # Temporal API Usage
 
-This project uses the [Temporal API](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal) via `temporal-polyfill` for date/time handling. This replaces `date-fns` and native `Date` objects in most of the codebase.
+Kompose uses `temporal-polyfill` for date/time handling. Prefer Temporal's
+constructors and methods directly; reserve helpers for domain logic, formatting,
+and native `Date` boundaries.
 
-## Why Temporal?
+## Core types
 
-- **Timezone-aware**: `ZonedDateTime` explicitly tracks timezone, eliminating ambiguity
-- **Immutable**: All operations return new instances
-- **Type-safe**: Distinct types for different concepts (`PlainDate` vs `ZonedDateTime` vs `Instant`)
-- **No DST bugs**: Handles daylight saving time transitions correctly
+| Type | Use |
+| --- | --- |
+| `PlainDate` | Calendar dates: task start dates and due dates |
+| `PlainTime` | Time of day: task start times |
+| `ZonedDateTime` | A date and time in a timezone: calendar positions and event bounds |
+| `Instant` | UTC timestamps: task creation/update times and API instants |
 
-## Core Types
+`currentDateAtom` stores a `PlainDate`; `timezoneAtom` stores a timezone ID.
+Both live in `packages/state/src/atoms/current-date.ts`.
 
-| Type            | Use Case                                                    | Example                              |
-| --------------- | ----------------------------------------------------------- | ------------------------------------ |
-| `PlainDate`     | Calendar dates without time (due dates, start dates)        | `2025-12-15`                         |
-| `ZonedDateTime` | Full datetime with timezone (scheduled times, event bounds) | `2025-12-15T09:30[America/New_York]` |
-| `Instant`       | UTC timestamp (API communication, database)                 | `2025-12-15T14:30:00Z`               |
-| `PlainTime`     | Time of day without date                                    | `09:30`                              |
+## Task scheduling
 
-## Philosophy: Use Temporal API Directly
+Task dates and times are separate database fields in
+`packages/db/src/schema/task.ts`:
 
-Prefer using Temporal's native `.from()` constructors and methods over thin wrapper functions. This makes code more readable by using the standard API that developers can look up in the [MDN docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal).
+```ts
+dueDate: date("due_date", { mode: "string" }),     // "2025-12-15"
+startDate: date("start_date", { mode: "string" }), // "2025-12-15"
+startTime: time("start_time"),                    // "09:30:00"
+```
 
-```typescript
-// ✓ Prefer: Use Temporal API directly
-const date = Temporal.PlainDate.from({ year, month, day });
-const zdt = Temporal.ZonedDateTime.from({
-  year,
-  month,
-  day,
-  hour,
-  minute,
+A task is scheduled on the calendar only when both `startDate` and `startTime`
+are present. Combine the decoded values with the user's timezone when an instant
+or calendar position is needed:
+
+```ts
+const start = task.startDate.toZonedDateTime({
+  plainTime: task.startTime,
   timeZone,
 });
-const duration = end.since(start).total({ unit: "minutes" });
-
-// ✓ Use .add() and .subtract() directly
-const nextWeek = date.add({ days: 7 });
-const yesterday = date.subtract({ days: 1 });
-const monthStart = date.with({ day: 1 });
-const monthEnd = date.with({ day: date.daysInMonth });
-
-// ✗ Avoid: Thin wrappers that hide the API
-const date = plainDateFromYMD(year, month, day);
-const nextWeek = addDays(date, 7); // Just use date.add({ days: 7 })
-const monthStart = startOfMonth(date); // Just use date.with({ day: 1 })
+const end = start.add({ minutes: task.durationMinutes });
 ```
 
-Utility functions in `temporal-utils.ts` are reserved for:
+The task contract in `packages/api/src/routers/task/contract.ts` uses Zod codecs
+from `packages/api/src/lib/temporal-codecs.ts`:
 
-- **Parsing/formatting** with project-specific logic (e.g., Postgres timestamp format)
-- **Domain logic** that combines multiple operations (e.g., `getDayBoundsZoned`)
-- **Bridge functions** for native Date interop at UI boundaries
+- `plainDateCodec`: `YYYY-MM-DD` ↔ `Temporal.PlainDate`
+- `plainTimeCodec`: time string ↔ `Temporal.PlainTime`
+- `instantCodec`: timestamp string ↔ `Temporal.Instant` for `createdAt` and `updatedAt`
 
-## Architecture
+`useTasks` in `packages/state/src/hooks/use-tasks.ts` encodes mutation inputs and
+decodes responses. Callers pass Temporal values, not UTC timestamps, for task
+scheduling:
 
-### Database Layer (Drizzle)
-
-All date/time columns use `mode: "string"` to avoid auto-conversion:
-
-```typescript
-// packages/db/src/schema/task.ts
-dueDate: date("due_date", { mode: "string" }),      // "2025-12-15"
-startDate: date("start_date", { mode: "string" }),  // "2025-12-15"
-startTime: timestamp("start_time", { mode: "string" }), // "2025-12-15 09:30:00"
-```
-
-### State Layer (Jotai Atoms)
-
-Atoms store Temporal types directly:
-
-```typescript
-// atoms/current-date.ts
-export const currentDateAtom = atom<Temporal.PlainDate>(todayPlainDate());
-export const timezoneAtom = atom<string>(getSystemTimeZone());
-```
-
-### UI Boundary (React Components)
-
-UI pickers (like shadcn Calendar) expect native `Date` objects. Convert at the boundary:
-
-```typescript
-// In form components
-import { dateToDateString, dateStringToDate } from "@/lib/temporal-utils";
-
-// Calendar expects Date, form state stores string
-<Calendar
-  selected={field.value ? dateStringToDate(field.value) : undefined}
-  onSelect={(date) => field.onChange(date ? dateToDateString(date) : null)}
-/>;
-```
-
-## Utility Functions
-
-Utilities in `apps/web/src/lib/temporal-utils.ts` handle project-specific concerns. For basic operations, use Temporal API directly.
-
-### Use Temporal API Directly
-
-```typescript
-// Creating dates
-Temporal.PlainDate.from({ year: 2025, month: 12, day: 15 });
-Temporal.PlainDate.from("2025-12-15");
-
-// Creating ZonedDateTime
-Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone });
-
-// Arithmetic - use .add() and .subtract() directly
-date.add({ days: 5 });
-date.subtract({ days: 3 });
-zdt.add({ minutes: 30 });
-
-// Month operations - use .with() directly
-date.with({ day: 1 }); // First day of month
-date.with({ day: date.daysInMonth }); // Last day of month
-
-// Duration between two ZonedDateTimes
-end.since(start).total({ unit: "minutes" });
-
-// Comparison
-Temporal.ZonedDateTime.compare(a, b); // -1, 0, or 1
-date1.equals(date2); // boolean
-```
-
-### Project Utilities
-
-`packages/state/src/temporal-utils.ts` (`@kompose/state/temporal-utils`) holds the
-helpers both apps share; `apps/web/src/lib/temporal-utils.ts` holds the web-only ones and
-imports the shared ones instead of copying them.
-
-```typescript
-// Current time (shared)
-getSystemTimeZone()           // "America/New_York"
-todayPlainDate(timeZone?)     // PlainDate for today
-
-// Day bounds (for range queries)
-startOfDayZoned(date, timeZone)   // Start of day as ZonedDateTime (shared)
-endOfDayZoned(date, timeZone)     // Exclusive end (start of next day) (shared)
-getDayBoundsZoned(date, timeZone) // { dayStart, dayEnd } (web)
-
-// Comparison helpers
-isSameDay(a, b)               // Same calendar day? (ZonedDateTime)
-
-// Clamping
-clampZonedDateTime(value, min, max)
-
-// Calendar grid positioning
-minutesFromMidnight(zdt)      // Minutes since midnight
-```
-
-### Native Date Interop (for UI boundaries)
-
-```typescript
-// Date ↔ PlainDate
-dateToPlainDate(date, timeZone);
-plainDateToDate(date, timeZone);
-
-// Date ↔ ZonedDateTime
-dateToZonedDateTime(date, timeZone);
-zonedDateTimeToDate(zdt);
-
-// Date ↔ String (for form fields with date pickers)
-dateToDateString(date); // Date → "2025-12-15" (local timezone)
-dateStringToDate(str); // "2025-12-15" → Date (local midnight)
-```
-
-### Parsing Database Strings
-
-```typescript
-// Parse Postgres timestamp (handles "2025-12-15 09:30:00" format with space)
-isoStringToZonedDateTime(str, timeZone);
-
-// For API output
-zonedDateTimeToISOString(zdt); // → "2025-12-15T14:30:00.000Z"
-```
-
-### Formatting
-
-```typescript
-formatPlainDate(date, options?)                   // "Dec 15, 2025"
-formatTime(zdt, options?)                         // "9:30 AM"
-formatHourLabel(hour)                             // "9 AM"
-formatDateString(str, options?)                   // Format "YYYY-MM-DD" string
-formatTimestampString(str, timeZone, options?)    // Format timestamp string
-```
-
-## Common Patterns
-
-### Creating PlainDate/ZonedDateTime
-
-```typescript
-// From components - use Temporal.*.from() directly
-const date = Temporal.PlainDate.from({ year, month, day });
-const zdt = Temporal.ZonedDateTime.from({
-  year: date.year,
-  month: date.month,
-  day: date.day,
-  hour,
-  minute,
-  timeZone,
-});
-```
-
-### Passing DateTime in Component Data
-
-Instead of decomposing date/time into separate fields, pass the full `ZonedDateTime`:
-
-```typescript
-// ✓ Prefer: Single ZonedDateTime
-type SlotData = { dateTime: Temporal.ZonedDateTime };
-
-// ✗ Avoid: Decomposed fields that need reconstruction
-type SlotData = { date: PlainDate; hour: number; minutes: number };
-```
-
-### Parsing task.startTime from DB
-
-```typescript
-const timeZone = useAtomValue(timezoneAtom);
-
-// task.startTime is "2025-12-15 09:30:00" from Postgres
-const startZdt = isoStringToZonedDateTime(task.startTime, timeZone);
-const endZdt = startZdt.add({ minutes: task.durationMinutes });
-```
-
-### Duration calculations
-
-```typescript
-// Use Temporal's .since() directly
-const durationMinutes = Math.round(end.since(start).total({ unit: "minutes" }));
-```
-
-### Building API payloads
-
-```typescript
-// Convert ZonedDateTime to ISO string for API
+```ts
 updateTask.mutate({
   id: task.id,
-  task: { startTime: zdt.toInstant().toString() },
-});
-```
-
-### Form with date picker
-
-```typescript
-// Form state stores YYYY-MM-DD string (matches DB schema)
-const form = useForm({
-  defaultValues: {
-    dueDate: dateToDateString(new Date()), // "2025-12-15"
+  scope: "this",
+  task: {
+    startDate: target.toPlainDate(),
+    startTime: target.toPlainTime(),
   },
 });
+```
 
-// Convert for Calendar component (which expects native Date)
+## Shared and web helpers
+
+`packages/state/src/temporal-utils.ts` (`@kompose/state/temporal-utils`) owns:
+
+- `getSystemTimeZone()`
+- `todayPlainDate(timeZone?)`
+- `startOfDayZoned(date, timeZone)`
+- `endOfDayZoned(date, timeZone)` — the exclusive end, at the start of the next day
+
+`apps/web/src/lib/temporal-utils.ts` imports those day-bound helpers and adds:
+
+- Calendar math: `getDayBoundsZoned`, `isSameDay`, `clampZonedDateTime`, `minutesFromMidnight`
+- Display: `formatPlainDate`, `formatTime`, `formatHourLabel`, `formatDuration`
+- Timestamp parsing: `isoStringToZonedDateTime`
+- Native `Date` boundaries: `zonedDateTimeToDate`, `temporalToPickerDate`,
+  `pickerDateToTemporal`, `dateToDateString`, `formatTimeString`
+
+## UI boundaries
+
+Web date pickers expect native `Date` objects. Convert at the boundary while
+keeping form state as Temporal values:
+
+```tsx
 <Calendar
-  selected={field.value ? dateStringToDate(field.value) : undefined}
-  onSelect={(date) => field.onChange(date ? dateToDateString(date) : null)}
-/>;
+  selected={field.value ? temporalToPickerDate(field.value) : undefined}
+  onSelect={(date) => field.onChange(date ? pickerDateToTemporal(date) : null)}
+/>
 ```
 
-## Gotchas
+These picker helpers preserve the local calendar date without timezone
+conversion. `zonedDateTimeToDate` instead preserves an instant.
 
-### Postgres Timestamp Storage
+Never use `date.toISOString().split("T")[0]` for a local date: converting to UTC
+can shift the day. Use `dateToDateString` or `pickerDateToTemporal`.
 
-Postgres `timestamp` (without time zone) stores bare datetime values without timezone info:
+## Timestamp parsing and timezone rules
 
-- **Input**: `2025-12-15T14:00:00Z` → Postgres strips the `Z` and stores `2025-12-15 14:00:00`
-- **Output**: Returns `2025-12-15 14:00:00` (no `Z`)
+`isoStringToZonedDateTime(str, timeZone)` handles three timestamp forms:
 
-This means you must store **local datetime**, not UTC:
+- A trailing `Z`: parse as an instant, then convert to `timeZone`.
+- An explicit offset: parse as an instant, then convert to `timeZone`.
+- No offset, including Postgres strings with a space separator: parse as a
+  local date-time in `timeZone`.
 
-```typescript
-// ✓ Correct: Store local datetime (preserves wall-clock time)
-startTime: zdt.toPlainDateTime().toString(); // "2025-12-15T09:00:00"
+Task `startTime` is a time-only field; combine it with `startDate` as shown
+above instead of passing it to this timestamp parser.
 
-// ✗ Wrong: toInstant converts to UTC, Postgres strips Z, time shifts
-startTime: zdt.toInstant().toString(); // "2025-12-15T14:00:00Z" → stored as 14:00, read as 14:00 local
-```
+`instantCodec` treats database creation/update timestamps without an offset as
+UTC. That differs from the web timestamp helper's local-time interpretation.
 
-For APIs that expect UTC (like Google Calendar), use `.toInstant().toString()`.
+For Google Calendar, send a timestamp with an offset or `Z`; timed event
+payloads also carry `timeZone` to preserve recurrence behavior. Calendar drag
+payloads use offset strings with `timeZoneName: "never"` and
+`calendarName: "never"`, rather than bracketed Temporal timezone annotations.
 
-### Postgres Timestamp Format
+## Date math
 
-Postgres `TIMESTAMP` columns return `"2025-12-15 03:45:00"` (space, not `T`). Use `isoStringToZonedDateTime` which normalizes this and handles both formats.
+Use `.add()`, `.subtract()`, `.with()`, `.since()`, and Temporal comparison
+methods directly. For example, `date.with({ day: date.daysInMonth })` finds the
+last day of a month, and `end.since(start).total({ unit: "minutes" })` measures a
+duration.
 
-### UTC vs Local
-
-- `Temporal.Instant.from()` expects UTC (ends in `Z`)
-- `Temporal.PlainDateTime.from()` parses as-is (no timezone)
-- Our `isoStringToZonedDateTime` treats input as local time in the given timezone
-
-### Date String Timezone Bugs
-
-Never use `date.toISOString().split("T")[0]` - this converts to UTC first and can shift the date. Use `dateToDateString()` which preserves local timezone.
-
-### PlainDate.equals() for Comparison
-
-Use `.equals()` for PlainDate comparison, not `===`:
-
-```typescript
-// ✓ Correct
-if (date1.equals(date2)) { ... }
-
-// ✗ Wrong (compares object references)
-if (date1 === date2) { ... }
-```
+Use `.equals()` for Temporal value equality; `===` compares object references.
+Timezone-aware arithmetic accounts for DST, so distinguish adding calendar days
+from adding a fixed number of hours.

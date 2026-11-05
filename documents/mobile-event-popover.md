@@ -1,6 +1,6 @@
 # Mobile Event Popover (Sheet)
 
-Mobile keeps the event sheet for event create/edit, but empty-slot creation now starts with a lightweight chooser so users can create either an event or a task.
+Empty-slot creation starts with a chooser for an event or task; event create/edit uses `EventEditorSheet`.
 
 ## Where to find it
 
@@ -67,7 +67,7 @@ Top-to-bottom:
 ## Save/delete behavior
 
 Create:
-- Empty-slot tap now opens a chooser with `New event` and `New task`.
+- Empty-slot tap opens a chooser with `New event` and `New task`.
 - `New event` opens the existing event sheet and saves directly via `createEvent`.
 - `New task` opens the task sheet in create mode and saves via `createTask`.
 - Task creation is prefilled from the tapped slot:
@@ -85,35 +85,21 @@ Edit (recurring):
   - Only this occurrence
   - Entire series
   - This and following
-- Confirming scope applies update and optional move with the selected scope.
+- Confirming scope applies the update. If the calendar changes, only `all` is enabled and the entire series moves.
 
 Delete:
 - Non-recurring: simple confirm dialog.
 - Recurring: scoped delete dialog (`this`/`all`/`following`).
 
-## Important fixes included
+## Implementation constraints
 
-1. Recurrence scope dialog flow and lock-up
-- The editor sheet is closed before showing scope dialogs (`setEventDraft(null)`), preventing background interaction lock.
-
-2. `following` backend 400 fix (Google API timezone requirement)
+- Close the editor (`setEventDraft(null)`) before showing a scope dialog to prevent background interaction lock.
 - Timed updates include `start.timeZone` and `end.timeZone`.
 - Update payload preserves nested `start`/`end` fields from the source event when merging.
-
-3. Date/time picker UX
 - Picker triggers in event editor hide leading icons (`showIcon={false}`).
 - Compact date labels use `Mon D` format (year hidden in display label).
 - Year list auto-scrolls to selected year.
 - Time lists auto-scroll to the selected hour/minute.
-
-## Shared-state extraction summary
-
-To keep web/native aligned and avoid duplication, recurrence and scope logic lives in `packages/state`:
-
-- `google-event-recurrence.ts`
-- `recurrence-scope-options.ts`
-
-This is what both platforms now consume for parsing/building recurrence and scope labels/defaults.
 
 ## Quick QA checklist
 

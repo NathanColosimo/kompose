@@ -19,7 +19,7 @@ Cache lookup (Redis GET, key scoped to the user)
 
 **Service:** `GoogleCalendarCacheService` (`packages/api/src/routers/google-cal/cache.ts`)
 
-An `Effect.Service`. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility. The methods build keys and call the shared best-effort JSON cache, `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`), which `WhoopCacheService` uses too.
+A `Context.Service` with a `Layer.effect` layer. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility. The methods build keys and call the shared best-effort JSON cache, `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`), which `WhoopCacheService` uses too.
 
 **Redis client:** the shared `redis` connection from `@kompose/redis` (ioredis, `REDIS_URL`), which Better Auth, the rate limiters, the WHOOP cache and sync publishes use too.
 
@@ -123,8 +123,6 @@ const cached = yield* cache.getCachedEvents(...);
 yield* cache.setCachedEvents(...);
 ```
 
-`webhooks/webhook-service.ts` and `routers/whoop/service.ts` still pipe into the old `logAndSwallowCacheError` / `logAndSwallowWhoopCacheError` / `logWhoopCacheErrorAndFallback` helpers, which are now pass-throughs kept until those files drop them.
-
 ---
 
 ## SCAN-based Deletion
@@ -146,7 +144,7 @@ do {
 
 ## User-Scoped Keys
 
-Every cache key starts with the user ID (Google and WHOOP alike). An entry is written only after that user's own `getLinkedAccessToken` succeeded, which looks the account row up by user and so checks ownership. A hit therefore needs no ownership check or token, and a request for another user's account can only miss and then fail the lookup:
+Every cache key includes the user ID after its resource prefix (Google and WHOOP alike). An entry is written only after that user's own `getLinkedAccessToken` succeeded, which looks the account row up by user and so checks ownership. A hit therefore needs no ownership check or token, and a request for another user's account can only miss and then fail the lookup:
 
 ```ts
 // 1. Cache lookup (scoped to this user)
@@ -180,11 +178,4 @@ so they target the same keys as normal reads.
 
 ## Layer Composition
 
-`GoogleCalendarCacheService.layer` is part of `AppLayer` in `runtime.ts`, so handlers get it from the shared `appRuntime` through the oRPC context:
-
-```ts
-list: os.calendars.list.effect(function* ({ input, context }) {
-  const cache = yield* GoogleCalendarCacheService;
-  // ...
-}),
-```
+See [services.md](./services.md#layer-composition) for how `GoogleCalendarCacheService.layer` joins the shared API runtime.

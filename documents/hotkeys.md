@@ -27,13 +27,11 @@ These hotkeys only work in specific contexts.
 
 ### Command Bar
 
-When the command bar is open:
+See [command-bar.md](./command-bar.md#keyboard-navigation) for navigation within the palette.
 
-| Key   | Action                                          |
-| ----- | ----------------------------------------------- |
-| `↑/↓` | Navigate through items                          |
-| `↵`   | Select item / enter sub-view                    |
-| `Esc` | Go back to root view, or close if already there |
+### Creation forms
+
+**Cmd+Enter** / **Ctrl+Enter** saves from the sidebar `CreateTaskForm` dialog and the calendar `EventCreationPopover`, including when focus is inside a form field.
 
 ### Edit Popover (Task or Event)
 
@@ -54,6 +52,6 @@ When an edit popover is open:
 
 ## Notes
 
-- All global hotkeys use `enableOnFormTags: false` to prevent firing when typing in inputs
-- Delete hotkey uses custom logic to skip `<input>` and `<textarea>` elements while still working on buttons and other form elements
+- Global hotkeys use `enableOnFormTags: false`, except `⌘K`, which also works in inputs
+- Delete hotkeys skip `<input>` and `<textarea>`; the task editor also skips `<select>`
 - Mac's "delete" key maps to `backspace`, so both are registered for cross-platform support

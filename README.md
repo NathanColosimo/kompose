@@ -4,18 +4,21 @@ Kompose is a calendar and task manager with web, iOS, and macOS clients.
 
 ## Stack
 
-- **TypeScript** - For type safety and improved developer experience
+- **TypeScript**
 - **Next.js** - Full-stack React framework
 - **React Native** - Build mobile apps using React
 - **Expo** - Tools for React Native development
-- **TailwindCSS** - Utility-first CSS for rapid UI development
+- **Tailwind CSS** - Utility classes
 - **shadcn/ui** - Reusable UI components
 - **oRPC** - End-to-end type-safe APIs with OpenAPI integration
 - **Drizzle** - TypeScript-first ORM
 - **PostgreSQL** - Database engine
 - **Authentication** - Better Auth
 - **Electron** - Build native desktop applications
-- **Turborepo** - Optimized monorepo build system
+- **Turborepo** - Monorepo build system
+
+Bun manages dependencies and scripts; the Next.js API runs on Node 26 on Vercel.
+Redis access uses ioredis through `@kompose/redis`.
 
 ## Getting Started
 
@@ -111,6 +114,4 @@ kompose/
 
 ## Releases
 
-Merging to `main` releases whatever changed: migrations and the web app first,
-then the iOS app (an OTA update, or a new App Store build when native code
-changed) and the desktop app. See `documents/ci-cd.md`.
+See [documents/ci-cd.md](./documents/ci-cd.md) for web, iOS, and desktop releases.

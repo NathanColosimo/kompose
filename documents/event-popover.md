@@ -7,8 +7,8 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 - Triggered from (edit mode): `GoogleCalendarEvent` (`apps/web/src/components/calendar/events/google-event.tsx`)
 - Triggered from (create mode): `EventCreationPopover` (`apps/web/src/components/calendar/event-creation/event-creation-popover.tsx`)
 - Helper utilities: `apps/web/src/components/calendar/events/event-edit-utils.ts`
-- Prefetch hook: `apps/web/src/hooks/use-recurring-event-master.ts`
-- Mutations: `apps/web/src/hooks/use-google-event-mutations.ts`
+- Recurrence master hook: `packages/state/src/hooks/use-recurring-event-master.ts`
+- Mutations: `packages/state/src/hooks/use-google-event-mutations.ts` and `packages/state/src/hooks/use-move-google-event-mutation.ts`
 
 ### Props
 - `event?: GoogleEvent` — The event to edit. Optional for create mode.
@@ -66,7 +66,8 @@ Used for click-and-drag creation on the calendar.
 - Uses `createEvent` mutation instead of `updateEvent`
 
 #### Keyboard shortcuts (Create Mode)
-- **Cmd+Enter** (Mac) / **Ctrl+Enter** (Windows/Linux): Save — works even when focus is inside form fields.
+
+See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 
 #### Click-and-Drag Creation Flow
 1. User hovers over calendar → 30-minute preview appears
@@ -105,15 +106,11 @@ Used for click-and-drag creation on the calendar.
 #### Move to calendar flow — Edit Mode Only
 - Moving between calendars is handled via the calendar picker in the form.
 - If the user changes the calendar and clicks **Save**, the save flow handles both the data update and the calendar move.
-- Move supports recurrence scopes:
-  - `this`: move the instance/event
-  - `all`: move the series master
-  - `following`: truncate the original master series and create a new series in the destination calendar
-- For non-recurring events, move scope is effectively limited to `this`.
+- Recurring moves select `all` and disable `this` / `following` in the scope dialog. The series master is moved.
+- Non-recurring moves use `this`.
 
 #### Backend safety: partial failure recovery for `following`
-- For `following` (both update and move), if the master is truncated but the new series creation fails,
-  the client attempts a **best-effort rollback** by restoring the master's original recurrence.
+- `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server; the edit UI only offers `following` for updates.
 
 #### Error feedback
 - Mutations surface failures via toast errors:

@@ -17,8 +17,9 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
 - Selecting a task:
   - Resolves a single destination before opening anything:
     - Calendar for tasks with both `startDate` and `startTime`
-    - Inbox for tasks with neither `startDate` nor `startTime`
-    - Today for non-calendar tasks that currently belong to Today sections
+    - Inbox for non-recurring tasks without `startDate`
+    - Today for tasks with a start date but no start time, navigating to that date
+    - Today for other tasks matching its overdue, unplanned, or done sections
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
   - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
@@ -37,8 +38,7 @@ fields updates as you type. Typing `#` suggests your tags.
 - Parsing runs in a SharedWorker behind an oRPC contract
   (`packages/task-parser/src/worker-contract.ts`); Temporal values cross the
   worker boundary as Temporal objects. Every window and tab of a deploy
-  shares one worker and one loaded model (the desktop dashboard and popup
-  used to hold about 25 MB each). If the worker's script can't load, its
+  shares one worker and one loaded model. If the worker's script can't load, its
   `error` event fails the load, and the command bar creates plain tasks.
 - Enter before the model has a parse waits for it.
 
@@ -80,7 +80,7 @@ The model returns the input's URLs as `links: string[]`. On task creation, `task
   list. Pressing Esc from the root view dismisses the popup. On macOS,
   dismissal restores focus to the app that was active before the popup
   opened (e.g. browser) without flickering the main Kompose window.
-- Electron creates the popup on first use and releases it after 60 seconds hidden.
+- Electron creates the popup hidden at startup and keeps it loaded for quick access.
 - Preset shortcuts in Settings: `CommandOrControl+Shift+K` (default),
   `Control+Space`, and `Alt+Space`. Electron's `globalShortcut` registers them;
   `conf` persists the selection. A failed registration preserves the old shortcut.

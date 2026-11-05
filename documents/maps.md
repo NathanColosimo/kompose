@@ -24,13 +24,13 @@ Parsing:
 
 ## Debounce + query behavior
 `useLocationSearch(query)`:
-- Debounces input by 500ms
+- Debounces input by 250ms
 - Does not query for strings shorter than 2 characters
 - Uses React Query with `keepPreviousData` to avoid flicker
 
 ## UI usage
 - Web popover: `apps/web/src/components/calendar/events/event-edit-popover.tsx`
-- Native calendar modal: `apps/native/app/(tabs)/calendar.tsx`
+- Native event sheet: `apps/native/components/calendar/calendar-event-editor-sheet.tsx`
 
 Both UIs show suggestions as the user types and allow selection to fill the location field.
 

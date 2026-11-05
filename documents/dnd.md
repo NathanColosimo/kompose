@@ -13,7 +13,7 @@
 - Drop targets: `dnd/day-column-slots.ts` (collision detection, the hovered-slot atom, slot to `ZonedDateTime`).
 - Provider: `dnd-context.tsx` wires sensors, preview, and mutations using shared helpers.
 - Events: `events/task-event.tsx` and `events/google-event.tsx` handle render + drag/resize handles.
-- Time grid: `time-slot.tsx` (click-to-create mouse handlers, grid lines), `day-column.tsx` (column + its droppable and slot highlight), `day-header.tsx`, `time-gutter.tsx`, `slot-utils.ts` (hours/minutes constants).
+- Time grid: `time-grid/time-slot.tsx` (click-to-create mouse handlers, grid lines), `time-grid/day-column.tsx` (column + its droppable and slot highlight), `time-grid/day-header.tsx`, `time-grid/time-gutter.tsx`, `time-grid/slot-utils.ts` (hours/minutes constants). Paths in this section are relative to `apps/web/src/components/calendar/`.
 
 ## Drop targets
 
@@ -61,7 +61,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 - `handleDragMove` (dnd-kit `onDragMove`) reads the slot from the top collision and builds previews via `computePreviewForDrag`, positioned from the column rect. It skips moves whose slot and column rect are unchanged. `onDragOver` is not used, since it fires only when the hovered column changes.
 - Hovered-slot highlight: `handleDragMove` writes the `DropSlot` to `dropSlotAtom`; each column renders one absolutely positioned highlight that re-renders only when its own slot changes.
-- Height = duration/60 \* `PIXELS_PER_HOUR`, min 24px.
+- Height = duration/60 \* `PIXELS_PER_HOUR`, min 20px.
 - Preview follows the same snapping/clamping rules (including end-handle +15min adjust).
 - Drag overlay (title pill) is shown only for move drags; hidden during resize drags.
 
@@ -74,22 +74,12 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 - Tasks: `orpc.tasks.update` with optimistic updates and refetch on settle.
 - Google events: `orpc.googleCal.events.update` with invalidate on settle.
 - Payloads built via `buildTaskMoveUpdate`, `buildTaskResizeUpdate`, `buildGoogleMoveUpdate`, `buildGoogleResizeUpdate`.
-- ISO strings for API: `zdt.toInstant().toString()`.
+- Task payloads carry `Temporal.PlainDate` and `Temporal.PlainTime`; Google event payloads carry offset date-time strings plus `timeZone`. See [temporal.md](./temporal.md#task-scheduling) for task storage and codecs.
 
 ## Constraints & defaults
 
 - Granularity: 15 minutes (`MINUTES_STEP`), slot list in `SLOT_MINUTES`.
 - Timezone: passed through component tree, stored in `ZonedDateTime`.
-- Min visual height: 24px.
 - Default scroll: 8am on mount.
 
-## Touchpoints
-
-- Drag start: sets active item and resize flag for overlay visibility.
-- Drag move: resolves the target slot, updates the highlight and preview.
-- Drag end: reads the slot from the top collision, applies snapping/clamping, triggers mutation.
-
-## Known behaviors
-
-- Resizing cannot cross midnight; dragging to edges clamps at day start/end.
-- Same-day check uses `isSameDay(a, b)` comparing `ZonedDateTime.toPlainDate()`.
+The same-day resize check uses `isSameDay(a, b)`, which compares `ZonedDateTime.toPlainDate()`.
