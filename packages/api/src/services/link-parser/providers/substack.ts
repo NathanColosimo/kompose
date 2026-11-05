@@ -58,13 +58,10 @@ const postSchema = z.object({
 
 const archiveResponseSchema = z.array(postSchema);
 
-/** Response shape for the /api/v1/posts/by-id/{id} endpoint */
 const postByIdResponseSchema = z.object({
   post: postSchema,
   publication: PublicationSchema,
 });
-
-// ============================================================================
 
 const SUBSTACK_SLUG_PATTERN = /\/p\/([a-z0-9-]+)/;
 const INBOX_POST_ID_PATTERN = /\/inbox\/post\/(\d+)/;
@@ -92,7 +89,6 @@ function extractHomePostId(url: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** Extract post_id from URL query params (used by custom domain / share links) */
 function extractQueryPostId(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -122,7 +118,6 @@ function extractHtmlPostId(html: string): string | null {
   return null;
 }
 
-/** Fetch a post by numeric ID via the direct by-id endpoint */
 const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   url: string,
   postId: string
@@ -165,7 +160,6 @@ const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   return data.data;
 });
 
-/** Fetch a post by slug via the archive search endpoint */
 const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
   url: string,
   baseUrl: string,
@@ -219,7 +213,6 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
   return { post };
 });
 
-/** Fetch the public page HTML and extract an embedded post ID as a fallback */
 const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
   function* (url: string) {
     const response = yield* Effect.tryPromise({
@@ -261,7 +254,6 @@ const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
   }
 );
 
-/** Build LinkMeta from a resolved Substack post */
 function postToLinkMeta(
   post: z.infer<typeof postSchema>,
   publication?: z.infer<typeof PublicationSchema>
@@ -291,32 +283,31 @@ function postToLinkMeta(
   };
 }
 
-/** Fetch and parse a Substack post. Priority: query param post_id > inbox path ID > slug search */
+/**
+ * Try query, inbox and home IDs before slug search. If search fails, extract an
+ * ID from the page HTML and retry by ID. See documents/link-parsing.md.
+ */
 export const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
   url: string
 ) {
-  // 1. Query param post_id (custom domain / share links)
   const queryPostId = extractQueryPostId(url);
   if (queryPostId) {
     const data = yield* fetchPostById(url, queryPostId);
     return postToLinkMeta(data.post, data.publication);
   }
 
-  // 2. Inbox/post links have a numeric ID directly in the path
   const inboxPostId = extractInboxPostId(url);
   if (inboxPostId) {
     const data = yield* fetchPostById(url, inboxPostId);
     return postToLinkMeta(data.post, data.publication);
   }
 
-  // 3. Home/post links use p-{id} format
   const homePostId = extractHomePostId(url);
   if (homePostId) {
     const data = yield* fetchPostById(url, homePostId);
     return postToLinkMeta(data.post, data.publication);
   }
 
-  // 4. Publication post links use the slug via archive search
   const slug = extractSlug(url);
   if (!slug) {
     return yield* new LinkParseError({

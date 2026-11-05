@@ -14,9 +14,6 @@ export const SearchPlacesInputSchema = z.object({
   query: z.string().min(1),
 });
 
-/**
- * Search Google Places for location suggestions.
- */
 export const searchPlaces = oc
   .input(SearchPlacesInputSchema)
   .output(z.array(LocationSuggestionSchema));

@@ -16,10 +16,6 @@ import {
 } from "./db";
 import { InvalidTagError, TagConflictError, TagNotFoundError } from "./errors";
 
-// ============================================================================
-// Service Definition (Effect.Service + Effect.fn pattern)
-// ============================================================================
-
 export class TagService extends Context.Service<TagService>()("TagService", {
   make: Effect.gen(function* () {
     const listTags = Effect.fn("TagService.listTags")(function* (

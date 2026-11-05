@@ -1,6 +1,5 @@
 import { COMMON_ERROR_STATUS_MAP, ORPCError, os } from "@orpc/server";
 
-/** A code the client can receive. oRPC gives each one its HTTP status. */
 export type PublicErrorCode = keyof typeof COMMON_ERROR_STATUS_MAP;
 
 /**
@@ -24,7 +23,6 @@ function isPublicError(value: unknown): value is PublicError {
   );
 }
 
-/** The `publicError` of `error`, if its class defines one. */
 function publicErrorOf(error: unknown): PublicError | undefined {
   if (error instanceof Error && "publicError" in error) {
     const { publicError } = error;
@@ -34,9 +32,9 @@ function publicErrorOf(error: unknown): PublicError | undefined {
 }
 
 /**
- * Sends errors that define `publicError` to the client with that code and
- * message. Every other error passes through, and oRPC sends it as a generic
- * 500 that keeps its details on the server.
+ * Expose only an error's explicit public message. Other errors pass through:
+ * oRPC preserves ORPCErrors and hides unexpected errors behind a generic 500.
+ * See documents/services.md for the client error policy.
  */
 export const sendPublicErrors = os.middleware(async ({ next }) => {
   try {

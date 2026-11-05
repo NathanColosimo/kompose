@@ -12,25 +12,19 @@ const DAY_MAP: Record<string, number> = {
   WE: 3,
 };
 
-/** Safety cap: max occurrences to generate if recurrence has no count/until */
+/** Safety cap when count is absent, even if an until date is set. */
 const DEFAULT_MAX_OCCURRENCES = 52; // ~1 year of weekly occurrences
 
 /**
- * Generate occurrence dates for a recurring task.
- *
- * @param recurrence - The recurrence pattern (discriminated by freq)
- * @param startDate - The first occurrence date
- * @param options - Generation limits
- * @returns Array of PlainDate for each occurrence
+ * Generate dates on or after startDate, stopping at the count (or safety cap)
+ * or the inclusive until date, whichever comes first.
  */
 export function generateOccurrences(
   recurrence: TaskRecurrence,
   startDate: Temporal.PlainDate
 ): Temporal.PlainDate[] {
-  // Use recurrence.count if set, otherwise fall back to safety cap
   const limit = recurrence.count ?? DEFAULT_MAX_OCCURRENCES;
 
-  // Parse until date from recurrence rule
   const untilDate = recurrence.until
     ? Temporal.PlainDate.from(recurrence.until)
     : null;
@@ -83,7 +77,6 @@ export function generateOccurrences(
   return occurrences;
 }
 
-/** Check if we should stop generating */
 function shouldStop(
   occurrences: Temporal.PlainDate[],
   limit: number,
@@ -122,7 +115,6 @@ function generateWeekly(
   limit: number,
   untilDate: Temporal.PlainDate | null
 ): void {
-  // Convert byDay to Temporal dayOfWeek values, filter undefined, and sort
   const targetDays = byDay
     .map((d) => DAY_MAP[d])
     .filter((d): d is number => d !== undefined)
@@ -135,16 +127,13 @@ function generateWeekly(
   let currentWeekStart = weekStart;
 
   while (!shouldStop(occurrences, limit, currentWeekStart, untilDate)) {
-    // Generate occurrences for each target day in this week
     for (const dayOfWeek of targetDays) {
       const date = currentWeekStart.add({ days: dayOfWeek - 1 });
 
-      // Skip dates before the start date
       if (Temporal.PlainDate.compare(date, startDate) < 0) {
         continue;
       }
 
-      // Check stop conditions
       if (shouldStop(occurrences, limit, date, untilDate)) {
         return;
       }
@@ -152,7 +141,6 @@ function generateWeekly(
       occurrences.push(date);
     }
 
-    // Move to the next interval week
     currentWeekStart = currentWeekStart.add({ weeks: interval });
   }
 }
@@ -165,7 +153,6 @@ function generateMonthly(
   limit: number,
   untilDate: Temporal.PlainDate | null
 ): void {
-  // Start from the month of startDate
   let currentMonth = startDate.with({ day: 1 });
 
   while (!shouldStop(occurrences, limit, currentMonth, untilDate)) {
@@ -174,7 +161,6 @@ function generateMonthly(
     const actualDay = Math.min(byMonthDay, daysInMonth);
     const date = currentMonth.with({ day: actualDay });
 
-    // Skip dates before the start date
     if (Temporal.PlainDate.compare(date, startDate) >= 0) {
       if (shouldStop(occurrences, limit, date, untilDate)) {
         return;
@@ -182,7 +168,6 @@ function generateMonthly(
       occurrences.push(date);
     }
 
-    // Move to the next interval month
     currentMonth = currentMonth.add({ months: interval });
   }
 }

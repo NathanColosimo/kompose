@@ -5,10 +5,6 @@ import { z } from "zod";
 import { LinkParseError, roundToNearest15Min } from "../types";
 import { parseYoutubeVideoId } from "./detect";
 
-// ============================================================================
-// Zod schemas for YouTube Data API v3 responses
-// ============================================================================
-
 const youtubeVideoItem = z.object({
   contentDetails: z.object({
     duration: z.string(),
@@ -28,11 +24,9 @@ const youtubeVideosResponse = z.object({
   items: z.array(youtubeVideoItem),
 });
 
-// ============================================================================
-
 const ISO_DURATION_PATTERN = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
 
-/** Convert ISO 8601 duration (PT1H2M10S) to total seconds */
+/** Parse YouTube's hours/minutes/seconds duration form, e.g. PT1H2M10S. */
 function parseIsoDuration(iso: string): number {
   const match = iso.match(ISO_DURATION_PATTERN);
   if (!match) {
@@ -44,7 +38,6 @@ function parseIsoDuration(iso: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-/** Fetch metadata for a YouTube video via Data API v3 */
 export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
   url: string
 ) {

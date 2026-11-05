@@ -11,7 +11,6 @@ import { GoogleCalendarCacheService } from "./cache";
 import { googleCalContract } from "./contract";
 import { NonEditableGoogleEventError } from "./errors";
 
-/** The Google Calendar client for one of the user's linked accounts. */
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
   userId: string,
   accountId: string
@@ -75,8 +74,6 @@ const ensureGoogleEventEditable = (event: {
   );
 };
 
-// ── Router ──────────────────────────────────────────────────────────
-
 export const googleCalRouter = os.router({
   calendars: {
     create: os.calendars.create.effect(function* ({ input, context }) {
@@ -85,7 +82,6 @@ export const googleCalRouter = os.router({
 
       const calendar = yield* google.createCalendar(input.calendar);
 
-      // Invalidate calendar list cache (best effort)
       yield* cache.invalidateCalendars(context.user.id, input.accountId);
 
       yield* publishGoogleCalendarEvent(
@@ -103,7 +99,6 @@ export const googleCalRouter = os.router({
 
       yield* google.deleteCalendar(input.calendarId);
 
-      // Deleting whole calendar — invalidateCalendars covers list + all single-cal keys
       yield* Effect.all(
         [
           cache.invalidateCalendars(context.user.id, input.accountId),
@@ -128,7 +123,6 @@ export const googleCalRouter = os.router({
     get: os.calendars.get.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      // Check cache — log errors, fall through to API on failure
       const cached = yield* cache.getCachedCalendar(
         context.user.id,
         input.accountId,
@@ -138,11 +132,9 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
-      // Cache miss — fetch from Google API
       const google = yield* getGoogleCalendar(context.user.id, input.accountId);
       const calendar = yield* google.getCalendar(input.calendarId);
 
-      // Populate cache (best effort)
       yield* cache.setCachedCalendar(
         context.user.id,
         input.accountId,
@@ -155,7 +147,6 @@ export const googleCalRouter = os.router({
     list: os.calendars.list.effect(function* ({ input, context }) {
       const cache = yield* GoogleCalendarCacheService;
 
-      // Check cache — log errors, fall through to API on failure
       const cached = yield* cache.getCachedCalendars(
         context.user.id,
         input.accountId
@@ -164,11 +155,9 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
-      // Cache miss — fetch from Google API
       const google = yield* getGoogleCalendar(context.user.id, input.accountId);
       const calendars = yield* google.listCalendars();
 
-      // Populate cache (best effort)
       yield* cache.setCachedCalendars(
         context.user.id,
         input.accountId,
@@ -187,7 +176,6 @@ export const googleCalRouter = os.router({
         input.calendar
       );
 
-      // invalidateCalendars covers both the list key and all single-calendar keys
       yield* cache.invalidateCalendars(context.user.id, input.accountId);
 
       yield* publishGoogleCalendarEvent(
@@ -364,7 +352,6 @@ export const googleCalRouter = os.router({
         input.scope
       );
 
-      // Lists on both calendars + the moved event's source key
       yield* Effect.all(
         [
           cache.invalidateEventLists(
@@ -423,7 +410,6 @@ export const googleCalRouter = os.router({
         currentEvent
       );
 
-      // Invalidate event lists + the specific edited event concurrently
       yield* Effect.all(
         [
           cache.invalidateEventLists(

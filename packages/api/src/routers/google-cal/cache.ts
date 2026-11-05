@@ -7,25 +7,20 @@ import {
 import { Context, Effect, Layer } from "effect";
 import { makeRedisJsonCache } from "../../lib/redis-cache";
 
-// ── Key prefixes & TTLs ─────────────────────────────────────────────
-
 const KEY_PREFIX = "gcal";
 
-/** TTLs are safety nets — webhooks handle real invalidation. */
-const CALENDARS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
-const COLORS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
-const EVENTS_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+/** TTLs backstop webhook invalidation. See documents/caching.md. */
+const CALENDARS_TTL_SECONDS = 24 * 60 * 60;
+const COLORS_TTL_SECONDS = 24 * 60 * 60;
+const EVENTS_TTL_SECONDS = 24 * 60 * 60;
 
-// ── Key builders ────────────────────────────────────────────────────
-//    Keys start with the user ID. An entry is written only after that user's
-//    own token fetch for the account succeeded, so a cache hit needs no
-//    ownership check.
+// Keys include the user ID so a hit can only reuse data fetched with that user's
+// token. See documents/caching.md for ownership and account ID invariants.
 
 function calendarsKey(userId: string, accountId: string): string {
   return `${KEY_PREFIX}:cals:${userId}:${accountId}`;
 }
 
-/** Key for a single cached calendar. */
 function calendarKey(
   userId: string,
   accountId: string,
@@ -34,7 +29,6 @@ function calendarKey(
   return `${KEY_PREFIX}:cal:${userId}:${accountId}:${calendarId}`;
 }
 
-/** Prefix for scanning all single-calendar keys for a given account. */
 function calendarSingleKeyPrefix(userId: string, accountId: string): string {
   return `${KEY_PREFIX}:cal:${userId}:${accountId}:`;
 }
@@ -53,7 +47,6 @@ function eventsKey(
   return `${KEY_PREFIX}:events:${userId}:${accountId}:${calendarId}:${timeMin}:${timeMax}`;
 }
 
-/** Prefix for scanning all event list keys for a given account + calendar. */
 function eventsListKeyPrefix(
   userId: string,
   accountId: string,
@@ -62,7 +55,6 @@ function eventsListKeyPrefix(
   return `${KEY_PREFIX}:events:${userId}:${accountId}:${calendarId}:`;
 }
 
-/** Key for a single cached event (e.g. master recurring event). */
 function eventSingleKey(
   userId: string,
   accountId: string,
@@ -72,7 +64,6 @@ function eventSingleKey(
   return `${KEY_PREFIX}:event:${userId}:${accountId}:${calendarId}:${eventId}`;
 }
 
-/** Prefix for scanning all single-event keys for a given account + calendar. */
 function eventSingleKeyPrefix(
   userId: string,
   accountId: string,
@@ -115,8 +106,7 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       });
 
       /**
-       * Invalidate the calendar list AND all single-calendar keys for an account.
-       * Used by webhooks where we don't know which specific calendar changed.
+       * Webhooks don't identify the changed calendar, so clear the list and singles.
        */
       const invalidateCalendars = Effect.fn(
         "GoogleCalendarCacheService.invalidateCalendars"
@@ -268,8 +258,7 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       // ── Invalidation ────────────────────────────────────────────
 
       /**
-       * Invalidate ALL event-related cache for a calendar (list + single-event keys).
-       * Used by webhooks where we don't know which specific event changed.
+       * Webhooks don't identify the changed event, so clear lists and singles.
        */
       const invalidateAllEvents = Effect.fn(
         "GoogleCalendarCacheService.invalidateAllEvents"
@@ -285,9 +274,7 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
       });
 
       /**
-       * Invalidate only event list cache for a calendar.
-       * Used by local mutations — the list has changed but unrelated single-event
-       * keys (e.g. other master recurring events) can stay cached.
+       * Local mutations can retain unrelated single-event entries.
        */
       const invalidateEventLists = Effect.fn(
         "GoogleCalendarCacheService.invalidateEventLists"
@@ -299,7 +286,6 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
         });
       });
 
-      /** Invalidate a single cached event by its exact key. */
       const invalidateEvent = Effect.fn(
         "GoogleCalendarCacheService.invalidateEvent"
       )(function* (
