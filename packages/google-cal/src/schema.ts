@@ -21,7 +21,6 @@ export const CalendarSchema = z.object({
 
 export type Calendar = z.infer<typeof CalendarSchema>;
 
-// Input for creating a calendar (ID is assigned by Google)
 export const CreateCalendarInputSchema = CalendarSchema.omit({
   id: true,
   primary: true,
@@ -181,7 +180,6 @@ export function isGoogleEventEditable(
 export const RecurrenceScopeSchema = z.enum(["this", "all", "following"]);
 export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;
 
-// Input for creating an event (ID is assigned by Google)
 export const CreateEventInputSchema = EventSchema.omit({
   id: true,
   htmlLink: true,

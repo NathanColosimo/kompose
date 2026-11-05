@@ -20,8 +20,6 @@ function toCalendarKey(calendar: CalendarIdentifier) {
   return `${calendar.accountId}:${calendar.calendarId}`;
 }
 
-// --- Accounts ---
-
 const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
 
@@ -42,8 +40,6 @@ export const googleAccountsDataAtom = atom<Account[]>((get) =>
     (account) => account.providerId === "google"
   )
 );
-
-// --- Calendars per account ---
 
 export interface CalendarWithSource {
   accountId: string;
@@ -137,8 +133,6 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
     );
   }
 );
-
-// --- Events per calendar + window ---
 
 export interface GoogleEventWithSource {
   accountId: string;

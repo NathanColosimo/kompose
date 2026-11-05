@@ -15,7 +15,7 @@ import {
 } from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
-/** Filter out recurring tasks (both masters and occurrences). */
+/** Recurring masters also carry seriesMasterId, so this excludes the whole series. */
 export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
   task.seriesMasterId === null;
 
@@ -42,7 +42,6 @@ const isPlanned = (
   );
 };
 
-/** Unplanned on a specific non-today date. */
 const isUnplannedOnDate = (
   task: TaskSelectDecoded,
   targetDate: Temporal.PlainDate
@@ -96,7 +95,6 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
       const unplanned = isTargetToday
         ? tasks.filter((task) => isUnplannedTodayTask(task, today))
         : tasks.filter((task) => isUnplannedOnDate(task, targetDate));
-      // Done: completed on the target date in the user's timezone.
       const done = tasks.filter((task) =>
         isDoneOnDate(task, targetDate, timeZone)
       );

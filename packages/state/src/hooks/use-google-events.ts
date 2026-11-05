@@ -37,10 +37,8 @@ export function useGoogleEvents({
     [visibleCalendars, windows]
   );
 
-  // TanStack structurally shares the combined result, so `events` keeps its
-  // identity across fetch-status changes and refetches that return the same
-  // data. Without this, every refetch handed the grid a new array and it
-  // re-laid out every event in the window.
+  // Structural sharing keeps the events array stable when data is unchanged,
+  // avoiding unnecessary calendar layout work on refetch.
   const combine = useCallback(
     (queries: UseQueryResult<GoogleEvent[]>[]) => {
       // An event that crosses a month boundary is in both months' results.

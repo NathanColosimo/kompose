@@ -36,7 +36,6 @@ export function StateProvider({
   useHydrateAtoms([[stateConfigAtom, config]]);
   useHydrateAtoms([[queryClientAtom, queryClient]]);
 
-  // Keep today/now atoms fresh across midnight boundaries and app resume.
   useTodayTick(subscribeToResume);
 
   return <>{children}</>;

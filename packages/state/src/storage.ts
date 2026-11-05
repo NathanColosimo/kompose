@@ -1,8 +1,5 @@
 import { atom } from "jotai";
 
-/**
- * Minimal storage adapter interface for Jotai persistence.
- */
 export interface StorageAdapter {
   getItem: (key: string) => string | null | Promise<string | null>;
   removeItem: (key: string) => void | Promise<void>;
@@ -11,26 +8,16 @@ export interface StorageAdapter {
 
 let storageAdapter: StorageAdapter | null = null;
 
-/**
- * Register a storage adapter for persisted atoms.
- * Call this once during app startup (e.g., in StateProvider).
- */
+/** Configure before persisted atoms mount; StateProvider handles this for both apps. */
 export function setStorageAdapter(adapter: StorageAdapter) {
   storageAdapter = adapter;
 }
 
-/**
- * Read the currently configured adapter for atoms that need custom
- * persistence behavior beyond the default helper.
- */
 export function getStorageAdapter() {
   return storageAdapter;
 }
 
-/**
- * JSON storage wrapper used by atomWithStorage.
- * Storage is resolved lazily so adapters can be configured at runtime.
- */
+/** Missing or invalid JSON falls back to the initial atom value. */
 function parseStoredValue<T>(raw: string | null, fallback: T): T {
   if (!raw) {
     return fallback;
@@ -42,10 +29,7 @@ function parseStoredValue<T>(raw: string | null, fallback: T): T {
   }
 }
 
-/**
- * Create a persisted atom backed by the configured storage adapter.
- * Uses the initial value until stored data is loaded.
- */
+/** Stored data loads on mount; reads before hydration use the initial value. */
 export function createPersistedAtom<T>(key: string, initialValue: T) {
   const baseAtom = atom(initialValue);
 
@@ -84,10 +68,7 @@ export function createPersistedAtom<T>(key: string, initialValue: T) {
   );
 }
 
-/**
- * Web storage adapter based on localStorage.
- * Guards against server-side access in Next.js.
- */
+/** Storage is a no-op when localStorage is unavailable, including during SSR. */
 export function createWebStorageAdapter(): StorageAdapter {
   const localStorage =
     typeof globalThis !== "undefined" &&

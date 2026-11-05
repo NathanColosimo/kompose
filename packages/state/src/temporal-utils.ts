@@ -1,24 +1,15 @@
 import { Temporal } from "temporal-polyfill";
 
-/**
- * Return the system timezone identifier.
- */
 export function getSystemTimeZone(): string {
   return Temporal.Now.zonedDateTimeISO().timeZoneId;
 }
 
-/**
- * Return today's date as a PlainDate in the given timezone.
- */
 export function todayPlainDate(
   timeZone = getSystemTimeZone()
 ): Temporal.PlainDate {
   return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
 }
 
-/**
- * Convert a PlainDate to a ZonedDateTime at midnight (start of day).
- */
 export function startOfDayZoned(
   date: Temporal.PlainDate,
   timeZone: string

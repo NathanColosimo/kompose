@@ -1,9 +1,6 @@
 import { atom } from "jotai";
 import { getStorageAdapter } from "../storage";
 
-/**
- * Identifies a Google calendar within a specific linked Google account.
- */
 export interface CalendarIdentifier {
   accountId: string;
   calendarId: string;
@@ -18,11 +15,7 @@ export interface CalendarIdentifier {
  */
 export type VisibleCalendars = CalendarIdentifier[] | null;
 
-/**
- * Atom to store which calendars are currently visible.
- * A missing persisted value stays `null`; callers derive the effective
- * "show all loaded calendars" behavior at read time.
- */
+/** Missing storage stays null; resolvedVisibleCalendarIdsAtom derives the visible set. */
 const VISIBLE_CALENDARS_STORAGE_KEY = "visible-calendars";
 
 interface VisibleCalendarsState {
@@ -107,9 +100,6 @@ export const visibleCalendarsHydratedAtom = atom(
   (get) => get(visibleCalendarsStateAtom).hydrated
 );
 
-/**
- * Helper to check if a specific calendar is visible.
- */
 export function isCalendarVisible(
   visibleCalendars: VisibleCalendars,
   accountId: string,
@@ -126,9 +116,6 @@ export function isCalendarVisible(
   );
 }
 
-/**
- * Toggle a calendar identifier in the visible set.
- */
 export function toggleCalendarSelection(
   prev: CalendarIdentifier[],
   target: CalendarIdentifier
