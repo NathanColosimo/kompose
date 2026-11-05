@@ -4,8 +4,7 @@ import { defineConfig } from "drizzle-kit";
 
 const configDir = fileURLToPath(new URL(".", import.meta.url));
 
-// Load environment variables from web app if not already present
-// This allows it to work in Vercel (where env vars are in process.env) and locally (where they are in .env)
+// Local CLI runs use the web app's .env when DATABASE_URL isn't provided.
 if (!process.env.DATABASE_URL) {
   process.loadEnvFile(resolve(configDir, "../../apps/web/.env"));
 }

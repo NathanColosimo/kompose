@@ -257,8 +257,8 @@ export const CORRECTABLE = [
 ];
 
 /**
- * Other languages, matched on the lowercased phrase before tokenizing
- * (longest first). Replacements are English words the grammar knows.
+ * Translate the lowercased phrase before tokenizing, in array order.
+ * Keep overlapping phrases before the words they contain.
  */
 export const TRANSLATIONS: [string, string][] = [
   // Phrases shared by several languages, or that would be split by later words.
@@ -571,7 +571,6 @@ export const ROMANCE_HOURS: Record<string, number> = {
   undici: 11,
 };
 
-/** Time zone abbreviations. */
 export const ZONES: Record<string, string> = {
   // People write "PST" in summer meaning Pacific time: abbreviations name
   // the region, with its daylight saving.

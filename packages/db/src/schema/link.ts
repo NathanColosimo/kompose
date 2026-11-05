@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-// ============================================================================
-// LINK META SCHEMA (Zod discriminated union for JSONB column)
-// ============================================================================
-
 const spotifyLinkMeta = z.object({
   artistName: z.string().optional(),
   description: z.string().optional(),
@@ -48,7 +44,6 @@ const unknownLinkMeta = z.object({
   url: z.url(),
 });
 
-/** Link metadata - discriminated union by provider type */
 export const linkMetaSchema = z.discriminatedUnion("provider", [
   spotifyLinkMeta,
   youtubeLinkMeta,

@@ -1,6 +1,6 @@
 /**
  * The shipped model end to end on the evaluation sets, scored as
- * `bun gen/evaluate.ts` scores them. Fails when a set gets fewer cases
+ * `bun training/gen/evaluate.ts` scores them. Fails when a set gets fewer cases
  * right than it does now; raise these when shipping a better model.
  */
 import { expect, test } from "bun:test";
@@ -8,7 +8,7 @@ import { loadCases, score } from "../training/gen/evaluate";
 import { createTaskParser } from "./parser";
 import { shippedWeights } from "./test-fixtures";
 
-/** Cases with every field right, and usable (see evaluate.ts), per set. */
+/** Cases with every field right, and usable (see training/gen/evaluate.ts), per set. */
 const FLOORS: Record<string, { all: number; usable: number }> = {
   handwritten: { all: 34, usable: 34 },
   holidays: { all: 38, usable: 38 },

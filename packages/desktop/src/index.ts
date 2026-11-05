@@ -22,8 +22,8 @@ export interface DesktopTaskSelection {
 }
 
 /**
- * Installed apps keep their bridge until they update, while the web app always
- * ships the latest code. Only add members; feature-detect new ones in the web app.
+ * Only add members and feature-detect them: installed apps can have older bridges.
+ * See documents/electron-port.md for compatibility and release policy.
  */
 export interface DesktopBridge {
   dismissCommandBar: () => Promise<void>;
@@ -43,6 +43,5 @@ export interface DesktopBridge {
 export type DesktopInvokeMethod = {
   [K in keyof DesktopBridge]: K extends `on${string}` ? never : K;
 }[keyof DesktopBridge];
-/** IPC channel for a bridge member, e.g. `desktop:openTask`. */
 export const desktopChannel = (member: keyof DesktopBridge) =>
   `desktop:${member}`;

@@ -90,7 +90,6 @@ const HOUR = 60;
 const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 
-/** Minutes in each unit word. */
 const UNITS: Record<string, number> = {
   d: DAY,
   day: DAY,

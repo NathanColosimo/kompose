@@ -1,5 +1,5 @@
 /**
- * The date benchmark (training/testset/dates.jsonl) as `bun gen/datebench.ts
+ * The date benchmark (training/testset/dates.jsonl) as `bun training/gen/datebench.ts
  * score` runs it: labelled spans through resolveFields, per category. Fails
  * when a category gets fewer items right than it does now.
  */

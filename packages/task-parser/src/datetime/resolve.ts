@@ -78,7 +78,7 @@ function monthOf(
   return [year, ref.month, false];
 }
 
-/** The earliest of the rule's days in that month that isn't past `from`. */
+/** Earliest day on or after `from`, or the month's first match if all are past. */
 function ruleDayIn(
   spec: MonthRule,
   year: number,
@@ -288,8 +288,8 @@ function clockOf(time: TimeSpec, part: Phrase["part"]): Temporal.PlainTime {
 }
 
 /**
- * A time range: a bare start takes the end's am/pm ("11-1pm"), and a bare
- * end comes after the start ("9-5").
+ * Infer am/pm for bare range bounds so the end follows the start:
+ * "11-1pm" starts at 11am; "9-5" ends at 5pm.
  */
 function rangeOf(start: TimeSpec, end: TimeSpec, part: Phrase["part"]) {
   let startTime = clockOf(start, part);
@@ -298,7 +298,6 @@ function rangeOf(start: TimeSpec, end: TimeSpec, part: Phrase["part"]) {
     start.meridiem === null &&
     (end.meridiem === "am" || end.meridiem === "pm")
   ) {
-    // "11-1pm" starts at 11am; "2-3:30pm" at 2pm.
     const shared = clockOf({ ...start, meridiem: end.meridiem }, part);
     startTime =
       Temporal.PlainTime.compare(shared, endTime) <= 0
@@ -566,14 +565,12 @@ export function resolvePhrase(
 interface Context {
   /** The day named, shifted ("a week from friday"). */
   date: Temporal.PlainDate | null;
-  /** The end of a time range. */
   end: Temporal.PlainTime | null;
   /** Now, in the zone of a bare zoned time ("3pm ET"). */
   local: Temporal.ZonedDateTime;
   /** Where a repeat (or the task) begins ("starting next week"). */
   start: Temporal.PlainDate | null;
   time: Temporal.PlainTime | null;
-  /** `local`'s date. */
   today: Temporal.PlainDate;
 }
 

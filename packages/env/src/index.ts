@@ -18,7 +18,7 @@ export const env = createEnv({
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
     APPLE_CLIENT_ID: z.string().min(1),
     APPLE_CLIENT_SECRET: z.string().min(1),
-    // Optional -- tracing disabled when not set (server-only)
+    // Axiom requires both values; OTEL_EXPORTER_OTLP_ENDPOINT takes priority.
     AXIOM_API_TOKEN: z.string().min(1).optional(),
     AXIOM_DATASET: z.string().min(1).optional(),
     BETTER_AUTH_SECRET: z.string().min(1),
@@ -27,13 +27,11 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().min(1),
     GOOGLE_MAPS_API_KEY: z.string().min(1),
     GOOGLE_WEBHOOK_TOKEN: z.string().min(1),
-    // Optional -- local OTLP endpoint (e.g. http://localhost:4318 for Jaeger)
-    // Takes priority over Axiom when set
+    // Optional OTLP endpoint, e.g. http://localhost:4318 for Jaeger.
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
     REDIS_URL: z.string().min(1),
     // Set to "1" by Vercel at build and run time; unset locally.
     VERCEL: z.literal("1").optional(),
-    // Link parsing provider keys (optional — parsing degrades gracefully when missing)
     SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
     SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
     WHOOP_CLIENT_ID: z.string().min(1).optional(),
@@ -44,8 +42,5 @@ export const env = createEnv({
   skipValidation: Boolean(process.env.SKIP_ENV_VALIDATION),
 });
 
-/**
- * Deployment environment helpers shared across web and native clients.
- */
 export const isProductionDeployment =
   env.NEXT_PUBLIC_DEPLOYMENT_ENV === "production";

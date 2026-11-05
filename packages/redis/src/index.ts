@@ -2,9 +2,8 @@ import { env } from "@kompose/env";
 import { Redis } from "ioredis";
 
 /**
- * Logs a connection or command error without its `command`: ioredis attaches
- * the failed command's arguments to server errors, and a failed handshake's
- * are `HELLO 3 AUTH <user> <password>`.
+ * Omit `command`: ioredis attaches command arguments to server errors,
+ * which can include AUTH credentials.
  */
 function logError(error: Error) {
   console.error("REDIS_ERROR", {
@@ -26,9 +25,8 @@ export const redis = new Redis(env.REDIS_URL, { enableAutoPipelining: true });
 redis.on("error", logError);
 
 /**
- * A new connection for SUBSCRIBE, which can't share the command connection:
- * a subscribed connection only takes (un)subscribe commands. The caller
- * disconnects it when done.
+ * Isolate each subscriber's channels and lifetime from the shared command
+ * connection. The caller disconnects it when done.
  */
 export function createSubscriber(): Redis {
   const subscriber = redis.duplicate();
