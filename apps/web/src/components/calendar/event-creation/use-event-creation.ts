@@ -181,7 +181,8 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Center the initial range on the cursor.
+  // Center the initial range on the cursor. The move and up listeners go on
+  // the document so the drag continues while the cursor crosses existing events.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
