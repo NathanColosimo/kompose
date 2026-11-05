@@ -78,14 +78,6 @@ interface PositionedTaskSegment {
 
 type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
 
-function parseDateOnlyLocal(dateStr: string): Temporal.PlainDate {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  if (!(year && month && day)) {
-    throw new Error(`Invalid date string: ${dateStr}`);
-  }
-  return Temporal.PlainDate.from({ day, month, year });
-}
-
 /**
  * Clamp a positioned event to a single day's boundaries (midnight to midnight).
  * Returns null if the event doesn't overlap the given day.
@@ -111,12 +103,35 @@ function clampEventToDay(
   };
 }
 
+/** The date of an all-day event (one with a `date` and no `dateTime`), else null. */
+function allDayEventDate({
+  event,
+}: GoogleEventWithSource): Temporal.PlainDate | null {
+  if (!event.start.date || event.start.dateTime || event.end.dateTime) {
+    return null;
+  }
+  return Temporal.PlainDate.from(event.start.date);
+}
+
+/** The event's part on each of `days` it touches; an overnight event splits at midnight. */
+function daySegments(
+  event: PositionedGoogleEvent,
+  days: Temporal.PlainDate[],
+  timeZone: string
+): PositionedGoogleEvent[] {
+  if (event.start.toPlainDate().equals(event.end.toPlainDate())) {
+    return [event];
+  }
+  return days.flatMap((day) => clampEventToDay(event, day, timeZone) ?? []);
+}
+
+/** Buckets events by day key; events on days outside `days` are dropped. */
 function buildGoogleEventMaps({
-  bufferedDays,
+  days,
   googleEvents,
   timeZone,
 }: {
-  bufferedDays: Temporal.PlainDate[];
+  days: Temporal.PlainDate[];
   googleEvents: GoogleEventWithSource[];
   timeZone: string;
 }): {
@@ -125,51 +140,23 @@ function buildGoogleEventMaps({
 } {
   const timed = new Map<string, PositionedGoogleEvent[]>();
   const allDay = new Map<string, AllDayGoogleEvent[]>();
-
-  for (const day of bufferedDays) {
-    const key = day.toString();
-    timed.set(key, []);
-    allDay.set(key, []);
+  for (const day of days) {
+    timed.set(day.toString(), []);
+    allDay.set(day.toString(), []);
   }
 
   for (const sourceEvent of googleEvents) {
-    const startDate = sourceEvent.event.start.date;
-    const hasStartDateTime = sourceEvent.event.start.dateTime;
-    const hasEndDateTime = sourceEvent.event.end.dateTime;
-
-    if (startDate && !hasStartDateTime && !hasEndDateTime) {
-      const parsed = parseDateOnlyLocal(startDate);
-      const key = parsed.toString();
-      const bucket = allDay.get(key);
-      if (bucket) {
-        bucket.push({ ...sourceEvent, date: parsed });
-      }
+    const date = allDayEventDate(sourceEvent);
+    if (date) {
+      allDay.get(date.toString())?.push({ ...sourceEvent, date });
       continue;
     }
-
     const positioned = toPositionedGoogleEvent(sourceEvent, timeZone);
     if (!positioned) {
       continue;
     }
-
-    const startDay = positioned.start.toPlainDate();
-    const endDay = positioned.end.toPlainDate();
-    if (startDay.equals(endDay)) {
-      const dayEvents = timed.get(startDay.toString());
-      if (dayEvents) {
-        dayEvents.push(positioned);
-      }
-    } else {
-      // Split overnight event into one segment per day it touches
-      for (const day of bufferedDays) {
-        const clamped = clampEventToDay(positioned, day, timeZone);
-        if (clamped) {
-          const bucket = timed.get(day.toString());
-          if (bucket) {
-            bucket.push(clamped);
-          }
-        }
-      }
+    for (const segment of daySegments(positioned, days, timeZone)) {
+      timed.get(segment.start.toPlainDate().toString())?.push(segment);
     }
   }
 
@@ -368,7 +355,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   const { timedEventsByDay, allDayEventsByDay } = useMemo(
     () =>
       buildGoogleEventMaps({
-        bufferedDays: visibleDays,
+        days: visibleDays,
         googleEvents,
         timeZone,
       }),
@@ -780,7 +767,7 @@ function AllDayEventChip({
 
   const endDate =
     item.event.end.date && item.event.end.date !== item.date.toString()
-      ? parseDateOnlyLocal(item.event.end.date)
+      ? Temporal.PlainDate.from(item.event.end.date)
       : item.date.add({ days: 1 });
   const startZdt = startOfDayZoned(item.date, timeZone);
   const endZdt = startOfDayZoned(endDate, timeZone);
