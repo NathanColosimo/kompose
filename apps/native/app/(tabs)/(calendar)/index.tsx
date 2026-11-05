@@ -1512,6 +1512,8 @@ export default function CalendarTab() {
               setEventSaveScope(value as RecurrenceScope)
             }
             options={RECURRENCE_SCOPE_OPTIONS.map((option) => {
+              // Google can only move a whole series to another calendar, so
+              // "this" and "following" are disabled when the calendar changes.
               const isMoving =
                 pendingEventSaveDraft != null &&
                 pendingEventSaveDraft.calendar.calendarId !==
