@@ -44,10 +44,7 @@ function buildInitialSharedFields(start: Date, end: Date) {
   };
 }
 
-/**
- * EventCreationPopover keeps the existing event create flow, but now lets
- * users swap the inline form to a task create form without leaving the slot.
- */
+/** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
   const { state, actions, popoverTimes } = useEventCreation();
   const { createEvent } = useGoogleEventMutations();
@@ -59,7 +56,6 @@ export function EventCreationPopover() {
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
 
-  // Convert ZonedDateTime to Date for the popover
   const startDate = useMemo(
     () => (popoverTimes ? zonedDateTimeToDate(popoverTimes.start) : new Date()),
     [popoverTimes]

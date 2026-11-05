@@ -20,9 +20,7 @@ type ScheduledTask = TaskSelectDecoded & {
 };
 
 interface TaskEventProps {
-  /** Column index for horizontal positioning (0, 1, or 2) */
   columnIndex?: number;
-  /** How many consecutive columns this item spans */
   columnSpan?: number;
   /** Whether this segment contains the task's actual start time */
   isFirstSegment: boolean;
@@ -33,9 +31,7 @@ interface TaskEventProps {
   /** Clipped start time for this visible day segment */
   segmentStart: Temporal.ZonedDateTime;
   task: ScheduledTask;
-  /** Total columns in this item's collision group */
   totalColumns?: number;
-  /** Z-index for stacking order */
   zIndex?: number;
 }
 
@@ -116,10 +112,8 @@ export const TaskEvent = memo(function TaskEventInner({
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
-  // Center content only for 15-minute tasks.
   const isShortTask = segmentDurationMinutes <= 15;
 
-  // Calculate horizontal positioning based on collision layout
   // columnSpan lets items expand into adjacent empty columns
   const singleColumnWidth = 100 / totalColumns;
   const columnWidth = singleColumnWidth * columnSpan;
@@ -127,7 +121,6 @@ export const TaskEvent = memo(function TaskEventInner({
 
   const style: React.CSSProperties = {
     height,
-    // Horizontal positioning: divide available width by totalColumns
     left: `calc(${leftPercent}% + 2px)`,
     position: "absolute",
     top,
@@ -206,7 +199,6 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   const isShortTask = task.durationMinutes <= 15;
   const shortTaskHeight = (15 / 60) * PIXELS_PER_HOUR;
 
-  // Combine startDate + startTime if both exist for time display
   const startZdt =
     task.startDate && task.startTime
       ? task.startDate.toZonedDateTime({ plainTime: task.startTime, timeZone })

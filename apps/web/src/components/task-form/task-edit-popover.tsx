@@ -85,16 +85,11 @@ import { RecurrenceEditor } from "./recurrence-editor";
 /** Form state uses Temporal types, convert to native Date only at picker boundary */
 export interface TaskFormValues {
   description: string;
-  /** Due date - when task is due */
   dueDate: Temporal.PlainDate | null;
   durationMinutes: number;
-  /** Array of parsed link metadata objects */
   links: LinkMeta[];
-  /** Recurrence pattern (null = non-recurring) */
   recurrence: TaskRecurrence | null;
-  /** Start date - when task appears in inbox or on calendar */
   startDate: Temporal.PlainDate | null;
-  /** Start time - time of day for calendar scheduling (independent of startDate) */
   startTime: Temporal.PlainTime | null;
   tagIds: string[];
   title: string;
@@ -207,9 +202,7 @@ function getSharedFieldsFromTaskValues(
   };
 }
 
-/**
- * Shared popover for inline task editing (title, description, start date/time, duration).
- */
+/** See documents/task-popover.md for Save/Cancel and creation-popover behavior. */
 export function TaskEditPopover({
   task,
   children,
@@ -314,7 +307,6 @@ export function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   const isCreateMode = mode === "create";
 
-  // Check if this task is part of a recurring series
   const isRecurring =
     !isCreateMode && task ? task.seriesMasterId !== null : false;
   const resolvedRecurrence = useMemo(() => {
@@ -331,12 +323,10 @@ export function TaskEditForm({
     return masterTask?.recurrence ?? null;
   }, [initialCreateValues?.recurrence, task, tasksQuery.data]);
 
-  // Opens confirmation dialog
   const handleDeleteClick = useCallback(() => {
     setShowDeleteConfirm(true);
   }, []);
 
-  // Delete with specified scope
   const confirmDelete = useCallback(
     (scope: DeleteScope) => {
       if (!task) {
@@ -355,7 +345,6 @@ export function TaskEditForm({
     (e) => {
       const target = e.target as HTMLElement;
       const tagName = target.tagName.toLowerCase();
-      // Skip if focused on text input or textarea
       if (
         tagName === "input" ||
         tagName === "textarea" ||
@@ -714,7 +703,6 @@ export function TaskEditForm({
           )}
         />
 
-        {/* Recurrence editor */}
         <Controller
           control={control}
           name="recurrence"
@@ -748,7 +736,6 @@ export function TaskEditForm({
             shouldDirty: true,
           });
 
-          // Upgrade the placeholder in-place when metadata arrives
           parseLink.mutate(url, {
             onSuccess: (meta) => {
               const latest =
@@ -943,7 +930,6 @@ function LinkMetaPreview({
   );
 }
 
-/** Multi-link editor: renders link list + add input, delegates mutations to parent */
 function LinkListEditor({
   links,
   isParsing,

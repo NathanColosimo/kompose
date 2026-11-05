@@ -1,7 +1,6 @@
 import { endOfDayZoned, startOfDayZoned } from "@kompose/state/temporal-utils";
 import { Temporal } from "temporal-polyfill";
 
-/** Regex pattern to match timezone offsets at the end of ISO strings (e.g., "+05:00", "-05:00") */
 const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/;
 
 /**
@@ -15,15 +14,11 @@ export function isoStringToZonedDateTime(
   isoString: string,
   timeZone: string
 ): Temporal.ZonedDateTime {
-  // UTC timestamp (from toInstant().toString())
   if (isoString.endsWith("Z")) {
     return Temporal.Instant.from(isoString).toZonedDateTimeISO(timeZone);
   }
 
-  // Check if string has a timezone offset (e.g., "+05:00" or "-05:00")
-  // Pattern matches: timezone offset at the end of the string
   if (TIMEZONE_OFFSET_PATTERN.test(isoString)) {
-    // Parse as Instant (handles offsets), then convert to target timezone
     return Temporal.Instant.from(isoString).toZonedDateTimeISO(timeZone);
   }
 
@@ -31,15 +26,10 @@ export function isoStringToZonedDateTime(
   const normalized = isoString.includes("T")
     ? isoString
     : isoString.replace(" ", "T");
-  // Parse as local datetime and convert to timezone
   const plainDateTime = Temporal.PlainDateTime.from(normalized);
   return plainDateTime.toZonedDateTime(timeZone);
 }
 
-/**
- * Format a PlainDate for display using Intl.DateTimeFormat.
- * Default format: "Dec 15, 2025" (dateStyle: "medium")
- */
 export function formatPlainDate(
   date: Temporal.PlainDate,
   options?: Intl.DateTimeFormatOptions
@@ -57,10 +47,6 @@ export function formatDuration(minutes: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
-/**
- * Format a ZonedDateTime's time portion for display.
- * Default format: "9:30 AM" (hour: "numeric", minute: "2-digit")
- */
 export function formatTime(
   zdt: Temporal.ZonedDateTime,
   options?: Intl.DateTimeFormatOptions
@@ -72,7 +58,6 @@ export function formatTime(
   });
 }
 
-/** Check if two ZonedDateTimes fall on the same calendar day */
 export function isSameDay(
   a: Temporal.ZonedDateTime,
   b: Temporal.ZonedDateTime
@@ -80,18 +65,17 @@ export function isSameDay(
   return a.toPlainDate().equals(b.toPlainDate());
 }
 
-/** Format hour as "8 AM" style label */
+/** Format an hour using the locale's hour cycle. */
 export function formatHourLabel(hour: number): string {
   const time = new Temporal.PlainTime(hour, 0);
   return time.toLocaleString(undefined, { hour: "numeric" });
 }
 
-/** Convert a ZonedDateTime to a native Date */
 export function zonedDateTimeToDate(zdt: Temporal.ZonedDateTime): Date {
   return new Date(zdt.toInstant().epochMilliseconds);
 }
 
-/** Get start and end of day as ZonedDateTime for a PlainDate */
+/** Day bounds with an exclusive end at the start of the next day. */
 export function getDayBoundsZoned(
   date: Temporal.PlainDate,
   timeZone: string
@@ -102,7 +86,6 @@ export function getDayBoundsZoned(
   };
 }
 
-/** Clamp a ZonedDateTime between min and max */
 export function clampZonedDateTime(
   value: Temporal.ZonedDateTime,
   min: Temporal.ZonedDateTime,
@@ -117,7 +100,6 @@ export function clampZonedDateTime(
   return value;
 }
 
-/** Calculate position in minutes from start of day */
 export function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
   return zdt.hour * 60 + zdt.minute;
 }
@@ -130,25 +112,13 @@ export function dateToDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// ============================================================================
-// Date Picker Boundary Helpers
-// These convert between Temporal types and native Date for UI pickers.
-// Unlike plainDateToDate/dateToPlainDate, these work in local time without
-// timezone conversion since pickers already operate in local time.
-// ============================================================================
+// Pickers use local calendar dates; preserve their fields without converting time zones.
 
-/**
- * Convert a Temporal.PlainDate to a native Date for date picker components.
- * The returned Date represents the same calendar date at midnight local time.
- */
+/** Preserve the calendar date at local midnight for date pickers. */
 export function temporalToPickerDate(date: Temporal.PlainDate): Date {
   return new Date(date.year, date.month - 1, date.day);
 }
 
-/**
- * Convert a native Date from a date picker to Temporal.PlainDate.
- * Extracts the local calendar date components.
- */
 export function pickerDateToTemporal(date: Date): Temporal.PlainDate {
   return Temporal.PlainDate.from({
     day: date.getDate(),
@@ -157,10 +127,7 @@ export function pickerDateToTemporal(date: Date): Temporal.PlainDate {
   });
 }
 
-/**
- * Format a native Date to HH:mm string for time inputs.
- * Used at picker boundaries where native Date is required.
- */
+/** Local HH:mm for time inputs. */
 export function formatTimeString(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");

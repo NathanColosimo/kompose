@@ -14,9 +14,6 @@ const LazyCommandBarContent = dynamic(
   { ssr: false }
 );
 
-/**
- * CommandBar - Unified command palette (cmd+k) for quick actions in the app.
- */
 export function CommandBar() {
   const [open, setOpen] = useAtom(commandBarOpenAtom);
 

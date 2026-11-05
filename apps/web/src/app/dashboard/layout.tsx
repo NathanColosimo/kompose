@@ -135,16 +135,13 @@ export default function DashboardLayout({
       data-dashboard-layout
       style={
         {
-          // Header height used by sidebars to offset from top
           "--header-height": "2.5rem",
         } as React.CSSProperties
       }
       suppressHydrationWarning
     >
-      {/* App-wide header with search bar and user menu */}
       <AppHeader user={sessionUser} />
 
-      {/* Main content area below header */}
       <SidebarProvider
         className="min-h-0 flex-1"
         style={

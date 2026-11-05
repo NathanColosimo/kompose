@@ -29,16 +29,12 @@ import { EventEditPopover } from "./event-edit-popover";
 interface GoogleCalendarEventProps {
   accountId: string;
   calendarId: string;
-  /** Column index for horizontal positioning (0, 1, or 2) */
   columnIndex?: number;
-  /** How many consecutive columns this item spans */
   columnSpan?: number;
   end: Temporal.ZonedDateTime;
   event: GoogleEvent;
   start: Temporal.ZonedDateTime;
-  /** Total columns in this item's collision group */
   totalColumns?: number;
-  /** Z-index for stacking order */
   zIndex?: number;
 }
 
@@ -130,7 +126,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       palette: normalizedPalette?.event,
     });
 
-  // Calculate horizontal positioning based on collision layout
   // columnSpan lets items expand into adjacent empty columns
   const singleColumnWidth = 100 / totalColumns;
   const columnWidth = singleColumnWidth * columnSpan;
@@ -138,7 +133,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const style: React.CSSProperties = {
     height,
-    // Horizontal positioning: divide available width by totalColumns
     left: `calc(${leftPercent}% + 2px)`,
     position: "absolute",
     top,

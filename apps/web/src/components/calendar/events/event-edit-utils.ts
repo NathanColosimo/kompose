@@ -44,7 +44,6 @@ interface TemporalPayload {
   startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
-/** Combine a Date and time string (HH:mm) into a single Date */
 function buildDateTimeValue(date: Date | null, time: string): Date | null {
   if (!(date && time)) {
     return null;

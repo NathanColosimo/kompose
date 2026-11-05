@@ -59,7 +59,6 @@ function DashboardCalendarToolbar() {
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
 
-  // Keep toolbar navigation colocated with the toolbar itself.
   const goToPreviousPeriod = useCallback(() => {
     setCurrentDate((prev) => prev.subtract({ days: navigationStep }));
   }, [navigationStep, setCurrentDate]);

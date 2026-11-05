@@ -13,15 +13,10 @@ interface TimeSlotProps {
   children?: React.ReactNode;
   date: Temporal.PlainDate;
   minutes: number;
-  /** Called when mouse moves over the slot during creation drag */
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse enters the slot (for hover preview) */
   onSlotHover?: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse leaves the slot/column */
   onSlotLeave?: () => void;
-  /** Called when mouse down on the slot (start event creation) */
   onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
-  /** Called when mouse up on the slot (end event creation) */
   onSlotMouseUp?: () => void;
   timeZone: string;
 }
@@ -87,7 +82,6 @@ export const TimeSlot = memo(function TimeSlotInner({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
-      // Only handle left mouse button
       if (e.button !== 0) {
         return;
       }
@@ -99,7 +93,6 @@ export const TimeSlot = memo(function TimeSlotInner({
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
-      // Only handle left mouse button
       if (e.button !== 0) {
         return;
       }

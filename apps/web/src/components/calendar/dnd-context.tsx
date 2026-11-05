@@ -56,7 +56,6 @@ import type { DragData, PreviewRect } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 
-/** Pending task update waiting for scope selection */
 interface PendingTaskUpdate {
   id: string;
   task: object;
@@ -126,10 +125,7 @@ interface CalendarDndProviderProps {
   children: React.ReactNode;
 }
 
-/**
- * CalendarDndProvider - Wraps the calendar and sidebar with DnD context.
- * Handles drag events and task scheduling mutations.
- */
+/** See documents/dnd.md for drop targets, previews, and mutation behavior. */
 export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const timeZone = useAtomValue(timezoneAtom);
   const [drag, dispatch] = useReducer(dragReducer, initialDragState);
@@ -140,12 +136,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const lastDropTargetKeyRef = useRef<string | null>(null);
   const setDropSlot = useSetAtom(dropSlotAtom);
 
-  // State for pending recurring task updates that need scope selection
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
     null
   );
 
-  // Configure sensors for drag detection
   const sensors = useSensors(
     useSensor(PointerSensor, {
       // Small activation distance to prevent accidental drags
@@ -155,7 +149,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     })
   );
 
-  // Mutation to update task schedule
   const { updateTask } = useTasks();
   const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
 
@@ -180,7 +173,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
 
-      // If recurring, show scope selection dialog
       if (task.seriesMasterId) {
         setPendingUpdate({ id: update.id, task: update.task });
         return;
@@ -191,11 +183,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [updateTask]
   );
 
-  /**
-   * Handle unscheduling a task by clearing startDate and startTime but keeping the duration.
-   * Called when a task is dropped on the sidebar task list.
-   * If dropped on the date sidebar, sets startDate to that date but clears startTime.
-   */
+  /** Today keeps a date without a time; other sidebar drops return the task to Inbox. */
   const handleTaskUnschedule = useCallback(
     (task: TaskSelectDecoded, sidebarData?: SidebarDropData) => {
       const shouldMoveToDateSidebar =
@@ -219,7 +207,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // Default behavior: clear both startDate and startTime (move to inbox)
       updateTask.mutate({
         id: task.id,
         // Unscheduling affects just this occurrence
@@ -248,7 +235,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      // If recurring, show scope selection dialog
       if (payload.task.seriesMasterId) {
         setPendingUpdate({ id: update.id, task: update.task });
         return;
@@ -310,7 +296,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
   }, []);
 
-  // Handle drops on the sidebar list by unscheduling task cards.
   const handleSidebarDrop = useCallback(
     (data: DragData, sidebarData?: SidebarDropData) => {
       if (data.type !== "task") {
@@ -322,7 +307,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [handleTaskUnschedule]
   );
 
-  // Route calendar slot drops to the correct drop handler based on drag type.
   const handleSlotDrop = useCallback(
     (data: DragData, targetDateTime: Temporal.ZonedDateTime) => {
       const isResizeEnd =
@@ -448,12 +432,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ): PreviewRect | null => {
-      // Need both startDate and startTime for a scheduled task
       if (!(data.task.startDate && data.task.startTime)) {
         return null;
       }
 
-      // Combine startDate + startTime into ZonedDateTime
       const originalStart: Temporal.ZonedDateTime =
         data.task.startDate.toZonedDateTime({
           plainTime: data.task.startTime,
@@ -643,7 +625,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [clearPreview, computePreviewForDrag, setDropSlot]
   );
 
-  // Handle scope selection for recurring task updates
   const handleScopeSelect = useCallback(
     (scope: UpdateScope) => {
       if (!pendingUpdate) {
@@ -676,7 +657,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       >
         {children}
 
-        {/* Drop preview outline showing the eventual placement and duration */}
         {previewRect ? (
           <div
             aria-hidden
@@ -690,13 +670,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           />
         ) : null}
 
-        {/* Drag overlay for smooth preview during drag */}
         {overlayContent ? (
           <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
         ) : null}
       </DndContext>
 
-      {/* Scope selection dialog for recurring tasks */}
       <AlertDialog
         onOpenChange={(open) => !open && handleScopeDialogClose()}
         open={pendingUpdate !== null}

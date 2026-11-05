@@ -114,13 +114,10 @@ interface EventEditPopoverProps {
   calendarId: string;
   children: ReactElement;
   end: Date;
-  /** The event to edit. Optional for create mode. */
   event?: GoogleEvent;
   /** Whether the popover is in create or edit mode. Defaults based on event presence. */
   mode?: "create" | "edit";
-  /** Callback when open state changes (for controlled mode). */
   onOpenChange?: (open: boolean) => void;
-  /** Controlled open state (optional). If provided, the popover is controlled. */
   open?: boolean;
   readOnly?: boolean;
   readOnlyReason?: string | null;
@@ -136,9 +133,7 @@ interface EventFormValues {
   endTime: string;
   location: string;
   recurrence: string[];
-  /** Selected calendar for create mode (accountId) */
   selectedAccountId: string;
-  /** Selected calendar for create mode (calendarId) */
   selectedCalendarId: string;
   startDate: Date | null;
   startTime: string;
@@ -173,18 +168,14 @@ export type CloseSaveRequest =
        * We keep recurrence scope out of the form and ask for it after close.
        */
       variables: UpdateGoogleEventInput;
-      /** Whether this edit targets a recurring event (instance or master). */
       isRecurring: boolean;
-      /** Which scope should be preselected in the post-close scope dialog. */
       defaultScope: RecurrenceScope;
       /** Whether event data (non-calendar fields) were actually edited. */
       hasDataEdits: boolean;
-      /** If the user changed the calendar, include the destination for a move. */
       calendarChanged?: { destinationCalendarId: string };
     }
   | {
       type: "create";
-      /** Payload for creating a new event */
       payload: CreateEventInput;
     };
 
@@ -492,8 +483,6 @@ function RecurrenceEditor({
   );
 }
 
-// Temporal / calendar helpers live in `event-edit-utils.ts`.
-
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
   deleteScope: RecurrenceScope;
@@ -565,10 +554,7 @@ function eventEditDialogReducer(
   }
 }
 
-/**
- * Inline editor for Google events, mirroring TaskEditPopover behavior.
- * Supports both create and edit modes.
- */
+/** See documents/event-popover.md for save, recurrence scope, and calendar move behavior. */
 export function EventEditPopover({
   event,
   accountId,
@@ -584,10 +570,8 @@ export function EventEditPopover({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: EventEditPopoverProps) {
-  // Determine mode: explicit prop, or infer from event presence
   const mode = modeProp ?? (event ? "edit" : "create");
 
-  // Support both controlled and uncontrolled open state
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -627,14 +611,12 @@ export function EventEditPopover({
       return;
     }
     const { variables, hasDataEdits, calendarChanged } = pendingSave;
-    // Save event data if there are actual field edits
     if (hasDataEdits) {
       await updateEvent.mutateAsync({
         ...variables,
         recurrenceScope: selectedScope,
       });
     }
-    // Move to the new calendar if the user changed it
     if (calendarChanged && event) {
       await moveEvent.mutateAsync({
         accountId,
@@ -655,7 +637,6 @@ export function EventEditPopover({
     updateEvent,
   ]);
 
-  // Handle delete - opens appropriate confirmation dialog (edit mode only)
   const handleDelete = useCallback(() => {
     if (readOnly) {
       return;
@@ -672,7 +653,6 @@ export function EventEditPopover({
     }
   }, [event, readOnly, setOpen]);
 
-  // Commit delete for non-recurring events
   const confirmSimpleDelete = useCallback(() => {
     if (!event) {
       return;
@@ -686,7 +666,6 @@ export function EventEditPopover({
     dispatchDialog({ type: "set-simple-delete-open", value: false });
   }, [accountId, calendarId, deleteEvent, event]);
 
-  // Commit delete with selected scope
   const commitDelete = useCallback(async () => {
     if (!event) {
       return;
@@ -1465,7 +1444,6 @@ export function EventEditForm({
     (e) => {
       const target = e.target as HTMLElement;
       const tagName = target.tagName.toLowerCase();
-      // Skip if focused on text input or textarea
       if (tagName === "input" || tagName === "textarea") {
         return;
       }
@@ -1475,13 +1453,9 @@ export function EventEditForm({
     { enabled: open && !isCreateMode && !readOnly },
     [onDelete, open, isCreateMode, readOnly]
   );
-  /**
-   * We intentionally do not run mutations from inside the form.
-   * The popover wrapper controls “save on close” and dialogs.
-   */
+  // Closing the popover alone discards edits; the wrapper owns saves and dialogs.
   const hasUserEditedRef = useRef(false);
 
-  // Only query for recurring event master in edit mode when event exists
   const masterQuery = useRecurringEventMaster({
     accountId,
     calendarId,
@@ -1592,7 +1566,6 @@ export function EventEditForm({
   const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
   const locationPopoverOpen = locationOpen && locationQuery.length >= 2;
 
-  // Use the form's selected calendar (falls back to props on initial render)
   const effectiveAccountId = watchedValues.selectedAccountId ?? accountId;
   const effectiveCalendarId = watchedValues.selectedCalendarId ?? calendarId;
 
@@ -1630,13 +1603,11 @@ export function EventEditForm({
     [accountId, calendars, isCreateMode]
   );
 
-  // Find the active calendar for fallback color display
   const calendar = calendars.find(
     (c) =>
       c.accountId === effectiveAccountId &&
       c.calendar.id === effectiveCalendarId
   );
-  // Pastelise the calendar's background color for consistency with event colors
   const calendarFallbackColor = pastelizeColor(
     calendar?.calendar.backgroundColor
   );
@@ -1835,7 +1806,6 @@ export function EventEditForm({
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = watchedValues.recurrence?.[0];
-  // In create mode, always allow recurrence editing. In edit mode, only if the event is recurring.
   const canEditRecurrence =
     isCreateMode ||
     Boolean(

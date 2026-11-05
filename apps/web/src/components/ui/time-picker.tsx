@@ -27,12 +27,10 @@ interface TimePickerProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
-  /** Icon to show in the trigger (default: Clock3) */
   icon?: React.ReactNode;
   align?: "start" | "center" | "end";
 }
 
-/** Generate time slots for 24 hours at the given interval. */
 function generateTimeSlots(step: number): string[] {
   const slots: string[] = [];
   for (let minutes = 0; minutes < 24 * 60; minutes += step) {
@@ -45,7 +43,6 @@ function generateTimeSlots(step: number): string[] {
   return slots;
 }
 
-/** Format "HH:mm" to localized 12h or 24h display. */
 function formatTimeDisplay(value: string): string {
   const [h, m] = value.split(":").map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return value;
@@ -75,7 +72,6 @@ export function TimePicker({
 
   const slots = useMemo(() => generateTimeSlots(step), [step]);
 
-  // Auto-scroll to selected time when popover opens
   useLayoutEffect(() => {
     if (!open) return;
 

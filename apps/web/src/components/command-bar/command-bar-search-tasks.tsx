@@ -39,9 +39,6 @@ interface CommandBarSearchTasksProps {
   selectionMode?: "desktop-popup" | "local";
 }
 
-/**
- * Get the appropriate icon for a task status.
- */
 function getStatusIcon(status: "todo" | "in_progress" | "done") {
   switch (status) {
     case "in_progress":
@@ -142,13 +139,7 @@ function formatSidebarDateLabel(
   });
 }
 
-/**
- * CommandBarSearchTasks - Task search sub-view in the command bar.
- *
- * Filters tasks based on the search input and displays matching results.
- * Only shows uncompleted, non-recurring tasks.
- * Selecting a task navigates to its location and opens the edit popover.
- */
+/** See documents/command-bar.md for search destinations and desktop task opening. */
 export function CommandBarSearchTasks({
   search,
   selectionMode = "local",
@@ -167,24 +158,20 @@ export function CommandBarSearchTasks({
     applyCommandBarTaskOpenRequestAtom
   );
 
-  // Filter tasks: exclude completed, exclude recurring, match search query
   const filteredTasks = useMemo(() => {
     if (!tasks) {
       return [];
     }
 
-    // Base filters: exclude completed and recurring tasks
     const searchable = tasks.filter(
       (task: TaskSelectDecoded) =>
         task.status !== "done" && task.seriesMasterId === null
     );
 
-    // If no search query, return all searchable tasks
     if (!search.trim()) {
       return searchable;
     }
 
-    // Filter by title match
     const query = search.trim().toLowerCase();
     return searchable.filter(
       (task: TaskSelectDecoded) =>
@@ -193,7 +180,6 @@ export function CommandBarSearchTasks({
     );
   }, [tasks, search]);
 
-  // Handle task selection: navigate to task and open edit popover
   const handleSelectTask = useCallback(
     async (task: TaskSelectDecoded) => {
       const destination = resolveTaskSearchDestination(task, {
@@ -223,7 +209,6 @@ export function CommandBarSearchTasks({
 
       applyCommandBarTaskOpenRequest(request);
 
-      // Close the command bar
       setCommandBarOpen(false);
     },
     [

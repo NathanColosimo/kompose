@@ -9,25 +9,22 @@ import { isSameDay } from "@/lib/temporal-utils";
 import { clampResizeEnd, clampResizeStart, durationInMinutes } from "./helpers";
 import type { DragData, DragDirection } from "./types";
 
-/** Build task move update payload - returns decoded types (Temporal) */
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
   targetDateTime: Temporal.ZonedDateTime
 ): { id: string; task: object; scope: UpdateScope } {
   return {
     id: task.id,
-    // Dragging always updates just this occurrence
+    // Default scope; CalendarDndProvider asks for scope on recurring tasks.
     scope: "this",
     task: {
       durationMinutes: task.durationMinutes,
-      // Separate date and time for new schema
       startDate: targetDateTime.toPlainDate(),
       startTime: targetDateTime.toPlainTime(),
     },
   };
 }
 
-/** Build task resize update payload */
 export function buildTaskResizeUpdate({
   task,
   targetDateTime,
@@ -39,12 +36,10 @@ export function buildTaskResizeUpdate({
   direction: DragDirection;
   timeZone: string;
 }): { id: string; task: object; scope: UpdateScope } | null {
-  // Need both startDate and startTime for a scheduled task
   if (!(task.startDate && task.startTime)) {
     return null;
   }
 
-  // Combine startDate + startTime into ZonedDateTime
   const originalStart = task.startDate.toZonedDateTime({
     plainTime: task.startTime,
     timeZone,
@@ -64,11 +59,9 @@ export function buildTaskResizeUpdate({
     const newDuration = durationInMinutes(newStart, originalEnd);
     return {
       id: task.id,
-      // Resizing always updates just this occurrence
       scope: "this",
       task: {
         durationMinutes: newDuration,
-        // Separate date and time for new schema
         startDate: newStart.toPlainDate(),
         startTime: newStart.toPlainTime(),
       },
@@ -79,18 +72,16 @@ export function buildTaskResizeUpdate({
   const newDuration = durationInMinutes(originalStart, newEnd);
   return {
     id: task.id,
-    // Resizing always updates just this occurrence
     scope: "this",
     task: {
       durationMinutes: newDuration,
-      // Separate date and time for new schema (date unchanged for end resize)
       startDate: originalStart.toPlainDate(),
       startTime: originalStart.toPlainTime(),
     },
   };
 }
 
-/** Build Google event update payload with new start/end times */
+/** Keep the UTC offset but omit Temporal annotations that Google does not accept. */
 function toGoogleDateTime(dateTime: Temporal.ZonedDateTime): string {
   return dateTime.toString({
     calendarName: "never",
@@ -126,7 +117,6 @@ function buildGoogleUpdatePayload(
   };
 }
 
-/** Build Google event move update */
 export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
   start: Temporal.ZonedDateTime
@@ -145,7 +135,6 @@ export function buildGoogleMoveUpdate(
   };
 }
 
-/** Build Google event resize update */
 export function buildGoogleResizeUpdate({
   data,
   targetDateTime,

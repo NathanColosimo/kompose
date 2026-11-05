@@ -5,9 +5,6 @@ import {
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
-/**
- * Base views available in the left sidebar.
- */
 export type SidebarLeftBaseViewId = "inbox" | "today";
 
 /**
@@ -18,19 +15,13 @@ type SidebarLeftViewSelection =
   | { type: "base"; id: SidebarLeftBaseViewId }
   | { type: "tag"; tagId: string };
 
-/**
- * Default left-sidebar selection for first load and stale-storage fallback.
- */
+/** Also used when a persisted tag selection no longer exists. */
 export const defaultSidebarLeftViewSelection: SidebarLeftViewSelection = {
   id: "inbox",
   type: "base",
 };
 
-/**
- * Shared desktop widths for the dashboard sidebars.
- * clamp(min, preferred viewport width, max) keeps layouts responsive. The CSS
- * value and the layout budget below are both derived from these definitions.
- */
+/** Keep the CSS widths and the calendar's pixel budget derived from the same limits. */
 interface ClampedWidth {
   maxRem: number;
   minRem: number;
@@ -123,40 +114,26 @@ function computeDashboardResponsiveLayout(args: {
   };
 }
 
-/**
- * Left sidebar open/closed state persisted to localStorage.
- * Defaults to true (open) for new users.
- */
 export const sidebarLeftOpenAtom = atomWithStorage<boolean>(
   "sidebar-left-open",
   true,
   undefined,
-  // Keep the first client render aligned with SSR, then hydrate from storage.
+  // All persisted sidebar atoms hydrate after mount to match SSR on the first render.
   { getOnInit: false }
 );
 
-/**
- * Selected left-sidebar view persisted to localStorage.
- * Defaults to the Inbox view for new users.
- */
 export const sidebarLeftViewSelectionAtom =
   atomWithStorage<SidebarLeftViewSelection>(
     "sidebar-left-view-selection",
     defaultSidebarLeftViewSelection,
     undefined,
-    // Keep the first client render aligned with SSR, then hydrate from storage.
     { getOnInit: false }
   );
 
-/**
- * Right sidebar open/closed state persisted to localStorage.
- * Defaults to true (open) for new users.
- */
 export const sidebarRightOpenAtom = atomWithStorage<boolean>(
   "sidebar-right-open",
   true,
   undefined,
-  // Keep the first client render aligned with SSR, then hydrate from storage.
   { getOnInit: false }
 );
 
@@ -165,22 +142,14 @@ function getInitialDashboardViewportWidth() {
   return 0;
 }
 
-/**
- * Current viewport width for dashboard responsive calculations.
- * Populated client-side from the dashboard layout.
- */
+/** Measured by the dashboard layout after mount. */
 export const dashboardViewportWidthAtom = atom(
   getInitialDashboardViewportWidth()
 );
 
-/**
- * Overlay-only open state for right sidebar in constrained widths.
- */
+/** Overlay visibility is transient; the docked preference is persisted separately. */
 export const sidebarRightOverlayOpenAtom = atom(false);
 
-/**
- * Derived responsive flags/capacity used across layout, page, and hotkeys.
- */
 export const dashboardResponsiveLayoutAtom = atom((get) =>
   computeDashboardResponsiveLayout({
     leftSidebarOpen: get(sidebarLeftOpenAtom),
@@ -200,7 +169,6 @@ export const effectiveVisibleDaysCountAtom = atom((get) =>
   )
 );
 
-/** The days the calendar grid renders, starting from the current date. */
 export const effectiveVisibleDaysAtom = atom((get) => {
   const start = get(currentDateAtom);
   return Array.from({ length: get(effectiveVisibleDaysCountAtom) }, (_, i) =>

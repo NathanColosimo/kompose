@@ -37,10 +37,8 @@ import {
 } from "@/state/sidebar";
 import { TaskItem } from "./task-item";
 
-/** Droppable ID for the sidebar task list area */
 export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
-// Navigation tabs for the sidebar icon strip
 interface SidebarNavItem {
   icon: LucideIcon;
   id: string;
@@ -170,7 +168,6 @@ function renderTodayContent({
 
   return (
     <div className="flex flex-col">
-      {/* Overdue section */}
       {hasOverdue && (
         <div>
           <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -182,7 +179,6 @@ function renderTodayContent({
         </div>
       )}
 
-      {/* Unplanned section */}
       {hasUnplanned && (
         <div>
           <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -194,7 +190,6 @@ function renderTodayContent({
         </div>
       )}
 
-      {/* Planned section */}
       {hasPlanned && (
         <div>
           <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -206,7 +201,6 @@ function renderTodayContent({
         </div>
       )}
 
-      {/* Done section */}
       {hasDone && (
         <div>
           <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -415,7 +409,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     (tasksQuery.data === undefined && tasksQuery.error == null) ||
     (tagsQuery.data === undefined && tagsQuery.error == null);
 
-  // Make the task list a droppable area, passing the active tab for context-aware behavior
   const { setNodeRef, isOver } = useDroppable({
     data: {
       activeTab: activeItem?.title ?? "Inbox",
@@ -471,9 +464,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       mobile="inline"
       {...props}
     >
-      {/* This is the first sidebar */}
-      {/* We disable collapsible and adjust width to icon. */}
-      {/* This will make the sidebar appear as icons. */}
       <Sidebar
         className="w-[calc(var(--sidebar-width-icon)+1px)]! border-r"
         collapsible="none"
@@ -510,8 +500,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         </SidebarContent>
       </Sidebar>
 
-      {/* This is the second sidebar */}
-      {/* We disable collapsible and let it fill remaining space */}
       <Sidebar className="min-w-0 flex-1" collapsible="none" mobile="inline">
         <div
           className={cn(
@@ -554,7 +542,6 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         </div>
       </Sidebar>
 
-      {/* Rail for toggling the left sidebar */}
       <SidebarRail />
     </Sidebar>
   );

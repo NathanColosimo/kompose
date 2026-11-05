@@ -67,15 +67,6 @@ import {
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
 
-/**
- * App-wide header bar with:
- * - Left: Traffic light safe area (blank space for macOS window controls)
- * - Center: Search bar that opens command palette (cmd+k)
- * - Right: User avatar with dropdown menu
- *
- * The header is draggable in Electron for window movement.
- * On web, looks identical but without drag functionality.
- */
 export function AppHeader({ user }: { user: User }) {
   return (
     // The whole header drags the window; app-region is inherited, and the
@@ -146,10 +137,6 @@ function RightSidebarToggleButton() {
   );
 }
 
-/**
- * Fake search input that opens the command bar when clicked.
- * Shows placeholder text and ⌘K shortcut indicator.
- */
 function SearchButton() {
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
 
@@ -169,9 +156,6 @@ function SearchButton() {
   );
 }
 
-/**
- * User avatar dropdown with account options and logout.
- */
 function UserMenu({ user }: { user: User }) {
   const { push, replace } = useRouter();
   const queryClient = useQueryClient();
@@ -199,7 +183,6 @@ function UserMenu({ user }: { user: User }) {
   // accountInfo only affects surfaces that actually render linked accounts.
   const avatarSrc = user.image || "";
 
-  // Get initials for avatar fallback
   const initials = user.name
     ? user.name
         .split(" ")

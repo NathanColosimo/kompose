@@ -18,14 +18,9 @@ import { Badge } from "../ui/badge";
 import { Checkbox } from "../ui/checkbox";
 
 interface TaskItemProps {
-  /** The task to display */
   task: TaskSelectDecoded;
 }
 
-/**
- * TaskItem - A draggable task item in the sidebar.
- * Can be dragged onto the calendar to schedule the task.
- */
 export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
 
@@ -52,7 +47,6 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
     [task.id, task.status, updateTask]
   );
 
-  // Combine startDate + startTime into ZonedDateTime for display
   const scheduledZdt =
     task.startDate && task.startTime
       ? task.startDate.toZonedDateTime({ plainTime: task.startTime, timeZone })
@@ -74,7 +68,6 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
         {...attributes}
         {...listeners}
       >
-        {/* Status checkbox */}
         <Checkbox
           checked={isDone}
           className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground/50 transition-colors group-hover:border-foreground"
@@ -82,7 +75,6 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          {/* Task title */}
           <span
             className={cn(
               "font-medium text-sm leading-tight",
@@ -92,15 +84,12 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.title}
           </span>
 
-          {/* Metadata badges row */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Duration badge */}
             <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="secondary">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
             </Badge>
 
-            {/* Due date badge */}
             {task.dueDate ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
                 <CalendarDays className="size-3" />
@@ -111,7 +100,6 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
               </Badge>
             ) : null}
 
-            {/* Scheduled time badge - only show when both date and time are set */}
             {scheduledZdt ? (
               <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
                 <CalendarClock className="size-3" />

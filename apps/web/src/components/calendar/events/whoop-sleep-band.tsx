@@ -10,11 +10,9 @@ import {
 import { PIXELS_PER_HOUR } from "../constants";
 
 interface WhoopSleepBandProps {
-  /** Calendar date this column represents */
   columnDate: Temporal.PlainDate;
   /** ISO datetime string with offset for sleep end */
   end: string;
-  /** Whether this is a nap (vs overnight sleep) */
   isNap: boolean;
   /** ISO datetime string with offset for sleep start */
   start: string;
@@ -33,12 +31,7 @@ function formatSleepDuration(ms: number): string {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
-/**
- * Renders a translucent background band for a WHOOP sleep block.
- * Positioned behind all events (z-0) and does not participate in collision layout.
- * Clamps to the column's day boundaries (midnight-to-midnight).
- * Shows a "Sleep" label with duration on the larger segment when split across days.
- */
+/** Sleep stays behind collision-positioned events. See documents/whoop.md. */
 export const WhoopSleepBand = memo(function WhoopSleepBandInner({
   start,
   end,

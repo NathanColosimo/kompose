@@ -79,18 +79,12 @@ function recurrenceReducer(
 }
 
 interface RecurrenceEditorProps {
-  /** Called when recurrence changes */
   onChange: (recurrence: TaskRecurrence | null) => void;
   /** Reference date for defaults (typically the task's startDate) */
   referenceDate?: Temporal.PlainDate | null;
-  /** Current recurrence value (null = no recurrence) */
   value: TaskRecurrence | null;
 }
 
-/**
- * Recurrence pattern editor for tasks.
- * Supports daily, weekly (with day selection), monthly, and yearly patterns.
- */
 export function RecurrenceEditor({
   value,
   onChange,

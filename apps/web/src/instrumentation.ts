@@ -1,16 +1,9 @@
 import "zod/compile";
 
 /**
- * Next.js instrumentation hook — runs once at server startup, before any
- * request handling. By importing the backend telemetry module here we
- * ensure the telemetry module registers a global TracerProvider *before* Next.js
- * creates its root request spans. Without this, root spans
- * (BaseServer.handleRequest) are created against a no-op provider and
- * never exported.
- *
- * @see https://nextjs.org/docs/app/building-your-application/optimizing/open-telemetry
+ * Register telemetry before Next.js creates root request spans, or they are lost.
+ * See documents/otel.md.
  */
 export async function register() {
-  // Side-effect import: the TracerProvider is registered at module evaluation time
   await import("@kompose/api/telemetry");
 }
