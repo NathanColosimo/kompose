@@ -8,7 +8,10 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { getLinkedAccessToken } from "../../lib/linked-account";
+import {
+  getLinkedAccessToken,
+  getLinkedAccount,
+} from "../../lib/linked-account";
 import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
@@ -359,6 +362,11 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
+          const link = yield* getLinkedAccount({
+            accountId: params.accountId,
+            providerId: "whoop",
+            userId: params.userId,
+          });
           const now = Temporal.Now.instant();
           const today = now
             .toZonedDateTimeISO(params.timeZone)
@@ -369,11 +377,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.startDate,
             params.endDate
           ).filter((day) => day <= today);
-          const cachedDays = yield* cache.getCachedDays(
-            params.userId,
-            params.accountId,
-            requestedDays
-          );
+          const cachedDays = yield* cache.getCachedDays(link, requestedDays);
 
           const fetchRanges = missingDayFetchRanges({
             cachedDays,
@@ -384,13 +388,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const allDays = new Map(cachedDays);
 
           if (fetchRanges.length > 0) {
-            // Only fetch a token on a cache miss; user-scoped cache keys
-            // already keep one user from reading another's cached days.
-            const accessToken = yield* getLinkedAccessToken({
-              accountId: params.accountId,
-              providerId: "whoop",
-              userId: params.userId,
-            });
+            const accessToken = yield* getLinkedAccessToken(link);
             const client = createWhoopClient(accessToken);
 
             for (const range of fetchRanges) {
@@ -428,8 +426,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
                 fetchedDays,
                 (payload) =>
                   cache.setCachedDay(
-                    params.userId,
-                    params.accountId,
+                    link,
                     payload.day,
                     payload,
                     ttlForDay(payload, params.timeZone, now)
@@ -451,11 +448,12 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const accessToken = yield* getLinkedAccessToken({
+          const link = yield* getLinkedAccount({
             providerId: "whoop",
             accountId: params.accountId,
             userId: params.userId,
           });
+          const accessToken = yield* getLinkedAccessToken(link);
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();

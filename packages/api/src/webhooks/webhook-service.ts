@@ -403,11 +403,12 @@ export class WebhookService extends Context.Service<WebhookService>()(
             userId: subscription.userId,
           });
 
-          // Cache keys and client query keys use Google's provider account id.
-          yield* cache.invalidateCalendars(
-            subscription.userId,
-            subscription.providerAccountId
-          );
+          // Use the subscription's exact linkage, including its local account row ID.
+          yield* cache.invalidateCalendars({
+            accountId: subscription.providerAccountId,
+            id: subscription.accountId,
+            userId: subscription.userId,
+          });
 
           yield* publishToUser(subscription.userId, {
             payload: {
@@ -433,11 +434,12 @@ export class WebhookService extends Context.Service<WebhookService>()(
             userId: subscription.userId,
           });
 
-          // Invalidate all cached events for this calendar (best effort).
-          // Webhooks don't tell us which event changed, so we clear everything.
-          yield* cache.invalidateAllEvents(
-            subscription.userId,
-            subscription.providerAccountId,
+          yield* cache.invalidateEvents(
+            {
+              accountId: subscription.providerAccountId,
+              id: subscription.accountId,
+              userId: subscription.userId,
+            },
             subscription.config.calendarId
           );
 

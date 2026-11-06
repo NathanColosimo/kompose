@@ -161,20 +161,23 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check the user-scoped cache first and only on a miss call `getGoogleCalendar(userId, accountId)`, which fetches the access token with `getLinkedAccessToken` (`lib/linked-account.ts`, which also checks the user owns the account) and returns the Google client. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event.
+Read handlers first call `getLinkedAccount` to check ownership and resolve the current local account row ID. The cache namespace includes that row ID, so unlink blocks cache hits and relink cannot reuse old entries. OAuth tokens are fetched only on misses. Mutating handlers advance the relevant cache generation and publish a realtime `google-calendar` event.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
+  const link = yield* getLinkedAccount({
+    accountId: input.accountId,
+    providerId: "google",
+    userId: context.user.id,
+  });
   const cache = yield* GoogleCalendarCacheService;
-
-  // Cache-first read, scoped to the user
-  const cached = yield* cache.getCachedCalendars(context.user.id, input.accountId);
+  const entry = yield* cache.calendars(link);
+  const cached = yield* entry.get;
   if (Option.isSome(cached)) return cached.value;
 
-  // API fallback: ownership check + token only on a miss
-  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+  const google = yield* getGoogleCalendar(link);
   const data = yield* google.listCalendars();
-  yield* cache.setCachedCalendars(context.user.id, input.accountId, data);
+  yield* entry.set(data);
   return data;
 }),
 ```
@@ -397,7 +400,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 
 ### Caching
 
-- Per-day raw data cached in Redis via `WhoopCacheService`.
+- Per-day raw data cached in Redis via `WhoopCacheService`, after checking the current account linkage. Keys include the local account row ID so relinking starts a new namespace.
 - Today's data: 15-minute TTL. Past days: 7-day TTL.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
