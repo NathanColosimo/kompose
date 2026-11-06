@@ -213,7 +213,8 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 | `routers/sync/contract.ts` | oRPC contract (SSE event stream) |
 | `routers/sync/router.ts` | SSE endpoint handler |
 | `realtime/events.ts` | Zod schemas for sync event types |
-| `realtime/sync.ts` | Redis pub/sub, async event iterator |
+| `realtime/sync.ts` | Redis publish and user-scoped stream entry point |
+| `realtime/sync-stream.ts` | Subscription acquisition, coalesced event queue, stream cleanup |
 
 ### Sync event types
 
@@ -227,14 +228,19 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 1. Client opens SSE connection via `sync.events` endpoint
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
-3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
+3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; subscriber auto-resubscription and reconnect retries are disabled. If that connection drops, the stream ends so the client reconnects and catches up instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
 
-- Shared state clients no longer invalidate broad task/calendar queries on the first successful SSE connect. They only run the broad recovery invalidation after an explicit `reconnect` event.
+- The first successful SSE connection stays quiet. Each later successful subscription runs broad task/calendar recovery invalidation, including after an unexpected EOF, Redis close, transport error, inactivity timeout, planned rotation, or deliberate background pause. Recovery runs after the replacement stream is acquired, so it covers changes missed during the gap. An explicit `reconnect` is a control event; it does not also invalidate before resubscription.
+- Both browser focus/visibility and native AppState feed the same supervisor. A backgrounded connection closes after **30 s**; keepalives and repeated background notifications cannot extend that deadline. Returning before the deadline preserves the connection. Disabling/unmounting closes immediately.
+- Abort and Redis close race pending `subscribe()` acquisition. Abort disconnects the subscriber immediately, even when the command has not settled; late command rejection is observed. Acquisition, listeners, timers, subscriber lifetime, and tracing cleanup share one scope.
+- Pending task invalidations and keepalives each occupy one queue slot; calendar invalidations coalesce by `(accountId, calendarId)`. At 256 pending distinct resources, overflow discards the backlog and ends with `reconnect`, allowing a broad catch-up instead of growing memory without limit.
+
+Regression tests use controlled iterators/clocks in `packages/state/src/realtime-sync-supervisor.test.ts` and a fake Redis subscriber in `packages/api/src/realtime/sync-stream.test.ts`. Run `bun test packages/state/src packages/api/src/realtime/sync-stream.test.ts` without Redis or production credentials.
 
 ### Redis pub/sub functions
 

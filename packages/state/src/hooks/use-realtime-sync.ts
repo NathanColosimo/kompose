@@ -11,18 +11,11 @@ import {
   GOOGLE_EVENTS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
 } from "../google-calendar-query-keys";
-
-const BASE_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_ATTEMPTS = 10;
-const MAX_RECONNECT_DELAY_MS = 30_000;
-const BACKGROUND_DISCONNECT_DELAY_MS = 30_000;
-// If no event (including keepalive) arrives within this window, assume the
-// connection is dead and force a reconnect. Must be > server keepalive
-// interval (10s) to avoid false positives.
-const INACTIVITY_TIMEOUT_MS = 30_000;
+import { RealtimeSyncSupervisor } from "../realtime-sync-supervisor";
 
 export interface RealtimeSyncOptions {
   enabled?: boolean;
+  foreground?: boolean;
   userId?: string;
 }
 
@@ -36,13 +29,6 @@ interface RealtimeDocument {
 interface RealtimeWindow {
   addEventListener?: (type: string, listener: () => void) => void;
   removeEventListener?: (type: string, listener: () => void) => void;
-}
-
-function getReconnectDelayMs(attempt: number): number {
-  return Math.min(
-    BASE_RECONNECT_DELAY_MS * 2 ** Math.max(0, attempt),
-    MAX_RECONNECT_DELAY_MS
-  );
 }
 
 function getRealtimeDocument(): RealtimeDocument | undefined {
@@ -72,10 +58,15 @@ function canKeepRealtimeConnected(): boolean {
 
 export function useRealtimeSync({
   enabled = true,
+  foreground,
   userId,
 }: RealtimeSyncOptions) {
   const queryClient = useQueryClient();
   const { orpc } = useStateConfig();
+  const supervisorRef = React.useRef<RealtimeSyncSupervisor | null>(null);
+  const isForeground = React.useEffectEvent(
+    () => foreground ?? canKeepRealtimeConnected()
+  );
 
   const invalidateTaskQueries = React.useCallback(() => {
     // Refresh inactive cached task lists too, as with calendar lists below.
@@ -122,7 +113,6 @@ export function useRealtimeSync({
           return;
         }
         case "reconnect": {
-          invalidateCriticalQueries();
           return;
         }
         case "keepalive": {
@@ -133,11 +123,7 @@ export function useRealtimeSync({
         }
       }
     },
-    [
-      invalidateCriticalQueries,
-      invalidateGoogleCalendarQueries,
-      invalidateTaskQueries,
-    ]
+    [invalidateGoogleCalendarQueries, invalidateTaskQueries]
   );
 
   React.useEffect(() => {
@@ -145,209 +131,16 @@ export function useRealtimeSync({
       return;
     }
 
-    let cancelled = false;
-    let reconnectAttempts = 0;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
-    let backgroundDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let pausedForBackground = !canKeepRealtimeConnected();
-    let connectInFlight = false;
-    let activeIterator: AsyncIterator<SyncEvent> | null = null;
-
-    const clearReconnectTimer = () => {
-      if (!reconnectTimer) {
-        return;
-      }
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    };
-
-    const clearBackgroundDisconnectTimer = () => {
-      if (!backgroundDisconnectTimer) {
-        return;
-      }
-      clearTimeout(backgroundDisconnectTimer);
-      backgroundDisconnectTimer = null;
-    };
-
-    const scheduleReconnect = (immediate: boolean) => {
-      clearReconnectTimer();
-
-      if (cancelled || pausedForBackground || !canKeepRealtimeConnected()) {
-        return;
-      }
-
-      if (immediate) {
-        reconnectAttempts = 0;
-        reconnectTimer = setTimeout(() => {
-          connect();
-        }, 0);
-        return;
-      }
-
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        return;
-      }
-
-      const delayMs = getReconnectDelayMs(reconnectAttempts);
-      reconnectAttempts += 1;
-
-      reconnectTimer = setTimeout(() => {
-        connect();
-      }, delayMs);
-    };
-
-    const clearInactivityTimer = () => {
-      if (!inactivityTimer) {
-        return;
-      }
-      clearTimeout(inactivityTimer);
-      inactivityTimer = null;
-    };
-
-    const resetInactivityTimer = () => {
-      clearInactivityTimer();
-      if (cancelled || pausedForBackground) {
-        return;
-      }
-      inactivityTimer = setTimeout(() => {
-        // Close a silent stream so the consume loop can exit and reconnect.
-        closeActiveIterator();
-      }, INACTIVITY_TIMEOUT_MS);
-    };
-
-    const closeActiveIterator = async () => {
-      if (!activeIterator) {
-        return;
-      }
-      const current = activeIterator;
-      activeIterator = null;
-      try {
-        await current.return?.();
-      } catch {
-        // Expo may throw when the server has already closed the ReadableStream.
-      }
-    };
-
-    const pauseForBackground = async () => {
-      if (cancelled) {
-        return;
-      }
-      pausedForBackground = true;
-      clearReconnectTimer();
-      clearInactivityTimer();
-      await closeActiveIterator();
-    };
-
-    const scheduleBackgroundDisconnect = () => {
-      if (cancelled || canKeepRealtimeConnected()) {
-        return;
-      }
-
-      if (backgroundDisconnectTimer) {
-        return;
-      }
-
-      backgroundDisconnectTimer = setTimeout(() => {
-        backgroundDisconnectTimer = null;
-        if (!canKeepRealtimeConnected()) {
-          pauseForBackground();
-        }
-      }, BACKGROUND_DISCONNECT_DELAY_MS);
-    };
-
-    const resumeFromBackground = () => {
-      if (cancelled || !canKeepRealtimeConnected()) {
-        return;
-      }
-
-      const wasPaused = pausedForBackground;
-      pausedForBackground = false;
-      clearBackgroundDisconnectTimer();
-
-      if (wasPaused) {
-        invalidateCriticalQueries();
-      }
-
-      if (!(activeIterator || connectInFlight)) {
-        scheduleReconnect(true);
-      }
-    };
-
+    const supervisor = new RealtimeSyncSupervisor({
+      connect: (signal) => orpc.sync.events(undefined, { signal }),
+      onEvent: handleSyncEvent,
+      onResubscribe: invalidateCriticalQueries,
+    });
+    supervisorRef.current = supervisor;
+    supervisor.start(isForeground());
     const handleConnectionActivity = () => {
-      if (canKeepRealtimeConnected()) {
-        resumeFromBackground();
-        return;
-      }
-
-      scheduleBackgroundDisconnect();
+      supervisor.setForeground(isForeground());
     };
-
-    const consumeIterator = async (iterator: AsyncIterator<SyncEvent>) => {
-      let reconnectRequested = false;
-
-      while (!cancelled) {
-        // biome-ignore lint/performance/noAwaitInLoops: sequential async iterator
-        const next = await iterator.next();
-        if (next.done) {
-          break;
-        }
-
-        resetInactivityTimer();
-        handleSyncEvent(next.value);
-
-        if (next.value.type === "reconnect") {
-          reconnectRequested = true;
-          break;
-        }
-      }
-
-      return reconnectRequested;
-    };
-
-    const connect = async () => {
-      if (
-        cancelled ||
-        pausedForBackground ||
-        !canKeepRealtimeConnected() ||
-        connectInFlight
-      ) {
-        return;
-      }
-
-      connectInFlight = true;
-      try {
-        const iterator = await orpc.sync.events();
-        connectInFlight = false;
-        activeIterator = iterator;
-
-        if (cancelled || pausedForBackground || !canKeepRealtimeConnected()) {
-          await closeActiveIterator();
-          return;
-        }
-
-        reconnectAttempts = 0;
-        resetInactivityTimer();
-        const reconnectRequested = await consumeIterator(iterator);
-
-        await closeActiveIterator();
-
-        if (!cancelled) {
-          scheduleReconnect(reconnectRequested);
-        }
-      } catch {
-        connectInFlight = false;
-        if (!cancelled) {
-          scheduleReconnect(false);
-        }
-      }
-    };
-
-    if (pausedForBackground) {
-      scheduleBackgroundDisconnect();
-    } else {
-      connect();
-    }
 
     const realtimeWindow = getRealtimeWindow();
     const realtimeDocument = getRealtimeDocument();
@@ -362,10 +155,8 @@ export function useRealtimeSync({
     }
 
     return () => {
-      cancelled = true;
-      clearReconnectTimer();
-      clearInactivityTimer();
-      clearBackgroundDisconnectTimer();
+      supervisor.stop();
+      supervisorRef.current = null;
       if (realtimeWindow && realtimeDocument) {
         realtimeWindow.removeEventListener?.("focus", handleConnectionActivity);
         realtimeWindow.removeEventListener?.("blur", handleConnectionActivity);
@@ -374,7 +165,12 @@ export function useRealtimeSync({
           handleConnectionActivity
         );
       }
-      closeActiveIterator();
     };
   }, [enabled, handleSyncEvent, invalidateCriticalQueries, orpc, userId]);
+
+  React.useEffect(() => {
+    supervisorRef.current?.setForeground(
+      foreground ?? canKeepRealtimeConnected()
+    );
+  }, [foreground]);
 }

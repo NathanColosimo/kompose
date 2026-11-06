@@ -150,6 +150,9 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Session gating:
   - The root layout subscribes through `authClient.useSession()` and starts
     realtime sync with the authenticated user's ID.
+  - Native AppState changes feed the shared realtime supervisor's foreground
+    input. Backgrounding preserves its history and closes SSE after 30 s;
+    resuming a paused stream runs task/calendar catch-up after resubscribing.
 - oRPC client (cookie injection + required server URL):
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.
