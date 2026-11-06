@@ -110,7 +110,6 @@
         "@kompose/task-parser": "workspace:*",
         "@opentelemetry/api": "catalog:",
         "@orpc/client": "catalog:",
-        "@orpc/contract": "catalog:",
         "@orpc/openapi": "catalog:",
         "@orpc/ratelimit": "catalog:",
         "@orpc/server": "catalog:",

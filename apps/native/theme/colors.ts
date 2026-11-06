@@ -22,7 +22,7 @@ export const Fonts = Platform.select({
   },
 });
 
-export const lightColors = {
+const lightColors = {
   accent: THEME.light.accent,
   accentForeground: THEME.light.accentForeground,
   background: THEME.light.background,
@@ -56,7 +56,7 @@ export const lightColors = {
   yellow: "#FFCC00",
 };
 
-export const darkColors = {
+const darkColors = {
   accent: THEME.dark.accent,
   accentForeground: THEME.dark.accentForeground,
   background: THEME.dark.background,
