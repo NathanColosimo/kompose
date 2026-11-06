@@ -14,6 +14,7 @@ import {
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import type { useEventEditorFlow } from "@/hooks/use-event-editor-flow";
+import { useModalPresence } from "@/hooks/use-modal-presence";
 
 export function EventScopeDialog({
   flow,
@@ -28,7 +29,24 @@ export function EventScopeDialog({
   ) {
     return null;
   }
+  return <EventScopeModal flow={flow} key={state.sessionId} state={state} />;
+}
+
+function EventScopeModal({
+  flow,
+  state,
+}: {
+  flow: ReturnType<typeof useEventEditorFlow>;
+  state: Extract<EventEditorState, { action: "save" | "delete" }>;
+}) {
   const { sessionId } = state;
+  const { finishAnimation, finishNativeDismiss, presence, requestClose } =
+    useModalPresence({
+      isVisible: true,
+      onClose: () => {
+        flow.dispatch({ sessionId, type: "cancel-scope" });
+      },
+    });
   const submitting = state.status === "submitting";
   const deleting = state.action === "delete";
   const showScopeOptions = isRecurringEventDraft(state.draft);
@@ -43,16 +61,20 @@ export function EventScopeDialog({
     confirmLabel = "Retry move";
   }
   const cancel = () => {
-    flow.dispatch({ sessionId, type: "cancel-scope" });
+    requestClose();
+    // The native fade completes through onDismiss, after visible becomes false.
+    finishAnimation("closing");
   };
 
   return (
     <Modal
       animationType="fade"
+      onDismiss={finishNativeDismiss}
       onRequestClose={submitting ? undefined : cancel}
+      onShow={() => finishAnimation("opening")}
       statusBarTranslucent
       transparent
-      visible
+      visible={presence !== "hidden"}
     >
       <View className="flex-1 items-center justify-center bg-black/80 p-6">
         <Pressable
