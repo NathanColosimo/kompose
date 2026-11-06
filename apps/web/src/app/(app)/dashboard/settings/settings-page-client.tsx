@@ -1,6 +1,6 @@
 "use client";
 
-import { env } from "@kompose/env";
+import { clientEnv } from "@kompose/env/client";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import { whoopAccountDataAtom } from "@kompose/state/atoms/whoop-data";
 import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "@kompose/state/google-calendar-query-keys";
@@ -79,7 +79,7 @@ export default function SettingsPageClient() {
     setLinkingProvider("google");
     try {
       if (isDesktopRuntime()) {
-        window.open(`${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
+        window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
         return;
       }
 
@@ -120,7 +120,7 @@ export default function SettingsPageClient() {
 
     try {
       if (isDesktopRuntime()) {
-        window.open(`${env.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
+        window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
         return;
       }
 

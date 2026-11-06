@@ -1,19 +1,17 @@
+import { clientEnv, deploymentEnvs } from "@kompose/env/client";
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
 export const env = createEnv({
   client: {
-    NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(["local", "preview", "production"]),
+    NEXT_PUBLIC_DEPLOYMENT_ENV: z.enum(deploymentEnvs),
     NEXT_PUBLIC_WEB_URL: z
       .string()
       .min(1)
       .regex(/^https?:\/\//),
   },
 
-  experimental__runtimeEnv: {
-    NEXT_PUBLIC_DEPLOYMENT_ENV: process.env.NEXT_PUBLIC_DEPLOYMENT_ENV,
-    NEXT_PUBLIC_WEB_URL: process.env.NEXT_PUBLIC_WEB_URL,
-  },
+  experimental__runtimeEnv: clientEnv,
   server: {
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1),
     APPLE_CLIENT_ID: z.string().min(1),

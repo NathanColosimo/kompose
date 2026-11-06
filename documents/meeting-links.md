@@ -46,8 +46,8 @@ When `conferenceData` is present, the Google Calendar client automatically sets 
 - Native calendar modal: `apps/native/app/(tabs)/calendar.tsx`
 
 ## Desktop (Electron) behavior
-- In desktop runtime, external meeting URLs are handled by a global click
-  interceptor in `apps/web/src/components/providers.tsx`.
+- In desktop runtime, external meeting URLs are handled by the window's
+  navigation handlers in `apps/electron/src/main.ts`.
 - External `http/https` links are opened via Electron’s `shell.openExternal`
   so they launch in the system browser instead of being handled inside the
   app window.

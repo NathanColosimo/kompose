@@ -1,6 +1,6 @@
 "use client";
 
-import { env } from "@kompose/env";
+import { clientEnv } from "@kompose/env/client";
 import { useConnectedAgents } from "@kompose/state/hooks/use-connected-agents";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const MCP_URL = `${env.NEXT_PUBLIC_WEB_URL}/api/mcp`;
+const MCP_URL = `${clientEnv.NEXT_PUBLIC_WEB_URL}/api/mcp`;
 
 /** AI apps connected over MCP, each revocable. See documents/mcp.md. */
 export function ConnectedAgentsSettings() {
