@@ -1,4 +1,4 @@
-import type { PluginManifest } from "@kompose/plugins";
+import type { OAuthPlugin } from "@kompose/plugins";
 import {
   connectLabel,
   initials,
@@ -21,7 +21,7 @@ import { authClient } from "@/lib/auth-client";
 /** A card per plugin with its connected accounts. See documents/plugins.md. */
 export function PluginConnectionsCards() {
   const { cards, connect, connectionsQuery, disconnect } = usePluginConnections(
-    (plugin: PluginManifest) =>
+    (plugin: OAuthPlugin) =>
       // Resolves after the in-app browser closes.
       authClient.linkSocial({
         callbackURL: createURL("settings"),

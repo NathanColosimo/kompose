@@ -85,8 +85,8 @@ list: os.list.effect(function* ({ context }) {
 | File | Purpose |
 |------|---------|
 | `services/link-parser/service.ts` | `LinkParserService` (Effect.Service) — provider detection and metadata fetching |
-| `services/link-parser/types.ts` | Zod discriminated union for `linkMeta` (provider variants) |
-| `services/link-parser/providers/*.ts` | Provider-specific parsers (Spotify, YouTube, Substack, unknown fallback) |
+| `services/link-parser/open-graph.ts` | Open Graph fallback when no `link-resolver` plugin matches |
+| `@kompose/plugins/link-resolvers` | The Spotify, YouTube, and Substack resolvers (`packages/plugins/src/<id>/server.ts`) |
 
 ### LinkParserService
 
