@@ -5,6 +5,7 @@ import { connectTaskParser } from "@kompose/task-parser/worker-client";
 import {
   keepPreviousData,
   queryOptions,
+  useIsFetching,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -41,10 +42,12 @@ function loadParser() {
   return Promise.race([connectTaskParser(worker.port), failedToStart]);
 }
 
+const PARSER_QUERY_SCOPE = "task-parser";
+
 const parserQuery = queryOptions({
   gcTime: Number.POSITIVE_INFINITY,
   queryFn: loadParser,
-  queryKey: ["task-parser", "model"],
+  queryKey: [PARSER_QUERY_SCOPE, "model"],
   retry: 1,
   staleTime: Number.POSITIVE_INFINITY,
 });
@@ -57,6 +60,19 @@ export function usePreloadTaskParser() {
   useQuery(parserQuery);
 }
 
+/**
+ * Loads the model once `dataLoaded` is true and no other query is fetching,
+ * so the weights' first download (14 MB; later visits read the Cache API)
+ * doesn't compete with the page's own data. Opening the command bar sooner
+ * loads it then.
+ */
+export function usePreloadTaskParserAfterData(dataLoaded: boolean) {
+  const othersFetching = useIsFetching({
+    predicate: (query) => query.queryKey[0] !== PARSER_QUERY_SCOPE,
+  });
+  useQuery({ ...parserQuery, enabled: dataLoaded && othersFetching === 0 });
+}
+
 function parseQuery(text: string, tags: TagOption[]) {
   // Relative phrases ("tomorrow", "in 2 hours") depend on the current time.
   const minute = Math.floor(Date.now() / 60_000);
@@ -66,7 +82,7 @@ function parseQuery(text: string, tags: TagOption[]) {
       const parser = await client.fetchQuery(parserQuery);
       return parser.parse({ now: Temporal.Now.zonedDateTimeISO(), tags, text });
     },
-    queryKey: ["task-parser", "parse", minute, tags, text],
+    queryKey: [PARSER_QUERY_SCOPE, "parse", minute, tags, text],
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });

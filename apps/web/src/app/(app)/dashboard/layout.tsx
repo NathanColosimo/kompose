@@ -1,8 +1,10 @@
 "use client";
 
+import { tagsQueryAtom } from "@kompose/state/atoms/tags";
+import { tasksQueryAtom } from "@kompose/state/atoms/tasks";
 import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -17,12 +19,20 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
-import { usePreloadTaskParser } from "@/lib/use-magic-task";
+import { usePreloadTaskParserAfterData } from "@/lib/use-magic-task";
 import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
 } from "@/state/sidebar";
+
+/** Its own component, so task and tag updates don't re-render the layout. */
+function TaskParserPreload() {
+  const tasks = useAtomValue(tasksQueryAtom);
+  const tags = useAtomValue(tagsQueryAtom);
+  usePreloadTaskParserAfterData(!(tasks.isPending || tags.isPending));
+  return null;
+}
 
 function LoginRedirect() {
   const { replace } = useRouter();
@@ -53,7 +63,6 @@ export default function DashboardLayout({
     applyCommandBarTaskOpenRequestAtom
   );
   useRealtimeSync({ userId: sessionUser?.id });
-  usePreloadTaskParser();
 
   // Keep a live viewport width so day/sidebar capacity can be derived centrally.
   useLayoutEffect(() => {
@@ -124,6 +133,7 @@ export default function DashboardLayout({
         <CalendarDndProvider>
           <CalendarHotkeys />
           <CommandBar />
+          <TaskParserPreload />
           <SidebarLeft />
           <SidebarInset>{children}</SidebarInset>
           <SidebarRight />

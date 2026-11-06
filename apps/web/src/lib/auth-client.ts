@@ -1,7 +1,7 @@
 import { electronProxyClient } from "@better-auth/electron/proxy";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import type { auth } from "@kompose/auth";
-import { env } from "@kompose/env";
+import { clientEnv } from "@kompose/env/client";
 import {
   inferAdditionalFields,
   lastLoginMethodClient,
@@ -14,7 +14,7 @@ import {
 } from "./desktop-auth-handoff";
 
 export const authClient = createAuthClient({
-  baseURL: env.NEXT_PUBLIC_WEB_URL,
+  baseURL: clientEnv.NEXT_PUBLIC_WEB_URL,
   plugins: [
     inferAdditionalFields<typeof auth>(),
     lastLoginMethodClient({ cookieName: "kompose.last_used_login_method" }),

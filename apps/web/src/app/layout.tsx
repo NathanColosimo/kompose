@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { preload } from "react-dom";
 import "../index.css";
 import Providers from "@/components/providers";
+import sentientUprightUrl from "@/fonts/Sentient-Variable.woff2";
 
 export const metadata: Metadata = {
   description:
@@ -15,8 +16,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   // Every page's text is Sentient (index.css), so fetch it with the HTML
-  // instead of after the CSS is parsed.
-  preload("/fonts/Sentient-Variable.woff2", {
+  // instead of after the CSS is parsed. The import resolves to the same
+  // content-hashed, immutable URL the stylesheet uses.
+  preload(sentientUprightUrl, {
     as: "font",
     crossOrigin: "anonymous",
     type: "font/woff2",
