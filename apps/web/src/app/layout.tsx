@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { preload } from "react-dom";
 import "../index.css";
 import Providers from "@/components/providers";
-import sentientUprightUrl from "@/fonts/Sentient-Variable.woff2";
+import sentientUprightCoreUrl from "@/fonts/sentient-upright-core.woff2";
 
 export const metadata: Metadata = {
   description:
@@ -15,10 +15,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Every page's text is Sentient (index.css), so fetch it with the HTML
-  // instead of after the CSS is parsed. The import resolves to the same
-  // content-hashed, immutable URL the stylesheet uses.
-  preload(sentientUprightUrl, {
+  // Every page's text is Sentient (fonts/sentient.css), so fetch its core
+  // file with the HTML instead of after the CSS is parsed. The import resolves
+  // to the same content-hashed, immutable URL the stylesheet uses. Italic and
+  // the extended characters load only on pages that use them.
+  preload(sentientUprightCoreUrl, {
     as: "font",
     crossOrigin: "anonymous",
     type: "font/woff2",
