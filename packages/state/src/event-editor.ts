@@ -56,12 +56,12 @@ type EditOperation = {
 );
 
 type Submission =
-  | (EditOperation & { returnTo: "editor" | "scope" })
+  | (EditOperation & { returnTo: "editor" | "scope" | "dismissed" })
   | {
       action: "create";
       draft: CreateEventDraft;
       phase: "create";
-      returnTo: "editor";
+      returnTo: "editor" | "dismissed";
       scope: "this";
     };
 
@@ -73,7 +73,7 @@ export type EventEditorState =
 
 export type EventEditorAction =
   | (Session & { type: "open"; draft: EventDraft })
-  | (Session & { type: "close" | "cancel-scope" })
+  | (Session & { type: "close" | "dismiss" | "cancel-scope" })
   | (Session & {
       type: "request-scope";
       draft: EditEventDraft;
@@ -101,6 +101,8 @@ export function eventEditorReducer(
   }
   const { sessionId } = state;
   switch (event.type) {
+    case "dismiss":
+      return beginDismissal(state);
     case "close":
       if (
         state.status === "scope" ||
@@ -147,6 +149,15 @@ export function eventEditorReducer(
   }
 }
 
+function beginDismissal(
+  state: Exclude<EventEditorState, { status: "closed" }>
+): EventEditorState {
+  if (state.status === "submitting" && state.returnTo === "editor") {
+    return { ...state, returnTo: "dismissed" };
+  }
+  return state;
+}
+
 function completeSubmission(
   state: Extract<EventEditorState, { status: "submitting" }>,
   event: Extract<
@@ -171,6 +182,9 @@ function completeSubmission(
     case "succeeded":
       return { status: "closed" };
     case "failed":
+      if (state.returnTo === "dismissed") {
+        return { status: "closed" };
+      }
       if (
         state.action !== "create" &&
         (state.returnTo === "scope" || state.phase === "move")

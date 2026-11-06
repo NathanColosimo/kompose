@@ -1122,6 +1122,12 @@ export default function CalendarTab() {
               type: "close",
             })
           }
+          onCloseStart={() =>
+            eventFlow.dispatch({
+              sessionId: editorSession.sessionId,
+              type: "dismiss",
+            })
+          }
           onDelete={(draft) =>
             eventFlow.requestDelete(editorSession.sessionId, draft)
           }

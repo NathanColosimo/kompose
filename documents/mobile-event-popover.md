@@ -102,7 +102,7 @@ Delete:
 ## Implementation constraints
 
 - Keep the editor sheet and form mounted throughout scope confirmation. Render the controlled scope card as a modal overlay inside the sheet, with background touch and accessibility access blocked. Back removes the overlay directly; it does not wait for a native modal dismissal. Android Back cancels scope through the same guarded reducer action.
-- Direct save failures keep the form open. Dismissing a direct save and opening a new editor prevents the earlier completion from closing the new session. Already-started writes still finish.
+- Direct save failures keep the form open. Starting a user dismissal marks an in-flight direct save dismissed, so success or failure (including a failed move) closes it instead of restoring a hidden form or scope overlay. Opening a new editor prevents the earlier completion from closing the new session. Already-started writes still finish and errors still surface through the mutation toast.
 - Timed updates include `start.timeZone` and `end.timeZone`.
 - Update payload preserves nested `start`/`end` fields from the source event when merging.
 - Picker triggers in event editor hide leading icons (`showIcon={false}`).

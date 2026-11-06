@@ -130,6 +130,7 @@ const BottomSheetContent = ({
 type BottomSheetProps = {
   isVisible: boolean;
   onClose: () => void;
+  onCloseStart?: () => void;
   onDismissed?: () => void;
   children: React.ReactNode;
   snapPoints?: number[];
@@ -147,6 +148,7 @@ type BottomSheetProps = {
 export function BottomSheet({
   isVisible,
   onClose,
+  onCloseStart,
   onDismissed,
   children,
   snapPoints = [0.3, 0.6, 0.9],
@@ -174,6 +176,8 @@ export function BottomSheet({
     presence,
     requestClose,
   } = useModalPresence({ isVisible, onClose, onDismissed });
+
+  const handleRequestClose = () => requestClose(onCloseStart);
 
   const animateOpening = React.useEffectEvent(() => {
     translateY.value = withSpring(defaultHeight, SPRING_CONFIG);
@@ -271,7 +275,7 @@ export function BottomSheet({
       const velocity = event.velocityY;
 
       if (velocity > 500 && currentY > -SCREEN_HEIGHT * 0.2) {
-        scheduleOnRN(requestClose);
+        scheduleOnRN(handleRequestClose);
         return;
       }
 
@@ -293,7 +297,7 @@ export function BottomSheet({
 
   const handleBackdropPress = () => {
     if (enableBackdropDismiss) {
-      requestClose();
+      handleRequestClose();
     }
   };
 
@@ -301,7 +305,7 @@ export function BottomSheet({
     <Modal
       animationType="none"
       onDismiss={finishNativeDismiss}
-      onRequestClose={overlay?.onRequestClose ?? (() => requestClose())}
+      onRequestClose={overlay?.onRequestClose ?? handleRequestClose}
       statusBarTranslucent
       transparent
       visible={presence !== "hidden"}

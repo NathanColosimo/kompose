@@ -788,6 +788,7 @@ interface EventEditorSheetProps {
   failed?: boolean;
   masterRecurrence?: string[];
   onClose: () => void;
+  onCloseStart: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
   overlay?: React.ComponentProps<typeof BottomSheet>["overlay"];
@@ -801,6 +802,7 @@ export function EventEditorSheet({
   submitting,
   failed,
   onClose,
+  onCloseStart,
   onSubmit,
   onDelete,
   calendarOptions,
@@ -988,6 +990,7 @@ export function EventEditorSheet({
       headerRight={headerRight}
       isVisible
       onClose={onClose}
+      onCloseStart={onCloseStart}
       overlay={overlay}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}

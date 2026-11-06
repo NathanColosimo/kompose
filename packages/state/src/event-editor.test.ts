@@ -32,22 +32,27 @@ function open(sessionId: string): EventEditorState {
 }
 
 test("a dismissed save cannot close or restore a different editor", () => {
-  let state = eventEditorReducer(open("A"), {
-    draft,
-    opId: "save-A",
-    sessionId: "A",
-    type: "submit",
-  });
-  state = eventEditorReducer(state, { sessionId: "A", type: "close" });
-  state = eventEditorReducer(state, { draft, sessionId: "B", type: "open" });
-  const editorB = state;
-  for (const type of ["succeeded", "failed"] as const) {
-    state = eventEditorReducer(state, {
+  for (const dismissalFinished of [false, true]) {
+    let state = eventEditorReducer(open("A"), {
+      draft,
       opId: "save-A",
       sessionId: "A",
-      type,
+      type: "submit",
     });
-    expect(state).toBe(editorB);
+    state = eventEditorReducer(state, { sessionId: "A", type: "dismiss" });
+    if (dismissalFinished) {
+      state = eventEditorReducer(state, { sessionId: "A", type: "close" });
+    }
+    state = eventEditorReducer(state, { draft, sessionId: "B", type: "open" });
+    const editorB = state;
+    for (const type of ["succeeded", "failed"] as const) {
+      state = eventEditorReducer(state, {
+        opId: "save-A",
+        sessionId: "A",
+        type,
+      });
+      expect(state).toBe(editorB);
+    }
   }
 });
 
@@ -119,6 +124,55 @@ function requestScope(action: "save" | "delete") {
     type: "request-scope",
   });
 }
+
+test("direct save completions after dismissal starts cannot restore a hidden editor", () => {
+  for (const dismissAfterUpdate of [false, true]) {
+    for (const type of ["succeeded", "failed"] as const) {
+      let state = eventEditorReducer(open("A"), {
+        draft: editDraft,
+        opId: "save",
+        sessionId: "A",
+        type: "submit",
+      });
+      if (!dismissAfterUpdate) {
+        state = eventEditorReducer(state, { sessionId: "A", type: "dismiss" });
+      }
+      state = eventEditorReducer(state, {
+        event: { ...editDraft.sourceEvent, id: "updated-event" },
+        opId: "save",
+        sessionId: "A",
+        type: "updated",
+      });
+      if (dismissAfterUpdate) {
+        state = eventEditorReducer(state, { sessionId: "A", type: "dismiss" });
+      }
+      state = eventEditorReducer(state, { opId: "save", sessionId: "A", type });
+      expect(state).toEqual({ status: "closed" });
+      expect(
+        eventEditorReducer(state, { sessionId: "A", type: "close" })
+      ).toEqual({ status: "closed" });
+    }
+  }
+});
+
+test("create and update failures during dismissal close the session", () => {
+  for (const submitted of [draft, editDraft]) {
+    let state = eventEditorReducer(open("A"), {
+      draft: submitted,
+      opId: "save",
+      sessionId: "A",
+      type: "submit",
+    });
+    state = eventEditorReducer(state, { sessionId: "A", type: "dismiss" });
+    expect(
+      eventEditorReducer(state, {
+        opId: "save",
+        sessionId: "A",
+        type: "failed",
+      })
+    ).toEqual({ status: "closed" });
+  }
+});
 
 test("scope cancellation restores the submitted edits, and failure retains the confirmation", () => {
   for (const action of ["save", "delete"] as const) {
@@ -211,6 +265,9 @@ test("a failed move retries only the move, using the event returned by the succe
 
 test("old sheet and dialog callbacks cannot dismiss or submit a new session", () => {
   const editorB = open("B");
+  expect(eventEditorReducer(editorB, { sessionId: "A", type: "dismiss" })).toBe(
+    editorB
+  );
   expect(eventEditorReducer(editorB, { sessionId: "A", type: "close" })).toBe(
     editorB
   );
@@ -235,6 +292,9 @@ test("old sheet and dialog callbacks cannot dismiss or submit a new session", ()
 
 test("a scope prompt ignores late sheet dismissal and locks recurring moves to all", () => {
   const scoped = requestScope("save");
+  expect(eventEditorReducer(scoped, { sessionId: "A", type: "dismiss" })).toBe(
+    scoped
+  );
   expect(eventEditorReducer(scoped, { sessionId: "A", type: "close" })).toBe(
     scoped
   );
