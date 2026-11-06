@@ -29,14 +29,14 @@ export function TagManagerPopover({
   value,
 }: TagManagerPopoverProps) {
   const { tagsQuery, createTag, updateTag, deleteTag } = useTags();
-  const [isEditMode, setIsEditMode] = React.useState(false);
+  const [requestedEdit, setRequestedEdit] = React.useState(false);
   const [name, setName] = React.useState("");
   const [icon, setIcon] = React.useState<TagIconName>("Tag");
   const [deleteTarget, setDeleteTarget] = React.useState<TagSelect | null>(
     null
   );
-  const [tagDrafts, setTagDrafts] = React.useState<
-    Record<string, { icon: TagIconName; name: string }>
+  const [tagEdits, setTagEdits] = React.useState<
+    Record<string, Partial<Pick<TagSelect, "icon" | "name">>>
   >({});
   const [iconPickerTagId, setIconPickerTagId] = React.useState<string | null>(
     null
@@ -46,36 +46,18 @@ export function TagManagerPopover({
   const mutedColor = useColor("textMuted");
 
   const tags = tagsQuery.data ?? [];
+  const isEditMode =
+    requestedEdit || (tagsQuery.isSuccess && tags.length === 0);
 
-  React.useEffect(() => {
-    if (open && tags.length === 0) {
-      setIsEditMode(true);
-    }
-  }, [open, tags.length]);
-
-  React.useEffect(() => {
-    if (!open) {
-      setIconPickerTagId(null);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    setTagDrafts((previous) => {
-      const next: Record<string, { icon: TagIconName; name: string }> = {};
-      for (const tag of tags) {
-        const draft = previous[tag.id];
-        next[tag.id] = {
-          icon: draft?.icon ?? tag.icon,
-          name: draft?.name ?? tag.name,
-        };
-      }
-      return next;
-    });
-  }, [open, tags]);
+  const handleClose = () => {
+    setRequestedEdit(false);
+    setName("");
+    setIcon("Tag");
+    setDeleteTarget(null);
+    setTagEdits({});
+    setIconPickerTagId(null);
+    onOpenChange(false);
+  };
 
   const handleCreate = () => {
     const trimmed = name.trim();
@@ -95,12 +77,12 @@ export function TagManagerPopover({
   const handleSelectTag = (tag: TagSelect) => {
     const next = value === tag.id ? null : tag.id;
     onChange(next);
-    onOpenChange(false);
+    handleClose();
   };
 
   const handleShowAll = () => {
     onChange(null);
-    onOpenChange(false);
+    handleClose();
   };
 
   const handleDelete = () => {
@@ -118,36 +100,44 @@ export function TagManagerPopover({
   };
 
   const handleSaveEdit = (tag: TagSelect) => {
-    if (updateTag.isPending) {
+    const edits = tagEdits[tag.id];
+    if (!edits || updateTag.isPending) {
       return;
     }
-    const draft = tagDrafts[tag.id];
-    const trimmed = (draft?.name ?? tag.name).trim();
-    const nextIcon = draft?.icon ?? tag.icon;
-    if (!trimmed) {
-      return;
-    }
-    updateTag.mutate(
-      { icon: nextIcon, id: tag.id, name: trimmed },
-      {
-        onSuccess: () => {
-          setTagDrafts((previous) => ({
-            ...previous,
-            [tag.id]: { icon: nextIcon, name: trimmed },
-          }));
-        },
+    const input = { ...edits, id: tag.id };
+    if (input.name !== undefined) {
+      input.name = input.name.trim();
+      if (!input.name) {
+        return;
       }
-    );
+    }
+    updateTag.mutate(input, {
+      onSuccess: () => {
+        setTagEdits((previous) => {
+          const current = previous[tag.id];
+          const remaining: typeof edits = {};
+          if (current?.name !== undefined && current.name !== edits.name) {
+            remaining.name = current.name;
+          }
+          if (current?.icon !== undefined && current.icon !== edits.icon) {
+            remaining.icon = current.icon;
+          }
+          const next = { ...previous };
+          if (Object.keys(remaining).length === 0) {
+            delete next[tag.id];
+          } else {
+            next[tag.id] = remaining;
+          }
+          return next;
+        });
+      },
+    });
   };
 
-  const toggleEditMode = React.useCallback(() => {
-    if (tags.length === 0) {
-      setIsEditMode(true);
-      return;
-    }
-    setIsEditMode((prev) => !prev);
+  const toggleEditMode = () => {
+    setRequestedEdit((previous) => !previous);
     setIconPickerTagId(null);
-  }, [tags.length]);
+  };
 
   let tagListContent: React.ReactNode = null;
   if (tagsQuery.isLoading) {
@@ -162,12 +152,10 @@ export function TagManagerPopover({
     tagListContent = (
       <View className="gap-2">
         {tags.map((tag) => {
-          const IconComponent = tagIconMap[tag.icon];
-          const draft = tagDrafts[tag.id];
-          const draftName = draft?.name ?? tag.name;
-          const draftIcon = draft?.icon ?? tag.icon;
+          const draft = { ...tag, ...tagEdits[tag.id] };
+          const IconComponent = tagIconMap[draft.icon];
           const hasChanges =
-            draftName.trim() !== tag.name || draftIcon !== tag.icon;
+            draft.name.trim() !== tag.name || draft.icon !== tag.icon;
           return (
             <View
               className="gap-1.5 rounded-md border border-border"
@@ -206,10 +194,10 @@ export function TagManagerPopover({
                 >
                   <TextInput
                     onChangeText={(nextName) =>
-                      setTagDrafts((previous) => ({
+                      setTagEdits((previous) => ({
                         ...previous,
                         [tag.id]: {
-                          icon: previous[tag.id]?.icon ?? tag.icon,
+                          ...previous[tag.id],
                           name: nextName,
                         },
                       }))
@@ -223,13 +211,13 @@ export function TagManagerPopover({
                       fontSize: 14,
                       paddingVertical: 0,
                     }}
-                    value={draftName}
+                    value={draft.name}
                   />
                 </View>
                 <Button
                   accessibilityLabel="Save tag"
                   disabled={
-                    !(hasChanges && draftName.trim()) || updateTag.isPending
+                    !(hasChanges && draft.name.trim()) || updateTag.isPending
                   }
                   onPress={() => handleSaveEdit(tag)}
                   size="icon"
@@ -252,15 +240,15 @@ export function TagManagerPopover({
               {iconPickerTagId === tag.id ? (
                 <TagIconPicker
                   onChange={(nextIcon) =>
-                    setTagDrafts((previous) => ({
+                    setTagEdits((previous) => ({
                       ...previous,
                       [tag.id]: {
+                        ...previous[tag.id],
                         icon: nextIcon,
-                        name: previous[tag.id]?.name ?? tag.name,
                       },
                     }))
                   }
-                  value={draftIcon}
+                  value={draft.icon}
                 />
               ) : null}
             </View>
@@ -321,7 +309,7 @@ export function TagManagerPopover({
           </Button>
         }
         isVisible={open}
-        onClose={() => onOpenChange(false)}
+        onClose={handleClose}
         snapPoints={[0.55, 0.82, 0.95]}
         title="Tags"
       >
