@@ -138,6 +138,10 @@ type BottomSheetProps = {
   headerRight?: React.ReactNode;
   style?: ViewStyle;
   disablePanGesture?: boolean;
+  overlay?: {
+    content: React.ReactNode;
+    onRequestClose: () => void;
+  };
 };
 
 export function BottomSheet({
@@ -151,6 +155,7 @@ export function BottomSheet({
   headerRight,
   style,
   disablePanGesture = false,
+  overlay,
 }: BottomSheetProps) {
   const cardColor = useColor("card");
   const mutedColor = useColor("muted");
@@ -296,13 +301,16 @@ export function BottomSheet({
     <Modal
       animationType="none"
       onDismiss={finishNativeDismiss}
-      onRequestClose={() => requestClose()}
+      onRequestClose={overlay?.onRequestClose ?? (() => requestClose())}
       statusBarTranslucent
       transparent
       visible={presence !== "hidden"}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Animated.View
+          accessibilityElementsHidden={Boolean(overlay)}
+          importantForAccessibility={overlay ? "no-hide-descendants" : "auto"}
+          pointerEvents={overlay ? "none" : "auto"}
           style={[
             { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.8)" },
             rBackdropStyle,
@@ -338,6 +346,7 @@ export function BottomSheet({
             </GestureDetector>
           )}
         </Animated.View>
+        {overlay?.content}
       </GestureHandlerRootView>
     </Modal>
   );

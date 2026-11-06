@@ -28,7 +28,13 @@ import { useAtomValue } from "jotai";
 import { Check, MapPin, Repeat2, Trash2, Video, X } from "lucide-react-native";
 import React from "react";
 import { type UseFormSetValue, useForm } from "react-hook-form";
-import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
+import {
+  Keyboard,
+  Linking,
+  Pressable,
+  Switch as RNSwitch,
+  View,
+} from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type { CalendarOption } from "@/components/calendar/calendar-editor-types";
 import { hydrateEventRecurrence } from "@/components/calendar/event-editor-form";
@@ -780,21 +786,17 @@ interface EventEditorSheetProps {
   calendarOptions: CalendarOption[];
   draft: EventDraft;
   failed?: boolean;
-  isVisible: boolean;
   masterRecurrence?: string[];
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
+  overlay?: React.ComponentProps<typeof BottomSheet>["overlay"];
   submitting: boolean;
 }
 
-/**
- * One form per editor session. Hide its sheet during scope confirmation while
- * keeping the form and its dirty fields alive until the session closes.
- */
 export function EventEditorSheet({
   draft,
-  isVisible,
+  overlay,
   masterRecurrence,
   submitting,
   failed,
@@ -957,18 +959,18 @@ export function EventEditorSheet({
     [calendarOptions, setValue]
   );
 
-  const handleSheetSubmit = handleSubmit(onSubmit);
+  const handleSheetSubmit = handleSubmit((submittedDraft) => {
+    Keyboard.dismiss();
+    return onSubmit(submittedDraft);
+  });
 
   const handleDelete = React.useCallback(() => {
     const currentDraft = getValues();
     if (currentDraft.mode === "edit" && onDelete) {
+      Keyboard.dismiss();
       onDelete(currentDraft);
     }
   }, [getValues, onDelete]);
-
-  if (!isVisible) {
-    return null;
-  }
 
   const headerRight = (
     <EventEditorHeaderRight
@@ -986,6 +988,7 @@ export function EventEditorSheet({
       headerRight={headerRight}
       isVisible
       onClose={onClose}
+      overlay={overlay}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >

@@ -19,7 +19,7 @@ Empty-slot creation starts with a chooser for an event or task; event create/edi
 ## Architecture and state
 
 - Uses `react-hook-form` in `EventEditorSheet` for event form state; the form values are the `EventDraft` itself.
-- Uses a single exported `EventEditorSheet` for create and edit, keyed by editor session ID. The form initializes once per session and remains mounted while its sheet is hidden for scope confirmation.
+- Uses a single exported `EventEditorSheet` for create and edit, keyed by editor session ID. The form initializes once per session and remains mounted with its sheet throughout scope confirmation.
 - The form owns live edits. A late recurring master only initializes the recurrence field if the user has not edited or touched it. It never resets the title, location, or expanded UI.
 - One shared reducer owns `closed`, `editing`, `scope`, and `submitting` transitions. Drafts in this reducer are initial values or submission snapshots, not a second live form.
 - Submissions carry a session ID and operation ID. Duplicate submits and stale completions are ignored. Save/delete are disabled during submission.
@@ -88,7 +88,7 @@ Edit (non-recurring):
 
 Edit (recurring):
 - Save does not apply immediately.
-- Sheet closes first, then scope dialog opens:
+- A scope card overlays the form inside the same native modal:
   - Only this occurrence
   - Entire series
   - This and following
@@ -101,7 +101,7 @@ Delete:
 
 ## Implementation constraints
 
-- Unmount the editor's sheet before showing scope confirmation, while keeping its session form mounted. Scope confirmation uses a controlled native modal because the shared `AlertDialog` automatically closes when confirmed.
+- Keep the editor sheet and form mounted throughout scope confirmation. Render the controlled scope card as a modal overlay inside the sheet, with background touch and accessibility access blocked. Back removes the overlay directly; it does not wait for a native modal dismissal. Android Back cancels scope through the same guarded reducer action.
 - Direct save failures keep the form open. Dismissing a direct save and opening a new editor prevents the earlier completion from closing the new session. Already-started writes still finish.
 - Timed updates include `start.timeZone` and `end.timeZone`.
 - Update payload preserves nested `start`/`end` fields from the source event when merging.
@@ -121,7 +121,7 @@ Delete:
 - Start saving A, dismiss it, then open B. A's completion leaves B open.
 - Fail a scoped save/delete, then retry. The draft and selected scope remain.
 - Fail a move after a successful update. Retrying sends only the move.
-- Recurring save opens scope prompt after editor closes.
+- Recurring save opens a scope overlay; Back restores the same editable form and draft.
 - Recurring delete opens scope prompt; non-recurring delete opens simple confirm.
 - `following` updates succeed (no missing timezone error).
 - Calendar picker shows color dots and same-account calendars only.

@@ -503,9 +503,9 @@ export default function CalendarTab() {
   const eventFlow = useEventEditorFlow(timeZone);
   const eventState = eventFlow.state;
   const editorSession = eventState.status === "closed" ? null : eventState;
-  const isEventEditorVisible =
-    eventState.status === "editing" ||
-    (eventState.status === "submitting" && eventState.returnTo === "editor");
+  const isEventScopeVisible =
+    eventState.status === "scope" ||
+    (eventState.status === "submitting" && eventState.returnTo === "scope");
   const editingEventDraft =
     editorSession?.draft.mode === "edit" ? editorSession.draft : null;
   const showEventEditor = eventFlow.open;
@@ -1114,7 +1114,6 @@ export default function CalendarTab() {
           calendarOptions={eventCalendarOptions}
           draft={editorSession.draft}
           failed={editorSession.status === "editing" && editorSession.failed}
-          isVisible={isEventEditorVisible}
           key={editorSession.sessionId}
           masterRecurrence={eventFlow.masterRecurrence}
           onClose={() =>
@@ -1127,6 +1126,18 @@ export default function CalendarTab() {
             eventFlow.requestDelete(editorSession.sessionId, draft)
           }
           onSubmit={(draft) => eventFlow.save(editorSession.sessionId, draft)}
+          overlay={
+            isEventScopeVisible
+              ? {
+                  content: <EventScopeDialog flow={eventFlow} />,
+                  onRequestClose: () =>
+                    eventFlow.dispatch({
+                      sessionId: editorSession.sessionId,
+                      type: "cancel-scope",
+                    }),
+                }
+              : undefined
+          }
           submitting={editorSession.status === "submitting"}
         />
       ) : null}
@@ -1184,8 +1195,6 @@ export default function CalendarTab() {
       </BottomSheet>
 
       <TaskEditorSheet flow={taskFlow} timeZone={timeZone} />
-
-      <EventScopeDialog flow={eventFlow} />
 
       <TaskScopeDialogs flow={taskFlow} />
     </View>

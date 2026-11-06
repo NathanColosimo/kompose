@@ -3,7 +3,7 @@ import {
   isRecurringEventDraft,
 } from "@kompose/state/event-editor";
 import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
-import { Modal, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,7 +14,6 @@ import {
 import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import type { useEventEditorFlow } from "@/hooks/use-event-editor-flow";
-import { useModalPresence } from "@/hooks/use-modal-presence";
 
 export function EventScopeDialog({
   flow,
@@ -29,24 +28,7 @@ export function EventScopeDialog({
   ) {
     return null;
   }
-  return <EventScopeModal flow={flow} key={state.sessionId} state={state} />;
-}
-
-function EventScopeModal({
-  flow,
-  state,
-}: {
-  flow: ReturnType<typeof useEventEditorFlow>;
-  state: Extract<EventEditorState, { action: "save" | "delete" }>;
-}) {
   const { sessionId } = state;
-  const { finishAnimation, finishNativeDismiss, presence, requestClose } =
-    useModalPresence({
-      isVisible: true,
-      onClose: () => {
-        flow.dispatch({ sessionId, type: "cancel-scope" });
-      },
-    });
   const submitting = state.status === "submitting";
   const deleting = state.action === "delete";
   const showScopeOptions = isRecurringEventDraft(state.draft);
@@ -61,82 +43,70 @@ function EventScopeModal({
     confirmLabel = "Retry move";
   }
   const cancel = () => {
-    requestClose();
-    // The native fade completes through onDismiss, after visible becomes false.
-    finishAnimation("closing");
+    flow.dispatch({ sessionId, type: "cancel-scope" });
   };
 
   return (
-    <Modal
-      animationType="fade"
-      onDismiss={finishNativeDismiss}
-      onRequestClose={submitting ? undefined : cancel}
-      onShow={() => finishAnimation("opening")}
-      statusBarTranslucent
-      transparent
-      visible={presence !== "hidden"}
+    <View
+      accessibilityViewIsModal
+      className="absolute inset-0 items-center justify-center bg-black/80 p-6"
     >
-      <View className="flex-1 items-center justify-center bg-black/80 p-6">
-        <Pressable
-          accessibilityLabel="Back to event"
-          className="absolute inset-0"
-          disabled={submitting}
-          onPress={cancel}
-        />
-        <Card>
-          <CardHeader>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </CardHeader>
-          {showScopeOptions && !moveOnly ? (
-            <View className="mb-4">
-              <RadioGroup
-                disabled={submitting}
-                onValueChange={(scope) => {
-                  if (
-                    scope === "this" ||
-                    scope === "all" ||
-                    scope === "following"
-                  ) {
-                    flow.dispatch({ scope, sessionId, type: "select-scope" });
-                  }
-                }}
-                options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-                  ...option,
-                  disabled: moving && option.value !== "all",
-                }))}
-                value={state.scope}
-              />
-            </View>
-          ) : null}
-          {state.status === "scope" && state.failed ? (
-            <Text
-              accessibilityRole="alert"
-              className="mb-4 text-red-500 text-sm"
-            >
-              {moveOnly
-                ? "The calendar move failed. Retry to finish moving this event."
-                : "The request failed. Your changes are kept. Try again."}
-            </Text>
-          ) : null}
-          <View className="flex-row gap-3">
-            <Button disabled={submitting} onPress={cancel} variant="outline">
-              {moveOnly ? "Close" : "Back"}
-            </Button>
-            <Button
+      <Pressable
+        accessibilityLabel="Back to event"
+        className="absolute inset-0"
+        disabled={submitting}
+        onPress={cancel}
+      />
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        {showScopeOptions && !moveOnly ? (
+          <View className="mb-4">
+            <RadioGroup
               disabled={submitting}
-              loading={submitting}
-              onPress={() => {
-                flow.submit(sessionId);
+              onValueChange={(scope) => {
+                if (
+                  scope === "this" ||
+                  scope === "all" ||
+                  scope === "following"
+                ) {
+                  flow.dispatch({ scope, sessionId, type: "select-scope" });
+                }
               }}
-              style={{ flex: 1 }}
-            >
-              {confirmLabel}
-            </Button>
+              options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+                ...option,
+                disabled: moving && option.value !== "all",
+              }))}
+              value={state.scope}
+            />
           </View>
-        </Card>
-      </View>
-    </Modal>
+        ) : null}
+        {state.status === "scope" && state.failed ? (
+          <Text accessibilityRole="alert" className="mb-4 text-red-500 text-sm">
+            {moveOnly
+              ? "The calendar move failed. Retry to finish moving this event."
+              : "The request failed. Your changes are kept. Try again."}
+          </Text>
+        ) : null}
+        <View className="flex-row gap-3">
+          <Button disabled={submitting} onPress={cancel} variant="outline">
+            {moveOnly ? "Close" : "Back"}
+          </Button>
+          <Button
+            disabled={submitting}
+            loading={submitting}
+            onPress={() => {
+              flow.submit(sessionId);
+            }}
+            style={{ flex: 1 }}
+          >
+            {confirmLabel}
+          </Button>
+        </View>
+      </Card>
+    </View>
   );
 }
 
