@@ -110,8 +110,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           storage={storage}
           subscribeToResume={webSubscribeToResume}
         >
-          <DesktopAuth />
-          {children}
+          <DesktopAuth>{children}</DesktopAuth>
         </StateProvider>
         {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       </QueryClientProvider>

@@ -16,18 +16,9 @@ function DashboardRedirect() {
   const { replace } = useRouter();
 
   useMountEffect(() => {
-    const query = getElectronAuthQuery();
-    if (query) {
-      authClient.electron
-        .transferUser({ fetchOptions: { query } })
-        .then(({ error }) => {
-          if (error) {
-            console.error("Electron authorization failed", error.message);
-          } else {
-            authClient.ensureElectronRedirect();
-          }
-        });
-    } else {
+    if (
+      !(getElectronAuthQuery() || authClient.electron.getAuthorizationCode())
+    ) {
       replace("/dashboard");
     }
   });
@@ -42,7 +33,7 @@ function DashboardRedirect() {
 /**
  * The desktop app signs in through the system browser. Without a provider,
  * Better Auth opens this login page there, so a browser that is already signed
- * in hands its session over (DashboardRedirect) instead of repeating OAuth.
+ * in hands its session over through DesktopAuth instead of repeating OAuth.
  */
 function requestBrowserSignIn() {
   window.requestAuth();
