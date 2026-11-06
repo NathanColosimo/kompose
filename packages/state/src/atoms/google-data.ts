@@ -16,10 +16,6 @@ import {
   visibleCalendarsHydratedAtom,
 } from "./visible-calendars";
 
-function toCalendarKey(calendar: CalendarIdentifier) {
-  return `${calendar.accountId}:${calendar.calendarId}`;
-}
-
 const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
 
@@ -100,37 +96,35 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
     }
 
     const accountsQuery = get(linkedAccountsAtom);
-    const hasResolvedAccounts = accountsQuery.isSuccess;
-    if (!hasResolvedAccounts) {
-      return stored;
-    }
-
     const linkedAccountIds = new Set(
-      (accountsQuery.data ?? [])
-        .filter((account) => account.providerId === "google")
-        .map((account) => account.accountId)
+      accounts.map((account) => account.accountId)
     );
-    const accountFiltered = stored.filter((calendar) =>
-      linkedAccountIds.has(calendar.accountId)
-    );
-
-    // Filter the live view without rewriting preferences. An empty account
-    // response during sign-out or a failed refresh must not erase saved choices.
-
-    const allCalendarQueriesResolved = accounts.every((account) => {
+    const discoveredCalendarIds = new Map<string, Set<string>>();
+    for (const account of accounts) {
       const query = get(googleCalendarsAtomFamily(account.accountId));
-      return query.data !== undefined || query.isError;
-    });
-    if (!allCalendarQueriesResolved) {
-      return accountFiltered;
+      if (query.isSuccess) {
+        discoveredCalendarIds.set(
+          account.accountId,
+          new Set(query.data.map(({ calendar }) => calendar.id))
+        );
+      }
     }
 
-    const validKeys = new Set(
-      allCalendarIds.map((calendar) => toCalendarKey(calendar))
-    );
-    return accountFiltered.filter((calendar) =>
-      validKeys.has(toCalendarKey(calendar))
-    );
+    // Only successful discovery proves an account or calendar is gone.
+    // Keep saved preferences intact when deriving the live selection.
+    return stored.filter((calendar) => {
+      if (
+        accountsQuery.isSuccess &&
+        !linkedAccountIds.has(calendar.accountId)
+      ) {
+        return false;
+      }
+      return (
+        discoveredCalendarIds
+          .get(calendar.accountId)
+          ?.has(calendar.calendarId) ?? true
+      );
+    });
   }
 );
 
