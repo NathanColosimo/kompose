@@ -4,7 +4,7 @@ import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useCallback, useReducer } from "react";
+import { useCallback, useReducer, useRef } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
@@ -84,12 +84,20 @@ export function CreateTaskForm({
     }
   };
 
+  // isPending only updates on the next render, so two quick submits would
+  // both see it false. This ref blocks the second one synchronously.
+  const submittingDraftId = useRef<object | null>(null);
+
   const onSubmit = useCallback(
     (data: ClientTaskInsertDecoded) => {
-      if (!draftId || createTask.isPending) {
+      if (!draftId || submittingDraftId.current === draftId) {
         return;
       }
+      submittingDraftId.current = draftId;
       createTask.mutate(data, {
+        onSettled: () => {
+          submittingDraftId.current = null;
+        },
         onSuccess: () => {
           dispatchDraft({ type: "created", draftId });
         },
