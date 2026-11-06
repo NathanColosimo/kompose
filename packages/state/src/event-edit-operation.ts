@@ -2,7 +2,10 @@ import type {
   DeleteEventInput,
   MoveEventInput,
 } from "@kompose/api/routers/google-cal/contract";
-import type { RecurrenceScope } from "@kompose/google-cal/schema";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
 import type { UpdateGoogleEventInput } from "./hooks/use-google-event-mutations";
 
 export type EventEditCommand =
@@ -39,7 +42,8 @@ export type EventEditOperationAction =
   | { type: "scope"; id: number; scope: RecurrenceScope }
   | { type: "run"; id: number }
   | { type: "dismiss"; id: number }
-  | { type: "succeeded"; id: number; step: OperationStep }
+  | { type: "succeeded"; id: number; step: "move" | "delete" }
+  | { type: "succeeded"; id: number; step: "update"; eventId: string }
   | { type: "failed"; id: number; step: OperationStep };
 
 function operationScope(
@@ -109,7 +113,7 @@ export function eventEditOperationReducer(
           }
         : state;
     case "succeeded":
-      return completeOperationStep(state, action.step);
+      return completeOperationStep(state, action);
     default:
       return action satisfies never;
   }
@@ -117,8 +121,9 @@ export function eventEditOperationReducer(
 
 function completeOperationStep(
   state: EventEditOperation,
-  step: OperationStep
+  action: Extract<EventEditOperationAction, { type: "succeeded" }>
 ): EventEditOperation {
+  const { step } = action;
   if (state.kind !== "running" || state.step !== step) {
     return state;
   }
@@ -127,7 +132,14 @@ function completeOperationStep(
     state.command.kind === "save" &&
     state.command.move
   ) {
-    return { ...state, step: "move" };
+    return {
+      ...state,
+      command: {
+        ...state.command,
+        move: { ...state.command.move, eventId: action.eventId },
+      },
+      step: "move",
+    };
   }
   return { kind: "idle" };
 }
@@ -136,7 +148,9 @@ function completeOperationStep(
 export async function runEventEditOperation(
   operation: Extract<EventEditOperation, { kind: "running" }>,
   mutations: {
-    update: (variables: UpdateGoogleEventInput) => Promise<unknown>;
+    update: (
+      variables: UpdateGoogleEventInput
+    ) => Promise<Pick<GoogleEvent, "id">>;
     move: (variables: MoveEventInput) => Promise<unknown>;
     delete: (variables: DeleteEventInput) => Promise<unknown>;
   },
@@ -150,20 +164,27 @@ export async function runEventEditOperation(
   }
   runningOperations.add(id);
   let step = operation.step;
+  let move = command.kind === "save" ? command.move : null;
   try {
     if (command.kind === "delete") {
       await mutations.delete({ ...command.variables, scope });
-      dispatch({ id, step, type: "succeeded" });
+      dispatch({ id, step: "delete", type: "succeeded" });
       return;
     }
     if (step === "update" && command.update) {
-      await mutations.update({ ...command.update, recurrenceScope: scope });
-      dispatch({ id, step, type: "succeeded" });
+      const updated = await mutations.update({
+        ...command.update,
+        recurrenceScope: scope,
+      });
+      if (move) {
+        move = { ...move, eventId: updated.id };
+      }
+      dispatch({ id, step: "update", eventId: updated.id, type: "succeeded" });
       step = "move";
     }
-    if (command.move) {
-      await mutations.move({ ...command.move, scope });
-      dispatch({ id, step, type: "succeeded" });
+    if (move) {
+      await mutations.move({ ...move, scope });
+      dispatch({ id, step: "move", type: "succeeded" });
     }
   } catch {
     dispatch({ id, step, type: "failed" });

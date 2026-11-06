@@ -44,6 +44,7 @@ import {
   useEventCreation,
   useEventCreationState,
 } from "./event-creation/use-event-creation";
+import { EventEditOperationProvider } from "./events/event-edit-operation-provider";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -260,7 +261,9 @@ export const DaysView = memo(function DaysViewComponent({
   const eventCreation = useEventCreationState();
   return (
     <EventCreationContext.Provider value={eventCreation}>
-      <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+      <EventEditOperationProvider>
+        <DaysViewInner googleEvents={googleEvents} tasks={tasks} />
+      </EventEditOperationProvider>
     </EventCreationContext.Provider>
   );
 });

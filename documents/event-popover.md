@@ -8,6 +8,7 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 - Triggered from (create mode): `EventCreationPopover` (`apps/web/src/components/calendar/event-creation/event-creation-popover.tsx`)
 - Helper utilities: `apps/web/src/components/calendar/events/event-edit-utils.ts`
 - Recurrence draft resolver: `packages/state/src/event-recurrence-draft.ts`
+- Calendar-level operation owner and dialog: `apps/web/src/components/calendar/events/event-edit-operation-provider.tsx`
 - Save/delete operation reducer and runner: `packages/state/src/event-edit-operation.ts`
 - Recurrence master hook: `packages/state/src/hooks/use-recurring-event-master.ts`
 - Mutations: `packages/state/src/hooks/use-google-event-mutations.ts` and `packages/state/src/hooks/use-move-google-event-mutation.ts`
@@ -116,11 +117,12 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Non-recurring moves use `this`.
 
 #### Confirmation and retry
-- Save and delete share one operation: idle, confirming, running, or failed. Only one confirmation can be open.
+- Save and delete share one calendar-level operation: idle, confirming, running, or failed. Only one confirmation can be open across event blocks. The operation and dialog survive optimistic time/date changes that remount a block, and optimistic deletion that removes it.
 - Cancel, Escape, and outside dismissal discard a confirmation and its command snapshot.
 - While running, confirmation, scope changes, dismissal, and starting another operation are disabled. Server mutations cannot be cancelled by closing a dialog.
 - Completion actions include the operation ID and step; stale completions cannot clear a newer operation or skip its next step.
 - Failed operations keep the command and scope for Retry. Scope cannot change after a partial save.
+- After an update, the move command checkpoints the returned event ID (the series master for an entire-series update). The initial move and any retry use that ID.
 - If update succeeds but move fails, Retry runs only move. If update fails, move has not started. Dismissing a failed operation keeps any changes already saved.
 - Non-recurring saves run immediately; their progress and failures use the same operation dialog. Non-recurring deletes require confirmation.
 
@@ -152,7 +154,8 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Add Google Meet: the save snapshot includes the pending conference request.
 - Dismiss a scope confirmation with Escape/outside click, then start another: no old request runs.
 - Double-click Confirm for save/delete: one operation runs; confirmation and dismissal stay disabled until it settles.
-- Fail move after a successful update: Retry sends only move with the original destination and scope.
+- Fail move after a successful time/date update: the dialog survives the event block remount and Retry sends only move with the returned event ID, original destination, and scope.
+- Fail deletion after the event disappears optimistically: the dialog stays available and Retry resubmits the delete command.
 
 #### Create Mode
 - Hover on calendar: 30-minute preview appears.

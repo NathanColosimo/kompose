@@ -10,13 +10,7 @@ import {
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
-import {
-  type EventEditCommand,
-  type EventEditOperation,
-  type EventEditOperationAction,
-  eventEditOperationReducer,
-  runEventEditOperation,
-} from "@kompose/state/event-edit-operation";
+import type { EventEditCommand } from "@kompose/state/event-edit-operation";
 import {
   type RecurrenceDraft,
   resolveEventRecurrence,
@@ -30,7 +24,6 @@ import {
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
-import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { getMapsSearchUrl } from "@kompose/state/locations";
 import {
@@ -51,19 +44,16 @@ import {
   Video,
 } from "lucide-react";
 import {
-  type Dispatch,
   type ReactElement,
   type ReactNode,
   useCallback,
   useImperativeHandle,
   useMemo,
-  useReducer,
   useRef,
   useState,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -101,6 +91,7 @@ import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
+import { useEventEditOperation } from "./event-edit-operation-provider";
 import {
   buildRecurrenceRule,
   buildTemporalPayload,
@@ -479,69 +470,6 @@ function RecurrenceEditor({
   );
 }
 
-function EventOperationDialog({
-  operation,
-  dispatch,
-  onConfirm,
-}: {
-  operation: EventEditOperation;
-  dispatch: Dispatch<EventEditOperationAction>;
-  onConfirm: () => void | Promise<void>;
-}) {
-  if (operation.kind === "idle") {
-    return null;
-  }
-  let confirmLabel = operation.command.kind === "delete" ? "Delete" : "Save";
-  if (operation.kind === "failed") {
-    confirmLabel = "Retry";
-  }
-  let description = "Choose how broadly to apply your changes.";
-  if (!operation.command.isRecurring) {
-    description = "Save your changes to this event.";
-  }
-  if (operation.command.kind === "delete") {
-    description = "This action cannot be undone.";
-  } else if (operation.command.move && operation.command.isRecurring) {
-    description =
-      "Moving to a different calendar applies to all events in the series.";
-  }
-  return (
-    <RecurrenceScopeDialog
-      confirmLabel={confirmLabel}
-      description={description}
-      disabledScopes={
-        operation.command.kind === "save" && operation.command.move
-          ? { following: true, this: true }
-          : undefined
-      }
-      error={
-        operation.kind === "failed"
-          ? `Could not ${operation.retryStep} the event. ${operation.retryStep === "move" ? "Any saved event changes are kept. Retry will only move the event." : "Retry to try this step again."}`
-          : undefined
-      }
-      onConfirm={onConfirm}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          dispatch({ id: operation.id, type: "dismiss" });
-        }
-      }}
-      onValueChange={(scope) =>
-        dispatch({ id: operation.id, scope, type: "scope" })
-      }
-      open
-      options={operation.command.isRecurring ? undefined : []}
-      pending={operation.kind === "running"}
-      scopeDisabled={operation.kind !== "confirming"}
-      title={
-        operation.command.kind === "delete"
-          ? "Delete event?"
-          : "Save event changes"
-      }
-      value={operation.scope}
-    />
-  );
-}
-
 /** See documents/event-popover.md for save, recurrence scope, and calendar move behavior. */
 export function EventEditPopover({
   event,
@@ -574,69 +502,14 @@ export function EventEditPopover({
     [isControlled, controlledOnOpenChange]
   );
 
-  const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
-  const moveEvent = useMoveGoogleEventMutation();
-
-  const [operation, dispatchOperation] = useReducer(eventEditOperationReducer, {
-    kind: "idle",
-  });
-  const nextOperationId = useRef(0);
-  const runningOperations = useRef(new Set<number>());
+  const { createEvent } = useGoogleEventMutations();
+  const { busy, prepareOperation } = useEventEditOperation();
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
 
-  const runOperation = useCallback(
-    (running: Extract<EventEditOperation, { kind: "running" }>) =>
-      runEventEditOperation(
-        running,
-        {
-          delete: deleteEvent.mutateAsync,
-          move: moveEvent.mutateAsync,
-          update: updateEvent.mutateAsync,
-        },
-        dispatchOperation,
-        runningOperations.current
-      ),
-    [deleteEvent.mutateAsync, moveEvent.mutateAsync, updateEvent.mutateAsync]
-  );
-
-  const prepareOperation = useCallback(
-    (command: EventEditCommand, scope: RecurrenceScope, confirm: boolean) => {
-      if (operation.kind !== "idle" || runningOperations.current.size > 0) {
-        return;
-      }
-      nextOperationId.current += 1;
-      const action = {
-        command,
-        confirm,
-        id: nextOperationId.current,
-        scope,
-        type: "prepare" as const,
-      };
-      dispatchOperation(action);
-      const next = eventEditOperationReducer({ kind: "idle" }, action);
-      if (next.kind === "running") {
-        runOperation(next);
-      }
-    },
-    [operation.kind, runOperation]
-  );
-
-  const confirmOperation = useCallback(() => {
-    if (operation.kind !== "confirming" && operation.kind !== "failed") {
-      return;
-    }
-    const action = { id: operation.id, type: "run" as const };
-    const next = eventEditOperationReducer(operation, action);
-    dispatchOperation(action);
-    if (next.kind === "running") {
-      return runOperation(next);
-    }
-  }, [operation, runOperation]);
-
   const handleDelete = useCallback(() => {
-    if (readOnly || !event || operation.kind !== "idle") {
+    if (readOnly || !event || busy) {
       return;
     }
     setOpen(false);
@@ -651,22 +524,14 @@ export function EventEditPopover({
       event.recurringEventId || !event.recurrence?.length ? "this" : "all",
       true
     );
-  }, [
-    accountId,
-    calendarId,
-    event,
-    operation.kind,
-    prepareOperation,
-    readOnly,
-    setOpen,
-  ]);
+  }, [accountId, calendarId, event, busy, prepareOperation, readOnly, setOpen]);
 
   const handleCancel = useCallback(() => {
     setOpen(false);
   }, [setOpen]);
 
   const handleSave = useCallback(() => {
-    if (operation.kind !== "idle") {
+    if (busy) {
       return;
     }
     if (readOnly) {
@@ -690,7 +555,7 @@ export function EventEditPopover({
       request.defaultScope,
       request.command.isRecurring
     );
-  }, [createEvent, operation.kind, prepareOperation, readOnly, setOpen]);
+  }, [createEvent, busy, prepareOperation, readOnly, setOpen]);
 
   useHotkeys(
     "mod+enter",
@@ -703,59 +568,51 @@ export function EventEditPopover({
   );
 
   return (
-    <>
-      <Popover
-        onOpenChange={(nextOpen) => {
-          if (nextOpen && operation.kind === "idle") {
-            setOpen(true);
+    <Popover
+      onOpenChange={(nextOpen) => {
+        if (nextOpen && !busy) {
+          setOpen(true);
+        }
+      }}
+      open={open}
+    >
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent
+        align={align}
+        className="w-[420px] space-y-3 p-4"
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault();
+          handleCancel();
+        }}
+        onOpenAutoFocus={(e) => {
+          if (mode === "edit") {
+            e.preventDefault();
           }
         }}
-        open={open}
+        side={side}
       >
-        <PopoverTrigger asChild>{children}</PopoverTrigger>
-        <PopoverContent
-          align={align}
-          className="w-[420px] space-y-3 p-4"
-          onEscapeKeyDown={(e) => {
-            e.preventDefault();
-            handleCancel();
-          }}
-          onInteractOutside={(e) => {
-            e.preventDefault();
-            handleCancel();
-          }}
-          onOpenAutoFocus={(e) => {
-            if (mode === "edit") {
-              e.preventDefault();
-            }
-          }}
-          side={side}
-        >
-          <EventEditForm
-            accountId={accountId}
-            calendarId={calendarId}
-            closeSaveRequestRef={buildCloseSaveRequestRef}
-            end={end}
-            event={event}
-            key={event?.id ?? "create-event"}
-            mode={mode}
-            onCancel={handleCancel}
-            onDelete={handleDelete}
-            onSave={handleSave}
-            open={open}
-            readOnly={readOnly}
-            readOnlyReason={readOnlyReason}
-            start={start}
-          />
-        </PopoverContent>
-      </Popover>
-
-      <EventOperationDialog
-        dispatch={dispatchOperation}
-        onConfirm={confirmOperation}
-        operation={operation}
-      />
-    </>
+        <EventEditForm
+          accountId={accountId}
+          calendarId={calendarId}
+          closeSaveRequestRef={buildCloseSaveRequestRef}
+          end={end}
+          event={event}
+          key={event?.id ?? "create-event"}
+          mode={mode}
+          onCancel={handleCancel}
+          onDelete={handleDelete}
+          onSave={handleSave}
+          open={open}
+          readOnly={readOnly}
+          readOnlyReason={readOnlyReason}
+          start={start}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

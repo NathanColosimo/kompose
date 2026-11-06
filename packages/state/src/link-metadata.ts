@@ -45,6 +45,10 @@ export function applyLinkMetadata<T extends LinkDraft>(
   return { ...draft, durationMinutes, links, title };
 }
 
+export function getLinkMetadataQueryKey(url: string) {
+  return ["link-meta", url] as const;
+}
+
 export function linkMetadataQueryOptions(
   parseLink: StateConfig["orpc"]["tasks"]["parseLink"],
   url: string,
@@ -56,7 +60,7 @@ export function linkMetadataQueryOptions(
         ? initialData
         : undefined,
     queryFn: ({ signal }) => parseLink({ url }, { signal }),
-    queryKey: ["link-meta", url],
+    queryKey: getLinkMetadataQueryKey(url),
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });

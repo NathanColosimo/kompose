@@ -13,10 +13,15 @@ import {
   getLinkDurationMinutes,
   getProviderLabel,
 } from "@kompose/state/link-meta-utils";
+import { getLinkMetadataQueryKey } from "@kompose/state/link-metadata";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
-import { useMutation } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   CalendarIcon,
   CheckIcon,
@@ -26,7 +31,7 @@ import {
   PlayCircleIcon,
   RepeatIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
@@ -75,10 +80,19 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
   };
 }
 
-function buildTaskDataFromParsed(
+export function buildTaskDataFromParsed(
   parsed: TaskDraft,
-  linkMetaMap: Record<string, LinkMeta>
+  queryClient: QueryClient
 ): ClientTaskInsertDecoded {
+  const linkMetaMap: Record<string, LinkMeta> = {};
+  for (const url of parsed.links) {
+    const meta = queryClient.getQueryData<LinkMeta>(
+      getLinkMetadataQueryKey(url)
+    );
+    if (meta) {
+      linkMetaMap[url] = meta;
+    }
+  }
   const firstLinkMeta = linkMetaMap[parsed.links[0]];
   const links = dedupeLinks(
     parsed.links.map((url) => {
@@ -175,6 +189,7 @@ export function CommandBarCreateTask({
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
   const { createTask } = useTasks();
+  const queryClient = useQueryClient();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
@@ -210,10 +225,6 @@ export function CommandBarCreateTask({
       linkMetaMap[query.url] = query.data;
     }
   }
-  // Submission reads metadata after awaiting the parse, so it needs the latest map.
-  const linkMetadata = useRef(linkMetaMap);
-  linkMetadata.current = linkMetaMap;
-
   const firstLinkMeta =
     parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
 
@@ -254,7 +265,7 @@ export function CommandBarCreateTask({
       const submittedText = submitted.text.trim();
       const resolved = draft(submittedText, await magic.resolve(submittedText));
       await createTask.mutateAsync(
-        buildTaskDataFromParsed(resolved, linkMetadata.current)
+        buildTaskDataFromParsed(resolved, queryClient)
       );
     },
   });

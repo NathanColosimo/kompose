@@ -81,7 +81,7 @@ describe("event edit operations", () => {
     });
     for (const action of [
       { id: 1, type: "run" },
-      { id: 1, step: "update", type: "succeeded" },
+      { id: 1, step: "update", eventId: "event", type: "succeeded" },
       {
         id: 1,
         step: "update",
@@ -147,7 +147,7 @@ describe("event edit operations", () => {
       },
       update: (variables: { recurrenceScope?: string }) => {
         calls.push(`update:${variables.recurrenceScope}`);
-        return Promise.resolve(null);
+        return Promise.resolve({ id: "event" });
       },
     };
     await runEventEditOperation(
@@ -170,6 +170,41 @@ describe("event edit operations", () => {
       "move:all:destination",
       "move:all:destination",
     ]);
+    expect(flow.state).toEqual({ kind: "idle" });
+  });
+
+  test("update checkpoints the returned master ID for the move and its retry", async () => {
+    const flow = harness(prepare(save, false));
+    const movedIds: string[] = [];
+    const mutations = {
+      delete: unexpectedMutation,
+      update: () => Promise.resolve({ id: "master" }),
+      move: (variables: { eventId: string }) => {
+        movedIds.push(variables.eventId);
+        return movedIds.length === 1
+          ? Promise.reject(new Error("move failed"))
+          : Promise.resolve(null);
+      },
+    };
+    await runEventEditOperation(
+      running(flow.state),
+      mutations,
+      flow.dispatch,
+      flow.runningOperations
+    );
+    expect(flow.state).toMatchObject({
+      kind: "failed",
+      retryStep: "move",
+      command: { move: { eventId: "master" } },
+    });
+    flow.dispatch({ id: 1, type: "run" });
+    await runEventEditOperation(
+      running(flow.state),
+      mutations,
+      flow.dispatch,
+      flow.runningOperations
+    );
+    expect(movedIds).toEqual(["master", "master"]);
     expect(flow.state).toEqual({ kind: "idle" });
   });
 
@@ -221,7 +256,7 @@ describe("event edit operations", () => {
       {
         delete: unexpectedMutation,
         move: unexpectedMutation,
-        update: () => Promise.resolve(null),
+        update: () => Promise.resolve({ id: "event" }),
       },
       flow.dispatch,
       flow.runningOperations
@@ -297,11 +332,17 @@ describe("event edit operations", () => {
     const active = reduce(prepare(save, false), {
       id: 1,
       step: "update",
+      eventId: "event",
       type: "succeeded",
     });
     expect(active).toMatchObject({ kind: "running", step: "move" });
-    expect(reduce(active, { id: 1, step: "update", type: "succeeded" })).toBe(
-      active
-    );
+    expect(
+      reduce(active, {
+        id: 1,
+        step: "update",
+        eventId: "event",
+        type: "succeeded",
+      })
+    ).toBe(active);
   });
 });

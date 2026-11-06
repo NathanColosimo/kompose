@@ -44,7 +44,7 @@ fields updates as you type. Typing `#` suggests your tags.
 - Enter before the model has a parse waits for it.
 - Submission captures the input and its revision. Resolving the parse and creating the task share one pending lifecycle; another submission is blocked until both finish. Typing remains available.
 - A successful creation clears the input only if its revision still matches the submitted revision. Later typing, tag completion, or leaving Create preserves the newer input, even if it returns to the same text.
-- Link metadata is read after the submitted input's parse resolves, using the resolved task's URLs.
+- Link metadata is read from the shared query cache after the submitted input's parse resolves, using the resolved task's URLs even if the user has typed a newer draft.
 
 ### URL detection
 
