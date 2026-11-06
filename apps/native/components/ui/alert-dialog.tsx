@@ -7,11 +7,12 @@ import {
   type ViewStyle,
 } from "react-native";
 import Animated, {
-  runOnJS,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,10 +23,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useColor } from "@/hooks/use-color";
+import { useModalPresence } from "@/hooks/use-modal-presence";
 
 export type AlertDialogProps = {
   isVisible: boolean;
   onClose: () => void;
+  onDismissed?: () => void;
   title?: string;
   description?: string;
   children?: React.ReactNode;
@@ -41,6 +44,7 @@ export type AlertDialogProps = {
 export function AlertDialog({
   isVisible,
   onClose,
+  onDismissed,
   title,
   description,
   children,
@@ -54,25 +58,49 @@ export function AlertDialog({
 }: AlertDialogProps) {
   const cardColor = useColor("card");
 
-  const [modalVisible, setModalVisible] = React.useState(false);
+  const {
+    finishClosing,
+    finishNativeDismiss,
+    finishOpening,
+    presence,
+    requestClose,
+  } = useModalPresence({ isVisible, onClose, onDismissed });
   const backdropOpacity = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
 
   useEffect(() => {
-    if (isVisible) {
-      setModalVisible(true);
-      backdropOpacity.value = withTiming(1, { duration: 250 });
-      cardOpacity.value = withTiming(1, { duration: 200 });
-    } else {
-      backdropOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
-        if (finished) {
-          runOnJS(setModalVisible)(false);
+    let active = true;
+    const complete = () => {
+      if (!active) {
+        return;
+      }
+      if (presence === "opening") {
+        finishOpening();
+      } else {
+        finishClosing();
+      }
+    };
+
+    if (presence === "opening" || presence === "closing") {
+      const target = presence === "opening" ? 1 : 0;
+      backdropOpacity.value = withTiming(
+        target,
+        { duration: 250 },
+        (finished) => {
+          if (finished) {
+            scheduleOnRN(complete);
+          }
         }
-      });
-      cardOpacity.value = withTiming(0, { duration: 200 });
+      );
+      cardOpacity.value = withTiming(target, { duration: 200 });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVisible]);
+
+    return () => {
+      active = false;
+      cancelAnimation(backdropOpacity);
+      cancelAnimation(cardOpacity);
+    };
+  }, [presence, finishClosing, finishOpening, backdropOpacity, cardOpacity]);
 
   const rBackdropStyle = useAnimatedStyle(() => ({
     opacity: backdropOpacity.value,
@@ -82,39 +110,28 @@ export function AlertDialog({
     opacity: cardOpacity.value,
   }));
 
-  const animateClose = () => {
-    "worklet";
-    backdropOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-      if (finished) {
-        runOnJS(onClose)();
-      }
-    });
-    cardOpacity.value = withTiming(0, { duration: 200 });
+  const handleCancel = () => {
+    requestClose(onCancel);
   };
 
   const handleBackdropPress = () => {
     if (dismissible) {
-      animateClose();
-      if (onCancel) onCancel();
+      handleCancel();
     }
   };
 
-  const handleCancel = () => {
-    if (onCancel) onCancel();
-    animateClose();
-  };
-
   const handleConfirm = () => {
-    if (onConfirm) onConfirm();
-    animateClose();
+    requestClose(onConfirm);
   };
 
   return (
     <Modal
       animationType="none"
+      onDismiss={finishNativeDismiss}
+      onRequestClose={handleBackdropPress}
       statusBarTranslucent
       transparent
-      visible={modalVisible}
+      visible={presence !== "hidden"}
     >
       <Animated.View style={[styles.backdrop, rBackdropStyle]}>
         <TouchableWithoutFeedback onPress={handleBackdropPress}>
@@ -126,9 +143,7 @@ export function AlertDialog({
           style={[styles.roundedWrapper, { backgroundColor: cardColor }, style]}
         >
           <Animated.View style={[styles.innerContent, rCardFadeStyle]}>
-            <Card
-              style={{ backgroundColor: "transparent", elevation: 0 }}
-            >
+            <Card style={{ backgroundColor: "transparent", elevation: 0 }}>
               {(title || description) && (
                 <CardHeader>
                   {title ? <CardTitle>{title}</CardTitle> : null}
