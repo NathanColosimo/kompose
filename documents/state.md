@@ -19,7 +19,7 @@
 - `atoms/google-colors.ts`: Google color palette atoms with normalization helpers.
 - `account-query-keys.ts`: Shared query keys for linked Better Auth account discovery.
 - `atoms/google-data.ts`: Shared linked Better Auth account query, Google-account derivations, per-account calendars, and derived visible calendar ids. The effective visible set is calculated during reads: if no explicit preference is saved yet, all currently loaded calendars are treated as visible. Explicit saved selections are filtered per account only when its calendar-list query succeeds; loading or errored discovery preserves that account's saved ids, including after a failed refresh with cached data. Only a successful linked-account query can exclude an unlinked account. Accounts resolve independently, and derivation never rewrites persisted preferences.
-- `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet".
+- `atoms/visible-calendars.ts`: Visible calendar selection atoms, shared persistence readiness, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet".
 - `atoms/whoop-data.ts`: WHOOP account derivation from the shared linked-account query, month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
@@ -36,3 +36,35 @@
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared auth client types.
+
+## Persisted preferences
+
+`createPersistedAtom` in `storage.ts` owns persistence for both the visible-day
+count and calendar selection. It returns a writable `valueAtom` and a read-only
+`stateAtom` with `{ kind: "loading", revision }` or
+`{ kind: "ready", revision, value }`. Reads use the initial value while loading.
+The revision is in memory only; storage still contains just the preference's JSON
+value. No server data is persisted.
+
+A user write immediately enters `ready` and increments the revision, including
+before hydration or the first mount. A storage read may apply only if its captured
+revision still matches and its mount is still active. Unmount cleanup discards a
+pending read; a later mount can retry while still loading. Ready preferences are
+not rehydrated on remount. Missing, invalid JSON, or failed reads finish loading
+with the initial value.
+
+Calendar selection uses this same state instead of a separate hydration flag.
+`resolvedVisibleCalendarIdsAtom` waits only while the preference is `loading`, so
+a user choice is usable immediately even with a storage read pending. `null`
+still means no explicit preference, and `[]` means explicitly hide all calendars.
+
+Storage writes run in order per adapter and key, including across atom instances
+and Jotai stores. The first write starts immediately; asynchronous writes wait
+for the previous write to settle. A failed write does not block later writes;
+its rejection is returned to the writer. These rules apply to both localStorage
+and the native async SecureStore adapter without platform-specific hydration.
+There is no automatic retry or rollback on persistence failure.
+
+`bun test` in `packages/state` covers writes racing older reads for both
+preferences, immediate calendar readiness, unmount/remount cancellation,
+preference fallback semantics, and ordered async writes after success or failure.

@@ -13,7 +13,7 @@ import { getGoogleCalendarsQueryKey } from "../google-calendar-query-keys";
 import {
   type CalendarIdentifier,
   visibleCalendarsAtom,
-  visibleCalendarsHydratedAtom,
+  visibleCalendarsStateAtom,
 } from "./visible-calendars";
 
 const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
@@ -74,8 +74,8 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
 
 export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
-    const hydrated = get(visibleCalendarsHydratedAtom);
-    if (!hydrated) {
+    const selection = get(visibleCalendarsStateAtom);
+    if (selection.kind === "loading") {
       return [];
     }
 
