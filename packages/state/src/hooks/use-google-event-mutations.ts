@@ -112,6 +112,10 @@ export function useGoogleEventMutations() {
       }),
     onMutate: async (variables) => {
       const scope = variables.recurrenceScope ?? "this";
+      if (scope !== "this") {
+        return;
+      }
+
       const queryKey = getGoogleEventsByCalendarQueryKey({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -125,16 +129,14 @@ export function useGoogleEventMutations() {
         queryKey,
       });
 
-      if (scope === "this") {
-        for (const [cachedKey, cachedEvents] of previousQueries) {
-          if (Array.isArray(cachedEvents)) {
-            queryClient.setQueryData<Event[]>(
-              cachedKey,
-              cachedEvents.map((event) =>
-                event.id === variables.eventId ? variables.event : event
-              )
-            );
-          }
+      for (const [cachedKey, cachedEvents] of previousQueries) {
+        if (Array.isArray(cachedEvents)) {
+          queryClient.setQueryData<Event[]>(
+            cachedKey,
+            cachedEvents.map((event) =>
+              event.id === variables.eventId ? variables.event : event
+            )
+          );
         }
       }
 

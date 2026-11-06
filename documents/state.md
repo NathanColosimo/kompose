@@ -23,10 +23,10 @@
 - `atoms/whoop-data.ts`: WHOOP account derivation from the shared linked-account query, month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
-- `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates.
+- `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations. Single-occurrence updates (scope `this`, also the default) optimistically update the cache and roll back on failure. Series updates (`all` / `following`) leave in-flight queries and cached data alone until invalidation on settlement, so a failed series update cannot restore an old snapshot over a concurrent edit.
 - `hooks/use-google-events.ts`: Query hook for events, one query per calendar and month window (`eventWindowsAtom`: each month the visible days ±7 touch, so the page after the visible one is already loaded). Events crossing a month boundary come back in both months and are deduped by ID.
 - `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. It can fetch eagerly, but only surfaces that actually render linked-account metadata should depend on it for display.
-- `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
+- `hooks/use-move-google-event-mutation.ts`: Google event move mutation. Moves do not optimistically change the cache, cancel queries, or snapshot/roll back event lists. Failures notify the user; both source and destination calendars are invalidated on settlement.
 - `hooks/use-recurring-event-master.ts`: Recurring master query hook.
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
