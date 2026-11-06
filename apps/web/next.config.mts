@@ -10,6 +10,8 @@ const workspaceRoot = path.resolve(import.meta.dirname, "../..");
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["localhost:3000", "local.kompose.dev"],
   experimental: {
+    // Required with more than one root layout (app/(site) and app/(docs)).
+    globalNotFound: true,
     turbopackRustReactCompiler: true,
   },
   reactCompiler: true,
