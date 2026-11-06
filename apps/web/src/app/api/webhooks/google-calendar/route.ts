@@ -1,83 +1,15 @@
-/** biome-ignore-all lint/correctness/noNestedComponentDefinitions: route handler */
 import { appRuntime } from "@kompose/api/runtime";
-import { WebhookService } from "@kompose/api/webhooks/webhook-service";
-import { SpanStatusCode, trace } from "@opentelemetry/api";
-import { Effect } from "effect";
+import { handleGoogleCalendarWebhook } from "@kompose/api/webhooks/google-cal/notification";
+import { after } from "next/server";
 
-const tracer = trace.getTracer("kompose-api");
-
-export async function POST(request: Request): Promise<Response> {
-  return await tracer.startActiveSpan(
-    "webhook.google-calendar",
-    async (span) => {
-      // Annotate the root span with Google webhook headers for searchability
-      const channelId = request.headers.get("x-goog-channel-id");
-      const resourceId = request.headers.get("x-goog-resource-id");
-      const resourceState = request.headers.get("x-goog-resource-state");
-      if (channelId) {
-        span.setAttribute("webhook.channelId", channelId);
-      }
-      if (resourceId) {
-        span.setAttribute("webhook.resourceId", resourceId);
-      }
-      if (resourceState) {
-        span.setAttribute("webhook.resourceState", resourceState);
-      }
-
-      try {
-        const result = await appRuntime.runPromise(
-          WebhookService.use((service) =>
-            service.handleGoogleNotification({
-              headers: request.headers,
-            })
-          ).pipe(
-            Effect.catchTags({
-              WebhookRepositoryError: (error) =>
-                Effect.succeed(new Response(error.message, { status: 202 })),
-              WebhookValidationError: (error) =>
-                Effect.succeed(new Response(error.message, { status: 400 })),
-            })
-          )
-        );
-
-        // Error cases are caught above and returned as Response
-        if (result instanceof Response) {
-          span.setAttribute("http.status_code", result.status);
-          return result;
-        }
-
-        // Fire-and-forget webhook refresh when calendar list changes
-        if (result.followUpRefresh) {
-          appRuntime.runFork(
-            WebhookService.use((service) =>
-              service.refreshAll({
-                accountId: result.followUpRefresh.accountId,
-                userId: result.followUpRefresh.userId,
-              })
-            ).pipe(
-              Effect.tapError((error) =>
-                Effect.logError(
-                  "GOOGLE_WEBHOOK_SETUP_FAILED_ON_CALENDAR_LIST_CHANGE",
-                  { error }
-                )
-              ),
-              Effect.ignore
-            )
-          );
-        }
-
-        span.setAttribute("http.status_code", 200);
-        return new Response("OK", { status: 200 });
-      } catch (error) {
-        span.recordException(
-          error instanceof Error ? error : new Error(String(error))
-        );
-        span.setStatus({ code: SpanStatusCode.ERROR });
-        span.setAttribute("http.status_code", 500);
-        return new Response("Internal Server Error", { status: 500 });
-      } finally {
-        span.end();
-      }
-    }
-  );
+/**
+ * Google Calendar push notifications. Replies as soon as the headers check
+ * out, then syncs in `after()`. See documents/services.md.
+ */
+export function POST(request: Request): Response {
+  const { response, sync } = handleGoogleCalendarWebhook(request);
+  if (sync) {
+    after(() => appRuntime.runPromise(sync));
+  }
+  return response;
 }

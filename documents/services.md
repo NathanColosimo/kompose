@@ -300,7 +300,7 @@ Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRe
 | Method | Purpose |
 |--------|---------|
 | `refreshAll` | Discover linked accounts, load existing subs, refresh all watches in parallel |
-| `handleGoogleNotification` | Validate headers/token, find subscription, publish realtime event |
+| `handleGoogleNotification` | Find the subscription for already-checked headers, clear its cache, publish realtime event |
 
 `refreshAll` processes each account independently — one revoked token does not fail the batch. Per-account errors are logged via `Effect.tapError` and caught so other accounts continue.
 
@@ -313,14 +313,13 @@ Webhook subscriptions keep both Google account identifiers:
 
 ### Webhook route handler
 
-**File:** `apps/web/src/app/api/webhooks/google-calendar/route.ts`
+**File:** `apps/web/src/app/api/webhooks/google-calendar/route.ts` (handler: `packages/api/src/webhooks/google-cal/notification.ts`)
 
-A plain Next.js `POST` handler (not an oRPC route). It:
+A plain Next.js `POST` handler (not an oRPC route). `handleGoogleCalendarWebhook` is a plain function that returns `{ response, sync }`:
 
-1. Runs `WebhookService.handleGoogleNotification` with the incoming request headers
-2. Maps `WebhookValidationError` → 400, `WebhookRepositoryError` → 202 via `Effect.catchTags`
-3. On success, if `result.followUpRefresh` is set, fire-and-forgets a `WebhookService.refreshAll`
-4. Returns 200 OK
+1. Checks the `X-Goog-Channel-Id`, `X-Goog-Resource-Id` and `X-Goog-Channel-Token` headers, answering 400 when one is missing or the token is wrong
+2. Otherwise replies 200 at once, and in `after()` runs `WebhookService.handleGoogleNotification`, then `WebhookService.refreshAll` if `result.followUpRefresh` is set
+3. Logs `GOOGLE_WEBHOOK_SYNC_FAILED` if that sync fails (for example, a channel with no active subscription)
 
 ### Errors (`Schema.TaggedError`)
 
@@ -329,7 +328,7 @@ A plain Next.js `POST` handler (not an oRPC route). It:
 | `WebhookRepositoryError` | Repository service | DB query failed or record not found |
 | `WebhookProviderError` | Google cal service | Google API call failed |
 | `WebhookAuthError` | Orchestrator | OAuth token retrieval failed |
-| `WebhookValidationError` | Google cal service, orchestrator | Invalid input (bad URL, missing headers, invalid token) |
+| `WebhookValidationError` | Google cal service, orchestrator | Invalid input (bad callback URL, unexpected watch response) |
 
 ---
 
@@ -442,11 +441,10 @@ if (!rows[0]) {
 }
 return rows[0];
 
-// In the route — catchTags maps errors to HTTP responses
-Effect.catchTags({
-  WebhookValidationError: (e) => Effect.succeed(new Response(e.message, { status: 400 })),
-  WebhookRepositoryError: (e) => Effect.succeed(new Response(e.message, { status: 202 })),
-})
+// In the webhook sync (after the reply) — log instead of failing the request
+Effect.catch((error) =>
+  Effect.logWarning("GOOGLE_WEBHOOK_SYNC_FAILED", { channelId, error })
+)
 ```
 
 ### Layer composition
@@ -454,10 +452,12 @@ Effect.catchTags({
 Every service layer is merged once into `AppLayer` in `runtime.ts`, and `appRuntime` (a `ManagedRuntime`) builds it once per process. Layers referenced more than once, like `DatabaseLive`, are built once, so all requests share one Postgres pool. The OAuth token hook in `@kompose/auth` can't import `appRuntime` (`@kompose/api` depends on `@kompose/auth`), so it has its own runtime; both pass `runtimeMemoMap` from `@kompose/db`, which makes them share the one `DatabaseLive` and its pool. Code outside oRPC handlers runs through the same runtime:
 
 ```ts
-// Google webhook route
-await appRuntime.runPromise(
-  WebhookService.use((service) => service.handleGoogleNotification({ headers }))
-);
+// Google webhook route: reply now, sync after the response is sent
+const { response, sync } = handleGoogleCalendarWebhook(request);
+if (sync) {
+  after(() => appRuntime.runPromise(sync));
+}
+return response;
 ```
 
 Don't `Effect.provide` a service layer per request: each call builds the layer again, including a new Postgres pool.
@@ -518,4 +518,4 @@ export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
 |-------------|------|----------|
 | oRPC handler | `apps/web/src/app/api/rpc/[[...rest]]/route.ts` | All oRPC routes — tasks, tags, google-cal, maps, sync |
 | SSE connect | `routers/sync/router.ts` | Fire-and-forget `refreshAll` then return Redis iterator |
-| Google webhook | `apps/web/src/app/api/webhooks/google-calendar/route.ts` | `handleGoogleNotification` → map errors to HTTP → optional follow-up `refreshAll`, all through `appRuntime` |
+| Google Calendar webhook | `apps/web/src/app/api/webhooks/google-calendar/route.ts` | `handleGoogleCalendarWebhook` checks the headers and replies; its `sync` (`handleGoogleNotification`, then `refreshAll` if the calendar list changed) runs in `after()` through `appRuntime` |
