@@ -111,12 +111,32 @@ export function PluginConnectionsSettings() {
                   <p className="truncate font-medium text-sm">
                     {connection.name || "Unknown user"}
                   </p>
-                  <p className="truncate text-muted-foreground text-xs">
-                    {connection.email || "Email unavailable"}
-                  </p>
+                  {connection.status === "needs-reauth" ? (
+                    <p className="truncate text-destructive text-xs">
+                      {plugin.name} stopped accepting this account. Reconnect to
+                      keep syncing.
+                    </p>
+                  ) : (
+                    <p className="truncate text-muted-foreground text-xs">
+                      {connection.email || "Email unavailable"}
+                    </p>
+                  )}
                 </div>
+                {connection.status === "needs-reauth" ? (
+                  <Button
+                    className="ml-auto"
+                    disabled={connectingPluginId !== null}
+                    onClick={() => connect(plugin)}
+                    size="sm"
+                    type="button"
+                  >
+                    Reconnect
+                  </Button>
+                ) : null}
                 <Button
-                  className="ml-auto"
+                  className={
+                    connection.status === "needs-reauth" ? "" : "ml-auto"
+                  }
                   disabled={disconnect.isPending}
                   onClick={() => disconnectAccount(connection, plugin.name)}
                   size="sm"

@@ -15,13 +15,15 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
-import { connectLinkedAccount } from "./connections";
+import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
+import { pluginOAuthTokens } from "./oauth-tokens";
 import { redisSecondaryStorage } from "./redis-storage";
-import { whoopOAuthTokens } from "./whoop";
 
 export const auth = betterAuth({
   account: {
+    // Plaintext tokens from before this still read; pluginOAuthTokens encrypts them on next use.
+    encryptOAuthTokens: true,
     accountLinking: {
       // Support linking additional Google accounts that may use different emails.
       allowDifferentEmails: true,
@@ -41,7 +43,10 @@ export const auth = betterAuth({
     schema,
   }),
   databaseHooks: {
-    account: { create: { after: connectLinkedAccount } },
+    account: {
+      create: { after: connectLinkedAccount },
+      update: { after: reactivateConnection },
+    },
   },
   // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
   disabledPaths: ["/token"],
@@ -119,7 +124,7 @@ export const auth = betterAuth({
         },
       ],
     }),
-    whoopOAuthTokens(),
+    pluginOAuthTokens(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
     jwt(),
     mcp({

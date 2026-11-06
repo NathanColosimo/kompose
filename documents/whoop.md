@@ -29,15 +29,17 @@ The app's WHOOP RPC inputs and cache keys use the provider account ID
 owned by the current user before calling Better Auth. Better Auth token,
 profile, and unlink APIs require the local row ID (`account.id`).
 
-`packages/auth/src/whoop.ts` identifies WHOOP from the owned account row rather
-than a request `providerId`. An access token request first reads the row
-without a transaction or lock; a stored token more than 30 seconds from expiry
-is returned as is, so concurrent requests don't queue on the row. Otherwise it
-locks the row (`SELECT … FOR UPDATE`), checks the token again in case a
-concurrent request just refreshed it, then refreshes and saves the rotated
-tokens, preserving the stored granted scopes. WHOOP refresh tokens are
-single-use, so only the lock holder refreshes, with the refresh token it read
-under the lock. `whoop.test.ts` covers both paths against a real Postgres; it
+`packages/auth/src/oauth-tokens.ts` (the token hook shared by every OAuth
+plugin; see `documents/plugins.md`) identifies the provider from the owned
+account row rather than a request `providerId`. An access token request first
+reads the row without a transaction or lock; a stored, already encrypted token
+more than 30 seconds from expiry is returned as is, so concurrent requests
+don't queue on the row. Otherwise it locks the row (`SELECT … FOR UPDATE`),
+checks the token again in case a concurrent request just refreshed it, then
+refreshes and saves the rotated tokens, preserving the stored granted scopes.
+WHOOP refresh tokens are single-use, so only the lock holder refreshes, with
+the refresh token it read under the lock. `oauth-tokens.test.ts` covers both
+paths and the encryption of old plaintext tokens against a real Postgres; it
 skips without `DATABASE_URL`, so it only runs locally. HTTP callers must have a
 current session; explicit `userId` is only a fallback for trusted server calls.
 The account-info hook also refreshes under this lock before Better Auth fetches

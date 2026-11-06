@@ -7,6 +7,7 @@ Built so far:
 - `@kompose/plugins` (`packages/plugins/src`): manifest types and the Google Calendar and WHOOP manifests (plain objects checked with `as const satisfies PluginManifest`).
 - The `connection` table, backfilled from linked Google and WHOOP accounts. `connectLinkedAccount` in `packages/auth/src/connections.ts` (a Better Auth `account.create.after` hook) adds a row whenever an account from a plugin's OAuth provider is linked; unlinking cascades.
 - Settings connections list on web (`plugin-connections-settings.tsx`) and native (`plugin-connections-cards.tsx`): a card per plugin from the manifest list, fed by `plugins.connections` (each connection with the account's name, email and avatar from Better Auth's `accountInfo`) through `usePluginConnections` in `@kompose/state`, which also groups connections per plugin and holds the `connectLabel` and `initials` helpers both cards use. Connect calls `linkSocial` with the manifest's provider; Disconnect unlinks the account. This replaced the Google and WHOOP cards and the unused `account.list` and `whoop.profile.get` procedures. Native now offers WHOOP too.
+- Token encryption and the shared locked refresh with `needs-reauth` (see Tokens below).
 
 Integrations (Google Calendar, WHOOP, link parsing, place search, meeting links, later Outlook, Apple Calendar, Apple Health) become plugins. Every plugin is built into the app; nothing is loaded at runtime.
 
@@ -69,9 +70,10 @@ The connection kind comes from the manifest, so it isn't stored. Columns land wi
 
 Tokens:
 
-- Turn on `account.encryptOAuthTokens` with `BETTER_AUTH_SECRETS`, and migrate existing plaintext tokens.
+- `account.encryptOAuthTokens` is on. Better Auth encrypts with `BETTER_AUTH_SECRET` and still reads plaintext rows. Rows stored before are encrypted the next time `pluginOAuthTokens` reads them, so there's no backfill to run; an account nobody uses again stays plaintext until it's used. Better Auth treats any even-length hex string as encrypted, so a provider whose tokens are pure hex can't have plaintext rows.
 - Encrypt app-specific passwords with `symmetricEncrypt` from `better-auth/crypto`, using the same keys.
-- Callers keep using `auth.api.getAccessToken`. The WHOOP hook in `packages/auth/src/whoop.ts` becomes one hook for every OAuth plugin: each manifest supplies its refresh call, the hook refreshes under a row lock (Microsoft and WHOOP rotate refresh tokens), and `invalid_grant` sets `connection.status = "needs-reauth"` so Settings shows Reconnect. Better Auth's own refresh has no lock and hides the provider's error.
+- Callers keep using `auth.api.getAccessToken`. `pluginOAuthTokens` (`packages/auth/src/oauth-tokens.ts`) answers it for every plugin provider: it returns a still-valid token without a lock and refreshes under a row lock (Microsoft and WHOOP rotate refresh tokens), encrypts and decrypts with Better Auth's helpers, and on `invalid_grant` sets `connection.status = "needs-reauth"`, so Settings shows Reconnect. Every token failure is a `BAD_REQUEST` `APIError` with the reason in the message; `getLinkedAccessToken` turns any of them into the same "reconnect it in Settings" error. Reconnecting updates the account, and the `account.update.after` hook sets the connection back to `active`. Better Auth's own refresh has no lock and hides the provider's error.
+- Each provider's token URL and client credentials live in `refreshConfigs` in that file, a `Record<OAuthProvider, …>`, so a new OAuth plugin doesn't typecheck until it has one. They're server-only, so they aren't in the manifest.
 
 ## Standard tables
 

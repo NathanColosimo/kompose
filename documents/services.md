@@ -354,7 +354,7 @@ Full details in [`otel.md`](./otel.md). Summary:
 
 1. **`TracerProvider`** — single global provider (wired by hand, not `NodeSDK`, to keep cold starts small) with `ORPCInstrumentation` for automatic oRPC handler/middleware spans. Exports to Axiom (or local Jaeger) via OTLP HTTP.
 2. **`Tracer.layerGlobal`** — bridges `Effect.fn` spans into the same provider. Exported as `TelemetryLive` layer, merged into `AppLayer` in `runtime.ts`.
-3. **`ExportSpanProcessor`** — the batch processor; strips noisy Next.js internal attributes and, on Vercel, flushes when a request ends.
+3. **`SpanAttributeFilter`** — strips noisy Next.js internal attributes before export.
 4. **`instrumentation.ts`** — Next.js hook ensuring the provider is registered early to prevent orphaned root spans.
 
 No client-side OTel SDK. Network latency is measured via `x-request-start` headers from both web and native clients.
@@ -451,7 +451,7 @@ Effect.catchTags({
 
 ### Layer composition
 
-Every service layer is merged once into `AppLayer` in `runtime.ts`, and `appRuntime` (a `ManagedRuntime`) builds it once per process. Layers referenced more than once, like `DatabaseLive`, are built once, so all requests share one Postgres pool. The WHOOP token hook in `@kompose/auth` can't import `appRuntime` (`@kompose/api` depends on `@kompose/auth`), so it has its own runtime; both pass `runtimeMemoMap` from `@kompose/db`, which makes them share the one `DatabaseLive` and its pool. Code outside oRPC handlers runs through the same runtime:
+Every service layer is merged once into `AppLayer` in `runtime.ts`, and `appRuntime` (a `ManagedRuntime`) builds it once per process. Layers referenced more than once, like `DatabaseLive`, are built once, so all requests share one Postgres pool. The OAuth token hook in `@kompose/auth` can't import `appRuntime` (`@kompose/api` depends on `@kompose/auth`), so it has its own runtime; both pass `runtimeMemoMap` from `@kompose/db`, which makes them share the one `DatabaseLive` and its pool. Code outside oRPC handlers runs through the same runtime:
 
 ```ts
 // Google webhook route
@@ -472,8 +472,6 @@ Don't `Effect.provide` a service layer per request: each call builds the layer a
 - Vercel's own guide suggests a short idle timeout (about 5 s) with `attachDatabasePool`. That guidance is about connections leaking from suspended instances when the database has few connection slots. `@effect/sql-pg`'s pool isn't one of the pool types `attachDatabasePool` lists, and here the transaction pooler sits between the instances and Postgres.
 
 The Better Auth client (`packages/db/src/legacy.ts`, postgres.js) uses its defaults: no idle timeout, 60 s keepalive, and a lifetime of 30–60 minutes per connection. It already keeps idle connections across suspensions, so it's left as is.
-
-Better Auth reads through the Drizzle relations-v2 adapter with `advanced.database.joins` on. Where it needs a row together with its user (an OAuth sign-in looking up the account's owner, or a user by email with their accounts), it uses one joined query instead of two. The joins go through the auth relations in `packages/db/src/schema/relations.ts`, which follow Better Auth's naming (`account.user`, `session.user`, `user.accounts`, `user.sessions`). Sessions are read from Redis, so `session.user` is only used when a session isn't cached.
 
 ### Effect ↔ oRPC bridge
 
