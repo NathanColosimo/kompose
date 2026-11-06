@@ -1,6 +1,6 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
+import { fetchText } from "@kompose/plugins/link-resolver";
 import { Effect } from "effect";
-import { LinkParseError } from "../types";
 
 /** Accept property/name and content in either attribute order. */
 function extractMeta(html: string, attr: string): string | undefined {
@@ -15,39 +15,17 @@ function extractMeta(html: string, attr: string): string | undefined {
 export const parseUnknownLink = Effect.fn("Unknown.parseLink")(function* (
   url: string
 ) {
-  const response = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to fetch page for OG metadata",
-        url,
-      }),
-    try: () =>
-      fetch(url, {
-        headers: {
-          Accept: "text/html",
-          "User-Agent":
-            "Mozilla/5.0 (compatible; KomposeBot/1.0; +https://kompose.app)",
-        },
-        redirect: "follow",
-      }),
-  });
-
-  if (!response.ok) {
-    return yield* new LinkParseError({
-      message: `Page returned ${response.status}`,
-      url,
-    });
-  }
-
-  const html = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to read response body",
-        url,
-      }),
-    try: () => response.text(),
+  const html = yield* fetchText({
+    init: {
+      headers: {
+        Accept: "text/html",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; KomposeBot/1.0; +https://kompose.app)",
+      },
+    },
+    label: "Page",
+    link: url,
+    url,
   });
 
   const result: LinkMeta & { provider: "unknown" } = {

@@ -2,8 +2,33 @@ import type { LinkMeta } from "@kompose/db/schema/link";
 import { env } from "@kompose/env";
 import { Effect } from "effect";
 import { z } from "zod";
-import { LinkParseError, roundToNearest15Min } from "../types";
-import { parseYoutubeVideoId } from "./detect";
+import {
+  fetchJson,
+  LinkParseError,
+  type LinkResolver,
+  roundToNearest15Min,
+} from "../link-resolver";
+
+// ============================================================================
+// Zod schemas for YouTube Data API v3 responses
+// ============================================================================
+
+const YOUTUBE_VIDEO_ID_PATTERNS = [
+  /^https?:\/\/(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=([a-zA-Z0-9_-]{11})/,
+  /^https?:\/\/youtu\.be\/([a-zA-Z0-9_-]{11})/,
+  /^https?:\/\/(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+];
+
+/** The video ID in a watch, youtu.be, or Shorts URL */
+function parseYoutubeVideoId(url: string): string | null {
+  for (const pattern of YOUTUBE_VIDEO_ID_PATTERNS) {
+    const id = url.match(pattern)?.[1];
+    if (id) {
+      return id;
+    }
+  }
+  return null;
+}
 
 const youtubeVideoItem = z.object({
   contentDetails: z.object({
@@ -38,7 +63,8 @@ function parseIsoDuration(iso: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
+/** Fetch metadata for a YouTube video via Data API v3 */
+const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
   url: string
 ) {
   const videoId = parseYoutubeVideoId(url);
@@ -57,44 +83,16 @@ export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
     });
   }
 
-  const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${apiKey}`;
+  const data = yield* fetchJson(
+    {
+      label: "YouTube API",
+      link: url,
+      url: `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${apiKey}`,
+    },
+    youtubeVideosResponse
+  );
 
-  const response = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to fetch YouTube metadata",
-        url,
-      }),
-    try: () => fetch(apiUrl),
-  });
-
-  if (!response.ok) {
-    return yield* new LinkParseError({
-      message: `YouTube API returned ${response.status}`,
-      url,
-    });
-  }
-
-  const json = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to parse YouTube response",
-        url,
-      }),
-    try: () => response.json(),
-  });
-
-  const data = youtubeVideosResponse.safeParse(json);
-  if (!data.success) {
-    return yield* new LinkParseError({
-      message: `Invalid YouTube API response: ${data.error.message}`,
-      url,
-    });
-  }
-
-  const item = data.data.items[0];
+  const item = data.items[0];
   if (!item) {
     return yield* new LinkParseError({
       message: "YouTube video not found",
@@ -118,3 +116,9 @@ export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
 
   return result;
 });
+
+export const youtubeResolver: LinkResolver = {
+  matches: (url) => parseYoutubeVideoId(url.href) !== null,
+  pluginId: "youtube",
+  resolve: parseYoutubeLink,
+};

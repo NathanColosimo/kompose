@@ -1,58 +1,41 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { uuidv7 } from "uuidv7";
 
-export type MeetingProvider =
-  | "google-meet"
-  | "zoom"
-  | "teams"
-  | "webex"
-  | "other";
-
 export interface MeetingLink {
+  /** e.g. "Zoom", or "Meeting link" when no rule matches the host */
   label: string;
-  provider: MeetingProvider;
   url: string;
 }
 
-const PROVIDER_LABELS: Record<MeetingProvider, string> = {
-  "google-meet": "Google Meet",
-  other: "Meeting link",
-  teams: "Microsoft Teams",
-  webex: "Webex",
-  zoom: "Zoom",
-};
+/** A URL on one of these hosts is a meeting link. */
+interface MeetingRule {
+  /** A host starting with "." matches its subdomains instead. */
+  hosts: readonly string[];
+  /** Shown on the join button. */
+  label: string;
+}
 
-const PROVIDER_PRIORITY: MeetingProvider[] = [
-  "google-meet",
-  "zoom",
-  "teams",
-  "webex",
-  "other",
+/** Earlier rules win when an event has several links. */
+const MEETING_RULES: readonly MeetingRule[] = [
+  { hosts: ["meet.google.com"], label: "Google Meet" },
+  { hosts: ["zoom.us", "zoom.com", ".zoom.us"], label: "Zoom" },
+  { hosts: ["teams.microsoft.com"], label: "Microsoft Teams" },
+  { hosts: ["webex.com", ".webex.com"], label: "Webex" },
 ];
+const OTHER_MEETING = MEETING_RULES.length;
+
+/** The index of the rule matching this host, or `OTHER_MEETING`. */
+function ruleIndex(hostname: string): number {
+  const host = hostname.toLowerCase();
+  const index = MEETING_RULES.findIndex((rule) =>
+    rule.hosts.some((ruleHost) =>
+      ruleHost.startsWith(".") ? host.endsWith(ruleHost) : host === ruleHost
+    )
+  );
+  return index === -1 ? OTHER_MEETING : index;
+}
 
 const URL_REGEX = /https?:\/\/[^\s<>]+/gi;
-
-function providerFromHost(hostname: string): MeetingProvider {
-  const host = hostname.toLowerCase();
-  if (host === "meet.google.com") {
-    return "google-meet";
-  }
-  if (host.endsWith(".zoom.us") || host === "zoom.us" || host === "zoom.com") {
-    return "zoom";
-  }
-  if (host === "teams.microsoft.com") {
-    return "teams";
-  }
-  if (host.endsWith(".webex.com") || host === "webex.com") {
-    return "webex";
-  }
-  return "other";
-}
-
-function scoreProvider(provider: MeetingProvider): number {
-  const idx = PROVIDER_PRIORITY.indexOf(provider);
-  return idx === -1 ? PROVIDER_PRIORITY.length : idx;
-}
 
 function collectUrls(text?: string): string[] {
   if (!text) {
@@ -110,34 +93,22 @@ export function extractMeetingLink(
       return true;
     });
 
-  const parsed = uniqueCandidates
-    .map((value) => {
-      try {
-        const url = new URL(value);
-        const provider = providerFromHost(url.hostname);
-        return { provider, url: value };
-      } catch {
-        return null;
-      }
-    })
-    .filter((value): value is { url: string; provider: MeetingProvider } =>
-      Boolean(value)
-    );
+  const parsed = uniqueCandidates.flatMap((value) => {
+    try {
+      return [{ rule: ruleIndex(new URL(value).hostname), url: value }];
+    } catch {
+      return [];
+    }
+  });
 
-  if (parsed.length === 0) {
-    return null;
-  }
-
-  parsed.sort((a, b) => scoreProvider(a.provider) - scoreProvider(b.provider));
-  const chosen = parsed[0];
-  // Guard for TypeScript - length check above ensures this exists
+  // Prefer recognized providers in rule order; stable for ties.
+  const [chosen] = parsed.sort((a, b) => a.rule - b.rule);
   if (!chosen) {
     return null;
   }
 
   return {
-    label: PROVIDER_LABELS[chosen.provider],
-    provider: chosen.provider,
+    label: MEETING_RULES[chosen.rule]?.label ?? "Meeting link",
     url: chosen.url,
   };
 }
