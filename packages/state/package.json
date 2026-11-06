@@ -22,6 +22,7 @@
   "dependencies": {
     "@kompose/api": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "@orpc/client": "catalog:",
     "@tanstack/query-core": "catalog:",
     "@tanstack/react-query": "catalog:",

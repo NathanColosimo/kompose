@@ -48,12 +48,12 @@ token endpoint.
 
 ```
 packages/whoop/          — WHOOP API client + schemas (standalone, no app dependencies)
-├── src/client.ts        — Effect-based API client (cycles, recoveries, sleeps, workouts, profile)
+├── src/client.ts        — Effect-based API client (cycles, recoveries, sleeps, workouts)
 ├── src/errors.ts        — WhoopApiError, WhoopParseError (Schema.TaggedError)
 └── src/schema.ts        — Zod schemas for all WHOOP API response types
 
 packages/api/src/routers/whoop/   — oRPC router + Effect service
-├── contract.ts          — oRPC contract (days.list, profile.get)
+├── contract.ts          — oRPC contract (days.list)
 ├── router.ts            — oRPC handler implementations
 ├── service.ts           — WhoopService (day summary aggregation, caching, grouping)
 ├── cache.ts             — WhoopCacheService (Redis per-day cache)
@@ -68,7 +68,6 @@ packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
 
 | Method | Returns | Error channel |
 |--------|---------|---------------|
-| `getProfileBasic()` | `WhoopProfileBasic` | `WhoopApiError \| WhoopParseError` |
 | `listCycles(params)` | `WhoopCycle[]` | `WhoopApiError \| WhoopParseError` |
 | `listRecoveries(params)` | `WhoopRecovery[]` | `WhoopApiError \| WhoopParseError` |
 | `listSleeps(params)` | `WhoopSleep[]` | `WhoopApiError \| WhoopParseError` |
@@ -111,7 +110,6 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 | Endpoint | Input | Output |
 |----------|-------|--------|
 | `whoop.days.list` | `{ accountId, startDate, endDate, timeZone }` | `WhoopDaySummary[]` |
-| `whoop.profile.get` | `{ accountId }` | `{ firstName, lastName, email }` |
 
 `WhoopDaySummary` contains: `day`, `cycleId`, `recoveryScore`, `strainScore`, `kilojoule`, `sleepPerformance`, `sleep` (primary overnight sleep), `naps` (array), `workouts` (array).
 
@@ -153,4 +151,4 @@ Events spanning midnight (Google events, WHOOP sleep/workouts) are split into pe
 
 ## Settings Page
 
-WHOOP account card matches the Google account card pattern: avatar with initials, full name, email, and unlink button. Profile data fetched via `whoop.profile.get`. Account state reads from `whoopAccountDataAtom` (shared with dashboard).
+WHOOP gets the generic plugin connection card (see `documents/plugins.md`): avatar with initials, name and email from Better Auth's `accountInfo`, and a disconnect button. The manifest allows one WHOOP account, so Connect is disabled once one is linked.

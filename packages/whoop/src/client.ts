@@ -3,12 +3,10 @@ import type z from "zod";
 import { WhoopApiError, WhoopParseError } from "./errors";
 import {
   type WhoopCycle,
-  type WhoopProfileBasic,
   type WhoopRecovery,
   type WhoopSleep,
   type WhoopWorkout,
   whoopCycleCollectionSchema,
-  whoopProfileBasicSchema,
   whoopRecoveryCollectionSchema,
   whoopSleepCollectionSchema,
   whoopWorkoutCollectionSchema,
@@ -130,18 +128,6 @@ function fetchCollection<T>(
 
 export function createWhoopClient(accessToken: string) {
   return {
-    getProfileBasic: (): Effect.Effect<
-      WhoopProfileBasic,
-      WhoopApiError | WhoopParseError
-    > =>
-      fetchPage(
-        accessToken,
-        "/developer/v1/user/profile/basic",
-        {},
-        whoopProfileBasicSchema,
-        "getProfileBasic"
-      ),
-
     listCycles: (
       params: WhoopListParams
     ): Effect.Effect<WhoopCycle[], WhoopApiError | WhoopParseError> =>

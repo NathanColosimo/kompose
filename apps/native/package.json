@@ -19,6 +19,7 @@
     "@kompose/api": "workspace:*",
     "@kompose/auth": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "@kompose/state": "workspace:*",
     "@orpc/client": "catalog:",
     "@rn-primitives/slot": "^1.5.2",

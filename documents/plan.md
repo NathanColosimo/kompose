@@ -425,8 +425,8 @@ shortcuts, window sizing, focus restoration, and settings persistence. See
 - **OAuth**: WHOOP linked via Better Auth `genericOAuth` plugin with `read:profile`, `read:sleep`, `read:workout`, `read:recovery`, `read:cycles`, `offline` scopes. Limited to one account per user.
 - **API client**: `packages/whoop/` — typed Zod-validated client wrapping WHOOP Developer API v1/v2 endpoints (profile, cycles, recoveries, sleeps, workouts).
 - **Backend service**: `WhoopService` in `packages/api/src/routers/whoop/` — fetches raw data for a date range, groups by day, and returns aggregated `WhoopDaySummary` objects. Per-day Redis caching (15 min TTL for today, 7 day TTL for past days).
-- **oRPC endpoints**: `whoop.days.list` (day summaries) and `whoop.profile.get` (basic profile info).
-- **Settings page**: WHOOP account card shows profile name and email (matching Google account card pattern).
+- **oRPC endpoints**: `whoop.days.list` (day summaries).
+- **Settings page**: WHOOP is one of the plugin cards (`plugin-connections-settings.tsx`); its name and email come from Better Auth's account info.
 - **Calendar week view** (web):
   - **Day header badges**: Recovery score (color-coded dot: green 67-100, yellow 34-66, red 0-33), strain score, and sleep performance percentage shown as compact badges below the date.
   - **Sleep background band**: Sleep blocks rendered as translucent indigo bands behind all events, clamped to the column's day boundaries. All visible sleep blocks are checked per column so overnight sleep (e.g. 11pm-7am) renders on both the evening and morning day columns. Does not participate in collision layout.
