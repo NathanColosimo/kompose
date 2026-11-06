@@ -1,22 +1,7 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/shadcn.css";
 @import "fumadocs-ui/css/preset.css";
-
-@font-face {
-  font-family: "Sentient";
-  src: url("./fonts/Sentient-Variable.woff2") format("woff2");
-  font-weight: 200 700;
-  font-display: swap;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Sentient";
-  src: url("./fonts/Sentient-VariableItalic.woff2") format("woff2");
-  font-weight: 200 700;
-  font-display: swap;
-  font-style: italic;
-}
+@import "./fonts/sentient.css";
 
 @custom-variant dark (&:is(.dark *));
 
