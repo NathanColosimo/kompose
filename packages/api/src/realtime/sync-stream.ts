@@ -1,4 +1,5 @@
 import { trace } from "@opentelemetry/api";
+import { AsyncIteratorClass } from "@orpc/server";
 import { type SyncEvent, syncEventSchema } from "./events";
 
 const RECONNECT_EVENT_AFTER_MS = 11 * 60 * 1000;
@@ -83,7 +84,7 @@ function createEventQueue() {
   };
 }
 
-export async function* createSyncEventStream({
+export async function createSyncEventStream({
   channel,
   createSubscriber,
   signal,
@@ -93,10 +94,8 @@ export async function* createSyncEventStream({
   createSubscriber: () => Subscriber;
   signal?: AbortSignal;
   userId: string;
-}): AsyncGenerator<SyncEvent, void, unknown> {
-  if (signal?.aborted) {
-    return;
-  }
+}): Promise<AsyncGenerator<SyncEvent, void, unknown>> {
+  signal?.throwIfAborted();
   const span = tracer.startSpan("sync.connection");
   span.setAttribute("userId", userId);
   span.setAttribute("channel", channel);
@@ -139,27 +138,38 @@ export async function* createSyncEventStream({
     clearTimeout(reconnectTimer);
     subscriber?.off("message", onMessage);
     subscriber?.off("close", dispose);
-    // Also cancels pending subscribe while the generator is awaiting acquisition.
+    // Also cancels a Redis subscribe command that has not settled.
     subscriber?.disconnect();
     span.setAttribute("messagesReceived", messagesReceived);
     span.end();
   };
+
+  const stream = new AsyncIteratorClass<SyncEvent, void>(
+    async () => {
+      const next = await queue.next();
+      if (!next.done && next.value.type === "reconnect") {
+        span.addEvent("sync.reconnect_triggered");
+        dispose();
+      }
+      return next;
+    },
+    () => Promise.resolve(dispose())
+  );
 
   try {
     subscriber = createSubscriber();
     subscriber.on("message", onMessage);
     subscriber.on("close", dispose);
     signal?.addEventListener("abort", dispose, { once: true });
-    if (signal?.aborted) {
-      return;
-    }
+    signal?.throwIfAborted();
     // A disconnect must settle acquisition even if the Redis command never does.
     const subscribed = await Promise.race([
       subscriber.subscribe(channel).then(() => true),
       ended.promise,
     ]);
     if (!subscribed || disposed) {
-      return;
+      signal?.throwIfAborted();
+      throw new Error("Redis subscription closed before acquisition");
     }
     span.addEvent("sync.subscribed");
     keepaliveTimer = setInterval(() => {
@@ -167,19 +177,11 @@ export async function* createSyncEventStream({
     }, KEEPALIVE_INTERVAL_MS);
     reconnectTimer = setTimeout(queue.reconnect, RECONNECT_EVENT_AFTER_MS);
 
-    while (true) {
-      // biome-ignore lint/performance/noAwaitInLoops: sequential async iterator
-      const next = await queue.next();
-      if (next.done) {
-        return;
-      }
-      yield next.value;
-      if (next.value.type === "reconnect") {
-        span.addEvent("sync.reconnect_triggered");
-        return;
-      }
-    }
-  } finally {
+    // oRPC can send headers and its initial SSE comment as soon as it gets an
+    // iterator, so acquisition must finish before returning it to the handler.
+    return stream;
+  } catch (error) {
     dispose();
+    throw error;
   }
 }

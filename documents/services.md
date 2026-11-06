@@ -231,7 +231,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 1. Client opens SSE connection via `sync.events` endpoint
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
-3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; subscriber auto-resubscription and reconnect retries are disabled. If that connection drops, the stream ends so the client reconnects and catches up instead of silently missing events
+3. `createUserSyncEventIterator` awaits subscription to the Redis channel `user:{userId}` before returning its event iterator. oRPC can send headers and its initial SSE comment as soon as a handler returns an iterator, so this acquisition barrier keeps client recovery refetches behind a live subscription. The iterator then yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; subscriber auto-resubscription and reconnect retries are disabled. If that connection drops, the stream ends so the client reconnects and catches up instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
@@ -243,14 +243,14 @@ Client note:
 - Abort and Redis close race pending `subscribe()` acquisition. Abort disconnects the subscriber immediately, even when the command has not settled; late command rejection is observed. Acquisition, listeners, timers, subscriber lifetime, and tracing cleanup share one scope.
 - Pending task invalidations and keepalives each occupy one queue slot; calendar invalidations coalesce by `(accountId, calendarId)`. At 256 pending distinct resources, overflow discards the backlog and ends with `reconnect`, allowing a broad catch-up instead of growing memory without limit.
 
-Regression tests use controlled iterators/clocks in `packages/state/src/realtime-sync-supervisor.test.ts` and a fake Redis subscriber in `packages/api/src/realtime/sync-stream.test.ts`. Run `bun test packages/state/src packages/api/src/realtime/sync-stream.test.ts` without Redis or production credentials.
+Regression tests use controlled iterators/clocks in `packages/state/src/realtime-sync-supervisor.test.ts` and a fake Redis subscriber with the real oRPC fetch/SSE transport in `packages/api/src/realtime/sync-stream.test.ts`. The transport test delays subscription and checks that no SSE headers or initial comment can reach the client before acquisition. Run `bun test packages/state/src packages/api/src/realtime/sync-stream.test.ts` without Redis or production credentials.
 
 ### Redis pub/sub functions
 
 | Function | Purpose |
 |----------|---------|
 | `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel. Best effort: a failure is logged as `SYNC_PUBLISH_ERROR` and never fails the caller |
-| `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
+| `createUserSyncEventIterator` | Resolves an `AsyncGenerator<SyncEvent>` after Redis subscription succeeds |
 
 ---
 
@@ -299,7 +299,7 @@ Top-level orchestrator. Depends on `GoogleCalendarWebhookService`, `GoogleCalend
 
 `refreshAll` processes accounts independently. Each account holds a transaction-scoped Postgres advisory lock, keyed by its internal account ID, before rereading the account, capability state, or subscriptions. Concurrent SSE connects therefore see committed replacements rather than racing on the same snapshot. Provider failures are logged per watch so successful watches and unsupported decisions still commit. Database failures roll back the account transaction; old channels are stopped only after commit.
 
-The Better Auth `databaseHooks.account.delete.before` hook in `packages/auth/src/index.ts` calls `stopAccountWatches` before the account and subscription rows cascade away. Cleanup takes the same account lock and persists `unlinking_until` intent for one minute before resolving a token and stopping all tracked channels. Later reconciles skip accounts with that intent. Cleanup has a ten-second budget, logs failures, and never fails unlink on a Google error. The state row cascades with the account. If deletion itself fails after cleanup, the marker expires so later reconciles can restore coverage.
+The Better Auth `databaseHooks.account.delete.before` hook in `packages/auth/src/index.ts` calls `stopAccountWatches` before the account and subscription rows cascade away. Cleanup must acquire the same account lock and commit `unlinking_until` intent for one minute before deletion can proceed. Coordination failures reject unlink; waiting for reconciliation is outside the best-effort timeout. That transaction also marks tracked channels inactive, since a remote stop may succeed even if its response is lost. Later reconciles skip accounts with unlink intent. Token resolution and remote channel stops then have a ten-second best-effort budget; Google errors are logged and do not fail unlink. The state row cascades with the account. If deletion itself fails after cleanup, the marker expires and the inactive rows cause the next reconcile to replace even fresh watches. Postgres regression tests in `packages/api/src/webhooks/webhook-service.test.ts` cover a lock held beyond ten seconds, a rejected intent write, and failed deletion after fresh channels stop.
 
 `handleGoogleNotification` accepts only active, unexpired channels and does not write `lastNotifiedAt` (the legacy column remains). It returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
 

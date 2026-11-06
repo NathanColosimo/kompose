@@ -33,7 +33,7 @@ export const publishToUser = Effect.fn("sync.publish")(
 export function createUserSyncEventIterator(
   userId: string,
   signal?: AbortSignal
-): AsyncGenerator<SyncEvent, void, unknown> {
+): Promise<AsyncGenerator<SyncEvent, void, unknown>> {
   return createSyncEventStream({
     channel: getUserSyncChannel(userId),
     createSubscriber,

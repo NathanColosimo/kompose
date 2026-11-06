@@ -7,10 +7,13 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { sql } from "drizzle-orm";
 import { Effect, Layer, ManagedRuntime } from "effect";
 
 // Uses the real services, Better Auth token lookup and Postgres advisory lock.
-// Only Google's HTTP API is replaced. Use a migrated, disposable DATABASE_URL.
+// Google's HTTP API and the final delete failure are injected.
+// Use a migrated, disposable DATABASE_URL.
 describe.skipIf(!process.env.DATABASE_URL)(
   "Google webhook reconciliation with Postgres",
   () => {
@@ -418,6 +421,100 @@ describe.skipIf(!process.env.DATABASE_URL)(
       expect(watchCalls).toHaveLength(2);
       expect(stops).toHaveLength(2);
       expect(await rows()).toEqual([]);
+    });
+
+    test("unlink waits beyond the remote cleanup budget for the account lock", async () => {
+      const started = new Promise<void>((resolve) => {
+        watchStarted = resolve;
+      });
+      watchGate = new Promise<void>((resolve) => {
+        releaseWatch = resolve;
+      });
+      const inFlight = reconcile();
+      await started;
+      const context = await modules.auth.$context;
+      let deleted = false;
+      const unlink = context.internalAdapter
+        .deleteAccount(accountId)
+        .then(() => {
+          deleted = true;
+        });
+      try {
+        // Exercise the real ten-second Effect timeout while Postgres holds the
+        // lock. Cleanup's private runtime does not expose a controllable clock.
+        await delay(10_100);
+        expect(deleted).toBe(false);
+      } finally {
+        releaseWatch?.();
+        await Promise.all([inFlight, unlink]);
+      }
+      expect(stops).toHaveLength(2);
+      expect(await rows()).toEqual([]);
+    }, 20_000);
+
+    test("a failed unlink intent write prevents Better Auth account deletion", async () => {
+      await reconcile();
+      await modules.db.execute(sql`
+        create function fail_unlink_intent() returns trigger language plpgsql as
+        $$ begin raise exception 'test unlink coordination failure'; end $$
+      `);
+      try {
+        await modules.db.execute(sql`
+          create trigger fail_unlink_intent before insert or update
+          on webhook_account_state for each row execute function fail_unlink_intent()
+        `);
+        const context = await modules.auth.$context;
+        await expect(
+          context.internalAdapter.deleteAccount(accountId)
+        ).rejects.toThrow();
+        expect(stops).toEqual([]);
+        expect((await rows()).every((row) => row.active)).toBe(true);
+        expect(
+          await modules.db
+            .select()
+            .from(modules.schema.account)
+            .where(modules.eq(modules.schema.account.id, accountId))
+        ).toHaveLength(1);
+      } finally {
+        await modules.db.execute(sql`
+          drop trigger if exists fail_unlink_intent on webhook_account_state
+        `);
+        await modules.db.execute(sql`drop function fail_unlink_intent()`);
+      }
+    });
+
+    test("fresh watches recover after stopping succeeds but account deletion fails", async () => {
+      await reconcile();
+      const original = await rows();
+      expect(original).toHaveLength(2);
+      expect(
+        original.every(
+          (row) => Date.parse(row.expiresAt ?? "") > Date.now() + 86_400_000
+        )
+      ).toBe(true);
+      const context = await modules.auth.$context;
+      const deletion = spyOn(context.adapter, "delete").mockRejectedValueOnce(
+        new Error("test account deletion failure")
+      );
+      try {
+        await expect(
+          context.internalAdapter.deleteAccount(accountId)
+        ).rejects.toThrow("test account deletion failure");
+      } finally {
+        deletion.mockRestore();
+      }
+      expect(stops.sort()).toEqual(original.map((row) => row.id).sort());
+      expect((await rows()).every((row) => !row.active)).toBe(true);
+      await modules.db
+        .update(modules.state)
+        .set({ unlinkingUntil: new Date(Date.now() - 1).toISOString() })
+        .where(modules.eq(modules.state.accountId, accountId));
+      await reconcile();
+      expect(watchCalls).toHaveLength(4);
+      expect((await rows()).every((row) => row.active)).toBe(true);
+      expect(
+        (await rows()).some((row) => original.some((old) => old.id === row.id))
+      ).toBe(false);
     });
 
     test("expired unlink intent allows coverage to recover after a failed delete", async () => {

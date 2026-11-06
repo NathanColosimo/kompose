@@ -44,49 +44,56 @@ export function stopAccountWatches(
               target: webhookAccountStateTable.accountId,
             });
           return yield* db
-            .select()
-            .from(webhookSubscriptionTable)
-            .where(eq(webhookSubscriptionTable.accountId, account.id));
+            .update(webhookSubscriptionTable)
+            // A stop can succeed remotely even if its response times out. If
+            // deletion fails, none of these channels can be assumed live.
+            .set({ active: false })
+            .where(eq(webhookSubscriptionTable.accountId, account.id))
+            .returning();
         })
       );
       if (subscriptions.length === 0) {
         return;
       }
-      const token = yield* Effect.tryPromise({
-        catch: (cause) => new WebhookCleanupTokenError({ cause }),
-        try: getAccessToken,
-      });
-      if (!token) {
-        return yield* new WebhookCleanupTokenError({
-          cause: new Error("No Google access token available"),
+      yield* Effect.gen(function* () {
+        const token = yield* Effect.tryPromise({
+          catch: (cause) => new WebhookCleanupTokenError({ cause }),
+          try: getAccessToken,
         });
-      }
-      const client = makeGoogleCalendarService(token);
-      yield* Effect.forEach(
-        subscriptions,
-        (sub) =>
-          client
-            .stopWatch({ channelId: sub.id, resourceId: sub.config.resourceId })
-            .pipe(
-              Effect.catch((error) =>
-                Effect.logWarning("GOOGLE_UNLINK_CHANNEL_STOP_FAILED", {
-                  accountId: account.id,
-                  error,
-                  subscriptionId: sub.id,
-                })
-              )
-            ),
-        { concurrency: 5, discard: true }
+        if (!token) {
+          return yield* new WebhookCleanupTokenError({
+            cause: new Error("No Google access token available"),
+          });
+        }
+        const client = makeGoogleCalendarService(token);
+        yield* Effect.forEach(
+          subscriptions,
+          (sub) =>
+            client
+              .stopWatch({
+                channelId: sub.id,
+                resourceId: sub.config.resourceId,
+              })
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning("GOOGLE_UNLINK_CHANNEL_STOP_FAILED", {
+                    accountId: account.id,
+                    error,
+                    subscriptionId: sub.id,
+                  })
+                )
+              ),
+          { concurrency: 5, discard: true }
+        );
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.catch((error) =>
+          Effect.logWarning("GOOGLE_UNLINK_WEBHOOK_CLEANUP_FAILED", {
+            accountId: account.id,
+            error,
+          })
+        )
       );
-    }).pipe(
-      Effect.withSpan("Auth.stopAccountWatches"),
-      Effect.timeout("10 seconds"),
-      Effect.catch((error) =>
-        Effect.logWarning("GOOGLE_UNLINK_WEBHOOK_CLEANUP_FAILED", {
-          accountId: account.id,
-          error,
-        })
-      )
-    )
+    }).pipe(Effect.withSpan("Auth.stopAccountWatches"))
   );
 }
