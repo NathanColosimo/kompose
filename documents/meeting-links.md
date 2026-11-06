@@ -12,24 +12,18 @@ Primary entry points:
 - URLs found in `event.location`
 - URLs found in `event.description`
 
-Provider detection is based on the hostname:
+Hosts come from the `MEETING_RULES` table in `meeting.ts`. A host starting with `.` matches its subdomains:
 - Google Meet: `meet.google.com`
-- Zoom: `*.zoom.us`, `zoom.us`, `zoom.com`
+- Zoom: `zoom.us`, `zoom.com`, `.zoom.us`
 - Microsoft Teams: `teams.microsoft.com`
-- Webex: `*.webex.com`, `webex.com`
-- Otherwise: `other`
+- Webex: `webex.com`, `.webex.com`
+- Any other URL: "Meeting link"
 
-Selection priority (first available wins):
-1. Google Meet
-2. Zoom
-3. Microsoft Teams
-4. Webex
-5. Other
+Selection priority: rule order (the list above), then unrecognized links. A new provider is one more rule; the rules move into plugin manifests when a second source of rules (say, a Zoom plugin) shows up.
 
 Return shape:
 - `url`
-- `provider`
-- `label` (human-readable provider name)
+- `label` (the rule's label, e.g. "Zoom")
 
 ## Creating Google Meet links
 `buildGoogleMeetConferenceData()` returns a `conferenceData.createRequest` payload for Google Meet, using a `uuidv7` request id.

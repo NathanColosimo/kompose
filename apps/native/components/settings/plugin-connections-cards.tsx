@@ -1,4 +1,4 @@
-import type { PluginManifest } from "@kompose/plugins";
+import type { OAuthPlugin } from "@kompose/plugins";
 import {
   connectLabel,
   initials,
@@ -27,7 +27,7 @@ export function PluginConnectionsCards() {
     null
   );
 
-  const connect = async (plugin: PluginManifest) => {
+  const connect = async (plugin: OAuthPlugin) => {
     setConnectingPluginId(plugin.id);
     try {
       await authClient.linkSocial(

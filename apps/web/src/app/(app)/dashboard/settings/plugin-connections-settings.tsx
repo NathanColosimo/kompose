@@ -2,7 +2,7 @@
 
 import type { PluginConnection } from "@kompose/api/routers/plugins/contract";
 import { clientEnv } from "@kompose/env/client";
-import type { PluginManifest } from "@kompose/plugins";
+import type { OAuthPlugin } from "@kompose/plugins";
 import {
   connectLabel,
   initials,
@@ -39,7 +39,7 @@ export function PluginConnectionsSettings() {
     return () => window.removeEventListener("focus", refresh);
   });
 
-  const connect = async (plugin: PluginManifest) => {
+  const connect = async (plugin: OAuthPlugin) => {
     if (isDesktop) {
       window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
       return;

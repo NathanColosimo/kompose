@@ -1,5 +1,5 @@
 import type { PluginConnection } from "@kompose/api/routers/plugins/contract";
-import { type PluginManifest, plugins } from "@kompose/plugins";
+import { isOAuthPlugin, type OAuthPlugin, plugins } from "@kompose/plugins";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
 import { useStateConfig } from "../config";
@@ -7,12 +7,12 @@ import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "../google-calendar-query-keys";
 
 export const PLUGIN_CONNECTIONS_QUERY_KEY = ["plugin-connections"] as const;
 
-/** One Settings card: a plugin and the accounts connected to it. */
+/** One Settings card: an OAuth plugin and the accounts connected to it. */
 export interface PluginCard {
   connections: PluginConnection[];
   /** The plugin allows one account and has it, so Connect is disabled. */
   isFull: boolean;
-  plugin: PluginManifest;
+  plugin: OAuthPlugin;
 }
 
 /**
@@ -28,7 +28,7 @@ export function usePluginConnections() {
     queryKey: PLUGIN_CONNECTIONS_QUERY_KEY,
   });
 
-  const cards: PluginCard[] = plugins.map((plugin) => {
+  const cards: PluginCard[] = plugins.filter(isOAuthPlugin).map((plugin) => {
     const connections = (connectionsQuery.data ?? []).filter(
       (connection) => connection.pluginId === plugin.id
     );
