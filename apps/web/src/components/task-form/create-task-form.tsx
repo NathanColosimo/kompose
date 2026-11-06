@@ -4,7 +4,7 @@ import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useReducer } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
@@ -33,6 +33,7 @@ import {
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
+import { createTaskDraftReducer } from "./create-task-draft";
 import { RecurrenceEditor } from "./recurrence-editor";
 
 const EMPTY_TAG_IDS: string[] = [];
@@ -64,37 +65,37 @@ export function CreateTaskForm({
   defaultTagIds?: string[];
   defaultStartDateString?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [draftId, dispatchDraft] = useReducer(createTaskDraftReducer, null);
+  const open = draftId !== null;
 
   const { createTask } = useTasks();
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    reset,
-    setValue,
-    formState: { isSubmitting },
-  } = useForm<ClientTaskInsertDecoded>({
-    defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
-  });
+  const { register, handleSubmit, control, reset, setValue } =
+    useForm<ClientTaskInsertDecoded>({
+      defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
+    });
 
   const startDate = useWatch({ control, name: "startDate" });
 
   const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
+    dispatchDraft({ type: nextOpen ? "open" : "close" });
     if (nextOpen) {
       reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
     }
   };
 
   const onSubmit = useCallback(
-    async (data: ClientTaskInsertDecoded) => {
-      await createTask.mutateAsync(data);
-      reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
-      setOpen(false);
+    (data: ClientTaskInsertDecoded) => {
+      if (!draftId || createTask.isPending) {
+        return;
+      }
+      createTask.mutate(data, {
+        onSuccess: () => {
+          dispatchDraft({ type: "created", draftId });
+        },
+      });
     },
-    [createTask, defaultStartDateString, defaultTagIds, reset]
+    [createTask, draftId]
   );
 
   useHotkeys(
@@ -103,7 +104,7 @@ export function CreateTaskForm({
       e.preventDefault();
       handleSubmit(onSubmit)();
     },
-    { enabled: open, enableOnFormTags: true },
+    { enabled: open && !createTask.isPending, enableOnFormTags: true },
     [handleSubmit, onSubmit, open]
   );
 
@@ -331,8 +332,8 @@ export function CreateTaskForm({
             </div>
           </div>
           <div className="flex justify-end">
-            <Button disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Creating..." : "Create"}
+            <Button disabled={createTask.isPending} type="submit">
+              {createTask.isPending ? "Creating..." : "Create"}
             </Button>
           </div>
         </form>

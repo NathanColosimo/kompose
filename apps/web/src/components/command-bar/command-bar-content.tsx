@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useReducer, useState } from "react";
 import { Command, CommandInput, CommandList } from "@/components/ui/command";
 import { CommandBarCreateTask } from "./command-bar-create-task";
+import { commandBarInputReducer } from "./command-bar-input";
 import { CommandBarRoot } from "./command-bar-root";
 import { CommandBarSearchTasks } from "./command-bar-search-tasks";
 
@@ -37,7 +38,14 @@ export function CommandBarContent({
   className,
 }: CommandBarContentProps) {
   const [view, setView] = useState<CommandBarView>("root");
-  const [search, setSearch] = useState("");
+  const [input, dispatchInput] = useReducer(commandBarInputReducer, {
+    revision: 0,
+    text: "",
+  });
+  const search = input.text;
+  const setSearch = useCallback((text: string) => {
+    dispatchInput({ text, type: "change" });
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -68,14 +76,19 @@ export function CommandBarContent({
         activateCommandItem(e, false);
       }
     },
-    [onRequestClose, selectionMode, view]
+    [onRequestClose, selectionMode, setSearch, view]
   );
 
-  const navigateToView = useCallback((targetView: CommandBarView) => {
-    setView(targetView);
-    setSearch("");
+  const navigateToView = useCallback(
+    (targetView: CommandBarView) => {
+      setView(targetView);
+      setSearch("");
+    },
+    [setSearch]
+  );
+  const handleCreated = useCallback((revision: number) => {
+    dispatchInput({ revision, type: "created" });
   }, []);
-  const handleCreated = useCallback(() => setSearch(""), []);
 
   let placeholder = "Type a command or search...";
   if (view === "search-tasks") {
@@ -107,9 +120,9 @@ export function CommandBarContent({
         )}
         {view === "create-task" && (
           <CommandBarCreateTask
+            input={input}
             onCreated={handleCreated}
             onUpdateSearch={setSearch}
-            search={search}
           />
         )}
       </CommandList>

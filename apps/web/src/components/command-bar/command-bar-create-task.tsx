@@ -11,6 +11,7 @@ import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
+import { useMutation } from "@tanstack/react-query";
 import {
   CalendarIcon,
   CheckIcon,
@@ -27,7 +28,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
 } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
@@ -40,6 +40,8 @@ import {
 import { formatDuration, formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { cn } from "@/lib/utils";
+
+import type { CommandBarInput } from "./command-bar-input";
 
 const TAG_QUERY_PATTERN = /#([^#]*)$/;
 const URL_PATTERN = /https?:\/\/\S+/g;
@@ -169,14 +171,14 @@ function smartFieldClassName(parse: MagicParse) {
 }
 
 interface CommandBarCreateTaskProps {
-  onCreated: () => void;
+  input: CommandBarInput;
+  onCreated: (revision: number) => void;
   onUpdateSearch: (next: string) => void;
-  search: string;
 }
 
 /** See documents/command-bar.md for parsing, link enrichment, and submit behavior. */
 export function CommandBarCreateTask({
-  search,
+  input,
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
@@ -188,11 +190,11 @@ export function CommandBarCreateTask({
     () => tags.map((tag) => ({ id: tag.id, name: tag.name })),
     [tags]
   );
+  const search = input.text;
   const text = search.trim();
   const magic = useMagicTask(text, tagOptions);
   const parsed = draft(text, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
-  const [resolving, startResolving] = useTransition();
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
@@ -200,6 +202,8 @@ export function CommandBarCreateTask({
   const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
   const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
   const lastParsedUrls = useRef<string[]>([]);
+  const linkMetadata = useRef(linkMetaMap);
+  linkMetadata.current = linkMetaMap;
 
   const parseLinkMutate = parseLink.mutate;
 
@@ -284,22 +288,23 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  const createFrom = (input: TaskDraft) => {
-    const taskData = buildTaskDataFromParsed(input, linkMetaMap, firstLinkMeta);
-    createTask.mutate(taskData, { onSuccess: () => onCreated() });
-  };
+  const submission = useMutation({
+    mutationFn: async (submitted: CommandBarInput) => {
+      const submittedText = submitted.text.trim();
+      const resolved = draft(submittedText, await magic.resolve(submittedText));
+      const metadata = linkMetadata.current;
+      await createTask.mutateAsync(
+        buildTaskDataFromParsed(resolved, metadata, metadata[resolved.links[0]])
+      );
+    },
+  });
 
   const handleCreate = () => {
-    if (!isValid || createTask.isPending || resolving) {
+    if (!isValid || submission.isPending) {
       return;
     }
-    if (magic.parse.status === "done") {
-      createFrom(parsed);
-      return;
-    }
-    // Enter can beat the parse (or the model download); wait for it.
-    startResolving(async () => {
-      createFrom(draft(text, await magic.resolve()));
+    submission.mutate(input, {
+      onSuccess: (_data, submitted) => onCreated(submitted.revision),
     });
   };
 
@@ -343,7 +348,11 @@ export function CommandBarCreateTask({
 
       {isValid && (
         <CommandGroup heading="Create Task">
-          <CommandItem onSelect={handleCreate} value={createItemValue}>
+          <CommandItem
+            disabled={submission.isPending}
+            onSelect={handleCreate}
+            value={createItemValue}
+          >
             <CheckIcon className="text-muted-foreground" />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="truncate font-medium">{createItemLabel}</span>

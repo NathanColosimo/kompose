@@ -9,6 +9,8 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving.
 - Uses React Hook Form; values stay in sync while open.
 - Updates task via `useTasks().updateTask`.
+- The editor has one active phase: editing, delete confirmation, or recurrence scope selection. Confirmations cannot overlap. Scope selection retains its submitted values and chosen scope across extra Save/Delete attempts; save/delete shortcuts are inactive until Apply or Cancel.
+- Command-bar open requests notify only the matching task and surface (calendar or sidebar).
 
 ## Usage
 ```tsx
@@ -42,3 +44,8 @@ See [hotkeys.md](./hotkeys.md#contextual-hotkeys) for form save and delete short
 ## Notes
 - Calendar drag/resize still works; edit popover wraps the event element.
 - When `TaskEditForm` is used inside `EventCreationPopover` (create mode), `submitRef` lets the creation popover header submit the form; the form hides its own action buttons.
+
+## Sidebar creation dialog
+
+- Each opening has its own draft identity. A successful submission closes only that opening; dismissing and reopening preserves the new draft when an earlier request finishes.
+- Creation stays busy for the mutation's lifetime. Button, form submit, and Cmd/Ctrl+Enter all reject additional submissions while it is pending.

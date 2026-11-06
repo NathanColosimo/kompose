@@ -16,7 +16,13 @@ import {
   toggleSidebarRightAtom,
 } from "@/state/sidebar";
 
-const hotkeyOptions = { enableOnFormTags: false } as const;
+const hotkeyOptions = {
+  enableOnFormTags: false,
+  ignoreEventWhen: () =>
+    document.querySelector(
+      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+    ) !== null,
+} as const;
 
 /**
  * Calendar shortcuts; Cmd+K also works in form fields.

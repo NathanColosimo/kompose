@@ -4,7 +4,7 @@ Keyboard shortcuts for Kompose calendar. Implemented using `react-hotkeys-hook`.
 
 ## Global Hotkeys
 
-These hotkeys work anywhere in the app (except when typing in input fields, unless noted).
+These hotkeys work anywhere in the app (except when typing in input fields, unless noted). Calendar navigation and sidebar shortcuts pause while any dialog or popover is open, including when focus is on a button or recurrence scope option. Cmd+K remains available.
 
 | Key       | Action                                 |
 | --------- | -------------------------------------- |
@@ -31,14 +31,15 @@ See [command-bar.md](./command-bar.md#keyboard-navigation) for navigation within
 
 ### Creation forms
 
-**Cmd+Enter** / **Ctrl+Enter** saves from the sidebar `CreateTaskForm` dialog and the calendar `EventCreationPopover`, including when focus is inside a form field.
+**Cmd+Enter** / **Ctrl+Enter** saves from the sidebar `CreateTaskForm` dialog and the calendar `EventCreationPopover`, including when focus is inside a form field. The sidebar creation shortcut is disabled while its create mutation is pending.
 
 ### Edit Popover (Task or Event)
 
-When an edit popover is open:
+When an edit popover is open and editing (with no delete confirmation or recurrence scope dialog):
 
 | Key                    | Action                                  |
 | ---------------------- | --------------------------------------- |
+| `⌘Enter` / `Ctrl+Enter` | Save task changes (may open recurrence scope selection) |
 | `Backspace` / `Delete` | Delete item (shows confirmation dialog) |
 
 > **Note:** Delete hotkey is disabled when focus is on text inputs to allow normal editing.
