@@ -1,7 +1,7 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
 import type { LinkMeta } from "@kompose/api/routers/task/contract";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
-import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
   getLinkDurationMinutes,
@@ -9,6 +9,7 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
+import { applyLinkMetadata } from "@kompose/state/link-metadata";
 import {
   buildTaskDraft,
   type TaskDraft,
@@ -474,7 +475,17 @@ function TaskEditorSession({
   );
   const mode = session.kind;
   const { tagsQuery } = useTags();
-  const { parseLink } = useTasks();
+  const linkQueries = useLinkMetadata(draft.links);
+  React.useEffect(() => {
+    for (const { url, data } of linkQueries) {
+      if (!data) {
+        continue;
+      }
+      setDraft((current) =>
+        applyLinkMetadata(current, url, data, current.linkEditedFields)
+      );
+    }
+  }, [linkQueries]);
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
@@ -595,6 +606,10 @@ function TaskEditorSession({
               setDraft((current) => ({
                 ...current,
                 durationMinutes: nextMinutes,
+                linkEditedFields: {
+                  durationMinutes: true,
+                  title: current.linkEditedFields?.title ?? false,
+                },
               }));
             }}
             options={durationOptions}
@@ -736,7 +751,15 @@ function TaskEditorSession({
         <Input
           containerStyle={{ flex: 1 }}
           onChangeText={(value) =>
-            setDraft((current) => ({ ...current, title: value }))
+            setDraft((current) => ({
+              ...current,
+              linkEditedFields: {
+                durationMinutes:
+                  current.linkEditedFields?.durationMinutes ?? false,
+                title: true,
+              },
+              title: value,
+            }))
           }
           pill
           placeholder="Title"
@@ -765,12 +788,10 @@ function TaskEditorSession({
       />
 
       <NativeLinkListEditor
-        isParsing={parseLink.isPending}
+        isParsing={linkQueries.some((query) => query.isPending)}
         linkInput={draft.linkInput}
         links={draft.links}
         onAddLink={(url) => {
-          const isFirstLink = draft.links.length === 0;
-
           // Insert placeholder immediately so the link survives a quick save
           setDraft((current) => ({
             ...current,
@@ -784,28 +805,6 @@ function TaskEditorSession({
               },
             ]),
           }));
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              setDraft((current) => {
-                const next = {
-                  ...current,
-                  links: dedupeLinks(
-                    current.links.map((l) => (l.url === url ? meta : l))
-                  ),
-                };
-                if (isFirstLink) {
-                  if (meta.title && !current.title.trim()) {
-                    next.title = meta.title;
-                  }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
-                  }
-                }
-                return next;
-              });
-            },
-          });
         }}
         onLinkInputChange={(value) =>
           setDraft((current) => ({ ...current, linkInput: value }))

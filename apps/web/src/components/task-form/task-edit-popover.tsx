@@ -9,6 +9,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -17,6 +18,10 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
+import {
+  applyLinkMetadata,
+  type LinkEditedFields,
+} from "@kompose/state/link-metadata";
 import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
@@ -36,9 +41,11 @@ import Image from "next/image";
 import {
   type ReactElement,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -304,8 +311,7 @@ export function TaskEditForm({
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
 }) {
   const showActionButtons = !submitRef;
-  const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
-    useTasks();
+  const { createTask, updateTask, deleteTask, tasksQuery } = useTasks();
   const [phase, setPhase] = useReducer(taskEditorPhaseReducer, {
     type: "editing",
   });
@@ -383,6 +389,42 @@ export function TaskEditForm({
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const editedLinkFields = useRef<LinkEditedFields>({
+    durationMinutes:
+      mode === "edit" || initialCreateValues?.durationMinutes !== undefined,
+    title: false,
+  });
+  const linkQueries = useLinkMetadata(links, open);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    for (const { url, data } of linkQueries) {
+      if (!data) {
+        continue;
+      }
+      const current = getValues();
+      const next = applyLinkMetadata(
+        current,
+        url,
+        data,
+        editedLinkFields.current
+      );
+      if (next === current) {
+        continue;
+      }
+      setValue("links", next.links, { shouldDirty: true });
+      if (next.title !== current.title) {
+        setValue("title", next.title, { shouldDirty: true });
+      }
+      if (next.durationMinutes !== current.durationMinutes) {
+        setValue("durationMinutes", next.durationMinutes, {
+          shouldDirty: true,
+        });
+      }
+    }
+  }, [getValues, linkQueries, open, setValue]);
 
   const commitUpdate = useCallback(
     (values: TaskFormValues, scope: UpdateScope) => {
@@ -504,6 +546,7 @@ export function TaskEditForm({
 
   const applySharedFields = useCallback(
     (fields: CalendarCreateSharedFields) => {
+      editedLinkFields.current.durationMinutes = true;
       setValue("title", fields.title, { shouldDirty: true });
       setValue("description", fields.description, { shouldDirty: true });
       setValue(
@@ -545,9 +588,10 @@ export function TaskEditForm({
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
       <Input
-        onChange={(e) =>
-          setValue("title", e.target.value, { shouldDirty: true })
-        }
+        onChange={(e) => {
+          editedLinkFields.current.title = true;
+          setValue("title", e.target.value, { shouldDirty: true });
+        }}
         placeholder="Task title"
         value={watchedValues.title}
       />
@@ -650,7 +694,10 @@ export function TaskEditForm({
           name="durationMinutes"
           render={({ field }) => (
             <DurationPicker
-              onChange={(minutes) => field.onChange(minutes)}
+              onChange={(minutes) => {
+                editedLinkFields.current.durationMinutes = true;
+                field.onChange(minutes);
+              }}
               value={field.value}
             />
           )}
@@ -728,7 +775,7 @@ export function TaskEditForm({
       <Separator />
 
       <LinkListEditor
-        isParsing={parseLink.isPending}
+        isParsing={linkQueries.some((query) => query.isPending)}
         links={links}
         onAddLink={(url) => {
           // Insert an unknown placeholder immediately so the link
@@ -738,36 +785,9 @@ export function TaskEditForm({
             provider: "unknown",
             url,
           };
-          const currentLinks =
-            (getValues("links") as unknown as LinkMeta[]) ?? [];
-          const isFirstLink = currentLinks.length === 0;
+          const currentLinks = getValues("links");
           setValue("links", dedupeLinks([...currentLinks, placeholder]), {
             shouldDirty: true,
-          });
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              const latest =
-                (getValues("links") as unknown as LinkMeta[]) ?? [];
-              setValue(
-                "links",
-                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
-                { shouldDirty: true }
-              );
-
-              if (isFirstLink) {
-                if (meta.title && !getValues("title")?.trim()) {
-                  setValue("title", meta.title, { shouldDirty: true });
-                }
-                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                  setValue(
-                    "durationMinutes",
-                    Math.ceil(meta.durationSeconds / 60),
-                    { shouldDirty: true }
-                  );
-                }
-              }
-            },
           });
         }}
         onRemoveLink={(index) => {

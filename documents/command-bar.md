@@ -48,7 +48,7 @@ fields updates as you type. Typing `#` suggests your tags.
 
 ### URL detection
 
-The model returns the input's URLs as `links: string[]`. On task creation, `tasks.parseLink` is called for each URL to build the `links: LinkMeta[]` array. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
+The model returns the input's URLs as `links: string[]`. After 500ms without URL edits, each URL gets a shared metadata query (`["link-meta", url]`) to build the `links: LinkMeta[]` array. Pending, error, and metadata state come from these independent queries, so concurrent URLs can finish in any order. Failed URLs can be retried by removing and re-adding them. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
 
 ## Keyboard Navigation
 

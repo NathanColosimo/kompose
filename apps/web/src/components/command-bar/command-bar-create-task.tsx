@@ -5,6 +5,7 @@ import type {
   ClientTaskInsertDecoded,
   LinkMeta,
 } from "@kompose/api/routers/task/contract";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
@@ -21,14 +22,7 @@ import {
   PlayCircleIcon,
   RepeatIcon,
 } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
@@ -182,7 +176,7 @@ export function CommandBarCreateTask({
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
-  const { createTask, parseLink } = useTasks();
+  const { createTask } = useTasks();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
@@ -199,59 +193,28 @@ export function CommandBarCreateTask({
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
 
-  const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
-  const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
-  const lastParsedUrls = useRef<string[]>([]);
-  const linkMetadata = useRef(linkMetaMap);
-  linkMetadata.current = linkMetaMap;
-
-  const parseLinkMutate = parseLink.mutate;
-
-  const dispatchParses = useCallback(
-    (urls: string[]) => {
-      const previous = lastParsedUrls.current;
-      const previousUrls = new Set(previous);
-      const newUrls = urls.filter((url) => !previousUrls.has(url));
-      lastParsedUrls.current = urls;
-
-      for (const url of newUrls) {
-        setPendingUrls((prev) => new Set([...prev, url]));
-        parseLinkMutate(url, {
-          onError: () => {
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-          onSuccess: (meta) => {
-            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-        });
-      }
-
-      if (urls.length === 0 && previous.length > 0) {
-        lastParsedUrls.current = [];
-        setLinkMetaMap({});
-        setPendingUrls(new Set());
-      }
-    },
-    [parseLinkMutate]
-  );
+  const urlsKey = parsed.links.join("\n");
+  const [debouncedUrlsKey, setDebouncedUrlsKey] = useState("");
 
   // Wait for 500ms idle so partially typed URLs do not trigger backend calls.
   useEffect(() => {
-    const urls = parsed.links;
-    const timer = setTimeout(() => {
-      dispatchParses(urls);
-    }, 500);
+    const timer = setTimeout(() => setDebouncedUrlsKey(urlsKey), 500);
     return () => clearTimeout(timer);
-  }, [parsed.links, dispatchParses]);
+  }, [urlsKey]);
+
+  const debouncedUrls = debouncedUrlsKey.split("\n");
+  const linkQueries = useLinkMetadata(
+    parsed.links.filter((url) => debouncedUrls.includes(url))
+  );
+  const linkMetaMap: Record<string, LinkMeta> = {};
+  for (const query of linkQueries) {
+    if (query.data) {
+      linkMetaMap[query.url] = query.data;
+    }
+  }
+  // Submission reads metadata after awaiting the parse, so it needs the latest map.
+  const linkMetadata = useRef(linkMetaMap);
+  linkMetadata.current = linkMetaMap;
 
   const firstLinkMeta =
     parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
@@ -399,7 +362,9 @@ export function CommandBarCreateTask({
                   const meta = linkMetaMap[url];
                   return (
                     <PreviewBadge key={url}>
-                      {pendingUrls.has(url) ? (
+                      {linkQueries.some(
+                        (query) => query.url === url && query.isPending
+                      ) ? (
                         <Loader2Icon className="size-3.5 animate-spin" />
                       ) : (
                         <Link2Icon className="size-3.5" />

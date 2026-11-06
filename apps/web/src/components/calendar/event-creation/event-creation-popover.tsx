@@ -228,7 +228,7 @@ export function EventCreationPopover() {
               initialValues={initialTaskValues}
               mode="create"
               onClose={handleCancel}
-              open={state.showPopover}
+              open={state.showPopover && mode === "task"}
               submitRef={taskSubmitRef}
             />
           </TabsContent>

@@ -27,6 +27,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - `recurrence`
 - `links` (array of `LinkMeta` objects)
 - `linkInput` (current add-link input value)
+- `linkEditedFields` (optional draft-only title/duration provenance; never sent to the server)
 
 ## Editor lifecycle
 
@@ -49,7 +50,7 @@ Only `saveScope` retains a submitted draft while waiting for confirmation.
 - Title row with completion checkbox (edit mode can toggle status).
 - Tags (`TaskTagPicker`).
 - Description.
-- Links: pressable cards with remove buttons and an "Add link" input that accepts URLs on blur. Adding a URL inserts a placeholder immediately; `tasks.parseLink` upgrades it when metadata arrives. The first link fills an empty title and replaces duration when duration metadata is available.
+- Links: pressable cards with remove buttons and an "Add link" input that accepts URLs on blur. Adding a URL inserts a placeholder immediately; a shared per-URL query upgrades it when metadata arrives. Only the current first link may fill an untouched, empty title or an unset duration. Existing task durations and user edits are preserved. Closed sheets stop observing metadata; a response for a removed link or a previous draft cannot auto-fill the current draft.
 
 ## Header/footer actions
 

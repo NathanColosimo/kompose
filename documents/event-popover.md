@@ -47,7 +47,7 @@ Used for click-and-drag creation on the calendar.
 - The creation popover shows `Event` / `Task` tabs alongside `Cancel` / `Save` buttons in a single header row.
 - `Event` is the default on the first open.
 - After that, the popover reopens on whichever create type the user last selected.
-- The `Task` tab reuses the full inline task form, including due date, recurrence, links, and tags.
+- The `Task` tab reuses the full inline task form, including due date, recurrence, links, and tags. Link metadata is observed only while this tab is active; late responses cannot auto-fill the hidden task form. The selected/transferred duration is preserved.
 - Switching tabs preserves:
   - title (`summary` <-> `title`)
   - description

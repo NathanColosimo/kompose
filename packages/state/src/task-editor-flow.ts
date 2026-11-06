@@ -3,6 +3,7 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import type { LinkEditedFields } from "./link-metadata";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
@@ -20,6 +21,8 @@ export type TaskDraft = Pick<
   | "links"
 > & {
   description: string;
+  /** Fields the user set, which link metadata must not overwrite. */
+  linkEditedFields?: LinkEditedFields;
   /** Current text in the link input field (not yet added to links array). */
   linkInput: string;
   tagIds: string[];
@@ -50,6 +53,7 @@ export function buildTaskDraft(task: TaskSelectDecoded): TaskDraft {
     description: task.description ?? "",
     dueDate: task.dueDate,
     durationMinutes: task.durationMinutes,
+    linkEditedFields: { durationMinutes: true, title: false },
     linkInput: "",
     links: task.links ?? [],
     recurrence: task.recurrence ?? null,

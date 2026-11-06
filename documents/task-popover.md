@@ -32,7 +32,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 4. **Start date / time / duration** — 3-column grid row (calendar scheduling).
 5. **Due date / recurrence** — 2-column grid row.
 6. Separator
-7. **Links** — multi-link UI with `LinkMetaPreview` cards and "Add link" input. Title and duration auto-fill from first link metadata.
+7. **Links** — multi-link UI with `LinkMetaPreview` cards and "Add link" input. Per-URL queries enrich placeholders. Only the current first link may auto-fill an untouched empty title or a duration that was not explicitly set. Existing task durations, calendar-selected durations, and user edits are preserved.
 8. **Tags** — `TagPicker`, no label.
 9. Separator
 10. **Action row** (edit mode): `[Delete] ... [Cancel] [Save]` in a single row. Delete opens a confirmation dialog with scope options for recurring tasks.
