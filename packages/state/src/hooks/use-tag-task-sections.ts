@@ -7,8 +7,10 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "../atoms/current-date";
-import { isOverdueTask } from "../task-search-routing";
-import { isNonRecurring } from "./use-task-sections";
+import {
+  deriveTaskPresentation,
+  type TaskPresentationContext,
+} from "../task-presentation";
 import { useTasks } from "./use-tasks";
 
 const isTagged = (task: TaskSelectDecoded, tagId: string): boolean =>
@@ -65,63 +67,82 @@ const compareNullablePlainDate = (
   return Temporal.PlainDate.compare(a, b);
 };
 
+export function getTagTaskSections(
+  tasks: readonly TaskSelectDecoded[],
+  tagId: string | null,
+  context: TaskPresentationContext
+) {
+  const overdue: {
+    at: Temporal.ZonedDateTime | null;
+    task: TaskSelectDecoded;
+  }[] = [];
+  const todoTasks: TaskSelectDecoded[] = [];
+  const doneTasks: TaskSelectDecoded[] = [];
+  if (!tagId) {
+    return { doneTasks, overdueTasks: [], todoTasks };
+  }
+
+  // Tags show all dates, so overdue membership is always evaluated for today.
+  const todayContext = { ...context, targetDate: context.today };
+  for (const task of tasks) {
+    if (task.seriesMasterId !== null || !isTagged(task, tagId)) {
+      continue;
+    }
+    const { section } = deriveTaskPresentation(task, todayContext);
+    if (task.status === "done") {
+      doneTasks.push(task);
+    } else if (section === "overdue") {
+      overdue.push({ at: getOverdueAt(task, context.timeZone), task });
+    } else {
+      todoTasks.push(task);
+    }
+  }
+
+  overdue.sort((a, b) => {
+    if (a.at && b.at) {
+      return Temporal.ZonedDateTime.compare(a.at, b.at);
+    }
+    if (a.at) {
+      return -1;
+    }
+    if (b.at) {
+      return 1;
+    }
+    return 0;
+  });
+  todoTasks.sort((a, b) => {
+    const dueCompare = compareNullablePlainDate(a.dueDate, b.dueDate);
+    if (dueCompare !== 0) {
+      return dueCompare;
+    }
+    const startCompare = compareNullablePlainDate(a.startDate, b.startDate);
+    if (startCompare !== 0) {
+      return startCompare;
+    }
+    return Temporal.Instant.compare(b.updatedAt, a.updatedAt);
+  });
+  doneTasks.sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
+
+  return {
+    doneTasks,
+    overdueTasks: overdue.map(({ task }) => task),
+    todoTasks,
+  };
+}
+
 export function useTagTaskSections(tagId: string | null) {
   const { tasksQuery } = useTasks();
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
   const nowZdt = useAtomValue(nowZonedDateTimeAtom);
 
-  const { overdueTasks, todoTasks, doneTasks } = useMemo(() => {
-    const tasks = tasksQuery.data ?? [];
-    if (!tagId || tasks.length === 0) {
-      return { doneTasks: [], overdueTasks: [], todoTasks: [] };
-    }
-
-    const taggedTasks = tasks.filter(
-      (task) => isNonRecurring(task) && isTagged(task, tagId)
-    );
-
-    const overdue = taggedTasks
-      .filter((task) => isOverdueTask(task, today, nowZdt, timeZone))
-      .sort((a, b) => {
-        const aOverdue = getOverdueAt(a, timeZone);
-        const bOverdue = getOverdueAt(b, timeZone);
-        if (aOverdue && bOverdue) {
-          return Temporal.ZonedDateTime.compare(aOverdue, bOverdue);
-        }
-        if (aOverdue) {
-          return -1;
-        }
-        if (bOverdue) {
-          return 1;
-        }
-        return 0;
-      });
-
-    const todo = taggedTasks
-      .filter(
-        (task) =>
-          task.status !== "done" &&
-          !isOverdueTask(task, today, nowZdt, timeZone)
-      )
-      .sort((a, b) => {
-        const dueCompare = compareNullablePlainDate(a.dueDate, b.dueDate);
-        if (dueCompare !== 0) {
-          return dueCompare;
-        }
-        const startCompare = compareNullablePlainDate(a.startDate, b.startDate);
-        if (startCompare !== 0) {
-          return startCompare;
-        }
-        return Temporal.Instant.compare(b.updatedAt, a.updatedAt);
-      });
-
-    const done = taggedTasks
-      .filter((task) => task.status === "done")
-      .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
-
-    return { doneTasks: done, overdueTasks: overdue, todoTasks: todo };
-  }, [nowZdt, tagId, tasksQuery.data, timeZone, today]);
-
-  return { doneTasks, overdueTasks, todoTasks };
+  return useMemo(
+    () =>
+      getTagTaskSections(tasksQuery.data ?? [], tagId, {
+        now: nowZdt,
+        timeZone,
+        today,
+      }),
+    [nowZdt, tagId, tasksQuery.data, timeZone, today]
+  );
 }

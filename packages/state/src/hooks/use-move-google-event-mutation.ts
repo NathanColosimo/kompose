@@ -12,49 +12,8 @@ export function useMoveGoogleEventMutation() {
   return useMutation({
     mutationFn: async (variables: MoveEventInput) =>
       orpc.googleCal.events.move(variables),
-    onMutate: async (variables) => {
-      // Snapshot both calendars for "move" operations. The destination is only
-      // read when it differs from the source, so the two lists never overlap.
-      const sourceKey = getGoogleEventsByCalendarQueryKey({
-        accountId: variables.accountId,
-        calendarId: variables.calendarId,
-      });
-      const destinationKey = getGoogleEventsByCalendarQueryKey({
-        accountId: variables.accountId,
-        calendarId: variables.destinationCalendarId,
-      });
-
-      await queryClient.cancelQueries({
-        queryKey: sourceKey,
-      });
-      if (variables.destinationCalendarId !== variables.calendarId) {
-        await queryClient.cancelQueries({
-          queryKey: destinationKey,
-        });
-      }
-
-      const sourceQueries = queryClient.getQueriesData({
-        queryKey: sourceKey,
-      });
-      const destinationQueries =
-        variables.destinationCalendarId === variables.calendarId
-          ? []
-          : queryClient.getQueriesData({
-              queryKey: destinationKey,
-            });
-
-      return {
-        previousQueries: [...sourceQueries, ...destinationQueries],
-      };
-    },
-    onError: (err, _variables, context) => {
+    onError: (err) => {
       notifyError?.(err);
-
-      if (context?.previousQueries) {
-        for (const [queryKey, data] of context.previousQueries) {
-          queryClient.setQueryData(queryKey, data);
-        }
-      }
     },
     onSettled: (_data, _error, variables) => {
       if (!variables) {

@@ -112,8 +112,7 @@ export default function AppProviders({
         storage={storage}
         subscribeToResume={webSubscribeToResume}
       >
-        <DesktopAuth />
-        {children}
+        <DesktopAuth>{children}</DesktopAuth>
       </StateProvider>
       {showReactQueryDevtools ? <ReactQueryDevtools /> : null}
       {isCommandBarRoute ? null : <Toaster richColors />}

@@ -1,5 +1,4 @@
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
-import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
@@ -8,6 +7,7 @@ import { currentDateAtom, timezoneAtom } from "./current-date";
 import { linkedAccountsDataAtom } from "./google-data";
 
 const WHOOP_DAYS_QUERY_KEY = ["whoop", "days"] as const;
+const EMPTY_SUMMARIES_BY_DAY = new Map<string, WhoopDaySummary>();
 
 export const whoopAccountDataAtom = atom<Account | null>(
   (get) =>
@@ -45,7 +45,11 @@ const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
 
   return {
     enabled: Boolean(accountId),
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[2] === accountId &&
+      previousQuery?.queryKey[3] === timeZone
+        ? previousData
+        : undefined,
     queryFn: () => {
       if (!accountId) {
         throw new Error("No WHOOP account linked");
@@ -57,21 +61,31 @@ const whoopSummariesQueryAtom = atomWithQuery<WhoopDaySummary[]>((get) => {
         timeZone,
       });
     },
-    queryKey: [...WHOOP_DAYS_QUERY_KEY, accountId, startDate, endDate] as const,
+    queryKey: [
+      ...WHOOP_DAYS_QUERY_KEY,
+      accountId,
+      timeZone,
+      startDate,
+      endDate,
+    ] as const,
     staleTime: 10 * 60 * 1000,
   };
+});
+
+const whoopSummariesDataAtom = atom((get) => {
+  if (!get(whoopAccountIdAtom)) {
+    return;
+  }
+  return get(whoopSummariesQueryAtom).data;
 });
 
 /** Keys are local dates in YYYY-MM-DD format. */
 export const whoopSummariesByDayAtom = atom<Map<string, WhoopDaySummary>>(
   (get) => {
-    const data = get(whoopSummariesQueryAtom).data;
-    const map = new Map<string, WhoopDaySummary>();
-    if (data) {
-      for (const summary of data) {
-        map.set(summary.day, summary);
-      }
+    const data = get(whoopSummariesDataAtom);
+    if (!data) {
+      return EMPTY_SUMMARIES_BY_DAY;
     }
-    return map;
+    return new Map(data.map((summary) => [summary.day, summary]));
   }
 );

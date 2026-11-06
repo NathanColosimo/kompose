@@ -1,10 +1,7 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
-import type {
-  LinkMeta,
-  TaskRecurrence,
-} from "@kompose/api/routers/task/contract";
+import type { LinkMeta } from "@kompose/api/routers/task/contract";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
-import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
   getLinkDurationMinutes,
@@ -12,6 +9,12 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
+import { applyLinkMetadata } from "@kompose/state/link-metadata";
+import {
+  buildTaskDraft,
+  type TaskDraft,
+  type TaskEditorState,
+} from "@kompose/state/task-editor-flow";
 import {
   buildTaskRecurrence,
   getTaskRecurrenceDisplayText,
@@ -46,31 +49,10 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-
-export interface TaskDraft {
-  description: string;
-  dueDate: Temporal.PlainDate | null;
-  durationMinutes: number;
-  /** Current text in the link input field (not yet added to links array) */
-  linkInput: string;
-  links: LinkMeta[];
-  recurrence: TaskRecurrence | null;
-  startDate: Temporal.PlainDate | null;
-  startTime: Temporal.PlainTime | null;
-  status: "todo" | "in_progress" | "done";
-  tagIds: string[];
-  title: string;
-}
+import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
 interface TaskEditorSheetProps {
-  draft: TaskDraft | null;
-  isVisible: boolean;
-  mode: "create" | "edit";
-  onClose: () => void;
-  onDelete?: () => void;
-  onSave: () => void;
-  onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
-  setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
+  flow: TaskEditorFlow;
   timeZone: string;
 }
 
@@ -158,59 +140,57 @@ function TaskRecurrenceEndSection({
       <Text className="text-muted-foreground text-xs">Ends</Text>
       <View className="mt-1 flex-row flex-wrap gap-2">
         <Button
-          onPress={() => updateRecurrence({ endType: "never", until: null })}
+          onPress={() => updateRecurrence({ end: { kind: "never" } })}
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "never" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "never" ? "default" : "outline"}
         >
           <Text>Never</Text>
         </Button>
         <Button
           onPress={() =>
             updateRecurrence({
-              endType: "until",
-              until: recurrenceState.until ?? fallbackUntil,
+              end:
+                recurrenceState.end.kind === "until"
+                  ? recurrenceState.end
+                  : { date: fallbackUntil, kind: "until" },
             })
           }
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "until" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "until" ? "default" : "outline"}
         >
           <Text>On date</Text>
         </Button>
         <Button
           onPress={() =>
             updateRecurrence({
-              count:
-                Number.isFinite(recurrenceState.count) &&
-                recurrenceState.count > 0
-                  ? recurrenceState.count
-                  : 10,
-              endType: "count",
+              end:
+                recurrenceState.end.kind === "count"
+                  ? recurrenceState.end
+                  : { count: 10, kind: "count" },
             })
           }
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "count" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "count" ? "default" : "outline"}
         >
           <Text>After N</Text>
         </Button>
       </View>
 
-      {recurrenceState.endType === "until" ? (
+      {recurrenceState.end.kind === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
-            displayValue={
-              recurrenceState.until
-                ? formatPlainDateShort(recurrenceState.until)
-                : "Until date"
-            }
+            displayValue={formatPlainDateShort(recurrenceState.end.date)}
             mode="date"
-            onChange={(date) =>
-              updateRecurrence({
-                until: date ? dateToPlainDate(date) : null,
-              })
-            }
+            onChange={(date) => {
+              if (date) {
+                updateRecurrence({
+                  end: { date: dateToPlainDate(date), kind: "until" },
+                });
+              }
+            }}
             placeholder="Until date"
             showIcon={false}
             style={{
@@ -218,18 +198,14 @@ function TaskRecurrenceEndSection({
               minHeight: 38,
               paddingHorizontal: 10,
             }}
-            value={
-              recurrenceState.until
-                ? plainDateToDate(recurrenceState.until)
-                : undefined
-            }
+            value={plainDateToDate(recurrenceState.end.date)}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
           />
         </View>
       ) : null}
 
-      {recurrenceState.endType === "count" ? (
+      {recurrenceState.end.kind === "count" ? (
         <View className="mt-2 flex-row items-center gap-2">
           <Input
             containerStyle={{ width: 78 }}
@@ -237,10 +213,10 @@ function TaskRecurrenceEndSection({
             keyboardType="number-pad"
             onChangeText={(value) => {
               const nextCount = Number.parseInt(value, 10) || 1;
-              updateRecurrence({ count: nextCount });
+              updateRecurrence({ end: { count: nextCount, kind: "count" } });
             }}
             pill
-            value={String(recurrenceState.count)}
+            value={String(recurrenceState.end.count)}
             variant="outline"
           />
           <Text className="text-foreground text-xs">occurrences</Text>
@@ -471,29 +447,49 @@ function TaskTagPicker({
   );
 }
 
-export function TaskEditorSheet({
-  isVisible,
-  mode,
-  draft,
-  setDraft,
-  onClose,
-  onSave,
-  onDelete,
-  onToggleDone,
+export function TaskEditorSheet({ flow, timeZone }: TaskEditorSheetProps) {
+  const { state } = flow;
+  if (state.kind !== "create" && state.kind !== "edit") {
+    return null;
+  }
+
+  return (
+    <TaskEditorSession
+      flow={flow}
+      key={state.sessionId}
+      session={state}
+      timeZone={timeZone}
+    />
+  );
+}
+
+function TaskEditorSession({
+  session,
+  flow,
   timeZone,
-}: TaskEditorSheetProps) {
+}: TaskEditorSheetProps & {
+  session: Extract<TaskEditorState, { kind: "create" | "edit" }>;
+}) {
+  const [draft, setDraft] = React.useState<TaskDraft>(() =>
+    session.kind === "create" ? session.initial : buildTaskDraft(session.task)
+  );
+  const mode = session.kind;
   const { tagsQuery } = useTags();
-  const { parseLink } = useTasks();
+  const linkQueries = useLinkMetadata(draft.links);
+  React.useEffect(() => {
+    for (const { url, data } of linkQueries) {
+      if (!data) {
+        continue;
+      }
+      setDraft((current) =>
+        applyLinkMetadata(current, url, data, current.linkEditedFields)
+      );
+    }
+  }, [linkQueries]);
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft
-    ? draft.title.trim().length > 0 || draft.links.length > 0
-    : false;
-
-  if (!draft) {
-    return null;
-  }
+  const canSave = draft.title.trim().length > 0 || draft.links.length > 0;
 
   const durationOptions = Array.from({ length: 24 }, (_, hour) =>
     DURATION_MINUTE_OPTIONS.map((minute) => {
@@ -511,7 +507,7 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone);
+  const canToggleDone = mode === "edit";
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));
@@ -561,21 +557,15 @@ export function TaskEditorSheet({
     });
   };
 
-  const handleClose = () => {
-    setIsRecurrenceExpanded(false);
-    setIsTagPickerExpanded(false);
-    onClose();
-  };
-
   const fallbackUntil = draft.startDate ?? Temporal.Now.plainDateISO(timeZone);
 
   return (
     <BottomSheet
       headerRight={
         <View className="flex-row items-center gap-2">
-          {mode === "edit" && onDelete ? (
+          {mode === "edit" ? (
             <Button
-              onPress={onDelete}
+              onPress={flow.requestDelete}
               size="icon"
               style={{ borderRadius: 999 }}
               variant="ghost"
@@ -585,7 +575,7 @@ export function TaskEditorSheet({
           ) : null}
           <Button
             disabled={!canSave}
-            onPress={onSave}
+            onPress={() => flow.save(draft)}
             size="icon"
             style={{ borderRadius: 999 }}
             variant="ghost"
@@ -598,8 +588,8 @@ export function TaskEditorSheet({
           </Button>
         </View>
       }
-      isVisible={isVisible}
-      onClose={handleClose}
+      isVisible
+      onClose={flow.close}
       snapPoints={[0.84, 0.95, 0.99]}
       title={mode === "edit" ? "Edit task" : "New task"}
     >
@@ -616,6 +606,10 @@ export function TaskEditorSheet({
               setDraft((current) => ({
                 ...current,
                 durationMinutes: nextMinutes,
+                linkEditedFields: {
+                  durationMinutes: true,
+                  title: current.linkEditedFields?.title ?? false,
+                },
               }));
             }}
             options={durationOptions}
@@ -744,7 +738,7 @@ export function TaskEditorSheet({
             if (canToggleDone) {
               const nextStatus: TaskDraft["status"] = checked ? "done" : "todo";
               setDraft((current) => ({ ...current, status: nextStatus }));
-              onToggleDone?.(nextStatus);
+              flow.toggleDone(nextStatus);
             }
           }}
           style={{
@@ -757,7 +751,15 @@ export function TaskEditorSheet({
         <Input
           containerStyle={{ flex: 1 }}
           onChangeText={(value) =>
-            setDraft((current) => ({ ...current, title: value }))
+            setDraft((current) => ({
+              ...current,
+              linkEditedFields: {
+                durationMinutes:
+                  current.linkEditedFields?.durationMinutes ?? false,
+                title: true,
+              },
+              title: value,
+            }))
           }
           pill
           placeholder="Title"
@@ -786,12 +788,10 @@ export function TaskEditorSheet({
       />
 
       <NativeLinkListEditor
-        isParsing={parseLink.isPending}
+        isParsing={linkQueries.some((query) => query.isPending)}
         linkInput={draft.linkInput}
         links={draft.links}
         onAddLink={(url) => {
-          const isFirstLink = draft.links.length === 0;
-
           // Insert placeholder immediately so the link survives a quick save
           setDraft((current) => ({
             ...current,
@@ -805,28 +805,6 @@ export function TaskEditorSheet({
               },
             ]),
           }));
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              setDraft((current) => {
-                const next = {
-                  ...current,
-                  links: dedupeLinks(
-                    current.links.map((l) => (l.url === url ? meta : l))
-                  ),
-                };
-                if (isFirstLink) {
-                  if (meta.title && !current.title.trim()) {
-                    next.title = meta.title;
-                  }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
-                  }
-                }
-                return next;
-              });
-            },
-          });
         }}
         onLinkInputChange={(value) =>
           setDraft((current) => ({ ...current, linkInput: value }))

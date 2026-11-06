@@ -161,20 +161,23 @@ The actual `GoogleCalendar` Effect client lives in `packages/google-cal/src/clie
 
 ### Pattern
 
-Read handlers check the user-scoped cache first and only on a miss call `getGoogleCalendar(userId, accountId)`, which fetches the access token with `getLinkedAccessToken` (`lib/linked-account.ts`, which also checks the user owns the account) and returns the Google client. Mutating handlers invalidate relevant cache keys and publish a realtime `google-calendar` event.
+Read handlers first call `getLinkedAccount` to check ownership and resolve the current local account row ID. The cache namespace includes that row ID, so unlink blocks cache hits and relink cannot reuse old entries. OAuth tokens are fetched only on misses. Mutating handlers advance the relevant cache generation and publish a realtime `google-calendar` event.
 
 ```ts
 list: os.calendars.list.effect(function* ({ input, context }) {
+  const link = yield* getLinkedAccount({
+    accountId: input.accountId,
+    providerId: "google",
+    userId: context.user.id,
+  });
   const cache = yield* GoogleCalendarCacheService;
-
-  // Cache-first read, scoped to the user
-  const cached = yield* cache.getCachedCalendars(context.user.id, input.accountId);
+  const entry = yield* cache.calendars(link);
+  const cached = yield* entry.get;
   if (Option.isSome(cached)) return cached.value;
 
-  // API fallback: ownership check + token only on a miss
-  const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+  const google = yield* getGoogleCalendar(link);
   const data = yield* google.listCalendars();
-  yield* cache.setCachedCalendars(context.user.id, input.accountId, data);
+  yield* entry.set(data);
   return data;
 }),
 ```
@@ -213,7 +216,8 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 | `routers/sync/contract.ts` | oRPC contract (SSE event stream) |
 | `routers/sync/router.ts` | SSE endpoint handler |
 | `realtime/events.ts` | Zod schemas for sync event types |
-| `realtime/sync.ts` | Redis pub/sub, async event iterator |
+| `realtime/sync.ts` | Redis publish and user-scoped stream entry point |
+| `realtime/sync-stream.ts` | Subscription acquisition, coalesced event queue, stream cleanup |
 
 ### Sync event types
 
@@ -227,21 +231,26 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 1. Client opens SSE connection via `sync.events` endpoint
 2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
-3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
+3. `createUserSyncEventIterator` awaits subscription to the Redis channel `user:{userId}` before returning its event iterator. oRPC can send headers and its initial SSE comment as soon as a handler returns an iterator, so this acquisition barrier keeps client recovery refetches behind a live subscription. The iterator then yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; subscriber auto-resubscription and reconnect retries are disabled. If that connection drops, the stream ends so the client reconnects and catches up instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
 6. When the client disconnects, the request's abort signal closes the iterator right away, which unsubscribes from Redis and ends the function. Clients close the stream 30 s after their window loses focus or is hidden (`use-realtime-sync.ts`), so a backgrounded app stops using function time.
 
 Client note:
 
-- Shared state clients no longer invalidate broad task/calendar queries on the first successful SSE connect. They only run the broad recovery invalidation after an explicit `reconnect` event.
+- The first successful SSE connection stays quiet. Each later successful subscription runs broad task/calendar recovery invalidation, including after an unexpected EOF, Redis close, transport error, inactivity timeout, planned rotation, or deliberate background pause. Recovery runs after the replacement stream is acquired, so it covers changes missed during the gap. An explicit `reconnect` is a control event; it does not also invalidate before resubscription.
+- Both browser focus/visibility and native AppState feed the same supervisor. A backgrounded connection closes after **30 s**; keepalives and repeated background notifications cannot extend that deadline. Returning before the deadline preserves the connection. Disabling/unmounting closes immediately.
+- Abort and Redis close race pending `subscribe()` acquisition. Abort disconnects the subscriber immediately, even when the command has not settled; late command rejection is observed. Acquisition, listeners, timers, subscriber lifetime, and tracing cleanup share one scope.
+- Pending task invalidations and keepalives each occupy one queue slot; calendar invalidations coalesce by `(accountId, calendarId)`. At 256 pending distinct resources, overflow discards the backlog and ends with `reconnect`, allowing a broad catch-up instead of growing memory without limit.
+
+Regression tests use controlled iterators/clocks in `packages/state/src/realtime-sync-supervisor.test.ts` and a fake Redis subscriber with the real oRPC fetch/SSE transport in `packages/api/src/realtime/sync-stream.test.ts`. The transport test delays subscription and checks that no SSE headers or initial comment can reach the client before acquisition. Run `bun test packages/state/src packages/api/src/realtime/sync-stream.test.ts` without Redis or production credentials.
 
 ### Redis pub/sub functions
 
 | Function | Purpose |
 |----------|---------|
 | `publishToUser` | Publish a typed `SyncEvent` to a user's Redis channel. Best effort: a failure is logged as `SYNC_PUBLISH_ERROR` and never fails the caller |
-| `createUserSyncEventIterator` | Creates an `AsyncGenerator<SyncEvent>` backed by Redis subscription |
+| `createUserSyncEventIterator` | Resolves an `AsyncGenerator<SyncEvent>` after Redis subscription succeeds |
 
 ---
 
@@ -249,45 +258,31 @@ Client note:
 
 ### Architecture
 
-Three Effect services handle Google Calendar push notifications:
+Two Effect services handle Google Calendar push notifications:
 
 ```
 WebhookService (orchestrator)
-├── GoogleCalendarWebhookService (provider-specific watch logic)
-└── WebhookRepositoryService (database layer)
+└── GoogleCalendarWebhookService (provider-specific watch logic)
 ```
 
-Dependencies are declared via `dependencies: [...]` in each service definition, so layers are wired automatically at the root.
-
-### WebhookRepositoryService
-
-**File:** `webhooks/webhook-repository-service.ts`
-
-Provider-agnostic database layer. No mention of Google or any specific provider.
-
-| Method | Purpose |
-|--------|---------|
-| `getAccountsByProvider` | List OAuth accounts for a user by provider |
-| `listSubscriptionsForUser` | List subscriptions, optionally filtered by provider |
-| `findActiveSubById` | Find an active subscription by primary key (yields error if not found) |
-| `touchSubById` | Update `lastNotifiedAt` timestamp |
-| `upsertSub` | Insert or update a subscription (conflict on `id`) |
-| `deactivateSubById` | Mark a subscription inactive |
+Both use `Database` directly. Their layers provide dependencies at the root.
 
 ### GoogleCalendarWebhookService
 
 **File:** `webhooks/google-cal/webhook-service.ts`
 
-Google-specific watch management. Depends on `WebhookRepositoryService`.
+Google-specific watch management, backed by `Database`.
 
 | Method | Purpose |
 |--------|---------|
 | `refreshListWatch` | Create or renew a calendar-list watch subscription |
 | `refreshEventsWatch` | Create or renew one calendar's event watch subscription (for IDs from `listCalendarIds`) |
-| `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
+| `deactivateEventsWatch` | Deactivate a removed calendar and return the channel to stop after commit |
 | `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
 
-Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
+Both refresh methods share `renewWatch`: keep an active channel with more than 12 hours left, otherwise create a replacement with a new channel ID and save it before retiring the old channel. The subscription row's primary key follows the new channel ID; the old remote channel is stopped only after the transaction commits. A failed creation or database rollback leaves the old channel tracked and running. Google stop failures are logged and do not fail reconciliation.
+
+Unsupported event watches are identified by Google's structured `pushNotSupportedForRequestedResource` reason. Their retry times are persisted for seven days in `webhook_account_state.unsupported_until`, independently of channel liveness. An unsupported renewal keeps the existing channel. Removed calendars are pruned from this capability map.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
@@ -295,16 +290,18 @@ Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does
 
 **File:** `webhooks/webhook-service.ts`
 
-Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRepositoryService`.
+Top-level orchestrator. Depends on `GoogleCalendarWebhookService`, `GoogleCalendarCacheService`, and `Database`.
 
 | Method | Purpose |
 |--------|---------|
-| `refreshAll` | Discover linked accounts, load existing subs, refresh all watches in parallel |
+| `refreshAll` | Discover linked accounts, lock each account, read current subs and refresh watches |
 | `handleGoogleNotification` | Validate headers/token, find subscription, publish realtime event |
 
-`refreshAll` processes each account independently — one revoked token does not fail the batch. Per-account errors are logged via `Effect.tapError` and caught so other accounts continue.
+`refreshAll` processes accounts independently. Each account holds a transaction-scoped Postgres advisory lock, keyed by its internal account ID, before rereading the account, capability state, or subscriptions. Concurrent SSE connects therefore see committed replacements rather than racing on the same snapshot. Provider failures are logged per watch so successful watches and unsupported decisions still commit. Database failures roll back the account transaction; old channels are stopped only after commit.
 
-`handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
+The Better Auth `databaseHooks.account.delete.before` hook in `packages/auth/src/index.ts` calls `stopAccountWatches` before the account and subscription rows cascade away. Cleanup must acquire the same account lock and commit `unlinking_until` intent for one minute before deletion can proceed. Coordination failures reject unlink. The lock wait is capped by a transaction-local 15-second `lock_timeout` (a reconcile holds the lock across Google calls that can retry for minutes); on timeout unlink fails and nothing changes, so the user can retry. That transaction also marks tracked channels inactive, since a remote stop may succeed even if its response is lost. Later reconciles skip accounts with unlink intent. Token resolution and remote channel stops then have a ten-second best-effort budget; Google errors are logged and do not fail unlink. The state row cascades with the account. If deletion itself fails after cleanup, the marker expires and the inactive rows cause the next reconcile to replace even fresh watches. Postgres regression tests in `packages/api/src/webhooks/webhook-service.test.ts` cover a lock that stays busy past the 15-second wait, a rejected intent write, and failed deletion after fresh channels stop.
+
+`handleGoogleNotification` accepts only active, unexpired channels and does not write `lastNotifiedAt` (the legacy column remains). It returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
 
 Webhook subscriptions keep both Google account identifiers:
 
@@ -326,7 +323,7 @@ A plain Next.js `POST` handler (not an oRPC route). It:
 
 | Error | Used by | Meaning |
 |-------|---------|---------|
-| `WebhookRepositoryError` | Repository service | DB query failed or record not found |
+| `WebhookRepositoryError` | Orchestrator | No live subscription found |
 | `WebhookProviderError` | Google cal service | Google API call failed |
 | `WebhookAuthError` | Orchestrator | OAuth token retrieval failed |
 | `WebhookValidationError` | Google cal service, orchestrator | Invalid input (bad URL, missing headers, invalid token) |
@@ -391,8 +388,8 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 
 ### Caching
 
-- Per-day raw data cached in Redis via `WhoopCacheService`.
-- Today's data: 15-minute TTL. Past days: 7-day TTL.
+- Per-day raw data cached in Redis via `WhoopCacheService`, after checking the current account linkage. Keys include the local account row ID so relinking starts a new namespace.
+- 15-minute TTL for today, empty days, and days with pending scores or an open cycle; 7-day TTL only for settled past days. Future days are never fetched or cached. See `documents/whoop.md`.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)

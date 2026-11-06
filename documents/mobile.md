@@ -109,8 +109,10 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Data hook: `packages/state/src/hooks/use-tasks.ts` (imported via `@kompose/state/hooks`)
 - Editor flow (shared by the Tasks and Calendar tabs): `apps/native/hooks/use-task-editor-flow.ts`
-  owns the draft, create/save/delete/toggle-done, and the recurring-task scope prompts,
-  which render through `apps/native/components/tasks/task-scope-dialogs.tsx`.
+  runs create/save/delete/toggle-done and the recurring-task scope prompts using
+  the pure lifecycle reducer in `packages/state/src/task-editor-flow.ts`.
+  The session-keyed editor sheet owns mutable form data. Scope prompts render
+  through `apps/native/components/tasks/task-scope-dialogs.tsx`.
 
 ### Google calendar visibility picker
 
@@ -129,6 +131,7 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
   - Reads directly from the normal granular task/account/calendar/event caches.
+  - Pull-to-refresh waits for the requests started by that pull, then clears the spinner and restores the captured scroll position. Overlapping pulls are ignored; background fetches do not trigger scroll restoration.
 
 ### Settings + Theming
 
@@ -148,6 +151,9 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Session gating:
   - The root layout subscribes through `authClient.useSession()` and starts
     realtime sync with the authenticated user's ID.
+  - Native AppState changes feed the shared realtime supervisor's foreground
+    input. Backgrounding preserves its history and closes SSE after 30 s;
+    resuming a paused stream runs task/calendar catch-up after resubscribing.
 - oRPC client (cookie injection + required server URL):
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.

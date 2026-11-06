@@ -2,180 +2,119 @@
 
 ## Overview
 
-Google Calendar API data is cached in Redis to reduce latency. Webhooks handle real-time invalidation; TTLs are safety nets only.
+Google Calendar API data is cached in Redis to reduce latency. Webhooks and local mutations advance cache generations; TTLs are safety nets. WHOOP caches raw day data per day; see `documents/whoop.md` for its TTL policy.
+
+Every cache-backed request first checks the current linked account in Postgres. Cache hits require ownership and an existing linkage, but do not fetch or refresh an OAuth token.
 
 ```
 Client request
   ▼
-Cache lookup (Redis GET, key scoped to the user)
-  ├── HIT  → return cached data
-  └── MISS → getGoogleCalendar (ownership check + access token)
-             → fetch from Google API → populate cache → return
+getLinkedAccount (user + provider + provider account ID → local account row ID)
+  ├── missing/ambiguous → LinkedAccountError; no cache access
+  └── linked → select cache namespace (user + provider account ID + local row ID)
+                 → capture generation for Google calendars/events
+                 → Redis GET
+                    ├── HIT  → return cached data
+                    └── MISS → token for that local row → provider API
+                               → populate the captured namespace → return
 ```
-
----
 
 ## Architecture
 
-**Service:** `GoogleCalendarCacheService` (`packages/api/src/routers/google-cal/cache.ts`)
+- `GoogleCalendarCacheService` (`packages/api/src/routers/google-cal/cache.ts`) creates read handles with `get` and `set(data)`. Each handle captures its generation **before** the provider fetch. Callers must use the same handle for the read and write.
+- `WhoopCacheService` (`packages/api/src/routers/whoop/cache.ts`) receives the linkage checked by `WhoopService` and uses it for both reads and writes.
+- `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`) handles best-effort JSON reads, writes, generation selection and invalidation.
+- All use the shared ioredis connection from `@kompose/redis` (`REDIS_URL`), also used by Better Auth, rate limiters and sync publishes.
 
-A `Context.Service` with a `Layer.effect` layer. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility. The methods build keys and call the shared best-effort JSON cache, `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`), which `WhoopCacheService` uses too.
+Service methods use `Effect.fn` tracing and annotate account/calendar/event IDs. Cache failures never fail requests. Linkage errors do fail requests, including cache hits.
 
-**Redis client:** the shared `redis` connection from `@kompose/redis` (ioredis, `REDIS_URL`), which Better Auth, the rate limiters, the WHOOP cache and sync publishes use too.
+## Keys and TTLs
 
-**Errors:** none. No cache method can fail; see [Error Handling](#error-handling).
+`{link}` below means `{userId}:{providerAccountId}:{localAccountRowId}`. The local row ID changes when an account is unlinked and relinked. Old keys without a row ID are never read by this implementation and expire naturally.
 
----
+| Resource | Key pattern | TTL |
+|----------|-------------|-----|
+| Calendar-list generation | `gcal:calendars-generation:{link}` | None |
+| Calendar list | `gcal:cals:{link}:{generation}` | 24h |
+| Single calendar | `gcal:cal:{link}:{calendarId}:{generation}` | 24h |
+| Colors | `gcal:colors:{link}` | 24h |
+| Calendar event generation | `gcal:events-generation:{link}:{calendarId}` | None |
+| Event list | `gcal:events:{link}:{calendarId}:{timeMin}:{timeMax}:{generation}` | 24h |
+| Single event | `gcal:event:{link}:{calendarId}:{eventId}:{generation}` | 24h |
+| WHOOP raw day | `whoop:day:{link}:{day}` | 15 min, or 7 days once settled (`documents/whoop.md`) |
 
-## What's Cached
+Generation counters do not expire. Expiring or evicting a counter independently of its payloads could resurrect an old namespace. Retired payloads expire by their TTL; invalidation does not scan or delete them. Retired linkage counters remain in Redis.
 
-| Resource | Key pattern | TTL | Used by |
-|----------|-------------|-----|---------|
-| Calendar list | `gcal:cals:{userId}:{accountId}` | 24h | `calendars.list` |
-| Single calendar | `gcal:cal:{userId}:{accountId}:{calendarId}` | 24h | `calendars.get` |
-| Colors | `gcal:colors:{userId}:{accountId}` | 24h | `colors.list` |
-| Event list | `gcal:events:{userId}:{accountId}:{calendarId}:{timeMin}:{timeMax}` | 24h | `events.list` |
-| Single event | `gcal:event:{userId}:{accountId}:{calendarId}:{eventId}` | 24h | `events.get` |
+## Generation invalidation
 
-TTLs are conservative safety nets. With active webhook subscriptions, data is invalidated in real-time and TTLs rarely trigger.
+A missing generation counter means generation `0`. Invalidation atomically `INCR`s the counter once. Event lists and **all** single-event entries in a calendar share one counter, so recurring mutations invalidate cached instances as well as the supplied event ID. Calendar lists and single-calendar entries share a separate counter per linkage.
 
----
+A request captures generation N, misses the cache, and starts fetching Google data. If a webhook or mutation advances the counter to N+1 while that fetch is pending, the request can only write to N. Later requests select N+1 and cannot reuse the old response. The already-running request may still finish with its fetched response.
 
-## Cache Methods
+There is no `SCAN`, prefix deletion, or separate list/single invalidation pass.
 
-### Read operations
+| Trigger | Invalidation |
+|---------|--------------|
+| Calendar-list webhook | `invalidateCalendars(link)` |
+| Events webhook | `invalidateEvents(link, calendarId)` |
+| `calendars.create`, `calendars.update` | `invalidateCalendars(link)` |
+| `calendars.delete` | Calendar-list generation + deleted calendar's event generation |
+| `events.create`, `events.update`, `events.delete` | Calendar's event generation |
+| `events.move` | Source and destination event generations |
 
-| Method | Returns | On error |
-|--------|---------|----------|
-| `getCachedCalendars(userId, accountId)` | `Option<data>` | Logged, returns `None` |
-| `getCachedCalendar(userId, accountId, calendarId)` | `Option<data>` | Logged, returns `None` |
-| `getCachedColors(userId, accountId)` | `Option<data>` | Logged, returns `None` |
-| `getCachedEvents(userId, accountId, calendarId, timeMin, timeMax)` | `Option<data>` | Logged, returns `None` |
-| `getCachedEvent(userId, accountId, calendarId, eventId)` | `Option<data>` | Logged, returns `None` |
+Independent invalidations run with `Effect.all([...], { concurrency: "unbounded", discard: true })`. Webhooks use the subscription's exact local account row ID, provider account ID and user ID. Watch-channel lifecycle is described in `documents/services.md`.
 
-### Write operations
+## Linkage lifecycle and account IDs
 
-| Method | On error |
-|--------|----------|
-| `setCachedCalendars(userId, accountId, data)` | Logged, swallowed |
-| `setCachedCalendar(userId, accountId, calendarId, data)` | Logged, swallowed |
-| `setCachedColors(userId, accountId, data)` | Logged, swallowed |
-| `setCachedEvents(userId, accountId, calendarId, timeMin, timeMax, data)` | Logged, swallowed |
-| `setCachedEvent(userId, accountId, calendarId, eventId, data)` | Logged, swallowed |
+`getLinkedAccount` (`packages/api/src/lib/linked-account.ts`) selects only the local account ID, filtering by user ID, provider ID and provider account ID. Missing or ambiguous rows yield `LinkedAccountError`; database failures are defects. No positive linkage result is cached across requests.
 
-### Invalidation operations
+After unlink completes, subsequent reads fail before touching Redis. Relinking the same provider account creates a different local account row ID and therefore a new Google/WHOOP namespace. In-flight requests keep their original linkage for writes and cannot populate the relinked account's namespace. Unlink does not need a cache-deletion hook; retired data remains inaccessible and expires by TTL.
 
-| Method | Scope | Used by |
-|--------|-------|---------|
-| `invalidateCalendars(userId, accountId)` | Deletes calendar list key + SCAN-deletes all `gcal:cal:{userId}:{accountId}:*` single-calendar keys | Webhooks, local calendar mutations |
-| `invalidateAllEvents(userId, accountId, calendarId)` | SCAN-deletes all event list keys + all single-event keys for a calendar | Webhooks (unknown which event changed) |
-| `invalidateEventLists(userId, accountId, calendarId)` | SCAN-deletes event list keys only | Local mutations (single-event keys unaffected) |
-| `invalidateEvent(userId, accountId, calendarId, eventId)` | Deletes a single event key | Local event update/delete |
+Google Calendar oRPC inputs, client query keys, calendar preferences, bootstrap `accountId` fields and realtime payloads continue to use Google's **provider account ID** (`account.account_id`). Better Auth token/profile/unlink selectors use the **local row ID** (`account.id`). `getLinkedAccessToken(link)` fetches a token for the exact row resolved before cache access, with no second ownership query.
 
----
-
-## Invalidation Strategy
-
-### Webhooks (external changes)
-
-Google push notifications trigger broad invalidation because they don't specify which resource changed:
-
-| Webhook type | Invalidation |
-|-------------|--------------|
-| Calendar list changed | `invalidateCalendars(userId, accountId)` |
-| Calendar events changed | `invalidateAllEvents(userId, accountId, calendarId)` |
-
-Handled in `WebhookService.handleGoogleNotification` (`packages/api/src/webhooks/webhook-service.ts`).
-
-### Local mutations (user actions via oRPC)
-
-Local mutations use targeted invalidation since we know exactly what changed:
-
-| Mutation | Invalidation |
-|----------|--------------|
-| `calendars.create` | `invalidateCalendars` |
-| `calendars.update` | `invalidateCalendars` |
-| `calendars.delete` | `invalidateCalendars` + `invalidateAllEvents` (concurrent) |
-| `events.create` | `invalidateEventLists` (new event, no single-event key to clear) |
-| `events.update` | `invalidateEventLists` + `invalidateEvent` (concurrent) |
-| `events.move` | `invalidateEventLists` on source + destination + `invalidateEvent` (concurrent) |
-| `events.delete` | `invalidateEventLists` + `invalidateEvent` (concurrent) |
-
-Concurrent invalidations use `Effect.all([...], { concurrency: "unbounded", discard: true })`.
-
----
-
-## Error Handling
-
-Cache failures never fail a request. `makeRedisJsonCache(logEvent)` handles them in one place:
-
-- A read that fails (Redis error, invalid JSON, or a payload the Zod schema rejects) returns `Option.none()`, a miss.
-- A write or delete that fails does nothing.
-- Each failure is logged as `logEvent` (`CACHE_ERROR` for Google Calendar, `WHOOP_CACHE_ERROR` for WHOOP) with `{ message, operation }`, so it appears on the request's trace.
-
-Handlers call cache methods directly, with nothing to catch:
+Webhook subscription rows store both identifiers: `webhook_subscription.account_id` is the local row ID; `provider_account_id` is Google's provider ID. Cache invalidation includes both; realtime events still use only the provider ID.
 
 ```ts
-// Reads: a failure is a miss
-const cached = yield* cache.getCachedEvents(...);
-
-// Writes and invalidations: a failure is logged and ignored
-yield* cache.setCachedEvents(...);
-```
-
----
-
-## SCAN-based Deletion
-
-Prefix-based invalidation uses Redis `SCAN` (not `KEYS`) to avoid blocking Redis. `remove(operation, { keys, prefixes })` in `lib/redis-cache.ts` deletes the exact keys, then SCAN-deletes each prefix:
-
-```ts
-let cursor = "0";
-do {
-  const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
-  cursor = nextCursor;
-  if (keys.length > 0) {
-    await redis.del(...keys);
-  }
-} while (cursor !== "0");
-```
-
----
-
-## User-Scoped Keys
-
-Every cache key includes the user ID after its resource prefix (Google and WHOOP alike). An entry is written only after that user's own `getLinkedAccessToken` succeeded, which looks the account row up by user and so checks ownership. A hit therefore needs no ownership check or token, and a request for another user's account can only miss and then fail the lookup:
-
-```ts
-// 1. Cache lookup (scoped to this user)
-const cached = yield* cache.getCachedCalendars(userId, accountId);
+const link = yield* getLinkedAccount({
+  accountId: input.accountId,
+  providerId: "google",
+  userId: context.user.id,
+});
+const cache = yield* GoogleCalendarCacheService;
+const entry = yield* cache.events(link, {
+  calendarId: input.calendarId,
+  ...input.params,
+});
+const cached = yield* entry.get;
 if (Option.isSome(cached)) return cached.value;
 
-// 2. On a miss: ownership check + access token, then the API
-const google = yield* getGoogleCalendar(userId, accountId);
-const data = yield* google.listCalendars();
-
-// 3. Populate cache
-yield* cache.setCachedCalendars(userId, accountId, data);
+const token = yield* getLinkedAccessToken(link);
+const google = makeGoogleCalendarService(token);
+const data = yield* google.listEvents(
+  input.calendarId,
+  input.params.timeMin,
+  input.params.timeMax
+);
+yield* entry.set(data);
+return data;
 ```
 
-Webhook invalidation uses the subscription's `userId`. If two users link the same Google account, each has their own entries.
+## Error handling
 
-## Account ID Invariant
+`makeRedisJsonCache(logEvent)` logs failures as `CACHE_ERROR` for Google or `WHOOP_CACHE_ERROR` for WHOOP, with `{ message, operation }`:
 
-Google Calendar cache keys use the Google provider account id (`account.account_id`),
-which is also the id used by client query keys and oRPC Google Calendar inputs.
-Better Auth 1.7 token, profile, and unlink selectors instead use the local
-`account.id`. `getLinkedAccessToken` (`packages/api/src/lib/linked-account.ts`)
-resolves the provider ID to the user's row before calling Better Auth; keep provider IDs in calendar
-preferences, bootstrap `accountId` fields, cache keys, and realtime events.
-Webhook subscription rows additionally store the Better Auth internal account row
-id (`webhook_subscription.account_id`) for database relations, but webhook cache
-invalidation and realtime payloads must use `webhook_subscription.provider_account_id`
-so they target the same keys as normal reads.
+- Failed reads, invalid JSON or schema-invalid payloads return `Option.none()`.
+- Failed writes and generation increments are logged and ignored.
+- A failed generation lookup disables both reads and writes for that handle. It must not fall back to generation `0`, which may contain obsolete data.
 
----
+Invalidation remains best effort: a failed `INCR` can leave cached data visible until a later successful invalidation or TTL expiry. There is no retry or durable invalidation queue.
 
-## Layer Composition
+## Regression tests
 
-See [services.md](./services.md#layer-composition) for how `GoogleCalendarCacheService.layer` joins the shared API runtime.
+Run `SKIP_ENV_VALIDATION=1 bun test packages/api/src/lib/cache-lifecycle.test.ts`.
+
+The tests exercise actual oRPC Google handlers, WHOOP service, linkage resolution and cache services. Redis, provider calls and the database query boundary use in-memory fakes. Controlled promises hold provider requests open across invalidation; no sleeps or live credentials are required. Coverage includes late list/single writes, recurring-instance invalidation, generation-read failures, and unlink/relink for every Google cache resource and WHOOP days.
+
+## Layer composition
+
+See [services.md](./services.md#layer-composition) for the shared API runtime.

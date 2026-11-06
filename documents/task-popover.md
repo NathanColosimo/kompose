@@ -9,6 +9,8 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving.
 - Uses React Hook Form; values stay in sync while open.
 - Updates task via `useTasks().updateTask`.
+- The editor has one active phase: editing, delete confirmation, or recurrence scope selection. Confirmations cannot overlap. Scope selection retains its submitted values and chosen scope across extra Save/Delete attempts; save/delete shortcuts are inactive until Apply or Cancel.
+- Command-bar open requests notify only the matching task and surface (calendar or sidebar).
 
 ## Usage
 ```tsx
@@ -30,7 +32,7 @@ Compact inline editor for tasks, shared by sidebar task items and calendar task 
 4. **Start date / time / duration** — 3-column grid row (calendar scheduling).
 5. **Due date / recurrence** — 2-column grid row.
 6. Separator
-7. **Links** — multi-link UI with `LinkMetaPreview` cards and "Add link" input. Title and duration auto-fill from first link metadata.
+7. **Links** — multi-link UI with `LinkMetaPreview` cards and "Add link" input. Per-URL queries enrich placeholders. Only the current first link may auto-fill an untouched empty title or a duration that was not explicitly set. Existing task durations, calendar-selected durations, and user edits are preserved.
 8. **Tags** — `TagPicker`, no label.
 9. Separator
 10. **Action row** (edit mode): `[Delete] ... [Cancel] [Save]` in a single row. Delete opens a confirmation dialog with scope options for recurring tasks.
@@ -42,3 +44,8 @@ See [hotkeys.md](./hotkeys.md#contextual-hotkeys) for form save and delete short
 ## Notes
 - Calendar drag/resize still works; edit popover wraps the event element.
 - When `TaskEditForm` is used inside `EventCreationPopover` (create mode), `submitRef` lets the creation popover header submit the form; the form hides its own action buttons.
+
+## Sidebar creation dialog
+
+- Each opening has its own draft identity. A successful submission closes only that opening; dismissing and reopening preserves the new draft when an earlier request finishes.
+- Creation stays busy for the mutation's lifetime. Button, form submit, and Cmd/Ctrl+Enter all reject additional submissions while it is pending.

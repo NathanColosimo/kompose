@@ -2,7 +2,7 @@
   "extends": "../../packages/config/tsconfig.base.json",
   "compilerOptions": {
     "lib": ["dom", "dom.iterable", "esnext"],
-    "types": ["node"],
+    "types": ["bun", "node"],
     "noEmit": true,
     "jsx": "react-jsx",
     "incremental": true,

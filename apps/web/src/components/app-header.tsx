@@ -5,7 +5,7 @@ import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   LogOut,
   PanelRight,
@@ -59,11 +59,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
-import {
-  dashboardResponsiveLayoutAtom,
-  sidebarRightOpenAtom,
-  sidebarRightOverlayOpenAtom,
-} from "@/state/sidebar";
+import { sidebarRightViewAtom, toggleSidebarRightAtom } from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
 
@@ -95,32 +91,14 @@ export function AppHeader({ user }: { user: User }) {
 }
 
 function RightSidebarToggleButton() {
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
-  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
-  const [rightOverlayOpen, setRightOverlayOpen] = useAtom(
-    sidebarRightOverlayOpenAtom
-  );
-
-  const isOpen = responsiveLayout.canDockRightSidebar
-    ? rightSidebarOpen
-    : rightOverlayOpen;
-
-  const toggleRightSidebar = useCallback(() => {
-    if (responsiveLayout.canDockRightSidebar) {
-      setRightSidebarOpen((prev) => !prev);
-      return;
-    }
-    setRightOverlayOpen((prev) => !prev);
-  }, [
-    responsiveLayout.canDockRightSidebar,
-    setRightSidebarOpen,
-    setRightOverlayOpen,
-  ]);
+  const view = useAtomValue(sidebarRightViewAtom);
+  const toggleRightSidebar = useSetAtom(toggleSidebarRightAtom);
+  const isOpen = view !== "closed";
 
   return (
     <Button
       className="size-7"
-      onClick={toggleRightSidebar}
+      onClick={() => toggleRightSidebar()}
       size="icon"
       type="button"
       variant={isOpen ? "secondary" : "outline"}
@@ -507,11 +485,30 @@ function CreateTagRow({
 /** Shown once the desktop app has downloaded an update. */
 function UpdatePromptButton() {
   const [readyVersion, setReadyVersion] = useState<string | null>(null);
-  useMountEffect(() =>
-    isDesktopRuntime()
-      ? desktopBridge().onUpdateReady(setReadyVersion)
-      : undefined
-  );
+  useMountEffect(() => {
+    if (!isDesktopRuntime()) {
+      return;
+    }
+    const bridge = desktopBridge();
+    let active = true;
+    let receivedEvent = false;
+    const unsubscribe = bridge.onUpdateReady((version) => {
+      receivedEvent = true;
+      setReadyVersion(version);
+    });
+    bridge
+      .getReadyUpdate?.()
+      .then((version) => {
+        if (active && !receivedEvent && version) {
+          setReadyVersion(version);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  });
 
   if (!readyVersion) {
     return null;

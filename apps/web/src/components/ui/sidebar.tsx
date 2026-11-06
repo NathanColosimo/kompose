@@ -2,7 +2,7 @@
 
 import { Slot as SlotPrimitive } from "radix-ui";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { PanelLeftIcon } from "lucide-react";
 // biome-ignore lint/performance/noNamespaceImport: Imported Component
 import * as React from "react";
@@ -25,7 +25,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
-import { sidebarLeftOpenAtom, sidebarRightOpenAtom } from "@/state/sidebar";
+import {
+  sidebarLeftOpenAtom,
+  sidebarRightViewAtom,
+  toggleSidebarRightAtom,
+} from "@/state/sidebar";
 
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
@@ -86,8 +90,8 @@ function SidebarProvider({
 
   const [leftOpenAtomValue, setLeftOpenAtomValue] =
     useAtom(sidebarLeftOpenAtom);
-  const [rightOpenAtomValue, setRightOpenAtomValue] =
-    useAtom(sidebarRightOpenAtom);
+  const rightView = useAtomValue(sidebarRightViewAtom);
+  const updateRightSidebar = useSetAtom(toggleSidebarRightAtom);
 
   const leftOpen = openProp ?? leftOpenAtomValue;
   const setLeftOpen = React.useCallback(
@@ -102,13 +106,13 @@ function SidebarProvider({
     [setOpenProp, leftOpen, setLeftOpenAtomValue]
   );
 
-  const rightOpen = rightOpenAtomValue;
+  const rightOpen = rightView !== "closed";
   const setRightOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(rightOpen) : value;
-      setRightOpenAtomValue(openState);
+      updateRightSidebar(openState);
     },
-    [rightOpen, setRightOpenAtomValue]
+    [rightOpen, updateRightSidebar]
   );
 
   const toggleLeftSidebar = React.useCallback(
@@ -120,11 +124,8 @@ function SidebarProvider({
   );
 
   const toggleRightSidebar = React.useCallback(
-    () =>
-      isMobile
-        ? setOpenMobile((toggle) => !toggle)
-        : setRightOpen((toggle) => !toggle),
-    [isMobile, setRightOpen]
+    () => updateRightSidebar(),
+    [updateRightSidebar]
   );
 
   const toggleSidebar = toggleLeftSidebar;

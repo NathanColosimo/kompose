@@ -9,10 +9,12 @@ import {
 } from "@kompose/state/atoms/current-date";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
-  createCommandBarTaskOpenRequest,
-  resolveTaskSearchDestination,
-  serializeCommandBarTaskOpenRequest,
+  deriveTaskPresentation,
   type TaskSearchDestination,
+} from "@kompose/state/task-presentation";
+import {
+  createCommandBarTaskOpenRequest,
+  serializeCommandBarTaskOpenRequest,
 } from "@kompose/state/task-search-routing";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -182,7 +184,7 @@ export function CommandBarSearchTasks({
 
   const handleSelectTask = useCallback(
     async (task: TaskSelectDecoded) => {
-      const destination = resolveTaskSearchDestination(task, {
+      const { destination } = deriveTaskPresentation(task, {
         now,
         timeZone,
         today,
@@ -236,7 +238,7 @@ export function CommandBarSearchTasks({
   return (
     <CommandGroup heading="Tasks">
       {filteredTasks.map((task) => {
-        const destination = resolveTaskSearchDestination(task, {
+        const { destination } = deriveTaskPresentation(task, {
           now,
           timeZone,
           today,

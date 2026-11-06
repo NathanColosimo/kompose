@@ -29,7 +29,11 @@ redis.on("error", logError);
  * connection. The caller disconnects it when done.
  */
 export function createSubscriber(): Redis {
-  const subscriber = redis.duplicate();
+  // SSE owns recovery. Never reconnect or replay a subscribe after it has ended.
+  const subscriber = redis.duplicate({
+    autoResubscribe: false,
+    retryStrategy: () => null,
+  });
   subscriber.on("error", logError);
   return subscriber;
 }

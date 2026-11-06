@@ -29,6 +29,13 @@ import {
   shell,
 } from "electron";
 import type { AppUpdater } from "electron-updater";
+import {
+  type PopupState,
+  reducePopup,
+  reduceTaskDelivery,
+  type TaskDeliveryEvent,
+  type TaskDeliveryState,
+} from "./window-state";
 
 /**
  * Add macOS keychain CAs to Node TLS so the token exchange trusts the same
@@ -64,11 +71,8 @@ let quitting = false;
 let mainWasFocused = false;
 // Set when the popup opened over a hidden app and kept the main window out.
 let restoreMainOnActivate = false;
-// The popup loads hidden at startup; a shortcut press before its first paint
-// shows it once painted.
-let commandBarReady = false;
-let commandBarRequested = false;
-let pendingTask: DesktopTaskSelection | null = null;
+let commandBarState: PopupState = { desired: "hidden", kind: "loading" };
+let taskDelivery: TaskDeliveryState = { pending: null, ready: false };
 let readyUpdate: string | null = null;
 let updater: AppUpdater | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
@@ -280,17 +284,17 @@ function createMainWindow() {
     }
   });
   window.on("closed", () => {
+    updateTaskDelivery({ kind: "navigate" });
     mainWindow = null;
   });
-  window.webContents.on("did-finish-load", () => {
-    if (pendingTask) {
-      send(window, "onOpenTask", pendingTask);
-      pendingTask = null;
+  window.webContents.on(
+    "did-start-navigation",
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) {
+        updateTaskDelivery({ kind: "navigate" });
+      }
     }
-    if (readyUpdate) {
-      send(window, "onUpdateReady", readyUpdate);
-    }
-  });
+  );
   return window;
 }
 
@@ -314,14 +318,10 @@ function createCommandWindow() {
     },
     "/desktop/command-bar"
   );
-  commandBarReady = false;
+  commandBarState = { desired: "hidden", kind: "loading" };
   window.once("ready-to-show", () => {
-    commandBarReady = true;
-    if (commandBarRequested) {
-      commandBarRequested = false;
-      window.show();
-      window.focus();
-    }
+    commandBarState = reducePopup(commandBarState, "ready");
+    reconcileCommandBar();
   });
   window.on("blur", hideCommandBar);
   window.on("move", () => {
@@ -332,12 +332,14 @@ function createCommandWindow() {
     }
   });
   window.on("hide", () => {
+    commandBarState = reducePopup(commandBarState, "hide");
     if (commandBarDragged && commandBarAnchor) {
       settings.set("commandBarPosition", commandBarAnchor);
       commandBarDragged = false;
     }
   });
   window.on("closed", () => {
+    commandBarState = { desired: "hidden", kind: "loading" };
     commandWindow = null;
   });
   return window;
@@ -372,10 +374,24 @@ function showMain() {
 }
 
 function hideCommandBar() {
+  commandBarState = reducePopup(commandBarState, "hide");
   commandWindow?.hide();
 }
+function reconcileCommandBar() {
+  if (commandBarState.kind !== "ready" || !commandWindow) {
+    return;
+  }
+  if (commandBarState.desired === "shown") {
+    commandWindow.show();
+    commandWindow.focus();
+  } else {
+    commandWindow.hide();
+  }
+}
 function toggleCommandBar() {
-  if (commandWindow?.isVisible()) {
+  commandWindow ??= createCommandWindow();
+  commandBarState = reducePopup(commandBarState, "toggle");
+  if (commandBarState.desired === "hidden") {
     dismissCommandBar();
     return;
   }
@@ -387,7 +403,6 @@ function toggleCommandBar() {
     mainWindow.hide();
     restoreMainOnActivate = true;
   }
-  commandWindow ??= createCommandWindow();
   // Open on the display under the cursor, at the remembered spot when it is there.
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const { workArea } = display;
@@ -400,12 +415,7 @@ function toggleCommandBar() {
           y: workArea.y + workArea.height * 0.25,
         };
   placeCommandBar(commandWindow, commandWindow.getBounds().height);
-  if (commandBarReady) {
-    commandWindow.show();
-    commandWindow.focus();
-  } else {
-    commandBarRequested = true;
-  }
+  reconcileCommandBar();
 }
 function dismissCommandBar() {
   hideCommandBar();
@@ -458,7 +468,7 @@ function handle<K extends DesktopInvokeMethod>(
   callback: (
     value: unknown,
     window: BrowserWindow
-  ) => Awaited<ReturnType<DesktopBridge[K]>>
+  ) => Awaited<ReturnType<NonNullable<DesktopBridge[K]>>>
 ) {
   ipcMain.handle(desktopChannel(method), (event, value: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -473,12 +483,26 @@ function handle<K extends DesktopInvokeMethod>(
   });
 }
 
+function updateTaskDelivery(event: TaskDeliveryEvent) {
+  const result = reduceTaskDelivery(taskDelivery, event);
+  taskDelivery = result.state;
+  if (result.deliver && mainWindow) {
+    send(mainWindow, "onOpenTask", result.deliver);
+  }
+}
+
 function registerBridge() {
   handle("showMainWindow", () => {
     hideCommandBar();
     showMain();
   });
   handle("getShortcut", () => settings.get("shortcut"));
+  handle("getReadyUpdate", () => readyUpdate);
+  handle("setTaskListenerReady", (ready, window) => {
+    if (window === mainWindow && typeof ready === "boolean") {
+      updateTaskDelivery({ kind: "subscription", ready });
+    }
+  });
   handle("setShortcut", (id) => applyShortcut(id));
   handle("dismissCommandBar", () => dismissCommandBar());
   handle("resizeCommandBar", (height, window) => {
@@ -495,11 +519,11 @@ function registerBridge() {
   handle("openTask", (selection) => {
     hideCommandBar();
     showMain();
-    if (!mainWindow || mainWindow.webContents.isLoading()) {
-      pendingTask = selection as DesktopTaskSelection;
-    } else {
-      send(mainWindow, "onOpenTask", selection as DesktopTaskSelection);
-    }
+    updateTaskDelivery({
+      kind: "request",
+      // Both windows send the shared selection contract through IPC.
+      selection: selection as DesktopTaskSelection,
+    });
   });
   handle("installUpdate", () => {
     if (readyUpdate && updater) {

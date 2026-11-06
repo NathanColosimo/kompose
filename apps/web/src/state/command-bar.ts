@@ -4,6 +4,19 @@ import type { CommandBarTaskOpenRequest } from "@kompose/state/task-search-routi
 import { atom } from "jotai";
 import { sidebarLeftOpenAtom, sidebarLeftViewSelectionAtom } from "./sidebar";
 
+/** Each mounted popover subscribes only to requests for its task and surface. */
+export function selectTaskOpenRequestAtom(
+  taskId: string | undefined,
+  target: CommandBarTaskOpenRequest["target"]
+) {
+  return atom((get) => {
+    const request = get(commandBarTaskOpenRequestAtom);
+    return request?.taskId === taskId && request?.target === target
+      ? request
+      : null;
+  });
+}
+
 /** Shows the task's day or sidebar view, then asks its edit popover to open. */
 export const applyCommandBarTaskOpenRequestAtom = atom(
   null,

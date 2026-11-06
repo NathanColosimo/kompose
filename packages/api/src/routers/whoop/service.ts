@@ -8,15 +8,17 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { getLinkedAccessToken } from "../../lib/linked-account";
+import {
+  getLinkedAccessToken,
+  getLinkedAccount,
+} from "../../lib/linked-account";
 import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
+import { missingDayFetchRanges, ttlForDay } from "./day-policy";
 import { WhoopInvalidRangeError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
-const TODAY_CACHE_TTL_SECONDS = 15 * 60;
-const PAST_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 function dateFromOffset(dateTime: string, offset: string): string {
   return Temporal.Instant.from(dateTime)
@@ -334,18 +336,6 @@ function groupRawDataByDay(params: {
   return byDay;
 }
 
-// Today and days with no data yet (future days, band off) can still gain
-// data, so they expire quickly. Caching empty days at all keeps windows that
-// include future days from refetching WHOOP on every load.
-function ttlForDay(payload: WhoopCachedDayRaw, timeZone: string): number {
-  const isToday =
-    payload.day === Temporal.Now.plainDateISO(timeZone).toString();
-
-  return isToday || !hasData(payload)
-    ? TODAY_CACHE_TTL_SECONDS
-    : PAST_CACHE_TTL_SECONDS;
-}
-
 export class WhoopService extends Context.Service<WhoopService>()(
   "WhoopService",
   {
@@ -372,98 +362,76 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
-          const requestedDays = inclusiveDays(params.startDate, params.endDate);
-          const cachedDays = yield* cache.getCachedDays(
-            params.userId,
-            params.accountId,
-            requestedDays
-          );
+          const link = yield* getLinkedAccount({
+            accountId: params.accountId,
+            providerId: "whoop",
+            userId: params.userId,
+          });
+          const now = Temporal.Now.instant();
+          const today = now
+            .toZonedDateTimeISO(params.timeZone)
+            .toPlainDate()
+            .toString();
+          // Future days are empty by definition, including any old cache entries.
+          const requestedDays = inclusiveDays(
+            params.startDate,
+            params.endDate
+          ).filter((day) => day <= today);
+          const cachedDays = yield* cache.getCachedDays(link, requestedDays);
 
-          const missingDays = requestedDays.filter(
-            (day) => !cachedDays.has(day)
-          );
+          const fetchRanges = missingDayFetchRanges({
+            cachedDays,
+            days: requestedDays,
+            timeZone: params.timeZone,
+          });
           const allDays = new Map(cachedDays);
 
-          const [missingStart] = missingDays;
-          const missingEnd = missingDays.at(-1);
-
-          if (missingStart && missingEnd) {
-            // Only fetch a token on a cache miss; user-scoped cache keys
-            // already keep one user from reading another's cached days.
-            const accessToken = yield* getLinkedAccessToken({
-              accountId: params.accountId,
-              providerId: "whoop",
-              userId: params.userId,
-            });
+          if (fetchRanges.length > 0) {
+            const accessToken = yield* getLinkedAccessToken(link);
             const client = createWhoopClient(accessToken);
 
-            // Start 6 hours before midnight so WHOOP cycles/sleeps that
-            // begin in the late evening (typically ~11pm when the user
-            // falls asleep) are captured. Without this buffer, a sleep
-            // starting at 11:54pm falls outside the next day's midnight
-            // boundary and is excluded from narrow refetches.
-            const fetchStart = Temporal.PlainDate.from(missingStart)
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from("00:00"),
-                timeZone: params.timeZone,
-              })
-              .subtract({ hours: 6 })
-              .toInstant()
-              .toString();
-            const fetchEnd = Temporal.PlainDate.from(missingEnd)
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from("00:00"),
-                timeZone: params.timeZone,
-              })
-              .add({ days: 1 })
-              .toInstant()
-              .toString();
+            for (const range of fetchRanges) {
+              const fetchParams = { end: range.end, start: range.start };
 
-            const fetchParams = {
-              end: fetchEnd,
-              start: fetchStart,
-            };
+              const [cycles, recoveries, sleeps, workouts] = yield* Effect.all(
+                [
+                  client.listCycles(fetchParams),
+                  client.listRecoveries(fetchParams),
+                  client.listSleeps(fetchParams),
+                  client.listWorkouts(fetchParams),
+                ],
+                { concurrency: "unbounded" }
+              );
 
-            const [cycles, recoveries, sleeps, workouts] = yield* Effect.all(
-              [
-                client.listCycles(fetchParams),
-                client.listRecoveries(fetchParams),
-                client.listSleeps(fetchParams),
-                client.listWorkouts(fetchParams),
-              ],
-              { concurrency: "unbounded" }
-            );
+              const groupedDays = groupRawDataByDay({
+                cycles,
+                recoveries,
+                sleeps,
+                workouts,
+              });
 
-            const groupedDays = groupRawDataByDay({
-              cycles,
-              recoveries,
-              sleeps,
-              workouts,
-            });
-
-            // Only write days that were actually missing from cache. A cycle
-            // fetched for a missing day can get grouped to an adjacent CACHED
-            // day (e.g., the active cycle starts on day N but its sleep ends
-            // on day N+1), which would overwrite that day's complete cached
-            // data with an incomplete grouping.
-            const fetchedDays = missingDays.map(
-              (day) => groupedDays.get(day) ?? initializeDay(day)
-            );
-            for (const payload of fetchedDays) {
-              allDays.set(payload.day, payload);
+              // Only write days that were actually missing from cache. A cycle
+              // fetched for a missing day can get grouped to an adjacent CACHED
+              // day (e.g., the active cycle starts on day N but its sleep ends
+              // on day N+1), which would overwrite that day's complete cached
+              // data with an incomplete grouping.
+              const fetchedDays = range.days.map(
+                (day) => groupedDays.get(day) ?? initializeDay(day)
+              );
+              for (const payload of fetchedDays) {
+                allDays.set(payload.day, payload);
+              }
+              yield* Effect.forEach(
+                fetchedDays,
+                (payload) =>
+                  cache.setCachedDay(
+                    link,
+                    payload,
+                    ttlForDay(payload, params.timeZone, now)
+                  ),
+                { concurrency: "unbounded", discard: true }
+              );
             }
-            yield* Effect.forEach(
-              fetchedDays,
-              (payload) =>
-                cache.setCachedDay(
-                  params.userId,
-                  params.accountId,
-                  payload.day,
-                  payload,
-                  ttlForDay(payload, params.timeZone)
-                ),
-              { concurrency: "unbounded", discard: true }
-            );
           }
 
           return requestedDays
@@ -478,11 +446,12 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const accessToken = yield* getLinkedAccessToken({
+          const link = yield* getLinkedAccount({
             providerId: "whoop",
             accountId: params.accountId,
             userId: params.userId,
           });
+          const accessToken = yield* getLinkedAccessToken(link);
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();

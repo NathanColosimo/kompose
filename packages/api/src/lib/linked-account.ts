@@ -34,10 +34,10 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
 /**
  * Resolve the provider account ID to a user-owned local `account.id` for
  * Better Auth. See documents/caching.md for the account ID invariant.
- * Missing or ambiguous rows, APIErrors and absent tokens yield LinkedAccountError;
+ * Missing or ambiguous rows yield LinkedAccountError;
  * unexpected failures, including database errors, are defects.
  */
-export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
+export const getLinkedAccount = Effect.fn("getLinkedAccount")(
   function* (params: {
     accountId: string;
     providerId: LinkedProvider;
@@ -74,9 +74,25 @@ export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
       );
     }
 
+    return { ...params, id: row.id };
+  }
+);
+
+export type LinkedAccount = Effect.Success<ReturnType<typeof getLinkedAccount>>;
+
+/** Fetch a token for the exact linkage checked before the cache lookup. */
+export const getLinkedAccessToken = Effect.fn("getLinkedAccessToken")(
+  function* (link: LinkedAccount) {
+    const fail = (cause: unknown) =>
+      new LinkedAccountError({
+        accountId: link.accountId,
+        cause,
+        providerId: link.providerId,
+      });
+
     const { accessToken } = yield* Effect.tryPromise(() =>
       auth.api.getAccessToken({
-        body: { accountId: row.id, userId: params.userId },
+        body: { accountId: link.id, userId: link.userId },
       })
     ).pipe(
       Effect.catch(({ cause }) =>

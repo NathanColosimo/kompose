@@ -1,78 +1,28 @@
 import {
   CalendarSchema,
   ColorsSchema,
-  type Event,
   EventSchema,
 } from "@kompose/google-cal/schema";
 import { Context, Effect, Layer } from "effect";
+import type { LinkedAccount } from "../../lib/linked-account";
 import { makeRedisJsonCache } from "../../lib/redis-cache";
 
-const KEY_PREFIX = "gcal";
-
 /** TTLs backstop webhook invalidation. See documents/caching.md. */
-const CALENDARS_TTL_SECONDS = 24 * 60 * 60;
-const COLORS_TTL_SECONDS = 24 * 60 * 60;
-const EVENTS_TTL_SECONDS = 24 * 60 * 60;
+const CACHE_TTL_SECONDS = 24 * 60 * 60;
 
-// Keys include the user ID so a hit can only reuse data fetched with that user's
-// token. See documents/caching.md for ownership and account ID invariants.
+type CacheAccount = Pick<LinkedAccount, "accountId" | "id" | "userId">;
 
-function calendarsKey(userId: string, accountId: string): string {
-  return `${KEY_PREFIX}:cals:${userId}:${accountId}`;
+function accountKey(link: CacheAccount): string {
+  return `${link.userId}:${link.accountId}:${link.id}`;
 }
 
-function calendarKey(
-  userId: string,
-  accountId: string,
-  calendarId: string
-): string {
-  return `${KEY_PREFIX}:cal:${userId}:${accountId}:${calendarId}`;
+function calendarsGenerationKey(link: CacheAccount): string {
+  return `gcal:calendars-generation:${accountKey(link)}`;
 }
 
-function calendarSingleKeyPrefix(userId: string, accountId: string): string {
-  return `${KEY_PREFIX}:cal:${userId}:${accountId}:`;
+function eventsGenerationKey(link: CacheAccount, calendarId: string): string {
+  return `gcal:events-generation:${accountKey(link)}:${calendarId}`;
 }
-
-function colorsKey(userId: string, accountId: string): string {
-  return `${KEY_PREFIX}:colors:${userId}:${accountId}`;
-}
-
-function eventsKey(
-  userId: string,
-  accountId: string,
-  calendarId: string,
-  timeMin: string,
-  timeMax: string
-): string {
-  return `${KEY_PREFIX}:events:${userId}:${accountId}:${calendarId}:${timeMin}:${timeMax}`;
-}
-
-function eventsListKeyPrefix(
-  userId: string,
-  accountId: string,
-  calendarId: string
-): string {
-  return `${KEY_PREFIX}:events:${userId}:${accountId}:${calendarId}:`;
-}
-
-function eventSingleKey(
-  userId: string,
-  accountId: string,
-  calendarId: string,
-  eventId: string
-): string {
-  return `${KEY_PREFIX}:event:${userId}:${accountId}:${calendarId}:${eventId}`;
-}
-
-function eventSingleKeyPrefix(
-  userId: string,
-  accountId: string,
-  calendarId: string
-): string {
-  return `${KEY_PREFIX}:event:${userId}:${accountId}:${calendarId}:`;
-}
-
-// ── Service ─────────────────────────────────────────────────────────
 
 export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCacheService>()(
   "GoogleCalendarCacheService",
@@ -80,243 +30,107 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
     make: Effect.sync(() => {
       const cache = makeRedisJsonCache("CACHE_ERROR");
 
-      // ── Calendars ───────────────────────────────────────────────
+      const calendars = Effect.fn("GoogleCalendarCacheService.calendars")(
+        function* (link: CacheAccount) {
+          yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+          return yield* cache.versionedEntry(
+            "calendars",
+            `gcal:cals:${accountKey(link)}`,
+            calendarsGenerationKey(link),
+            CalendarSchema.array(),
+            CACHE_TTL_SECONDS
+          );
+        }
+      );
 
-      const getCachedCalendars = Effect.fn(
-        "GoogleCalendarCacheService.getCachedCalendars"
-      )(function* (userId: string, accountId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        return yield* cache.get(
-          "getCachedCalendars",
-          calendarsKey(userId, accountId),
-          CalendarSchema.array()
+      const calendar = Effect.fn("GoogleCalendarCacheService.calendar")(
+        function* (link: CacheAccount, calendarId: string) {
+          yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+          yield* Effect.annotateCurrentSpan("calendarId", calendarId);
+          return yield* cache.versionedEntry(
+            "calendar",
+            `gcal:cal:${accountKey(link)}:${calendarId}`,
+            calendarsGenerationKey(link),
+            CalendarSchema,
+            CACHE_TTL_SECONDS
+          );
+        }
+      );
+
+      const colors = Effect.fn("GoogleCalendarCacheService.colors")(function* (
+        link: CacheAccount
+      ) {
+        yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+        return cache.entry(
+          "colors",
+          `gcal:colors:${accountKey(link)}`,
+          ColorsSchema,
+          CACHE_TTL_SECONDS
         );
       });
 
-      const setCachedCalendars = Effect.fn(
-        "GoogleCalendarCacheService.setCachedCalendars"
-      )(function* (userId: string, accountId: string, data: unknown) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* cache.set(
-          "setCachedCalendars",
-          calendarsKey(userId, accountId),
-          data,
-          CALENDARS_TTL_SECONDS
+      const events = Effect.fn("GoogleCalendarCacheService.events")(function* (
+        link: CacheAccount,
+        params: { calendarId: string; timeMin: string; timeMax: string }
+      ) {
+        yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+        yield* Effect.annotateCurrentSpan("calendarId", params.calendarId);
+        return yield* cache.versionedEntry(
+          "events",
+          `gcal:events:${accountKey(link)}:${params.calendarId}:${params.timeMin}:${params.timeMax}`,
+          eventsGenerationKey(link, params.calendarId),
+          EventSchema.array(),
+          CACHE_TTL_SECONDS
         );
       });
 
-      /**
-       * Webhooks don't identify the changed calendar, so clear the list and singles.
-       */
+      const event = Effect.fn("GoogleCalendarCacheService.event")(function* (
+        link: CacheAccount,
+        params: { calendarId: string; eventId: string }
+      ) {
+        yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+        yield* Effect.annotateCurrentSpan("calendarId", params.calendarId);
+        yield* Effect.annotateCurrentSpan("eventId", params.eventId);
+        return yield* cache.versionedEntry(
+          "event",
+          `gcal:event:${accountKey(link)}:${params.calendarId}:${params.eventId}`,
+          eventsGenerationKey(link, params.calendarId),
+          EventSchema,
+          CACHE_TTL_SECONDS
+        );
+      });
+
       const invalidateCalendars = Effect.fn(
         "GoogleCalendarCacheService.invalidateCalendars"
-      )(function* (userId: string, accountId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* cache.remove("invalidateCalendars", {
-          keys: [calendarsKey(userId, accountId)],
-          prefixes: [calendarSingleKeyPrefix(userId, accountId)],
-        });
-      });
-
-      // ── Single calendar ──────────────────────────────────────────
-
-      const getCachedCalendar = Effect.fn(
-        "GoogleCalendarCacheService.getCachedCalendar"
-      )(function* (userId: string, accountId: string, calendarId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        return yield* cache.get(
-          "getCachedCalendar",
-          calendarKey(userId, accountId, calendarId),
-          CalendarSchema
+      )(function* (link: CacheAccount) {
+        yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+        yield* cache.invalidate(
+          "invalidateCalendars",
+          calendarsGenerationKey(link)
         );
       });
 
-      const setCachedCalendar = Effect.fn(
-        "GoogleCalendarCacheService.setCachedCalendar"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        data: unknown
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
+      // Recurring mutations can change other instances as well as the supplied ID.
+      // All lists and singles for a calendar share one generation.
+      const invalidateEvents = Effect.fn(
+        "GoogleCalendarCacheService.invalidateEvents"
+      )(function* (link: CacheAccount, calendarId: string) {
+        yield* Effect.annotateCurrentSpan("accountId", link.accountId);
         yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* cache.set(
-          "setCachedCalendar",
-          calendarKey(userId, accountId, calendarId),
-          data,
-          CALENDARS_TTL_SECONDS
+        yield* cache.invalidate(
+          "invalidateEvents",
+          eventsGenerationKey(link, calendarId)
         );
-      });
-
-      // ── Colors ──────────────────────────────────────────────────
-
-      const getCachedColors = Effect.fn(
-        "GoogleCalendarCacheService.getCachedColors"
-      )(function* (userId: string, accountId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        return yield* cache.get(
-          "getCachedColors",
-          colorsKey(userId, accountId),
-          ColorsSchema
-        );
-      });
-
-      const setCachedColors = Effect.fn(
-        "GoogleCalendarCacheService.setCachedColors"
-      )(function* (userId: string, accountId: string, data: unknown) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* cache.set(
-          "setCachedColors",
-          colorsKey(userId, accountId),
-          data,
-          COLORS_TTL_SECONDS
-        );
-      });
-
-      // ── Events ──────────────────────────────────────────────────
-
-      const getCachedEvents = Effect.fn(
-        "GoogleCalendarCacheService.getCachedEvents"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        timeMin: string,
-        timeMax: string
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        return yield* cache.get(
-          "getCachedEvents",
-          eventsKey(userId, accountId, calendarId, timeMin, timeMax),
-          EventSchema.array()
-        );
-      });
-
-      const setCachedEvents = Effect.fn(
-        "GoogleCalendarCacheService.setCachedEvents"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        timeMin: string,
-        timeMax: string,
-        data: Event[]
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* cache.set(
-          "setCachedEvents",
-          eventsKey(userId, accountId, calendarId, timeMin, timeMax),
-          data,
-          EVENTS_TTL_SECONDS
-        );
-      });
-
-      // ── Single event ────────────────────────────────────────────
-
-      const getCachedEvent = Effect.fn(
-        "GoogleCalendarCacheService.getCachedEvent"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        eventId: string
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.annotateCurrentSpan("eventId", eventId);
-        return yield* cache.get(
-          "getCachedEvent",
-          eventSingleKey(userId, accountId, calendarId, eventId),
-          EventSchema
-        );
-      });
-
-      const setCachedEvent = Effect.fn(
-        "GoogleCalendarCacheService.setCachedEvent"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        eventId: string,
-        data: unknown
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.annotateCurrentSpan("eventId", eventId);
-        yield* cache.set(
-          "setCachedEvent",
-          eventSingleKey(userId, accountId, calendarId, eventId),
-          data,
-          EVENTS_TTL_SECONDS
-        );
-      });
-
-      // ── Invalidation ────────────────────────────────────────────
-
-      /**
-       * Webhooks don't identify the changed event, so clear lists and singles.
-       */
-      const invalidateAllEvents = Effect.fn(
-        "GoogleCalendarCacheService.invalidateAllEvents"
-      )(function* (userId: string, accountId: string, calendarId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* cache.remove("invalidateAllEvents", {
-          prefixes: [
-            eventsListKeyPrefix(userId, accountId, calendarId),
-            eventSingleKeyPrefix(userId, accountId, calendarId),
-          ],
-        });
-      });
-
-      /**
-       * Local mutations can retain unrelated single-event entries.
-       */
-      const invalidateEventLists = Effect.fn(
-        "GoogleCalendarCacheService.invalidateEventLists"
-      )(function* (userId: string, accountId: string, calendarId: string) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* cache.remove("invalidateEventLists", {
-          prefixes: [eventsListKeyPrefix(userId, accountId, calendarId)],
-        });
-      });
-
-      const invalidateEvent = Effect.fn(
-        "GoogleCalendarCacheService.invalidateEvent"
-      )(function* (
-        userId: string,
-        accountId: string,
-        calendarId: string,
-        eventId: string
-      ) {
-        yield* Effect.annotateCurrentSpan("accountId", accountId);
-        yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-        yield* Effect.annotateCurrentSpan("eventId", eventId);
-        yield* cache.remove("invalidateEvent", {
-          keys: [eventSingleKey(userId, accountId, calendarId, eventId)],
-        });
       });
 
       return {
-        getCachedCalendar,
-        getCachedCalendars,
-        getCachedColors,
-        getCachedEvent,
-        getCachedEvents,
-        invalidateAllEvents,
+        calendar,
+        calendars,
+        colors,
+        event,
+        events,
         invalidateCalendars,
-        invalidateEvent,
-        invalidateEventLists,
-        setCachedCalendar,
-        setCachedCalendars,
-        setCachedColors,
-        setCachedEvent,
-        setCachedEvents,
+        invalidateEvents,
       };
     }),
   }

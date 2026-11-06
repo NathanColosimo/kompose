@@ -1,6 +1,7 @@
 "use client";
 
 import type { TaskRecurrence } from "@kompose/api/routers/task/contract";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   buildTaskRecurrence,
   getTaskRecurrenceDisplayText,
@@ -9,13 +10,14 @@ import {
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceDayCode,
   type TaskRecurrenceEditorState,
-  type TaskRecurrenceEndType,
+  type TaskRecurrenceEnd,
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
+import { useAtomValue } from "jotai";
 import { CalendarIcon, Repeat, X } from "lucide-react";
 import { useCallback, useMemo, useReducer, useState } from "react";
-import type { Temporal } from "temporal-polyfill";
+import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -40,22 +42,17 @@ import {
 import { cn } from "@/lib/utils";
 
 type RecurrenceAction =
-  | { type: "reset"; state: TaskRecurrenceEditorState }
   | { type: "set-freq"; freq: TaskRecurrenceFrequency }
   | { type: "set-interval"; interval: number }
   | { type: "toggle-day"; day: TaskRecurrenceDayCode }
   | { type: "set-month-day"; byMonthDay: number }
-  | { type: "set-end-type"; endType: TaskRecurrenceEndType }
-  | { type: "set-until"; until: Temporal.PlainDate | null }
-  | { type: "set-count"; count: number };
+  | { type: "set-end"; end: TaskRecurrenceEnd };
 
 function recurrenceReducer(
   state: TaskRecurrenceEditorState,
   action: RecurrenceAction
 ): TaskRecurrenceEditorState {
   switch (action.type) {
-    case "reset":
-      return action.state;
     case "set-freq":
       return { ...state, freq: action.freq };
     case "set-interval":
@@ -67,14 +64,10 @@ function recurrenceReducer(
       };
     case "set-month-day":
       return { ...state, byMonthDay: action.byMonthDay };
-    case "set-end-type":
-      return { ...state, endType: action.endType };
-    case "set-until":
-      return { ...state, until: action.until };
-    case "set-count":
-      return { ...state, count: action.count };
+    case "set-end":
+      return { ...state, end: action.end };
     default:
-      return state;
+      return action satisfies never;
   }
 }
 
@@ -132,7 +125,8 @@ function RecurrenceForm({
   );
 
   const [state, dispatch] = useReducer(recurrenceReducer, initialFields);
-  const { freq, interval, byDay, byMonthDay, endType, until, count } = state;
+  const { freq, interval, byDay, byMonthDay, end } = state;
+  const timeZone = useAtomValue(timezoneAtom);
 
   const handleApply = useCallback(() => {
     onChange(buildTaskRecurrence(state));
@@ -247,10 +241,12 @@ function RecurrenceForm({
         <div className="space-y-2">
           <Button
             className="h-8 w-full justify-start text-xs"
-            onClick={() => dispatch({ endType: "never", type: "set-end-type" })}
+            onClick={() =>
+              dispatch({ end: { kind: "never" }, type: "set-end" })
+            }
             size="sm"
             type="button"
-            variant={endType === "never" ? "default" : "outline"}
+            variant={end.kind === "never" ? "default" : "outline"}
           >
             Never
           </Button>
@@ -259,15 +255,26 @@ function RecurrenceForm({
             <Button
               className="h-8 shrink-0 text-xs"
               onClick={() =>
-                dispatch({ endType: "until", type: "set-end-type" })
+                dispatch({
+                  end:
+                    end.kind === "until"
+                      ? end
+                      : {
+                          date:
+                            referenceDate ??
+                            Temporal.Now.plainDateISO(timeZone),
+                          kind: "until",
+                        },
+                  type: "set-end",
+                })
               }
               size="sm"
               type="button"
-              variant={endType === "until" ? "default" : "outline"}
+              variant={end.kind === "until" ? "default" : "outline"}
             >
               On
             </Button>
-            {endType === "until" && (
+            {end.kind === "until" && (
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -275,24 +282,28 @@ function RecurrenceForm({
                     variant="outline"
                   >
                     <CalendarIcon className="size-3" />
-                    {until
-                      ? formatPlainDate(until, {
-                          day: "numeric",
-                          month: "short",
-                        })
-                      : "Select"}
+                    {formatPlainDate(end.date, {
+                      day: "numeric",
+                      month: "short",
+                    })}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-auto p-0">
                   <Calendar
                     mode="single"
-                    onSelect={(date) =>
-                      dispatch({
-                        type: "set-until",
-                        until: date ? pickerDateToTemporal(date) : null,
-                      })
-                    }
-                    selected={until ? temporalToPickerDate(until) : undefined}
+                    onSelect={(date) => {
+                      if (date) {
+                        dispatch({
+                          end: {
+                            date: pickerDateToTemporal(date),
+                            kind: "until",
+                          },
+                          type: "set-end",
+                        });
+                      }
+                    }}
+                    required
+                    selected={temporalToPickerDate(end.date)}
                   />
                 </PopoverContent>
               </Popover>
@@ -303,27 +314,34 @@ function RecurrenceForm({
             <Button
               className="h-8 shrink-0 text-xs"
               onClick={() =>
-                dispatch({ endType: "count", type: "set-end-type" })
+                dispatch({
+                  end:
+                    end.kind === "count" ? end : { count: 10, kind: "count" },
+                  type: "set-end",
+                })
               }
               size="sm"
               type="button"
-              variant={endType === "count" ? "default" : "outline"}
+              variant={end.kind === "count" ? "default" : "outline"}
             >
               After
             </Button>
-            {endType === "count" && (
+            {end.kind === "count" && (
               <>
                 <Input
                   className="h-7 w-14 px-2 text-xs"
                   min={1}
                   onChange={(event) =>
                     dispatch({
-                      count: Number.parseInt(event.target.value, 10) || 1,
-                      type: "set-count",
+                      end: {
+                        count: Number.parseInt(event.target.value, 10) || 1,
+                        kind: "count",
+                      },
+                      type: "set-end",
                     })
                   }
                   type="number"
-                  value={count}
+                  value={end.count}
                 />
                 <span className="text-muted-foreground text-xs">times</span>
               </>

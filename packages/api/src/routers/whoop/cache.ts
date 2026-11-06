@@ -3,14 +3,11 @@ import {
   whoopCachedDayRawSchema,
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer, Option } from "effect";
+import type { LinkedAccount } from "../../lib/linked-account";
 import { makeRedisJsonCache } from "../../lib/redis-cache";
 
-const KEY_PREFIX = "whoop";
-
-// User-scoped keys allow ownership-checked data to be reused without a token fetch.
-// See documents/caching.md for the shared ownership invariant.
-function dayKey(userId: string, accountId: string, day: string): string {
-  return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
+function dayKey(link: LinkedAccount, day: string): string {
+  return `whoop:day:${link.userId}:${link.accountId}:${link.id}:${day}`;
 }
 
 export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
@@ -20,12 +17,12 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
       const cache = makeRedisJsonCache("WHOOP_CACHE_ERROR");
 
       const getCachedDay = Effect.fn("WhoopCacheService.getCachedDay")(
-        function* (userId: string, accountId: string, day: string) {
-          yield* Effect.annotateCurrentSpan("accountId", accountId);
+        function* (link: LinkedAccount, day: string) {
+          yield* Effect.annotateCurrentSpan("accountId", link.accountId);
           yield* Effect.annotateCurrentSpan("day", day);
           return yield* cache.get(
             "getCachedDay",
-            dayKey(userId, accountId, day),
+            dayKey(link, day),
             whoopCachedDayRawSchema
           );
         }
@@ -33,14 +30,14 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
 
       /** The cached days among `days`; a day that fails to load is left out. */
       const getCachedDays = Effect.fn("WhoopCacheService.getCachedDays")(
-        function* (userId: string, accountId: string, days: string[]) {
-          yield* Effect.annotateCurrentSpan("accountId", accountId);
+        function* (link: LinkedAccount, days: string[]) {
+          yield* Effect.annotateCurrentSpan("accountId", link.accountId);
           yield* Effect.annotateCurrentSpan("days", JSON.stringify(days));
 
           const entries = yield* Effect.forEach(
             days,
             (day) =>
-              getCachedDay(userId, accountId, day).pipe(
+              getCachedDay(link, day).pipe(
                 Effect.map((payload) => [day, payload] as const)
               ),
             { concurrency: "unbounded" }
@@ -58,17 +55,15 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
 
       const setCachedDay = Effect.fn("WhoopCacheService.setCachedDay")(
         function* (
-          userId: string,
-          accountId: string,
-          day: string,
+          link: LinkedAccount,
           payload: WhoopCachedDayRaw,
           ttlSeconds: number
         ) {
-          yield* Effect.annotateCurrentSpan("accountId", accountId);
-          yield* Effect.annotateCurrentSpan("day", day);
+          yield* Effect.annotateCurrentSpan("accountId", link.accountId);
+          yield* Effect.annotateCurrentSpan("day", payload.day);
           yield* cache.set(
             "setCachedDay",
-            dayKey(userId, accountId, day),
+            dayKey(link, payload.day),
             payload,
             ttlSeconds
           );

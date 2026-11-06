@@ -5,12 +5,27 @@ import type {
   ClientTaskInsertDecoded,
   LinkMeta,
 } from "@kompose/api/routers/task/contract";
+import { useStateConfig } from "@kompose/state/config";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
+import {
+  dedupeLinks,
+  getLinkDurationMinutes,
+  getProviderLabel,
+} from "@kompose/state/link-meta-utils";
+import {
+  getLinkMetadataQueryKey,
+  linkMetadataQueryOptions,
+} from "@kompose/state/link-metadata";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
+import {
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   CalendarIcon,
   CheckIcon,
@@ -20,15 +35,7 @@ import {
   PlayCircleIcon,
   RepeatIcon,
 } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +47,8 @@ import {
 import { formatDuration, formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { cn } from "@/lib/utils";
+
+import type { CommandBarInput } from "./command-bar-input";
 
 const TAG_QUERY_PATTERN = /#([^#]*)$/;
 const URL_PATTERN = /https?:\/\/\S+/g;
@@ -75,19 +84,20 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
   };
 }
 
-/** Round link media durations up to whole minutes. */
-function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
-  if (meta && "durationSeconds" in meta && meta.durationSeconds > 0) {
-    return Math.ceil(meta.durationSeconds / 60);
-  }
-  return null;
-}
-
-function buildTaskDataFromParsed(
+export function buildTaskDataFromParsed(
   parsed: TaskDraft,
-  linkMetaMap: Record<string, LinkMeta>,
-  firstLinkMeta: LinkMeta | undefined
+  queryClient: QueryClient
 ): ClientTaskInsertDecoded {
+  const linkMetaMap: Record<string, LinkMeta> = {};
+  for (const url of parsed.links) {
+    const meta = queryClient.getQueryData<LinkMeta>(
+      getLinkMetadataQueryKey(url)
+    );
+    if (meta) {
+      linkMetaMap[url] = meta;
+    }
+  }
+  const firstLinkMeta = linkMetaMap[parsed.links[0]];
   const links = dedupeLinks(
     parsed.links.map((url) => {
       if (linkMetaMap[url]) {
@@ -103,7 +113,9 @@ function buildTaskDataFromParsed(
 
   let title = parsed.title || firstLinkMeta?.title || "";
   let durationMinutes = parsed.durationMinutes ?? 30;
-  const linkMinutes = linkDurationMinutes(firstLinkMeta);
+  const linkMinutes = firstLinkMeta
+    ? getLinkDurationMinutes(firstLinkMeta)
+    : null;
   if (!parsed.durationMinutes && linkMinutes !== null) {
     durationMinutes = linkMinutes;
   }
@@ -169,18 +181,20 @@ function smartFieldClassName(parse: MagicParse) {
 }
 
 interface CommandBarCreateTaskProps {
-  onCreated: () => void;
+  input: CommandBarInput;
+  onCreated: (revision: number) => void;
   onUpdateSearch: (next: string) => void;
-  search: string;
 }
 
 /** See documents/command-bar.md for parsing, link enrichment, and submit behavior. */
 export function CommandBarCreateTask({
-  search,
+  input,
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
-  const { createTask, parseLink } = useTasks();
+  const { createTask } = useTasks();
+  const queryClient = useQueryClient();
+  const { orpc } = useStateConfig();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
@@ -188,67 +202,34 @@ export function CommandBarCreateTask({
     () => tags.map((tag) => ({ id: tag.id, name: tag.name })),
     [tags]
   );
+  const search = input.text;
   const text = search.trim();
   const magic = useMagicTask(text, tagOptions);
   const parsed = draft(text, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
-  const [resolving, startResolving] = useTransition();
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
 
-  const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
-  const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
-  const lastParsedUrls = useRef<string[]>([]);
-
-  const parseLinkMutate = parseLink.mutate;
-
-  const dispatchParses = useCallback(
-    (urls: string[]) => {
-      const previous = lastParsedUrls.current;
-      const previousUrls = new Set(previous);
-      const newUrls = urls.filter((url) => !previousUrls.has(url));
-      lastParsedUrls.current = urls;
-
-      for (const url of newUrls) {
-        setPendingUrls((prev) => new Set([...prev, url]));
-        parseLinkMutate(url, {
-          onError: () => {
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-          onSuccess: (meta) => {
-            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-        });
-      }
-
-      if (urls.length === 0 && previous.length > 0) {
-        lastParsedUrls.current = [];
-        setLinkMetaMap({});
-        setPendingUrls(new Set());
-      }
-    },
-    [parseLinkMutate]
-  );
+  const urlsKey = parsed.links.join("\n");
+  const [debouncedUrlsKey, setDebouncedUrlsKey] = useState("");
 
   // Wait for 500ms idle so partially typed URLs do not trigger backend calls.
   useEffect(() => {
-    const urls = parsed.links;
-    const timer = setTimeout(() => {
-      dispatchParses(urls);
-    }, 500);
+    const timer = setTimeout(() => setDebouncedUrlsKey(urlsKey), 500);
     return () => clearTimeout(timer);
-  }, [parsed.links, dispatchParses]);
+  }, [urlsKey]);
 
+  const debouncedUrls = debouncedUrlsKey.split("\n");
+  const linkQueries = useLinkMetadata(
+    parsed.links.filter((url) => debouncedUrls.includes(url))
+  );
+  const linkMetaMap: Record<string, LinkMeta> = {};
+  for (const query of linkQueries) {
+    if (query.data) {
+      linkMetaMap[query.url] = query.data;
+    }
+  }
   const firstLinkMeta =
     parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
 
@@ -284,27 +265,37 @@ export function CommandBarCreateTask({
     onUpdateSearch(`${prefix}#${tag.name} `);
   };
 
-  const createFrom = (input: TaskDraft) => {
-    const taskData = buildTaskDataFromParsed(input, linkMetaMap, firstLinkMeta);
-    createTask.mutate(taskData, { onSuccess: () => onCreated() });
-  };
+  const submission = useMutation({
+    mutationFn: async (submitted: CommandBarInput) => {
+      const submittedText = submitted.text.trim();
+      const resolved = draft(submittedText, await magic.resolve(submittedText));
+      // The live preview stops observing a URL once the input changes, which
+      // cancels its query. Fetch (or reuse) metadata for the submitted links.
+      await Promise.allSettled(
+        resolved.links.map((url) =>
+          queryClient.fetchQuery(
+            linkMetadataQueryOptions(orpc.tasks.parseLink, url)
+          )
+        )
+      );
+      await createTask.mutateAsync(
+        buildTaskDataFromParsed(resolved, queryClient)
+      );
+    },
+  });
 
   const handleCreate = () => {
-    if (!isValid || createTask.isPending || resolving) {
+    if (!isValid || submission.isPending) {
       return;
     }
-    if (magic.parse.status === "done") {
-      createFrom(parsed);
-      return;
-    }
-    // Enter can beat the parse (or the model download); wait for it.
-    startResolving(async () => {
-      createFrom(draft(text, await magic.resolve()));
+    submission.mutate(input, {
+      onSuccess: (_data, submitted) => onCreated(submitted.revision),
     });
   };
 
   const effectiveDuration =
-    parsed.durationMinutes ?? linkDurationMinutes(firstLinkMeta);
+    parsed.durationMinutes ??
+    (firstLinkMeta ? getLinkDurationMinutes(firstLinkMeta) : null);
 
   const createItemLabel =
     parsed.title ||
@@ -343,7 +334,11 @@ export function CommandBarCreateTask({
 
       {isValid && (
         <CommandGroup heading="Create Task">
-          <CommandItem onSelect={handleCreate} value={createItemValue}>
+          <CommandItem
+            disabled={submission.isPending}
+            onSelect={handleCreate}
+            value={createItemValue}
+          >
             <CheckIcon className="text-muted-foreground" />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="truncate font-medium">{createItemLabel}</span>
@@ -390,7 +385,9 @@ export function CommandBarCreateTask({
                   const meta = linkMetaMap[url];
                   return (
                     <PreviewBadge key={url}>
-                      {pendingUrls.has(url) ? (
+                      {linkQueries.some(
+                        (query) => query.url === url && query.isPending
+                      ) ? (
                         <Loader2Icon className="size-3.5 animate-spin" />
                       ) : (
                         <Link2Icon className="size-3.5" />

@@ -2,28 +2,9 @@ import { redis } from "@kompose/redis";
 import { Effect, Option } from "effect";
 import type { z } from "zod";
 
-/** Use incremental SCAN calls instead of blocking Redis with KEYS. */
-async function deleteKeysWithPrefix(prefix: string) {
-  let cursor = "0";
-  do {
-    // biome-ignore lint/performance/noAwaitInLoops: SCAN is cursor-dependent
-    const [nextCursor, keys] = await redis.scan(
-      cursor,
-      "MATCH",
-      `${prefix}*`,
-      "COUNT",
-      100
-    );
-    cursor = nextCursor;
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
-  } while (cursor !== "0");
-}
-
 /**
  * Cache failures must not fail requests: log them as `logEvent`, treat failed
- * reads as misses and ignore failed writes/deletes. See documents/caching.md.
+ * reads as misses and ignore failed writes/invalidations. See documents/caching.md.
  */
 export function makeRedisJsonCache(logEvent: string) {
   const logAndReturn =
@@ -67,22 +48,58 @@ export function makeRedisJsonCache(logEvent: string) {
       try: () => redis.set(key, JSON.stringify(value), "EX", ttlSeconds),
     }).pipe(Effect.asVoid, Effect.catch(logAndReturn(operation, undefined)));
 
-  const remove = (
+  const entry = <T>(
     operation: string,
-    { keys = [], prefixes = [] }: { keys?: string[]; prefixes?: string[] }
+    key: string,
+    schema: z.ZodType<T>,
+    ttlSeconds: number
+  ) => ({
+    get: get(operation, key, schema).pipe(
+      Effect.withSpan(`RedisJsonCache.${operation}.get`)
+    ),
+    set: (value: T) =>
+      set(operation, key, value, ttlSeconds).pipe(
+        Effect.withSpan(`RedisJsonCache.${operation}.set`)
+      ),
+  });
+
+  // Capture once, before the provider fetch. A late write must never look up
+  // the new generation and repopulate it with an old provider response.
+  const versionedEntry = <T>(
+    operation: string,
+    key: string,
+    generationKey: string,
+    schema: z.ZodType<T>,
+    ttlSeconds: number
   ) =>
     Effect.tryPromise({
       catch: String,
-      try: async () => {
-        if (keys.length > 0) {
-          await redis.del(...keys);
+      try: () => redis.get(generationKey),
+    }).pipe(
+      Effect.map((generation) => Option.some(generation ?? "0")),
+      Effect.catch(logAndReturn(operation, Option.none<string>())),
+      Effect.map((generation) => {
+        if (Option.isNone(generation)) {
+          // A failed generation lookup cannot safely choose a namespace.
+          return {
+            get: Effect.succeed(Option.none<T>()),
+            set: (_value: T) => Effect.void,
+          };
         }
-        for (const prefix of prefixes) {
-          // biome-ignore lint/performance/noAwaitInLoops: one prefix at a time
-          await deleteKeysWithPrefix(prefix);
-        }
-      },
-    }).pipe(Effect.catch(logAndReturn(operation, undefined)));
+        return entry(
+          operation,
+          `${key}:${generation.value}`,
+          schema,
+          ttlSeconds
+        );
+      })
+    );
 
-  return { get, remove, set };
+  const invalidate = (operation: string, generationKey: string) =>
+    Effect.tryPromise({
+      catch: String,
+      try: () => redis.incr(generationKey),
+    }).pipe(Effect.asVoid, Effect.catch(logAndReturn(operation, undefined)));
+
+  return { entry, get, invalidate, set, versionedEntry };
 }

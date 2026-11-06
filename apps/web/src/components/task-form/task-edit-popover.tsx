@@ -9,6 +9,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -17,12 +18,16 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
+import {
+  applyLinkMetadata,
+  type LinkEditedFields,
+} from "@kompose/state/link-metadata";
 import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
 } from "@kompose/state/task-recurrence";
-import { useAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
@@ -36,8 +41,10 @@ import Image from "next/image";
 import {
   type ReactElement,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -75,12 +82,14 @@ import {
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { selectTaskOpenRequestAtom } from "@/state/command-bar";
 import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../calendar/event-creation/create-form-shared";
 import { Label } from "../ui/label";
 import { RecurrenceEditor } from "./recurrence-editor";
+import { taskEditorPhaseReducer } from "./task-editor-phase";
 
 /** Form state uses Temporal types, convert to native Date only at picker boundary */
 export interface TaskFormValues {
@@ -214,14 +223,17 @@ export function TaskEditPopover({
 }: TaskEditPopoverProps) {
   const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
-  const [openRequest, setOpenRequest] = useAtom(commandBarTaskOpenRequestAtom);
-  const matchesOpenRequest = Boolean(
-    mode === "edit" &&
-      task &&
-      openRequest &&
-      openRequest.taskId === task.id &&
-      openRequest.target === surface
+  const requestAtom = useMemo(
+    () =>
+      selectTaskOpenRequestAtom(
+        mode === "edit" ? task?.id : undefined,
+        surface
+      ),
+    [mode, task?.id, surface]
   );
+  const openRequest = useAtomValue(requestAtom);
+  const setOpenRequest = useSetAtom(commandBarTaskOpenRequestAtom);
+  const matchesOpenRequest = openRequest !== null;
 
   const handleCancel = useCallback(() => {
     setOpen(false);
@@ -299,12 +311,10 @@ export function TaskEditForm({
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
 }) {
   const showActionButtons = !submitRef;
-  const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
-    useTasks();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
-  const [tagScope, setTagScope] = useState<UpdateScope>("this");
-  const pendingUpdateRef = useRef<TaskFormValues | null>(null);
+  const { createTask, updateTask, deleteTask, tasksQuery } = useTasks();
+  const [phase, setPhase] = useReducer(taskEditorPhaseReducer, {
+    type: "editing",
+  });
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -324,7 +334,7 @@ export function TaskEditForm({
   }, [initialCreateValues?.recurrence, task, tasksQuery.data]);
 
   const handleDeleteClick = useCallback(() => {
-    setShowDeleteConfirm(true);
+    setPhase({ type: "delete" });
   }, []);
 
   const confirmDelete = useCallback(
@@ -355,7 +365,7 @@ export function TaskEditForm({
       e.preventDefault();
       handleDeleteClick();
     },
-    { enabled: open && !isCreateMode },
+    { enabled: open && !isCreateMode && phase.type === "editing" },
     [handleDeleteClick, isCreateMode, open]
   );
 
@@ -378,7 +388,43 @@ export function TaskEditForm({
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
-  const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const links = useWatch({ control, name: "links" });
+  const editedLinkFields = useRef<LinkEditedFields>({
+    durationMinutes:
+      mode === "edit" || initialCreateValues?.durationMinutes !== undefined,
+    title: false,
+  });
+  const linkQueries = useLinkMetadata(links, open);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    for (const { url, data } of linkQueries) {
+      if (!data) {
+        continue;
+      }
+      const current = getValues();
+      const next = applyLinkMetadata(
+        current,
+        url,
+        data,
+        editedLinkFields.current
+      );
+      if (next === current) {
+        continue;
+      }
+      setValue("links", next.links, { shouldDirty: true });
+      if (next.title !== current.title) {
+        setValue("title", next.title, { shouldDirty: true });
+      }
+      if (next.durationMinutes !== current.durationMinutes) {
+        setValue("durationMinutes", next.durationMinutes, {
+          shouldDirty: true,
+        });
+      }
+    }
+  }, [getValues, linkQueries, open, setValue]);
 
   const commitUpdate = useCallback(
     (values: TaskFormValues, scope: UpdateScope) => {
@@ -411,6 +457,9 @@ export function TaskEditForm({
 
   const submit = useCallback(
     (values: TaskFormValues) => {
+      if (phase.type !== "editing") {
+        return false;
+      }
       if (isCreateMode) {
         const payload = buildTaskCreatePayload(values);
         if (!payload) {
@@ -452,9 +501,7 @@ export function TaskEditForm({
       });
 
       if (decision.action === "prompt") {
-        pendingUpdateRef.current = values;
-        setTagScope(decision.defaultScope);
-        setShowTagScopeDialog(true);
+        setPhase({ type: "scope", values, scope: decision.defaultScope });
         return false;
       }
 
@@ -466,6 +513,7 @@ export function TaskEditForm({
       createTask,
       isCreateMode,
       isRecurring,
+      phase.type,
       resolvedRecurrence,
       task,
     ]
@@ -489,12 +537,16 @@ export function TaskEditForm({
       e.preventDefault();
       handleSaveClick();
     },
-    { enabled: open && showActionButtons, enableOnFormTags: true },
+    {
+      enabled: open && showActionButtons && phase.type === "editing",
+      enableOnFormTags: true,
+    },
     [handleSaveClick, open, showActionButtons]
   );
 
   const applySharedFields = useCallback(
     (fields: CalendarCreateSharedFields) => {
+      editedLinkFields.current.durationMinutes = true;
       setValue("title", fields.title, { shouldDirty: true });
       setValue("description", fields.description, { shouldDirty: true });
       setValue(
@@ -536,9 +588,10 @@ export function TaskEditForm({
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
       <Input
-        onChange={(e) =>
-          setValue("title", e.target.value, { shouldDirty: true })
-        }
+        onChange={(e) => {
+          editedLinkFields.current.title = true;
+          setValue("title", e.target.value, { shouldDirty: true });
+        }}
         placeholder="Task title"
         value={watchedValues.title}
       />
@@ -641,7 +694,10 @@ export function TaskEditForm({
           name="durationMinutes"
           render={({ field }) => (
             <DurationPicker
-              onChange={(minutes) => field.onChange(minutes)}
+              onChange={(minutes) => {
+                editedLinkFields.current.durationMinutes = true;
+                field.onChange(minutes);
+              }}
               value={field.value}
             />
           )}
@@ -719,7 +775,7 @@ export function TaskEditForm({
       <Separator />
 
       <LinkListEditor
-        isParsing={parseLink.isPending}
+        isParsing={linkQueries.some((query) => query.isPending)}
         links={links}
         onAddLink={(url) => {
           // Insert an unknown placeholder immediately so the link
@@ -729,36 +785,9 @@ export function TaskEditForm({
             provider: "unknown",
             url,
           };
-          const currentLinks =
-            (getValues("links") as unknown as LinkMeta[]) ?? [];
-          const isFirstLink = currentLinks.length === 0;
+          const currentLinks = getValues("links");
           setValue("links", dedupeLinks([...currentLinks, placeholder]), {
             shouldDirty: true,
-          });
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              const latest =
-                (getValues("links") as unknown as LinkMeta[]) ?? [];
-              setValue(
-                "links",
-                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
-                { shouldDirty: true }
-              );
-
-              if (isFirstLink) {
-                if (meta.title && !getValues("title")?.trim()) {
-                  setValue("title", meta.title, { shouldDirty: true });
-                }
-                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                  setValue(
-                    "durationMinutes",
-                    Math.ceil(meta.durationSeconds / 60),
-                    { shouldDirty: true }
-                  );
-                }
-              }
-            },
           });
         }}
         onRemoveLink={(index) => {
@@ -784,12 +813,15 @@ export function TaskEditForm({
           <div className="flex items-center gap-2">
             {isCreateMode ? null : (
               <AlertDialog
-                onOpenChange={setShowDeleteConfirm}
-                open={showDeleteConfirm}
+                onOpenChange={(nextOpen) => {
+                  setPhase({ type: nextOpen ? "delete" : "editing" });
+                }}
+                open={phase.type === "delete"}
               >
                 <AlertDialogTrigger asChild>
                   <Button
                     className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    disabled={phase.type !== "editing"}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -838,7 +870,12 @@ export function TaskEditForm({
               <Button onClick={onClose} size="sm" type="button" variant="ghost">
                 Cancel
               </Button>
-              <Button onClick={handleSaveClick} size="sm" type="button">
+              <Button
+                disabled={phase.type !== "editing"}
+                onClick={handleSaveClick}
+                size="sm"
+                type="button"
+              >
                 Save
               </Button>
             </div>
@@ -847,30 +884,29 @@ export function TaskEditForm({
       ) : null}
 
       {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
-      {isCreateMode ? null : (
+      {phase.type === "scope" && (
         <RecurrenceScopeDialog
           confirmLabel="Apply"
           description="This is a recurring task. Choose how broadly to apply the change."
           onConfirm={() => {
-            const pendingUpdate = pendingUpdateRef.current;
-            if (!pendingUpdate) {
-              return;
-            }
-            commitUpdate(pendingUpdate, tagScope);
-            pendingUpdateRef.current = null;
+            commitUpdate(phase.values, phase.scope);
+            setPhase({ type: "editing" });
             onClose();
           }}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
-              pendingUpdateRef.current = null;
+              setPhase({ type: "editing" });
             }
-            setShowTagScopeDialog(nextOpen);
           }}
-          onValueChange={(value) => setTagScope(value as UpdateScope)}
-          open={showTagScopeDialog}
+          onValueChange={(scope) => {
+            if (scope === "this" || scope === "following") {
+              setPhase({ type: "select-scope", scope });
+            }
+          }}
+          open
           options={TASK_UPDATE_SCOPE_OPTIONS}
           title="Apply task update"
-          value={tagScope}
+          value={phase.scope}
         />
       )}
     </form>

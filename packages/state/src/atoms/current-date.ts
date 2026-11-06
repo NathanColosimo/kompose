@@ -13,7 +13,7 @@ export const timezoneAtom = atom<string>(getSystemTimeZone());
 
 export const currentDateAtom = atom<Temporal.PlainDate>(todayPlainDate());
 
-const visibleDaysCountBaseAtom = createPersistedAtom<number>(
+const { valueAtom: visibleDaysCountBaseAtom } = createPersistedAtom<number>(
   "visible-days-count",
   7
 );
@@ -25,7 +25,7 @@ export const visibleDaysCountAtom = atom(
     const clamped = Number.isNaN(rounded)
       ? 7
       : Math.max(1, Math.min(7, rounded));
-    set(visibleDaysCountBaseAtom, clamped);
+    return set(visibleDaysCountBaseAtom, clamped);
   }
 );
 

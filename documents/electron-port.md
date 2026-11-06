@@ -31,6 +31,26 @@ ships the latest code. Only add bridge members, and feature-detect new ones in
 the web app. Removing or changing one needs a desktop release that every user
 has installed first.
 
+The popup stores desired visibility separately from its first-paint readiness.
+Shortcut presses toggle that desired state, and every dismissal clears it, so
+an open followed by another press or dismissal while loading stays hidden.
+
+Task selections wait for the main renderer's task subscription, rather than
+`did-finish-load`. The optional `setTaskListenerReady` handshake runs after the
+listener is installed. Preload also signals subscription and final unsubscription
+through the existing `onOpenTask` API, so older hosted web versions work with new
+desktop installs. Main-frame navigation resets readiness, retaining the latest
+pending selection through login, offline pages, and retries until the app
+subscribes again. As before, a newer pending selection replaces an older one.
+
+Downloaded updates remain main-process state. The optional `getReadyUpdate`
+snapshot is queried after subscribing to `onUpdateReady`, recovering updates
+downloaded before hydration or during offline navigation. Preload replays the
+snapshot for older web versions too. A live event takes precedence over an older
+snapshot response, and cleaned-up subscriptions ignore snapshot responses.
+New web code feature-detects both optional methods; older installed desktops
+keep their existing event-only behavior.
+
 ## Releases
 
 Desktop releases are only needed for main-process or preload changes; UI changes
@@ -59,6 +79,29 @@ browser through the Better Auth Electron plugin. The login page calls
 copies the returned session cookies into the windows' cookie store, and reloads
 the main window. From then on the windows are ordinary same-origin web pages:
 sessions refresh and sign out exactly as on the web.
+
+The web `DesktopAuth` component owns browser handoff. A complete Electron PKCE
+query on `/login` transfers an already signed-in browser session; signed-out
+browsers keep the normal sign-in form. After OAuth, the plugin's authorization
+cookie signals the handoff even though `/dashboard` has no Electron query.
+Ordinary browser visits start no polling.
+
+Handoff moves through idle, transferring, waiting for a code, complete, or an
+error with a retry button. Polling starts only for an authorization cookie or
+a successful transfer, checks every 100 ms, and fails after 10 seconds without
+a code. Unmounting or replacing the handoff aborts the request and clears its
+poller, including retries; late responses cannot start another poller.
+
+Implementation follows the installed `@better-auth/electron` 1.7.14:
+`dist/proxy.mjs:18–53` exposes `getAuthorizationCode()` and implements
+`ensureElectronRedirect()` with an interval but no completion callback.
+Kompose uses the accessor with its own cancellable poller to expose completion
+and timeout, preserving the plugin's cookie deletion and
+`<scheme>://auth/callback#token=<cookie value>` redirect. The callback gets the
+opaque cookie value, not the identifier returned by `transferUser`.
+`dist/index.mjs:144–180,195–224,235–271` implements transfer and OAuth hooks
+that set this readable cookie. Complete means the browser dispatched the app
+URL; the browser cannot confirm that the OS opened the app.
 
 Account linking opens the normal settings page in the browser and uses Better
 Auth's standard `linkSocial`, including WHOOP's generic provider. Use the same

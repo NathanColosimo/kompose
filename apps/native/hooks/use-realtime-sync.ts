@@ -13,7 +13,8 @@ export function useNativeRealtimeSync(userId?: string) {
   }, []);
 
   useRealtimeSync({
-    enabled: Boolean(userId) && appState === "active",
+    enabled: Boolean(userId),
+    foreground: appState === "active",
     userId,
   });
 }

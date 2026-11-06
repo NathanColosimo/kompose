@@ -18,8 +18,9 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
   - Resolves a single destination before opening anything:
     - Calendar for tasks with both `startDate` and `startTime`
     - Inbox for non-recurring tasks without `startDate`
-    - Today for tasks with a start date but no start time, navigating to that date
-    - Today for other tasks matching its overdue, unplanned, or done sections
+    - Today for other overdue tasks, explicitly navigating to today's date
+    - Today for remaining tasks with a start date but no start time, navigating to that date
+    - Today for completed untimed tasks updated today, explicitly navigating to today (search currently excludes completed tasks)
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
   - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
@@ -45,10 +46,13 @@ fields updates as you type. Typing `#` suggests your tags.
   shares one worker and one loaded model. If the worker's script can't load, its
   `error` event fails the load, and the command bar creates plain tasks.
 - Enter before the model has a parse waits for it.
+- Submission captures the input and its revision. Resolving the parse and creating the task share one pending lifecycle; another submission is blocked until both finish. Typing remains available.
+- A successful creation clears the input only if its revision still matches the submitted revision. Later typing, tag completion, or leaving Create preserves the newer input, even if it returns to the same text.
+- Link metadata is read from the shared query cache after the submitted input's parse resolves, using the resolved task's URLs even if the user has typed a newer draft.
 
 ### URL detection
 
-The model returns the input's URLs as `links: string[]`. On task creation, `tasks.parseLink` is called for each URL to build the `links: LinkMeta[]` array. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
+The model returns the input's URLs as `links: string[]`. After 500ms without URL edits, each URL gets a shared metadata query (`["link-meta", url]`) to build the `links: LinkMeta[]` array. Pending, error, and metadata state come from these independent queries, so concurrent URLs can finish in any order. Failed URLs can be retried by removing and re-adding them. Auto-fill (title, duration) uses the first link's metadata only. Each link is displayed as a separate badge showing its provider name.
 
 ## Keyboard Navigation
 

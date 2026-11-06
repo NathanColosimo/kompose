@@ -28,11 +28,16 @@ export function RecurrenceScopeDialog({
   onValueChange,
   confirmLabel = "Save",
   cancelLabel = "Cancel",
-  onCancel,
   onConfirm,
   disabledScopes,
   options = RECURRENCE_SCOPE_OPTIONS,
+  pending = false,
+  scopeDisabled = false,
+  error,
 }: {
+  pending?: boolean;
+  scopeDisabled?: boolean;
+  error?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -41,15 +46,21 @@ export function RecurrenceScopeDialog({
   onValueChange: (value: RecurrenceScope) => void;
   confirmLabel?: string;
   cancelLabel?: string;
-  onCancel?: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => void;
   disabledScopes?: Partial<Record<RecurrenceScope, boolean>>;
   options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        if (!pending) {
+          onOpenChange(nextOpen);
+        }
+      }}
+      open={open}
+    >
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -59,12 +70,15 @@ export function RecurrenceScopeDialog({
         </DialogHeader>
 
         <RadioGroup
+          disabled={pending || scopeDisabled}
           onValueChange={(next) => onValueChange(next as RecurrenceScope)}
           value={value}
         >
           {options.map((opt) => {
             const id = `${idBase}-${opt.value}`;
-            const isDisabled = Boolean(disabledScopes?.[opt.value]);
+            const isDisabled = Boolean(
+              pending || scopeDisabled || disabledScopes?.[opt.value]
+            );
             return (
               <Label
                 className={cn(
@@ -88,24 +102,22 @@ export function RecurrenceScopeDialog({
           })}
         </RadioGroup>
 
+        {error ? (
+          <p className="text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
+
         <DialogFooter>
           <Button
-            onClick={() => {
-              onCancel?.();
-              onOpenChange(false);
-            }}
+            disabled={pending}
+            onClick={() => onOpenChange(false)}
             type="button"
             variant="ghost"
           >
             {cancelLabel}
           </Button>
-          <Button
-            onClick={async () => {
-              await onConfirm();
-              onOpenChange(false);
-            }}
-            type="button"
-          >
+          <Button disabled={pending} onClick={onConfirm} type="button">
             {confirmLabel}
           </Button>
         </DialogFooter>

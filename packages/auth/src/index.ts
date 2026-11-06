@@ -17,6 +17,7 @@ import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { redisSecondaryStorage } from "./redis-storage";
+import { stopAccountWatches } from "./webhook-cleanup";
 import { whoopOAuthTokens } from "./whoop";
 
 export const auth = betterAuth({
@@ -39,6 +40,20 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  databaseHooks: {
+    account: {
+      delete: {
+        before: async (account): Promise<void> => {
+          await stopAccountWatches(account, async () => {
+            const result = await auth.api.getAccessToken({
+              body: { accountId: account.id, userId: account.userId },
+            });
+            return result.accessToken;
+          });
+        },
+      },
+    },
+  },
   // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
   disabledPaths: ["/token"],
   emailAndPassword: {

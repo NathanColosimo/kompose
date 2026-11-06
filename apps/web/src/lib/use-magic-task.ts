@@ -102,12 +102,12 @@ export function useMagicTask(text: string, tags: TagOption[]) {
     placeholderData: keepPreviousData,
   });
 
-  const resolve = async (): Promise<ParsedTask | null> => {
-    if (!text) {
+  const resolve = async (input: string): Promise<ParsedTask | null> => {
+    if (!input) {
       return null;
     }
     try {
-      return await queryClient.fetchQuery(parseQuery(text, tags));
+      return await queryClient.fetchQuery(parseQuery(input, tags));
     } catch {
       return null;
     }

@@ -24,15 +24,47 @@ function subscribe<T>(
   };
 }
 
-const desktop: DesktopBridge = {
+const desktop: Required<DesktopBridge> = {
   dismissCommandBar: () => invoke("dismissCommandBar"),
+  getReadyUpdate: () => invoke("getReadyUpdate"),
   getShortcut: () => invoke("getShortcut"),
   installUpdate: () => invoke("installUpdate"),
-  onOpenTask: (callback) => subscribe("onOpenTask", callback),
-  onUpdateReady: (callback) => subscribe("onUpdateReady", callback),
+  onOpenTask: (callback) => {
+    const unsubscribe = subscribe("onOpenTask", callback);
+    // Older hosted apps only call onOpenTask, so subscription itself is the ack.
+    desktop.setTaskListenerReady(true).catch(() => undefined);
+    return () => {
+      unsubscribe();
+      if (ipcRenderer.listenerCount(desktopChannel("onOpenTask")) === 0) {
+        desktop.setTaskListenerReady(false).catch(() => undefined);
+      }
+    };
+  },
+  onUpdateReady: (callback) => {
+    let active = true;
+    let receivedEvent = false;
+    const unsubscribe = subscribe<string>("onUpdateReady", (version) => {
+      receivedEvent = true;
+      callback(version);
+    });
+    // Replay for older web apps too, after their listener has been installed.
+    desktop
+      .getReadyUpdate()
+      .then((version) => {
+        if (active && !receivedEvent && version) {
+          callback(version);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  },
   openTask: (selection) => invoke("openTask", selection),
   resizeCommandBar: (height) => invoke("resizeCommandBar", height),
   setShortcut: (id) => invoke("setShortcut", id),
+  setTaskListenerReady: (ready) => invoke("setTaskListenerReady", ready),
   showMainWindow: () => invoke("showMainWindow"),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);
