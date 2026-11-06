@@ -4,7 +4,7 @@ import { webhookSubscriptionTable } from "@kompose/db/schema/webhook-subscriptio
 import { webhookAccountLock } from "@kompose/db/webhook-lock";
 import { makeGoogleCalendarService } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Effect, ManagedRuntime, Schema } from "effect";
 
 class WebhookCleanupTokenError extends Schema.TaggedError<WebhookCleanupTokenError>()(
@@ -31,6 +31,9 @@ export function stopAccountWatches(
       const db = yield* Database;
       const subscriptions = yield* db.transaction(() =>
         Effect.gen(function* () {
+          // Bound the wait for a reconcile holding the lock (its Google calls can
+          // retry for minutes). On timeout the unlink fails and nothing changes.
+          yield* db.execute(sql`set local lock_timeout = '15s'`);
           yield* db.execute(webhookAccountLock(account.id));
           // A reconcile already in flight finishes first. Later ones see unlink intent.
           const unlinkingUntil = new Date(

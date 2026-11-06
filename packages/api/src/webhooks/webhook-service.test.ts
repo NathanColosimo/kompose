@@ -7,7 +7,6 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import { Effect, Layer, ManagedRuntime } from "effect";
 
@@ -423,7 +422,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
       expect(await rows()).toEqual([]);
     });
 
-    test("unlink waits beyond the remote cleanup budget for the account lock", async () => {
+    test("unlink fails without changes when the account lock stays busy", async () => {
       const started = new Promise<void>((resolve) => {
         watchStarted = resolve;
       });
@@ -433,24 +432,24 @@ describe.skipIf(!process.env.DATABASE_URL)(
       const inFlight = reconcile();
       await started;
       const context = await modules.auth.$context;
-      let deleted = false;
-      const unlink = context.internalAdapter
-        .deleteAccount(accountId)
-        .then(() => {
-          deleted = true;
-        });
       try {
-        // Exercise the real ten-second Effect timeout while Postgres holds the
-        // lock. Cleanup's private runtime does not expose a controllable clock.
-        await delay(10_100);
-        expect(deleted).toBe(false);
+        // Waits past the ten-second remote budget, then hits the 15 s lock_timeout.
+        await expect(
+          context.internalAdapter.deleteAccount(accountId)
+        ).rejects.toThrow();
+        expect(stops).toEqual([]);
+        expect(
+          await modules.db
+            .select()
+            .from(modules.schema.account)
+            .where(modules.eq(modules.schema.account.id, accountId))
+        ).toHaveLength(1);
       } finally {
         releaseWatch?.();
-        await Promise.all([inFlight, unlink]);
+        await inFlight;
       }
-      expect(stops).toHaveLength(2);
-      expect(await rows()).toEqual([]);
-    }, 20_000);
+      expect((await rows()).every((row) => row.active)).toBe(true);
+    }, 30_000);
 
     test("a failed unlink intent write prevents Better Auth account deletion", async () => {
       await reconcile();
