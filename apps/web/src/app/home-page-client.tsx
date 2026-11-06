@@ -1,12 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
-import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
+
+// Only the desktop app checks the session here, so browsers never download
+// the auth client on the landing page.
+const DesktopHomeSessionGate = dynamic(
+  () =>
+    import("./desktop-home-session-gate").then(
+      (mod) => mod.DesktopHomeSessionGate
+    ),
+  { ssr: false }
+);
 
 const highlights = [
   {
@@ -31,30 +40,12 @@ export default function HomePageClient() {
   });
 
   return showElectronSessionGate ? (
-    <DesktopHomeSessionGate />
+    <DesktopHomeSessionGate>
+      <HomePageContent />
+    </DesktopHomeSessionGate>
   ) : (
     <HomePageContent />
   );
-}
-
-function DashboardRedirect() {
-  const { replace } = useRouter();
-
-  useMountEffect(() => {
-    replace("/dashboard");
-  });
-
-  return null;
-}
-
-function DesktopHomeSessionGate() {
-  const { data: session, isPending } = authClient.useSession();
-
-  if (isPending) {
-    return null;
-  }
-
-  return session?.user ? <DashboardRedirect /> : <HomePageContent />;
 }
 
 function HomePageContent() {

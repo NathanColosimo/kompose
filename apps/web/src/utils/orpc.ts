@@ -1,5 +1,5 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
-import { env } from "@kompose/env";
+import { clientEnv } from "@kompose/env/client";
 import { errorMessage } from "@kompose/state/errors";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
@@ -86,7 +86,7 @@ const link = new RPCLink({
     const { headers } = await import("next/headers");
     return Object.fromEntries(await headers());
   },
-  origin: env.NEXT_PUBLIC_WEB_URL,
+  origin: clientEnv.NEXT_PUBLIC_WEB_URL,
   plugins: [new RetryAfterLinkPlugin({ maxAttempts: 2 })],
   url: "/api/rpc",
 });

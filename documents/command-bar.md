@@ -96,6 +96,6 @@ The model returns the input's URLs as `links: string[]`. On task creation, `task
 - **Parser worker:** `packages/task-parser/src/worker.ts`, a SharedWorker (server in `worker-server.ts`, contract in `worker-contract.ts`, client in `worker-client.ts`)
 - **State atom:** `packages/state/src/atoms/command-bar.ts`
 - **Hotkey registration:** `apps/web/src/components/hotkeys/calendar-hotkeys.tsx`
-- **Desktop popup route:** `apps/web/src/app/desktop/command-bar/page.tsx`
-- **Desktop shortcut settings:** `apps/web/src/app/dashboard/settings/desktop-shortcut-settings.tsx`
+- **Desktop popup route:** `apps/web/src/app/(app)/desktop/command-bar/page.tsx`
+- **Desktop shortcut settings:** `apps/web/src/app/(app)/dashboard/settings/desktop-shortcut-settings.tsx`
 - **Desktop shortcut config/helpers:** `packages/desktop/src/index.ts`

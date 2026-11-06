@@ -5,7 +5,7 @@ import {
   ELECTRON_AUTH_CLIENT_ID,
   ELECTRON_AUTH_SCHEME,
 } from "@kompose/desktop";
-import { env } from "@kompose/env";
+import { clientEnv } from "@kompose/env/client";
 import {
   inferAdditionalFields,
   lastLoginMethodClient,
@@ -14,7 +14,7 @@ import { createAuthClient } from "better-auth/react";
 import { isDesktopRuntime } from "./desktop";
 
 export const authClient = createAuthClient({
-  baseURL: env.NEXT_PUBLIC_WEB_URL,
+  baseURL: clientEnv.NEXT_PUBLIC_WEB_URL,
   plugins: [
     inferAdditionalFields<typeof auth>(),
     lastLoginMethodClient({ cookieName: "kompose.last_used_login_method" }),

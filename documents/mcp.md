@@ -35,7 +35,7 @@ OpenID discovery stays at `/api/auth/.well-known/openid-configuration`, which MC
 
 ### Consent page
 
-`apps/web/src/app/oauth/consent/page.tsx` verifies the signed query with `verifyOAuthQueryParams` on the server, loads the client's public name and logo, and lists what each scope allows. Allow and Cancel call `authClient.oauth2.consent`; `oauthProviderClient()` in the web auth client attaches the signed query.
+`apps/web/src/app/(app)/oauth/consent/page.tsx` verifies the signed query with `verifyOAuthQueryParams` on the server, loads the client's public name and logo, and lists what each scope allows. Allow and Cancel call `authClient.oauth2.consent`; `oauthProviderClient()` in the web auth client attaches the signed query.
 
 ### Revoking
 
