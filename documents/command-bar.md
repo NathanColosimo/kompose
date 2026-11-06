@@ -32,8 +32,12 @@ A small model (`packages/task-parser`) reads the title, description, start
 and due dates, time, duration, repeat, links and tags, and a preview of the
 fields updates as you type. Typing `#` suggests your tags.
 
-- The dashboard and the desktop popup start loading the model on mount
+- The desktop popup starts loading the model on mount
   (`usePreloadTaskParser`), so it's ready by the time the command bar opens.
+  The dashboard waits until its tasks and tags have loaded and no other query
+  is fetching (`usePreloadTaskParserAfterData`), so the first download doesn't
+  compete with the dashboard's data. Opening the command bar sooner loads it
+  right away.
   The weights (14 MB, Git LFS) are kept in the Cache API between sessions.
 - Parsing runs in a SharedWorker behind an oRPC contract
   (`packages/task-parser/src/worker-contract.ts`); Temporal values cross the
