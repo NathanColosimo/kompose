@@ -57,6 +57,7 @@ packages/api/src/routers/whoop/   — oRPC router + Effect service
 ├── router.ts            — oRPC handler implementations
 ├── service.ts           — WhoopService (day summary aggregation, caching, grouping)
 ├── cache.ts             — WhoopCacheService (Redis per-day cache)
+├── day-policy.ts        — Freshness TTLs and contiguous missing-day fetch ranges
 └── errors.ts            — Service-level errors (InvalidRange)
 
 packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
@@ -99,12 +100,19 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 
 | Resource | Key pattern | TTL |
 |----------|-------------|-----|
-| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today, or no data yet), 7 days (past) |
+| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today, empty, pending, or incomplete), 7 days (settled past days) |
 
-- Days with no WHOOP data (future days, today before the band syncs, days the band was off) are cached as empty for 15 min and left out of `days.list` responses. Without this, any window containing a future day (the current week or month always does) refetched from WHOOP on every load.
+- A past day is settled only when its cycle has an end at or before the request time, its recovery and associated sleep are present, and every cycle, recovery, sleep (including naps), and workout has score state `SCORED` or `UNSCORABLE`. Pending scores, open cycles, missing bundle records, and orphan workouts keep the 15-minute TTL.
+- Today is determined in the requested timezone and always uses the 15-minute TTL. Empty days up to today are cached for 15 minutes and left out of `days.list` responses.
+- Future days are computed as empty: they are excluded before cache reads, API fetches, and cache writes, and left out of responses. Previously cached future entries are ignored.
+- Each contiguous run of missing days gets its own four paginated collection fetches. Cached days between runs are not included in the main fetch interval; the overnight lookback can overlap the previous day's evening.
 - Cache writes only target days that were actually missing. Cached days are never overwritten by data from an adjacent day's fetch.
-- Fetch window starts 6 hours before midnight local time to capture cycles/sleeps that begin in the late evening.
+- Each fetch window starts 6 hours before midnight local time and ends at midnight after its last missing day, preserving calendar boundaries across daylight saving transitions.
+- Raw cached records retain the distinction between `PENDING_SCORE`, `UNSCORABLE`, and missing data for freshness decisions. The client summary still uses nullable scores; its API is unchanged.
+- Existing cache entries retain their original Redis expiry until refreshed; this policy applies to new writes without changing key namespaces.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and degrade to API fetches; they never fail requests.
+
+`day-policy.test.ts` covers pending/terminal states, incomplete bundles, local-day boundaries, future-day exclusion, and missing ranges split around cache hits (including a daylight saving transition). Run it with `bun test packages/api/src/routers/whoop/day-policy.test.ts`.
 
 ## oRPC Endpoints
 
