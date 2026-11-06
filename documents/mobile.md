@@ -109,8 +109,10 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Data hook: `packages/state/src/hooks/use-tasks.ts` (imported via `@kompose/state/hooks`)
 - Editor flow (shared by the Tasks and Calendar tabs): `apps/native/hooks/use-task-editor-flow.ts`
-  owns the draft, create/save/delete/toggle-done, and the recurring-task scope prompts,
-  which render through `apps/native/components/tasks/task-scope-dialogs.tsx`.
+  runs create/save/delete/toggle-done and the recurring-task scope prompts using
+  the pure lifecycle reducer in `packages/state/src/task-editor-flow.ts`.
+  The session-keyed editor sheet owns mutable form data. Scope prompts render
+  through `apps/native/components/tasks/task-scope-dialogs.tsx`.
 
 ### Google calendar visibility picker
 

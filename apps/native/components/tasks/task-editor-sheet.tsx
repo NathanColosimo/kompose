@@ -1,8 +1,5 @@
 import type { TagSelect } from "@kompose/api/routers/tag/contract";
-import type {
-  LinkMeta,
-  TaskRecurrence,
-} from "@kompose/api/routers/task/contract";
+import type { LinkMeta } from "@kompose/api/routers/task/contract";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
@@ -12,6 +9,11 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
+import {
+  buildTaskDraft,
+  type TaskDraft,
+  type TaskEditorState,
+} from "@kompose/state/task-editor-flow";
 import {
   buildTaskRecurrence,
   getTaskRecurrenceDisplayText,
@@ -46,31 +48,10 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-
-export interface TaskDraft {
-  description: string;
-  dueDate: Temporal.PlainDate | null;
-  durationMinutes: number;
-  /** Current text in the link input field (not yet added to links array) */
-  linkInput: string;
-  links: LinkMeta[];
-  recurrence: TaskRecurrence | null;
-  startDate: Temporal.PlainDate | null;
-  startTime: Temporal.PlainTime | null;
-  status: "todo" | "in_progress" | "done";
-  tagIds: string[];
-  title: string;
-}
+import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
 interface TaskEditorSheetProps {
-  draft: TaskDraft | null;
-  isVisible: boolean;
-  mode: "create" | "edit";
-  onClose: () => void;
-  onDelete?: () => void;
-  onSave: () => void;
-  onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
-  setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
+  flow: TaskEditorFlow;
   timeZone: string;
 }
 
@@ -465,29 +446,39 @@ function TaskTagPicker({
   );
 }
 
-export function TaskEditorSheet({
-  isVisible,
-  mode,
-  draft,
-  setDraft,
-  onClose,
-  onSave,
-  onDelete,
-  onToggleDone,
+export function TaskEditorSheet({ flow, timeZone }: TaskEditorSheetProps) {
+  const { state } = flow;
+  if (state.kind !== "create" && state.kind !== "edit") {
+    return null;
+  }
+
+  return (
+    <TaskEditorSession
+      flow={flow}
+      key={state.sessionId}
+      session={state}
+      timeZone={timeZone}
+    />
+  );
+}
+
+function TaskEditorSession({
+  session,
+  flow,
   timeZone,
-}: TaskEditorSheetProps) {
+}: TaskEditorSheetProps & {
+  session: Extract<TaskEditorState, { kind: "create" | "edit" }>;
+}) {
+  const [draft, setDraft] = React.useState<TaskDraft>(() =>
+    session.kind === "create" ? session.initial : buildTaskDraft(session.task)
+  );
+  const mode = session.kind;
   const { tagsQuery } = useTags();
   const { parseLink } = useTasks();
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft
-    ? draft.title.trim().length > 0 || draft.links.length > 0
-    : false;
-
-  if (!draft) {
-    return null;
-  }
+  const canSave = draft.title.trim().length > 0 || draft.links.length > 0;
 
   const durationOptions = Array.from({ length: 24 }, (_, hour) =>
     DURATION_MINUTE_OPTIONS.map((minute) => {
@@ -505,7 +496,7 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone);
+  const canToggleDone = mode === "edit";
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));
@@ -555,21 +546,15 @@ export function TaskEditorSheet({
     });
   };
 
-  const handleClose = () => {
-    setIsRecurrenceExpanded(false);
-    setIsTagPickerExpanded(false);
-    onClose();
-  };
-
   const fallbackUntil = draft.startDate ?? Temporal.Now.plainDateISO(timeZone);
 
   return (
     <BottomSheet
       headerRight={
         <View className="flex-row items-center gap-2">
-          {mode === "edit" && onDelete ? (
+          {mode === "edit" ? (
             <Button
-              onPress={onDelete}
+              onPress={flow.requestDelete}
               size="icon"
               style={{ borderRadius: 999 }}
               variant="ghost"
@@ -579,7 +564,7 @@ export function TaskEditorSheet({
           ) : null}
           <Button
             disabled={!canSave}
-            onPress={onSave}
+            onPress={() => flow.save(draft)}
             size="icon"
             style={{ borderRadius: 999 }}
             variant="ghost"
@@ -592,8 +577,8 @@ export function TaskEditorSheet({
           </Button>
         </View>
       }
-      isVisible={isVisible}
-      onClose={handleClose}
+      isVisible
+      onClose={flow.close}
       snapPoints={[0.84, 0.95, 0.99]}
       title={mode === "edit" ? "Edit task" : "New task"}
     >
@@ -738,7 +723,7 @@ export function TaskEditorSheet({
             if (canToggleDone) {
               const nextStatus: TaskDraft["status"] = checked ? "done" : "todo";
               setDraft((current) => ({ ...current, status: nextStatus }));
-              onToggleDone?.(nextStatus);
+              flow.toggleDone(nextStatus);
             }
           }}
           style={{

@@ -39,6 +39,7 @@ import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import type { TaskDraft } from "@kompose/state/task-editor-flow";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
@@ -65,10 +66,7 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
-import {
-  type TaskDraft,
-  TaskEditorSheet,
-} from "@/components/tasks/task-editor-sheet";
+import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -1476,18 +1474,7 @@ export default function CalendarTab() {
         </View>
       </BottomSheet>
 
-      <TaskEditorSheet
-        // Drop the content as soon as it closes rather than animating it out.
-        draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
-        isVisible={taskFlow.isEditorOpen}
-        mode={taskFlow.editingTask ? "edit" : "create"}
-        onClose={taskFlow.close}
-        onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
-        onSave={taskFlow.save}
-        onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
-        setDraft={taskFlow.updateDraft}
-        timeZone={timeZone}
-      />
+      <TaskEditorSheet flow={taskFlow} timeZone={timeZone} />
 
       <AlertDialog
         confirmText="Apply"

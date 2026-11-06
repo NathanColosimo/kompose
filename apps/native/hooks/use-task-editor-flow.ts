@@ -5,30 +5,14 @@ import type {
 } from "@kompose/api/routers/task/contract";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
-  getTaskUpdateScopeDecision,
-  haveTaskCoreFieldsChanged,
-  resolveTaskRecurrenceForEditor,
-} from "@kompose/state/task-recurrence";
-import { useCallback, useState } from "react";
-import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
-
-type TaskScopeDialog = "save" | "delete" | null;
-
-function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
-  return {
-    description: task.description ?? "",
-    dueDate: task.dueDate,
-    durationMinutes: task.durationMinutes,
-    linkInput: "",
-    links: task.links ?? [],
-    recurrence: task.recurrence ?? null,
-    startDate: task.startDate,
-    startTime: task.startTime,
-    status: task.status,
-    tagIds: task.tags.map((tag) => tag.id),
-    title: task.title,
-  };
-}
+  canSaveTaskDraft,
+  getTaskDraftUpdateScopeDecision,
+  type TaskDraft,
+  taskEditorFlowReducer,
+} from "@kompose/state/task-editor-flow";
+import { resolveTaskRecurrenceForEditor } from "@kompose/state/task-recurrence";
+import { useCallback, useReducer } from "react";
+import { uuidv7 } from "uuidv7";
 
 function trimmedDescription(draft: TaskDraft): string | null {
   return draft.description.trim() ? draft.description.trim() : null;
@@ -37,55 +21,37 @@ function trimmedDescription(draft: TaskDraft): string | null {
 /** Shared task editor orchestration; see documents/mobile-task-popover.md. */
 export function useTaskEditorFlow() {
   const { tasksQuery, createTask, updateTask, deleteTask } = useTasks();
-  const [draft, setDraft] = useState<TaskDraft | null>(null);
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<TaskSelectDecoded | null>(
-    null
-  );
-  const [scopeDialog, setScopeDialog] = useState<TaskScopeDialog>(null);
-  const [pendingSaveDraft, setPendingSaveDraft] = useState<TaskDraft | null>(
-    null
-  );
-  const [saveScope, setSaveScope] = useState<UpdateScope>("this");
-  const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
+  const [state, dispatch] = useReducer(taskEditorFlowReducer, {
+    kind: "closed",
+  });
 
   // Stable so callers can use it in effect dependencies.
-  const openCreate = useCallback((nextDraft: TaskDraft) => {
-    setEditingTask(null);
-    setPendingSaveDraft(null);
-    setScopeDialog(null);
-    setDraft(nextDraft);
-    setIsEditorOpen(true);
+  const openCreate = useCallback((initial: TaskDraft) => {
+    dispatch({ initial, sessionId: uuidv7(), type: "openCreate" });
   }, []);
 
   function openEdit(task: TaskSelectDecoded) {
-    const nextEditingTask: TaskSelectDecoded = {
-      ...task,
-      recurrence: resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []),
-    };
-    setEditingTask(nextEditingTask);
-    setDraft(buildDraftFromTask(nextEditingTask));
-    setIsEditorOpen(true);
+    dispatch({
+      sessionId: uuidv7(),
+      task: {
+        ...task,
+        recurrence: resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []),
+      },
+      type: "openEdit",
+    });
   }
 
   function close() {
-    setIsEditorOpen(false);
-    setEditingTask(null);
-    setPendingSaveDraft(null);
-    setScopeDialog(null);
+    dispatch({ type: "close" });
   }
 
-  function updateDraft(updater: (previous: TaskDraft) => TaskDraft) {
-    setDraft((current) => (current ? updater(current) : current));
-  }
-
-  function commitUpdate(nextDraft: TaskDraft, scope: UpdateScope) {
-    if (!editingTask) {
-      return;
-    }
-
+  function commitUpdate(
+    task: TaskSelectDecoded,
+    nextDraft: TaskDraft,
+    scope: UpdateScope
+  ) {
     updateTask.mutate({
-      id: editingTask.id,
+      id: task.id,
       scope,
       task: {
         description: trimmedDescription(nextDraft),
@@ -124,102 +90,61 @@ export function useTaskEditorFlow() {
     });
   }
 
-  function save() {
-    if (!draft) {
-      return;
-    }
-    if (!draft.title.trim() && draft.links.length === 0) {
-      return;
-    }
-    if (draft.durationMinutes <= 0) {
+  function save(draft: TaskDraft) {
+    if (
+      (state.kind !== "create" && state.kind !== "edit") ||
+      !canSaveTaskDraft(draft)
+    ) {
       return;
     }
 
-    if (!editingTask) {
+    if (state.kind === "create") {
       create(draft);
-      close();
-      return;
+    } else {
+      const decision = getTaskDraftUpdateScopeDecision(state.task, draft);
+      if (decision.action === "apply") {
+        commitUpdate(state.task, draft, decision.scope);
+      }
     }
-
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: draft.description,
-        dueDate: draft.dueDate,
-        durationMinutes: draft.durationMinutes,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
-        title: draft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      nextRecurrence: draft.recurrence,
-      nextTagIds: draft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
-
-    if (decision.action === "prompt") {
-      setPendingSaveDraft(draft);
-      setSaveScope(decision.defaultScope);
-      setIsEditorOpen(false);
-      setScopeDialog("save");
-      return;
-    }
-
-    commitUpdate(draft, decision.scope);
-    close();
+    dispatch({ draft, type: "save" });
   }
 
   function requestDelete() {
-    if (!editingTask) {
+    if (state.kind !== "edit") {
       return;
     }
-
-    if (editingTask.seriesMasterId) {
-      setDeleteScope("this");
-      setIsEditorOpen(false);
-      setScopeDialog("delete");
-      return;
+    if (!state.task.seriesMasterId) {
+      deleteTask.mutate({ id: state.task.id, scope: "this" });
     }
-
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    close();
+    dispatch({ type: "delete" });
   }
 
   function confirmScopedSave() {
-    if (!(editingTask && pendingSaveDraft)) {
+    if (state.kind !== "saveScope") {
       return;
     }
-    commitUpdate(pendingSaveDraft, saveScope);
+    commitUpdate(state.task, state.draft, state.scope);
     close();
   }
 
   function confirmScopedDelete() {
-    if (!editingTask) {
+    if (state.kind !== "deleteScope") {
       return;
     }
-    deleteTask.mutate({ id: editingTask.id, scope: deleteScope });
+    deleteTask.mutate({ id: state.task.id, scope: state.scope });
     close();
   }
 
+  function setScope(scope: UpdateScope | DeleteScope) {
+    dispatch({ scope, type: "setScope" });
+  }
+
   function toggleDone(nextStatus: TaskDraft["status"]) {
-    if (!editingTask) {
+    if (state.kind !== "edit") {
       return;
     }
     updateTask.mutate({
-      id: editingTask.id,
+      id: state.task.id,
       scope: "this",
       task: { status: nextStatus },
     });
@@ -230,20 +155,13 @@ export function useTaskEditorFlow() {
     close,
     confirmScopedDelete,
     confirmScopedSave,
-    deleteScope,
-    draft,
-    editingTask,
-    isEditorOpen,
     openCreate,
     openEdit,
     requestDelete,
     save,
-    saveScope,
-    scopeDialog,
-    setDeleteScope,
-    setSaveScope,
+    setScope,
+    state,
     toggleDone,
-    updateDraft,
   };
 }
 

@@ -2,6 +2,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
+import type { TaskDraft } from "@kompose/state/task-editor-flow";
 import { getSystemTimeZone } from "@kompose/state/temporal-utils";
 import { Stack } from "expo-router/stack";
 import { Plus, Tag } from "lucide-react-native";
@@ -10,10 +11,7 @@ import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { TagManagerPopover } from "@/components/tags/tag-manager-popover";
-import {
-  type TaskDraft,
-  TaskEditorSheet,
-} from "@/components/tasks/task-editor-sheet";
+import { TaskEditorSheet } from "@/components/tasks/task-editor-sheet";
 import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -408,17 +406,7 @@ export default function TasksScreen() {
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
       />
 
-      <TaskEditorSheet
-        draft={taskFlow.draft}
-        isVisible={taskFlow.isEditorOpen}
-        mode={taskFlow.editingTask ? "edit" : "create"}
-        onClose={taskFlow.close}
-        onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
-        onSave={taskFlow.save}
-        onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
-        setDraft={taskFlow.updateDraft}
-        timeZone={timeZone}
-      />
+      <TaskEditorSheet flow={taskFlow} timeZone={timeZone} />
 
       <TaskScopeDialogs flow={taskFlow} />
 
