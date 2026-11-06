@@ -5,6 +5,9 @@ import { whoop } from "./whoop/manifest";
 /** Every plugin built into Kompose. */
 export const plugins = [googleCalendar, whoop] as const;
 
+/** Better Auth providers whose accounts connect a plugin. */
+export type OAuthProvider = (typeof plugins)[number]["connection"]["provider"];
+
 /** The plugin an OAuth account from this Better Auth provider connects. */
 export function getPluginForProvider(
   providerId: string

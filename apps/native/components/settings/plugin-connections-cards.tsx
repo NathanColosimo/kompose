@@ -5,7 +5,7 @@ import {
   usePluginConnections,
 } from "@kompose/state/hooks/use-plugin-connections";
 import { createURL } from "expo-linking";
-import { Unlink2 } from "lucide-react-native";
+import { RefreshCw, Unlink2 } from "lucide-react-native";
 import { Image, Alert as RNAlert, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,10 +93,29 @@ export function PluginConnectionsCards() {
                   <Text className="font-semibold text-sm" selectable>
                     {connection.name || "Unknown user"}
                   </Text>
-                  <Text className="text-muted-foreground text-xs" selectable>
-                    {connection.email || "Email unavailable"}
-                  </Text>
+                  {connection.status === "needs-reauth" ? (
+                    <Text className="text-destructive text-xs">
+                      {plugin.name} stopped accepting this account. Reconnect to
+                      keep syncing.
+                    </Text>
+                  ) : (
+                    <Text className="text-muted-foreground text-xs" selectable>
+                      {connection.email || "Email unavailable"}
+                    </Text>
+                  )}
                 </View>
+                {connection.status === "needs-reauth" ? (
+                  <Button
+                    accessibilityLabel={`Reconnect ${plugin.name}`}
+                    disabled={connect.isPending}
+                    icon={RefreshCw}
+                    loading={
+                      connect.isPending && connect.variables.id === plugin.id
+                    }
+                    onPress={() => connect.mutate(plugin)}
+                    size="icon"
+                  />
+                ) : null}
                 <Button
                   accessibilityLabel={`Disconnect ${plugin.name}`}
                   disabled={disconnect.isPending}
