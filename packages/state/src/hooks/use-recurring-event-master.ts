@@ -25,31 +25,21 @@ export function useRecurringEventMaster(params: {
 }) {
   const { orpc } = useStateConfig();
 
-  const shouldFetchByDefault =
+  const needsMaster =
     params.event !== null &&
     !params.event.recurrence?.length &&
     Boolean(params.event.recurringEventId);
 
   const recurringEventId = params.event?.recurringEventId;
 
-  const enabled =
-    params.event !== null &&
-    Boolean(recurringEventId) &&
-    (params.enabled ?? shouldFetchByDefault);
+  const enabled = needsMaster && (params.enabled ?? true);
 
-  const queryKey = enabled
-    ? recurringEventMasterQueryKey({
-        accountId: params.accountId,
-        calendarId: params.calendarId,
-        recurringEventId: recurringEventId ?? "",
-      })
-    : ([
-        "google-event-master",
-        params.accountId,
-        params.calendarId,
-        params.event?.id ?? "no-event",
-        "disabled",
-      ] as const);
+  // Keep the cache identity stable when the editor opens and closes.
+  const queryKey = recurringEventMasterQueryKey({
+    accountId: params.accountId,
+    calendarId: params.calendarId,
+    recurringEventId: recurringEventId ?? "no-master",
+  });
 
   return useQuery({
     enabled,

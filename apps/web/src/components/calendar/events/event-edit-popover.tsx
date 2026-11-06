@@ -11,6 +11,17 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
+  type EventEditCommand,
+  type EventEditOperation,
+  type EventEditOperationAction,
+  eventEditOperationReducer,
+  runEventEditOperation,
+} from "@kompose/state/event-edit-operation";
+import {
+  type RecurrenceDraft,
+  resolveEventRecurrence,
+} from "@kompose/state/event-recurrence-draft";
+import {
   dateToUntilRule,
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
@@ -40,6 +51,7 @@ import {
   Video,
 } from "lucide-react";
 import {
+  type Dispatch,
   type ReactElement,
   type ReactNode,
   useCallback,
@@ -52,16 +64,6 @@ import {
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -128,11 +130,12 @@ interface EventEditPopoverProps {
 interface EventFormValues {
   allDay: boolean;
   colorId?: string;
+  conferenceData: GoogleEvent["conferenceData"] | null;
   description: string;
   endDate: Date | null;
   endTime: string;
   location: string;
-  recurrence: string[];
+  recurrenceDraft: RecurrenceDraft;
   selectedAccountId: string;
   selectedCalendarId: string;
   startDate: Date | null;
@@ -161,6 +164,7 @@ function buildRecurrenceEnd(values: RecurrenceEditorValues): RecurrenceEnd {
 
 export type CloseSaveRequest =
   | { type: "none" }
+  | { type: "blocked" }
   | {
       type: "save";
       /**
@@ -483,75 +487,68 @@ function RecurrenceEditor({
   );
 }
 
-interface EventEditDialogState {
-  deleteDialogOpen: boolean;
-  deleteScope: RecurrenceScope;
-  pendingSave: {
-    variables: UpdateGoogleEventInput;
-    defaultScope: RecurrenceScope;
-    hasDataEdits: boolean;
-    calendarChanged?: { destinationCalendarId: string };
-  } | null;
-  scopeDialogOpen: boolean;
-  selectedScope: RecurrenceScope;
-  simpleDeleteConfirmOpen: boolean;
-}
-
-type EventEditDialogAction =
-  | { type: "open-recurring-delete"; scope: RecurrenceScope }
-  | { type: "set-delete-dialog-open"; value: boolean }
-  | { type: "set-delete-scope"; value: RecurrenceScope }
-  | { type: "open-simple-delete" }
-  | { type: "set-simple-delete-open"; value: boolean }
-  | {
-      type: "open-scope-dialog";
-      pendingSave: EventEditDialogState["pendingSave"];
-      scope: RecurrenceScope;
-    }
-  | { type: "set-scope-dialog-open"; value: boolean }
-  | { type: "set-selected-scope"; value: RecurrenceScope }
-  | { type: "clear-pending-save" };
-
-const eventEditDialogInitialState: EventEditDialogState = {
-  deleteDialogOpen: false,
-  deleteScope: "this",
-  pendingSave: null,
-  scopeDialogOpen: false,
-  selectedScope: "this",
-  simpleDeleteConfirmOpen: false,
-};
-
-function eventEditDialogReducer(
-  state: EventEditDialogState,
-  action: EventEditDialogAction
-): EventEditDialogState {
-  switch (action.type) {
-    case "open-recurring-delete":
-      return { ...state, deleteDialogOpen: true, deleteScope: action.scope };
-    case "set-delete-dialog-open":
-      return { ...state, deleteDialogOpen: action.value };
-    case "set-delete-scope":
-      return { ...state, deleteScope: action.value };
-    case "open-simple-delete":
-      return { ...state, simpleDeleteConfirmOpen: true };
-    case "set-simple-delete-open":
-      return { ...state, simpleDeleteConfirmOpen: action.value };
-    case "open-scope-dialog":
-      return {
-        ...state,
-        pendingSave: action.pendingSave,
-        scopeDialogOpen: true,
-        selectedScope: action.scope,
-      };
-    case "set-scope-dialog-open":
-      return { ...state, scopeDialogOpen: action.value };
-    case "set-selected-scope":
-      return { ...state, selectedScope: action.value };
-    case "clear-pending-save":
-      return { ...state, pendingSave: null };
-    default:
-      return state;
+function EventOperationDialog({
+  operation,
+  dispatch,
+  onConfirm,
+}: {
+  operation: EventEditOperation;
+  dispatch: Dispatch<EventEditOperationAction>;
+  onConfirm: () => void | Promise<void>;
+}) {
+  if (operation.kind === "idle") {
+    return null;
   }
+  let confirmLabel = operation.command.kind === "delete" ? "Delete" : "Save";
+  if (operation.kind === "failed") {
+    confirmLabel = "Retry";
+  }
+  let description = "Choose how broadly to apply your changes.";
+  if (!operation.command.isRecurring) {
+    description = "Save your changes to this event.";
+  }
+  if (operation.command.kind === "delete") {
+    description = "This action cannot be undone.";
+  } else if (operation.command.move && operation.command.isRecurring) {
+    description =
+      "Moving to a different calendar applies to all events in the series.";
+  }
+  return (
+    <RecurrenceScopeDialog
+      closeOnConfirm={false}
+      confirmLabel={confirmLabel}
+      description={description}
+      disabledScopes={
+        operation.command.kind === "save" && operation.command.move
+          ? { following: true, this: true }
+          : undefined
+      }
+      error={
+        operation.kind === "failed"
+          ? `Could not ${operation.retryStep} the event. ${operation.retryStep === "move" ? "Any saved event changes are kept. Retry will only move the event." : "Retry to try this step again."}`
+          : undefined
+      }
+      onConfirm={onConfirm}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          dispatch({ id: operation.id, type: "dismiss" });
+        }
+      }}
+      onValueChange={(scope) =>
+        dispatch({ id: operation.id, scope, type: "scope" })
+      }
+      open
+      options={operation.command.isRecurring ? undefined : []}
+      pending={operation.kind === "running"}
+      scopeDisabled={operation.kind !== "confirming"}
+      title={
+        operation.command.kind === "delete"
+          ? "Delete event?"
+          : "Save event changes"
+      }
+      value={operation.scope}
+    />
+  );
 }
 
 /** See documents/event-popover.md for save, recurrence scope, and calendar move behavior. */
@@ -589,163 +586,133 @@ export function EventEditPopover({
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
 
-  const [dialogState, dispatchDialog] = useReducer(
-    eventEditDialogReducer,
-    eventEditDialogInitialState
-  );
-  const {
-    deleteDialogOpen,
-    deleteScope,
-    simpleDeleteConfirmOpen,
-    scopeDialogOpen,
-    pendingSave,
-    selectedScope,
-  } = dialogState;
-
+  const [operation, dispatchOperation] = useReducer(eventEditOperationReducer, {
+    kind: "idle",
+  });
+  const nextOperationId = useRef(0);
+  const runningOperations = useRef(new Set<number>());
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
 
-  const commitPendingSave = useCallback(async () => {
-    if (!pendingSave) {
+  const runOperation = useCallback(
+    (running: Extract<EventEditOperation, { kind: "running" }>) =>
+      runEventEditOperation(
+        running,
+        {
+          delete: deleteEvent.mutateAsync,
+          move: moveEvent.mutateAsync,
+          update: updateEvent.mutateAsync,
+        },
+        dispatchOperation,
+        runningOperations.current
+      ),
+    [deleteEvent.mutateAsync, moveEvent.mutateAsync, updateEvent.mutateAsync]
+  );
+
+  const prepareOperation = useCallback(
+    (command: EventEditCommand, scope: RecurrenceScope, confirm: boolean) => {
+      if (operation.kind !== "idle" || runningOperations.current.size > 0) {
+        return;
+      }
+      nextOperationId.current += 1;
+      const action = {
+        command,
+        confirm,
+        id: nextOperationId.current,
+        scope,
+        type: "prepare" as const,
+      };
+      dispatchOperation(action);
+      const next = eventEditOperationReducer({ kind: "idle" }, action);
+      if (next.kind === "running") {
+        runOperation(next);
+      }
+    },
+    [operation.kind, runOperation]
+  );
+
+  const confirmOperation = useCallback(() => {
+    if (operation.kind !== "confirming" && operation.kind !== "failed") {
       return;
     }
-    const { variables, hasDataEdits, calendarChanged } = pendingSave;
-    if (hasDataEdits) {
-      await updateEvent.mutateAsync({
-        ...variables,
-        recurrenceScope: selectedScope,
-      });
+    const action = { id: operation.id, type: "run" as const };
+    const next = eventEditOperationReducer(operation, action);
+    dispatchOperation(action);
+    if (next.kind === "running") {
+      return runOperation(next);
     }
-    if (calendarChanged && event) {
-      await moveEvent.mutateAsync({
-        accountId,
-        calendarId,
-        destinationCalendarId: calendarChanged.destinationCalendarId,
-        eventId: event.id,
-        scope: selectedScope,
-      });
+  }, [operation, runOperation]);
+
+  const handleDelete = useCallback(() => {
+    if (readOnly || !event || operation.kind !== "idle") {
+      return;
     }
-    dispatchDialog({ type: "clear-pending-save" });
+    setOpen(false);
+    prepareOperation(
+      {
+        isRecurring: Boolean(
+          event.recurringEventId || event.recurrence?.length
+        ),
+        kind: "delete",
+        variables: { accountId, calendarId, eventId: event.id },
+      },
+      event.recurringEventId || !event.recurrence?.length ? "this" : "all",
+      true
+    );
   }, [
     accountId,
     calendarId,
     event,
-    moveEvent,
-    pendingSave,
-    selectedScope,
-    updateEvent,
+    operation.kind,
+    prepareOperation,
+    readOnly,
+    setOpen,
   ]);
-
-  const handleDelete = useCallback(() => {
-    if (readOnly) {
-      return;
-    }
-    if (!event) {
-      return;
-    }
-    setOpen(false);
-    if (event.recurringEventId || event.recurrence?.length) {
-      const defaultScope = event.recurringEventId ? "this" : "all";
-      dispatchDialog({ scope: defaultScope, type: "open-recurring-delete" });
-    } else {
-      dispatchDialog({ type: "open-simple-delete" });
-    }
-  }, [event, readOnly, setOpen]);
-
-  const confirmSimpleDelete = useCallback(() => {
-    if (!event) {
-      return;
-    }
-    deleteEvent.mutate({
-      accountId,
-      calendarId,
-      eventId: event.id,
-      scope: "this",
-    });
-    dispatchDialog({ type: "set-simple-delete-open", value: false });
-  }, [accountId, calendarId, deleteEvent, event]);
-
-  const commitDelete = useCallback(async () => {
-    if (!event) {
-      return;
-    }
-    await deleteEvent.mutateAsync({
-      accountId,
-      calendarId,
-      eventId: event.id,
-      scope: deleteScope,
-    });
-  }, [accountId, calendarId, deleteEvent, deleteScope, event]);
 
   const handleCancel = useCallback(() => {
     setOpen(false);
   }, [setOpen]);
 
   const handleSave = useCallback(() => {
+    if (operation.kind !== "idle") {
+      return;
+    }
     if (readOnly) {
       setOpen(false);
       return;
     }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
+    if (request.type === "blocked") {
+      return;
+    }
     setOpen(false);
-
     if (request.type === "none") {
       return;
     }
-
     if (request.type === "create") {
       createEvent.mutate(request.payload);
       return;
     }
-
-    if (request.type === "save") {
-      if (request.isRecurring) {
-        const forceAll = Boolean(request.calendarChanged);
-        const scope = forceAll ? "all" : request.defaultScope;
-        dispatchDialog({
-          pendingSave: {
-            calendarChanged: request.calendarChanged,
-            defaultScope: scope,
-            hasDataEdits: request.hasDataEdits,
-            variables: request.variables,
-          },
-          scope,
-          type: "open-scope-dialog",
-        });
-        return;
-      }
-
-      const saveAndMove = async () => {
-        if (request.hasDataEdits) {
-          await updateEvent.mutateAsync({
-            ...request.variables,
-            recurrenceScope: "this",
-          });
-        }
-        if (request.calendarChanged && event) {
-          await moveEvent.mutateAsync({
-            accountId,
-            calendarId,
-            destinationCalendarId:
-              request.calendarChanged.destinationCalendarId,
-            eventId: event.id,
-            scope: "this",
-          });
-        }
-      };
-      saveAndMove().catch(() => null);
-    }
-  }, [
-    accountId,
-    calendarId,
-    createEvent,
-    event,
-    moveEvent,
-    readOnly,
-    setOpen,
-    updateEvent,
-  ]);
+    prepareOperation(
+      {
+        isRecurring: request.isRecurring,
+        kind: "save",
+        move: request.calendarChanged
+          ? {
+              accountId: request.variables.accountId,
+              calendarId: request.variables.calendarId,
+              destinationCalendarId:
+                request.calendarChanged.destinationCalendarId,
+              eventId: request.variables.eventId,
+            }
+          : null,
+        update: request.hasDataEdits ? request.variables : null,
+      },
+      request.isRecurring ? request.defaultScope : "this",
+      request.isRecurring
+    );
+  }, [createEvent, operation.kind, prepareOperation, readOnly, setOpen]);
 
   useHotkeys(
     "mod+enter",
@@ -761,7 +728,7 @@ export function EventEditPopover({
     <>
       <Popover
         onOpenChange={(nextOpen) => {
-          if (nextOpen) {
+          if (nextOpen && operation.kind === "idle") {
             setOpen(true);
           }
         }}
@@ -805,83 +772,21 @@ export function EventEditPopover({
         </PopoverContent>
       </Popover>
 
-      {/* Post-close recurrence scope prompt (covers both save and move for recurring events). */}
-      <RecurrenceScopeDialog
-        description={
-          pendingSave?.calendarChanged
-            ? "Moving to a different calendar applies to all events in the series."
-            : "Choose how broadly to apply your changes."
-        }
-        disabledScopes={
-          pendingSave?.calendarChanged
-            ? { following: true, this: true }
-            : undefined
-        }
-        onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
-        onConfirm={commitPendingSave}
-        onOpenChange={(value) =>
-          dispatchDialog({ type: "set-scope-dialog-open", value })
-        }
-        onValueChange={(value) =>
-          dispatchDialog({ type: "set-selected-scope", value })
-        }
-        open={scopeDialogOpen}
-        title="Save recurring event changes"
-        value={selectedScope}
+      <EventOperationDialog
+        dispatch={dispatchOperation}
+        onConfirm={confirmOperation}
+        operation={operation}
       />
-
-      {/* Delete scope dialog for recurring events */}
-      <RecurrenceScopeDialog
-        confirmLabel="Delete"
-        description="Choose how broadly to apply the deletion."
-        onCancel={() =>
-          dispatchDialog({ type: "set-delete-dialog-open", value: false })
-        }
-        onConfirm={commitDelete}
-        onOpenChange={(value) =>
-          dispatchDialog({ type: "set-delete-dialog-open", value })
-        }
-        onValueChange={(value) =>
-          dispatchDialog({ type: "set-delete-scope", value })
-        }
-        open={deleteDialogOpen}
-        title="Delete recurring event"
-        value={deleteScope}
-      />
-
-      {/* Simple delete confirmation for non-recurring events */}
-      <AlertDialog
-        onOpenChange={(value) =>
-          dispatchDialog({ type: "set-simple-delete-open", value })
-        }
-        open={simpleDeleteConfirmOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete event?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmSimpleDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
 
 function buildCreatePayload(
-  values: EventFormValues,
+  values: EventFormValues & { recurrence: string[] },
   clampToStartIfNeeded: (
     s: Date | null,
     e: Date | null
   ) => { start: Date | null; end: Date | null },
-  conferenceData: GoogleEvent["conferenceData"] | null | undefined,
   calendarTimeZone?: string
 ): CloseSaveRequest {
   const trimmedTitle = values.summary.trim();
@@ -902,7 +807,7 @@ function buildCreatePayload(
       calendarId: values.selectedCalendarId,
       event: {
         colorId: values.colorId ?? undefined,
-        conferenceData: conferenceData ?? undefined,
+        conferenceData: values.conferenceData ?? undefined,
         description: values.description?.trim() || undefined,
         end: temporalPayload.endPayload,
         location: values.location?.trim() || undefined,
@@ -917,7 +822,7 @@ function buildCreatePayload(
 }
 
 function buildEditPayload(
-  values: EventFormValues,
+  values: EventFormValues & { recurrence: string[] },
   ctx: {
     accountId: string;
     calendarId: string;
@@ -925,11 +830,9 @@ function buildEditPayload(
       s: Date | null,
       e: Date | null
     ) => { start: Date | null; end: Date | null };
-    conferenceData: GoogleEvent["conferenceData"] | null | undefined;
     calendarTimeZone?: string;
     event: GoogleEvent | undefined;
     hasEdits: boolean;
-    masterRecurrence: string[] | null | undefined;
   }
 ): CloseSaveRequest {
   const calendarChanged = values.selectedCalendarId !== ctx.calendarId;
@@ -937,15 +840,15 @@ function buildEditPayload(
     return { type: "none" };
   }
 
+  const isRecurring = Boolean(
+    ctx.event?.recurringEventId || ctx.event?.recurrence?.length
+  );
   const temporalPayload = buildTemporalPayload(
     values,
     ctx.clampToStartIfNeeded,
     {
       timeZone:
-        values.recurrence?.length ||
-        ctx.event?.recurringEventId ||
-        ctx.event?.recurrence?.length ||
-        ctx.masterRecurrence?.length
+        values.recurrence.length || isRecurring
           ? ctx.calendarTimeZone
           : undefined,
     }
@@ -954,11 +857,6 @@ function buildEditPayload(
     return { type: "none" };
   }
 
-  const isRecurring = Boolean(
-    ctx.event?.recurringEventId ||
-      ctx.event?.recurrence?.length ||
-      ctx.masterRecurrence?.length
-  );
   const defaultScope: RecurrenceScope = ctx.event?.recurringEventId
     ? "this"
     : "all";
@@ -969,7 +867,7 @@ function buildEditPayload(
     event: {
       ...ctx.event,
       colorId: values.colorId ?? undefined,
-      conferenceData: ctx.conferenceData ?? undefined,
+      conferenceData: values.conferenceData ?? undefined,
       description: values.description ?? "",
       end: {
         ...ctx.event?.end,
@@ -977,7 +875,7 @@ function buildEditPayload(
       },
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      recurrence: values.recurrence ?? ctx.event?.recurrence,
+      recurrence: values.recurrence,
       start: {
         ...ctx.event?.start,
         ...temporalPayload.startPayload,
@@ -1153,6 +1051,7 @@ function EventAllDayAndRecurrenceRow({
   canEditRecurrence,
   readOnly = false,
   recurrenceRule,
+  recurrenceUnavailable,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1163,6 +1062,7 @@ function EventAllDayAndRecurrenceRow({
   canEditRecurrence: boolean;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
+  recurrenceUnavailable: boolean;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1200,7 +1100,7 @@ function EventAllDayAndRecurrenceRow({
           <PopoverTrigger asChild>
             <Button
               className="size-8"
-              disabled={readOnly}
+              disabled={readOnly || recurrenceUnavailable}
               size="icon"
               variant="outline"
             >
@@ -1212,7 +1112,7 @@ function EventAllDayAndRecurrenceRow({
             <RecurrenceEditor
               onChange={onRecurrenceChange}
               recurrenceRule={recurrenceRule}
-              visible
+              visible={!recurrenceUnavailable}
             />
           </PopoverContent>
         </Popover>
@@ -1348,7 +1248,8 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
     endDate: watched.endDate,
     endTime: watched.endTime ?? "",
     location: watched.location ?? "",
-    recurrence: watched.recurrence ?? [],
+    recurrenceDraft: watched.recurrenceDraft ?? { kind: "inherit" },
+    conferenceData: watched.conferenceData ?? null,
     selectedAccountId: watched.selectedAccountId ?? "",
     selectedCalendarId: watched.selectedCalendarId ?? "",
     startDate: watched.startDate,
@@ -1363,8 +1264,10 @@ function EventFormActionRow({
   onDelete,
   onCancel,
   onSave,
+  saveDisabled,
 }: {
   isCreateMode: boolean;
+  saveDisabled: boolean;
   readOnly?: boolean;
   onDelete: () => void;
   onCancel: () => void;
@@ -1391,7 +1294,12 @@ function EventFormActionRow({
             {readOnly ? "Close" : "Cancel"}
           </Button>
           {readOnly ? null : (
-            <Button onClick={onSave} size="sm" type="button">
+            <Button
+              disabled={saveDisabled}
+              onClick={onSave}
+              size="sm"
+              type="button"
+            >
               Save
             </Button>
           )}
@@ -1399,6 +1307,33 @@ function EventFormActionRow({
       </div>
     </>
   );
+}
+
+function RecurrenceQueryFeedback({
+  status,
+  onRetry,
+}: {
+  status: ReturnType<typeof resolveEventRecurrence>["kind"];
+  onRetry: () => void;
+}) {
+  if (status === "loading") {
+    return (
+      <p className="text-muted-foreground text-xs">
+        Loading series recurrence…
+      </p>
+    );
+  }
+  if (status === "error") {
+    return (
+      <p className="text-destructive text-xs">
+        Could not load series recurrence.{" "}
+        <Button onClick={onRetry} size="sm" type="button" variant="ghost">
+          Retry
+        </Button>
+      </p>
+    );
+  }
+  return null;
 }
 
 export function EventEditForm({
@@ -1454,13 +1389,13 @@ export function EventEditForm({
     [onDelete, open, isCreateMode, readOnly]
   );
   // Closing the popover alone discards edits; the wrapper owns saves and dialogs.
-  const hasUserEditedRef = useRef(false);
+  const hasDataEditsRef = useRef(false);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
     calendarId,
-    enabled: open,
-    event: event ?? (null as GoogleEvent | null),
+    enabled: open && !isCreateMode,
+    event: event ?? null,
   });
 
   const isAllDay = Boolean(event?.start?.date);
@@ -1485,14 +1420,6 @@ export function EventEditForm({
     return end;
   }, [end, event?.end?.date, isAllDay]);
 
-  const recurrenceSource = useMemo(
-    () =>
-      event?.recurrence?.length
-        ? event.recurrence
-        : (masterQuery.data?.recurrence ?? []),
-    [event?.recurrence, masterQuery.data?.recurrence]
-  );
-
   const initialValues = useMemo<EventFormValues>(
     () => ({
       allDay: isAllDay,
@@ -1501,7 +1428,8 @@ export function EventEditForm({
       endDate: initialEndDate ?? null,
       endTime: isAllDay ? "" : formatTimeString(initialEndDate),
       location: event?.location ?? "",
-      recurrence: recurrenceSource,
+      recurrenceDraft: { kind: "inherit" },
+      conferenceData: event?.conferenceData ?? null,
       selectedAccountId: accountId,
       selectedCalendarId: calendarId,
       startDate: initialStartDate ?? null,
@@ -1515,7 +1443,7 @@ export function EventEditForm({
       event?.description,
       event?.location,
       event?.summary,
-      recurrenceSource,
+      event?.conferenceData,
       initialEndDate,
       initialStartDate,
       isAllDay,
@@ -1525,16 +1453,9 @@ export function EventEditForm({
   const { control, setValue, getValues } = useForm<EventFormValues>({
     defaultValues: initialValues,
   });
-  const [pendingConference, setPendingConference] = useState<
-    GoogleEvent["conferenceData"] | null
-  >(null);
-  const pendingConferenceRef = useRef<GoogleEvent["conferenceData"] | null>(
-    null
-  );
   const [locationOpen, setLocationOpen] = useState(false);
 
-  const rawWatched = useWatch({ control });
-  const watchedValues = resolveWatchedDefaults(rawWatched);
+  const watchedValues = useWatch({ control, compute: resolveWatchedDefaults });
   const locationQuery = watchedValues.location.trim();
   const locationSearch = useLocationSearch(locationQuery);
   const locationSuggestions = locationSearch.data ?? [];
@@ -1543,14 +1464,13 @@ export function EventEditForm({
   const meetingSource = useMemo(
     () => ({
       ...(event ?? {}),
-      // Use pendingConference state (not ref) to ensure memo recomputes on changes
-      conferenceData: pendingConference ?? event?.conferenceData,
+      conferenceData: watchedValues.conferenceData ?? undefined,
       description: watchedValues.description,
       location: watchedValues.location,
     }),
     [
       event,
-      pendingConference,
+      watchedValues.conferenceData,
       watchedValues.description,
       watchedValues.location,
     ]
@@ -1560,7 +1480,7 @@ export function EventEditForm({
     [meetingSource]
   );
   const isConferencePending = Boolean(
-    (pendingConferenceRef.current ?? pendingConference)?.createRequest
+    watchedValues.conferenceData?.createRequest
   );
   const canCreateMeeting = !(meetingLink || isConferencePending);
   const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
@@ -1637,7 +1557,7 @@ export function EventEditForm({
       return;
     }
     if (!value) {
-      hasUserEditedRef.current = true;
+      hasDataEditsRef.current = true;
       setValue(field, "", { shouldDirty: true });
       return;
     }
@@ -1646,7 +1566,7 @@ export function EventEditForm({
       return;
     }
 
-    hasUserEditedRef.current = true;
+    hasDataEditsRef.current = true;
     setValue(
       field,
       `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
@@ -1661,7 +1581,7 @@ export function EventEditForm({
       if (readOnly) {
         return;
       }
-      hasUserEditedRef.current = true;
+      hasDataEditsRef.current = true;
       setValue("location", value, { shouldDirty: true });
       if (value.trim().length >= 2) {
         setLocationOpen(true);
@@ -1680,7 +1600,7 @@ export function EventEditForm({
       if (!value) {
         return;
       }
-      hasUserEditedRef.current = true;
+      hasDataEditsRef.current = true;
       setValue("location", value, { shouldDirty: true });
       setLocationOpen(false);
     },
@@ -1711,39 +1631,43 @@ export function EventEditForm({
     if (!canCreateMeeting) {
       return;
     }
-    hasUserEditedRef.current = true;
+    hasDataEditsRef.current = true;
     const nextConference = buildGoogleMeetConferenceData();
-    pendingConferenceRef.current = nextConference;
-    setPendingConference(nextConference);
+    setValue("conferenceData", nextConference, { shouldDirty: true });
     if (!isCreateMode) {
       onSave();
     }
-  }, [canCreateMeeting, isCreateMode, onSave, readOnly]);
+  }, [canCreateMeeting, isCreateMode, onSave, readOnly, setValue]);
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
       if (readOnly) {
         return { type: "none" };
       }
-      const resolvedConference =
-        pendingConferenceRef.current ?? pendingConference;
+      const recurrence = resolveEventRecurrence({
+        draft: values.recurrenceDraft,
+        event,
+        master: masterQuery,
+      });
+      // Never submit an unresolved inherited recurrence as an explicit clear.
+      if (recurrence.kind !== "ready") {
+        return { type: "blocked" };
+      }
+      const snapshot = { ...values, recurrence: recurrence.rules };
       if (isCreateMode) {
         return buildCreatePayload(
-          values,
+          snapshot,
           clampToStartIfNeeded,
-          resolvedConference,
           calendar?.calendar.timeZone
         );
       }
-      return buildEditPayload(values, {
+      return buildEditPayload(snapshot, {
         accountId,
         calendarId,
         calendarTimeZone: calendar?.calendar.timeZone,
         clampToStartIfNeeded,
-        conferenceData: resolvedConference ?? event?.conferenceData,
         event,
-        hasEdits: hasUserEditedRef.current,
-        masterRecurrence: masterQuery.data?.recurrence,
+        hasEdits: hasDataEditsRef.current,
       });
     },
     [
@@ -1753,8 +1677,7 @@ export function EventEditForm({
       event,
       isCreateMode,
       calendar?.calendar.timeZone,
-      masterQuery.data,
-      pendingConference,
+      masterQuery,
       readOnly,
     ]
   );
@@ -1775,9 +1698,8 @@ export function EventEditForm({
         fields.durationMinutes
       );
 
-      hasUserEditedRef.current = true;
-      pendingConferenceRef.current = null;
-      setPendingConference(null);
+      hasDataEditsRef.current = true;
+      setValue("conferenceData", null, { shouldDirty: true });
       setValue("summary", fields.title, { shouldDirty: true });
       setValue("description", fields.description, { shouldDirty: true });
       setValue("startDate", nextStartDate, { shouldDirty: true });
@@ -1787,7 +1709,7 @@ export function EventEditForm({
       setValue("allDay", false, { shouldDirty: true });
       setValue("location", "", { shouldDirty: true });
       setValue("colorId", undefined, { shouldDirty: true });
-      setValue("recurrence", [], { shouldDirty: true });
+      setValue("recurrenceDraft", { kind: "inherit" }, { shouldDirty: true });
     },
     [setValue]
   );
@@ -1805,14 +1727,18 @@ export function EventEditForm({
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const recurrenceRule = watchedValues.recurrence?.[0];
+  const resolvedRecurrence = resolveEventRecurrence({
+    draft: watchedValues.recurrenceDraft,
+    event,
+    master: masterQuery,
+  });
+  const recurrenceRule =
+    resolvedRecurrence.kind === "ready"
+      ? resolvedRecurrence.rules[0]
+      : undefined;
   const canEditRecurrence =
     isCreateMode ||
-    Boolean(
-      event?.recurrence?.length ||
-        event?.recurringEventId ||
-        masterQuery.data?.recurrence?.length
-    );
+    Boolean(event?.recurrence?.length || event?.recurringEventId);
 
   return (
     <div className="space-y-3">
@@ -1829,11 +1755,11 @@ export function EventEditForm({
         colorEntries={colorEntries}
         isCreateMode={isCreateMode}
         onSelectColor={(colorKey) => {
-          hasUserEditedRef.current = true;
+          hasDataEditsRef.current = true;
           setValue("colorId", colorKey, { shouldDirty: true });
         }}
         onSummaryChange={(value) => {
-          hasUserEditedRef.current = true;
+          hasDataEditsRef.current = true;
           setValue("summary", value, { shouldDirty: true });
         }}
         readOnly={readOnly}
@@ -1843,7 +1769,7 @@ export function EventEditForm({
 
       <Textarea
         onChange={(e) => {
-          hasUserEditedRef.current = true;
+          hasDataEditsRef.current = true;
           setValue("description", e.target.value, { shouldDirty: true });
         }}
         placeholder="Add details..."
@@ -1863,7 +1789,6 @@ export function EventEditForm({
             (c) => `${c.accountId}::${c.calendarId}` === val
           );
           if (opt) {
-            hasUserEditedRef.current = true;
             setValue("selectedAccountId", opt.accountId, {
               shouldDirty: true,
             });
@@ -1873,15 +1798,25 @@ export function EventEditForm({
           }
         }}
         onRecurrenceChange={(rule) => {
-          hasUserEditedRef.current = true;
-          setValue("recurrence", rule ? [rule] : [], { shouldDirty: true });
+          hasDataEditsRef.current = true;
+          setValue(
+            "recurrenceDraft",
+            { kind: "override", rules: rule ? [rule] : [] },
+            { shouldDirty: true }
+          );
         }}
         onToggleAllDay={() => {
-          hasUserEditedRef.current = true;
+          hasDataEditsRef.current = true;
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
         readOnly={readOnly}
         recurrenceRule={recurrenceRule}
+        recurrenceUnavailable={resolvedRecurrence.kind !== "ready"}
+      />
+
+      <RecurrenceQueryFeedback
+        onRetry={() => masterQuery.refetch()}
+        status={resolvedRecurrence.kind}
       />
 
       <div className="grid grid-cols-2 gap-2">
@@ -1918,7 +1853,7 @@ export function EventEditForm({
                       next,
                       watchedValues.endDate ?? null
                     );
-                    hasUserEditedRef.current = true;
+                    hasDataEditsRef.current = true;
                     field.onChange(clamped.start);
                     setValue("endDate", clamped.end, { shouldDirty: true });
                   }}
@@ -1962,7 +1897,7 @@ export function EventEditForm({
                       watchedValues.startDate ?? null,
                       next
                     );
-                    hasUserEditedRef.current = true;
+                    hasDataEditsRef.current = true;
                     field.onChange(clamped.end);
                     setValue("startDate", clamped.start, { shouldDirty: true });
                   }}
@@ -2023,6 +1958,7 @@ export function EventEditForm({
           onDelete={onDelete}
           onSave={onSave}
           readOnly={readOnly}
+          saveDisabled={resolvedRecurrence.kind !== "ready"}
         />
       ) : null}
     </div>
