@@ -9,12 +9,11 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import {
-  dashboardResponsiveLayoutAtom,
   effectiveVisibleDaysCountAtom,
   sidebarLeftOpenAtom,
   sidebarLeftViewSelectionAtom,
-  sidebarRightOpenAtom,
-  sidebarRightOverlayOpenAtom,
+  sidebarRightViewAtom,
+  toggleSidebarRightAtom,
 } from "@/state/sidebar";
 
 const hotkeyOptions = { enableOnFormTags: false } as const;
@@ -25,11 +24,8 @@ const hotkeyOptions = { enableOnFormTags: false } as const;
  */
 export function CalendarHotkeys() {
   const [sidebarLeftOpen, setSidebarLeftOpen] = useAtom(sidebarLeftOpenAtom);
-  const [sidebarRightOpen, setSidebarRightOpen] = useAtom(sidebarRightOpenAtom);
-  const [sidebarRightOverlayOpen, setSidebarRightOverlayOpen] = useAtom(
-    sidebarRightOverlayOpenAtom
-  );
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
+  const sidebarRightView = useAtomValue(sidebarRightViewAtom);
+  const toggleSidebarRight = useSetAtom(toggleSidebarRightAtom);
   const setCurrentDate = useSetAtom(currentDateAtom);
   const setVisibleDaysCount = useSetAtom(visibleDaysCountAtom);
   const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
@@ -78,49 +74,20 @@ export function CalendarHotkeys() {
     setSidebarLeftOpen,
   ]);
 
-  useHotkeys(
-    "r",
-    () => {
-      if (responsiveLayout.canDockRightSidebar) {
-        setSidebarRightOpen((prev) => !prev);
-        return;
-      }
-      setSidebarRightOverlayOpen((prev) => !prev);
-    },
-    hotkeyOptions,
-    [
-      responsiveLayout.canDockRightSidebar,
-      setSidebarRightOpen,
-      setSidebarRightOverlayOpen,
-    ]
-  );
+  useHotkeys("r", () => toggleSidebarRight(), hotkeyOptions, [
+    toggleSidebarRight,
+  ]);
 
   // Close both only when both are open; otherwise open both.
   useHotkeys(
     "s",
     () => {
-      const isRightOpen = responsiveLayout.canDockRightSidebar
-        ? sidebarRightOpen
-        : sidebarRightOverlayOpen;
-      const newState = !(sidebarLeftOpen && isRightOpen);
-
+      const newState = !(sidebarLeftOpen && sidebarRightView !== "closed");
       setSidebarLeftOpen(newState);
-      if (responsiveLayout.canDockRightSidebar) {
-        setSidebarRightOpen(newState);
-        return;
-      }
-      setSidebarRightOverlayOpen(newState);
+      toggleSidebarRight(newState);
     },
     hotkeyOptions,
-    [
-      responsiveLayout.canDockRightSidebar,
-      setSidebarLeftOpen,
-      setSidebarRightOpen,
-      setSidebarRightOverlayOpen,
-      sidebarLeftOpen,
-      sidebarRightOpen,
-      sidebarRightOverlayOpen,
-    ]
+    [setSidebarLeftOpen, toggleSidebarRight, sidebarLeftOpen, sidebarRightView]
   );
 
   useHotkeys(

@@ -130,7 +130,7 @@ export const sidebarLeftViewSelectionAtom =
     { getOnInit: false }
   );
 
-export const sidebarRightOpenAtom = atomWithStorage<boolean>(
+export const sidebarRightDockRequestedAtom = atomWithStorage<boolean>(
   "sidebar-right-open",
   true,
   undefined,
@@ -147,16 +147,44 @@ export const dashboardViewportWidthAtom = atom(
   getInitialDashboardViewportWidth()
 );
 
-/** Overlay visibility is transient; the docked preference is persisted separately. */
-export const sidebarRightOverlayOpenAtom = atom(false);
-
 export const dashboardResponsiveLayoutAtom = atom((get) =>
   computeDashboardResponsiveLayout({
     leftSidebarOpen: get(sidebarLeftOpenAtom),
-    rightSidebarDockRequested: get(sidebarRightOpenAtom),
+    rightSidebarDockRequested: get(sidebarRightDockRequestedAtom),
     viewportWidth: get(dashboardViewportWidthAtom),
   })
 );
+
+const canDockRightSidebarAtom = atom(
+  (get) => get(dashboardResponsiveLayoutAtom).canDockRightSidebar
+);
+
+// Each constrained-width session gets its own transient intent. Becoming dock-capable
+// discards that session through derivation, without writing atoms or persisted storage.
+const sidebarRightOverlaySessionAtom = atom((get) =>
+  get(canDockRightSidebarAtom) ? null : atom(false)
+);
+
+type SidebarRightView = "closed" | "docked" | "overlay";
+
+export const sidebarRightViewAtom = atom<SidebarRightView>((get) => {
+  const overlayRequestedAtom = get(sidebarRightOverlaySessionAtom);
+  if (overlayRequestedAtom) {
+    return get(overlayRequestedAtom) ? "overlay" : "closed";
+  }
+  return get(sidebarRightDockRequestedAtom) ? "docked" : "closed";
+});
+
+/** Omit open to toggle; explicit values let the synchronized sidebar hotkey share it. */
+export const toggleSidebarRightAtom = atom(null, (get, set, open?: boolean) => {
+  const nextOpen = open ?? get(sidebarRightViewAtom) === "closed";
+  const overlayRequestedAtom = get(sidebarRightOverlaySessionAtom);
+  if (overlayRequestedAtom) {
+    set(overlayRequestedAtom, nextOpen);
+    return;
+  }
+  set(sidebarRightDockRequestedAtom, nextOpen);
+});
 
 /** Rendered days and every period-navigation control must share this count. */
 export const effectiveVisibleDaysCountAtom = atom((get) =>

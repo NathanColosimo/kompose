@@ -2,7 +2,7 @@
 
 import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import { useAtom, useAtomValueRawSync, useSetAtom } from "jotai";
+import { useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -20,11 +20,8 @@ import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { usePreloadTaskParser } from "@/lib/use-magic-task";
 import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
-  dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
-  sidebarRightOpenAtom,
-  sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
 function LoginRedirect() {
@@ -50,13 +47,8 @@ export default function DashboardLayout({
     refetch: refetchSession,
   } = authClient.useSession();
   const sessionUser = session?.user;
-  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
-  // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
-  const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
-  const viewportWidth = useAtomValueRawSync(dashboardViewportWidthAtom);
   const { push } = useRouter();
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
-  const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const applyCommandBarTaskOpenRequest = useSetAtom(
     applyCommandBarTaskOpenRequestAtom
   );
@@ -73,32 +65,6 @@ export default function DashboardLayout({
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
-
-  // Constrained widths use overlay mode for right sidebar, so docked open must reset.
-  useEffect(() => {
-    // Do not clear the saved preference before the first viewport measurement.
-    if (
-      viewportWidth === 0 ||
-      responsiveLayout.canDockRightSidebar ||
-      !rightSidebarOpen
-    ) {
-      return;
-    }
-    setRightSidebarOpen(false);
-  }, [
-    responsiveLayout.canDockRightSidebar,
-    rightSidebarOpen,
-    setRightSidebarOpen,
-    viewportWidth,
-  ]);
-
-  // When dock mode becomes available again, close overlay-only right sidebar.
-  useEffect(() => {
-    if (!responsiveLayout.canDockRightSidebar) {
-      return;
-    }
-    setRightSidebarOverlayOpen(false);
-  }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) {
