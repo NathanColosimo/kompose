@@ -18,8 +18,9 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
   - Resolves a single destination before opening anything:
     - Calendar for tasks with both `startDate` and `startTime`
     - Inbox for non-recurring tasks without `startDate`
-    - Today for tasks with a start date but no start time, navigating to that date
-    - Today for other tasks matching its overdue, unplanned, or done sections
+    - Today for other overdue tasks, explicitly navigating to today's date
+    - Today for remaining tasks with a start date but no start time, navigating to that date
+    - Today for completed untimed tasks updated today, explicitly navigating to today (search currently excludes completed tasks)
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
   - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
