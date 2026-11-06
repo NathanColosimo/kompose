@@ -10,6 +10,7 @@
     "doctor": "EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK=1 expo-doctor",
     "ios": "expo run:ios",
     "prebuild:native": "expo prebuild",
+    "test": "bun test components",
     "type-check": "tsc --noEmit",
     "web": "expo start --web"
   },

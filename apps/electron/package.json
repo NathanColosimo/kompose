@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "dev": "electron-vite dev",
     "package": "electron-builder --mac --arm64 --dir -c.mac.identity=null -c.mac.notarize=false",
+    "test": "bun test src",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
