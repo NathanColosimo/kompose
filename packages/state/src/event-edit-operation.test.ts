@@ -83,7 +83,6 @@ describe("event edit operations", () => {
       { id: 1, type: "run" },
       { id: 1, step: "update", type: "succeeded" },
       {
-        error: new Error("late failure"),
         id: 1,
         step: "update",
         type: "failed",

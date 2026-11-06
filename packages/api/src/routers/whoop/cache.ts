@@ -6,10 +6,8 @@ import { Context, Effect, Layer, Option } from "effect";
 import type { LinkedAccount } from "../../lib/linked-account";
 import { makeRedisJsonCache } from "../../lib/redis-cache";
 
-const KEY_PREFIX = "whoop";
-
 function dayKey(link: LinkedAccount, day: string): string {
-  return `${KEY_PREFIX}:day:${link.userId}:${link.accountId}:${link.id}:${day}`;
+  return `whoop:day:${link.userId}:${link.accountId}:${link.id}:${day}`;
 }
 
 export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
@@ -58,15 +56,14 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
       const setCachedDay = Effect.fn("WhoopCacheService.setCachedDay")(
         function* (
           link: LinkedAccount,
-          day: string,
           payload: WhoopCachedDayRaw,
           ttlSeconds: number
         ) {
           yield* Effect.annotateCurrentSpan("accountId", link.accountId);
-          yield* Effect.annotateCurrentSpan("day", day);
+          yield* Effect.annotateCurrentSpan("day", payload.day);
           yield* cache.set(
             "setCachedDay",
-            dayKey(link, day),
+            dayKey(link, payload.day),
             payload,
             ttlSeconds
           );

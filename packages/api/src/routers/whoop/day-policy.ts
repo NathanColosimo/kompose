@@ -43,11 +43,8 @@ export function missingDayFetchRanges(params: {
   cachedDays: ReadonlyMap<string, WhoopCachedDayRaw>;
   days: string[];
   timeZone: string;
-  today: string;
 }): { days: string[]; end: string; start: string }[] {
-  const missingDays = params.days.filter(
-    (day) => day <= params.today && !params.cachedDays.has(day)
-  );
+  const missingDays = params.days.filter((day) => !params.cachedDays.has(day));
   const ranges: [string, ...string[]][] = [];
   for (const day of missingDays) {
     const range = ranges.at(-1);

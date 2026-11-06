@@ -24,7 +24,7 @@ function subscribe<T>(
   };
 }
 
-const desktop: DesktopBridge = {
+const desktop: Required<DesktopBridge> = {
   dismissCommandBar: () => invoke("dismissCommandBar"),
   getReadyUpdate: () => invoke("getReadyUpdate"),
   getShortcut: () => invoke("getShortcut"),
@@ -32,11 +32,11 @@ const desktop: DesktopBridge = {
   onOpenTask: (callback) => {
     const unsubscribe = subscribe("onOpenTask", callback);
     // Older hosted apps only call onOpenTask, so subscription itself is the ack.
-    desktop.setTaskListenerReady?.(true).catch(() => undefined);
+    desktop.setTaskListenerReady(true).catch(() => undefined);
     return () => {
       unsubscribe();
       if (ipcRenderer.listenerCount(desktopChannel("onOpenTask")) === 0) {
-        desktop.setTaskListenerReady?.(false).catch(() => undefined);
+        desktop.setTaskListenerReady(false).catch(() => undefined);
       }
     };
   },
@@ -49,7 +49,7 @@ const desktop: DesktopBridge = {
     });
     // Replay for older web apps too, after their listener has been installed.
     desktop
-      .getReadyUpdate?.()
+      .getReadyUpdate()
       .then((version) => {
         if (active && !receivedEvent && version) {
           callback(version);

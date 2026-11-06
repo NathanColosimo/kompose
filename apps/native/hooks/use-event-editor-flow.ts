@@ -101,8 +101,9 @@ export function useEventEditorFlow(timeZone: string) {
           scope,
         });
       } else {
-        let savedDraft = operation.draft;
+        const savedDraft = operation.draft;
         const { sourceCalendar } = savedDraft;
+        let eventId = savedDraft.eventId;
         const isMoving =
           savedDraft.calendar.calendarId !== sourceCalendar.calendarId;
         if (operation.phase === "update") {
@@ -116,15 +117,11 @@ export function useEventEditorFlow(timeZone: string) {
               end: { ...savedDraft.sourceEvent.end, ...payload.end },
               start: { ...savedDraft.sourceEvent.start, ...payload.start },
             },
-            eventId: savedDraft.eventId,
+            eventId,
             recurrenceScope: scope,
           });
           if (isMoving) {
-            savedDraft = {
-              ...savedDraft,
-              eventId: updated.id,
-              sourceEvent: updated,
-            };
+            eventId = updated.id;
             dispatch({ event: updated, opId, sessionId, type: "updated" });
           }
         }
@@ -133,7 +130,7 @@ export function useEventEditorFlow(timeZone: string) {
             accountId: sourceCalendar.accountId,
             calendarId: sourceCalendar.calendarId,
             destinationCalendarId: savedDraft.calendar.calendarId,
-            eventId: savedDraft.eventId,
+            eventId,
             scope,
           });
         }

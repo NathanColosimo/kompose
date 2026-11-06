@@ -78,16 +78,12 @@ function pickMostRecent<T extends WebhookSubscriptionSelect>(
   return candidateUpdatedAt >= currentUpdatedAt ? candidate : current;
 }
 
-const getAccountsByProvider = (params: {
-  accountId?: string;
-  providerId: string;
-  userId: string;
-}) =>
+const getGoogleAccounts = (params: { accountId?: string; userId: string }) =>
   Effect.gen(function* () {
     const db = yield* Database;
     const conditions = [
       eq(account.userId, params.userId),
-      eq(account.providerId, params.providerId),
+      eq(account.providerId, GOOGLE_PROVIDER),
     ];
 
     if (params.accountId) {
@@ -106,14 +102,15 @@ const listSubscriptionsForAccount = (params: {
 }) =>
   Effect.gen(function* () {
     const db = yield* Database;
-    const conditions = [eq(webhookSubscriptionTable.userId, params.userId)];
-
-    conditions.push(eq(webhookSubscriptionTable.accountId, params.accountId));
-
     return yield* db
       .select()
       .from(webhookSubscriptionTable)
-      .where(and(...conditions));
+      .where(
+        and(
+          eq(webhookSubscriptionTable.userId, params.userId),
+          eq(webhookSubscriptionTable.accountId, params.accountId)
+        )
+      );
   });
 
 const findLiveSubById = (params: { id: string }) =>
@@ -191,18 +188,17 @@ export class WebhookService extends Context.Service<WebhookService>()(
       )(function* (params: {
         account: Account;
         unsupportedUntil: Record<string, string>;
-        userId: string;
       }) {
         yield* Effect.annotateCurrentSpan("accountId", params.account.id);
-        yield* Effect.annotateCurrentSpan("userId", params.userId);
+        yield* Effect.annotateCurrentSpan("userId", params.account.userId);
         const client = yield* createGoogleClient({
           accountId: params.account.id,
-          userId: params.userId,
+          userId: params.account.userId,
         });
 
         const accountSubs = yield* listSubscriptionsForAccount({
           accountId: params.account.id,
-          userId: params.userId,
+          userId: params.account.userId,
         });
         const activeAccountSubs = accountSubs.filter((s) => s.active);
 
@@ -226,12 +222,10 @@ export class WebhookService extends Context.Service<WebhookService>()(
           }
         }
 
-        // Run all watches concurrently, provided with the account's Google client
         const accountWebhookProgram = Effect.gen(function* () {
           const calendarIds = yield* googleCalWebhooks.listCalendarIds();
           const calendarIdSet = new Set(calendarIds);
 
-          // Identify stale event subscriptions for calendars no longer in the user's list
           const staleEventSubs = activeAccountSubs.filter(
             (s): s is GoogleCalendarEventsSubscription => {
               if (!isGoogleCalendarEventsSubscription(s)) {
@@ -252,7 +246,6 @@ export class WebhookService extends Context.Service<WebhookService>()(
               .refreshListWatch({
                 account: params.account,
                 existingSubscription: existingListSub,
-                userId: params.userId,
               })
               .pipe(Effect.catchTag("WebhookProviderError", logWatchError)),
             ...calendarIds.map((calendarId) =>
@@ -263,7 +256,6 @@ export class WebhookService extends Context.Service<WebhookService>()(
                   existingSubscription:
                     existingEventSubsByCalendarId.get(calendarId),
                   unsupportedUntil: params.unsupportedUntil[calendarId],
-                  userId: params.userId,
                 })
                 .pipe(
                   Effect.catchTag("WebhookProviderError", logWatchError),
@@ -324,9 +316,8 @@ export class WebhookService extends Context.Service<WebhookService>()(
         if (params.accountId) {
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
         }
-        const accounts = yield* getAccountsByProvider({
+        const accounts = yield* getGoogleAccounts({
           accountId: params.accountId,
-          providerId: GOOGLE_PROVIDER,
           userId: params.userId,
         });
         const db = yield* Database;
@@ -345,9 +336,8 @@ export class WebhookService extends Context.Service<WebhookService>()(
                 Effect.gen(function* () {
                   yield* db.execute(webhookAccountLock(acct.id));
                   // Re-read under the lock: unlink may have completed while we waited.
-                  const [linkedAccount] = yield* getAccountsByProvider({
+                  const [linkedAccount] = yield* getGoogleAccounts({
                     accountId: acct.id,
-                    providerId: GOOGLE_PROVIDER,
                     userId: params.userId,
                   });
                   if (!linkedAccount) {
@@ -366,7 +356,6 @@ export class WebhookService extends Context.Service<WebhookService>()(
                   return yield* ensureAccountWebhooks({
                     account: linkedAccount,
                     unsupportedUntil: state?.unsupportedUntil ?? {},
-                    userId: params.userId,
                   });
                 })
               )

@@ -11,25 +11,7 @@ const values = new Map<string, string>();
 const ttls = new Map<string, number>();
 let generationUnavailable = false;
 let cacheReads = 0;
-let scanCalls = 0;
 const redisFake = {
-  del(...keys: string[]) {
-    let removed = 0;
-    for (const key of keys) {
-      if (values.delete(key)) {
-        removed += 1;
-      }
-      ttls.delete(key);
-    }
-    return Promise.resolve(removed);
-  },
-  scan(_cursor: string, _match: string, pattern: string) {
-    scanCalls += 1;
-    return Promise.resolve([
-      "0",
-      [...values.keys()].filter((key) => key.startsWith(pattern.slice(0, -1))),
-    ]);
-  },
   eval() {
     return Promise.resolve([1, 60_000]);
   },
@@ -210,14 +192,14 @@ const getEvent = () =>
   call(googleCalRouter.events.get, eventInput, { context });
 const run = <A, E>(effect: Effect.Effect<A, E, DatabaseService>) =>
   Effect.runPromise(effect.pipe(Effect.provideContext(services)));
-const listWhoop = () =>
+const listWhoop = (day = "2026-11-06") =>
   run(
     Effect.gen(function* () {
       const service = yield* WhoopService.make;
       return yield* service.listDaySummaries({
         accountId: "provider",
-        endDate: "2026-11-06",
-        startDate: "2026-11-06",
+        endDate: day,
+        startDate: day,
         timeZone: "UTC",
         userId: "user",
       });
@@ -229,7 +211,6 @@ beforeEach(() => {
   ttls.clear();
   links = [googleLink, whoopLink];
   cacheReads = 0;
-  scanCalls = 0;
   tokenCalls = 0;
   googleReads = 0;
   whoopFetches = 0;
@@ -270,7 +251,6 @@ describe("calendar generation invalidation", () => {
       await read();
       expect(googleReads).toBe(2);
       expect([...ttls.values()]).toEqual([86_400, 86_400]);
-      expect(scanCalls).toBe(0);
     });
   }
 
@@ -371,5 +351,12 @@ describe("linkage lifecycle", () => {
     await listWhoop();
     expect(whoopFetches).toBe(2);
     expect([...ttls.values()]).toEqual([900, 900]);
+  });
+
+  test("WHOOP future days skip cache access and provider requests", async () => {
+    expect(await listWhoop("9999-12-30")).toEqual([]);
+    expect(cacheReads).toBe(0);
+    expect(tokenCalls).toBe(0);
+    expect(whoopFetches).toBe(0);
   });
 });

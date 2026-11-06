@@ -25,7 +25,7 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
       isVisible
       onCancel={flow.close}
       onClose={flow.close}
-      onConfirm={isSave ? flow.confirmScopedSave : flow.confirmScopedDelete}
+      onConfirm={flow.confirmScope}
       title={isSave ? "Apply task update" : "Delete recurring task"}
     >
       <View className="mt-2">

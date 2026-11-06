@@ -42,7 +42,6 @@ import {
 import { cn } from "@/lib/utils";
 
 type RecurrenceAction =
-  | { type: "reset"; state: TaskRecurrenceEditorState }
   | { type: "set-freq"; freq: TaskRecurrenceFrequency }
   | { type: "set-interval"; interval: number }
   | { type: "toggle-day"; day: TaskRecurrenceDayCode }
@@ -54,8 +53,6 @@ function recurrenceReducer(
   action: RecurrenceAction
 ): TaskRecurrenceEditorState {
   switch (action.type) {
-    case "reset":
-      return action.state;
     case "set-freq":
       return { ...state, freq: action.freq };
     case "set-interval":
@@ -70,7 +67,7 @@ function recurrenceReducer(
     case "set-end":
       return { ...state, end: action.end };
     default:
-      return state;
+      return action satisfies never;
   }
 }
 

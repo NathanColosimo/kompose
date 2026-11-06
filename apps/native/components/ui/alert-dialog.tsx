@@ -28,7 +28,6 @@ import { useModalPresence } from "@/hooks/use-modal-presence";
 export type AlertDialogProps = {
   isVisible: boolean;
   onClose: () => void;
-  onDismissed?: () => void;
   title?: string;
   description?: string;
   children?: React.ReactNode;
@@ -44,7 +43,6 @@ export type AlertDialogProps = {
 export function AlertDialog({
   isVisible,
   onClose,
-  onDismissed,
   title,
   description,
   children,
@@ -59,48 +57,39 @@ export function AlertDialog({
   const cardColor = useColor("card");
 
   const {
-    finishClosing,
+    finishAnimation,
     finishNativeDismiss,
-    finishOpening,
     presence,
     requestClose,
-  } = useModalPresence({ isVisible, onClose, onDismissed });
+  } = useModalPresence({ isVisible, onClose });
   const backdropOpacity = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
 
   useEffect(() => {
+    if (presence !== "opening" && presence !== "closing") {
+      return;
+    }
     let active = true;
     const complete = () => {
-      if (!active) {
-        return;
-      }
-      if (presence === "opening") {
-        finishOpening();
-      } else {
-        finishClosing();
+      if (active) {
+        finishAnimation(presence);
       }
     };
 
-    if (presence === "opening" || presence === "closing") {
-      const target = presence === "opening" ? 1 : 0;
-      backdropOpacity.value = withTiming(
-        target,
-        { duration: 250 },
-        (finished) => {
-          if (finished) {
-            scheduleOnRN(complete);
-          }
-        }
-      );
-      cardOpacity.value = withTiming(target, { duration: 200 });
-    }
+    const target = presence === "opening" ? 1 : 0;
+    backdropOpacity.value = withTiming(target, { duration: 250 }, (finished) => {
+      if (finished) {
+        scheduleOnRN(complete);
+      }
+    });
+    cardOpacity.value = withTiming(target, { duration: 200 });
 
     return () => {
       active = false;
       cancelAnimation(backdropOpacity);
       cancelAnimation(cardOpacity);
     };
-  }, [presence, finishClosing, finishOpening, backdropOpacity, cardOpacity]);
+  }, [presence, finishAnimation, backdropOpacity, cardOpacity]);
 
   const rBackdropStyle = useAnimatedStyle(() => ({
     opacity: backdropOpacity.value,

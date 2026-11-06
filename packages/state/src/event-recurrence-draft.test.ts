@@ -7,6 +7,10 @@ import {
 const event = { recurringEventId: "series" };
 const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=MO"];
 const inherited: RecurrenceDraft = { kind: "inherit" };
+const overrides: { name: string; rules: string[] }[] = [
+  { name: "an explicit clear", rules: [] },
+  { name: "a changed rule", rules: ["RRULE:FREQ=MONTHLY"] },
+];
 
 describe("event recurrence draft", () => {
   test("a cold instance inherits the master when it arrives without resetting the draft", () => {
@@ -26,28 +30,16 @@ describe("event recurrence draft", () => {
     ).toEqual({ kind: "ready", rules: weekly });
   });
 
-  test("an explicit clear stays empty across master refreshes", () => {
-    const draft: RecurrenceDraft = { kind: "override", rules: [] };
-    for (const rules of [weekly, ["RRULE:FREQ=DAILY"]]) {
+  test.each(overrides)("$name survives master refreshes", ({ rules }) => {
+    for (const recurrence of [weekly, ["RRULE:FREQ=DAILY"]]) {
       expect(
         resolveEventRecurrence({
-          draft,
+          draft: { kind: "override", rules },
           event,
-          master: { data: { recurrence: rules }, isError: false },
+          master: { data: { recurrence }, isError: false },
         })
-      ).toEqual({ kind: "ready", rules: [] });
+      ).toEqual({ kind: "ready", rules });
     }
-  });
-
-  test("a changed rule survives refreshed master data", () => {
-    const rules = ["RRULE:FREQ=MONTHLY"];
-    expect(
-      resolveEventRecurrence({
-        draft: { kind: "override", rules },
-        event,
-        master: { data: { recurrence: weekly }, isError: false },
-      })
-    ).toEqual({ kind: "ready", rules });
   });
 
   test("master errors block edits even with cached rules or an override", () => {

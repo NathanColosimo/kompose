@@ -388,7 +388,7 @@ export function TaskEditForm({
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
-  const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const links = useWatch({ control, name: "links" });
   const editedLinkFields = useRef<LinkEditedFields>({
     durationMinutes:
       mode === "edit" || initialCreateValues?.durationMinutes !== undefined,

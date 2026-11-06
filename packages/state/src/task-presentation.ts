@@ -45,7 +45,7 @@ function getSearchDestination(
     // Sidebar "today" follows the selected date, so navigation must set it.
     return { date: today, kind: "sidebar", view: "today" };
   }
-  if (task.status !== "done" && task.startDate && task.startTime === null) {
+  if (task.status !== "done" && task.startDate) {
     return { date: task.startDate, kind: "sidebar", view: "today" };
   }
   return {

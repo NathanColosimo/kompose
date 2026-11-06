@@ -66,11 +66,9 @@ export function createDesktopAuthHandoff(client: HandoffClient) {
     signedIn: boolean;
   }) => {
     cancel();
-    let cancelled = false;
     let timer: ReturnType<typeof setInterval> | undefined;
     const abort = new AbortController();
     const stop = () => {
-      cancelled = true;
       clearInterval(timer);
       abort.abort();
     };
@@ -82,7 +80,7 @@ export function createDesktopAuthHandoff(client: HandoffClient) {
     };
 
     const fail = (error: unknown) => {
-      if (cancelled) {
+      if (abort.signal.aborted) {
         return;
       }
       clearInterval(timer);
@@ -96,7 +94,7 @@ export function createDesktopAuthHandoff(client: HandoffClient) {
     };
 
     const waitForCode = () => {
-      if (cancelled) {
+      if (abort.signal.aborted) {
         return;
       }
       update({ status: "waiting-for-code" });

@@ -8,7 +8,11 @@ import type {
 import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
+import {
+  dedupeLinks,
+  getLinkDurationMinutes,
+  getProviderLabel,
+} from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
@@ -71,19 +75,11 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
   };
 }
 
-/** Round link media durations up to whole minutes. */
-function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
-  if (meta && "durationSeconds" in meta && meta.durationSeconds > 0) {
-    return Math.ceil(meta.durationSeconds / 60);
-  }
-  return null;
-}
-
 function buildTaskDataFromParsed(
   parsed: TaskDraft,
-  linkMetaMap: Record<string, LinkMeta>,
-  firstLinkMeta: LinkMeta | undefined
+  linkMetaMap: Record<string, LinkMeta>
 ): ClientTaskInsertDecoded {
+  const firstLinkMeta = linkMetaMap[parsed.links[0]];
   const links = dedupeLinks(
     parsed.links.map((url) => {
       if (linkMetaMap[url]) {
@@ -99,7 +95,9 @@ function buildTaskDataFromParsed(
 
   let title = parsed.title || firstLinkMeta?.title || "";
   let durationMinutes = parsed.durationMinutes ?? 30;
-  const linkMinutes = linkDurationMinutes(firstLinkMeta);
+  const linkMinutes = firstLinkMeta
+    ? getLinkDurationMinutes(firstLinkMeta)
+    : null;
   if (!parsed.durationMinutes && linkMinutes !== null) {
     durationMinutes = linkMinutes;
   }
@@ -255,9 +253,8 @@ export function CommandBarCreateTask({
     mutationFn: async (submitted: CommandBarInput) => {
       const submittedText = submitted.text.trim();
       const resolved = draft(submittedText, await magic.resolve(submittedText));
-      const metadata = linkMetadata.current;
       await createTask.mutateAsync(
-        buildTaskDataFromParsed(resolved, metadata, metadata[resolved.links[0]])
+        buildTaskDataFromParsed(resolved, linkMetadata.current)
       );
     },
   });
@@ -272,7 +269,8 @@ export function CommandBarCreateTask({
   };
 
   const effectiveDuration =
-    parsed.durationMinutes ?? linkDurationMinutes(firstLinkMeta);
+    parsed.durationMinutes ??
+    (firstLinkMeta ? getLinkDurationMinutes(firstLinkMeta) : null);
 
   const createItemLabel =
     parsed.title ||

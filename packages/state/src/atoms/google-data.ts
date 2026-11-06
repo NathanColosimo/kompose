@@ -12,7 +12,6 @@ import { getStateConfig } from "../config";
 import { getGoogleCalendarsQueryKey } from "../google-calendar-query-keys";
 import {
   type CalendarIdentifier,
-  visibleCalendarsAtom,
   visibleCalendarsStateAtom,
 } from "./visible-calendars";
 
@@ -79,22 +78,15 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       return [];
     }
 
-    const accounts = get(googleAccountsDataAtom);
-    const calendars = get(googleCalendarsDataAtom);
-    const allCalendarIds = calendars.map((calendar) => ({
-      accountId: calendar.accountId,
-      calendarId: calendar.calendar.id,
-    }));
-
-    const stored = get(visibleCalendarsAtom);
+    const stored = selection.value;
     if (stored === null) {
-      return allCalendarIds;
+      return get(googleCalendarsDataAtom).map(({ accountId, calendar }) => ({
+        accountId,
+        calendarId: calendar.id,
+      }));
     }
 
-    if (stored.length === 0) {
-      return [];
-    }
-
+    const accounts = get(googleAccountsDataAtom);
     const accountsQuery = get(linkedAccountsAtom);
     const linkedAccountIds = new Set(
       accounts.map((account) => account.accountId)

@@ -14,8 +14,18 @@ import { resolveTaskRecurrenceForEditor } from "@kompose/state/task-recurrence";
 import { useCallback, useReducer } from "react";
 import { uuidv7 } from "uuidv7";
 
-function trimmedDescription(draft: TaskDraft): string | null {
-  return draft.description.trim() ? draft.description.trim() : null;
+function buildTaskPayload(draft: TaskDraft) {
+  return {
+    description: draft.description.trim() || null,
+    dueDate: draft.dueDate,
+    durationMinutes: draft.durationMinutes,
+    links: draft.links,
+    recurrence: draft.recurrence,
+    startDate: draft.startDate,
+    startTime: draft.startTime,
+    tagIds: draft.tagIds,
+    title: draft.title.trim(),
+  };
 }
 
 /** Shared task editor orchestration; see documents/mobile-task-popover.md. */
@@ -25,7 +35,6 @@ export function useTaskEditorFlow() {
     kind: "closed",
   });
 
-  // Stable so callers can use it in effect dependencies.
   const openCreate = useCallback((initial: TaskDraft) => {
     dispatch({ initial, sessionId: uuidv7(), type: "openCreate" });
   }, []);
@@ -53,17 +62,7 @@ export function useTaskEditorFlow() {
     updateTask.mutate({
       id: task.id,
       scope,
-      task: {
-        description: trimmedDescription(nextDraft),
-        dueDate: nextDraft.dueDate,
-        durationMinutes: nextDraft.durationMinutes,
-        links: nextDraft.links,
-        recurrence: nextDraft.recurrence,
-        startDate: nextDraft.startDate,
-        startTime: nextDraft.startTime,
-        tagIds: nextDraft.tagIds,
-        title: nextDraft.title.trim(),
-      },
+      task: buildTaskPayload(nextDraft),
     });
   }
 
@@ -75,17 +74,10 @@ export function useTaskEditorFlow() {
     }
 
     createTask.mutate({
-      description: trimmedDescription(nextDraft),
-      dueDate: nextDraft.dueDate,
-      durationMinutes: nextDraft.durationMinutes,
+      ...buildTaskPayload(nextDraft),
       isException: false,
-      links: nextDraft.links,
-      recurrence: nextDraft.recurrence,
       seriesMasterId: null,
-      startDate: nextDraft.startDate,
-      startTime: nextDraft.startTime,
       status: "todo",
-      tagIds: nextDraft.tagIds,
       title,
     });
   }
@@ -119,19 +111,14 @@ export function useTaskEditorFlow() {
     dispatch({ type: "delete" });
   }
 
-  function confirmScopedSave() {
-    if (state.kind !== "saveScope") {
+  function confirmScope() {
+    if (state.kind === "saveScope") {
+      commitUpdate(state.task, state.draft, state.scope);
+    } else if (state.kind === "deleteScope") {
+      deleteTask.mutate({ id: state.task.id, scope: state.scope });
+    } else {
       return;
     }
-    commitUpdate(state.task, state.draft, state.scope);
-    close();
-  }
-
-  function confirmScopedDelete() {
-    if (state.kind !== "deleteScope") {
-      return;
-    }
-    deleteTask.mutate({ id: state.task.id, scope: state.scope });
     close();
   }
 
@@ -153,8 +140,7 @@ export function useTaskEditorFlow() {
 
   return {
     close,
-    confirmScopedDelete,
-    confirmScopedSave,
+    confirmScope,
     openCreate,
     openEdit,
     requestDelete,

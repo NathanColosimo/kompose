@@ -26,7 +26,6 @@ interface SupervisorOptions {
 
 interface Attempt {
   controller: AbortController;
-  generation: number;
   inactivityTimer?: CancelTimer;
   iterator?: AsyncIterator<SyncEvent>;
   startedAt: number;
@@ -42,7 +41,6 @@ export class RealtimeSyncSupervisor {
   private attempt?: Attempt;
   private backgroundTimer?: CancelTimer;
   private foreground = true;
-  private generation = 0;
   private hasConnected = false;
   private reconnectAttempts = 0;
   private retryTimer?: CancelTimer;
@@ -104,7 +102,7 @@ export class RealtimeSyncSupervisor {
   }
 
   private isCurrent(attempt: Attempt) {
-    return this.attempt?.generation === attempt.generation;
+    return this.attempt === attempt;
   }
 
   private closeIterator(attempt: Attempt) {
@@ -165,10 +163,8 @@ export class RealtimeSyncSupervisor {
       this.state = "paused";
       return;
     }
-    this.generation += 1;
     const attempt: Attempt = {
       controller: new AbortController(),
-      generation: this.generation,
       startedAt: this.now(),
     };
     this.attempt = attempt;

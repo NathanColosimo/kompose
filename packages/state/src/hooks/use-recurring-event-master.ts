@@ -4,19 +4,6 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useQuery } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 
-function recurringEventMasterQueryKey(params: {
-  accountId: string;
-  calendarId: string;
-  recurringEventId: string;
-}) {
-  return [
-    "google-event-master",
-    params.accountId,
-    params.calendarId,
-    params.recurringEventId,
-  ] as const;
-}
-
 export function useRecurringEventMaster(params: {
   accountId: string;
   calendarId: string;
@@ -25,24 +12,13 @@ export function useRecurringEventMaster(params: {
 }) {
   const { orpc } = useStateConfig();
 
-  const needsMaster =
-    params.event !== null &&
-    !params.event.recurrence?.length &&
-    Boolean(params.event.recurringEventId);
-
   const recurringEventId = params.event?.recurringEventId;
 
-  const enabled = needsMaster && (params.enabled ?? true);
-
-  // Keep the cache identity stable when the editor opens and closes.
-  const queryKey = recurringEventMasterQueryKey({
-    accountId: params.accountId,
-    calendarId: params.calendarId,
-    recurringEventId: recurringEventId ?? "no-master",
-  });
-
   return useQuery({
-    enabled,
+    enabled:
+      Boolean(recurringEventId) &&
+      !params.event?.recurrence?.length &&
+      (params.enabled ?? true),
     queryFn: () => {
       if (!recurringEventId) {
         throw new Error("Recurring master query is disabled");
@@ -53,7 +29,13 @@ export function useRecurringEventMaster(params: {
         eventId: recurringEventId,
       });
     },
-    queryKey,
+    // Keep the cache identity stable when the editor opens and closes.
+    queryKey: [
+      "google-event-master",
+      params.accountId,
+      params.calendarId,
+      recurringEventId ?? "no-master",
+    ],
     staleTime: 5 * 60 * 1000,
   });
 }

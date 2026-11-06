@@ -164,9 +164,8 @@ export function BottomSheet({
   const defaultHeight = snapPointsHeights[0];
 
   const {
-    finishClosing,
+    finishAnimation,
     finishNativeDismiss,
-    finishOpening,
     presence,
     requestClose,
   } = useModalPresence({ isVisible, onClose, onDismissed });
@@ -177,15 +176,13 @@ export function BottomSheet({
   });
 
   useEffect(() => {
+    if (presence !== "opening" && presence !== "closing") {
+      return;
+    }
     let active = true;
     const complete = () => {
-      if (!active) {
-        return;
-      }
-      if (presence === "opening") {
-        finishOpening();
-      } else {
-        finishClosing();
+      if (active) {
+        finishAnimation(presence);
       }
     };
 
@@ -195,26 +192,24 @@ export function BottomSheet({
     };
     if (presence === "opening") {
       animateOpening();
-    } else if (presence === "closing") {
+    } else {
       translateY.value = withTiming(0, config);
     }
-    if (presence === "opening" || presence === "closing") {
-      opacity.value = withTiming(
-        presence === "opening" ? 1 : 0,
-        config,
-        (finished) => {
-          if (finished) {
-            scheduleOnRN(complete);
-          }
+    opacity.value = withTiming(
+      presence === "opening" ? 1 : 0,
+      config,
+      (finished) => {
+        if (finished) {
+          scheduleOnRN(complete);
         }
-      );
-    }
+      }
+    );
 
     return () => {
       active = false;
       cancelAnimation(opacity);
     };
-  }, [presence, finishClosing, finishOpening, translateY, opacity]);
+  }, [presence, finishAnimation, translateY, opacity]);
 
   // Animate from JS contexts (effects, press handlers).
   const snapTo = (destination: number) => {

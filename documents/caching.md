@@ -2,7 +2,7 @@
 
 ## Overview
 
-Google Calendar API data is cached in Redis to reduce latency. Webhooks and local mutations advance cache generations; TTLs are safety nets. WHOOP caches raw day data with its existing per-day TTL policy.
+Google Calendar API data is cached in Redis to reduce latency. Webhooks and local mutations advance cache generations; TTLs are safety nets. WHOOP caches raw day data per day; see `documents/whoop.md` for its TTL policy.
 
 Every cache-backed request first checks the current linked account in Postgres. Cache hits require ownership and an existing linkage, but do not fetch or refresh an OAuth token.
 
@@ -22,7 +22,7 @@ getLinkedAccount (user + provider + provider account ID → local account row ID
 ## Architecture
 
 - `GoogleCalendarCacheService` (`packages/api/src/routers/google-cal/cache.ts`) creates read handles with `get` and `set(data)`. Each handle captures its generation **before** the provider fetch. Callers must use the same handle for the read and write.
-- `WhoopCacheService` (`packages/api/src/routers/whoop/cache.ts`) receives the linkage checked by `WhoopService` and uses it for both reads and writes. Its TTL selection is unchanged.
+- `WhoopCacheService` (`packages/api/src/routers/whoop/cache.ts`) receives the linkage checked by `WhoopService` and uses it for both reads and writes.
 - `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`) handles best-effort JSON reads, writes, generation selection and invalidation.
 - All use the shared ioredis connection from `@kompose/redis` (`REDIS_URL`), also used by Better Auth, rate limiters and sync publishes.
 
@@ -41,7 +41,7 @@ Service methods use `Effect.fn` tracing and annotate account/calendar/event IDs.
 | Calendar event generation | `gcal:events-generation:{link}:{calendarId}` | None |
 | Event list | `gcal:events:{link}:{calendarId}:{timeMin}:{timeMax}:{generation}` | 24h |
 | Single event | `gcal:event:{link}:{calendarId}:{eventId}:{generation}` | 24h |
-| WHOOP raw day | `whoop:day:{link}:{day}` | Existing per-day TTL policy |
+| WHOOP raw day | `whoop:day:{link}:{day}` | 15 min, or 7 days once settled (`documents/whoop.md`) |
 
 Generation counters do not expire. Expiring or evicting a counter independently of its payloads could resurrect an old namespace. Retired payloads expire by their TTL; invalidation does not scan or delete them. Retired linkage counters remain in Redis.
 
@@ -62,7 +62,7 @@ There is no `SCAN`, prefix deletion, or separate list/single invalidation pass.
 | `events.create`, `events.update`, `events.delete` | Calendar's event generation |
 | `events.move` | Source and destination event generations |
 
-Independent invalidations run with `Effect.all([...], { concurrency: "unbounded", discard: true })`. Webhooks use the subscription's exact local account row ID, provider account ID and user ID. Watch-channel create/renew/stop behavior is unchanged.
+Independent invalidations run with `Effect.all([...], { concurrency: "unbounded", discard: true })`. Webhooks use the subscription's exact local account row ID, provider account ID and user ID. Watch-channel lifecycle is described in `documents/services.md`.
 
 ## Linkage lifecycle and account IDs
 

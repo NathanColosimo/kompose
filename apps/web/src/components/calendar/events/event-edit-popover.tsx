@@ -167,16 +167,8 @@ export type CloseSaveRequest =
   | { type: "blocked" }
   | {
       type: "save";
-      /**
-       * Mutation payload that represents the user’s edits.
-       * We keep recurrence scope out of the form and ask for it after close.
-       */
-      variables: UpdateGoogleEventInput;
-      isRecurring: boolean;
+      command: Extract<EventEditCommand, { kind: "save" }>;
       defaultScope: RecurrenceScope;
-      /** Whether event data (non-calendar fields) were actually edited. */
-      hasDataEdits: boolean;
-      calendarChanged?: { destinationCalendarId: string };
     }
   | {
       type: "create";
@@ -515,7 +507,6 @@ function EventOperationDialog({
   }
   return (
     <RecurrenceScopeDialog
-      closeOnConfirm={false}
       confirmLabel={confirmLabel}
       description={description}
       disabledScopes={
@@ -695,22 +686,9 @@ export function EventEditPopover({
       return;
     }
     prepareOperation(
-      {
-        isRecurring: request.isRecurring,
-        kind: "save",
-        move: request.calendarChanged
-          ? {
-              accountId: request.variables.accountId,
-              calendarId: request.variables.calendarId,
-              destinationCalendarId:
-                request.calendarChanged.destinationCalendarId,
-              eventId: request.variables.eventId,
-            }
-          : null,
-        update: request.hasDataEdits ? request.variables : null,
-      },
-      request.isRecurring ? request.defaultScope : "this",
-      request.isRecurring
+      request.command,
+      request.defaultScope,
+      request.command.isRecurring
     );
   }, [createEvent, operation.kind, prepareOperation, readOnly, setOpen]);
 
@@ -857,10 +835,6 @@ function buildEditPayload(
     return { type: "none" };
   }
 
-  const defaultScope: RecurrenceScope = ctx.event?.recurringEventId
-    ? "this"
-    : "all";
-
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
     calendarId: ctx.calendarId,
@@ -886,14 +860,21 @@ function buildEditPayload(
   };
 
   return {
-    calendarChanged: calendarChanged
-      ? { destinationCalendarId: values.selectedCalendarId }
-      : undefined,
-    defaultScope,
-    hasDataEdits: ctx.hasEdits,
-    isRecurring,
+    command: {
+      isRecurring,
+      kind: "save",
+      move: calendarChanged
+        ? {
+            accountId: ctx.accountId,
+            calendarId: ctx.calendarId,
+            destinationCalendarId: values.selectedCalendarId,
+            eventId: variables.eventId,
+          }
+        : null,
+      update: ctx.hasEdits ? variables : null,
+    },
+    defaultScope: isRecurring && !ctx.event?.recurringEventId ? "all" : "this",
     type: "save",
-    variables,
   };
 }
 

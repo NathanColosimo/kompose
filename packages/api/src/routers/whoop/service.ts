@@ -383,7 +383,6 @@ export class WhoopService extends Context.Service<WhoopService>()(
             cachedDays,
             days: requestedDays,
             timeZone: params.timeZone,
-            today,
           });
           const allDays = new Map(cachedDays);
 
@@ -427,7 +426,6 @@ export class WhoopService extends Context.Service<WhoopService>()(
                 (payload) =>
                   cache.setCachedDay(
                     link,
-                    payload.day,
                     payload,
                     ttlForDay(payload, params.timeZone, now)
                   ),

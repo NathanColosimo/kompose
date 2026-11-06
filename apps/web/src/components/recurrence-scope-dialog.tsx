@@ -5,7 +5,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
 } from "@kompose/state/recurrence-scope-options";
-import { useId, useTransition } from "react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,18 +28,15 @@ export function RecurrenceScopeDialog({
   onValueChange,
   confirmLabel = "Save",
   cancelLabel = "Cancel",
-  onCancel,
   onConfirm,
   disabledScopes,
   options = RECURRENCE_SCOPE_OPTIONS,
   pending = false,
   scopeDisabled = false,
-  closeOnConfirm = true,
   error,
 }: {
   pending?: boolean;
   scopeDisabled?: boolean;
-  closeOnConfirm?: boolean;
   error?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,19 +46,16 @@ export function RecurrenceScopeDialog({
   onValueChange: (value: RecurrenceScope) => void;
   confirmLabel?: string;
   cancelLabel?: string;
-  onCancel?: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => void;
   disabledScopes?: Partial<Record<RecurrenceScope, boolean>>;
   options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
-  const [confirming, startConfirm] = useTransition();
-  const busy = pending || confirming;
 
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        if (!busy) {
+        if (!pending) {
           onOpenChange(nextOpen);
         }
       }}
@@ -76,14 +70,14 @@ export function RecurrenceScopeDialog({
         </DialogHeader>
 
         <RadioGroup
-          disabled={busy || scopeDisabled}
+          disabled={pending || scopeDisabled}
           onValueChange={(next) => onValueChange(next as RecurrenceScope)}
           value={value}
         >
           {options.map((opt) => {
             const id = `${idBase}-${opt.value}`;
             const isDisabled = Boolean(
-              busy || scopeDisabled || disabledScopes?.[opt.value]
+              pending || scopeDisabled || disabledScopes?.[opt.value]
             );
             return (
               <Label
@@ -116,28 +110,14 @@ export function RecurrenceScopeDialog({
 
         <DialogFooter>
           <Button
-            disabled={busy}
-            onClick={() => {
-              onCancel?.();
-              onOpenChange(false);
-            }}
+            disabled={pending}
+            onClick={() => onOpenChange(false)}
             type="button"
             variant="ghost"
           >
             {cancelLabel}
           </Button>
-          <Button
-            disabled={busy}
-            onClick={() => {
-              startConfirm(async () => {
-                await onConfirm();
-                if (closeOnConfirm) {
-                  onOpenChange(false);
-                }
-              });
-            }}
-            type="button"
-          >
+          <Button disabled={pending} onClick={onConfirm} type="button">
             {confirmLabel}
           </Button>
         </DialogFooter>

@@ -389,7 +389,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 ### Caching
 
 - Per-day raw data cached in Redis via `WhoopCacheService`, after checking the current account linkage. Keys include the local account row ID so relinking starts a new namespace.
-- Today's data: 15-minute TTL. Past days: 7-day TTL.
+- 15-minute TTL for today, empty days, and days with pending scores or an open cycle; 7-day TTL only for settled past days. Future days are never fetched or cached. See `documents/whoop.md`.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)

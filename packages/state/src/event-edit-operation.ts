@@ -32,7 +32,6 @@ export type EventEditOperation =
   | (OperationContext & {
       kind: "failed";
       retryStep: OperationStep;
-      error: unknown;
     });
 
 export type EventEditOperationAction =
@@ -41,7 +40,7 @@ export type EventEditOperationAction =
   | { type: "run"; id: number }
   | { type: "dismiss"; id: number }
   | { type: "succeeded"; id: number; step: OperationStep }
-  | { type: "failed"; id: number; step: OperationStep; error: unknown };
+  | { type: "failed"; id: number; step: OperationStep };
 
 function operationScope(
   command: EventEditCommand,
@@ -88,12 +87,21 @@ export function eventEditOperationReducer(
         ? { ...state, scope: operationScope(state.command, action.scope) }
         : state;
     case "run":
-      return startOperation(state);
+      if (state.kind !== "confirming" && state.kind !== "failed") {
+        return state;
+      }
+      return {
+        command: state.command,
+        id: state.id,
+        kind: "running",
+        scope: state.scope,
+        step:
+          state.kind === "failed" ? state.retryStep : firstStep(state.command),
+      };
     case "failed":
       return state.kind === "running" && state.step === action.step
         ? {
             command: state.command,
-            error: action.error,
             id: state.id,
             kind: "failed",
             retryStep: action.step,
@@ -105,21 +113,6 @@ export function eventEditOperationReducer(
     default:
       return action satisfies never;
   }
-}
-
-function startOperation(
-  state: Exclude<EventEditOperation, { kind: "idle" }>
-): EventEditOperation {
-  if (state.kind !== "confirming" && state.kind !== "failed") {
-    return state;
-  }
-  return {
-    command: state.command,
-    id: state.id,
-    kind: "running",
-    scope: state.scope,
-    step: state.kind === "failed" ? state.retryStep : firstStep(state.command),
-  };
 }
 
 function completeOperationStep(
@@ -172,8 +165,8 @@ export async function runEventEditOperation(
       await mutations.move({ ...command.move, scope });
       dispatch({ id, step, type: "succeeded" });
     }
-  } catch (error) {
-    dispatch({ error, id, step, type: "failed" });
+  } catch {
+    dispatch({ id, step, type: "failed" });
   } finally {
     runningOperations.delete(id);
   }

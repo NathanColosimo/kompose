@@ -140,29 +140,9 @@ describe("WHOOP missing fetch ranges", () => {
       cachedDays: new Map([["2026-11-05", settledDay()]]),
       days: ["2026-11-05"],
       timeZone,
-      today: "2026-11-06",
     };
     expect(missingDayFetchRanges(params)).toEqual([]);
     expect(missingDayFetchRanges({ ...params, days: [] })).toEqual([]);
-  });
-
-  test("future days need no fetch even when only future days were requested", () => {
-    const params = {
-      cachedDays: new Map<string, WhoopCachedDayRaw>(),
-      days: ["2026-11-07", "2026-11-08"],
-      timeZone,
-      today: "2026-11-06",
-    };
-    expect(missingDayFetchRanges(params)).toEqual([]);
-    expect(
-      missingDayFetchRanges({ ...params, days: ["2026-11-06", ...params.days] })
-    ).toEqual([
-      {
-        days: ["2026-11-06"],
-        end: "2026-11-07T05:00:00Z",
-        start: "2026-11-05T23:00:00Z",
-      },
-    ]);
   });
 
   test("splits missing days around cached days", () => {
@@ -171,7 +151,6 @@ describe("WHOOP missing fetch ranges", () => {
         cachedDays: new Map([["2026-11-03", settledDay()]]),
         days: ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"],
         timeZone,
-        today: "2026-11-06",
       })
     ).toEqual([
       {

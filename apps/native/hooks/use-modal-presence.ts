@@ -62,18 +62,16 @@ export function useModalPresence({
     [transitionTo]
   );
 
-  const finishOpening = useCallback(() => {
-    if (presenceRef.current === "opening") {
-      transitionTo("open");
-    }
-  }, [transitionTo]);
-
-  const finishClosing = useCallback(() => {
-    if (presenceRef.current === "closing") {
-      awaitingNativeDismiss.current = true;
-      transitionTo("hidden");
-    }
-  }, [transitionTo]);
+  const finishAnimation = useCallback(
+    (phase: "opening" | "closing") => {
+      if (presenceRef.current !== phase) {
+        return;
+      }
+      awaitingNativeDismiss.current = phase === "closing";
+      transitionTo(phase === "opening" ? "open" : "hidden");
+    },
+    [transitionTo]
+  );
 
   const finishNativeDismiss = useCallback(() => {
     if (!awaitingNativeDismiss.current || presenceRef.current !== "hidden") {
@@ -99,9 +97,8 @@ export function useModalPresence({
   }, [finishNativeDismiss, presence]);
 
   return {
-    finishClosing,
+    finishAnimation,
     finishNativeDismiss,
-    finishOpening,
     presence,
     requestClose,
   };
