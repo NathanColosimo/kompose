@@ -5,10 +5,10 @@ import { errorMessage } from "@kompose/state/errors";
 import type { SubscribeToResume } from "@kompose/state/hooks/use-today-tick";
 import { StateProvider } from "@kompose/state/state-provider";
 import { createWebStorageAdapter } from "@kompose/state/storage";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { createAppQueryClient, orpc } from "@/utils/orpc";
@@ -41,6 +41,21 @@ const ReactQueryDevtools = dynamic(
   { ssr: false }
 );
 
+let browserQueryClient: QueryClient | undefined;
+
+/**
+ * One QueryClient per window. Navigating to a public page and back remounts
+ * these providers, and StateProvider gives Jotai's global store only the
+ * first client it sees, so a new client would split the atoms from the hooks.
+ */
+function getQueryClient(options: Parameters<typeof createAppQueryClient>[0]) {
+  if (typeof window === "undefined") {
+    return createAppQueryClient(options);
+  }
+  browserQueryClient ??= createAppQueryClient(options);
+  return browserQueryClient;
+}
+
 /** Query, app state, toasts and desktop sign-in for the signed-in app routes. */
 export default function AppProviders({
   children,
@@ -50,9 +65,7 @@ export default function AppProviders({
   const pathname = usePathname();
   // The desktop command bar window never renders or emits toasts.
   const isCommandBarRoute = pathname === "/desktop/command-bar";
-  const [queryClient] = useState(() =>
-    createAppQueryClient({ suppressToasts: isCommandBarRoute })
-  );
+  const queryClient = getQueryClient({ suppressToasts: isCommandBarRoute });
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
     () => ({
