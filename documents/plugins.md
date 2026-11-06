@@ -6,6 +6,7 @@ Built so far:
 
 - `@kompose/plugins` (`packages/plugins/src`): manifest types and the Google Calendar and WHOOP manifests (plain objects checked with `as const satisfies PluginManifest`).
 - The `connection` table, backfilled from linked Google and WHOOP accounts. `connectLinkedAccount` in `packages/auth/src/connections.ts` (a Better Auth `account.create.after` hook) adds a row whenever an account from a plugin's OAuth provider is linked; unlinking cascades.
+- Settings connections list on web (`plugin-connections-settings.tsx`) and native (`plugin-connections-cards.tsx`): a card per plugin from the manifest list, fed by `plugins.connections` (each connection with the account's name, email and avatar from Better Auth's `accountInfo`) through `usePluginConnections` in `@kompose/state`, which also groups connections per plugin and holds the `connectLabel` and `initials` helpers both cards use. Connect calls `linkSocial` with the manifest's provider; Disconnect unlinks the account. This replaced the Google and WHOOP cards and the unused `account.list` and `whoop.profile.get` procedures. Native now offers WHOOP too.
 
 Integrations (Google Calendar, WHOOP, link parsing, place search, meeting links, later Outlook, Apple Calendar, Apple Health) become plugins. Every plugin is built into the app; nothing is loaded at runtime.
 
