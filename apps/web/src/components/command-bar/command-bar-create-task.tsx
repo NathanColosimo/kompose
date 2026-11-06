@@ -5,6 +5,7 @@ import type {
   ClientTaskInsertDecoded,
   LinkMeta,
 } from "@kompose/api/routers/task/contract";
+import { useStateConfig } from "@kompose/state/config";
 import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
@@ -13,7 +14,10 @@ import {
   getLinkDurationMinutes,
   getProviderLabel,
 } from "@kompose/state/link-meta-utils";
-import { getLinkMetadataQueryKey } from "@kompose/state/link-metadata";
+import {
+  getLinkMetadataQueryKey,
+  linkMetadataQueryOptions,
+} from "@kompose/state/link-metadata";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
@@ -190,6 +194,7 @@ export function CommandBarCreateTask({
 }: CommandBarCreateTaskProps) {
   const { createTask } = useTasks();
   const queryClient = useQueryClient();
+  const { orpc } = useStateConfig();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
@@ -264,6 +269,15 @@ export function CommandBarCreateTask({
     mutationFn: async (submitted: CommandBarInput) => {
       const submittedText = submitted.text.trim();
       const resolved = draft(submittedText, await magic.resolve(submittedText));
+      // The live preview stops observing a URL once the input changes, which
+      // cancels its query. Fetch (or reuse) metadata for the submitted links.
+      await Promise.allSettled(
+        resolved.links.map((url) =>
+          queryClient.fetchQuery(
+            linkMetadataQueryOptions(orpc.tasks.parseLink, url)
+          )
+        )
+      );
       await createTask.mutateAsync(
         buildTaskDataFromParsed(resolved, queryClient)
       );
