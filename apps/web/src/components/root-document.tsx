@@ -4,17 +4,18 @@ import "../index.css";
 import Providers from "@/components/providers";
 import sentientUprightUrl from "@/fonts/Sentient-Variable.woff2";
 
-export const metadata: Metadata = {
+export const rootMetadata: Metadata = {
   description:
     "Kompose merges your calendar, tasks, and integrations into one orchestration canvas for planning your day.",
   title: "kompose — calendar and tasks",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+/**
+ * The <html> shell for each root layout: app/(site), app/(docs), and the
+ * global 404. /docs has its own root layout so its stylesheet never stays
+ * attached to other pages; moving between root layouts is a full page load.
+ */
+export function RootDocument({ children }: { children: React.ReactNode }) {
   // Every page's text is Sentient (index.css), so fetch it with the HTML
   // instead of after the CSS is parsed. The import resolves to the same
   // content-hashed, immutable URL the stylesheet uses.
