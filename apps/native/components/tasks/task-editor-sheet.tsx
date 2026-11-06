@@ -158,59 +158,57 @@ function TaskRecurrenceEndSection({
       <Text className="text-muted-foreground text-xs">Ends</Text>
       <View className="mt-1 flex-row flex-wrap gap-2">
         <Button
-          onPress={() => updateRecurrence({ endType: "never", until: null })}
+          onPress={() => updateRecurrence({ end: { kind: "never" } })}
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "never" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "never" ? "default" : "outline"}
         >
           <Text>Never</Text>
         </Button>
         <Button
           onPress={() =>
             updateRecurrence({
-              endType: "until",
-              until: recurrenceState.until ?? fallbackUntil,
+              end:
+                recurrenceState.end.kind === "until"
+                  ? recurrenceState.end
+                  : { date: fallbackUntil, kind: "until" },
             })
           }
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "until" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "until" ? "default" : "outline"}
         >
           <Text>On date</Text>
         </Button>
         <Button
           onPress={() =>
             updateRecurrence({
-              count:
-                Number.isFinite(recurrenceState.count) &&
-                recurrenceState.count > 0
-                  ? recurrenceState.count
-                  : 10,
-              endType: "count",
+              end:
+                recurrenceState.end.kind === "count"
+                  ? recurrenceState.end
+                  : { count: 10, kind: "count" },
             })
           }
           size="sm"
           style={{ borderRadius: 999 }}
-          variant={recurrenceState.endType === "count" ? "default" : "outline"}
+          variant={recurrenceState.end.kind === "count" ? "default" : "outline"}
         >
           <Text>After N</Text>
         </Button>
       </View>
 
-      {recurrenceState.endType === "until" ? (
+      {recurrenceState.end.kind === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
-            displayValue={
-              recurrenceState.until
-                ? formatPlainDateShort(recurrenceState.until)
-                : "Until date"
-            }
+            displayValue={formatPlainDateShort(recurrenceState.end.date)}
             mode="date"
-            onChange={(date) =>
-              updateRecurrence({
-                until: date ? dateToPlainDate(date) : null,
-              })
-            }
+            onChange={(date) => {
+              if (date) {
+                updateRecurrence({
+                  end: { date: dateToPlainDate(date), kind: "until" },
+                });
+              }
+            }}
             placeholder="Until date"
             showIcon={false}
             style={{
@@ -218,18 +216,14 @@ function TaskRecurrenceEndSection({
               minHeight: 38,
               paddingHorizontal: 10,
             }}
-            value={
-              recurrenceState.until
-                ? plainDateToDate(recurrenceState.until)
-                : undefined
-            }
+            value={plainDateToDate(recurrenceState.end.date)}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
           />
         </View>
       ) : null}
 
-      {recurrenceState.endType === "count" ? (
+      {recurrenceState.end.kind === "count" ? (
         <View className="mt-2 flex-row items-center gap-2">
           <Input
             containerStyle={{ width: 78 }}
@@ -237,10 +231,10 @@ function TaskRecurrenceEndSection({
             keyboardType="number-pad"
             onChangeText={(value) => {
               const nextCount = Number.parseInt(value, 10) || 1;
-              updateRecurrence({ count: nextCount });
+              updateRecurrence({ end: { count: nextCount, kind: "count" } });
             }}
             pill
-            value={String(recurrenceState.count)}
+            value={String(recurrenceState.end.count)}
             variant="outline"
           />
           <Text className="text-foreground text-xs">occurrences</Text>

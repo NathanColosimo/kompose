@@ -17,16 +17,17 @@ export const TASK_RECURRENCE_DAYS = [
 export type TaskRecurrenceDayCode =
   (typeof TASK_RECURRENCE_DAYS)[number]["value"];
 export type TaskRecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
-export type TaskRecurrenceEndType = "never" | "until" | "count";
+export type TaskRecurrenceEnd =
+  | { kind: "never" }
+  | { kind: "until"; date: Temporal.PlainDate }
+  | { kind: "count"; count: number };
 
 export interface TaskRecurrenceEditorState {
   byDay: TaskRecurrenceDayCode[];
   byMonthDay: number;
-  count: number;
-  endType: TaskRecurrenceEndType;
+  end: TaskRecurrenceEnd;
   freq: TaskRecurrenceFrequency;
   interval: number;
-  until: Temporal.PlainDate | null;
 }
 
 function normalizePositiveInt(value: number | undefined, fallback = 1): number {
@@ -73,13 +74,13 @@ export function getTaskRecurrenceEditorState(
   value: TaskRecurrence | null,
   referenceDate?: Temporal.PlainDate | null
 ): TaskRecurrenceEditorState {
-  let endType: TaskRecurrenceEndType;
+  let end: TaskRecurrenceEnd;
   if (value?.until) {
-    endType = "until";
+    end = { date: Temporal.PlainDate.from(value.until), kind: "until" };
   } else if (value?.count) {
-    endType = "count";
+    end = { count: normalizePositiveInt(value.count, 10), kind: "count" };
   } else {
-    endType = "never";
+    end = { kind: "never" };
   }
 
   return {
@@ -91,26 +92,35 @@ export function getTaskRecurrenceEditorState(
       value?.freq === "MONTHLY"
         ? clampMonthDay(value.byMonthDay)
         : clampMonthDay(referenceDate?.day ?? 1),
-    count: normalizePositiveInt(value?.count, 10),
-    endType,
+    end,
     freq: (value?.freq ?? "WEEKLY") as TaskRecurrenceFrequency,
     interval: normalizePositiveInt(value?.interval, 1),
-    until: value?.until ? Temporal.PlainDate.from(value.until) : null,
   };
+}
+
+function buildTaskRecurrenceEnd(end: TaskRecurrenceEnd): {
+  until?: string;
+  count?: number;
+} {
+  switch (end.kind) {
+    case "never":
+      return {};
+    case "until":
+      return { until: end.date.toString() };
+    case "count":
+      return { count: normalizePositiveInt(end.count, 1) };
+    default:
+      throw new Error("Invalid task recurrence end", {
+        cause: end satisfies never,
+      });
+  }
 }
 
 export function buildTaskRecurrence(
   value: TaskRecurrenceEditorState
 ): TaskRecurrence {
   const interval = normalizePositiveInt(value.interval, 1);
-  const count = normalizePositiveInt(value.count, 1);
-
-  const end: { until?: string; count?: number } = {};
-  if (value.endType === "until" && value.until) {
-    end.until = value.until.toString();
-  } else if (value.endType === "count") {
-    end.count = count;
-  }
+  const end = buildTaskRecurrenceEnd(value.end);
 
   if (value.freq === "WEEKLY") {
     return {
