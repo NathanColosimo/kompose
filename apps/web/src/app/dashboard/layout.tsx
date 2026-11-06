@@ -71,11 +71,14 @@ export default function DashboardLayout({
       return;
     }
 
-    return desktopBridge().onOpenTask((payload) => {
+    const bridge = desktopBridge();
+    const unsubscribe = bridge.onOpenTask((payload) => {
       const request = deserializeCommandBarTaskOpenRequest(payload);
       push("/dashboard");
       applyCommandBarTaskOpenRequest(request);
     });
+    bridge.setTaskListenerReady?.(true).catch(() => undefined);
+    return unsubscribe;
   }, [applyCommandBarTaskOpenRequest, push]);
 
   if (isSessionPending || (!sessionUser && sessionError)) {

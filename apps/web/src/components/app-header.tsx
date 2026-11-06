@@ -485,11 +485,30 @@ function CreateTagRow({
 /** Shown once the desktop app has downloaded an update. */
 function UpdatePromptButton() {
   const [readyVersion, setReadyVersion] = useState<string | null>(null);
-  useMountEffect(() =>
-    isDesktopRuntime()
-      ? desktopBridge().onUpdateReady(setReadyVersion)
-      : undefined
-  );
+  useMountEffect(() => {
+    if (!isDesktopRuntime()) {
+      return;
+    }
+    const bridge = desktopBridge();
+    let active = true;
+    let receivedEvent = false;
+    const unsubscribe = bridge.onUpdateReady((version) => {
+      receivedEvent = true;
+      setReadyVersion(version);
+    });
+    bridge
+      .getReadyUpdate?.()
+      .then((version) => {
+        if (active && !receivedEvent && version) {
+          setReadyVersion(version);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  });
 
   if (!readyVersion) {
     return null;

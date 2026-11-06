@@ -31,6 +31,26 @@ ships the latest code. Only add bridge members, and feature-detect new ones in
 the web app. Removing or changing one needs a desktop release that every user
 has installed first.
 
+The popup stores desired visibility separately from its first-paint readiness.
+Shortcut presses toggle that desired state, and every dismissal clears it, so
+an open followed by another press or dismissal while loading stays hidden.
+
+Task selections wait for the main renderer's task subscription, rather than
+`did-finish-load`. The optional `setTaskListenerReady` handshake runs after the
+listener is installed. Preload also signals subscription and final unsubscription
+through the existing `onOpenTask` API, so older hosted web versions work with new
+desktop installs. Main-frame navigation resets readiness, retaining the latest
+pending selection through login, offline pages, and retries until the app
+subscribes again. As before, a newer pending selection replaces an older one.
+
+Downloaded updates remain main-process state. The optional `getReadyUpdate`
+snapshot is queried after subscribing to `onUpdateReady`, recovering updates
+downloaded before hydration or during offline navigation. Preload replays the
+snapshot for older web versions too. A live event takes precedence over an older
+snapshot response, and cleaned-up subscriptions ignore snapshot responses.
+New web code feature-detects both optional methods; older installed desktops
+keep their existing event-only behavior.
+
 ## Releases
 
 Desktop releases are only needed for main-process or preload changes; UI changes

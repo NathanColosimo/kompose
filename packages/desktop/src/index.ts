@@ -27,6 +27,8 @@ export interface DesktopTaskSelection {
  */
 export interface DesktopBridge {
   dismissCommandBar: () => Promise<void>;
+  /** Snapshot for listeners installed after an update downloaded. */
+  getReadyUpdate?: () => Promise<string | null>;
   getShortcut: () => Promise<DesktopCommandBarShortcutPresetId>;
   installUpdate: () => Promise<void>;
   /** Delivers a command bar selection to the main window. */
@@ -38,10 +40,12 @@ export interface DesktopBridge {
   openTask: (selection: DesktopTaskSelection) => Promise<void>;
   resizeCommandBar: (height: number) => Promise<void>;
   setShortcut: (id: DesktopCommandBarShortcutPresetId) => Promise<void>;
+  /** Call after installing the task listener; preload also does this for older web apps. */
+  setTaskListenerReady?: (ready: boolean) => Promise<void>;
   showMainWindow: () => Promise<void>;
 }
 export type DesktopInvokeMethod = {
-  [K in keyof DesktopBridge]: K extends `on${string}` ? never : K;
+  [K in keyof DesktopBridge]-?: K extends `on${string}` ? never : K;
 }[keyof DesktopBridge];
 export const desktopChannel = (member: keyof DesktopBridge) =>
   `desktop:${member}`;
