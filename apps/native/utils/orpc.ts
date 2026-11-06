@@ -42,7 +42,7 @@ export const queryClient = new QueryClient({
   }),
 });
 
-export const link = new RPCLink({
+const link = new RPCLink({
   // React Native's built-in fetch does not support SSE / ReadableStream.
   // expo/fetch provides streaming support required for oRPC eventIterator.
   async fetch(url, init) {
