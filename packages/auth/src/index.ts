@@ -15,6 +15,7 @@ import { env } from "@kompose/env";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
+import { connectLinkedAccount } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { redisSecondaryStorage } from "./redis-storage";
 import { whoopOAuthTokens } from "./whoop";
@@ -39,6 +40,9 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  databaseHooks: {
+    account: { create: { after: connectLinkedAccount } },
+  },
   // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
   disabledPaths: ["/token"],
   emailAndPassword: {
