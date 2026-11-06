@@ -131,6 +131,7 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
   - Reads directly from the normal granular task/account/calendar/event caches.
+  - Pull-to-refresh waits for the requests started by that pull, then clears the spinner and restores the captured scroll position. Overlapping pulls are ignored; background fetches do not trigger scroll restoration.
 
 ### Settings + Theming
 
