@@ -23,10 +23,14 @@ import {
 import {
   GOOGLE_CHANNEL_TTL_MS,
   GOOGLE_PROVIDER,
-  GOOGLE_RENEWAL_BUFFER_MS,
   GOOGLE_WEBHOOK_CALLBACK_URL,
   isGoogleHolidayCalendarId,
 } from "./constants";
+import {
+  isUnsupportedWatchError,
+  saveReplacement,
+  watchDecision,
+} from "./reconciliation";
 
 // ── Subscription type narrowing ──────────────────────────────────────
 
@@ -39,20 +43,6 @@ export type GoogleCalendarEventsSubscription = WebhookSubscriptionSelect & {
 };
 
 // ── Private helpers ──────────────────────────────────────────────────
-
-function isSubscriptionActiveAndFresh(
-  subscription: WebhookSubscriptionSelect
-): boolean {
-  const expiresAtMs = subscription.expiresAt
-    ? Date.parse(subscription.expiresAt)
-    : Number.NaN;
-
-  return (
-    subscription.active &&
-    Number.isFinite(expiresAtMs) &&
-    expiresAtMs > Date.now() + GOOGLE_RENEWAL_BUFFER_MS
-  );
-}
 
 /** Require HTTPS and reject localhost/127.0.0.1; this isn't a public-address check. */
 function validateCallbackUrl() {
@@ -89,34 +79,18 @@ function toProviderError(operation: string) {
     });
 }
 
-function isPushNotSupportedError(error: WebhookProviderError): boolean {
-  return (
-    error.operation === "google-calendar-events-watch" &&
-    (error.message.includes("pushNotSupportedForRequestedResource") ||
-      error.message.includes(
-        "Push notifications are not supported by this resource."
-      ))
-  );
-}
-
-const upsertSub = (values: WebhookSubscriptionInsert) =>
+const saveSub = (values: WebhookSubscriptionInsert, previousId?: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
-    yield* db
-      .insert(webhookSubscriptionTable)
-      .values(values)
-      .onConflictDoUpdate({
-        set: {
-          active: values.active ?? true,
-          config: values.config,
-          expiresAt: values.expiresAt,
-          lastNotifiedAt: values.lastNotifiedAt,
-          providerAccountId: values.providerAccountId,
-          updatedAt: new Date().toISOString(),
-          webhookToken: values.webhookToken,
-        },
-        target: webhookSubscriptionTable.id,
-      });
+    if (previousId) {
+      // Keep one row per resource, but use a fresh remote channel ID on renewal.
+      yield* db
+        .update(webhookSubscriptionTable)
+        .set(values)
+        .where(eq(webhookSubscriptionTable.id, previousId));
+      return;
+    }
+    yield* db.insert(webhookSubscriptionTable).values(values);
   });
 
 const deactivateSubById = (params: { id: string }) =>
@@ -128,8 +102,8 @@ const deactivateSubById = (params: { id: string }) =>
       .where(eq(webhookSubscriptionTable.id, params.id));
   });
 
-/** Stop a watch channel. Best effort: a failure is ignored (it still shows on the span). */
-const stopWatch = (params: {
+/** Stop a retired channel after commit; Google failures are logged. */
+export const stopWatch = (params: {
   id: string;
   operation: string;
   resourceId: string;
@@ -148,7 +122,9 @@ const stopWatch = (params: {
         subscriptionId: params.id,
       },
     }),
-    Effect.ignore
+    Effect.catch((error) =>
+      Effect.logWarning("GOOGLE_WEBHOOK_STOP_FAILED", { error, ...params })
+    )
   );
 
 type WatchChannelInput = Parameters<
@@ -159,8 +135,8 @@ type WatchChannel = Effect.Success<
 >;
 
 /**
- * Reuse the subscription ID across renewals. An unsupported watch returns
- * undefined and must not be persisted. See documents/services.md.
+ * Each replacement gets a new channel ID. The caller stops the retired channel
+ * only after the transaction commits, preserving coverage on save failure.
  */
 const renewWatch = <E, R>(params: {
   account: Account;
@@ -169,7 +145,7 @@ const renewWatch = <E, R>(params: {
     | GoogleCalendarListSubscription
     | GoogleCalendarEventsSubscription
     | undefined;
-  stopOperation: string;
+  unsupportedUntil?: string;
   userId: string;
   watch: (
     channel: WatchChannelInput
@@ -177,49 +153,51 @@ const renewWatch = <E, R>(params: {
 }) =>
   Effect.gen(function* () {
     const existing = params.existingSubscription;
-    if (existing && isSubscriptionActiveAndFresh(existing)) {
+    if (
+      watchDecision({
+        existing,
+        now: Date.now(),
+        unsupportedUntil: params.unsupportedUntil,
+      }) !== "replace"
+    ) {
       return;
     }
-
-    if (existing?.active) {
-      yield* stopWatch({
-        id: existing.id,
-        operation: params.stopOperation,
-        resourceId: existing.config.resourceId,
-      });
-    }
-
     yield* validateCallbackUrl();
-
-    const subId = existing?.id ?? uuidv7();
-    const channel = yield* params.watch({
-      address: GOOGLE_WEBHOOK_CALLBACK_URL,
-      expiration: String(Date.now() + GOOGLE_CHANNEL_TTL_MS),
-      id: subId,
-      token: env.GOOGLE_WEBHOOK_TOKEN,
+    const subId = uuidv7();
+    const replaced = yield* saveReplacement({
+      create: params.watch({
+        address: GOOGLE_WEBHOOK_CALLBACK_URL,
+        expiration: String(Date.now() + GOOGLE_CHANNEL_TTL_MS),
+        id: subId,
+        token: env.GOOGLE_WEBHOOK_TOKEN,
+      }),
+      save: (channel) =>
+        Effect.gen(function* () {
+          if (!channel.resourceId) {
+            return yield* new WebhookValidationError({
+              message: "Provider watch response missing channel metadata.",
+            });
+          }
+          yield* saveSub(
+            {
+              accountId: params.account.id,
+              active: true,
+              config: params.config(channel.resourceId),
+              expiresAt: computeExpiresAt(channel.expiration),
+              id: subId,
+              provider: GOOGLE_PROVIDER,
+              providerAccountId: params.account.accountId,
+              userId: params.userId,
+              webhookToken: env.GOOGLE_WEBHOOK_TOKEN,
+            },
+            existing?.id
+          );
+        }),
     });
-    if (!channel) {
-      return;
+    if (!replaced) {
+      return { unsupported: true as const };
     }
-
-    if (!channel.resourceId) {
-      return yield* Effect.fail(
-        new WebhookValidationError({
-          message: "Provider watch response missing channel metadata.",
-        })
-      );
-    }
-
-    yield* upsertSub({
-      accountId: params.account.id,
-      config: params.config(channel.resourceId),
-      expiresAt: computeExpiresAt(channel.expiration),
-      id: subId,
-      provider: GOOGLE_PROVIDER,
-      providerAccountId: params.account.accountId,
-      userId: params.userId,
-      webhookToken: env.GOOGLE_WEBHOOK_TOKEN,
-    });
+    return { retired: existing };
   });
 
 // ── Service ──────────────────────────────────────────────────────────
@@ -239,14 +217,13 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
         yield* Effect.annotateCurrentSpan("userId", params.userId);
         const client = yield* GoogleCalendar;
 
-        yield* renewWatch({
+        return yield* renewWatch({
           account: params.account,
           config: (resourceId) => ({
             resourceId,
             type: "google-calendar-list",
           }),
           existingSubscription: params.existingSubscription,
-          stopOperation: "google-calendar-list-stop-watch",
           userId: params.userId,
           watch: (channel) =>
             client
@@ -264,13 +241,14 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
         calendarId: string;
         existingSubscription?: GoogleCalendarEventsSubscription;
         userId: string;
+        unsupportedUntil?: string;
       }) {
         yield* Effect.annotateCurrentSpan("accountId", params.account.id);
         yield* Effect.annotateCurrentSpan("calendarId", params.calendarId);
         yield* Effect.annotateCurrentSpan("userId", params.userId);
         const client = yield* GoogleCalendar;
 
-        yield* renewWatch({
+        return yield* renewWatch({
           account: params.account,
           config: (resourceId) => ({
             calendarId: params.calendarId,
@@ -278,14 +256,13 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
             type: "google-calendar-events",
           }),
           existingSubscription: params.existingSubscription,
-          stopOperation: "google-calendar-events-stop-watch",
+          unsupportedUntil: params.unsupportedUntil,
           userId: params.userId,
           watch: (channel) =>
             client.watchCalendarEvents(params.calendarId, channel).pipe(
-              Effect.mapError(toProviderError("google-calendar-events-watch")),
               // Other non-holiday calendars can also reject push notifications.
-              Effect.catchTag("WebhookProviderError", (error) => {
-                if (!isPushNotSupportedError(error)) {
+              Effect.catchTag("GoogleApiError", (error) => {
+                if (!isUnsupportedWatchError(error)) {
                   return Effect.fail(error);
                 }
                 return Effect.logWarning("GOOGLE_EVENTS_WEBHOOK_UNSUPPORTED", {
@@ -293,7 +270,8 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
                   calendarId: params.calendarId,
                   error,
                 }).pipe(Effect.as(undefined));
-              })
+              }),
+              Effect.mapError(toProviderError("google-calendar-events-watch"))
             ),
         });
       });
@@ -309,15 +287,10 @@ export class GoogleCalendarWebhookService extends Context.Service<GoogleCalendar
           "calendarId",
           params.subscription.config.calendarId
         );
-        yield* stopWatch({
-          id: params.subscription.id,
-          operation: "google-calendar-events-stop-watch",
-          resourceId: params.subscription.config.resourceId,
-        });
-
         yield* deactivateSubById({
           id: params.subscription.id,
         });
+        return { retired: params.subscription };
       });
 
       /** Exclude known holiday calendars; other unsupported watches are handled at renewal. */

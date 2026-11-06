@@ -1,0 +1,145 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "77f98a99-5f6e-4e39-99fa-4d1f399fe09f",
+  "prevIds": [
+    "36f075e0-2769-45e6-8e3a-239be39fc1e7"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_account_state"
+      ],
+      "writes": [
+        "s|tbl|public.webhook_account_state",
+        "n|tbl|public.webhook_account_state",
+        "e|tbl|public.webhook_account_state",
+        "n|rel|public.webhook_account_state",
+        "n|type|public.webhook_account_state",
+        "n|rel|public.webhook_account_state_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "webhook_account_state"
+      ],
+      "writes": [
+        "s|fk|public.webhook_account_state.webhook_account_state_account_id_account_id_fkey",
+        "n|fk|public.webhook_account_state.webhook_account_state_account_id_account_id_fkey",
+        "e|fk|public.webhook_account_state.webhook_account_state_account_id_account_id_fkey",
+        "n|con|public.webhook_account_state.webhook_account_state_account_id_account_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.webhook_account_state",
+        "n|sch|public",
+        "n|tbl|public.account",
+        "n|sch|public",
+        "n|col|public.webhook_account_state.account_id",
+        "n|col|public.account.id",
+        "e|uniqueness|public.account.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "webhook_account_state",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_account_state",
+        "name": "account_id",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_account_state",
+        "name": "unlinking_until",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_account_state",
+        "name": "unsupported_until",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'{}'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_account_state",
+        "name": "webhook_account_state_account_id_account_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "account_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "account",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "webhook_account_state",
+        "name": "webhook_account_state_pkey",
+        "columns": [
+          "account_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}

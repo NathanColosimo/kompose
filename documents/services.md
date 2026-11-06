@@ -258,45 +258,31 @@ Regression tests use controlled iterators/clocks in `packages/state/src/realtime
 
 ### Architecture
 
-Three Effect services handle Google Calendar push notifications:
+Two Effect services handle Google Calendar push notifications:
 
 ```
 WebhookService (orchestrator)
-├── GoogleCalendarWebhookService (provider-specific watch logic)
-└── WebhookRepositoryService (database layer)
+└── GoogleCalendarWebhookService (provider-specific watch logic)
 ```
 
-Dependencies are declared via `dependencies: [...]` in each service definition, so layers are wired automatically at the root.
-
-### WebhookRepositoryService
-
-**File:** `webhooks/webhook-repository-service.ts`
-
-Provider-agnostic database layer. No mention of Google or any specific provider.
-
-| Method | Purpose |
-|--------|---------|
-| `getAccountsByProvider` | List OAuth accounts for a user by provider |
-| `listSubscriptionsForUser` | List subscriptions, optionally filtered by provider |
-| `findActiveSubById` | Find an active subscription by primary key (yields error if not found) |
-| `touchSubById` | Update `lastNotifiedAt` timestamp |
-| `upsertSub` | Insert or update a subscription (conflict on `id`) |
-| `deactivateSubById` | Mark a subscription inactive |
+Both use `Database` directly. Their layers provide dependencies at the root.
 
 ### GoogleCalendarWebhookService
 
 **File:** `webhooks/google-cal/webhook-service.ts`
 
-Google-specific watch management. Depends on `WebhookRepositoryService`.
+Google-specific watch management, backed by `Database`.
 
 | Method | Purpose |
 |--------|---------|
 | `refreshListWatch` | Create or renew a calendar-list watch subscription |
 | `refreshEventsWatch` | Create or renew one calendar's event watch subscription (for IDs from `listCalendarIds`) |
-| `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
+| `deactivateEventsWatch` | Deactivate a removed calendar and return the channel to stop after commit |
 | `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
 
-Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
+Both refresh methods share `renewWatch`: keep an active channel with more than 12 hours left, otherwise create a replacement with a new channel ID and save it before retiring the old channel. The subscription row's primary key follows the new channel ID; the old remote channel is stopped only after the transaction commits. A failed creation or database rollback leaves the old channel tracked and running. Google stop failures are logged and do not fail reconciliation.
+
+Unsupported event watches are identified by Google's structured `pushNotSupportedForRequestedResource` reason. Their retry times are persisted for seven days in `webhook_account_state.unsupported_until`, independently of channel liveness. An unsupported renewal keeps the existing channel. Removed calendars are pruned from this capability map.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
@@ -304,16 +290,18 @@ Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does
 
 **File:** `webhooks/webhook-service.ts`
 
-Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRepositoryService`.
+Top-level orchestrator. Depends on `GoogleCalendarWebhookService`, `GoogleCalendarCacheService`, and `Database`.
 
 | Method | Purpose |
 |--------|---------|
-| `refreshAll` | Discover linked accounts, load existing subs, refresh all watches in parallel |
+| `refreshAll` | Discover linked accounts, lock each account, read current subs and refresh watches |
 | `handleGoogleNotification` | Validate headers/token, find subscription, publish realtime event |
 
-`refreshAll` processes each account independently — one revoked token does not fail the batch. Per-account errors are logged via `Effect.tapError` and caught so other accounts continue.
+`refreshAll` processes accounts independently. Each account holds a transaction-scoped Postgres advisory lock, keyed by its internal account ID, before rereading the account, capability state, or subscriptions. Concurrent SSE connects therefore see committed replacements rather than racing on the same snapshot. Provider failures are logged per watch so successful watches and unsupported decisions still commit. Database failures roll back the account transaction; old channels are stopped only after commit.
 
-`handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
+The Better Auth `databaseHooks.account.delete.before` hook in `packages/auth/src/index.ts` calls `stopAccountWatches` before the account and subscription rows cascade away. Cleanup takes the same account lock and persists `unlinking_until` intent for one minute before resolving a token and stopping all tracked channels. Later reconciles skip accounts with that intent. Cleanup has a ten-second budget, logs failures, and never fails unlink on a Google error. The state row cascades with the account. If deletion itself fails after cleanup, the marker expires so later reconciles can restore coverage.
+
+`handleGoogleNotification` accepts only active, unexpired channels and does not write `lastNotifiedAt` (the legacy column remains). It returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
 
 Webhook subscriptions keep both Google account identifiers:
 
@@ -335,7 +323,7 @@ A plain Next.js `POST` handler (not an oRPC route). It:
 
 | Error | Used by | Meaning |
 |-------|---------|---------|
-| `WebhookRepositoryError` | Repository service | DB query failed or record not found |
+| `WebhookRepositoryError` | Orchestrator | No live subscription found |
 | `WebhookProviderError` | Google cal service | Google API call failed |
 | `WebhookAuthError` | Orchestrator | OAuth token retrieval failed |
 | `WebhookValidationError` | Google cal service, orchestrator | Invalid input (bad URL, missing headers, invalid token) |
