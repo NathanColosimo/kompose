@@ -12,6 +12,7 @@ import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
+import { openOnEnterOrSpace } from "@/lib/keyboard";
 import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../tags/tag-icon-map";
@@ -32,6 +33,7 @@ export const TaskItem = memo(function TaskItemInner({
   const today = useAtomValue(todayPlainDateAtom);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    attributes: { roleDescription: "task" },
     data: {
       task,
       type: "task",
@@ -67,9 +69,10 @@ export const TaskItem = memo(function TaskItemInner({
 
   return (
     <TaskEditPopover surface="sidebar" task={task}>
+      {/* biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace) */}
       <div
         className={cn(
-          "group flex cursor-grab items-start gap-2.5 rounded-md px-2 py-2 transition-colors",
+          "group flex cursor-grab items-start gap-2.5 rounded-md px-2 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           // Hide original when dragging - DragOverlay shows the preview
           isDragging ? "opacity-0" : ""
@@ -77,6 +80,9 @@ export const TaskItem = memo(function TaskItemInner({
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        onKeyDown={openOnEnterOrSpace}
+        role="button"
+        tabIndex={0}
       >
         <Checkbox
           checked={isDone}

@@ -9,18 +9,19 @@ import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
+import { openOnEnterOrSpace } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
+import { taskItemKey, useIsItemMoving } from "../dnd/moving-item";
 import {
   BLOCK_RAISE_CLASS,
   blockHorizontalStyle,
   blockStackStyle,
   calculateEventPosition,
   GRIP_PROPS,
-  openOnEnterOrSpace,
 } from "../event-position";
 import { BlockContent, type BlockDetail } from "./block-content";
 
@@ -72,7 +73,9 @@ export const TaskEvent = memo(function TaskEventInner({
   // One per drawn day: dnd-kit keeps one node per id, so an overnight
   // task's two parts need their own.
   const dragId = `event-${task.id}-${segmentStart.toPlainDate()}`;
+  const isMoving = useIsItemMoving(taskItemKey(task.id));
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    attributes: { roleDescription: "task" },
     data: {
       // Moving an overnight task's second-day part shifts the whole task.
       grabOffsetMinutes: segmentStart
@@ -148,7 +151,7 @@ export const TaskEvent = memo(function TaskEventInner({
         className={cn(
           "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
           BLOCK_RAISE_CLASS,
-          isDragging ? "opacity-0" : "",
+          isDragging || isMoving ? "opacity-0" : "",
           isDone ? "opacity-60" : ""
         )}
         ref={setNodeRef}

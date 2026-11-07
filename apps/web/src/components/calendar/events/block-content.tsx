@@ -135,6 +135,8 @@ export function BlockContent({
   }
 
   const isTall = minutes >= 60;
+  // From 45 minutes (60px) a two-line title still leaves room for the time.
+  const hasTwoTitleLines = minutes >= 45;
   const detailIcons = details.map((detail) =>
     detail.short ? (
       <ShortDetail key={detail.label} {...detail} />
@@ -165,10 +167,11 @@ export function BlockContent({
         <span
           className={cn(
             titleClass,
-            // In a narrow block long words break at a soft hyphen; a word
-            // that still can't fit breaks anywhere rather than being clipped.
-            "hyphens-auto [hyphenate-limit-chars:5_2_2] [overflow-wrap:break-word]",
-            isTall
+            // Only soft hyphens break words (manual: the dictionary would
+            // split ordinary words like "re-view"). A word that still can't
+            // fit breaks anywhere rather than being clipped.
+            "hyphens-manual [overflow-wrap:break-word]",
+            hasTwoTitleLines
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
           )}
@@ -180,13 +183,15 @@ export function BlockContent({
             {withSoftHyphens(title)}
           </span>
         </span>
+        {/* The time comes first: icons that don't fit beside it wrap onto
+            a hidden second line. */}
         <span
           className={cn(
-            "flex @max-[5.5rem]:hidden min-w-0 items-center gap-1.5 tabular-nums leading-[14px]",
+            "flex @max-[5.5rem]:hidden h-[14px] min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden tabular-nums leading-[14px]",
             META
           )}
         >
-          <span className="truncate">
+          <span className="max-w-full truncate">
             {formatTimeRange(shownStart ?? start, shownEnd ?? end)}
           </span>
           {isTall ? null : detailIcons}

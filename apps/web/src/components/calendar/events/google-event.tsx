@@ -23,19 +23,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { openOnEnterOrSpace } from "@/lib/keyboard";
 import {
   isoStringToZonedDateTime,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
+import { googleItemKey, useIsItemMoving } from "../dnd/moving-item";
 import {
   BLOCK_RAISE_CLASS,
   blockHorizontalStyle,
   blockStackStyle,
   calculateEventPosition,
   GRIP_PROPS,
-  openOnEnterOrSpace,
 } from "../event-position";
 import { BlockContent, type BlockDetail, eventColor } from "./block-content";
 import { EventEditPopover } from "./event-edit-popover";
@@ -89,7 +90,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   // event's two parts need their own.
   const dragId = `google-event-${accountId}-${calendarId}-${event.id}-${start.toPlainDate()}`;
 
+  const isMoving = useIsItemMoving(
+    googleItemKey(accountId, calendarId, event.id)
+  );
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    attributes: { roleDescription: "event" },
     data: {
       accountId,
       calendarId,
@@ -170,13 +175,13 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const details = useMemo(() => eventDetails(event), [event]);
 
   const eventCard = (
-    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace)
+    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the lock tooltip; matches the task card (see openOnEnterOrSpace)
     <div
       className={cn(
         "group pointer-events-auto relative rounded-md bg-background p-px",
         BLOCK_RAISE_CLASS,
         isEditable ? "cursor-grab" : "cursor-default opacity-90",
-        isDragging ? "opacity-0" : ""
+        isDragging || isMoving ? "opacity-0" : ""
       )}
       ref={setNodeRef}
       style={style}

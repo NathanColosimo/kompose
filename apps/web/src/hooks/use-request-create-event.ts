@@ -14,7 +14,7 @@ export function useRequestCreateEvent() {
   const pathname = usePathname();
   const requestCreateEvent = useSetAtom(createEventRequestedAtom);
   return useCallback(() => {
-    requestCreateEvent(true);
+    requestCreateEvent(Date.now());
     if (pathname !== CALENDAR_PATH) {
       router.push(CALENDAR_PATH);
     }

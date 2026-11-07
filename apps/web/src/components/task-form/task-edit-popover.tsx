@@ -313,31 +313,16 @@ function useSyncedSchedule(
 
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
-  onDone,
-  saveEdits,
-  task,
+  isDone,
+  onClick,
 }: {
-  onDone: () => void;
-  /** Saves unsaved edits first; false when that waits on a scope choice. */
-  saveEdits: () => boolean;
-  task: TaskSelectDecoded;
+  isDone: boolean;
+  onClick: () => void;
 }) {
-  const { updateTask } = useTasks();
-  const isDone = task.status === "done";
   return (
     <Button
       className="gap-1.5"
-      onClick={() => {
-        if (!saveEdits()) {
-          return;
-        }
-        updateTask.mutate({
-          id: task.id,
-          scope: "this",
-          task: { status: isDone ? "todo" : "done" },
-        });
-        onDone();
-      }}
+      onClick={onClick}
       size="sm"
       type="button"
       variant="outline"
@@ -373,6 +358,8 @@ export function TaskEditForm({
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
+  /** Mark done waiting on the scope dialog for the edits saved with it. */
+  const pendingStatusRef = useRef<(() => void) | null>(null);
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -550,6 +537,23 @@ export function TaskEditForm({
     getValues,
     submit,
   ]);
+
+  // Saves unsaved edits first, so marking done never drops them. On a
+  // recurring task that can wait on the scope dialog, which then sets it.
+  const handleToggleDone = useCallback(() => {
+    if (!task) {
+      return;
+    }
+    const status = task.status === "done" ? "todo" : "done";
+    const setStatus = () =>
+      updateTask.mutate({ id: task.id, scope: "this", task: { status } });
+    if (isDirty && !submit(getValues())) {
+      pendingStatusRef.current = setStatus;
+      return;
+    }
+    setStatus();
+    onClose();
+  }, [getValues, isDirty, onClose, submit, task, updateTask]);
 
   const handleSaveClick = useCallback(() => {
     const result = submit(getValues());
@@ -911,9 +915,8 @@ export function TaskEditForm({
             )}
             {isCreateMode || !task ? null : (
               <TaskDoneButton
-                onDone={onClose}
-                saveEdits={() => !isDirty || submit(getValues())}
-                task={task}
+                isDone={task.status === "done"}
+                onClick={handleToggleDone}
               />
             )}
             <div className="ml-auto flex gap-2">
@@ -939,12 +942,15 @@ export function TaskEditForm({
               return;
             }
             commitUpdate(pendingUpdate, tagScope);
+            pendingStatusRef.current?.();
             pendingUpdateRef.current = null;
+            pendingStatusRef.current = null;
             onClose();
           }}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
               pendingUpdateRef.current = null;
+              pendingStatusRef.current = null;
             }
             setShowTagScopeDialog(nextOpen);
           }}

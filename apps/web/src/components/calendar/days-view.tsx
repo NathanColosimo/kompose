@@ -48,6 +48,7 @@ import {
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import {
+  CREATE_EVENT_REQUEST_TTL_MS,
   createEventRequestedAtom,
   scrollToNowRequestedAtom,
 } from "@/state/calendar-navigation";
@@ -385,16 +386,16 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     createEventRequestedAtom
   );
   const setCurrentDate = useSetAtom(currentDateAtom);
-  // A request still waiting on calendars is dropped when the calendar
-  // closes, so it can't open an editor on some later visit.
-  useEffect(
-    () => () => setCreateEventRequested(false),
-    [setCreateEventRequested]
-  );
   useLayoutEffect(() => {
     const grid = scrollRef.current;
     const firstDay = visibleDays[0];
-    if (!(grid && createEventRequested && firstDay)) {
+    if (!(grid && createEventRequested !== null && firstDay)) {
+      return;
+    }
+    // One left waiting (calendars never loaded) can't open an editor on
+    // some later visit.
+    if (Date.now() - createEventRequested > CREATE_EVENT_REQUEST_TTL_MS) {
+      setCreateEventRequested(null);
       return;
     }
     const start = keyboardCreateStart(visibleDays, timeZone);
@@ -410,7 +411,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       // request stays and runs again once they have.
       return;
     }
-    setCreateEventRequested(false);
+    setCreateEventRequested(null);
     // createAt explains in a toast when there's no calendar to create in.
     if (result === "unavailable") {
       return;
@@ -770,71 +771,88 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                       totalSleepMilliseconds={sleep.totalSleepMilliseconds}
                     />
                   ))}
-                  {hasGoogleEvents
-                    ? dayGoogleEvents.map(
-                        ({
-                          event,
-                          start,
-                          end,
-                          calendarId,
-                          accountId,
-                        }: PositionedGoogleEvent) => {
-                          const layoutKey = `google-${accountId}-${calendarId}-${event.id}`;
-                          const layout = dayLayouts?.get(layoutKey);
-                          return (
-                            <GoogleCalendarEvent
-                              accountId={accountId}
-                              calendarId={calendarId}
-                              end={end}
-                              event={event}
-                              // Keyed by identity, not times: a time change keeps the
-                              // block (and an open editor's draft) mounted.
-                              key={layoutKey}
+                  {/* One list in start order (the layout's z order), so
+                      Tab moves through the day's events and tasks in time
+                      order. WHOOP workouts come from all collected workouts
+                      so cross-midnight ones appear in both day columns. */}
+                  {[
+                    ...(hasGoogleEvents
+                      ? dayGoogleEvents.map(
+                          ({
+                            event,
+                            start,
+                            end,
+                            calendarId,
+                            accountId,
+                          }: PositionedGoogleEvent) => {
+                            const layoutKey = `google-${accountId}-${calendarId}-${event.id}`;
+                            const layout = dayLayouts?.get(layoutKey);
+                            return {
+                              node: (
+                                <GoogleCalendarEvent
+                                  accountId={accountId}
+                                  calendarId={calendarId}
+                                  end={end}
+                                  event={event}
+                                  // Keyed by identity, not times: a time change keeps the
+                                  // block (and an open editor's draft) mounted.
+                                  key={layoutKey}
+                                  layout={layout}
+                                  start={start}
+                                />
+                              ),
+                              order: layout?.zIndex ?? 0,
+                            };
+                          }
+                        )
+                      : []),
+                    ...dayTaskSegments.map((segment) => {
+                      const layoutKey = `task-${segment.task.id}`;
+                      const layout = dayLayouts?.get(layoutKey);
+                      return {
+                        node: (
+                          <TaskEvent
+                            isFirstSegment={segment.isFirstSegment}
+                            isLastSegment={segment.isLastSegment}
+                            key={layoutKey}
+                            layout={layout}
+                            segmentEnd={segment.end}
+                            segmentStart={segment.start}
+                            task={segment.task}
+                          />
+                        ),
+                        order: layout?.zIndex ?? 0,
+                      };
+                    }),
+                    ...allWorkouts.flatMap((workout) => {
+                      const layout = dayLayouts?.get(
+                        `whoop-workout-${workout.id}`
+                      );
+                      if (!layout) {
+                        return [];
+                      }
+                      return [
+                        {
+                          node: (
+                            <WhoopWorkoutEvent
+                              columnDate={day}
+                              end={workout.end}
+                              id={workout.id}
+                              key={workout.id}
                               layout={layout}
-                              start={start}
+                              sportName={workout.sportName}
+                              start={workout.start}
+                              strainScore={workout.strainScore}
+                              timeZone={timeZone}
                             />
-                          );
-                        }
-                      )
-                    : null}
-                  {dayTaskSegments.map((segment) => {
-                    const layoutKey = `task-${segment.task.id}`;
-                    const layout = dayLayouts?.get(layoutKey);
-                    return (
-                      <TaskEvent
-                        isFirstSegment={segment.isFirstSegment}
-                        isLastSegment={segment.isLastSegment}
-                        key={layoutKey}
-                        layout={layout}
-                        segmentEnd={segment.end}
-                        segmentStart={segment.start}
-                        task={segment.task}
-                      />
-                    );
-                  })}
-                  {/* WHOOP workout event blocks — rendered from all
-                      collected workouts so cross-midnight workouts
-                      appear in both day columns. */}
-                  {allWorkouts.map((workout) => {
-                    const layoutKey = `whoop-workout-${workout.id}`;
-                    const layout = dayLayouts?.get(layoutKey);
-                    if (!layout) {
-                      return null;
-                    }
-                    return (
-                      <WhoopWorkoutEvent
-                        columnDate={day}
-                        end={workout.end}
-                        id={workout.id}
-                        key={workout.id}
-                        layout={layout}
-                        sportName={workout.sportName}
-                        start={workout.start}
-                        strainScore={workout.strainScore}
-                        timeZone={timeZone}
-                      />
-                    );
-                  })}
+                          ),
+                          order: layout.zIndex,
+                        },
+                      ];
+                    }),
+                  ]
+                    .sort((a, b) => a.order - b.order)
+                    .map(({ node }) => node)}
                 </DayColumn>
               );
             })}

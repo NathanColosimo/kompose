@@ -39,11 +39,12 @@ export function blockStackStyle(zIndex: number | undefined) {
  * Raises a block above its stack while its popover is open (it's selected),
  * so an item underneath shows its whole span and both resize grips. Not on
  * hover: a raised block would hide everything stacked on it and cover the
- * create and drag previews. The ring drawn outside the box fills the gap
+ * create and drag previews. A keyboard-focused block rises too, so its
+ * focus ring shows in full. The ring drawn outside the box fills the gap
  * to a side-by-side neighbour, so nothing underneath shows through it.
  */
 export const BLOCK_RAISE_CLASS =
-  "z-(--block-z) shadow-[0_0_0_1px_var(--background)] data-[state=open]:z-50";
+  "z-(--block-z) shadow-[0_0_0_1px_var(--background)] data-[state=open]:z-50 focus-visible:z-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60";
 
 /**
  * Left and width for a timed block from its collision layout: indent by its
@@ -64,22 +65,6 @@ export function blockHorizontalStyle(
     left: `calc(${rest} * ${column / columns} + ${indent + 1}px)`,
     width: `calc(${rest} * ${span / columns} - 2px)`,
   };
-}
-
-/**
- * Enter or Space on a focused block opens its editor, as on a button. The
- * block is a div (a task's checkbox can't sit inside a button), so the
- * browser doesn't do this for it.
- */
-export function openOnEnterOrSpace(event: React.KeyboardEvent<HTMLElement>) {
-  if (
-    event.target !== event.currentTarget ||
-    !(event.key === "Enter" || event.key === " ")
-  ) {
-    return;
-  }
-  event.preventDefault();
-  event.currentTarget.click();
 }
 
 /**

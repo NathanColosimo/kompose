@@ -53,6 +53,7 @@ import {
   MINUTES_STEP,
   resizedRange,
 } from "./dnd/helpers";
+import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
@@ -136,6 +137,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   // Drop target the preview was last computed for; skips unchanged moves.
   const lastDropTargetKeyRef = useRef<string | null>(null);
   const setDropSlot = useSetAtom(dropSlotAtom);
+  const setMovingItemKey = useSetAtom(movingItemKeyAtom);
 
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
     null
@@ -162,13 +164,14 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const resetDragState = useCallback(() => {
     dispatch({ type: "reset" });
     setDropSlot(null);
+    setMovingItemKey(null);
     lastDropTargetKeyRef.current = null;
     pendingPreviewRef.current = null;
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     }
-  }, [setDropSlot]);
+  }, [setDropSlot, setMovingItemKey]);
 
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
@@ -275,27 +278,37 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [updateGoogleEventMutation]
   );
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    const { active } = event;
-    const data = active.data.current as DragData | undefined;
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const { active } = event;
+      const data = active.data.current as DragData | undefined;
+      setMovingItemKey(data ? movingItemKey(data) : null);
 
-    if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
-      dispatch({
-        resizing: data.type === "task-resize",
-        task: data.task,
-        type: "start-task",
-      });
-      return;
-    }
+      if (
+        (data?.type === "task" || data?.type === "task-resize") &&
+        data.task
+      ) {
+        dispatch({
+          resizing: data.type === "task-resize",
+          task: data.task,
+          type: "start-task",
+        });
+        return;
+      }
 
-    if (data?.type === "google-event" || data?.type === "google-event-resize") {
-      dispatch({
-        data,
-        resizing: data.type === "google-event-resize",
-        type: "start-google-event",
-      });
-    }
-  }, []);
+      if (
+        data?.type === "google-event" ||
+        data?.type === "google-event-resize"
+      ) {
+        dispatch({
+          data,
+          resizing: data.type === "google-event-resize",
+          type: "start-google-event",
+        });
+      }
+    },
+    [setMovingItemKey]
+  );
 
   const handleSidebarDrop = useCallback(
     (data: DragData, sidebarData?: SidebarDropData) => {
@@ -633,6 +646,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   return (
     <>
       <DndContext
+        // Dragging is pointer-only (PointerSensor), so the default "press
+        // space to pick up" instructions would be wrong.
+        accessibility={{
+          screenReaderInstructions: {
+            draggable: "Press Enter to open. Drag with a pointer to move.",
+          },
+        }}
         autoScroll={false}
         collisionDetection={calendarCollisionDetection}
         onDragCancel={handleDragCancel}
