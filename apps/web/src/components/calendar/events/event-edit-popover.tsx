@@ -13,6 +13,7 @@ import {
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
   dateToUntilRule,
+  describeEventRecurrence,
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
@@ -28,7 +29,10 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
-import { formatTimeRange } from "@kompose/state/temporal-utils";
+import {
+  formatAllDayWhen,
+  formatEventWhen,
+} from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
@@ -1402,33 +1406,19 @@ function describeEventWhen(
   end: Date,
   timeZone: string
 ): string {
-  const dayFormat: Intl.DateTimeFormatOptions = {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-  };
   if (event?.start?.date) {
     const first = Temporal.PlainDate.from(event.start.date);
     // Google's all-day end date is exclusive.
     const last = event.end?.date
       ? Temporal.PlainDate.from(event.end.date).subtract({ days: 1 })
       : first;
-    const firstText = first.toLocaleString(undefined, dayFormat);
-    return Temporal.PlainDate.compare(last, first) > 0
-      ? `${firstText} – ${last.toLocaleString(undefined, dayFormat)}`
-      : `${firstText} · All day`;
+    return formatAllDayWhen(first, last);
   }
-  const startZdt = Temporal.Instant.fromEpochMilliseconds(
-    start.getTime()
-  ).toZonedDateTimeISO(timeZone);
-  const endZdt = Temporal.Instant.fromEpochMilliseconds(
-    end.getTime()
-  ).toZonedDateTimeISO(timeZone);
-  const range = formatTimeRange(startZdt, endZdt);
-  // A range across days carries its own dates.
-  return startZdt.toPlainDate().equals(endZdt.toPlainDate())
-    ? `${startZdt.toPlainDate().toLocaleString(undefined, dayFormat)} · ${range}`
-    : range;
+  const toZoned = (date: Date) =>
+    Temporal.Instant.fromEpochMilliseconds(date.getTime()).toZonedDateTimeISO(
+      timeZone
+    );
+  return formatEventWhen(toZoned(start), toZoned(end));
 }
 
 /**
@@ -1447,6 +1437,7 @@ function ReadOnlyEventDetails({
   meetingLink,
   onClose,
   reason,
+  recurrence,
   start,
   summary,
 }: {
@@ -1460,10 +1451,20 @@ function ReadOnlyEventDetails({
   meetingLink: MeetingLink | null;
   onClose?: () => void;
   reason: string | null | undefined;
+  /** The series' RRULEs (the event's own, or its master's). */
+  recurrence: string[];
   start: Date;
   summary: string | undefined;
 }) {
   const timeZone = useAtomValue(timezoneAtom);
+  const repeats = describeEventRecurrence({
+    eventType: event?.eventType,
+    recurringEventId: event?.recurringEventId,
+    rules: recurrence,
+  });
+  // Google keeps birthdays on the primary calendar; name what they are.
+  const calendarName =
+    event?.eventType === "birthday" ? "Birthdays" : calendarLabel;
   const place = location?.trim();
   const notes = description?.trim();
   return (
@@ -1479,14 +1480,15 @@ function ReadOnlyEventDetails({
         <p className="text-muted-foreground">
           {describeEventWhen(event, start, end, timeZone)}
         </p>
-        {calendarLabel ? (
+        {repeats ? <p className="text-muted-foreground">{repeats}</p> : null}
+        {calendarName ? (
           <p className="flex items-center gap-1.5 text-muted-foreground">
             <span
               aria-hidden
               className="size-2 rounded-full"
               style={{ backgroundColor: calendarColor ?? "currentColor" }}
             />
-            {calendarLabel}
+            {calendarName}
           </p>
         ) : null}
       </div>
@@ -2013,6 +2015,7 @@ export function EventEditForm({
         meetingLink={meetingLink}
         onClose={onCancel}
         reason={readOnlyReason}
+        recurrence={recurrenceSource}
         start={start}
         summary={watchedValues.summary}
       />

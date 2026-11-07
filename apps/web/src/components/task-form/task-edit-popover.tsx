@@ -22,7 +22,7 @@ import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-optio
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
-  taskRecurrenceEquals,
+  taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
@@ -501,19 +501,18 @@ export function TaskEditForm({
         commitUpdate(values, scope);
         return;
       }
-      const changesPattern = !taskRecurrenceEquals(
-        resolvedRecurrence,
-        values.recurrence
-      );
-      if (changesPattern && scope !== "this") {
-        // One save: the server keeps this occurrence (its edits and the new
-        // status, as an exception) and regenerates the series from its
-        // original date, so a move or a skipped date can't lose it.
+      // Shared with iOS (taskStatusSavePlan): one save carries the status
+      // for this occurrence or a pattern change; otherwise the edits go
+      // first and the status follows, on this occurrence alone.
+      const plan = taskStatusSavePlan({
+        nextRecurrence: values.recurrence,
+        previousRecurrence: resolvedRecurrence,
+        scope,
+      });
+      if (plan === "with-edits") {
         commitUpdate(values, scope, { status });
         return;
       }
-      // Otherwise occurrences keep their ids, and the series shifts by how
-      // this one moved, so the edits go first.
       commitUpdate(values, scope).then((saved) => {
         if (saved) {
           updateTask.mutate({ id: task.id, scope: "this", task: { status } });

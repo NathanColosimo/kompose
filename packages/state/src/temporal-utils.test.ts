@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
 import {
+  formatAllDayWhen,
   formatClockRange,
   formatClockTime,
   formatDuration,
+  formatEventWhen,
   formatTimeRange,
   nearestSlotMinutes,
 } from "./temporal-utils";
@@ -123,5 +125,38 @@ describe("formatClockTime", () => {
 
   test("keeps a leading one", () => {
     expect(formatClockTime(at("2026-11-09T10:25"), "ko-KR")).toContain("오전");
+  });
+});
+
+describe("formatEventWhen", () => {
+  test("leads with the day, including for an overnight range", () => {
+    expect(
+      formatEventWhen(at("2026-11-12T09:00"), at("2026-11-12T10:00"), "en-US")
+    ).toBe("Thu, Nov 12 · 9 – 10 AM");
+    expect(
+      formatEventWhen(at("2026-11-12T23:00"), at("2026-11-13T07:00"), "en-US")
+    ).toBe("Thu, Nov 12 · 11 PM – 7 AM");
+  });
+
+  test("lets a range of a day or more carry its own dates", () => {
+    const text = formatEventWhen(
+      at("2026-11-12T09:00"),
+      at("2026-11-14T09:00"),
+      "en-US"
+    );
+    expect(text).not.toContain("·");
+    expect(text).toContain("Nov 14");
+  });
+});
+
+describe("formatAllDayWhen", () => {
+  test("says all day for one day, and the span for more", () => {
+    const nov12 = Temporal.PlainDate.from("2026-11-12");
+    expect(formatAllDayWhen(nov12, nov12, "en-US")).toBe(
+      "Thu, Nov 12 · All day"
+    );
+    expect(formatAllDayWhen(nov12, nov12.add({ days: 2 }), "en-US")).toBe(
+      "Thu, Nov 12 – Sat, Nov 14"
+    );
   });
 });

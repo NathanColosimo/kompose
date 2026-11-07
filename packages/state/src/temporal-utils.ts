@@ -96,6 +96,58 @@ function formatParts(
  * times only for an overnight range ("11 PM – 7 AM"), and dates once the
  * range lasts a day or more ("Nov 6, 9 AM – Nov 8, 5 PM").
  */
+/**
+ * Whether formatTimeRange prints dates: for a day or longer. Overnight
+ * ranges shorter than a day ("11 PM – 7 AM") read fine as times on the grid.
+ */
+function rangeShowsDates(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime
+): boolean {
+  const nights = start
+    .toPlainDate()
+    .until(end.toPlainDate(), { largestUnit: "days" }).days;
+  return (
+    nights > 1 ||
+    (nights === 1 &&
+      Temporal.PlainTime.compare(end.toPlainTime(), start.toPlainTime()) >= 0)
+  );
+}
+
+const WHEN_DAY: Intl.DateTimeFormatOptions = {
+  day: "numeric",
+  month: "short",
+  weekday: "short",
+};
+
+/**
+ * When an event happens, for a view without a grid around it: the day,
+ * then the times ("Thu, Nov 12 · 11 PM – 7 AM"). A range of a day or more
+ * carries its own dates.
+ */
+export function formatEventWhen(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime,
+  locale?: string
+): string {
+  const range = formatTimeRange(start, end, locale);
+  return rangeShowsDates(start, end)
+    ? range
+    : `${start.toPlainDate().toLocaleString(locale, WHEN_DAY)} · ${range}`;
+}
+
+/** An all-day event's days, inclusive ("Thu, Nov 12 · All day"). */
+export function formatAllDayWhen(
+  first: Temporal.PlainDate,
+  last: Temporal.PlainDate,
+  locale?: string
+): string {
+  const firstText = first.toLocaleString(locale, WHEN_DAY);
+  return Temporal.PlainDate.compare(last, first) > 0
+    ? `${firstText} – ${last.toLocaleString(locale, WHEN_DAY)}`
+    : `${firstText} · All day`;
+}
+
 export function formatTimeRange(
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime,
@@ -105,12 +157,7 @@ export function formatTimeRange(
   const nights = start
     .toPlainDate()
     .until(end.toPlainDate(), { largestUnit: "days" }).days;
-  // Overnight ranges shorter than a day ("11 PM – 7 AM") read fine as
-  // times; anything a full day or longer needs its dates.
-  const withDate =
-    nights > 1 ||
-    (nights === 1 &&
-      Temporal.PlainTime.compare(end.toPlainTime(), start.toPlainTime()) >= 0);
+  const withDate = rangeShowsDates(start, end);
   const format = rangeFormat(
     locale,
     start.timeZoneId,

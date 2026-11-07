@@ -214,3 +214,57 @@ export function getDefaultRecurrenceScopeForEvent(params: {
   }
   return "this";
 }
+
+const DAY_NAMES: Record<string, string> = {
+  FR: "Fri",
+  MO: "Mon",
+  SA: "Sat",
+  SU: "Sun",
+  TH: "Thu",
+  TU: "Tue",
+  WE: "Wed",
+};
+
+const INTERVAL_PATTERN = /INTERVAL=(\d+)/;
+
+const FREQUENCY_WORDS: Record<string, [string, string] | undefined> = {
+  DAILY: ["daily", "days"],
+  MONTHLY: ["monthly", "months"],
+  WEEKLY: ["weekly", "weeks"],
+  YEARLY: ["yearly", "years"],
+};
+
+/**
+ * How a Google event repeats, for a read-only view ("Repeats weekly on Mon,
+ * Wed"). `rules` is the series' RRULE list (the event's own, or its
+ * master's). An instance whose rule isn't loaded still says it repeats.
+ * Null for a one-off event.
+ */
+export function describeEventRecurrence(params: {
+  eventType?: string | null;
+  recurringEventId?: string | null;
+  rules: string[] | null | undefined;
+}): string | null {
+  const rule = getPrimaryRecurrenceRule(params.rules ?? []) ?? undefined;
+  const { byDay, freq } = parseGoogleEventRecurrenceRule(rule);
+  const words = FREQUENCY_WORDS[freq];
+  if (!words) {
+    if (params.eventType === "birthday") {
+      return "Repeats yearly";
+    }
+    return params.recurringEventId ? "Repeats" : null;
+  }
+  const interval = Number.parseInt(
+    INTERVAL_PATTERN.exec(rule ?? "")?.[1] ?? "1",
+    10
+  );
+  const base =
+    interval > 1
+      ? `Repeats every ${interval} ${words[1]}`
+      : `Repeats ${words[0]}`;
+  const days = byDay
+    .map((code) => DAY_NAMES[code.slice(-2)])
+    .filter(Boolean)
+    .join(", ");
+  return freq === "WEEKLY" && days ? `${base} on ${days}` : base;
+}

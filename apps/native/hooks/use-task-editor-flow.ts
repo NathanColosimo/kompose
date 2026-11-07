@@ -7,7 +7,10 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  haveTaskTagIdsChanged,
   resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
+  taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useState } from "react";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
@@ -47,6 +50,10 @@ export function useTaskEditorFlow() {
     null
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
+  /** Mark done (or not done) waiting on the scope dialog with the edits. */
+  const [pendingStatus, setPendingStatus] = useState<
+    TaskDraft["status"] | null
+  >(null);
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
 
   // Stable so callers can use it in effect dependencies.
@@ -72,6 +79,7 @@ export function useTaskEditorFlow() {
     setIsEditorOpen(false);
     setEditingTask(null);
     setPendingSaveDraft(null);
+    setPendingStatus(null);
     setScopeDialog(null);
   }
 
@@ -79,26 +87,104 @@ export function useTaskEditorFlow() {
     setDraft((current) => (current ? updater(current) : current));
   }
 
-  function commitUpdate(nextDraft: TaskDraft, scope: UpdateScope) {
+  /** Saves the draft (plus `status`); resolves to whether it saved. */
+  function commitUpdate(
+    nextDraft: TaskDraft,
+    scope: UpdateScope,
+    status?: TaskDraft["status"]
+  ): Promise<boolean> {
+    if (!editingTask) {
+      return Promise.resolve(false);
+    }
+
+    return updateTask
+      .mutateAsync({
+        id: editingTask.id,
+        scope,
+        task: {
+          ...(status ? { status } : {}),
+          description: trimmedDescription(nextDraft),
+          dueDate: nextDraft.dueDate,
+          durationMinutes: nextDraft.durationMinutes,
+          links: nextDraft.links,
+          recurrence: nextDraft.recurrence,
+          startDate: nextDraft.startDate,
+          startTime: nextDraft.startTime,
+          tagIds: nextDraft.tagIds,
+          title: nextDraft.title.trim(),
+        },
+      })
+      .then(
+        () => true,
+        () => false
+      );
+  }
+
+  /** Saves the draft with a status change, the same way as on web. */
+  function commitWithStatus(
+    nextDraft: TaskDraft,
+    scope: UpdateScope,
+    status: TaskDraft["status"]
+  ) {
     if (!editingTask) {
       return;
     }
-
-    updateTask.mutate({
-      id: editingTask.id,
+    const plan = taskStatusSavePlan({
+      nextRecurrence: nextDraft.recurrence,
+      previousRecurrence: editingTask.recurrence,
       scope,
-      task: {
-        description: trimmedDescription(nextDraft),
+    });
+    if (plan === "with-edits") {
+      commitUpdate(nextDraft, scope, status);
+      return;
+    }
+    const { id } = editingTask;
+    commitUpdate(nextDraft, scope).then((saved) => {
+      if (saved) {
+        updateTask.mutate({ id, scope: "this", task: { status } });
+      }
+    });
+  }
+
+  /** The scope decision for saving `nextDraft` over the task being edited. */
+  function scopeDecisionFor(nextDraft: TaskDraft, task: TaskSelectDecoded) {
+    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
+      next: {
+        description: nextDraft.description,
         dueDate: nextDraft.dueDate,
         durationMinutes: nextDraft.durationMinutes,
-        links: nextDraft.links,
-        recurrence: nextDraft.recurrence,
         startDate: nextDraft.startDate,
         startTime: nextDraft.startTime,
-        tagIds: nextDraft.tagIds,
-        title: nextDraft.title.trim(),
+        title: nextDraft.title,
+      },
+      previous: {
+        description: task.description,
+        dueDate: task.dueDate,
+        durationMinutes: task.durationMinutes,
+        startDate: task.startDate,
+        startTime: task.startTime,
+        title: task.title,
       },
     });
+    const hasChanges =
+      hasCoreFieldChanges ||
+      !taskRecurrenceEquals(task.recurrence, nextDraft.recurrence) ||
+      haveTaskTagIdsChanged(
+        task.tags.map((tag) => tag.id),
+        nextDraft.tagIds
+      );
+    return {
+      decision: getTaskUpdateScopeDecision({
+        hasCoreFieldChanges,
+        isRecurring: task.seriesMasterId !== null,
+        isSeriesMaster: task.seriesMasterId === task.id,
+        nextRecurrence: nextDraft.recurrence,
+        nextTagIds: nextDraft.tagIds,
+        previousRecurrence: task.recurrence,
+        previousTagIds: task.tags.map((tag) => tag.id),
+      }),
+      hasChanges,
+    };
   }
 
   function create(nextDraft: TaskDraft) {
@@ -141,34 +227,7 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: draft.description,
-        dueDate: draft.dueDate,
-        durationMinutes: draft.durationMinutes,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
-        title: draft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      nextRecurrence: draft.recurrence,
-      nextTagIds: draft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
+    const { decision } = scopeDecisionFor(draft, editingTask);
 
     if (decision.action === "prompt") {
       setPendingSaveDraft(draft);
@@ -202,7 +261,11 @@ export function useTaskEditorFlow() {
     if (!(editingTask && pendingSaveDraft)) {
       return;
     }
-    commitUpdate(pendingSaveDraft, saveScope);
+    if (pendingStatus) {
+      commitWithStatus(pendingSaveDraft, saveScope, pendingStatus);
+    } else {
+      commitUpdate(pendingSaveDraft, saveScope);
+    }
     close();
   }
 
@@ -214,15 +277,34 @@ export function useTaskEditorFlow() {
     close();
   }
 
+  /**
+   * Mark done (or not done) from the editor. Unsaved edits are saved with
+   * it, through the scope dialog when the task repeats, so they're never
+   * dropped.
+   */
   function toggleDone(nextStatus: TaskDraft["status"]) {
-    if (!editingTask) {
+    if (!(editingTask && draft)) {
       return;
     }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: nextStatus },
-    });
+    const { decision, hasChanges } = scopeDecisionFor(draft, editingTask);
+    if (!hasChanges) {
+      updateTask.mutate({
+        id: editingTask.id,
+        scope: "this",
+        task: { status: nextStatus },
+      });
+      close();
+      return;
+    }
+    if (decision.action === "prompt") {
+      setPendingSaveDraft(draft);
+      setPendingStatus(nextStatus);
+      setSaveScope(decision.defaultScope);
+      setIsEditorOpen(false);
+      setScopeDialog("save");
+      return;
+    }
+    commitWithStatus(draft, decision.scope, nextStatus);
     close();
   }
 

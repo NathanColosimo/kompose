@@ -10,6 +10,7 @@ import {
 import {
   buildGoogleEventRecurrenceRule,
   dateToUntilRule,
+  describeEventRecurrence,
   type EventRecurrenceEnd,
   type EventRecurrenceFrequency,
   GOOGLE_EVENT_WEEKDAYS,
@@ -26,7 +27,10 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
-import { formatTimeRange } from "@kompose/state/temporal-utils";
+import {
+  formatAllDayWhen,
+  formatEventWhen,
+} from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import {
   Check,
@@ -378,30 +382,14 @@ function readOnlyReasonFor(draft: EventDraft): string | null {
 
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
 function describeWhen(draft: EventDraft): string {
-  const dayFormat: Intl.DateTimeFormatOptions = {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-  };
-  const startDay = draft.startDate.toLocaleString(undefined, dayFormat);
   if (draft.allDay || !(draft.startTime && draft.endTime)) {
-    return draft.endDate.equals(draft.startDate)
-      ? `${startDay} · All day`
-      : `${startDay} – ${draft.endDate.toLocaleString(undefined, dayFormat)}`;
+    return formatAllDayWhen(draft.startDate, draft.endDate);
   }
   const timeZone = Temporal.Now.timeZoneId();
-  const start = draft.startDate.toZonedDateTime({
-    plainTime: draft.startTime,
-    timeZone,
-  });
-  const end = draft.endDate.toZonedDateTime({
-    plainTime: draft.endTime,
-    timeZone,
-  });
-  // A range across days carries its own dates.
-  return draft.endDate.equals(draft.startDate)
-    ? `${startDay} · ${formatTimeRange(start, end)}`
-    : formatTimeRange(start, end);
+  return formatEventWhen(
+    draft.startDate.toZonedDateTime({ plainTime: draft.startTime, timeZone }),
+    draft.endDate.toZonedDateTime({ plainTime: draft.endTime, timeZone })
+  );
 }
 
 /**
@@ -410,12 +398,14 @@ function describeWhen(draft: EventDraft): string {
  * joining the call, the place on a map, the notes to copy).
  */
 function ReadOnlyEventView({
+  calendarColor,
   calendarLabel,
   draft,
   mapsUrl,
   meetingLink,
   reason,
 }: {
+  calendarColor: string | null | undefined;
   calendarLabel: string | undefined;
   draft: EventDraft;
   mapsUrl: string | null;
@@ -424,6 +414,15 @@ function ReadOnlyEventView({
 }) {
   const location = draft.location.trim();
   const description = draft.description.trim();
+  const source = draft.mode === "edit" ? draft.sourceEvent : undefined;
+  const repeats = describeEventRecurrence({
+    eventType: source?.eventType,
+    recurringEventId: source?.recurringEventId,
+    rules: draft.recurrence,
+  });
+  // Google keeps birthdays on the primary calendar; name what they are.
+  const calendarName =
+    source?.eventType === "birthday" ? "Birthdays" : calendarLabel;
   return (
     <View className="gap-3">
       <View className="flex-row items-center gap-2 rounded-lg bg-muted px-3 py-2.5">
@@ -437,8 +436,19 @@ function ReadOnlyEventView({
         <Text className="text-muted-foreground text-sm">
           {describeWhen(draft)}
         </Text>
-        {calendarLabel ? (
-          <Text className="text-muted-foreground text-sm">{calendarLabel}</Text>
+        {repeats ? (
+          <Text className="text-muted-foreground text-sm">{repeats}</Text>
+        ) : null}
+        {calendarName ? (
+          <View className="flex-row items-center gap-1.5">
+            <View
+              className="size-2 rounded-full bg-muted-foreground"
+              style={calendarColor ? { backgroundColor: calendarColor } : null}
+            />
+            <Text className="text-muted-foreground text-sm">
+              {calendarName}
+            </Text>
+          </View>
         ) : null}
       </View>
       {meetingLink ? (
@@ -1092,6 +1102,7 @@ export function EventEditorSheet({
         title="Event"
       >
         <ReadOnlyEventView
+          calendarColor={selectedCalendarOption?.color}
           calendarLabel={selectedCalendarOption?.label}
           draft={draft}
           mapsUrl={mapsUrl}

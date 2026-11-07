@@ -148,10 +148,14 @@ export function useTasks(options: UseTasksOptions = {}) {
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
-      // Only optimistic update for scope="this" (single task)
-      if (scope !== "this") {
+      // Optimistic for scope "this" (one task). A "following" save that sets
+      // a status applies it to this task alone (the server keeps it), so
+      // that status shows at once too; the rest waits for the server.
+      if (scope !== "this" && task.status === undefined) {
         return { previousTasks: undefined };
       }
+      const optimistic: TaskUpdateDecoded =
+        scope === "this" ? task : { status: task.status };
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
@@ -164,13 +168,15 @@ export function useTasks(options: UseTasksOptions = {}) {
           }
 
           const nextTags =
-            task.tagIds === undefined
+            optimistic.tagIds === undefined
               ? t.tags
-              : tags.filter((tag) => (task.tagIds ?? []).includes(tag.id));
+              : tags.filter((tag) =>
+                  (optimistic.tagIds ?? []).includes(tag.id)
+                );
 
           return {
             ...t,
-            ...task,
+            ...optimistic,
             createdAt: t.createdAt,
             tags: nextTags,
             updatedAt: Temporal.Now.instant(),
