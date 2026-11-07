@@ -104,6 +104,8 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
               : [{ icon: Activity, label: `Strain ${strainScore.toFixed(1)}` }]
           }
           end={clampedEnd}
+          shownEnd={workoutEnd}
+          shownStart={workoutStart}
           start={clampedStart}
           title={label}
         />

@@ -4,6 +4,7 @@ import { Moon } from "lucide-react";
 import { memo } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
+  formatDuration,
   formatTimeRange,
   isoStringToZonedDateTime,
   minutesFromMidnight,
@@ -20,16 +21,6 @@ interface WhoopSleepBandProps {
   timeZone: string;
   /** Total actual sleep time (light + deep + REM) for the label */
   totalSleepMilliseconds: number;
-}
-
-function formatSleepDuration(ms: number): string {
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) {
-    return `${minutes}m`;
-  }
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 /** Sleep stays behind collision-positioned events. See documents/whoop.md. */
@@ -102,14 +93,14 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
             <Moon aria-hidden className="size-3 shrink-0" />
             <span className="truncate">
               <span className="font-medium">
-                {formatSleepDuration(
+                {formatDuration(
                   totalSleepMilliseconds > 0
-                    ? totalSleepMilliseconds
-                    : totalInBedMinutes * 60_000
+                    ? Math.round(totalSleepMilliseconds / 60_000)
+                    : totalInBedMinutes
                 )}
               </span>{" "}
               {isNap ? "nap" : "asleep"}
-              <span className="@max-[13rem]:hidden text-whoop-sleep-foreground/75">
+              <span className="@max-[13rem]:hidden">
                 {" "}
                 · {formatTimeRange(sleepStart, sleepEnd)}
               </span>

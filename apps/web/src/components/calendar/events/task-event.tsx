@@ -118,6 +118,10 @@ export const TaskEvent = memo(function TaskEventInner({
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
+  const taskStart = task.startDate.toZonedDateTime({
+    plainTime: task.startTime,
+    timeZone: segmentStart.timeZoneId,
+  });
   // columnSpan lets items expand into adjacent empty columns
   const singleColumnWidth = 100 / totalColumns;
   const columnWidth = singleColumnWidth * columnSpan;
@@ -164,6 +168,8 @@ export const TaskEvent = memo(function TaskEventInner({
                 onClick={handleStatusToggle}
               />
             }
+            shownEnd={taskStart.add({ minutes: task.durationMinutes })}
+            shownStart={taskStart}
             start={segmentStart}
             struck={isDone}
             title={task.title}

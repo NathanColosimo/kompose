@@ -6,6 +6,7 @@ import { useAtomValue } from "jotai";
 import { Activity, Moon } from "lucide-react";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
+import { formatDuration } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 
 interface DayHeaderProps {
@@ -27,12 +28,9 @@ function recoveryColor(score: number): string {
   return "bg-red-500";
 }
 
-/** "7h 12m" from milliseconds. */
-function formatHours(ms: number): string {
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
+/** Sleep as decimal hours, "7.2h", to fit a narrow header. */
+function formatSleepHours(ms: number): string {
+  return `${(ms / 3_600_000).toFixed(1)}h`;
 }
 
 /** The day's WHOOP numbers as one sentence, for the tooltip and screen readers. */
@@ -45,7 +43,7 @@ function whoopDescription(summary: WhoopDaySummary, calories: number | null) {
       ? null
       : `Strain ${summary.strainScore.toFixed(1)}`,
     summary.sleep
-      ? `Slept ${formatHours(summary.sleep.totalSleepMilliseconds)}${
+      ? `Slept ${formatDuration(Math.round(summary.sleep.totalSleepMilliseconds / 60_000))}${
           summary.sleepPerformance === null
             ? ""
             : ` (${summary.sleepPerformance}% of need)`
@@ -130,11 +128,11 @@ export const DayHeader = memo(function DayHeaderInner({
           {whoopSummary?.sleep ? (
             <span
               aria-hidden
-              className="flex @max-[8.5rem]:hidden min-w-0 items-center gap-1"
+              className="flex @max-[7rem]:hidden min-w-0 items-center gap-1"
             >
               <Moon className="size-3 shrink-0" />
               <span className="truncate">
-                {formatHours(whoopSummary.sleep.totalSleepMilliseconds)}
+                {formatSleepHours(whoopSummary.sleep.totalSleepMilliseconds)}
               </span>
             </span>
           ) : null}

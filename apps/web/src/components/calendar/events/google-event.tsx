@@ -21,7 +21,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { zonedDateTimeToDate } from "@/lib/temporal-utils";
+import {
+  isoStringToZonedDateTime,
+  zonedDateTimeToDate,
+} from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import { calculateEventPosition } from "../event-position";
@@ -152,6 +155,13 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const eventColorStyle = eventColor(backgroundColor);
   const details = useMemo(() => eventDetails(event), [event]);
+  // An overnight event is split per day; its time text shows the whole event.
+  const shownStart = event.start.dateTime
+    ? isoStringToZonedDateTime(event.start.dateTime, start.timeZoneId)
+    : start;
+  const shownEnd = event.end.dateTime
+    ? isoStringToZonedDateTime(event.end.dateTime, end.timeZoneId)
+    : end;
 
   const eventCard = (
     <div
@@ -180,6 +190,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         <BlockContent
           details={details}
           end={end}
+          shownEnd={shownEnd}
+          shownStart={shownStart}
           start={start}
           title={event.summary || "(No title)"}
         />

@@ -135,11 +135,11 @@ export const TaskItem = memo(function TaskItemInner({
                 const TagIcon = tagIconMap[tag.icon];
                 return (
                   <span
-                    className="flex items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
+                    className="flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
                     key={tag.id}
                   >
-                    <TagIcon aria-hidden className="size-3" />
-                    {tag.name}
+                    <TagIcon aria-hidden className="size-3 shrink-0" />
+                    <span className="truncate">{tag.name}</span>
                   </span>
                 );
               })}

@@ -55,8 +55,8 @@ import { DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
 import { TimeGutter } from "./time-grid/time-gutter";
 
-/** Default scroll position on mount (8am) */
-const DEFAULT_SCROLL_HOUR = 8;
+/** Default scroll position on mount (7am), to show mornings' sleep and workouts. */
+const DEFAULT_SCROLL_HOUR = 7;
 /** Pixels above the default hour line, enough to show its whole label. */
 const HOUR_LABEL_CLEARANCE = 12;
 const MAX_ALL_DAY_EVENTS = 2;
@@ -200,11 +200,12 @@ function toPositionedGoogleEvent(
   }
 }
 
-/** A short name for the zone, such as "EST" or "GMT+1". */
-function timeZoneLabel(timeZone: string): string {
+/** A short name for the zone on `day`, such as "EST" or "GMT+1". */
+function timeZoneLabel(timeZone: string, day: Temporal.PlainDate): string {
+  const noon = day.toZonedDateTime({ plainTime: "12:00", timeZone });
   return (
     new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: "short" })
-      .formatToParts(new Date())
+      .formatToParts(noon.epochMilliseconds)
       .find((part) => part.type === "timeZoneName")?.value ?? ""
   );
 }
@@ -310,9 +311,9 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   // Event creation context for click-and-drag
   const { actions } = useEventCreation();
 
-  // Scroll vertically to 8am on mount for a sensible default view. Hour
+  // Scroll vertically to 7am on mount for a sensible default view. Hour
   // labels sit centered on their line, so stop a little above it to show
-  // the whole "8 AM" label.
+  // the whole "7 AM" label.
   useLayoutEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop =
@@ -399,6 +400,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   );
 
   const hasGoogleEvents = googleEvents.length > 0;
+  const firstDay = visibleDays[0];
+  const zoneLabel = useMemo(
+    () => (firstDay ? timeZoneLabel(timeZone, firstDay) : ""),
+    [timeZone, firstDay]
+  );
   const showWhoopRow = visibleDays.some((day) => {
     const summary = whoopSummaries.get(day.toString());
     return Boolean(
@@ -566,7 +572,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
             )}
             title={timeZone}
           >
-            {timeZoneLabel(timeZone)}
+            {zoneLabel}
           </span>
           {hasAllDayEvents ? (
             <span className="flex flex-1 items-start justify-end border-t pt-1.5 pr-2">

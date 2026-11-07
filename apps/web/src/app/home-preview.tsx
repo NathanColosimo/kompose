@@ -1,3 +1,4 @@
+import { Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Hour rows in the preview, 9 AM to 2 PM. */
@@ -121,12 +122,15 @@ export function HomePreview() {
               >
                 {label}
                 {index === 0 ? (
-                  <span className="flex items-center gap-2 font-normal text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-2 whitespace-nowrap font-normal text-[10px] text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
                       {WHOOP_DAY.recovery}
                     </span>
-                    <span>Strain {WHOOP_DAY.strain}</span>
+                    <span className="flex items-center gap-1">
+                      <Activity className="size-2.5" />
+                      {WHOOP_DAY.strain}
+                    </span>
                   </span>
                 ) : (
                   <span className="h-[15px]" />

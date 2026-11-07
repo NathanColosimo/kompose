@@ -9,6 +9,9 @@ export function eventColor(color: string | null | undefined) {
   return { "--event": color ?? "var(--foreground)" } as CSSProperties;
 }
 
+/** Secondary text on a tint, at AA contrast on Google's colors in both themes. */
+const META = "text-[11px] text-foreground/80 dark:text-foreground/70";
+
 export interface BlockDetail {
   icon: LucideIcon;
   label: string;
@@ -17,10 +20,14 @@ export interface BlockDetail {
 interface BlockContentProps {
   /** Extra facts after the time, such as a meeting link, place, or tag. */
   details?: BlockDetail[];
-  /** Start and end of the visible part, which sets how much fits. */
+  /** End of the visible part; with `start` it sets how much fits. */
   end: Temporal.ZonedDateTime;
   /** Shown before the title, such as a task's checkbox. */
   leading?: ReactNode;
+  /** The whole item's end, for the time text. Defaults to `end`. */
+  shownEnd?: Temporal.ZonedDateTime;
+  /** The whole item's start, for the time text. Defaults to `start`. */
+  shownStart?: Temporal.ZonedDateTime;
   start: Temporal.ZonedDateTime;
   /** Done tasks: muted and struck through. */
   struck?: boolean;
@@ -30,13 +37,15 @@ interface BlockContentProps {
 /**
  * The text inside a timed calendar block. How much shows depends on the
  * block's length: under 30 minutes is one line with the start time, under
- * an hour adds the time range and details on a second line, and longer
- * blocks give the title two lines and the details their own line.
+ * an hour adds the time range and each detail as an icon, and longer
+ * blocks give the title two lines and list the details in full.
  */
 export function BlockContent({
   details = [],
   end,
   leading,
+  shownEnd,
+  shownStart,
   start,
   struck = false,
   title,
@@ -52,17 +61,14 @@ export function BlockContent({
       <div className="@container flex h-full min-w-0 items-center gap-1.5">
         {leading}
         <span className={cn(titleClass, "truncate")}>{title}</span>
-        <span className="@max-[9rem]:hidden shrink-0 text-[11px] text-foreground/65 tabular-nums">
-          {formatTime(start)}
+        <span className={cn("@max-[6rem]:hidden shrink-0 tabular-nums", META)}>
+          {formatTime(shownStart ?? start)}
         </span>
       </div>
     );
   }
 
   const isTall = minutes >= 60;
-  const time = formatTimeRange(start, end);
-  // Short blocks show each detail as an icon after the time; tall ones
-  // list them in full.
   const detailIcons = details.map(({ icon: Icon, label }) => (
     <Icon
       aria-label={label}
@@ -85,12 +91,21 @@ export function BlockContent({
         <span className={cn(titleClass, isTall ? "line-clamp-2" : "truncate")}>
           {title}
         </span>
-        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-foreground/65 tabular-nums leading-[14px]">
-          <span className="truncate">{time}</span>
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 tabular-nums leading-[14px]",
+            META
+          )}
+        >
+          <span className="truncate">
+            {formatTimeRange(shownStart ?? start, shownEnd ?? end)}
+          </span>
           {isTall ? null : detailIcons}
         </span>
         {isTall && detailRows.length > 0 ? (
-          <span className="flex min-w-0 flex-col gap-px text-[11px] text-foreground/65 leading-[14px]">
+          <span
+            className={cn("flex min-w-0 flex-col gap-px leading-[14px]", META)}
+          >
             {detailRows}
           </span>
         ) : null}
