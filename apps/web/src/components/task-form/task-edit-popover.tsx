@@ -265,7 +265,7 @@ export function TaskEditPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align={align}
-        className="w-[360px] space-y-3 p-4"
+        className="max-h-(--radix-popover-content-available-height) w-[360px] space-y-3 overflow-y-auto p-4"
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           handleCancel();
@@ -496,10 +496,9 @@ export function TaskEditForm({
       values: TaskFormValues,
       scope: UpdateScope,
       status: TaskSelectDecoded["status"] | null
-    ) => {
+    ): Promise<boolean> => {
       if (!(status && task)) {
-        commitUpdate(values, scope);
-        return;
+        return commitUpdate(values, scope);
       }
       // Shared with iOS (taskStatusSavePlan): one save carries the status
       // for this occurrence or a pattern change; otherwise the edits go
@@ -510,16 +509,50 @@ export function TaskEditForm({
         scope,
       });
       if (plan === "with-edits") {
-        commitUpdate(values, scope, { status });
-        return;
+        return commitUpdate(values, scope, { status });
       }
-      commitUpdate(values, scope).then((saved) => {
+      return commitUpdate(values, scope).then((saved) => {
         if (saved) {
           updateTask.mutate({ id: task.id, scope: "this", task: { status } });
         }
+        return saved;
       });
     },
     [commitUpdate, resolvedRecurrence, task, updateTask]
+  );
+
+  /** Whether saving `values` needs the scope dialog, or which scope it uses. */
+  const scopeDecisionFor = useCallback(
+    (values: TaskFormValues) =>
+      task
+        ? getTaskUpdateScopeDecision({
+            hasCoreFieldChanges: haveTaskCoreFieldsChanged({
+              next: {
+                description: values.description,
+                dueDate: values.dueDate,
+                durationMinutes: values.durationMinutes,
+                startDate: values.startDate,
+                startTime: values.startTime,
+                title: values.title,
+              },
+              previous: {
+                description: task.description,
+                dueDate: task.dueDate,
+                durationMinutes: task.durationMinutes,
+                startDate: task.startDate,
+                startTime: task.startTime,
+                title: task.title,
+              },
+            }),
+            isRecurring,
+            isSeriesMaster: task.seriesMasterId === task.id,
+            nextRecurrence: values.recurrence,
+            nextTagIds: values.tagIds,
+            previousRecurrence: resolvedRecurrence,
+            previousTagIds: task.tags.map((tag) => tag.id),
+          })
+        : null,
+    [isRecurring, resolvedRecurrence, task]
   );
 
   const submit = useCallback(
@@ -537,32 +570,10 @@ export function TaskEditForm({
         return true;
       }
 
-      const decision = getTaskUpdateScopeDecision({
-        hasCoreFieldChanges: haveTaskCoreFieldsChanged({
-          next: {
-            description: values.description,
-            dueDate: values.dueDate,
-            durationMinutes: values.durationMinutes,
-            startDate: values.startDate,
-            startTime: values.startTime,
-            title: values.title,
-          },
-          previous: {
-            description: task.description,
-            dueDate: task.dueDate,
-            durationMinutes: task.durationMinutes,
-            startDate: task.startDate,
-            startTime: task.startTime,
-            title: task.title,
-          },
-        }),
-        isRecurring,
-        isSeriesMaster: task.seriesMasterId === task.id,
-        nextRecurrence: values.recurrence,
-        nextTagIds: values.tagIds,
-        previousRecurrence: resolvedRecurrence,
-        previousTagIds: task.tags.map((tag) => tag.id),
-      });
+      const decision = scopeDecisionFor(values);
+      if (!decision) {
+        return true;
+      }
 
       if (decision.action === "prompt") {
         pendingUpdateRef.current = values;
@@ -574,14 +585,7 @@ export function TaskEditForm({
       commitUpdate(values, decision.scope);
       return true;
     },
-    [
-      commitUpdate,
-      createTask,
-      isCreateMode,
-      isRecurring,
-      resolvedRecurrence,
-      task,
-    ]
+    [commitUpdate, createTask, isCreateMode, scopeDecisionFor, task]
   );
 
   useImperativeHandle(submitRef, () => () => submit(getValues()), [
@@ -589,20 +593,43 @@ export function TaskEditForm({
     submit,
   ]);
 
-  // Saves unsaved edits first, so marking done never drops them. On a
-  // recurring task that can wait on the scope dialog, which then sets it.
+  // Mark done saves unsaved edits with it, so they're never dropped: in one
+  // save where it can (taskStatusSavePlan), through the scope dialog when
+  // the task repeats. With edits, the editor stays open until they've
+  // saved, so a failed save keeps them.
   const handleToggleDone = useCallback(() => {
     if (!task) {
       return;
     }
     const status = task.status === "done" ? "todo" : "done";
-    if (isDirty && !submit(getValues())) {
-      pendingStatusRef.current = status;
+    const values = getValues();
+    const decision = isDirty ? scopeDecisionFor(values) : null;
+    if (!decision) {
+      updateTask.mutate({ id: task.id, scope: "this", task: { status } });
+      onClose();
       return;
     }
-    updateTask.mutate({ id: task.id, scope: "this", task: { status } });
-    onClose();
-  }, [getValues, isDirty, onClose, submit, task, updateTask]);
+    if (decision.action === "prompt") {
+      pendingUpdateRef.current = values;
+      pendingStatusRef.current = status;
+      setTagScope(decision.defaultScope);
+      setShowTagScopeDialog(true);
+      return;
+    }
+    commitWithStatus(values, decision.scope, status).then((saved) => {
+      if (saved) {
+        onClose();
+      }
+    });
+  }, [
+    commitWithStatus,
+    getValues,
+    isDirty,
+    onClose,
+    scopeDecisionFor,
+    task,
+    updateTask,
+  ]);
 
   const handleSaveClick = useCallback(() => {
     const result = submit(getValues());

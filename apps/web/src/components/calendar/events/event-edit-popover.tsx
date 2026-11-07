@@ -779,7 +779,9 @@ export function EventEditPopover({
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
           align={align}
-          className="w-[420px] space-y-3 p-4"
+          // Fits the space Radix measured, scrolling long notes rather than
+          // running off screen.
+          className="max-h-(--radix-popover-content-available-height) w-[420px] space-y-3 overflow-y-auto p-4"
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             handleCancel();
@@ -1518,8 +1520,10 @@ function ReadOnlyEventDetails({
         </p>
       ) : null}
       {notes ? <p className="whitespace-pre-wrap">{notes}</p> : null}
+      {/* Close stays in view while long notes scroll (the popover's p-4
+          is offset so nothing shows beneath it). */}
       {onClose ? (
-        <div className="flex justify-end">
+        <div className="sticky -bottom-4 -mx-4 -mb-4 flex justify-end bg-popover px-4 pt-2 pb-4">
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Close
           </Button>

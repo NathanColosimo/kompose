@@ -122,18 +122,35 @@ const WHEN_DAY: Intl.DateTimeFormatOptions = {
 
 /**
  * When an event happens, for a view without a grid around it: the day,
- * then the times ("Thu, Nov 12 · 11 PM – 7 AM"). A range of a day or more
- * carries its own dates.
+ * then the times ("Thu, Nov 12 · 9 – 10 AM"). One that ends on a later day
+ * names both days ("Thu, Nov 12, 11 PM – Fri, Nov 13, 7 AM"); an end at
+ * midnight still reads as the first day's.
  */
 export function formatEventWhen(
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime,
   locale?: string
 ): string {
-  const range = formatTimeRange(start, end, locale);
-  return rangeShowsDates(start, end)
-    ? range
-    : `${start.toPlainDate().toLocaleString(locale, WHEN_DAY)} · ${range}`;
+  const startDay = start.toPlainDate();
+  const endDay = end.subtract({ nanoseconds: 1 }).toPlainDate();
+  if (Temporal.PlainDate.compare(endDay, startDay) <= 0) {
+    return `${startDay.toLocaleString(locale, WHEN_DAY)} · ${formatTimeRange(start, end, locale)}`;
+  }
+  const at = (time: Temporal.ZonedDateTime) =>
+    `${time.toPlainDate().toLocaleString(locale, WHEN_DAY)}, ${formatClockTimeWithPeriod(time, locale)}`;
+  return `${at(start)} – ${at(end)}`;
+}
+
+/** A time with its AM/PM where the locale uses one ("11 PM", "7:30 AM"). */
+function formatClockTimeWithPeriod(
+  time: Temporal.ZonedDateTime,
+  locale?: string
+): string {
+  return formatParts(
+    rangeFormat(locale, time.timeZoneId, time.minute !== 0, false),
+    time.epochMilliseconds,
+    false
+  ).text;
 }
 
 /** An all-day event's days, inclusive ("Thu, Nov 12 · All day"). */

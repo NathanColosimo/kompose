@@ -133,19 +133,19 @@ describe("formatEventWhen", () => {
     expect(
       formatEventWhen(at("2026-11-12T09:00"), at("2026-11-12T10:00"), "en-US")
     ).toBe("Thu, Nov 12 · 9 – 10 AM");
+    // An end at midnight is still the first day's.
     expect(
-      formatEventWhen(at("2026-11-12T23:00"), at("2026-11-13T07:00"), "en-US")
-    ).toBe("Thu, Nov 12 · 11 PM – 7 AM");
+      formatEventWhen(at("2026-11-12T22:00"), at("2026-11-13T00:00"), "en-US")
+    ).toBe("Thu, Nov 12 · 10 PM – 12 AM");
   });
 
-  test("lets a range of a day or more carry its own dates", () => {
-    const text = formatEventWhen(
-      at("2026-11-12T09:00"),
-      at("2026-11-14T09:00"),
-      "en-US"
-    );
-    expect(text).not.toContain("·");
-    expect(text).toContain("Nov 14");
+  test("names both days for one that ends on a later day", () => {
+    expect(
+      formatEventWhen(at("2026-11-12T23:00"), at("2026-11-13T07:45"), "en-US")
+    ).toBe("Thu, Nov 12, 11 PM – Fri, Nov 13, 7:45 AM");
+    expect(
+      formatEventWhen(at("2026-11-12T09:00"), at("2026-11-14T09:00"), "en-US")
+    ).toBe("Thu, Nov 12, 9 AM – Sat, Nov 14, 9 AM");
   });
 });
 

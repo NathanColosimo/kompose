@@ -125,9 +125,9 @@ export function useTaskEditorFlow() {
     nextDraft: TaskDraft,
     scope: UpdateScope,
     status: TaskDraft["status"]
-  ) {
+  ): Promise<boolean> {
     if (!editingTask) {
-      return;
+      return Promise.resolve(false);
     }
     const plan = taskStatusSavePlan({
       nextRecurrence: nextDraft.recurrence,
@@ -135,14 +135,14 @@ export function useTaskEditorFlow() {
       scope,
     });
     if (plan === "with-edits") {
-      commitUpdate(nextDraft, scope, status);
-      return;
+      return commitUpdate(nextDraft, scope, status);
     }
     const { id } = editingTask;
-    commitUpdate(nextDraft, scope).then((saved) => {
+    return commitUpdate(nextDraft, scope).then((saved) => {
       if (saved) {
         updateTask.mutate({ id, scope: "this", task: { status } });
       }
+      return saved;
     });
   }
 
@@ -304,8 +304,13 @@ export function useTaskEditorFlow() {
       setScopeDialog("save");
       return;
     }
-    commitWithStatus(draft, decision.scope, nextStatus);
-    close();
+    // The editor stays open until the edits have saved, so a failed save
+    // keeps them.
+    commitWithStatus(draft, decision.scope, nextStatus).then((saved) => {
+      if (saved) {
+        close();
+      }
+    });
   }
 
   return {

@@ -195,6 +195,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         .join(" · ")}
       {...attributes}
       {...listeners}
+      // A read-only event can't be dragged, but it still opens its details,
+      // so it isn't announced as unavailable.
+      aria-disabled={false}
       onKeyDown={openOnEnterOrSpace}
       role="button"
       tabIndex={0}
