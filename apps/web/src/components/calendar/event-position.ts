@@ -28,12 +28,8 @@ const STACK_INDENT_PX = 9;
 const MAX_STACK_INDENT_LEVELS = 4;
 
 /**
- * Left and width for a timed block from its collision layout: indent by its
- * level, then split the rest of the column into its group's columns.
- */
-/**
- * A block's stacking order as a CSS variable, so hover and an open popover
- * can raise it (see BLOCK_RAISE_CLASS).
+ * A block's stacking order as a CSS variable, so an open popover can raise
+ * it (see BLOCK_RAISE_CLASS).
  */
 export function blockStackStyle(zIndex: number | undefined) {
   return { "--block-z": zIndex ?? 1 } as React.CSSProperties;
@@ -49,6 +45,10 @@ export function blockStackStyle(zIndex: number | undefined) {
 export const BLOCK_RAISE_CLASS =
   "z-(--block-z) shadow-[0_0_0_1px_var(--background)] data-[state=open]:z-50";
 
+/**
+ * Left and width for a timed block from its collision layout: indent by its
+ * level, then split the rest of the column into its group's columns.
+ */
 export function blockHorizontalStyle(
   layout: ItemLayout | undefined
 ): Pick<React.CSSProperties, "left" | "width"> {
@@ -65,3 +65,25 @@ export function blockHorizontalStyle(
     width: `calc(${rest} * ${span / columns} - 2px)`,
   };
 }
+
+/**
+ * Enter or Space on a focused block opens its editor, as on a button. The
+ * block is a div (a task's checkbox can't sit inside a button), so the
+ * browser doesn't do this for it.
+ */
+export function openOnEnterOrSpace(event: React.KeyboardEvent<HTMLElement>) {
+  if (
+    event.target !== event.currentTarget ||
+    !(event.key === "Enter" || event.key === " ")
+  ) {
+    return;
+  }
+  event.preventDefault();
+  event.currentTarget.click();
+}
+
+/**
+ * Resize grips are pointer-only; leave them out of the tab order so each
+ * block is one stop (its times are edited in the editor).
+ */
+export const GRIP_PROPS = { "aria-hidden": true, tabIndex: -1 } as const;

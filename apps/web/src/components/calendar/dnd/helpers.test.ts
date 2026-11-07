@@ -105,6 +105,18 @@ describe("resizedRange", () => {
   });
 });
 
+test("extends an item's end to midnight", () => {
+  const midnight = at("2026-11-10", "00:00");
+  expect(
+    resizedRange({
+      direction: "end",
+      end: at("2026-11-09", "23:00"),
+      start: at("2026-11-09", "22:00"),
+      target: midnight,
+    })?.end.toString()
+  ).toBe(midnight.toString());
+});
+
 describe("clipToDay", () => {
   test("keeps the part of a range on one day", () => {
     const range = {

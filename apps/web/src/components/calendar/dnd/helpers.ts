@@ -5,7 +5,7 @@ import type { DragDirection } from "./types";
 export const MINUTES_STEP = 15;
 
 /** The day holding the edge being dragged; an end at midnight belongs to the day before. */
-function edgeDay(
+export function edgeDay(
   direction: DragDirection,
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime
@@ -33,7 +33,8 @@ export function resizedRange({
   target: Temporal.ZonedDateTime;
 }): { end: Temporal.ZonedDateTime; start: Temporal.ZonedDateTime } | null {
   const day = edgeDay(direction, start, end);
-  if (!target.toPlainDate().equals(day)) {
+  // An end target at midnight (dropped on 11:45 PM) belongs to the day before.
+  if (!edgeDay(direction, target, target).equals(day)) {
     return null;
   }
   const { dayEnd, dayStart } = getDayBoundsZoned(day, start.timeZoneId);

@@ -34,6 +34,8 @@ import {
   blockHorizontalStyle,
   blockStackStyle,
   calculateEventPosition,
+  GRIP_PROPS,
+  openOnEnterOrSpace,
 } from "../event-position";
 import { BlockContent, type BlockDetail, eventColor } from "./block-content";
 import { EventEditPopover } from "./event-edit-popover";
@@ -83,6 +85,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     : end;
   const hasStartEdge = start.equals(shownStart);
   const hasEndEdge = end.equals(shownEnd);
+  // One per drawn day: dnd-kit keeps one node per id, so an overnight
+  // event's two parts need their own.
+  const dragId = `google-event-${accountId}-${calendarId}-${event.id}-${start.toPlainDate()}`;
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
@@ -95,7 +100,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       type: "google-event",
     },
     disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}`,
+    id: dragId,
   });
 
   const {
@@ -113,7 +118,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       type: "google-event-resize",
     },
     disabled: !(isEditable && hasStartEdge),
-    id: `google-event-${calendarId}-${event.id}-resize-start`,
+    id: `${dragId}-resize-start`,
   });
 
   const {
@@ -131,7 +136,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       type: "google-event-resize",
     },
     disabled: !(isEditable && hasEndEdge),
-    id: `google-event-${calendarId}-${event.id}-resize-end`,
+    id: `${dragId}-resize-end`,
   });
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
@@ -165,6 +170,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const details = useMemo(() => eventDetails(event), [event]);
 
   const eventCard = (
+    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace)
     <div
       className={cn(
         "group pointer-events-auto relative rounded-md bg-background p-px",
@@ -184,6 +190,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         .join(" · ")}
       {...attributes}
       {...listeners}
+      onKeyDown={openOnEnterOrSpace}
+      role="button"
+      tabIndex={0}
     >
       <div
         className={cn(
@@ -230,6 +239,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           ref={setStartHandleRef}
           {...startAttributes}
           {...startListeners}
+          {...GRIP_PROPS}
         />
       ) : null}
       {isEditable && hasEndEdge ? (
@@ -238,6 +248,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           ref={setEndHandleRef}
           {...endAttributes}
           {...endListeners}
+          {...GRIP_PROPS}
         />
       ) : null}
     </div>

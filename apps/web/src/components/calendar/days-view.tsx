@@ -781,7 +781,9 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                               calendarId={calendarId}
                               end={end}
                               event={event}
-                              key={`${accountId}-${calendarId}-${event.id}-${start.toString()}`}
+                              // Keyed by identity, not times: a time change keeps the
+                              // block (and an open editor's draft) mounted.
+                              key={layoutKey}
                               layout={layout}
                               start={start}
                             />
@@ -796,7 +798,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                       <TaskEvent
                         isFirstSegment={segment.isFirstSegment}
                         isLastSegment={segment.isLastSegment}
-                        key={`${segment.task.id}-${segment.start.toString()}`}
+                        key={layoutKey}
                         layout={layout}
                         segmentEnd={segment.end}
                         segmentStart={segment.start}

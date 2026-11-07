@@ -19,6 +19,8 @@ import {
   blockHorizontalStyle,
   blockStackStyle,
   calculateEventPosition,
+  GRIP_PROPS,
+  openOnEnterOrSpace,
 } from "../event-position";
 import { BlockContent, type BlockDetail } from "./block-content";
 
@@ -67,6 +69,9 @@ export const TaskEvent = memo(function TaskEventInner({
     plainTime: task.startTime,
     timeZone: segmentStart.timeZoneId,
   });
+  // One per drawn day: dnd-kit keeps one node per id, so an overnight
+  // task's two parts need their own.
+  const dragId = `event-${task.id}-${segmentStart.toPlainDate()}`;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
       // Moving an overnight task's second-day part shifts the whole task.
@@ -76,7 +81,7 @@ export const TaskEvent = memo(function TaskEventInner({
       task,
       type: "task",
     },
-    id: `event-${task.id}-${segmentStart.toString()}`,
+    id: dragId,
   });
 
   const {
@@ -89,7 +94,7 @@ export const TaskEvent = memo(function TaskEventInner({
       task,
       type: "task-resize",
     },
-    id: `event-${task.id}-resize-start`,
+    id: `${dragId}-resize-start`,
   });
 
   const {
@@ -102,7 +107,7 @@ export const TaskEvent = memo(function TaskEventInner({
       task,
       type: "task-resize",
     },
-    id: `event-${task.id}-resize-end`,
+    id: `${dragId}-resize-end`,
   });
 
   const { updateTask } = useTasks();
@@ -138,6 +143,7 @@ export const TaskEvent = memo(function TaskEventInner({
 
   return (
     <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
+      {/* biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace) */}
       <div
         className={cn(
           "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
@@ -153,6 +159,9 @@ export const TaskEvent = memo(function TaskEventInner({
         )}`}
         {...attributes}
         {...listeners}
+        onKeyDown={openOnEnterOrSpace}
+        role="button"
+        tabIndex={0}
       >
         <div
           className={cn(
@@ -190,6 +199,7 @@ export const TaskEvent = memo(function TaskEventInner({
             ref={setStartHandleRef}
             {...startAttributes}
             {...startListeners}
+            {...GRIP_PROPS}
           />
         ) : null}
         {isLastSegment ? (
@@ -198,6 +208,7 @@ export const TaskEvent = memo(function TaskEventInner({
             ref={setEndHandleRef}
             {...endAttributes}
             {...endListeners}
+            {...GRIP_PROPS}
           />
         ) : null}
       </div>

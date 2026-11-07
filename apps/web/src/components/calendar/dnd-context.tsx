@@ -49,6 +49,7 @@ import {
 import {
   clipToDay,
   durationInMinutes,
+  edgeDay,
   MINUTES_STEP,
   resizedRange,
 } from "./dnd/helpers";
@@ -460,7 +461,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       return range
         ? buildPreviewRect({
             columnRect,
-            day: targetDateTime.toPlainDate(),
+            // The hovered column: an end at midnight is the day before's.
+            day: edgeDay(data.direction, range.start, range.end),
             range,
           })
         : null;
@@ -503,7 +505,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       return range
         ? buildPreviewRect({
             columnRect,
-            day: targetDateTime.toPlainDate(),
+            day: edgeDay(data.direction, range.start, range.end),
             minimum: 1,
             range,
           })
