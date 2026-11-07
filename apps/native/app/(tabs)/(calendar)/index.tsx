@@ -510,7 +510,7 @@ export default function CalendarTab() {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
-  // "Nov", or "Oct – Nov" when the visible days cross a month.
+  // "Nov", or "Oct–Nov" when the visible days cross a month.
   const firstMonth = visibleDays[0]?.toLocaleString(undefined, {
     month: "short",
   });
@@ -518,7 +518,7 @@ export default function CalendarTab() {
     month: "short",
   });
   const gutterMonths =
-    firstMonth === lastMonth ? firstMonth : `${firstMonth} – ${lastMonth}`;
+    firstMonth === lastMonth ? firstMonth : `${firstMonth}–${lastMonth}`;
   const showWhoopRow = useShowWhoopRow(visibleDays);
   // Each workout's part on every visible day it touches, so an overnight
   // workout shows on both days with its real times.
@@ -1314,7 +1314,11 @@ export default function CalendarTab() {
               className="items-end justify-center border-border border-r pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
             >
-              <Text className="text-[11px] text-muted-foreground">
+              <Text
+                adjustsFontSizeToFit
+                className="text-[11px] text-muted-foreground"
+                numberOfLines={1}
+              >
                 {gutterMonths}
               </Text>
             </View>
