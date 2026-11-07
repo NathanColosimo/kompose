@@ -51,13 +51,7 @@ import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import {
-  Activity,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Plus,
-} from "lucide-react-native";
+import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
@@ -367,26 +361,37 @@ function recoveryColor(score: number): string {
   return score >= 34 ? "bg-amber-400" : "bg-red-500";
 }
 
+/** The date and any WHOOP numbers, as VoiceOver reads a day header. */
+function dayHeaderLabel(
+  day: Temporal.PlainDate,
+  summary: WhoopDaySummary | undefined
+): string {
+  return [
+    day.toLocaleString(undefined, {
+      day: "numeric",
+      month: "long",
+      weekday: "long",
+    }),
+    summary?.recoveryScore == null
+      ? null
+      : `recovery ${summary.recoveryScore}%`,
+    summary?.strainScore == null
+      ? null
+      : `strain ${summary.strainScore.toFixed(1)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 /** Recovery and strain under a day's date. */
 function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
   if (!(summary && hasWhoopStats(summary))) {
     // Keep every header the same height.
     return <View className="h-3.5" />;
   }
-  const parts = [
-    summary.recoveryScore === null
-      ? null
-      : `Recovery ${summary.recoveryScore}%`,
-    summary.strainScore === null
-      ? null
-      : `strain ${summary.strainScore.toFixed(1)}`,
-  ].filter(Boolean);
+  // The day header reads these out; see dayHeaderLabel.
   return (
-    <View
-      accessibilityLabel={parts.length > 0 ? parts.join(", ") : undefined}
-      accessible={parts.length > 0}
-      className="h-3.5 flex-row items-center gap-2"
-    >
+    <View className="h-3.5 flex-row items-center gap-2">
       {summary.recoveryScore === null ? null : (
         <View className="flex-row items-center gap-1">
           <View
@@ -889,21 +894,20 @@ export default function CalendarTab() {
     []
   );
 
-  // The header's "+": today at the next half hour when today is showing,
-  // else 9 AM on the first visible day. It's also the way in for VoiceOver,
-  // which can't tap an empty slot.
-  const openCreateChooserFromHeader = useCallback(() => {
-    const now = Temporal.Now.zonedDateTimeISO(timeZone);
-    const today = now.toPlainDate();
-    const showsToday = visibleDays.some((day) => day.equals(today));
-    const firstDay = visibleDays[0] ?? today;
-    const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
-    if (showsToday) {
-      openCreateChooserAt(today, Math.min(nextHalfHour, 23 * 60 + 30));
-    } else {
-      openCreateChooserAt(firstDay, 9 * 60);
-    }
-  }, [openCreateChooserAt, timeZone, visibleDays]);
+  // VoiceOver can't tap an empty slot, so each day header offers the create
+  // chooser: today at the next half hour, other days at 9 AM.
+  const openCreateChooserForDay = useCallback(
+    (day: Temporal.PlainDate) => {
+      const now = Temporal.Now.zonedDateTimeISO(timeZone);
+      if (day.equals(now.toPlainDate())) {
+        const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
+        openCreateChooserAt(day, Math.min(nextHalfHour, 23 * 60 + 30));
+      } else {
+        openCreateChooserAt(day, 9 * 60);
+      }
+    },
+    [openCreateChooserAt, timeZone]
+  );
 
   const closeCreateChooser = useCallback(() => {
     setCreateSlotSelection(null);
@@ -1342,14 +1346,6 @@ export default function CalendarTab() {
               >
                 <Icon as={ChevronRight} size={18} />
               </Pressable>
-              <Pressable
-                accessibilityLabel="New event or task"
-                accessibilityRole="button"
-                className="rounded-lg p-1.5 active:opacity-70"
-                onPress={openCreateChooserFromHeader}
-              >
-                <Icon as={Plus} size={18} />
-              </Pressable>
             </View>
           ),
           title: "Calendar",
@@ -1381,8 +1377,20 @@ export default function CalendarTab() {
 
                 return (
                   <View
+                    accessibilityActions={[
+                      { label: "New event or task", name: "activate" },
+                    ]}
+                    accessibilityHint="Creates an event or task on this day"
+                    accessibilityLabel={dayHeaderLabel(day, whoop)}
+                    accessibilityRole="button"
+                    accessible
                     className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
                     key={day.toString()}
+                    onAccessibilityAction={(event) => {
+                      if (event.nativeEvent.actionName === "activate") {
+                        openCreateChooserForDay(day);
+                      }
+                    }}
                   >
                     <View className="flex-row items-center gap-1.5">
                       <Text
