@@ -400,8 +400,8 @@ export default function TasksScreen() {
                 <Text
                   className={
                     !isTagView && activeTab === "Inbox"
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
+                      ? "font-sans-medium text-foreground"
+                      : "text-foreground"
                   }
                 >
                   Inbox
@@ -417,8 +417,8 @@ export default function TasksScreen() {
                 <Text
                   className={
                     !isTagView && activeTab === "Today"
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
+                      ? "font-sans-medium text-foreground"
+                      : "text-foreground"
                   }
                 >
                   Today

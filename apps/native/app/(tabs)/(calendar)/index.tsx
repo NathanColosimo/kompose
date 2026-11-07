@@ -1204,7 +1204,7 @@ export default function CalendarTab() {
                     className={
                       visibleDaysCount === n
                         ? "font-sans-medium text-foreground"
-                        : "text-foreground/70"
+                        : "text-foreground"
                     }
                   >
                     {n}d
