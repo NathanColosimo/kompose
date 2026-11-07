@@ -66,7 +66,7 @@ function DashboardCalendarToolbar() {
   }, [navigationStep, setCurrentDate]);
 
   return (
-    <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
+    <header className="@container z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
       {/* Keeps the date title beside the arrows that change it when the toolbar wraps. */}
       <div className="flex min-w-0 items-center gap-1">
         <Button onClick={goToToday} size="lg" variant="outline">
@@ -146,6 +146,10 @@ const monthYearFormat = new Intl.DateTimeFormat(undefined, {
   month: "long",
   year: "numeric",
 });
+const shortMonthYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  year: "numeric",
+});
 
 /** How many years before and after today the date picker's year dropdown spans. */
 const PICKER_YEAR_SPAN = 100;
@@ -154,12 +158,15 @@ function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const visibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
   const [open, setOpen] = useState(false);
-  const visibleMonths = monthYearFormat.formatRange(
-    temporalToPickerDate(currentDate),
-    temporalToPickerDate(currentDate.add({ days: visibleDaysCount - 1 }))
-  );
 
   const selectedDate = temporalToPickerDate(currentDate);
+  const lastVisibleDate = temporalToPickerDate(
+    currentDate.add({ days: visibleDaysCount - 1 })
+  );
+  const visibleMonths = monthYearFormat.formatRange(
+    selectedDate,
+    lastVisibleDate
+  );
   // react-day-picker's dropdown stops at the end of the current year by default.
   const thisYear = todayPlainDate().year;
   const startMonth = new Date(thisYear - PICKER_YEAR_SPAN, 0);
@@ -183,8 +190,12 @@ function DatePopover() {
           size="lg"
           variant="ghost"
         >
-          <span className="truncate" title={visibleMonths}>
+          {/* Narrow toolbars use short month names so the range end stays visible. */}
+          <span className="@md:inline hidden truncate" title={visibleMonths}>
             {visibleMonths}
+          </span>
+          <span className="@md:hidden truncate" title={visibleMonths}>
+            {shortMonthYearFormat.formatRange(selectedDate, lastVisibleDate)}
           </span>
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
