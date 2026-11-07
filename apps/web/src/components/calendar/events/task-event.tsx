@@ -171,7 +171,7 @@ export const TaskEvent = memo(function TaskEventInner({
         </div>
         {isFirstSegment ? (
           <div
-            className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
             ref={setStartHandleRef}
             {...startAttributes}
             {...startListeners}
@@ -179,7 +179,7 @@ export const TaskEvent = memo(function TaskEventInner({
         ) : null}
         {isLastSegment ? (
           <div
-            className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
+            className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
             ref={setEndHandleRef}
             {...endAttributes}
             {...endListeners}
