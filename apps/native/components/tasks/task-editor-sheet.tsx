@@ -127,11 +127,12 @@ function formatPlainDateShort(date: Temporal.PlainDate | null): string {
   }).format(plainDateToDate(date));
 }
 
-function formatPlainTime24(time: Temporal.PlainTime | null): string {
+/** In the locale's hour cycle ("4:30 PM"), like the calendar block. */
+function formatPlainTime(time: Temporal.PlainTime | null): string {
   if (!time) {
     return "--:--";
   }
-  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
+  return time.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function TaskRecurrenceEndSection({
@@ -461,6 +462,56 @@ function TaskTagPicker({
   );
 }
 
+/** The editor's header: delete, then save, or "Saving…" while Mark done saves. */
+function TaskEditorHeaderActions({
+  canSave,
+  isSaving,
+  onDelete,
+  onSave,
+}: {
+  canSave: boolean;
+  isSaving: boolean;
+  onDelete?: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <View className="flex-row items-center gap-2">
+      {onDelete ? (
+        <Button
+          disabled={isSaving}
+          onPress={onDelete}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Trash2}
+            className={isSaving ? "text-muted-foreground" : "text-red-500"}
+            size={18}
+          />
+        </Button>
+      ) : null}
+      {isSaving ? (
+        <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>
+      ) : (
+        <Button
+          disabled={!canSave}
+          onPress={onSave}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Check}
+            className={canSave ? "text-green-500" : "text-muted-foreground"}
+            size={18}
+          />
+        </Button>
+      )}
+    </View>
+  );
+}
+
 /** A draft saves with a title or a link, and not while Mark done is saving. */
 function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
   if (isSaving || !draft) {
@@ -560,6 +611,11 @@ export function TaskEditorSheet({
   };
 
   const handleClose = () => {
+    // While Mark done saves, the editor holds: closing would drop the edits
+    // if the save fails.
+    if (isSaving) {
+      return;
+    }
     setIsRecurrenceExpanded(false);
     setIsTagPickerExpanded(false);
     onClose();
@@ -569,32 +625,15 @@ export function TaskEditorSheet({
 
   return (
     <BottomSheet
+      disablePanGesture={isSaving}
+      enableBackdropDismiss={!isSaving}
       headerRight={
-        <View className="flex-row items-center gap-2">
-          {mode === "edit" && onDelete ? (
-            <Button
-              onPress={onDelete}
-              size="icon"
-              style={{ borderRadius: 999 }}
-              variant="ghost"
-            >
-              <Icon as={Trash2} className="text-red-500" size={18} />
-            </Button>
-          ) : null}
-          <Button
-            disabled={!canSave}
-            onPress={onSave}
-            size="icon"
-            style={{ borderRadius: 999 }}
-            variant="ghost"
-          >
-            <Icon
-              as={Check}
-              className={canSave ? "text-green-500" : "text-muted-foreground"}
-              size={18}
-            />
-          </Button>
-        </View>
+        <TaskEditorHeaderActions
+          canSave={canSave}
+          isSaving={isSaving}
+          onDelete={mode === "edit" ? onDelete : undefined}
+          onSave={onSave}
+        />
       }
       isVisible={isVisible}
       onClose={handleClose}
@@ -604,7 +643,8 @@ export function TaskEditorSheet({
       <View className="mb-3 flex-row items-center gap-1.5">
         <View style={{ width: 86 }}>
           <Picker
-            inputStyle={{ textAlign: "center" }}
+            // Same size as the date and time chips beside it.
+            inputStyle={{ fontSize: 13, textAlign: "center" }}
             modalTitle="Duration"
             onValueChange={(value) => {
               const nextMinutes = Number.parseInt(value, 10);
@@ -655,10 +695,10 @@ export function TaskEditorSheet({
               variant="outline"
             />
           </View>
-          <View style={{ width: 74 }}>
+          <View style={{ width: 84 }}>
             <DatePicker
               disabled={!draft.startDate}
-              displayValue={formatPlainTime24(draft.startTime)}
+              displayValue={formatPlainTime(draft.startTime)}
               mode="time"
               onChange={(date) =>
                 setDraft((current) => ({
@@ -686,7 +726,9 @@ export function TaskEditorSheet({
         <View style={{ width: 86 }}>
           <DatePicker
             displayValue={
-              draft.dueDate ? formatPlainDateShort(draft.dueDate) : "Due"
+              draft.dueDate
+                ? `Due ${formatPlainDateShort(draft.dueDate)}`
+                : "Due"
             }
             mode="date"
             onChange={(date) =>

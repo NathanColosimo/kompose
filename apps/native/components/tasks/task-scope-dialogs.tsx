@@ -11,6 +11,10 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { RadioGroup } from "@/components/ui/radio";
 import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
+function noop() {
+  // Intentionally empty: see TaskSaveScopeDialog's onClose.
+}
+
 /**
  * Save scope for a recurring task. Render it inside the editor sheet: iOS
  * presents a modal from the one showing, not beside it, and this opens over
@@ -26,7 +30,10 @@ export function TaskSaveScopeDialog({ flow }: { flow: TaskEditorFlow }) {
       // Over the editor: Cancel goes back to it, edits kept. After Apply
       // the flow hides this dialog itself (it may be saving).
       onCancel={flow.cancelScopedSave}
-      onClose={flow.cancelScopedSave}
+      // Cancel and a backdrop tap already run onCancel. The dialog's close
+      // after its fade has nothing left to do, and must not clear a save
+      // started again meanwhile.
+      onClose={noop}
       onConfirm={flow.confirmScopedSave}
       pending={flow.isSavingStatus}
       title="Apply task update"

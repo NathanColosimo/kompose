@@ -254,6 +254,11 @@ export function TaskEditPopover({
     [matchesOpenRequest, openRequest, setOpenRequest]
   );
 
+  const savingRef = useRef(false);
+  const setSaving = useCallback((saving: boolean) => {
+    savingRef.current = saving;
+  }, []);
+
   return (
     <Popover
       onOpenChange={(nextOpen) => {
@@ -268,13 +273,19 @@ export function TaskEditPopover({
         align={align}
         className="max-h-(--radix-popover-content-available-height) w-[360px] space-y-3 overflow-y-auto p-4"
         collisionPadding={8}
+        // While Mark done saves, the editor holds: closing would drop the
+        // edits if the save fails.
         onEscapeKeyDown={(e) => {
           e.preventDefault();
-          handleCancel();
+          if (!savingRef.current) {
+            handleCancel();
+          }
         }}
         onInteractOutside={(e) => {
           e.preventDefault();
-          handleCancel();
+          if (!savingRef.current) {
+            handleCancel();
+          }
         }}
         onOpenAutoFocus={handleOpenAutoFocus}
         side={side}
@@ -284,6 +295,7 @@ export function TaskEditPopover({
           key={task?.id ?? "create-task"}
           mode={mode}
           onClose={handleCancel}
+          onSavingChange={setSaving}
           open={open}
           task={task}
         />
@@ -359,6 +371,7 @@ export function TaskEditForm({
   mode,
   submitRef,
   onClose,
+  onSavingChange,
   open,
   createInteropRef,
 }: {
@@ -368,6 +381,8 @@ export function TaskEditForm({
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
   submitRef?: React.Ref<() => boolean>;
   onClose: () => void;
+  /** Mark done is saving: the popover holds (no Escape or outside close). */
+  onSavingChange?: (saving: boolean) => void;
   open: boolean;
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
 }) {
@@ -382,6 +397,9 @@ export function TaskEditForm({
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
   /** Mark done is saving the edits; the editor stays open until it has. */
   const [isSavingStatus, setIsSavingStatus] = useState(false);
+  useEffect(() => {
+    onSavingChange?.(isSavingStatus);
+  }, [isSavingStatus, onSavingChange]);
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -432,8 +450,8 @@ export function TaskEditForm({
       e.preventDefault();
       handleDeleteClick();
     },
-    { enabled: open && !isCreateMode },
-    [handleDeleteClick, isCreateMode, open]
+    { enabled: open && !isCreateMode && !isSavingStatus },
+    [handleDeleteClick, isCreateMode, isSavingStatus, open]
   );
 
   const resolvedInitialValues = useMemo<TaskFormValues>(
@@ -671,8 +689,11 @@ export function TaskEditForm({
       e.preventDefault();
       handleSaveClick();
     },
-    { enabled: open && showActionButtons, enableOnFormTags: true },
-    [handleSaveClick, open, showActionButtons]
+    {
+      enabled: open && showActionButtons && !isSavingStatus,
+      enableOnFormTags: true,
+    },
+    [handleSaveClick, isSavingStatus, open, showActionButtons]
   );
 
   const applySharedFields = useCallback(
