@@ -36,6 +36,12 @@ export interface ItemLayout {
   stackDepth: number;
   /** Columns in the item's group. */
   totalColumns: number;
+  /**
+   * Minutes from the item's start until a deeper group is drawn over it (its
+   * whole drawn length if none is). Renderers fit the item's text into this
+   * part, so it isn't cut off mid-line by the item on top.
+   */
+  uncoveredMinutes: number;
   zIndex: number;
 }
 
@@ -80,8 +86,28 @@ function groupItems(sorted: PositionedItem[]): Group[] {
 }
 
 /** First-fit columns within a group, then widen each item into free columns. */
+/** When a later, deeper group first covers `item`, in minutes from its start. */
+function uncoveredMinutes(
+  item: PositionedItem,
+  group: Group,
+  later: Group[]
+): number {
+  let uncovered = item.endMinutes - item.startMinutes;
+  for (const other of later) {
+    if (
+      other.depth > group.depth &&
+      other.start < item.endMinutes &&
+      other.members.some((member) => itemsOverlap(member, item))
+    ) {
+      uncovered = Math.min(uncovered, other.start - item.startMinutes);
+    }
+  }
+  return Math.max(uncovered, 0);
+}
+
 function layoutGroup(
   group: Group,
+  later: Group[],
   zIndexOf: Map<string, number>,
   result: Map<string, ItemLayout>
 ): void {
@@ -113,6 +139,7 @@ function layoutGroup(
       columnSpan,
       stackDepth: group.depth,
       totalColumns: columns.length,
+      uncoveredMinutes: uncoveredMinutes(member, group, later),
       zIndex: zIndexOf.get(member.id) ?? 1,
     });
   }
@@ -142,8 +169,9 @@ export function calculateCollisionLayout(
   const zIndexOf = new Map(sorted.map((item, index) => [item.id, index + 1]));
 
   const result = new Map<string, ItemLayout>();
-  for (const group of groupItems(sorted)) {
-    layoutGroup(group, zIndexOf, result);
+  const groups = groupItems(sorted);
+  for (const [index, group] of groups.entries()) {
+    layoutGroup(group, groups.slice(index + 1), zIndexOf, result);
   }
   return result;
 }

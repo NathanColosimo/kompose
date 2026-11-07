@@ -494,6 +494,7 @@ function TimedGoogleEventBlock({
   onLongPressAt?: (offsetY: number) => void;
   onPress: () => void;
   stackDepth?: number;
+  uncoveredMinutes?: number;
   top: number;
   totalColumns?: number;
   zIndex?: number;
@@ -1064,6 +1065,8 @@ export default function CalendarTab() {
   const openCreateChooserAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
       const slot = { day, minutes: nearestSlotMinutes(minutes) };
+      // A fresh chooser drops any action left from one iOS never dismissed.
+      setPendingCreateAction(null);
       setCreateSlotSelection(slot);
       setLastCreateSlot(slot);
     },
@@ -1676,7 +1679,10 @@ export default function CalendarTab() {
                   >
                     <AllDayCellItems
                       items={items}
-                      onMore={() => setAllDayListDay(day)}
+                      onMore={() => {
+                        setPendingAllDayEdit(null);
+                        setAllDayListDay(day);
+                      }}
                       onOpen={openEditAllDayEvent}
                     />
                   </View>
@@ -1815,6 +1821,7 @@ export default function CalendarTab() {
                               stackDepth={layout?.stackDepth}
                               top={adjustedTop}
                               totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
                               zIndex={layout?.zIndex}
                             />
                           );
@@ -1872,6 +1879,7 @@ export default function CalendarTab() {
                                 EVENT_BLOCK_INSET_PX / 2
                               }
                               totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
                               zIndex={layout?.zIndex}
                             />
                           );
@@ -1920,6 +1928,7 @@ export default function CalendarTab() {
                               title={task.title}
                               top={adjustedTop}
                               totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
                               zIndex={layout?.zIndex}
                             />
                           );

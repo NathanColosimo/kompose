@@ -133,15 +133,7 @@ export const TaskEvent = memo(function TaskEventInner({
   };
 
   return (
-    <TaskEditPopover
-      align="start"
-      // Moving or resizing the task remounts its editor closed, so an open
-      // editor can't save the old times over the new ones.
-      key={`${task.startDate}-${task.startTime}-${task.durationMinutes}`}
-      side="right"
-      surface="calendar"
-      task={task}
-    >
+    <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
       <div
         className={cn(
           "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
@@ -161,7 +153,12 @@ export const TaskEvent = memo(function TaskEventInner({
         <div
           className={cn(
             "h-full overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
-            segmentDurationMinutes < 30 ? "py-0" : "py-1"
+            Math.min(
+              segmentDurationMinutes,
+              layout?.uncoveredMinutes ?? segmentDurationMinutes
+            ) < 30
+              ? "py-0"
+              : "py-1"
           )}
         >
           <BlockContent
@@ -180,6 +177,7 @@ export const TaskEvent = memo(function TaskEventInner({
             start={segmentStart}
             struck={isDone}
             title={task.title}
+            uncoveredMinutes={layout?.uncoveredMinutes}
           />
         </div>
         {isFirstSegment ? (

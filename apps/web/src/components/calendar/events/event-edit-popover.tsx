@@ -43,6 +43,7 @@ import {
   type ReactElement,
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useReducer,
@@ -1525,6 +1526,20 @@ export function EventEditForm({
   const { control, setValue, getValues } = useForm<EventFormValues>({
     defaultValues: initialValues,
   });
+  // A move or resize while the editor is open updates its times, keeping
+  // any other unsaved edits, so Save can't write the old times back.
+  const scheduleKey = `${initialStartDate?.getTime()}|${initialEndDate?.getTime()}`;
+  const lastScheduleKeyRef = useRef(scheduleKey);
+  useEffect(() => {
+    if (scheduleKey === lastScheduleKeyRef.current) {
+      return;
+    }
+    lastScheduleKeyRef.current = scheduleKey;
+    setValue("startDate", initialValues.startDate);
+    setValue("startTime", initialValues.startTime);
+    setValue("endDate", initialValues.endDate);
+    setValue("endTime", initialValues.endTime);
+  }, [initialValues, scheduleKey, setValue]);
   const [pendingConference, setPendingConference] = useState<
     GoogleEvent["conferenceData"] | null
   >(null);

@@ -1,7 +1,10 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import {
+  currentDateAtom,
+  timezoneAtom,
+} from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -21,7 +24,7 @@ import {
   type PositionedItem,
 } from "@kompose/state/collision-utils";
 import { startOfDayZoned } from "@kompose/state/temporal-utils";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   memo,
   useEffect,
@@ -30,7 +33,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
 import { Temporal } from "temporal-polyfill";
 import {
   Popover,
@@ -215,7 +217,8 @@ function toPositionedGoogleEvent(
 
 /**
  * Where "c" creates: the next half hour today, or 9 AM tomorrow once today
- * has no half hour left; otherwise 9 AM on the first visible day.
+ * has no half hour left; when today isn't shown, 9 AM on the first visible
+ * day. Never in the past.
  */
 function keyboardCreateStart(
   visibleDays: Temporal.PlainDate[],
@@ -237,9 +240,9 @@ function keyboardCreateStart(
   if (isVisible(today) && nextHalfHour < 24 * 60) {
     return at(today, nextHalfHour);
   }
-  const tomorrow = today.add({ days: 1 });
-  if (isVisible(today) && isVisible(tomorrow)) {
-    return at(tomorrow, 9 * 60);
+  // Today is over: tomorrow at 9 AM, even if the view has to move there.
+  if (isVisible(today)) {
+    return at(today.add({ days: 1 }), 9 * 60);
   }
   return at(visibleDays[0] ?? today, 9 * 60);
 }
@@ -381,16 +384,23 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   const [createEventRequested, setCreateEventRequested] = useAtom(
     createEventRequestedAtom
   );
+  const setCurrentDate = useSetAtom(currentDateAtom);
   useLayoutEffect(() => {
     const grid = scrollRef.current;
     const firstDay = visibleDays[0];
     if (!(grid && createEventRequested && firstDay)) {
       return;
     }
-    setCreateEventRequested(false);
     const start = keyboardCreateStart(visibleDays, timeZone);
+    const startDay = start.toPlainDate();
+    if (!visibleDays.some((day) => day.equals(startDay))) {
+      // Show that day first; the request stays and runs once it's visible.
+      setCurrentDate(startDay);
+      return;
+    }
+    setCreateEventRequested(false);
+    // createAt explains in a toast when there's no calendar to create in.
     if (!actions.createAt(start)) {
-      toast("Connect a Google calendar in Settings to create events.");
       return;
     }
     grid.scrollTop = Math.max(
@@ -401,6 +411,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     actions,
     createEventRequested,
     setCreateEventRequested,
+    setCurrentDate,
     timeZone,
     visibleDays,
   ]);

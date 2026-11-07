@@ -183,7 +183,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       <div
         className={cn(
           "event-surface h-full overflow-hidden rounded-[5px] pr-1.5 pl-2",
-          durationMinutes < 30 ? "py-0" : "py-1",
+          Math.min(
+            durationMinutes,
+            layout?.uncoveredMinutes ?? durationMinutes
+          ) < 30
+            ? "py-0"
+            : "py-1",
           isEditable ? "" : "pr-5"
         )}
         style={eventColorStyle}
@@ -195,6 +200,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           shownStart={shownStart}
           start={start}
           title={event.summary || "(No title)"}
+          uncoveredMinutes={layout?.uncoveredMinutes}
         />
         {!isEditable && editBlockedReason ? (
           <Tooltip>
@@ -238,9 +244,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       calendarId={calendarId}
       end={zonedDateTimeToDate(end)}
       event={event}
-      // Moving or resizing the event remounts its editor closed, so an open
-      // editor can't save the old times over the new ones.
-      key={`${shownStart.toString()}-${shownEnd.toString()}`}
       readOnly={!isEditable}
       readOnlyReason={editBlockedReason}
       start={zonedDateTimeToDate(start)}

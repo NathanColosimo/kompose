@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  googleAccountsDataAtom,
   googleCalendarsDataAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
@@ -14,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { Temporal } from "temporal-polyfill";
 import { isSameDay } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
@@ -88,6 +90,17 @@ export function useEventCreation(): EventCreationContextValue {
 export function useEventCreationState(): EventCreationContextValue {
   const visibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const allCalendars = useAtomValue(googleCalendarsDataAtom);
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  // Says why there's nowhere to create an event, rather than nothing happening.
+  const explainNoCalendar = useCallback(() => {
+    if (googleAccounts.length === 0) {
+      toast("Connect a Google calendar in Settings to create events.");
+    } else if (allCalendars.length === 0) {
+      toast("Your calendars are still loading.");
+    } else {
+      toast("Show a calendar from the Calendars menu to create events.");
+    }
+  }, [allCalendars.length, googleAccounts.length]);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
@@ -193,6 +206,7 @@ export function useEventCreationState(): EventCreationContextValue {
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
+        explainNoCalendar();
         return;
       }
       documentListenerCleanupRef.current?.();
@@ -272,12 +286,13 @@ export function useEventCreationState(): EventCreationContextValue {
         documentListenerCleanupRef.current = null;
       };
     },
-    [defaultCalendar, onSlotDragMove, onSlotMouseUp]
+    [defaultCalendar, explainNoCalendar, onSlotDragMove, onSlotMouseUp]
   );
 
   const createAt = useCallback(
     (start: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
+        explainNoCalendar();
         return false;
       }
       documentListenerCleanupRef.current?.();
@@ -294,7 +309,7 @@ export function useEventCreationState(): EventCreationContextValue {
       }));
       return true;
     },
-    [defaultCalendar]
+    [defaultCalendar, explainNoCalendar]
   );
 
   const cancelCreation = useCallback(() => {

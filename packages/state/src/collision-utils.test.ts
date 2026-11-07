@@ -78,6 +78,18 @@ describe("calculateCollisionLayout", () => {
     });
   });
 
+  test("reports how much of an item shows above the group drawn on it", () => {
+    const layout = calculateCollisionLayout([
+      item("roadmap", at(10), at(11)),
+      item("prep", at(10, 15), at(10, 45)),
+      item("vendor", at(10, 30), at(11, 15)),
+    ]);
+    // Vendor call starts a deeper group at 10:30, on top of both.
+    expect(layout.get("roadmap")?.uncoveredMinutes).toBe(30);
+    expect(layout.get("prep")?.uncoveredMinutes).toBe(15);
+    expect(layout.get("vendor")?.uncoveredMinutes).toBe(45);
+  });
+
   test("draws later starts on top", () => {
     const layout = calculateCollisionLayout([
       item("late", at(10), at(11)),
@@ -128,6 +140,7 @@ describe("calculateCollisionLayout", () => {
       columnSpan: 1,
       stackDepth: 0,
       totalColumns: 1,
+      uncoveredMinutes: 30,
       zIndex: 1,
     });
   });

@@ -95,7 +95,12 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
       <div
         className={cn(
           "event-surface h-full overflow-hidden rounded-[5px] pr-1.5 pl-2",
-          durationMinutes < 30 ? "py-0" : "py-1"
+          Math.min(
+            durationMinutes,
+            layout?.uncoveredMinutes ?? durationMinutes
+          ) < 30
+            ? "py-0"
+            : "py-1"
         )}
         style={WORKOUT_COLOR}
       >
@@ -116,6 +121,7 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
           shownStart={workoutStart}
           start={clampedStart}
           title={label}
+          uncoveredMinutes={layout?.uncoveredMinutes}
         />
       </div>
     </div>

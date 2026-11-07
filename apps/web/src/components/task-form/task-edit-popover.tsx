@@ -26,9 +26,11 @@ import { useAtom } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
+  Check,
   Link2,
   Loader2,
   Trash2,
+  Undo2,
   X,
   XCircle,
 } from "lucide-react";
@@ -36,12 +38,18 @@ import Image from "next/image";
 import {
   type ReactElement,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  type UseFormSetValue,
+  useForm,
+  useWatch,
+} from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
@@ -280,6 +288,60 @@ export function TaskEditPopover({
   );
 }
 
+/**
+ * A move or resize while the editor is open updates its times, keeping any
+ * other unsaved edits, so Save can't write the old times back.
+ */
+function useSyncedSchedule(
+  task: TaskSelectDecoded | undefined,
+  setValue: UseFormSetValue<TaskFormValues>
+) {
+  const scheduleKey = task
+    ? `${task.startDate}|${task.startTime}|${task.durationMinutes}`
+    : "";
+  const lastScheduleKeyRef = useRef(scheduleKey);
+  useEffect(() => {
+    if (!task || scheduleKey === lastScheduleKeyRef.current) {
+      return;
+    }
+    lastScheduleKeyRef.current = scheduleKey;
+    setValue("startDate", task.startDate ?? null);
+    setValue("startTime", task.startTime ?? null);
+    setValue("durationMinutes", task.durationMinutes);
+  }, [scheduleKey, setValue, task]);
+}
+
+/** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
+function TaskDoneButton({
+  onDone,
+  task,
+}: {
+  onDone: () => void;
+  task: TaskSelectDecoded;
+}) {
+  const { updateTask } = useTasks();
+  const isDone = task.status === "done";
+  return (
+    <Button
+      className="gap-1.5"
+      onClick={() => {
+        updateTask.mutate({
+          id: task.id,
+          scope: "this",
+          task: { status: isDone ? "todo" : "done" },
+        });
+        onDone();
+      }}
+      size="sm"
+      type="button"
+      variant="outline"
+    >
+      {isDone ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
+      {isDone ? "Not done" : "Done"}
+    </Button>
+  );
+}
+
 export function TaskEditForm({
   task,
   initialValues: initialCreateValues,
@@ -373,6 +435,8 @@ export function TaskEditForm({
     useForm<TaskFormValues>({
       defaultValues: resolvedInitialValues,
     });
+
+  useSyncedSchedule(task, setValue);
 
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
@@ -833,6 +897,9 @@ export function TaskEditForm({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+            )}
+            {isCreateMode || !task ? null : (
+              <TaskDoneButton onDone={onClose} task={task} />
             )}
             <div className="ml-auto flex gap-2">
               <Button onClick={onClose} size="sm" type="button" variant="ghost">

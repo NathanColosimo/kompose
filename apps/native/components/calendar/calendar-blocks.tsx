@@ -67,6 +67,11 @@ interface BlockPosition {
   stackDepth?: number;
   top: number;
   totalColumns?: number;
+  /**
+   * Minutes before a later item is drawn over this one (ItemLayout); the
+   * text fits that part, top-aligned, so it isn't cut off mid-line.
+   */
+  uncoveredMinutes?: number;
   zIndex?: number;
 }
 
@@ -226,11 +231,14 @@ function useEventSurface(color: string | undefined) {
 function Surface({
   children,
   compact = false,
+  covered = false,
   surface,
 }: {
   children: ReactNode;
   /** Center one line vertically, for short blocks and the all-day row. */
   compact?: boolean;
+  /** Something is drawn over the block's lower part: keep text at the top. */
+  covered?: boolean;
   surface: ReturnType<typeof useEventSurface>;
 }) {
   return (
@@ -244,7 +252,7 @@ function Surface({
     >
       <View style={{ backgroundColor: surface.bar, width: 3 }} />
       <View
-        className={`min-w-0 flex-1 px-1.5 ${compact ? "justify-center" : "py-1"}`}
+        className={`min-w-0 flex-1 px-1.5 ${compact && !covered ? "justify-center" : ""} ${compact && covered ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
       >
         {children}
       </View>
@@ -272,6 +280,7 @@ export function EventBlock({
   title,
   ...position
 }: EventBlockProps) {
+  const textMinutes = Math.min(minutes, position.uncoveredMinutes ?? minutes);
   const surface = useEventSurface(color);
   const placement = positionStyle(position);
   return (
@@ -292,11 +301,15 @@ export function EventBlock({
     >
       {/* The block itself takes the touch, so locationY is from its top. */}
       <View className="h-full" pointerEvents="none">
-        <Surface compact={minutes < COMPACT_MINUTES} surface={surface}>
+        <Surface
+          compact={textMinutes < COMPACT_MINUTES}
+          covered={textMinutes < minutes}
+          surface={surface}
+        >
           <BlockText
             details={details}
             end={end}
-            minutes={minutes}
+            minutes={textMinutes}
             narrow={placement.width < NARROW_BLOCK_PT}
             start={start}
             title={title}
@@ -326,7 +339,9 @@ export function TaskBlock({
   title,
   ...position
 }: TaskBlockProps) {
-  const compact = minutes < COMPACT_MINUTES;
+  const textMinutes = Math.min(minutes, position.uncoveredMinutes ?? minutes);
+  const compact = textMinutes < COMPACT_MINUTES;
+  const isCovered = textMinutes < minutes;
   const placement = positionStyle(position);
   const bodyTopRef = useRef(0);
   const narrow = placement.width < NARROW_BLOCK_PT;
@@ -346,7 +361,7 @@ export function TaskBlock({
       style={placement}
     >
       <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact ? "items-center" : "py-1"}`}
+        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
       >
         {/* Narrow blocks give the checkbox's room to the title; done is in
             the editor and the long-press menu. */}
@@ -392,7 +407,7 @@ export function TaskBlock({
             <BlockText
               details={details}
               end={end}
-              minutes={minutes}
+              minutes={textMinutes}
               narrow={narrow}
               start={start}
               struck={done}

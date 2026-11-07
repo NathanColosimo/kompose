@@ -35,6 +35,11 @@ interface BlockContentProps {
   /** Done tasks: muted and struck through. */
   struck?: boolean;
   title: string;
+  /**
+   * Minutes before a later item is drawn over this one (ItemLayout). The
+   * text fits that part, top-aligned, so it isn't cut off mid-line.
+   */
+  uncoveredMinutes?: number;
 }
 
 /** `leading` (a task's checkbox), left out of narrow blocks for the title. */
@@ -70,8 +75,11 @@ export function BlockContent({
   start,
   struck = false,
   title,
+  uncoveredMinutes,
 }: BlockContentProps) {
-  const minutes = Math.round(end.since(start).total({ unit: "minutes" }));
+  const drawnMinutes = Math.round(end.since(start).total({ unit: "minutes" }));
+  const minutes = Math.min(drawnMinutes, uncoveredMinutes ?? drawnMinutes);
+  const isCovered = minutes < drawnMinutes;
   const titleClass = cn(
     "min-w-0 font-medium text-xs leading-4",
     struck ? "text-muted-foreground line-through" : ""
@@ -79,7 +87,12 @@ export function BlockContent({
 
   if (minutes < 30) {
     return (
-      <div className="@container flex h-full min-w-0 items-center gap-1.5">
+      <div
+        className={cn(
+          "@container flex min-w-0 gap-1.5",
+          isCovered ? "items-start pt-px" : "h-full items-center"
+        )}
+      >
         {narrowHidden(leading)}
         {/* One visible line: the time wraps onto a hidden second line when
             it doesn't fit beside the whole title, so the title wins. */}
@@ -136,7 +149,7 @@ export function BlockContent({
             titleClass,
             // Hyphenate where the browser can; otherwise break a word that
             // can't fit rather than clip it.
-            "hyphens-auto [overflow-wrap:break-word]",
+            "hyphens-auto [hyphenate-limit-chars:5_2_2] [overflow-wrap:break-word]",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
