@@ -52,6 +52,7 @@ import {
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
+import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 import {
   AlertDialog,
@@ -94,6 +95,7 @@ import {
   formatPlainDate,
   formatTimeString,
   pickerDateToTemporal,
+  temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import type {
@@ -1465,9 +1467,12 @@ export function EventEditForm({
   });
 
   const isAllDay = Boolean(event?.start?.date);
+  // All-day dates go to the pickers as local dates. (new Date("2026-11-12")
+  // is UTC midnight, which is the day before west of UTC, and saving would
+  // then move the event a day earlier.)
   const initialStartDate = useMemo(() => {
     if (isAllDay && event?.start?.date) {
-      return new Date(event.start.date);
+      return temporalToPickerDate(Temporal.PlainDate.from(event.start.date));
     }
     return start;
   }, [event?.start?.date, isAllDay, start]);
@@ -1475,12 +1480,8 @@ export function EventEditForm({
   const initialEndDate = useMemo(() => {
     if (isAllDay && event?.end?.date) {
       // Google all-day events use exclusive end date, subtract 1 day for display
-      const endPlainDate = pickerDateToTemporal(new Date(event.end.date));
-      const adjustedDate = endPlainDate.subtract({ days: 1 });
-      return new Date(
-        adjustedDate.year,
-        adjustedDate.month - 1,
-        adjustedDate.day
+      return temporalToPickerDate(
+        Temporal.PlainDate.from(event.end.date).subtract({ days: 1 })
       );
     }
     return end;

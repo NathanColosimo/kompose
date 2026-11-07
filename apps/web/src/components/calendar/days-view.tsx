@@ -2,6 +2,10 @@
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import {
+  getGoogleEventEditBlockReason,
+  isGoogleEventEditable,
+} from "@kompose/google-cal/schema";
+import {
   currentDateAtom,
   timezoneAtom,
 } from "@kompose/state/atoms/current-date";
@@ -966,11 +970,15 @@ function AllDayEventChip({
     palette: normalizedPalette?.event,
   });
 
-  const endDate =
-    item.event.end.date && item.event.end.date !== item.date.toString()
-      ? Temporal.PlainDate.from(item.event.end.date)
-      : item.date.add({ days: 1 });
-  const startZdt = startOfDayZoned(item.date, timeZone);
+  // The whole event's dates, not the drawn day, so opening a multi-day
+  // event from a later day can't save it shorter.
+  const startDate = item.event.start.date
+    ? Temporal.PlainDate.from(item.event.start.date)
+    : item.date;
+  const endDate = item.event.end.date
+    ? Temporal.PlainDate.from(item.event.end.date)
+    : startDate.add({ days: 1 });
+  const startZdt = startOfDayZoned(startDate, timeZone);
   const endZdt = startOfDayZoned(endDate, timeZone);
 
   return (
@@ -979,6 +987,8 @@ function AllDayEventChip({
       calendarId={item.calendarId}
       end={zonedDateTimeToDate(endZdt)}
       event={item.event}
+      readOnly={!isGoogleEventEditable(item.event)}
+      readOnlyReason={getGoogleEventEditBlockReason(item.event)}
       start={zonedDateTimeToDate(startZdt)}
     >
       <button

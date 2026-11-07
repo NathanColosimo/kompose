@@ -359,7 +359,7 @@ export function TaskEditForm({
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
-  const pendingStatusRef = useRef<(() => void) | null>(null);
+  const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -442,31 +442,37 @@ export function TaskEditForm({
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
 
+  /** Saves the edits; resolves to the saved tasks (none on failure, which the mutation reports). */
   const commitUpdate = useCallback(
-    (values: TaskFormValues, scope: UpdateScope) => {
+    (
+      values: TaskFormValues,
+      scope: UpdateScope
+    ): Promise<TaskSelectDecoded[]> => {
       if (!task) {
-        return;
+        return Promise.resolve([]);
       }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
 
-      updateTask.mutate({
-        id: task.id,
-        scope,
-        task: {
-          description: values.description ?? "",
-          dueDate: values.dueDate,
-          durationMinutes: normalizedDuration,
-          links: values.links,
-          recurrence: values.recurrence,
-          startDate: values.startDate,
-          startTime: values.startTime,
-          tagIds: values.tagIds,
-          title: values.title.trim(),
-        },
-      });
+      return updateTask
+        .mutateAsync({
+          id: task.id,
+          scope,
+          task: {
+            description: values.description ?? "",
+            dueDate: values.dueDate,
+            durationMinutes: normalizedDuration,
+            links: values.links,
+            recurrence: values.recurrence,
+            startDate: values.startDate,
+            startTime: values.startTime,
+            tagIds: values.tagIds,
+            title: values.title.trim(),
+          },
+        })
+        .catch(() => []);
     },
     [task, updateTask]
   );
@@ -545,13 +551,11 @@ export function TaskEditForm({
       return;
     }
     const status = task.status === "done" ? "todo" : "done";
-    const setStatus = () =>
-      updateTask.mutate({ id: task.id, scope: "this", task: { status } });
     if (isDirty && !submit(getValues())) {
-      pendingStatusRef.current = setStatus;
+      pendingStatusRef.current = status;
       return;
     }
-    setStatus();
+    updateTask.mutate({ id: task.id, scope: "this", task: { status } });
     onClose();
   }, [getValues, isDirty, onClose, submit, task, updateTask]);
 
@@ -941,8 +945,29 @@ export function TaskEditForm({
             if (!pendingUpdate) {
               return;
             }
-            commitUpdate(pendingUpdate, tagScope);
-            pendingStatusRef.current?.();
+            const status = pendingStatusRef.current;
+            const saved = commitUpdate(pendingUpdate, tagScope);
+            if (status && task) {
+              // "This and following" can replace occurrences with new ids,
+              // so the status goes on after the save, to this occurrence or
+              // the one that replaced it.
+              saved.then((updated) => {
+                const target =
+                  updated.find((other) => other.id === task.id) ??
+                  updated.find((other) =>
+                    [task.startDate, pendingUpdate.startDate].some(
+                      (date) => date && other.startDate?.equals(date)
+                    )
+                  );
+                if (target) {
+                  updateTask.mutate({
+                    id: target.id,
+                    scope: "this",
+                    task: { status },
+                  });
+                }
+              });
+            }
             pendingUpdateRef.current = null;
             pendingStatusRef.current = null;
             onClose();

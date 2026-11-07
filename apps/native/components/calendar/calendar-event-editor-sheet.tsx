@@ -1,5 +1,8 @@
 import type { LocationSuggestion } from "@kompose/api/routers/maps/contract";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import {
+  type Event as GoogleEvent,
+  getGoogleEventEditBlockReason,
+} from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
@@ -24,7 +27,15 @@ import {
   type MeetingLink,
 } from "@kompose/state/meeting";
 import { useAtomValue } from "jotai";
-import { Check, MapPin, Repeat2, Trash2, Video, X } from "lucide-react-native";
+import {
+  Check,
+  Lock,
+  MapPin,
+  Repeat2,
+  Trash2,
+  Video,
+  X,
+} from "lucide-react-native";
 import React from "react";
 import { type UseFormSetValue, useForm } from "react-hook-form";
 import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
@@ -351,6 +362,40 @@ function EventMeetingButton({
       <Icon as={Video} className="text-foreground" size={14} />
       <Text>Add Meet</Text>
     </Button>
+  );
+}
+
+/**
+ * Locked, Gmail, and birthday events can't be changed (Google rejects it),
+ * so their sheet shows why, with no Save or Delete.
+ */
+function readOnlyReasonFor(draft: EventDraft): string | null {
+  return draft.mode === "edit" && draft.sourceEvent
+    ? getGoogleEventEditBlockReason(draft.sourceEvent)
+    : null;
+}
+
+/** The sheet's fields, shown dimmed and inert under the reason when read-only. */
+function ReadOnlyBody({
+  children,
+  reason,
+}: {
+  children: React.ReactNode;
+  reason: string | null;
+}) {
+  if (!reason) {
+    return <>{children}</>;
+  }
+  return (
+    <>
+      <View className="mb-3 flex-row items-center gap-2 rounded-lg bg-muted px-3 py-2.5">
+        <Icon as={Lock} className="text-muted-foreground" size={14} />
+        <Text className="flex-1 text-muted-foreground text-sm">{reason}</Text>
+      </View>
+      <View className="opacity-70" pointerEvents="none">
+        {children}
+      </View>
+    </>
   );
 }
 
@@ -805,8 +850,9 @@ export function EventEditorSheet({
 
   const { summary, description, location, recurrence, allDay } = values;
 
-  const canSubmit = summary.trim().length > 0;
   const isCreateMode = draft.mode === "create";
+  const readOnlyReason = readOnlyReasonFor(draft);
+  const canSubmit = summary.trim().length > 0 && readOnlyReason === null;
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
 
@@ -946,7 +992,9 @@ export function EventEditorSheet({
       canSubmit={canSubmit}
       onDelete={draft.mode === "edit" ? handleDelete : undefined}
       onSubmit={handleSheetSubmit}
-      showDelete={draft.mode === "edit" && Boolean(onDelete)}
+      showDelete={
+        draft.mode === "edit" && Boolean(onDelete) && readOnlyReason === null
+      }
       submitLabel={submitLabel}
     />
   );
@@ -957,95 +1005,97 @@ export function EventEditorSheet({
       isVisible
       onClose={onClose}
       snapPoints={[0.84, 0.95, 0.99]}
-      title={sheetTitle}
+      title={readOnlyReason ? "Event" : sheetTitle}
     >
-      <EventDateTimeRow
-        allDay={allDay}
-        canEditRecurrence={canEditRecurrence}
-        endDate={endDate}
-        endDatePickerValue={endDatePickerValue}
-        endTimePickerValue={endTimePickerValue}
-        isRecurrenceExpanded={isRecurrenceExpanded}
-        onToggleRecurrence={() =>
-          setIsRecurrenceExpanded((current) => !current)
-        }
-        setValue={setValue}
-        startDate={startDate}
-        startDatePickerValue={startDatePickerValue}
-        startTimePickerValue={startTimePickerValue}
-      />
-
-      {recurrenceEditor}
-
-      <View className="mb-2.5 flex-row items-center gap-2">
-        <EventColorPicker
-          borderColor={borderColor}
-          colorEntries={colorEntries}
-          onSelectColor={(colorKey) =>
-            setValue("colorId", colorKey, { shouldDirty: true })
+      <ReadOnlyBody reason={readOnlyReason}>
+        <EventDateTimeRow
+          allDay={allDay}
+          canEditRecurrence={canEditRecurrence}
+          endDate={endDate}
+          endDatePickerValue={endDatePickerValue}
+          endTimePickerValue={endTimePickerValue}
+          isRecurrenceExpanded={isRecurrenceExpanded}
+          onToggleRecurrence={() =>
+            setIsRecurrenceExpanded((current) => !current)
           }
-          selectedColorBackground={selectedColorBackground}
-          selectedColorBorder={selectedColorBorder}
-          selectedColorId={values.colorId ?? null}
+          setValue={setValue}
+          startDate={startDate}
+          startDatePickerValue={startDatePickerValue}
+          startTimePickerValue={startTimePickerValue}
         />
 
-        <Input
-          containerStyle={{ flex: 1 }}
-          onChangeText={(value) =>
-            setValue("summary", value, { shouldDirty: true })
+        {recurrenceEditor}
+
+        <View className="mb-2.5 flex-row items-center gap-2">
+          <EventColorPicker
+            borderColor={borderColor}
+            colorEntries={colorEntries}
+            onSelectColor={(colorKey) =>
+              setValue("colorId", colorKey, { shouldDirty: true })
+            }
+            selectedColorBackground={selectedColorBackground}
+            selectedColorBorder={selectedColorBorder}
+            selectedColorId={values.colorId ?? null}
+          />
+
+          <Input
+            containerStyle={{ flex: 1 }}
+            onChangeText={(value) =>
+              setValue("summary", value, { shouldDirty: true })
+            }
+            placeholder="Title"
+            value={summary}
+            variant="outline"
+          />
+        </View>
+
+        <EventAllDayAndMeetingRow
+          allDay={allDay}
+          isConferencePending={isConferencePending}
+          meetingLink={meetingLink}
+          mutedColor={mutedColor}
+          onAddMeeting={() =>
+            setValue("conferenceData", buildGoogleMeetConferenceData(), {
+              shouldDirty: true,
+            })
           }
-          placeholder="Title"
-          value={summary}
+          onToggleAllDay={(nextValue) =>
+            setValue("allDay", nextValue, { shouldDirty: true })
+          }
+        />
+
+        <EventLocationInput
+          location={location}
+          locationSuggestions={locationSuggestions}
+          mapsUrl={mapsUrl}
+          onLocationChange={(value) => {
+            setValue("location", value, { shouldDirty: true });
+          }}
+          onSuggestionClose={() => setIsLocationSuggestionsOpen(false)}
+          onSuggestionOpen={() => setIsLocationSuggestionsOpen(true)}
+          showLocationSuggestions={showLocationSuggestions}
+        />
+
+        <Textarea
+          containerStyle={{ marginBottom: 10 }}
+          onChangeText={(value) =>
+            setValue("description", value, { shouldDirty: true })
+          }
+          placeholder="Description"
+          value={description}
           variant="outline"
         />
-      </View>
 
-      <EventAllDayAndMeetingRow
-        allDay={allDay}
-        isConferencePending={isConferencePending}
-        meetingLink={meetingLink}
-        mutedColor={mutedColor}
-        onAddMeeting={() =>
-          setValue("conferenceData", buildGoogleMeetConferenceData(), {
-            shouldDirty: true,
-          })
-        }
-        onToggleAllDay={(nextValue) =>
-          setValue("allDay", nextValue, { shouldDirty: true })
-        }
-      />
-
-      <EventLocationInput
-        location={location}
-        locationSuggestions={locationSuggestions}
-        mapsUrl={mapsUrl}
-        onLocationChange={(value) => {
-          setValue("location", value, { shouldDirty: true });
-        }}
-        onSuggestionClose={() => setIsLocationSuggestionsOpen(false)}
-        onSuggestionOpen={() => setIsLocationSuggestionsOpen(true)}
-        showLocationSuggestions={showLocationSuggestions}
-      />
-
-      <Textarea
-        containerStyle={{ marginBottom: 10 }}
-        onChangeText={(value) =>
-          setValue("description", value, { shouldDirty: true })
-        }
-        placeholder="Description"
-        value={description}
-        variant="outline"
-      />
-
-      <Picker
-        modalTitle="Select calendar"
-        onValueChange={handleCalendarChange}
-        options={calendarPickerOptions}
-        placeholder="Select calendar"
-        style={{ marginBottom: 10 }}
-        value={selectedCalendarValue}
-        variant="outline"
-      />
+        <Picker
+          modalTitle="Select calendar"
+          onValueChange={handleCalendarChange}
+          options={calendarPickerOptions}
+          placeholder="Select calendar"
+          style={{ marginBottom: 10 }}
+          value={selectedCalendarValue}
+          variant="outline"
+        />
+      </ReadOnlyBody>
     </BottomSheet>
   );
 }
