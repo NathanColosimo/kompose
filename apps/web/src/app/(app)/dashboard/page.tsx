@@ -154,6 +154,10 @@ function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
   const visibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
   const [open, setOpen] = useState(false);
+  const visibleMonths = monthYearFormat.formatRange(
+    temporalToPickerDate(currentDate),
+    temporalToPickerDate(currentDate.add({ days: visibleDaysCount - 1 }))
+  );
 
   const selectedDate = temporalToPickerDate(currentDate);
   // react-day-picker's dropdown stops at the end of the current year by default.
@@ -175,17 +179,12 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="min-w-0 gap-1.5 px-2 font-medium text-base"
+          className="min-w-0 shrink gap-1.5 px-2 font-medium text-base"
           size="lg"
           variant="ghost"
         >
-          <span className="truncate">
-            {monthYearFormat.formatRange(
-              selectedDate,
-              temporalToPickerDate(
-                currentDate.add({ days: visibleDaysCount - 1 })
-              )
-            )}
+          <span className="truncate" title={visibleMonths}>
+            {visibleMonths}
           </span>
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>

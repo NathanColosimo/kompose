@@ -65,7 +65,9 @@ export const DayHeader = memo(function DayHeaderInner({
         <span
           className={cn(
             "flex size-7 items-center justify-center rounded-full font-medium text-sm tabular-nums",
-            isTodayHighlight ? "bg-primary text-primary-foreground" : ""
+            isTodayHighlight
+              ? "bg-primary text-primary-foreground dark:bg-foreground/15 dark:text-foreground"
+              : ""
           )}
         >
           {date.day}

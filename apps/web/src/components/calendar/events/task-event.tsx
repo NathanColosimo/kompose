@@ -143,7 +143,7 @@ export const TaskEvent = memo(function TaskEventInner({
         {...attributes}
         {...listeners}
       >
-        <div className="h-full rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)]">
+        <div className="h-full rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10">
           <div
             className={cn(
               "flex h-full gap-1",
@@ -211,7 +211,7 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
     >
       <div
         className={cn(
-          "rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)]",
+          "rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10",
           isShortTask ? "flex h-full items-center px-1.5 py-0" : ""
         )}
       >
