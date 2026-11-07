@@ -247,6 +247,15 @@ function buildCreateTaskDraftFromSlot(
   };
 }
 
+/** A block's height: at least a 15-minute slot, less the gap between blocks. */
+function blockHeight(minutes: number): number {
+  const height = Math.max(
+    (Math.max(minutes, MINUTES_STEP) / 60) * PIXELS_PER_HOUR,
+    24
+  );
+  return Math.max(height - EVENT_BLOCK_INSET_PX, 20);
+}
+
 /** WHOOP workouts use one teal, matching the web's --whoop-workout. */
 const WORKOUT_COLOR = {
   dark: "hsl(176, 45%, 50%)",
@@ -313,7 +322,7 @@ function recoveryColor(score: number): string {
   return score >= 34 ? "bg-amber-400" : "bg-red-500";
 }
 
-/** Recovery and strain under a day's date; sleep hours when there's room. */
+/** Recovery and strain under a day's date. */
 function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
   if (!(summary && hasWhoopStats(summary))) {
     // Keep every header the same height.
@@ -329,8 +338,8 @@ function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
   ].filter(Boolean);
   return (
     <View
-      accessibilityLabel={parts.join(", ")}
-      accessible
+      accessibilityLabel={parts.length > 0 ? parts.join(", ") : undefined}
+      accessible={parts.length > 0}
       className="h-3.5 flex-row items-center gap-2"
     >
       {summary.recoveryScore === null ? null : (
@@ -487,6 +496,15 @@ export default function CalendarTab() {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
+  // "Nov", or "Oct – Nov" when the visible days cross a month.
+  const firstMonth = visibleDays[0]?.toLocaleString(undefined, {
+    month: "short",
+  });
+  const lastMonth = visibleDays.at(-1)?.toLocaleString(undefined, {
+    month: "short",
+  });
+  const gutterMonths =
+    firstMonth === lastMonth ? firstMonth : `${firstMonth} – ${lastMonth}`;
   const showWhoopRow = visibleDays.some((day) =>
     hasWhoopStats(whoopSummaries.get(day.toString()))
   );
@@ -1285,7 +1303,7 @@ export default function CalendarTab() {
               style={{ width: TIME_GUTTER_WIDTH_PX }}
             >
               <Text className="text-[11px] text-muted-foreground">
-                {visibleDays[0]?.toLocaleString(undefined, { month: "short" })}
+                {gutterMonths}
               </Text>
             </View>
             <View className="flex-1 flex-row">
@@ -1439,15 +1457,8 @@ export default function CalendarTab() {
                           )
                         );
                         const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const height = Math.max(
-                          (durationMinutes / 60) * PIXELS_PER_HOUR,
-                          24
-                        );
                         const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = Math.max(
-                          height - EVENT_BLOCK_INSET_PX,
-                          20
-                        );
+                        const adjustedHeight = blockHeight(durationMinutes);
 
                         return (
                           <TimedGoogleEventBlock
@@ -1493,12 +1504,7 @@ export default function CalendarTab() {
                                   ]
                             }
                             end={workout.end}
-                            height={Math.max(
-                              (Math.max(minutes, MINUTES_STEP) / 60) *
-                                PIXELS_PER_HOUR -
-                                EVENT_BLOCK_INSET_PX,
-                              20
-                            )}
+                            height={blockHeight(minutes)}
                             key={workout.id}
                             minutes={minutes}
                             start={workout.start}
@@ -1530,15 +1536,8 @@ export default function CalendarTab() {
                           task.durationMinutes
                         );
                         const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const height = Math.max(
-                          (durationMinutes / 60) * PIXELS_PER_HOUR,
-                          24
-                        );
                         const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = Math.max(
-                          height - EVENT_BLOCK_INSET_PX,
-                          20
-                        );
+                        const adjustedHeight = blockHeight(durationMinutes);
 
                         const end = start.add({ minutes: durationMinutes });
 

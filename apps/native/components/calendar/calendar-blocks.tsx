@@ -1,8 +1,9 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { extractMeetingLink } from "@kompose/state/meeting";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, View } from "react-native";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
@@ -17,6 +18,8 @@ const TITLE_ONLY_MINUTES = 45;
 const DETAILS_MINUTES = 60;
 /** Blocks at least this long let the title wrap to two lines. */
 const TWO_LINE_TITLE_MINUTES = 90;
+/** Short blocks show their start time beside the title from this width up. */
+const INLINE_TIME_MIN_WIDTH = 96;
 /** Blocks shorter than this center one line with no vertical padding. */
 const COMPACT_MINUTES = 30;
 
@@ -39,29 +42,6 @@ function describeBlock(
     formatTimeRange(start, end),
     ...details.map((d) => d.label),
   ].join(", ");
-}
-
-/** A compact time, "9", "9:30", with the meridiem added by the caller. */
-function clockTime(zdt: Temporal.ZonedDateTime): string {
-  const hour = zdt.hour % 12 || 12;
-  return zdt.minute === 0
-    ? `${hour}`
-    : `${hour}:${zdt.minute.toString().padStart(2, "0")}`;
-}
-
-const meridiem = (zdt: Temporal.ZonedDateTime) => (zdt.hour < 12 ? "am" : "pm");
-
-/** "9 – 10:30am", or "11pm – 1am" when the halves of the day differ. */
-function formatTimeRange(
-  start: Temporal.ZonedDateTime,
-  end: Temporal.ZonedDateTime
-): string {
-  const sameHalf =
-    meridiem(start) === meridiem(end) &&
-    start.toPlainDate().equals(end.toPlainDate());
-  return sameHalf
-    ? `${clockTime(start)} – ${clockTime(end)}${meridiem(end)}`
-    : `${clockTime(start)}${meridiem(start)} – ${clockTime(end)}${meridiem(end)}`;
 }
 
 /** The meeting provider, or else the place, for an event's detail line. */
@@ -124,6 +104,9 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
+  const [width, setWidth] = useState(0);
+  const showInlineTime =
+    minutes < TITLE_ONLY_MINUTES && width >= INLINE_TIME_MIN_WIDTH;
   // Until details get their own lines, keep short values in view.
   const shorts = details.flatMap(({ icon, label, short }) =>
     short
@@ -138,7 +121,10 @@ function BlockText({
       : []
   );
   return (
-    <View className="min-w-0 flex-1">
+    <View
+      className="min-w-0 flex-1"
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
       <View className="flex-row items-center gap-1">
         <Text
           className={`shrink font-sans-medium text-[11px] leading-[14px] ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
@@ -146,6 +132,14 @@ function BlockText({
         >
           {title}
         </Text>
+        {showInlineTime ? (
+          <Text className={`shrink-0 text-[10px] leading-[13px] ${meta}`}>
+            {start.toLocaleString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </Text>
+        ) : null}
         {minutes < TITLE_ONLY_MINUTES ? shorts : null}
       </View>
       {minutes >= TITLE_ONLY_MINUTES ? (

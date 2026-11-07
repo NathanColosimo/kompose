@@ -2,9 +2,18 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
-import { getSystemTimeZone } from "@kompose/state/temporal-utils";
+import {
+  formatDuration,
+  getSystemTimeZone,
+} from "@kompose/state/temporal-utils";
 import { Stack } from "expo-router/stack";
-import { CalendarDays, Clock, Plus, Tag } from "lucide-react-native";
+import {
+  CalendarClock,
+  CalendarDays,
+  Clock,
+  Plus,
+  Tag,
+} from "lucide-react-native";
 import React from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
@@ -26,16 +35,6 @@ function formatPlainDateShort(date: Temporal.PlainDate): string {
     day: "numeric",
     month: "short",
   }).format(plainDateToDate(date));
-}
-
-/** A duration for display: 30 → "30m", 90 → "1h 30m", 120 → "2h". */
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) {
-    return `${rest}m`;
-  }
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
 // Convert a plain date into a JS Date using the device's local timezone.
@@ -130,6 +129,13 @@ function TaskRow({
   today: Temporal.PlainDate;
 }) {
   const tags = item.tags.filter((tag) => tag.id !== hiddenTagId);
+  const scheduled =
+    item.startDate && item.startTime
+      ? item.startDate.toZonedDateTime({
+          plainTime: item.startTime,
+          timeZone: getSystemTimeZone(),
+        })
+      : null;
   const isDone = item.status === "done";
   const isPastDue =
     !isDone &&
@@ -163,6 +169,22 @@ function TaskRow({
               {formatDuration(item.durationMinutes)}
             </Text>
           </View>
+          {scheduled ? (
+            <View className="flex-row items-center gap-1">
+              <Icon
+                as={CalendarClock}
+                className="text-muted-foreground"
+                size={12}
+              />
+              <Text className="text-muted-foreground text-xs">
+                {scheduled.toLocaleString(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  weekday: "short",
+                })}
+              </Text>
+            </View>
+          ) : null}
           {item.dueDate ? (
             <View className="flex-row items-center gap-1">
               <Icon
@@ -255,9 +277,7 @@ function TaskList({
             >
               {item.title}
             </Text>
-            <Text className="text-muted-foreground/70 text-xs">
-              {item.count}
-            </Text>
+            <Text className="text-muted-foreground text-xs">{item.count}</Text>
           </View>
         ) : (
           <TaskRow
@@ -372,7 +392,7 @@ export default function TasksScreen() {
     emptyMessage = "Nothing planned for today.";
   } else {
     listItems = inboxTasks.map((task) => ({ task, type: "task" }));
-    emptyMessage = "Your inbox is empty.";
+    emptyMessage = "Your inbox is empty. Tap + to add a task.";
   }
 
   return (

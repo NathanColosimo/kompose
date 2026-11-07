@@ -22,6 +22,7 @@ import {
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { Image } from "expo-image";
 import {
   Check,
@@ -127,21 +128,6 @@ function formatPlainTime24(time: Temporal.PlainTime | null): string {
     return "--:--";
   }
   return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
-}
-
-function formatDurationMinutes(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-
-  if (remainder === 0) {
-    return `${hours}h`;
-  }
-
-  return `${hours}h ${remainder}m`;
 }
 
 function TaskRecurrenceEndSection({
@@ -499,7 +485,7 @@ export function TaskEditorSheet({
     DURATION_MINUTE_OPTIONS.map((minute) => {
       const totalMinutes = hour * 60 + minute;
       return {
-        label: formatDurationMinutes(totalMinutes),
+        label: formatDuration(totalMinutes),
         value: String(totalMinutes),
       };
     })

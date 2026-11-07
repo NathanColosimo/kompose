@@ -80,6 +80,13 @@ export default function SettingsScreen() {
     }
   };
 
+  let linkLabel = "Link another Google account";
+  if (isLinking) {
+    linkLabel = "Linking…";
+  } else if (googleAccountProfiles.length === 0) {
+    linkLabel = "Link a Google account";
+  }
+
   const handleSignOut = async () => {
     await authClient.signOut();
     clearAuthenticatedQueries();
@@ -97,7 +104,7 @@ export default function SettingsScreen() {
 
         {session?.user ? (
           <SettingsSection
-            description="Accounts whose calendars show in Kompose."
+            description="Events from these accounts show on your calendar."
             title="Google Calendar"
           >
             {isLoading ? (
@@ -143,9 +150,7 @@ export default function SettingsScreen() {
               <View className="size-8 items-center justify-center rounded-full border border-border border-dashed">
                 <Icon as={Plus} className="text-muted-foreground" size={15} />
               </View>
-              <Text className="text-foreground text-sm">
-                {isLinking ? "Linking…" : "Link another Google account"}
-              </Text>
+              <Text className="text-foreground text-sm">{linkLabel}</Text>
             </Pressable>
           </SettingsSection>
         ) : null}

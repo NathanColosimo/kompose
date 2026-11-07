@@ -37,16 +37,6 @@ export function formatPlainDate(
   return date.toLocaleString(undefined, options ?? { dateStyle: "medium" });
 }
 
-/** A duration for display: 30 → "30m", 90 → "1h 30m", 120 → "2h". */
-export function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) {
-    return `${rest}m`;
-  }
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
-}
-
 export function formatTime(
   zdt: Temporal.ZonedDateTime,
   options?: Intl.DateTimeFormatOptions
@@ -56,44 +46,6 @@ export function formatTime(
     minute: "2-digit",
     ...options,
   });
-}
-
-const timeRangeFormats = new Map<string, Intl.DateTimeFormat>();
-
-function timeRangeFormat(timeZone: string, onTheHour: boolean) {
-  const key = `${timeZone}|${onTheHour}`;
-  let format = timeRangeFormats.get(key);
-  if (!format) {
-    format = new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: onTheHour ? undefined : "2-digit",
-      timeZone,
-    });
-    timeRangeFormats.set(key, format);
-  }
-  return format;
-}
-
-/**
- * A compact time range in the locale's style: "10 AM – 12 PM" when both
- * ends are on the hour, else "9:00 – 9:30 AM". Times only, even when the
- * range crosses midnight ("11 PM – 7 AM").
- */
-export function formatTimeRange(
-  start: Temporal.ZonedDateTime,
-  end: Temporal.ZonedDateTime
-): string {
-  const format = timeRangeFormat(
-    start.timeZoneId,
-    start.minute === 0 && end.minute === 0
-  );
-  const startMs = start.epochMilliseconds;
-  const endMs = Math.max(end.epochMilliseconds, startMs);
-  // formatRange adds dates when the ends fall on different days.
-  if (!start.toPlainDate().equals(end.toPlainDate())) {
-    return `${format.format(startMs)} – ${format.format(endMs)}`;
-  }
-  return format.formatRange(startMs, endMs);
 }
 
 export function isSameDay(

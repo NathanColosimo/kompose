@@ -1,8 +1,6 @@
-// The web app only loads Node types; tests run under Bun.
-/// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { formatTimeRange } from "./temporal-utils";
+import { formatDuration, formatTimeRange } from "./temporal-utils";
 
 const zone = "America/New_York";
 const at = (iso: string) =>
@@ -17,7 +15,7 @@ describe("formatTimeRange", () => {
     expect(range("2026-11-07T10:00", "2026-11-07T12:00")).toBe("10 AM – 12 PM");
   });
 
-  test("shows the meridiem once within one half of the day", () => {
+  test("says the day period once within one half of the day", () => {
     expect(range("2026-11-07T09:00", "2026-11-07T09:30")).toBe(
       "9:00 – 9:30 AM"
     );
@@ -31,5 +29,17 @@ describe("formatTimeRange", () => {
     expect(range("2026-11-06T23:24", "2026-11-07T07:12")).toBe(
       "11:24 PM – 7:12 AM"
     );
+  });
+
+  test("adds dates once a range spans more than one night", () => {
+    expect(range("2026-11-06T09:00", "2026-11-08T17:00")).toBe(
+      "Nov 6 at 9 AM – Nov 8 at 5 PM"
+    );
+  });
+});
+
+describe("formatDuration", () => {
+  test("uses hours and minutes", () => {
+    expect([30, 60, 90].map(formatDuration)).toEqual(["30m", "1h", "1h 30m"]);
   });
 });

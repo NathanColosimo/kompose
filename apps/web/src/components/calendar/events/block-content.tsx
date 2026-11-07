@@ -1,7 +1,8 @@
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { formatTime, formatTimeRange } from "@/lib/temporal-utils";
+import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 
 /** Sets --event for the event-surface utility; falls back to the ink color. */

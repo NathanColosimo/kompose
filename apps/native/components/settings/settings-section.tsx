@@ -104,7 +104,7 @@ export function RowAction({
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
-      className={`rounded-md px-2.5 py-1.5 active:bg-muted ${disabled ? "opacity-50" : ""}`}
+      className={`min-w-24 items-center rounded-md px-2.5 py-1.5 active:bg-muted ${disabled ? "opacity-50" : ""}`}
       disabled={disabled}
       hitSlop={6}
       onPress={onPress}

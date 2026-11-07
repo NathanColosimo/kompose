@@ -39,7 +39,8 @@
   --muted-foreground: hsl(40 6.8182% 34.5098%);
   --accent: hsl(52 23.0769% 87.2549%);
   --accent-foreground: hsl(0 0% 18.0392%);
-  --destructive: hsl(0 72.2222% 50.5882%);
+  /* Dark enough for AA as small text on the paper background (5.1:1). */
+  --destructive: hsl(0 72% 42%);
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(41.7391 20.3540% 77.8431%);
   --input: hsl(41.7391 20.3540% 77.8431%);

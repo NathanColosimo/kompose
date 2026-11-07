@@ -2,11 +2,11 @@
 
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import { todayPlainDateAtom } from "@kompose/state/atoms/current-date";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { Activity, Moon } from "lucide-react";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { formatDuration } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 
 interface DayHeaderProps {

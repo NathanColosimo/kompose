@@ -1,11 +1,10 @@
 "use client";
 
+import { formatDuration, formatTimeRange } from "@kompose/state/temporal-utils";
 import { Moon } from "lucide-react";
 import { memo } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
-  formatDuration,
-  formatTimeRange,
   isoStringToZonedDateTime,
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
