@@ -6,7 +6,7 @@ import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
 import { useAtom, useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { AppHeader } from "@/components/app-header";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import { CalendarDndProvider } from "@/components/calendar/dnd-context";
@@ -25,11 +25,15 @@ import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   SIDEBAR_LEFT_WIDTH,
+  sidebarLeftOpenAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
 /** Its own component, so task and tag updates don't re-render the layout. */
+/** Below this width the task panel folds to its icon strip (Tailwind's md). */
+const NARROW_VIEWPORT_PX = 768;
+
 function TaskParserPreload() {
   const tasks = useAtomValue(tasksQueryAtom);
   const tags = useAtomValue(tagsQueryAtom);
@@ -100,6 +104,19 @@ export default function DashboardLayout({
     setRightSidebarOpen,
     viewportWidth,
   ]);
+
+  // Below the md breakpoint the task panel would leave the calendar about
+  // one cramped day, so it folds to its icon strip when the window narrows.
+  // Only on crossing into narrow, so the panel can still be opened there.
+  const setLeftSidebarOpen = useSetAtom(sidebarLeftOpenAtom);
+  const isNarrow = viewportWidth > 0 && viewportWidth < NARROW_VIEWPORT_PX;
+  const wasNarrowRef = useRef(false);
+  useEffect(() => {
+    if (isNarrow && !wasNarrowRef.current) {
+      setLeftSidebarOpen(false);
+    }
+    wasNarrowRef.current = isNarrow;
+  }, [isNarrow, setLeftSidebarOpen]);
 
   // When dock mode becomes available again, close overlay-only right sidebar.
   useEffect(() => {

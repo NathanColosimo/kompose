@@ -323,7 +323,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   );
   const currentDate = useAtomValue(currentDateAtom);
   const today = useAtomValue(todayPlainDateAtom);
-  const { setOpen } = useSidebar();
+  const { open, setOpen } = useSidebar();
   const { tagsQuery } = useTags();
   const dateTitle = useMemo(
     () => formatDateSidebarTitle(currentDate, today),
@@ -469,13 +469,22 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                       className="justify-center gap-0 px-0 text-muted-foreground data-[active=true]:text-sidebar-accent-foreground"
                       isActive={activeItem?.id === item.id}
                       onClick={() => {
+                        // The open list's own icon hides the panel; any
+                        // other icon shows that list.
+                        if (open && activeItem?.id === item.id) {
+                          setOpen(false);
+                          return;
+                        }
                         setActiveViewSelection(
                           getSidebarSelectionFromNavItem(item)
                         );
                         setOpen(true);
                       }}
                       tooltip={{
-                        children: item.title,
+                        children:
+                          open && activeItem?.id === item.id
+                            ? `Hide ${item.title}`
+                            : item.title,
                         hidden: false,
                       }}
                     >

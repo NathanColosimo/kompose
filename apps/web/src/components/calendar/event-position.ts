@@ -19,8 +19,11 @@ export function calculateEventPosition(
   };
 }
 
-/** Pixels per indent level, so the items underneath keep an edge in view. */
-const STACK_INDENT_PX = 12;
+/**
+ * Pixels per indent level: the edge and color bar of the item underneath
+ * stay in view, and its text (10px in from its edge) stays covered.
+ */
+const STACK_INDENT_PX = 9;
 /** Deeper levels stop indenting, so a block never gets too narrow to read. */
 const MAX_STACK_INDENT_LEVELS = 4;
 

@@ -51,10 +51,10 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       if (!hoverDate.equals(columnDate)) {
         return null;
       }
-      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
+      // The hover preview is what a click creates: from the hovered slot.
       return {
-        end: hoverDateTime.add({ minutes: halfDuration }),
-        start: hoverDateTime.subtract({ minutes: halfDuration }),
+        end: hoverDateTime.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        start: hoverDateTime,
         type: "hover" as const,
       };
     }

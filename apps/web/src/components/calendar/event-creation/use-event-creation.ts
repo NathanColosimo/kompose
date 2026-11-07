@@ -142,26 +142,28 @@ export function useEventCreationState(): EventCreationContextValue {
         return prev;
       }
 
-      // Add MINUTES_STEP to get the bottom of the slot
-      const slotEnd = dateTime.add({ minutes: MINUTES_STEP });
-
-      const isForward =
-        Temporal.ZonedDateTime.compare(slotEnd, dragStartDateTime) > 0;
-
-      if (isForward) {
-        // Dragging forward: original start stays, end moves
+      // The range covers every slot dragged over, including the pressed one.
+      const order = Temporal.ZonedDateTime.compare(dateTime, dragStartDateTime);
+      if (order === 0) {
+        // Still on the pressed slot: what a click would create.
         return {
           ...prev,
-          endDateTime: slotEnd,
+          endDateTime: dragStartDateTime.add({
+            minutes: DEFAULT_EVENT_DURATION_MINUTES,
+          }),
           startDateTime: dragStartDateTime,
         };
       }
-      // Dragging backward: start moves, original drag range stays anchored.
+      if (order > 0) {
+        return {
+          ...prev,
+          endDateTime: dateTime.add({ minutes: MINUTES_STEP }),
+          startDateTime: dragStartDateTime,
+        };
+      }
       return {
         ...prev,
-        endDateTime: dragStartDateTime.add({
-          minutes: DEFAULT_EVENT_DURATION_MINUTES,
-        }),
+        endDateTime: dragStartDateTime.add({ minutes: MINUTES_STEP }),
         startDateTime: dateTime,
       };
     });
@@ -181,8 +183,8 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Center the initial range on the cursor. The move and up listeners go on
-  // the document so the drag continues while the cursor crosses existing events.
+  // Start at the pressed slot. The move and up listeners go on the document
+  // so the drag continues while the cursor crosses existing events.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
@@ -190,21 +192,19 @@ export function useEventCreationState(): EventCreationContextValue {
       }
       documentListenerCleanupRef.current?.();
 
-      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
-      const centeredStart = dateTime.subtract({ minutes: halfDuration });
-      startDateTimeRef.current = centeredStart;
+      startDateTimeRef.current = dateTime;
 
       setState((prev) => ({
         ...prev,
         accountId: defaultCalendar.accountId,
         calendarId: defaultCalendar.calendarId,
-        endDateTime: centeredStart.add({
+        endDateTime: dateTime.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
         hoverDateTime: null,
         isCreating: true,
         showPopover: false,
-        startDateTime: centeredStart,
+        startDateTime: dateTime,
       }));
 
       const handleDocumentMouseMove = (e: MouseEvent) => {
@@ -233,7 +233,7 @@ export function useEventCreationState(): EventCreationContextValue {
         );
         const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
         const snappedMinutes =
-          Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+          Math.floor(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
         const clampedMinutes = Math.min(
           Math.max(snappedMinutes, 0),
           24 * 60 - MINUTES_STEP

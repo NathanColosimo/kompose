@@ -172,8 +172,9 @@ function formatHourLabel(hour: number): string {
   return time.toLocaleString(undefined, { hour: "numeric" });
 }
 
+/** The start of the 15-minute slot containing `mins`, where a tap lands. */
 function snapMinutes(mins: number): number {
-  const snapped = Math.round(mins / MINUTES_STEP) * MINUTES_STEP;
+  const snapped = Math.floor(mins / MINUTES_STEP) * MINUTES_STEP;
   return Math.max(0, Math.min(24 * 60 - MINUTES_STEP, snapped));
 }
 

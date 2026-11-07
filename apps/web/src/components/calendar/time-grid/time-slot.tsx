@@ -45,9 +45,9 @@ export const TimeSlot = memo(function TimeSlotInner({
         rect.height
       );
       const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
-      // Snap to the nearest grid step so hover/drag align with 15-min slots.
+      // The 15-minute slot under the pointer, so a click starts where it lands.
       const snappedMinutes =
-        Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+        Math.floor(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
       const clampedMinutes = Math.min(
         Math.max(snappedMinutes, 0),
         24 * 60 - MINUTES_STEP
