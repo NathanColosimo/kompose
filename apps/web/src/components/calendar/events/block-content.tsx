@@ -15,6 +15,8 @@ const META = "text-[11px] text-foreground/80 dark:text-foreground/70";
 export interface BlockDetail {
   icon: LucideIcon;
   label: string;
+  /** Text to keep beside the icon in short blocks, such as a strain score. */
+  short?: string;
 }
 
 interface BlockContentProps {
@@ -32,6 +34,17 @@ interface BlockContentProps {
   /** Done tasks: muted and struck through. */
   struck?: boolean;
   title: string;
+}
+
+/** An icon with a short value, such as a workout's strain. */
+function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      <Icon aria-hidden className="size-3" />
+      <span className="sr-only">{label}</span>
+      <span aria-hidden>{short}</span>
+    </span>
+  );
 }
 
 /**
@@ -61,22 +74,36 @@ export function BlockContent({
       <div className="@container flex h-full min-w-0 items-center gap-1.5">
         {leading}
         <span className={cn(titleClass, "truncate")}>{title}</span>
-        <span className={cn("@max-[6rem]:hidden shrink-0 tabular-nums", META)}>
+        <span
+          className={cn(
+            "flex @max-[6rem]:hidden shrink-0 items-center gap-1.5 tabular-nums",
+            META
+          )}
+        >
           {formatTime(shownStart ?? start)}
+          {details
+            .filter((detail) => detail.short)
+            .map((detail) => (
+              <ShortDetail key={detail.label} {...detail} />
+            ))}
         </span>
       </div>
     );
   }
 
   const isTall = minutes >= 60;
-  const detailIcons = details.map(({ icon: Icon, label }) => (
-    <Icon
-      aria-label={label}
-      className="size-3 shrink-0"
-      key={label}
-      role="img"
-    />
-  ));
+  const detailIcons = details.map((detail) =>
+    detail.short ? (
+      <ShortDetail key={detail.label} {...detail} />
+    ) : (
+      <detail.icon
+        aria-label={detail.label}
+        className="size-3 shrink-0"
+        key={detail.label}
+        role="img"
+      />
+    )
+  );
   const detailRows = details.map(({ icon: Icon, label }) => (
     <span className="flex min-w-0 items-center gap-1" key={label}>
       <Icon aria-hidden className="size-3 shrink-0" />

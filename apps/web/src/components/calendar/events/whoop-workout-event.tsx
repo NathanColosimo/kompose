@@ -88,7 +88,11 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
         width: `calc(${columnWidth}% - 4px)`,
         zIndex,
       }}
-      title={`WHOOP workout: ${label}`}
+      title={
+        strainScore === null
+          ? `WHOOP workout: ${label}`
+          : `WHOOP workout: ${label}, strain ${strainScore.toFixed(1)}`
+      }
     >
       <div
         className={cn(
@@ -101,7 +105,13 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
           details={
             strainScore === null
               ? []
-              : [{ icon: Activity, label: `Strain ${strainScore.toFixed(1)}` }]
+              : [
+                  {
+                    icon: Activity,
+                    label: `Strain ${strainScore.toFixed(1)}`,
+                    short: strainScore.toFixed(1),
+                  },
+                ]
           }
           end={clampedEnd}
           shownEnd={workoutEnd}

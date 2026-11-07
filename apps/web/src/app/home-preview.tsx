@@ -9,7 +9,7 @@ interface Block {
   day: number;
   end: number;
   kind: "event-blue" | "event-green" | "task";
-  /** Second line, shown on blocks an hour or longer. */
+  /** Start time as a second line, on blocks an hour or longer. */
   meta?: string;
   start: number;
   title: string;
@@ -22,15 +22,15 @@ const BLOCKS: Block[] = [
     day: 0,
     end: 2.5,
     kind: "task",
-    meta: "10 – 11:30 AM",
+    meta: "10 AM",
     start: 1,
-    title: "Q4 roadmap",
+    title: "Roadmap",
   },
   {
     day: 0,
     end: 4,
     kind: "event-green",
-    meta: "12 – 1 PM",
+    meta: "12 PM",
     start: 3,
     title: "Lunch",
   },
@@ -38,7 +38,7 @@ const BLOCKS: Block[] = [
     day: 1,
     end: 1,
     kind: "event-green",
-    meta: "9 – 10 AM",
+    meta: "9 AM",
     start: 0,
     title: "Planning",
   },
@@ -46,7 +46,7 @@ const BLOCKS: Block[] = [
     day: 1,
     end: 4.5,
     kind: "event-blue",
-    meta: "11:30 AM – 1:30 PM",
+    meta: "11:30 AM",
     start: 2.5,
     title: "Focus block",
   },
@@ -55,7 +55,7 @@ const BLOCKS: Block[] = [
     day: 2,
     end: 3,
     kind: "event-green",
-    meta: "11 AM – 12 PM",
+    meta: "11 AM",
     start: 2,
     title: "Customer call",
   },
@@ -217,7 +217,7 @@ export function HomePreview() {
                   width: "calc(100% / var(--days) - 14px)",
                 }}
               >
-                <span className="mt-px size-2.5 shrink-0 rounded-[3px] border border-foreground/60" />
+                <span className="mt-px size-2.5 shrink-0 rounded-[3px] border border-foreground/60 max-sm:hidden" />
                 <span className="truncate">Review PR</span>
               </div>
             </div>
