@@ -1,3 +1,4 @@
+import { withSoftHyphens } from "@kompose/state/soft-hyphens";
 import {
   formatClockTime,
   formatTimeRange,
@@ -43,24 +44,6 @@ interface BlockContentProps {
    * text fits that part, top-aligned, so it isn't cut off mid-line.
    */
   uncoveredMinutes?: number;
-}
-
-const LONG_WORD = /\p{L}{6,}/gu;
-
-/**
- * Allow a hyphenated break inside long words, keeping three letters on each
- * side. The browser's dictionary has no break points for many words
- * ("Roadmap", "Vendor"), which then split with no hyphen ("Roadm / ap").
- */
-function withSoftHyphens(text: string) {
-  return text.replace(LONG_WORD, (word) => {
-    const letters = Array.from(word);
-    return letters
-      .map((letter, i) =>
-        i >= 3 && i <= letters.length - 3 ? `\u00AD${letter}` : letter
-      )
-      .join("");
-  });
 }
 
 /**

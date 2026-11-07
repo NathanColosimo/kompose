@@ -6,6 +6,7 @@ import type {
   LinkMeta,
   TaskRecurrence,
   TaskSelectDecoded,
+  TaskUpdateDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
@@ -21,6 +22,7 @@ import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-optio
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
@@ -442,14 +444,18 @@ export function TaskEditForm({
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
 
-  /** Saves the edits; resolves to the saved tasks (none on failure, which the mutation reports). */
+  /**
+   * Saves the edits, plus `extra` fields; resolves once saved (also on
+   * failure, which the mutation reports).
+   */
   const commitUpdate = useCallback(
     (
       values: TaskFormValues,
-      scope: UpdateScope
-    ): Promise<TaskSelectDecoded[]> => {
+      scope: UpdateScope,
+      extra: Partial<TaskUpdateDecoded> = {}
+    ): Promise<unknown> => {
       if (!task) {
-        return Promise.resolve([]);
+        return Promise.resolve();
       }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
@@ -470,11 +476,50 @@ export function TaskEditForm({
             startTime: values.startTime,
             tagIds: values.tagIds,
             title: values.title.trim(),
+            ...extra,
           },
         })
-        .catch(() => []);
+        .catch(() => undefined);
     },
     [task, updateTask]
+  );
+
+  /**
+   * Saves the scope dialog's edits, then marks this occurrence done when
+   * Mark done asked for it.
+   */
+  const commitWithStatus = useCallback(
+    (
+      values: TaskFormValues,
+      scope: UpdateScope,
+      status: TaskSelectDecoded["status"] | null
+    ) => {
+      if (!(status && task)) {
+        commitUpdate(values, scope);
+        return;
+      }
+      const changesPattern = !taskRecurrenceEquals(
+        resolvedRecurrence,
+        values.recurrence
+      );
+      if (changesPattern && scope !== "this") {
+        // A new pattern replaces this and later occurrences (new ids, and
+        // maybe not this date). Mark this one done with its edits first:
+        // that makes it an exception, which the new pattern keeps. The
+        // new occurrences keep the old status, not done.
+        // (recurrence: undefined leaves the occurrence's own pattern alone.)
+        commitUpdate(values, "this", { recurrence: undefined, status }).then(
+          () => commitUpdate(values, scope, { status: task.status })
+        );
+        return;
+      }
+      // Otherwise occurrences keep their ids, and the series shifts by how
+      // this one moved, so the edits go first.
+      commitUpdate(values, scope).then(() =>
+        updateTask.mutate({ id: task.id, scope: "this", task: { status } })
+      );
+    },
+    [commitUpdate, resolvedRecurrence, task, updateTask]
   );
 
   const submit = useCallback(
@@ -945,29 +990,7 @@ export function TaskEditForm({
             if (!pendingUpdate) {
               return;
             }
-            const status = pendingStatusRef.current;
-            const saved = commitUpdate(pendingUpdate, tagScope);
-            if (status && task) {
-              // "This and following" can replace occurrences with new ids,
-              // so the status goes on after the save, to this occurrence or
-              // the one that replaced it.
-              saved.then((updated) => {
-                const target =
-                  updated.find((other) => other.id === task.id) ??
-                  updated.find((other) =>
-                    [task.startDate, pendingUpdate.startDate].some(
-                      (date) => date && other.startDate?.equals(date)
-                    )
-                  );
-                if (target) {
-                  updateTask.mutate({
-                    id: target.id,
-                    scope: "this",
-                    task: { status },
-                  });
-                }
-              });
-            }
+            commitWithStatus(pendingUpdate, tagScope, pendingStatusRef.current);
             pendingUpdateRef.current = null;
             pendingStatusRef.current = null;
             onClose();

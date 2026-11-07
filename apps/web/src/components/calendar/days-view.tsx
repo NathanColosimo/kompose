@@ -106,6 +106,26 @@ type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
  * Clamp a positioned event to a single day's boundaries (midnight to midnight).
  * Returns null if the event doesn't overlap the given day.
  */
+/**
+ * Start and end, in minutes from midnight, of an item's part on one day. An
+ * end at midnight is the day's end (1440), as on a middle day of a
+ * multi-day event, which runs midnight to midnight.
+ */
+function dayPartMinutes(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime
+): { endMinutes: number; startMinutes: number } {
+  const startMinutes = minutesFromMidnight(start);
+  const endMinutes = minutesFromMidnight(end);
+  return {
+    endMinutes:
+      endMinutes === 0 && Temporal.ZonedDateTime.compare(end, start) > 0
+        ? 1440
+        : endMinutes,
+    startMinutes,
+  };
+}
+
 function clampEventToDay(
   event: PositionedGoogleEvent,
   day: Temporal.PlainDate,
@@ -574,30 +594,16 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
       // Convert task segments to PositionedItems. Segments are already
       // clamped to day boundaries, matching the rendered task blocks.
-      const taskItems: PositionedItem[] = dayTaskSegments.map((segment) => {
-        const startMinutes = minutesFromMidnight(segment.start);
-        const rawEndMinutes = minutesFromMidnight(segment.end);
-        const endMinutes =
-          rawEndMinutes === 0 &&
-          Temporal.ZonedDateTime.compare(segment.end, segment.start) > 0
-            ? 1440
-            : rawEndMinutes;
-        return {
-          endMinutes,
-          id: `task-${segment.task.id}`,
-          startMinutes,
-          type: "task" as const,
-        };
-      });
+      const taskItems: PositionedItem[] = dayTaskSegments.map((segment) => ({
+        ...dayPartMinutes(segment.start, segment.end),
+        id: `task-${segment.task.id}`,
+        type: "task" as const,
+      }));
 
       // Convert google events to PositionedItems.
-      // Events are already clamped to day boundaries by buildGoogleEventMaps,
-      // so endMinutes=0 means the event extends to midnight (1440).
+      // Events are already clamped to day boundaries by buildGoogleEventMaps.
       const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
-        const startMinutes = minutesFromMidnight(ge.start);
-        const rawEndMinutes = minutesFromMidnight(ge.end);
-        const endMinutes =
-          rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
+        const { endMinutes, startMinutes } = dayPartMinutes(ge.start, ge.end);
         return {
           endMinutes:
             endMinutes > startMinutes ? endMinutes : startMinutes + 30,
@@ -621,13 +627,14 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         }
         const clampedStart = clampZonedDateTime(wStart, dayStart, dayEnd);
         const clampedEnd = clampZonedDateTime(wEnd, dayStart, dayEnd);
-        const startMin = minutesFromMidnight(clampedStart);
-        const rawEndMin = minutesFromMidnight(clampedEnd);
-        const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
+        const { endMinutes, startMinutes } = dayPartMinutes(
+          clampedStart,
+          clampedEnd
+        );
         return {
-          endMinutes: Math.max(endMin, startMin + 15),
+          endMinutes: Math.max(endMinutes, startMinutes + 15),
           id: `whoop-workout-${workout.id}`,
-          startMinutes: startMin,
+          startMinutes,
           type: "whoop-workout" as const,
         };
       });

@@ -1042,13 +1042,16 @@ function MeetingSection({
     );
   }
 
+  if (readOnly) {
+    return null;
+  }
+
   return (
     <div className="space-y-2">
       <Label className="font-medium text-muted-foreground text-xs">
         Meeting
       </Label>
       <Button
-        disabled={readOnly}
         onClick={onCreateMeeting}
         size="sm"
         type="button"
@@ -1178,26 +1181,28 @@ function EventAllDayAndRecurrenceRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Button
-        className="gap-2 text-xs"
-        disabled={readOnly}
-        onClick={onToggleAllDay}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <div
-          className={cn(
-            "flex size-4 items-center justify-center rounded border transition-colors",
-            allDay
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-muted-foreground/50 bg-transparent"
-          )}
+      {/* Read-only: the dates above already say whether it's all day. */}
+      {readOnly ? null : (
+        <Button
+          className="gap-2 text-xs"
+          onClick={onToggleAllDay}
+          size="sm"
+          type="button"
+          variant="outline"
         >
-          {allDay ? <Check className="size-3" /> : null}
-        </div>
-        All day
-      </Button>
+          <div
+            className={cn(
+              "flex size-4 items-center justify-center rounded border transition-colors",
+              allDay
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-muted-foreground/50 bg-transparent"
+            )}
+          >
+            {allDay ? <Check className="size-3" /> : null}
+          </div>
+          All day
+        </Button>
+      )}
       {canEditRecurrence ? (
         <Popover>
           <PopoverTrigger asChild>
@@ -1254,6 +1259,29 @@ function EventAllDayAndRecurrenceRow({
   );
 }
 
+/** The notes field; left out of a read-only event when empty. */
+function EventDescriptionField({
+  onChange,
+  readOnly,
+  value,
+}: {
+  onChange: (value: string) => void;
+  readOnly: boolean;
+  value: string | undefined;
+}) {
+  if (readOnly && !value?.trim()) {
+    return null;
+  }
+  return (
+    <Textarea
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Add details..."
+      readOnly={readOnly}
+      value={value}
+    />
+  );
+}
+
 function EventLocationCombobox({
   location,
   suggestions,
@@ -1282,6 +1310,11 @@ function EventLocationCombobox({
   onValueChange: (value: string | null) => void;
   onFocusInput: () => void;
 }) {
+  // A read-only event leaves out empty fields rather than showing inputs
+  // that look editable.
+  if (readOnly && !location.trim()) {
+    return null;
+  }
   return (
     <div className="space-y-2">
       <Label className="font-medium text-muted-foreground text-xs">
@@ -1839,7 +1872,6 @@ export function EventEditForm({
           <p className="text-muted-foreground">{readOnlyReason}</p>
         </div>
       ) : null}
-
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}
@@ -1856,19 +1888,15 @@ export function EventEditForm({
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
-
-      <Textarea
-        onChange={(e) => {
+      <EventDescriptionField
+        onChange={(value) => {
           hasUserEditedRef.current = true;
-          setValue("description", e.target.value, { shouldDirty: true });
+          setValue("description", value, { shouldDirty: true });
         }}
-        placeholder="Add details..."
         readOnly={readOnly}
         value={watchedValues.description}
       />
-
       <Separator />
-
       <EventAllDayAndRecurrenceRow
         allDay={watchedValues.allDay}
         calendarOptions={calendarPickerOptions}
@@ -1899,7 +1927,6 @@ export function EventEditForm({
         readOnly={readOnly}
         recurrenceRule={recurrenceRule}
       />
-
       <div className="grid grid-cols-2 gap-2">
         <Controller
           control={control}
@@ -1989,7 +2016,6 @@ export function EventEditForm({
           )}
         />
       </div>
-
       {watchedValues.allDay ? null : (
         <div className="grid grid-cols-2 gap-2">
           <TimePicker
@@ -2007,14 +2033,12 @@ export function EventEditForm({
           />
         </div>
       )}
-
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
         onCreateMeeting={handleCreateMeeting}
         readOnly={readOnly}
       />
-
       <EventLocationCombobox
         isSearching={isLocationSearching}
         location={watchedValues.location}
@@ -2031,7 +2055,6 @@ export function EventEditForm({
         readOnly={readOnly}
         suggestions={locationSuggestions}
       />
-
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}

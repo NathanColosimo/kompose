@@ -180,6 +180,27 @@ const dbDeleteNonExceptionsBySeriesFrom = (
       );
   });
 
+/** Dates from `fromDate` on that keep an exception (an occurrence edited alone). */
+const dbSelectExceptionDatesBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string
+) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .select({ startDate: taskTable.startDate })
+      .from(taskTable)
+      .where(
+        and(
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          eq(taskTable.userId, userId),
+          gte(taskTable.startDate, fromDate),
+          eq(taskTable.isException, true)
+        )
+      );
+  });
+
 const dbInsertTaskTags = (values: TaskTagInsert[]) =>
   Effect.gen(function* () {
     const db = yield* Database;
@@ -663,12 +684,29 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     return [] as TaskSelect[];
   }
 
+  // Exceptions stay (edited alone, or marked done before the change), so
+  // the new pattern leaves their dates out instead of doubling them.
+  const keptDates = new Set(
+    (yield* dbSelectExceptionDatesBySeriesFrom(
+      userId,
+      task.seriesMasterId,
+      task.startDate
+    )).map((row) => row.startDate)
+  );
+  const seriesStartDate = Temporal.PlainDate.from(task.startDate);
+  const occurrenceDates = generateOccurrences(
+    input.recurrence,
+    seriesStartDate
+  ).filter((date) => !keptDates.has(date.toString()));
+  if (occurrenceDates.length === 0) {
+    return [] as TaskSelect[];
+  }
+
   // The first new occurrence is the new series master.
   const seriesMasterId = uuidv7();
-  const seriesStartDate = Temporal.PlainDate.from(task.startDate);
   const taskRows = buildOccurrenceRowsFromTask({
     input,
-    occurrenceDates: generateOccurrences(input.recurrence, seriesStartDate),
+    occurrenceDates,
     seriesMasterId,
     seriesStartDate,
     task,

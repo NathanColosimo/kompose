@@ -1,5 +1,6 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { extractMeetingLink } from "@kompose/state/meeting";
+import { withSoftHyphens } from "@kompose/state/soft-hyphens";
 import {
   formatClockRange,
   formatTimeRange,
@@ -157,18 +158,86 @@ const CLOCK_TIME_BLOCK_PT = 120;
 /** Narrower than this, the title keeps to one line (see BlockText `sliver`). */
 const SLIVER_BLOCK_PT = 44;
 
-/** Title lines that fit: more for a narrow block, which drops its time line. */
+/**
+ * Title lines that fit. A narrow block drops its time line and padding and
+ * sets the title on 12pt lines, as many as its visible minutes hold (60pt
+ * an hour, less 6pt: the 1pt gap below it, its ring, border, and 1pt top
+ * padding), up to three.
+ */
 function titleLines(minutes: number, narrow: boolean, sliver: boolean): number {
   if (sliver) {
     return 1;
   }
   if (narrow) {
-    if (minutes >= DETAILS_MINUTES) {
-      return 3;
-    }
-    return minutes >= TITLE_ONLY_MINUTES ? 2 : 1;
+    return Math.min(3, Math.max(1, Math.floor((minutes - 6) / 12)));
   }
   return minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1;
+}
+
+/** A block's title: one line in a short block, as many as fit when narrow. */
+function BlockTitle({
+  minutes,
+  narrow,
+  oneLine,
+  sliver,
+  struck,
+  tight,
+  title,
+}: {
+  minutes: number;
+  narrow: boolean;
+  oneLine: boolean;
+  sliver: boolean;
+  struck: boolean;
+  tight: boolean;
+  title: string;
+}) {
+  const leading = tight || narrow ? "leading-[12px]" : "leading-[14px]";
+  const color = struck
+    ? "text-muted-foreground line-through"
+    : "text-foreground";
+  return (
+    <Text
+      className={`font-sans-medium text-[11px] ${leading} ${oneLine ? "max-w-full" : "shrink"} ${color}`}
+      numberOfLines={titleLines(minutes, narrow, sliver)}
+    >
+      {/* Narrow blocks break long words at a soft hyphen ("Road-map")
+          rather than cutting them to an ellipsis. */}
+      {narrow ? withSoftHyphens(title) : title}
+    </Text>
+  );
+}
+
+/** The time line: the time first, and values that don't fit beside it drop out. */
+function BlockTimeRow({
+  children,
+  clockTime,
+  end,
+  meta,
+  start,
+}: {
+  children: ReactNode;
+  clockTime: boolean;
+  end: Temporal.ZonedDateTime;
+  meta: string;
+  start: Temporal.ZonedDateTime;
+}) {
+  // An overnight range keeps AM/PM (and dates when it needs them).
+  const text =
+    clockTime && start.toPlainDate().equals(end.toPlainDate())
+      ? formatClockRange(start, end)
+      : formatTimeRange(start, end);
+  return (
+    <View className="h-[13px] flex-row flex-wrap items-center gap-x-1 overflow-hidden">
+      <Text
+        className={`max-w-full text-[10px] leading-[13px] ${meta}`}
+        numberOfLines={1}
+      >
+        {text}
+      </Text>
+      {children}
+    </View>
+  );
 }
 
 /** Title, then the time once there's room, then details on long blocks. */
@@ -187,7 +256,9 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
-  const isShort = minutes < TITLE_ONLY_MINUTES;
+  // Short blocks keep one line, unless narrow: then the title takes the
+  // lines (titleLines) and the time is left out.
+  const isShort = minutes < TITLE_ONLY_MINUTES && !narrow;
   // Until details get their own lines, keep short values in view.
   const shorts = details.flatMap(({ icon, label, short }) =>
     short
@@ -208,12 +279,15 @@ function BlockText({
       <View
         className={`flex-row items-center gap-x-1 ${isShort ? `${tight ? "h-[12px]" : "h-[14px]"} flex-wrap overflow-hidden` : ""}`}
       >
-        <Text
-          className={`font-sans-medium text-[11px] ${tight ? "leading-[12px]" : "leading-[14px]"} ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
-          numberOfLines={titleLines(minutes, narrow, sliver)}
-        >
-          {title}
-        </Text>
+        <BlockTitle
+          minutes={minutes}
+          narrow={narrow}
+          oneLine={isShort}
+          sliver={sliver}
+          struck={struck}
+          tight={tight}
+          title={title}
+        />
         {isShort ? (
           <Text className={`text-[10px] leading-[13px] ${meta}`}>
             {start.toLocaleString(undefined, {
@@ -225,20 +299,9 @@ function BlockText({
         {isShort ? shorts : null}
       </View>
       {minutes >= TITLE_ONLY_MINUTES && !narrow ? (
-        // The time comes first: values that don't fit beside it wrap onto
-        // a hidden second line.
-        <View className="h-[13px] flex-row flex-wrap items-center gap-x-1 overflow-hidden">
-          <Text
-            className={`max-w-full text-[10px] leading-[13px] ${meta}`}
-            numberOfLines={1}
-          >
-            {/* An overnight range keeps AM/PM (and dates when it needs them). */}
-            {clockTime && start.toPlainDate().equals(end.toPlainDate())
-              ? formatClockRange(start, end)
-              : formatTimeRange(start, end)}
-          </Text>
+        <BlockTimeRow clockTime={clockTime} end={end} meta={meta} start={start}>
           {minutes < DETAILS_MINUTES ? shorts : null}
-        </View>
+        </BlockTimeRow>
       ) : null}
       {minutes >= DETAILS_MINUTES && !narrow
         ? details.map(({ icon, label }) => (
@@ -269,10 +332,19 @@ function useEventSurface(color: string | undefined) {
   };
 }
 
+/** Vertical padding: none for one centered line, a little when narrow. */
+function blockPadding(compact: boolean, narrow: boolean) {
+  if (compact) {
+    return "";
+  }
+  return narrow ? "pt-px" : "py-1";
+}
+
 function Surface({
   children,
   compact = false,
   covered = false,
+  narrow = false,
   surface,
   tight = false,
 }: {
@@ -283,6 +355,8 @@ function Surface({
   covered?: boolean;
   /** No top padding, for the tight title line. */
   tight?: boolean;
+  /** Narrow: less padding, for more title lines (see titleLines). */
+  narrow?: boolean;
   surface: ReturnType<typeof useEventSurface>;
 }) {
   return (
@@ -296,7 +370,7 @@ function Surface({
     >
       <View style={{ backgroundColor: surface.bar, width: 3 }} />
       <View
-        className={`min-w-0 flex-1 px-1.5 ${compact && !covered ? "justify-center" : ""} ${compact && covered && !tight ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
+        className={`min-w-0 flex-1 px-1.5 ${compact && !covered ? "justify-center" : ""} ${compact && covered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
       >
         {children}
       </View>
@@ -348,6 +422,7 @@ export function EventBlock({
         <Surface
           compact={textMinutes < COMPACT_MINUTES}
           covered={textMinutes < minutes}
+          narrow={placement.width < NARROW_BLOCK_PT}
           surface={surface}
           tight={isTight(textMinutes, minutes)}
         >
@@ -410,7 +485,7 @@ export function TaskBlock({
       style={placement}
     >
       <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
+        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
       >
         {/* Narrow blocks give the checkbox's room to the title; done is in
             the editor and the long-press menu. */}
