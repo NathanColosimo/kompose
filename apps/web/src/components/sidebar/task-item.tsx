@@ -7,13 +7,16 @@ import {
   todayPlainDateAtom,
 } from "@kompose/state/atoms/current-date";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { formatDuration } from "@kompose/state/temporal-utils";
+import {
+  formatDuration,
+  formatScheduledAt,
+} from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
 import { openOnEnterOrSpace } from "@/lib/keyboard";
-import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
+import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../tags/tag-icon-map";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
@@ -109,11 +112,7 @@ export const TaskItem = memo(function TaskItemInner({
             {scheduledZdt ? (
               <span className="flex items-center gap-1">
                 <CalendarClock className="size-3" />
-                {formatTime(scheduledZdt, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  weekday: "short",
-                })}
+                {formatScheduledAt(scheduledZdt, today)}
               </span>
             ) : null}
 

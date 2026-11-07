@@ -1044,10 +1044,23 @@ export function TaskEditForm({
             if (!pendingUpdate) {
               return;
             }
-            commitWithStatus(pendingUpdate, tagScope, pendingStatusRef.current);
+            const status = pendingStatusRef.current;
             pendingUpdateRef.current = null;
             pendingStatusRef.current = null;
-            onClose();
+            if (!status) {
+              commitUpdate(pendingUpdate, tagScope);
+              onClose();
+              return;
+            }
+            // With Mark done, the editor stays open ("Saving…") until the
+            // save succeeds, so a failed save keeps the edits.
+            setIsSavingStatus(true);
+            commitWithStatus(pendingUpdate, tagScope, status).then((saved) => {
+              setIsSavingStatus(false);
+              if (saved) {
+                onClose();
+              }
+            });
           }}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {

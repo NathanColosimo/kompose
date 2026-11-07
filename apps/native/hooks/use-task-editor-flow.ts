@@ -301,12 +301,30 @@ export function useTaskEditorFlow() {
     if (!(editingTask && pendingSaveDraft)) {
       return;
     }
-    if (pendingStatus) {
-      commitWithStatus(pendingSaveDraft, saveScope, pendingStatus);
-    } else {
+    if (!pendingStatus) {
       commitUpdate(pendingSaveDraft, saveScope);
+      close();
+      return;
     }
-    close();
+    // With Mark done, the editor comes back (saving) once the dialog has
+    // gone, and closes when the save succeeds; a failed save keeps the edits.
+    const savedDraft = pendingSaveDraft;
+    const { status } = editingTask;
+    setDraft(savedDraft);
+    setPendingSaveDraft(null);
+    setPendingStatus(null);
+    reopenEditorRef.current = true;
+    setScopeDialog(null);
+    setIsSavingStatus(true);
+    commitWithStatus(savedDraft, saveScope, pendingStatus).then((saved) => {
+      setIsSavingStatus(false);
+      if (saved) {
+        reopenEditorRef.current = false;
+        close();
+        return;
+      }
+      updateDraft((current) => ({ ...current, status }));
+    });
   }
 
   function confirmScopedDelete() {

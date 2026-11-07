@@ -229,3 +229,32 @@ export function nearestSlotMinutes(minutes: number, step = 15): number {
   const snapped = Math.round(minutes / step) * step;
   return Math.max(0, Math.min(24 * 60 - step, snapped));
 }
+
+/**
+ * When a scheduled task starts, for a list: the weekday within the coming
+ * week ("Sat 10:00 AM"), else the date ("Nov 21, 10:00 AM"), so tasks a
+ * week apart never read the same.
+ */
+export function formatScheduledAt(
+  time: Temporal.ZonedDateTime,
+  today: Temporal.PlainDate,
+  locale?: string
+): string {
+  const date = time.toPlainDate();
+  const daysAway = today.until(date, { largestUnit: "days" }).days;
+  // Composed from parts: ICU versions join date and time differently
+  // ("Nov 21, 10:00 AM" or "Nov 21 at 10:00 AM").
+  const clock = time.toLocaleString(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (daysAway >= 0 && daysAway < 7) {
+    return `${date.toLocaleString(locale, { weekday: "short" })} ${clock}`;
+  }
+  const day = date.toLocaleString(locale, {
+    day: "numeric",
+    month: "short",
+    ...(date.year === today.year ? {} : { year: "numeric" }),
+  });
+  return `${day}, ${clock}`;
+}

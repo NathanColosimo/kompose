@@ -6,6 +6,7 @@ import {
   formatClockTime,
   formatDuration,
   formatEventWhen,
+  formatScheduledAt,
   formatTimeRange,
   nearestSlotMinutes,
 } from "./temporal-utils";
@@ -160,6 +161,24 @@ describe("formatAllDayWhen", () => {
     );
     expect(formatAllDayWhen(nov12, nov12.add({ days: 2 }), "en-US")).toBe(
       "Thu, Nov 12 – Sat, Nov 14"
+    );
+  });
+});
+
+describe("formatScheduledAt", () => {
+  const today = Temporal.PlainDate.from("2026-11-09");
+  test("says the weekday within the coming week, else the date", () => {
+    expect(formatScheduledAt(at("2026-11-14T10:00"), today, "en-US")).toBe(
+      "Sat 10:00 AM"
+    );
+    expect(formatScheduledAt(at("2026-11-21T10:00"), today, "en-US")).toBe(
+      "Nov 21, 10:00 AM"
+    );
+    expect(formatScheduledAt(at("2026-11-02T10:00"), today, "en-US")).toBe(
+      "Nov 2, 10:00 AM"
+    );
+    expect(formatScheduledAt(at("2027-01-04T10:00"), today, "en-US")).toBe(
+      "Jan 4, 2027, 10:00 AM"
     );
   });
 });

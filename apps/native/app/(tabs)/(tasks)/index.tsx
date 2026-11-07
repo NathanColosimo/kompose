@@ -4,6 +4,7 @@ import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import {
   formatDuration,
+  formatScheduledAt,
   getSystemTimeZone,
 } from "@kompose/state/temporal-utils";
 import { Stack } from "expo-router/stack";
@@ -177,11 +178,7 @@ function TaskRow({
                 size={12}
               />
               <Text className="text-muted-foreground text-xs">
-                {scheduled.toLocaleString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  weekday: "short",
-                })}
+                {formatScheduledAt(scheduled, today)}
               </Text>
             </View>
           ) : null}
