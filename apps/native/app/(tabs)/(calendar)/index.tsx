@@ -1405,11 +1405,15 @@ export default function CalendarTab() {
                     accessible
                     className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
                     key={day.toString()}
+                    // Fabric sends a VoiceOver double-tap to
+                    // onAccessibilityTap; the named action covers the
+                    // actions rotor.
                     onAccessibilityAction={(event) => {
                       if (event.nativeEvent.actionName === "activate") {
                         openCreateChooserForDay(day);
                       }
                     }}
+                    onAccessibilityTap={() => openCreateChooserForDay(day)}
                   >
                     <View className="flex-row items-center gap-1.5">
                       <Text
