@@ -104,7 +104,9 @@ export function useTaskEditorFlow() {
   function commitUpdate(
     nextDraft: TaskDraft,
     scope: UpdateScope,
-    status?: TaskDraft["status"]
+    status?: TaskDraft["status"],
+    /** False while the editor holds open on the save (Mark done). */
+    optimistic = true
   ): Promise<boolean> {
     if (!editingTask) {
       return Promise.resolve(false);
@@ -113,6 +115,7 @@ export function useTaskEditorFlow() {
     return updateTask
       .mutateAsync({
         id: editingTask.id,
+        optimistic,
         scope,
         task: {
           ...(status ? { status } : {}),
@@ -148,14 +151,22 @@ export function useTaskEditorFlow() {
       scope,
     });
     if (plan === "with-edits") {
-      return commitUpdate(nextDraft, scope, status);
+      // The editor holds open until this saves, so the cache waits for the
+      // server rather than rolling back over the draft on failure.
+      return commitUpdate(nextDraft, scope, status, false);
     }
     // Both writes count: the editor stays open until the status has saved
     // too, and a failure of either keeps it open.
     const { id } = editingTask;
     return saveThenSetStatus(
-      () => commitUpdate(nextDraft, scope),
-      () => updateTask.mutateAsync({ id, scope: "this", task: { status } })
+      () => commitUpdate(nextDraft, scope, undefined, false),
+      () =>
+        updateTask.mutateAsync({
+          id,
+          optimistic: false,
+          scope: "this",
+          task: { status },
+        })
     );
   }
 

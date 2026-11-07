@@ -122,6 +122,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       scope,
     }: {
       id: string;
+      /** False to wait for the server instead of updating the cache first. */
+      optimistic?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
@@ -141,13 +143,21 @@ export function useTasks(options: UseTasksOptions = {}) {
     },
     onMutate: async ({
       id,
+      optimistic: isOptimistic = true,
       task,
       scope,
     }: {
       id: string;
+      optimistic?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
+      // An editor that holds open until its save ends (Mark done with edits)
+      // skips this: an early update could unmount it (the task leaves its
+      // list) or roll its fields back over the draft on failure.
+      if (!isOptimistic) {
+        return { previousTasks: undefined };
+      }
       // Optimistic for scope "this" (one task). A "following" save that sets
       // a status applies it to this task alone (the server keeps it), so
       // that status shows at once too; the rest waits for the server.

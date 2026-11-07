@@ -490,7 +490,9 @@ export function TaskEditForm({
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      extra: Partial<TaskUpdateDecoded> = {}
+      extra: Partial<TaskUpdateDecoded> = {},
+      /** False while the editor holds open on the save (Mark done). */
+      optimistic = true
     ): Promise<boolean> => {
       if (!task) {
         return Promise.resolve(false);
@@ -503,6 +505,7 @@ export function TaskEditForm({
       return updateTask
         .mutateAsync({
           id: task.id,
+          optimistic,
           scope,
           task: {
             description: values.description ?? "",
@@ -546,16 +549,20 @@ export function TaskEditForm({
         previousRecurrence: resolvedRecurrence,
         scope,
       });
+      // The editor holds open until these save, so the cache waits for the
+      // server: an early update could unmount the editor or roll its
+      // fields back over the draft.
       if (plan === "with-edits") {
-        return commitUpdate(values, scope, { status });
+        return commitUpdate(values, scope, { status }, false);
       }
       // Both writes count: the editor stays open until the status has
       // saved too, and a failure of either keeps it open.
       return saveThenSetStatus(
-        () => commitUpdate(values, scope),
+        () => commitUpdate(values, scope, {}, false),
         () =>
           updateTask.mutateAsync({
             id: task.id,
+            optimistic: false,
             scope: "this",
             task: { status },
           })
