@@ -7,7 +7,7 @@ import { getStateConfig } from "../config";
 import { currentDateAtom, timezoneAtom } from "./current-date";
 import { linkedAccountsDataAtom } from "./google-data";
 
-const WHOOP_DAYS_QUERY_KEY = ["whoop", "days"] as const;
+export const WHOOP_DAYS_QUERY_KEY = ["whoop", "days"] as const;
 
 export const whoopAccountDataAtom = atom<Account | null>(
   (get) =>

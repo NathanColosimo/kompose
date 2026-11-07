@@ -23,6 +23,22 @@ const COMPACT_MINUTES = 30;
 export interface BlockDetail {
   icon: LucideIcon;
   label: string;
+  /** A value kept beside the title or time in short blocks, such as strain. */
+  short?: string;
+}
+
+/** Title, time, and details as one sentence for VoiceOver. */
+function describeBlock(
+  title: string,
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime,
+  details: BlockDetail[] = []
+): string {
+  return [
+    title,
+    formatTimeRange(start, end),
+    ...details.map((d) => d.label),
+  ].join(", ");
 }
 
 /** A compact time, "9", "9:30", with the meridiem added by the caller. */
@@ -108,21 +124,40 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
+  // Until details get their own lines, keep short values in view.
+  const shorts = details.flatMap(({ icon, label, short }) =>
+    short
+      ? [
+          <View className="flex-row items-center gap-0.5" key={label}>
+            <Icon as={icon} className={meta} size={10} />
+            <Text className={`text-[10px] leading-[13px] ${meta}`}>
+              {short}
+            </Text>
+          </View>,
+        ]
+      : []
+  );
   return (
     <View className="min-w-0 flex-1">
-      <Text
-        className={`font-sans-medium text-[11px] leading-[14px] ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
-        numberOfLines={minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1}
-      >
-        {title}
-      </Text>
-      {minutes >= TITLE_ONLY_MINUTES ? (
+      <View className="flex-row items-center gap-1">
         <Text
-          className={`text-[10px] leading-[13px] ${meta}`}
-          numberOfLines={1}
+          className={`shrink font-sans-medium text-[11px] leading-[14px] ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
+          numberOfLines={minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1}
         >
-          {formatTimeRange(start, end)}
+          {title}
         </Text>
+        {minutes < TITLE_ONLY_MINUTES ? shorts : null}
+      </View>
+      {minutes >= TITLE_ONLY_MINUTES ? (
+        <View className="flex-row items-center gap-1">
+          <Text
+            className={`shrink text-[10px] leading-[13px] ${meta}`}
+            numberOfLines={1}
+          >
+            {formatTimeRange(start, end)}
+          </Text>
+          {minutes < DETAILS_MINUTES ? shorts : null}
+        </View>
       ) : null}
       {minutes >= DETAILS_MINUTES
         ? details.map(({ icon, label }) => (
@@ -204,7 +239,7 @@ export function EventBlock({
   const surface = useEventSurface(color);
   return (
     <Pressable
-      accessibilityLabel={`${title}, ${formatTimeRange(start, end)}`}
+      accessibilityLabel={describeBlock(title, start, end, details)}
       accessibilityRole={onPress ? "button" : undefined}
       className={`absolute p-px ${onPress ? "active:opacity-80" : ""}`}
       onPress={(event) => {
@@ -244,10 +279,12 @@ export function TaskBlock({
   title,
   ...position
 }: TaskBlockProps) {
+  const compact = minutes < COMPACT_MINUTES;
+  // The checkbox and the editor are sibling controls, so VoiceOver reaches
+  // both; the outer press area only catches taps on the card's padding.
   return (
     <Pressable
-      accessibilityLabel={`${title}, ${formatTimeRange(start, end)}`}
-      accessibilityRole="button"
+      accessible={false}
       className={`absolute p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
       onPress={(event) => {
         event.stopPropagation();
@@ -256,10 +293,10 @@ export function TaskBlock({
       style={positionStyle(position)}
     >
       <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${minutes < COMPACT_MINUTES ? "items-center" : "py-1"}`}
+        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact ? "items-center" : "py-1"}`}
       >
         <Pressable
-          accessibilityLabel={done ? "Mark as not done" : "Mark as done"}
+          accessibilityLabel={title}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: done }}
           hitSlop={8}
@@ -269,21 +306,32 @@ export function TaskBlock({
           }}
         >
           <View
-            className={`size-3 items-center justify-center rounded-[3px] border ${minutes < COMPACT_MINUTES ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
+            className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
           >
             {done ? (
               <Icon as={Check} className="text-primary-foreground" size={9} />
             ) : null}
           </View>
         </Pressable>
-        <BlockText
-          details={details}
-          end={end}
-          minutes={minutes}
-          start={start}
-          struck={done}
-          title={title}
-        />
+        <Pressable
+          accessibilityHint="Opens the task"
+          accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
+          accessibilityRole="button"
+          className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
+          onPress={(event) => {
+            event.stopPropagation();
+            onPress();
+          }}
+        >
+          <BlockText
+            details={details}
+            end={end}
+            minutes={minutes}
+            start={start}
+            struck={done}
+            title={title}
+          />
+        </Pressable>
       </View>
     </Pressable>
   );

@@ -21,7 +21,10 @@ import {
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
-import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
+import {
+  WHOOP_DAYS_QUERY_KEY,
+  whoopSummariesByDayAtom,
+} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -92,6 +95,7 @@ import { useColorScheme } from "@/lib/color-scheme-context";
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
 const DEFAULT_SCROLL_HOUR = 7;
+const HOUR_LABEL_CLEARANCE_PX = 10;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 // Swipe thresholds for horizontal navigation without interfering with vertical scroll.
 const SWIPE_ACTIVATION_DISTANCE = 16;
@@ -250,11 +254,46 @@ const WORKOUT_COLOR = {
 };
 
 interface PositionedWorkout {
+  /** The whole workout's end, for its time text. */
   end: Temporal.ZonedDateTime;
   id: string;
+  /** The part on one day, for layout. */
+  segmentEnd: Temporal.ZonedDateTime;
+  segmentStart: Temporal.ZonedDateTime;
   sportName: string | null;
   start: Temporal.ZonedDateTime;
   strainScore: number | null;
+}
+
+/** Each workout's part on `day`, keeping its real start and end for text. */
+function workoutSegmentsForDay(
+  day: Temporal.PlainDate,
+  summaries: Iterable<WhoopDaySummary>,
+  timeZone: string
+): PositionedWorkout[] {
+  const { compare } = Temporal.ZonedDateTime;
+  const dayStart = day.toZonedDateTime({ timeZone });
+  const dayEnd = dayStart.add({ days: 1 });
+  const segments: PositionedWorkout[] = [];
+  for (const summary of summaries) {
+    for (const workout of summary.workouts) {
+      const start = isoStringToZonedDateTime(workout.start, timeZone);
+      const end = isoStringToZonedDateTime(workout.end, timeZone);
+      if (compare(end, dayStart) <= 0 || compare(start, dayEnd) >= 0) {
+        continue;
+      }
+      segments.push({
+        end,
+        id: workout.id,
+        segmentEnd: compare(end, dayEnd) > 0 ? dayEnd : end,
+        segmentStart: compare(start, dayStart) < 0 ? dayStart : start,
+        sportName: workout.sportName,
+        start,
+        strainScore: workout.strainScore,
+      });
+    }
+  }
+  return segments;
 }
 
 function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
@@ -437,6 +476,7 @@ export default function CalendarTab() {
   const isFetchingCalendars = useIsFetching({
     queryKey: GOOGLE_CALENDARS_QUERY_KEY,
   });
+  const isFetchingWhoop = useIsFetching({ queryKey: WHOOP_DAYS_QUERY_KEY });
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({
@@ -450,29 +490,18 @@ export default function CalendarTab() {
   const showWhoopRow = visibleDays.some((day) =>
     hasWhoopStats(whoopSummaries.get(day.toString()))
   );
-  // Workouts by the day they start, clamped to that day.
-  const workoutsByDay = useMemo(() => {
-    const map = new Map<string, PositionedWorkout[]>();
-    for (const day of visibleDays) {
-      map.set(day.toString(), []);
-    }
-    for (const summary of whoopSummaries.values()) {
-      for (const workout of summary.workouts) {
-        const start = isoStringToZonedDateTime(workout.start, timeZone);
-        const end = isoStringToZonedDateTime(workout.end, timeZone);
-        map.get(start.toPlainDate().toString())?.push({
-          end: start.toPlainDate().equals(end.toPlainDate())
-            ? end
-            : start.startOfDay().add({ days: 1 }),
-          id: workout.id,
-          sportName: workout.sportName,
-          start,
-          strainScore: workout.strainScore,
-        });
-      }
-    }
-    return map;
-  }, [visibleDays, whoopSummaries, timeZone]);
+  // Each workout's part on every visible day it touches, so an overnight
+  // workout shows on both days with its real times.
+  const workoutsByDay = useMemo(
+    () =>
+      new Map(
+        visibleDays.map((day) => [
+          day.toString(),
+          workoutSegmentsForDay(day, whoopSummaries.values(), timeZone),
+        ])
+      ),
+    [visibleDays, whoopSummaries, timeZone]
+  );
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MVP grouping logic kept inline for now.
   const { timedEventsByDay, allDayEventsByDay } = useMemo(() => {
@@ -612,13 +641,13 @@ export default function CalendarTab() {
       const workoutItems: PositionedItem[] = (
         workoutsByDay.get(dayKey) ?? []
       ).map((workout) => ({
-        endMinutes: workout.end
+        endMinutes: workout.segmentEnd
           .toPlainDate()
-          .equals(workout.start.toPlainDate())
-          ? minutesFromMidnight(workout.end)
+          .equals(workout.segmentStart.toPlainDate())
+          ? minutesFromMidnight(workout.segmentEnd)
           : 24 * 60,
         id: `whoop-${workout.id}`,
-        startMinutes: minutesFromMidnight(workout.start),
+        startMinutes: minutesFromMidnight(workout.segmentStart),
         type: "whoop-workout" as const,
       }));
 
@@ -1107,7 +1136,10 @@ export default function CalendarTab() {
   const scrollRef = useRef<ScrollViewInstance>(null);
 
   // Track scroll position so we can restore it after a pull-to-refresh.
-  const scrollOffsetRef = useRef(DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR);
+  // Stop a little above the hour so its whole gutter label shows.
+  const scrollOffsetRef = useRef(
+    DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR - HOUR_LABEL_CLEARANCE_PX
+  );
   const isRefreshingRef = useRef(false);
 
   const handleScroll = useCallback(
@@ -1130,6 +1162,7 @@ export default function CalendarTab() {
     queryClient.invalidateQueries({
       queryKey: GOOGLE_CALENDARS_QUERY_KEY,
     });
+    queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY });
 
     // Invalidate visible calendars; active month queries include preloaded days.
     for (const calendar of visibleCalendarIds) {
@@ -1143,7 +1176,8 @@ export default function CalendarTab() {
     tasksQuery.isFetching ||
     isFetchingGoogleEvents ||
     isFetchingAccounts > 0 ||
-    isFetchingCalendars > 0;
+    isFetchingCalendars > 0 ||
+    isFetchingWhoop > 0;
 
   // Clear the pull-to-refresh indicator and restore scroll position once
   // all fetches settle.
@@ -1195,7 +1229,7 @@ export default function CalendarTab() {
                 <Pressable
                   accessibilityLabel={`Show ${n} day${n > 1 ? "s" : ""}`}
                   className={`h-8 min-w-8 items-center justify-center rounded-full px-2.5 active:opacity-70 ${
-                    visibleDaysCount === n ? "bg-muted" : ""
+                    visibleDaysCount === n ? "bg-foreground/15" : ""
                   }`}
                   key={n}
                   onPress={() => setVisibleDaysCount(n)}
@@ -1434,8 +1468,8 @@ export default function CalendarTab() {
                       {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
                         const layout = dayLayouts?.get(`whoop-${workout.id}`);
                         const minutes = Math.round(
-                          workout.end
-                            .since(workout.start)
+                          workout.segmentEnd
+                            .since(workout.segmentStart)
                             .total({ unit: "minutes" })
                         );
                         return (
@@ -1454,6 +1488,7 @@ export default function CalendarTab() {
                                     {
                                       icon: Activity,
                                       label: `Strain ${workout.strainScore.toFixed(1)}`,
+                                      short: workout.strainScore.toFixed(1),
                                     },
                                   ]
                             }
@@ -1469,7 +1504,7 @@ export default function CalendarTab() {
                             start={workout.start}
                             title={workout.sportName || "Workout"}
                             top={
-                              (minutesFromMidnight(workout.start) / 60) *
+                              (minutesFromMidnight(workout.segmentStart) / 60) *
                                 PIXELS_PER_HOUR +
                               EVENT_BLOCK_INSET_PX / 2
                             }

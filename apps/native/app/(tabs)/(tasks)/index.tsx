@@ -181,7 +181,7 @@ function TaskRow({
           ) : null}
           {tags.map((tag) => (
             <View
-              className="flex-row items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5"
+              className="max-w-full flex-row items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5"
               key={tag.id}
             >
               <Icon
@@ -189,7 +189,12 @@ function TaskRow({
                 className="text-muted-foreground"
                 size={12}
               />
-              <Text className="text-muted-foreground text-xs">{tag.name}</Text>
+              <Text
+                className="shrink text-muted-foreground text-xs"
+                numberOfLines={1}
+              >
+                {tag.name}
+              </Text>
             </View>
           ))}
         </View>
@@ -393,7 +398,7 @@ export default function TasksScreen() {
               <Pressable
                 accessibilityLabel="Show inbox tasks"
                 className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Inbox" ? "bg-muted" : ""
+                  !isTagView && activeTab === "Inbox" ? "bg-foreground/15" : ""
                 }`}
                 onPress={() => selectBaseTab("Inbox")}
               >
@@ -410,7 +415,7 @@ export default function TasksScreen() {
               <Pressable
                 accessibilityLabel="Show today tasks"
                 className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Today" ? "bg-muted" : ""
+                  !isTagView && activeTab === "Today" ? "bg-foreground/15" : ""
                 }`}
                 onPress={() => selectBaseTab("Today")}
               >
