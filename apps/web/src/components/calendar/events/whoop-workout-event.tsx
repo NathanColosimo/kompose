@@ -1,6 +1,7 @@
 "use client";
 
 import type { ItemLayout } from "@kompose/state/collision-utils";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { Activity } from "lucide-react";
 import { memo } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -83,11 +84,13 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
         top: `${top}px`,
         ...blockStackStyle(layout?.zIndex),
       }}
-      title={
-        strainScore === null
-          ? `WHOOP workout: ${label}`
-          : `WHOOP workout: ${label}, strain ${strainScore.toFixed(1)}`
-      }
+      title={[
+        `WHOOP workout: ${label}`,
+        formatTimeRange(workoutStart, workoutEnd),
+        strainScore === null ? null : `strain ${strainScore.toFixed(1)}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
     >
       <div
         className={cn(

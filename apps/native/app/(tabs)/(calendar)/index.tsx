@@ -573,17 +573,20 @@ function AllDayListSheet({
   day,
   itemsByDay,
   onClose,
+  onDismissed,
   onOpen,
 }: {
   day: Temporal.PlainDate | null;
   itemsByDay: Map<string, AllDayGoogleEvent[]>;
   onClose: () => void;
+  onDismissed: () => void;
   onOpen: (item: AllDayGoogleEvent) => void;
 }) {
   return (
     <BottomSheet
       isVisible={day !== null}
       onClose={onClose}
+      onDismissed={onDismissed}
       snapPoints={[0.4, 0.7]}
       title={
         day?.toLocaleString(undefined, {
@@ -927,6 +930,9 @@ export default function CalendarTab() {
 
   const taskFlow = useTaskEditorFlow();
   const openCreateTask = taskFlow.openCreate;
+  // The event picked from that list, opened once the list has closed.
+  const [pendingAllDayEdit, setPendingAllDayEdit] =
+    useState<AllDayGoogleEvent | null>(null);
   // The day whose full all-day list is open, from "+N more".
   const [allDayListDay, setAllDayListDay] = useState<Temporal.PlainDate | null>(
     null
@@ -1154,31 +1160,19 @@ export default function CalendarTab() {
     setCreateSlotSelection(null);
   }, []);
 
-  useEffect(() => {
-    if (createSlotSelection !== null || pendingCreateAction === null) {
+  // Runs the chosen create action once the chooser's modal is gone; a modal
+  // presented while another dismisses is swallowed on iOS.
+  const runPendingCreateAction = useCallback(() => {
+    if (pendingCreateAction === null) {
       return;
     }
-
-    // Wait for the chooser bottom-sheet modal to finish closing before opening
-    // the next sheet. Otherwise the closing modal can swallow the new one.
-    const timeoutId = setTimeout(() => {
-      if (pendingCreateAction.kind === "event") {
-        openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      } else {
-        openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      }
-      setPendingCreateAction(null);
-    }, 320);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [
-    createSlotSelection,
-    openCreateEventAt,
-    openCreateTaskAt,
-    pendingCreateAction,
-  ]);
+    if (pendingCreateAction.kind === "event") {
+      openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    } else {
+      openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    }
+    setPendingCreateAction(null);
+  }, [openCreateEventAt, openCreateTaskAt, pendingCreateAction]);
 
   const openEditTimedEvent = useCallback(
     (item: PositionedGoogleEvent) => {
@@ -1965,9 +1959,17 @@ export default function CalendarTab() {
         day={allDayListDay}
         itemsByDay={allDayEventsByDay}
         onClose={() => setAllDayListDay(null)}
+        onDismissed={() => {
+          // Open the chosen event only once the list's modal is gone; a modal
+          // presented while another dismisses is swallowed on iOS.
+          if (pendingAllDayEdit) {
+            openEditAllDayEvent(pendingAllDayEdit);
+            setPendingAllDayEdit(null);
+          }
+        }}
         onOpen={(e) => {
+          setPendingAllDayEdit(e);
           setAllDayListDay(null);
-          openEditAllDayEvent(e);
         }}
       />
 
@@ -1979,6 +1981,7 @@ export default function CalendarTab() {
       <BottomSheet
         isVisible={createSlotSelection !== null}
         onClose={closeCreateChooser}
+        onDismissed={runPendingCreateAction}
         snapPoints={[0.34, 0.42]}
         title="Create"
       >
