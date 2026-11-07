@@ -257,6 +257,7 @@ export default function SettingsPageClient() {
                   <SettingsRow
                     action={
                       <Button
+                        className="hover:bg-destructive/10 hover:text-destructive"
                         disabled={isAccountActionPending}
                         onClick={() => handleUnlinkGoogleAccount(account.id)}
                         size="sm"
@@ -307,6 +308,7 @@ export default function SettingsPageClient() {
                 <SettingsRow
                   action={
                     <Button
+                      className="hover:bg-destructive/10 hover:text-destructive"
                       disabled={
                         unlinkingAccountId !== null || linkingProvider !== null
                       }

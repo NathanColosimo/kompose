@@ -147,7 +147,7 @@ function SearchButton() {
       type="button"
     >
       <Search className="size-3.5 shrink-0" />
-      <span className="flex-1 truncate text-left">Search or add a task</span>
+      <span className="flex-1 truncate text-left">Type a command…</span>
       <Kbd>⌘K</Kbd>
     </button>
   );
@@ -261,7 +261,7 @@ function TagsMenu() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 gap-0 p-0" sideOffset={8}>
-        <div className="px-3 pt-3 pb-1.5">
+        <div className="px-3 pt-3 pb-1">
           <h2 className="font-medium text-sm">Tags</h2>
         </div>
 

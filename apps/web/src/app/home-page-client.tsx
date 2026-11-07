@@ -52,7 +52,7 @@ export default function HomePageClient() {
 
 function HomePageContent() {
   return (
-    <main className="bg-background text-foreground">
+    <>
       {/* Provide a drag handle on desktop (Electron) without affecting web behavior. */}
       <div
         aria-hidden
@@ -60,39 +60,37 @@ function HomePageContent() {
         data-desktop-drag-region
       />
       <SiteHeader />
-
-      <section className="mx-auto grid max-w-6xl items-center gap-14 px-6 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:pt-24">
-        <div className="flex flex-col gap-6">
-          <h1 className="text-balance font-serif text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
-            One timeline for your calendar and tasks.
-          </h1>
-          <p className="max-w-lg text-lg text-muted-foreground">
-            Kompose puts your events and to-dos on the same calendar, so you can
-            plan a week in minutes and adjust when plans change.
-          </p>
-          <div className="flex items-center gap-3">
-            <Button asChild className="h-10 px-4 text-sm">
+      <main>
+        <section className="mx-auto grid max-w-6xl items-center gap-14 px-6 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:pt-24">
+          <div className="flex flex-col gap-6">
+            <h1 className="text-balance font-serif text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
+              One timeline for your calendar and tasks.
+            </h1>
+            <p className="max-w-lg text-lg text-muted-foreground">
+              Kompose puts your events and to-dos on the same calendar, so you
+              can plan a week in minutes and adjust when plans change.
+            </p>
+            <Button asChild className="h-10 self-start px-4 text-sm">
               <Link href="/login">Get started</Link>
             </Button>
           </div>
-        </div>
-        <HomePreview />
-      </section>
+          <HomePreview />
+        </section>
 
-      <section className="mx-auto max-w-6xl px-6 pb-24">
-        <div className="grid gap-10 border-t pt-10 sm:grid-cols-3 sm:gap-8">
-          {highlights.map((highlight) => (
-            <div className="flex flex-col gap-2" key={highlight.title}>
-              <h2 className="font-medium text-base">{highlight.title}</h2>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                {highlight.body}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
+        <section className="mx-auto max-w-6xl px-6 pb-24">
+          <div className="grid gap-10 border-t pt-10 sm:grid-cols-3 sm:gap-8">
+            {highlights.map((highlight) => (
+              <div className="flex flex-col gap-2" key={highlight.title}>
+                <h2 className="font-medium text-base">{highlight.title}</h2>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {highlight.body}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
       <SiteFooter />
-    </main>
+    </>
   );
 }

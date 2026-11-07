@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/popover";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
-  formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
@@ -67,7 +66,7 @@ function DashboardCalendarToolbar() {
   }, [navigationStep, setCurrentDate]);
 
   return (
-    <header className="z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-3">
+    <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
       <Button onClick={goToToday} size="lg" variant="outline">
         Today
       </Button>
@@ -142,11 +141,18 @@ function CalendarGridPlaceholder() {
   );
 }
 
+/** Formats a range as "November 2026", or "October – November 2026" across months. */
+const monthYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "long",
+  year: "numeric",
+});
+
 /** How many years before and after today the date picker's year dropdown spans. */
 const PICKER_YEAR_SPAN = 100;
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const visibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
   const [open, setOpen] = useState(false);
 
   const selectedDate = temporalToPickerDate(currentDate);
@@ -173,7 +179,12 @@ function DatePopover() {
           size="lg"
           variant="ghost"
         >
-          {formatPlainDate(currentDate, { month: "long", year: "numeric" })}
+          {monthYearFormat.formatRange(
+            selectedDate,
+            temporalToPickerDate(
+              currentDate.add({ days: visibleDaysCount - 1 })
+            )
+          )}
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>

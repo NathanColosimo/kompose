@@ -105,7 +105,7 @@ export function DesktopShortcutSettings() {
             const isSelected = preset.id === selectedPresetId;
             return (
               <label
-                className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50 has-focus-visible:bg-muted/50 has-disabled:opacity-50"
+                className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50 has-disabled:opacity-50"
                 key={preset.id}
               >
                 <input

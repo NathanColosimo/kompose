@@ -52,6 +52,7 @@ export function ConnectedAgentsSettings() {
         <SettingsRow
           action={
             <Button
+              className="hover:bg-destructive/10 hover:text-destructive"
               disabled={revokeAgent.isPending}
               onClick={() => revoke(agent.clientId, agent.name)}
               size="sm"

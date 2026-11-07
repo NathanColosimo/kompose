@@ -15,6 +15,7 @@ import {
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
+import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
 import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -61,8 +62,8 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  const { profiles: googleAccountProfiles, isLoading: isAccountsLoading } =
-    useGoogleAccountProfiles();
+  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  const accountsQuery = useGoogleAccounts();
   const accountProfilesById = useMemo(
     () =>
       new Map(
@@ -125,7 +126,8 @@ export function GoogleAccountsDropdown({
   const totalCount = googleCalendars.length;
 
   if (googleAccounts.length === 0) {
-    if (isAccountsLoading) {
+    // Only offer to connect once the account list has actually loaded empty.
+    if (!accountsQuery.isSuccess) {
       return null;
     }
     return (

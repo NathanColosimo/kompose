@@ -29,11 +29,14 @@ const blockStyles: Record<Block["kind"], string> = {
   task: "border-foreground/15 bg-card text-card-foreground shadow-[inset_2px_0_0_var(--foreground)]",
 };
 
+const DAY_WIDTH = "calc(100% / var(--days) - 6px)";
+
 const INBOX = ["Review PR", "Book flights for Lisbon"];
 
 /**
- * A static picture of the dashboard: an inbox beside three days, with one
- * task mid-drag. Decorative, so it is hidden from assistive tech.
+ * A static picture of the dashboard: an inbox beside a few days, with one
+ * task mid-drag that eases in once on load. Decorative, so it is hidden
+ * from assistive tech.
  */
 export function HomePreview() {
   return (
@@ -41,8 +44,9 @@ export function HomePreview() {
       aria-hidden
       className="pointer-events-none w-full select-none overflow-hidden rounded-xl border bg-background shadow-[0_24px_60px_-24px_rgb(0_0_0/0.25)]"
     >
-      <div className="flex text-[11px]">
-        <div className="hidden w-40 shrink-0 flex-col border-r bg-sidebar sm:flex">
+      {/* Two days on phones, three from sm up; --days drives the block math. */}
+      <div className="flex text-[11px] [--days:2] sm:[--days:3]">
+        <div className="flex w-28 shrink-0 flex-col border-r bg-sidebar sm:w-40">
           <div className="flex h-9 items-center border-b px-3 font-medium text-xs">
             Inbox
           </div>
@@ -68,7 +72,8 @@ export function HomePreview() {
               <div
                 className={cn(
                   "flex flex-1 items-center justify-center border-r last:border-r-0",
-                  index === 0 ? "font-medium" : "text-muted-foreground"
+                  index === 0 ? "font-medium" : "text-muted-foreground",
+                  index === 2 ? "hidden sm:flex" : ""
                 )}
                 key={label}
               >
@@ -80,7 +85,7 @@ export function HomePreview() {
             <div className="w-10 shrink-0">
               {HOURS.map((hour) => (
                 <div
-                  className="pr-1.5 text-right text-[9px] text-muted-foreground"
+                  className="pr-1.5 text-right text-[10px] text-muted-foreground"
                   key={hour}
                   style={{ height: ROW }}
                 >
@@ -90,7 +95,13 @@ export function HomePreview() {
             </div>
             <div className="relative flex flex-1">
               {[0, 1, 2].map((day) => (
-                <div className="flex-1 border-r last:border-r-0" key={day}>
+                <div
+                  className={cn(
+                    "flex-1 border-r last:border-r-0",
+                    day === 2 ? "hidden sm:block" : ""
+                  )}
+                  key={day}
+                >
                   {HOURS.map((hour) => (
                     <div
                       className="border-border/60 border-t"
@@ -104,14 +115,15 @@ export function HomePreview() {
                 <div
                   className={cn(
                     "absolute overflow-hidden truncate rounded-[5px] border px-1.5 py-1 font-medium leading-tight",
-                    blockStyles[block.kind]
+                    blockStyles[block.kind],
+                    block.day === 2 ? "hidden sm:block" : ""
                   )}
                   key={`${block.day}-${block.title}`}
                   style={{
                     height: (block.end - block.start) * ROW - 3,
-                    left: `calc(${(block.day * 100) / 3}% + 3px)`,
+                    left: `calc(${block.day} * 100% / var(--days) + 3px)`,
                     top: block.start * ROW + 1,
-                    width: "calc(33.333% - 6px)",
+                    width: DAY_WIDTH,
                   }}
                 >
                   {block.title}
@@ -122,18 +134,18 @@ export function HomePreview() {
                 className="absolute rounded-[5px] border border-foreground/40 border-dashed"
                 style={{
                   height: ROW * 0.75 - 3,
-                  left: "calc(33.333% + 3px)",
+                  left: "calc(100% / var(--days) + 3px)",
                   top: ROW * 1.25 + 1,
-                  width: "calc(33.333% - 6px)",
+                  width: DAY_WIDTH,
                 }}
               />
               <div
-                className="absolute rotate-[-2deg] truncate rounded-[5px] border border-foreground/15 bg-card px-1.5 py-1 font-medium leading-tight shadow-[inset_2px_0_0_var(--foreground),0_10px_20px_-6px_rgb(0_0_0/0.25)]"
+                className="absolute rotate-[-2deg] truncate rounded-[5px] border border-foreground/15 bg-card px-1.5 py-1 font-medium leading-tight shadow-[inset_2px_0_0_var(--foreground),0_10px_20px_-6px_rgb(0_0_0/0.25)] motion-safe:animate-[preview-drop_600ms_cubic-bezier(0.23,1,0.32,1)_300ms_both]"
                 style={{
                   height: ROW * 0.75 - 3,
-                  left: "calc(33.333% + 14px)",
-                  top: ROW * 1.25 + 9,
-                  width: "calc(33.333% - 6px)",
+                  left: "calc(100% / var(--days) + 9px)",
+                  top: ROW * 1.25 + 8,
+                  width: "calc(100% / var(--days) - 14px)",
                 }}
               >
                 Review PR

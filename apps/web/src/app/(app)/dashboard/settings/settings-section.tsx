@@ -32,7 +32,9 @@ export function SettingsSection({
         </div>
         {action}
       </div>
-      <div className="divide-y rounded-lg border bg-card">{children}</div>
+      <div className="divide-y overflow-hidden rounded-lg border bg-card">
+        {children}
+      </div>
     </section>
   );
 }

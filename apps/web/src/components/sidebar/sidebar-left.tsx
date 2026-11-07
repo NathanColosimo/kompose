@@ -118,13 +118,14 @@ function formatDateSidebarEmptyMessage(dateTitle: string) {
   return `Nothing for ${normalizedTitle}.`;
 }
 
-function renderEmptyMessage(message: string) {
+const ADD_OR_DROP_HINT =
+  "Use + above to add a task, or drag one here from the calendar.";
+
+function renderEmptyMessage(message: string, hint = ADD_OR_DROP_HINT) {
   return (
     <div className="px-4 py-6 text-muted-foreground text-sm">
       <p>{message}</p>
-      <p className="mt-1 text-xs">
-        Press + to add a task, or drag one here from the calendar.
-      </p>
+      <p className="mt-1 text-xs">{hint}</p>
     </div>
   );
 }
@@ -153,10 +154,14 @@ interface TaskSection {
   tone?: "overdue";
 }
 
-function renderTaskSections(sections: TaskSection[], emptyMessage: string) {
+function renderTaskSections(
+  sections: TaskSection[],
+  emptyMessage: string,
+  emptyHint?: string
+) {
   const visibleSections = sections.filter(({ tasks }) => tasks.length > 0);
   if (visibleSections.length === 0) {
-    return renderEmptyMessage(emptyMessage);
+    return renderEmptyMessage(emptyMessage, emptyHint);
   }
 
   return (
@@ -235,7 +240,9 @@ function renderTagContent({
       { label: "To do", tasks: todoTasks },
       { label: "Done", tasks: doneTasks },
     ],
-    "No tasks with this tag yet."
+    "No tasks with this tag yet.",
+    // Dropping on a tag list unschedules a task without tagging it.
+    "Use + above to add a task with this tag."
   );
 }
 

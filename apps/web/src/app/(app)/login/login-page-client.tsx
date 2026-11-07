@@ -116,7 +116,7 @@ export default function LoginPageClient() {
           Kompose
         </Link>
       </header>
-      <section className="flex flex-1 items-center justify-center px-6 pb-24">
+      <section className="flex flex-1 items-center justify-center px-6 pb-[20svh]">
         <div className="flex w-full max-w-sm flex-col gap-6">
           <div className="flex flex-col gap-2">
             <h1 className="font-serif text-3xl">Sign in to Kompose</h1>
@@ -127,7 +127,7 @@ export default function LoginPageClient() {
             )}
           </div>
           {isDesktop ? <DesktopSignIn /> : <SocialAccountButtons />}
-          <p className="text-muted-foreground text-xs leading-relaxed">
+          <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
             By continuing you agree to the{" "}
             <a className="underline underline-offset-4" href="/terms">
               Terms of Service

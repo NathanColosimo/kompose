@@ -69,7 +69,7 @@ export function SocialAccountButtons() {
     <div className="flex flex-col gap-2.5">
       {providers.map(({ id, label, variant }) => (
         <Button
-          className="relative h-10 w-full text-sm"
+          className="h-10 w-full text-sm"
           disabled={activeProvider !== null}
           key={id}
           onClick={() => handleSocialSignIn(id)}
@@ -78,10 +78,7 @@ export function SocialAccountButtons() {
         >
           {activeProvider === id ? "Connecting…" : label}
           {lastUsedMethod === id && activeProvider !== id ? (
-            <Badge
-              className="absolute right-2.5 font-normal"
-              variant="secondary"
-            >
+            <Badge className="ml-1 font-normal" variant="secondary">
               Last used
             </Badge>
           ) : null}
