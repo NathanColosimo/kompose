@@ -231,9 +231,9 @@ export function nearestSlotMinutes(minutes: number, step = 15): number {
 }
 
 /**
- * When a scheduled task starts, for a list: the weekday within the coming
- * week ("Sat 10:00 AM"), else the date ("Nov 21, 10:00 AM"), so tasks a
- * week apart never read the same.
+ * When a scheduled task starts, for a list: "Today" or "Tomorrow", the
+ * weekday within the coming week ("Sat 10:00 AM"), else the date ("Nov 21,
+ * 10:00 AM"), so tasks a week apart never read the same.
  */
 export function formatScheduledAt(
   time: Temporal.ZonedDateTime,
@@ -248,7 +248,12 @@ export function formatScheduledAt(
     hour: "numeric",
     minute: "2-digit",
   });
-  if (daysAway >= 0 && daysAway < 7) {
+  if (daysAway === 0 || daysAway === 1) {
+    const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    const word = relative.format(daysAway, "day");
+    return `${word.charAt(0).toLocaleUpperCase(locale)}${word.slice(1)} ${clock}`;
+  }
+  if (daysAway > 1 && daysAway < 7) {
     return `${date.toLocaleString(locale, { weekday: "short" })} ${clock}`;
   }
   const day = date.toLocaleString(locale, {

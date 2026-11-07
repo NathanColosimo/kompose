@@ -966,6 +966,7 @@ export function TaskEditForm({
                 <AlertDialogTrigger asChild>
                   <Button
                     className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    disabled={isSavingStatus}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -1018,7 +1019,15 @@ export function TaskEditForm({
               />
             )}
             <div className="ml-auto flex gap-2">
-              <Button onClick={onClose} size="sm" type="button" variant="ghost">
+              {/* While Mark done saves, leaving would drop the edits if the
+                  save fails, so the editor holds until it's done. */}
+              <Button
+                disabled={isSavingStatus}
+                onClick={onClose}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
                 Cancel
               </Button>
               <Button

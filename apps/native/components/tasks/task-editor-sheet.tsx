@@ -73,6 +73,8 @@ interface TaskEditorSheetProps {
   onDelete?: () => void;
   onSave: () => void;
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
+  /** Dialogs that open over the editor (iOS presents them from its modal). */
+  overlay?: React.ReactNode;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
 }
@@ -468,6 +470,7 @@ function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
 }
 
 export function TaskEditorSheet({
+  overlay,
   isSaving = false,
   isVisible,
   mode,
@@ -833,6 +836,7 @@ export function TaskEditorSheet({
           }))
         }
       />
+      {overlay}
     </BottomSheet>
   );
 }

@@ -167,6 +167,15 @@ describe("formatAllDayWhen", () => {
 
 describe("formatScheduledAt", () => {
   const today = Temporal.PlainDate.from("2026-11-09");
+  test("says today and tomorrow", () => {
+    expect(formatScheduledAt(at("2026-11-09T10:00"), today, "en-US")).toBe(
+      "Today 10:00 AM"
+    );
+    expect(formatScheduledAt(at("2026-11-10T09:30"), today, "en-US")).toBe(
+      "Tomorrow 9:30 AM"
+    );
+  });
+
   test("says the weekday within the coming week, else the date", () => {
     expect(formatScheduledAt(at("2026-11-14T10:00"), today, "en-US")).toBe(
       "Sat 10:00 AM"

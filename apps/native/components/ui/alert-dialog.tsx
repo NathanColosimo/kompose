@@ -1,7 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import {
   Modal,
-  Platform,
   StyleSheet,
   TouchableWithoutFeedback,
   View,
@@ -35,10 +34,16 @@ export type AlertDialogProps = {
   onConfirm?: () => void;
   onCancel?: () => void;
   /**
-   * After the dialog has fully gone. Present the next modal here: iOS
-   * can't present one while another is still dismissing.
+   * The confirm action is running: its button reads `pendingText`, and
+   * nothing closes the dialog until the caller hides it.
    */
-  onDismissed?: () => void;
+  pending?: boolean;
+  pendingText?: string;
+  /**
+   * False when the caller closes the dialog itself (by `isVisible`), as
+   * after an async confirm.
+   */
+  closeOnConfirm?: boolean;
   dismissible?: boolean;
   showCancelButton?: boolean;
   style?: ViewStyle;
@@ -54,7 +59,9 @@ export function AlertDialog({
   cancelText = "Cancel",
   onConfirm,
   onCancel,
-  onDismissed,
+  pending = false,
+  pendingText = "Saving…",
+  closeOnConfirm = true,
   dismissible = true,
   showCancelButton = true,
   style,
@@ -62,14 +69,6 @@ export function AlertDialog({
   const cardColor = useColor("card");
 
   const [modalVisible, setModalVisible] = React.useState(false);
-  // Android has no dismissal event: the modal is gone once it hides.
-  const wasModalVisible = useRef(false);
-  useEffect(() => {
-    if (wasModalVisible.current && !modalVisible && Platform.OS !== "ios") {
-      onDismissed?.();
-    }
-    wasModalVisible.current = modalVisible;
-  }, [modalVisible, onDismissed]);
   const backdropOpacity = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
 
@@ -108,7 +107,7 @@ export function AlertDialog({
   };
 
   const handleBackdropPress = () => {
-    if (dismissible) {
+    if (dismissible && !pending) {
       animateClose();
       if (onCancel) onCancel();
     }
@@ -121,14 +120,14 @@ export function AlertDialog({
 
   const handleConfirm = () => {
     if (onConfirm) onConfirm();
-    animateClose();
+    if (closeOnConfirm) {
+      animateClose();
+    }
   };
 
   return (
     <Modal
       animationType="none"
-      // iOS reports the end of dismissal; Android is handled above.
-      onDismiss={onDismissed}
       statusBarTranslucent
       transparent
       visible={modalVisible}
@@ -157,12 +156,20 @@ export function AlertDialog({
               {children ? <CardContent>{children}</CardContent> : null}
               <CardFooter>
                 {showCancelButton && (
-                  <Button onPress={handleCancel} variant="outline">
+                  <Button
+                    disabled={pending}
+                    onPress={handleCancel}
+                    variant="outline"
+                  >
                     {cancelText}
                   </Button>
                 )}
-                <Button onPress={handleConfirm} style={{ flex: 1 }}>
-                  {confirmText}
+                <Button
+                  disabled={pending}
+                  onPress={handleConfirm}
+                  style={{ flex: 1 }}
+                >
+                  {pending ? pendingText : confirmText}
                 </Button>
               </CardFooter>
             </Card>

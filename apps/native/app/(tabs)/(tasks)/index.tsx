@@ -24,7 +24,10 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
+import {
+  TaskDeleteScopeDialog,
+  TaskSaveScopeDialog,
+} from "@/components/tasks/task-scope-dialogs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -480,11 +483,12 @@ export default function TasksScreen() {
         onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        overlay={<TaskSaveScopeDialog flow={taskFlow} />}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
 
-      <TaskScopeDialogs flow={taskFlow} />
+      <TaskDeleteScopeDialog flow={taskFlow} />
 
       <TagManagerPopover
         onChange={setSelectedTagId}
