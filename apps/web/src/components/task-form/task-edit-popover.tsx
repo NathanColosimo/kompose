@@ -314,9 +314,12 @@ function useSyncedSchedule(
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
   onDone,
+  saveEdits,
   task,
 }: {
   onDone: () => void;
+  /** Saves unsaved edits first; false when that waits on a scope choice. */
+  saveEdits: () => boolean;
   task: TaskSelectDecoded;
 }) {
   const { updateTask } = useTasks();
@@ -325,6 +328,9 @@ function TaskDoneButton({
     <Button
       className="gap-1.5"
       onClick={() => {
+        if (!saveEdits()) {
+          return;
+        }
         updateTask.mutate({
           id: task.id,
           scope: "this",
@@ -337,7 +343,7 @@ function TaskDoneButton({
       variant="outline"
     >
       {isDone ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-      {isDone ? "Not done" : "Done"}
+      {isDone ? "Mark not done" : "Mark done"}
     </Button>
   );
 }
@@ -431,10 +437,15 @@ export function TaskEditForm({
     [initialCreateValues, resolvedRecurrence, task]
   );
 
-  const { control, setValue, handleSubmit, getValues } =
-    useForm<TaskFormValues>({
-      defaultValues: resolvedInitialValues,
-    });
+  const {
+    control,
+    setValue,
+    handleSubmit,
+    getValues,
+    formState: { isDirty },
+  } = useForm<TaskFormValues>({
+    defaultValues: resolvedInitialValues,
+  });
 
   useSyncedSchedule(task, setValue);
 
@@ -899,7 +910,11 @@ export function TaskEditForm({
               </AlertDialog>
             )}
             {isCreateMode || !task ? null : (
-              <TaskDoneButton onDone={onClose} task={task} />
+              <TaskDoneButton
+                onDone={onClose}
+                saveEdits={() => !isDirty || submit(getValues())}
+                task={task}
+              />
             )}
             <div className="ml-auto flex gap-2">
               <Button onClick={onClose} size="sm" type="button" variant="ghost">

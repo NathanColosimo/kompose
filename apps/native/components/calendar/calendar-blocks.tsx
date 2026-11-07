@@ -118,7 +118,21 @@ interface BlockTextProps {
   narrow?: boolean;
   start: Temporal.ZonedDateTime;
   struck?: boolean;
+  /** Fit the title on one 12pt line, for a thin strip left above a cover. */
+  tight?: boolean;
   title: string;
+}
+
+/**
+ * A covered block showing fewer minutes than this has a strip too thin for
+ * a 14pt line plus padding (at 60pt an hour, 15 minutes is 15pt), so its
+ * title drops the padding and sits on a 12pt line.
+ */
+const TIGHT_MINUTES = 20;
+
+/** Whether a block's visible strip needs the tight title line. */
+function isTight(textMinutes: number, minutes: number) {
+  return textMinutes < minutes && textMinutes < TIGHT_MINUTES;
 }
 
 /** The block's background ring (p-px), between its edge and its card. */
@@ -146,6 +160,7 @@ function BlockText({
   narrow = false,
   start,
   struck = false,
+  tight = false,
   title,
 }: BlockTextProps) {
   // Secondary text at AA contrast on every Google color in both themes.
@@ -170,10 +185,10 @@ function BlockText({
       {/* Short blocks keep one line: the time and strain wrap onto a hidden
           second line when they don't fit beside the whole title. */}
       <View
-        className={`flex-row items-center gap-x-1 ${isShort ? "h-[14px] flex-wrap overflow-hidden" : ""}`}
+        className={`flex-row items-center gap-x-1 ${isShort ? `${tight ? "h-[12px]" : "h-[14px]"} flex-wrap overflow-hidden` : ""}`}
       >
         <Text
-          className={`font-sans-medium text-[11px] leading-[14px] ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
+          className={`font-sans-medium text-[11px] ${tight ? "leading-[12px]" : "leading-[14px]"} ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
           numberOfLines={titleLines(minutes, narrow)}
         >
           {title}
@@ -233,12 +248,15 @@ function Surface({
   compact = false,
   covered = false,
   surface,
+  tight = false,
 }: {
   children: ReactNode;
   /** Center one line vertically, for short blocks and the all-day row. */
   compact?: boolean;
   /** Something is drawn over the block's lower part: keep text at the top. */
   covered?: boolean;
+  /** No top padding, for the tight title line. */
+  tight?: boolean;
   surface: ReturnType<typeof useEventSurface>;
 }) {
   return (
@@ -252,7 +270,7 @@ function Surface({
     >
       <View style={{ backgroundColor: surface.bar, width: 3 }} />
       <View
-        className={`min-w-0 flex-1 px-1.5 ${compact && !covered ? "justify-center" : ""} ${compact && covered ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
+        className={`min-w-0 flex-1 px-1.5 ${compact && !covered ? "justify-center" : ""} ${compact && covered && !tight ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
       >
         {children}
       </View>
@@ -305,6 +323,7 @@ export function EventBlock({
           compact={textMinutes < COMPACT_MINUTES}
           covered={textMinutes < minutes}
           surface={surface}
+          tight={isTight(textMinutes, minutes)}
         >
           <BlockText
             details={details}
@@ -312,6 +331,7 @@ export function EventBlock({
             minutes={textMinutes}
             narrow={placement.width < NARROW_BLOCK_PT}
             start={start}
+            tight={isTight(textMinutes, minutes)}
             title={title}
           />
         </Surface>
@@ -342,6 +362,7 @@ export function TaskBlock({
   const textMinutes = Math.min(minutes, position.uncoveredMinutes ?? minutes);
   const compact = textMinutes < COMPACT_MINUTES;
   const isCovered = textMinutes < minutes;
+  const tight = isTight(textMinutes, minutes);
   const placement = positionStyle(position);
   const bodyTopRef = useRef(0);
   const narrow = placement.width < NARROW_BLOCK_PT;
@@ -361,7 +382,7 @@ export function TaskBlock({
       style={placement}
     >
       <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
+        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${compact ? "" : "py-1"}`}
       >
         {/* Narrow blocks give the checkbox's room to the title; done is in
             the editor and the long-press menu. */}
@@ -411,6 +432,7 @@ export function TaskBlock({
               narrow={narrow}
               start={start}
               struck={done}
+              tight={tight}
               title={title}
             />
           </View>

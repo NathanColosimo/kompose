@@ -85,7 +85,6 @@ function groupItems(sorted: PositionedItem[]): Group[] {
   return groups;
 }
 
-/** First-fit columns within a group, then widen each item into free columns. */
 /** When a later, deeper group first covers `item`, in minutes from its start. */
 function uncoveredMinutes(
   item: PositionedItem,
@@ -105,6 +104,7 @@ function uncoveredMinutes(
   return Math.max(uncovered, 0);
 }
 
+/** First-fit columns within a group, then widen each item into free columns. */
 function layoutGroup(
   group: Group,
   later: Group[],

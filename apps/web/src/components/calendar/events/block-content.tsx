@@ -165,15 +165,20 @@ export function BlockContent({
         <span
           className={cn(
             titleClass,
-            // Long words break at a soft hyphen; a word that still can't
-            // fit breaks anywhere rather than being clipped.
+            // In a narrow block long words break at a soft hyphen; a word
+            // that still can't fit breaks anywhere rather than being clipped.
             "hyphens-auto [hyphenate-limit-chars:5_2_2] [overflow-wrap:break-word]",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
           )}
         >
-          {withSoftHyphens(title)}
+          {/* Soft hyphens only where the block is narrow: elsewhere a long
+              word moves down whole instead of being split. */}
+          <span className="@max-[5.5rem]:hidden">{title}</span>
+          <span className="@max-[5.5rem]:inline hidden">
+            {withSoftHyphens(title)}
+          </span>
         </span>
         <span
           className={cn(

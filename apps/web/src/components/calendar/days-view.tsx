@@ -385,6 +385,12 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     createEventRequestedAtom
   );
   const setCurrentDate = useSetAtom(currentDateAtom);
+  // A request still waiting on calendars is dropped when the calendar
+  // closes, so it can't open an editor on some later visit.
+  useEffect(
+    () => () => setCreateEventRequested(false),
+    [setCreateEventRequested]
+  );
   useLayoutEffect(() => {
     const grid = scrollRef.current;
     const firstDay = visibleDays[0];
