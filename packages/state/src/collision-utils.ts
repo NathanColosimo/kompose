@@ -94,29 +94,61 @@ function crowdedMember(
   );
 }
 
+/**
+ * Where to split `group` so that `item` and the members from that point on
+ * form a new group stacked on the rest, with every member that stays still
+ * showing 15 minutes. Null when no such point exists (the item then joins).
+ */
+function splitPoint(
+  group: Group,
+  item: PositionedItem,
+  crowded: PositionedItem
+): number | null {
+  let start = crowded.startMinutes;
+  for (;;) {
+    if (start <= group.start) {
+      return null;
+    }
+    const split = start;
+    const moved = [
+      ...group.members.filter((member) => member.startMinutes >= split),
+      item,
+    ];
+    // A staying member that started under 15 minutes before the split, and
+    // would be covered by the moved ones, has to move too.
+    const tooClose = group.members.find(
+      (member) =>
+        member.startMinutes < split &&
+        split - member.startMinutes < MIN_SHOWN_MINUTES &&
+        moved.some((other) => itemsOverlap(member, other))
+    );
+    if (!tooClose) {
+      return split;
+    }
+    start = tooClose.startMinutes;
+  }
+}
+
 /** Split items into side-by-side groups and give each its indent level. */
 function groupItems(sorted: PositionedItem[]): Group[] {
   const groups: Group[] = [];
   for (const item of sorted) {
     const latest = groups.at(-1);
     const crowded = latest && crowdedMember(item, latest);
-    if (
-      latest &&
-      crowded &&
-      crowded.startMinutes - latest.start >= MIN_SHOWN_MINUTES
-    ) {
-      // Move the crowded member and everything after it into a new group
-      // with the item, stacked on the members that stay.
+    const split = latest && crowded ? splitPoint(latest, item, crowded) : null;
+    if (latest && split !== null) {
+      // Move the members from the split on into a new group with the item,
+      // stacked on the members that stay.
       const moved = latest.members.filter(
-        (member) => member.startMinutes >= crowded.startMinutes
+        (member) => member.startMinutes >= split
       );
       latest.members = latest.members.filter(
-        (member) => member.startMinutes < crowded.startMinutes
+        (member) => member.startMinutes < split
       );
       groups.push({
-        depth: depthAt(groups, crowded.startMinutes),
+        depth: depthAt(groups, split),
         members: [...moved, item],
-        start: crowded.startMinutes,
+        start: split,
       });
       continue;
     }

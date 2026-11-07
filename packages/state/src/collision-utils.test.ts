@@ -101,6 +101,57 @@ describe("calculateCollisionLayout", () => {
     });
   });
 
+  test("moves every member that would show under 15 minutes", () => {
+    for (const items of [
+      [
+        item("a", at(10), at(11)),
+        item("b", at(10, 5), at(10, 35)),
+        item("c", at(10, 15), at(11)),
+        item("d", at(10, 25), at(11)),
+      ],
+      [
+        item("a", at(10), at(11)),
+        item("b", at(10, 10), at(11)),
+        item("c", at(10, 20), at(11)),
+        item("d", at(10, 30), at(11)),
+      ],
+    ]) {
+      const layout = calculateCollisionLayout(items);
+      for (const { id, startMinutes, endMinutes } of items) {
+        expect(layout.get(id)?.uncoveredMinutes).toBeGreaterThanOrEqual(
+          Math.min(15, endMinutes - startMinutes)
+        );
+      }
+    }
+  });
+
+  test("shows 15 minutes of every item on random busy days", () => {
+    // A fixed-seed generator, so a failure reproduces.
+    let seed = 1;
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed / 2_147_483_648;
+    };
+    const lengths = [5, 15, 30, 45, 60, 90, 120];
+    for (let day = 0; day < 2000; day += 1) {
+      const items = Array.from(
+        { length: 2 + Math.floor(random() * 7) },
+        (_, i) => {
+          const start = at(8) + Math.floor(random() * 24) * 5;
+          const length = lengths[Math.floor(random() * lengths.length)] ?? 30;
+          return item(`i${i}`, start, start + length);
+        }
+      );
+      const layout = calculateCollisionLayout(items);
+      for (const { endMinutes, id, startMinutes } of items) {
+        const drawn = Math.max(15, endMinutes - startMinutes);
+        expect(layout.get(id)?.uncoveredMinutes).toBeGreaterThanOrEqual(
+          Math.min(15, drawn)
+        );
+      }
+    }
+  });
+
   test("keeps items that start close to their group's start side by side", () => {
     const layout = calculateCollisionLayout([
       item("a", at(10), at(11)),

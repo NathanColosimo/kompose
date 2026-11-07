@@ -128,6 +128,31 @@ export function formatTimeRange(
 }
 
 /**
+ * Hours and minutes without a trailing AM/PM ("10:25", "14:05"), for blocks
+ * too narrow for the full time; the grid's hour labels give the half of day.
+ */
+export function formatClockTime(
+  time: Temporal.ZonedDateTime,
+  /** Defaults to the runtime's locale. */
+  locale?: string
+): string {
+  return formatParts(
+    rangeFormat(locale, time.timeZoneId, true, false),
+    time.epochMilliseconds,
+    true
+  ).text;
+}
+
+/** Both ends without a trailing AM/PM ("11:30 – 12:30"), for narrow blocks. */
+export function formatClockRange(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime,
+  locale?: string
+): string {
+  return `${formatClockTime(start, locale)} – ${formatClockTime(end, locale)}`;
+}
+
+/**
  * The 15-minute line nearest a touch, clamped to the day. Touch has no hover
  * preview, so a press on or near an hour line lands on that hour.
  */

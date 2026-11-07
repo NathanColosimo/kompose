@@ -1,4 +1,7 @@
-import { formatTimeRange } from "@kompose/state/temporal-utils";
+import {
+  formatClockTime,
+  formatTimeRange,
+} from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Temporal } from "temporal-polyfill";
@@ -58,6 +61,20 @@ function withSoftHyphens(text: string) {
       )
       .join("");
   });
+}
+
+/**
+ * Title lines by height. A narrow block (under 5.5rem) gives the title one
+ * more line from an hour, with its start time under it from 45 minutes.
+ */
+function titleClampClass(isTall: boolean, hasTwoTitleLines: boolean) {
+  if (isTall) {
+    return "@max-[5.5rem]:line-clamp-3 line-clamp-2";
+  }
+  if (hasTwoTitleLines) {
+    return "line-clamp-2";
+  }
+  return "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal";
 }
 
 /** `leading` (a task's checkbox), left out of narrow blocks for the title. */
@@ -157,9 +174,9 @@ export function BlockContent({
   ));
 
   // In a narrow block (side by side on a busy day) the title is what
-  // matters: it takes the time line's and the checkbox's room and
-  // hyphenates long words; the time is in the hover text, and done is in
-  // the popover.
+  // matters: it takes the checkbox's room and hyphenates long words, and
+  // the time shortens to the start ("10:25"). The full range is in the
+  // hover text, and done is in the editor.
   return (
     <div className="@container flex min-w-0 items-start gap-1.5">
       {narrowHidden(leading)}
@@ -171,9 +188,7 @@ export function BlockContent({
             // split ordinary words like "re-view"). A word that still can't
             // fit breaks anywhere rather than being clipped.
             "hyphens-manual [overflow-wrap:break-word]",
-            hasTwoTitleLines
-              ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
-              : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
+            titleClampClass(isTall, hasTwoTitleLines)
           )}
         >
           {/* Soft hyphens only where the block is narrow: elsewhere a long
@@ -196,6 +211,18 @@ export function BlockContent({
           </span>
           {isTall ? null : detailIcons}
         </span>
+        {/* A narrow block's start time, once there's room under the title
+            ("10:25"; the hour labels give AM or PM). */}
+        {hasTwoTitleLines ? (
+          <span
+            className={cn(
+              "@max-[5.5rem]:block hidden truncate tabular-nums leading-[14px]",
+              META
+            )}
+          >
+            {formatClockTime(shownStart ?? start)}
+          </span>
+        ) : null}
         {isTall && detailRows.length > 0 ? (
           <span
             className={cn(

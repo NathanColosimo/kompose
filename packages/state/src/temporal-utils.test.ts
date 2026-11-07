@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
 import {
+  formatClockRange,
+  formatClockTime,
   formatDuration,
   formatTimeRange,
   nearestSlotMinutes,
@@ -108,5 +110,18 @@ describe("nearestSlotMinutes", () => {
   test("stays inside the day", () => {
     expect(nearestSlotMinutes(-3)).toBe(0);
     expect(nearestSlotMinutes(24 * 60)).toBe(24 * 60 - 15);
+  });
+});
+
+describe("formatClockTime", () => {
+  test("drops a trailing AM/PM", () => {
+    expect(formatClockTime(at("2026-11-09T10:25"), "en-US")).toBe("10:25");
+    expect(
+      formatClockRange(at("2026-11-09T11:30"), at("2026-11-09T12:30"), "en-US")
+    ).toBe("11:30 – 12:30");
+  });
+
+  test("keeps a leading one", () => {
+    expect(formatClockTime(at("2026-11-09T10:25"), "ko-KR")).toContain("오전");
   });
 });

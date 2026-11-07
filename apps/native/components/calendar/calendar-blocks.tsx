@@ -1,6 +1,9 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { extractMeetingLink } from "@kompose/state/meeting";
-import { formatTimeRange } from "@kompose/state/temporal-utils";
+import {
+  formatClockRange,
+  formatTimeRange,
+} from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
 import { type ReactNode, useRef } from "react";
@@ -107,6 +110,8 @@ function positionStyle({
 }
 
 interface BlockTextProps {
+  /** Short of room for AM/PM: the time reads "11:30 – 12:30". */
+  clockTime?: boolean;
   details?: BlockDetail[];
   end: Temporal.ZonedDateTime;
   /** Visible minutes, which set how much text fits. */
@@ -146,6 +151,9 @@ const BLOCK_RING_PT = 1;
 /** Narrower than this, a block shows its title in place of the time. */
 const NARROW_BLOCK_PT = 72;
 
+/** Narrower than this, times drop AM/PM (the 3-day view on a phone). */
+const CLOCK_TIME_BLOCK_PT = 120;
+
 /** Narrower than this, the title keeps to one line (see BlockText `sliver`). */
 const SLIVER_BLOCK_PT = 44;
 
@@ -165,6 +173,7 @@ function titleLines(minutes: number, narrow: boolean, sliver: boolean): number {
 
 /** Title, then the time once there's room, then details on long blocks. */
 function BlockText({
+  clockTime = false,
   details = [],
   end,
   minutes,
@@ -216,12 +225,17 @@ function BlockText({
         {isShort ? shorts : null}
       </View>
       {minutes >= TITLE_ONLY_MINUTES && !narrow ? (
-        <View className="flex-row items-center gap-1">
+        // The time comes first: values that don't fit beside it wrap onto
+        // a hidden second line.
+        <View className="h-[13px] flex-row flex-wrap items-center gap-x-1 overflow-hidden">
           <Text
-            className={`shrink text-[10px] leading-[13px] ${meta}`}
+            className={`max-w-full text-[10px] leading-[13px] ${meta}`}
             numberOfLines={1}
           >
-            {formatTimeRange(start, end)}
+            {/* An overnight range keeps AM/PM (and dates when it needs them). */}
+            {clockTime && start.toPlainDate().equals(end.toPlainDate())
+              ? formatClockRange(start, end)
+              : formatTimeRange(start, end)}
           </Text>
           {minutes < DETAILS_MINUTES ? shorts : null}
         </View>
@@ -338,6 +352,7 @@ export function EventBlock({
           tight={isTight(textMinutes, minutes)}
         >
           <BlockText
+            clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
             details={details}
             end={end}
             minutes={textMinutes}
@@ -439,6 +454,7 @@ export function TaskBlock({
         >
           <View className="min-w-0 flex-1" pointerEvents="none">
             <BlockText
+              clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
               details={details}
               end={end}
               minutes={textMinutes}
