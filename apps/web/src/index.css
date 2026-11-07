@@ -224,6 +224,14 @@
   }
 }
 
+/* The landing preview's dragged task, lifting in from the inbox once. */
+@keyframes preview-drop {
+  from {
+    opacity: 0;
+    translate: -48px -12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

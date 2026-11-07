@@ -132,9 +132,9 @@ export const TaskEvent = memo(function TaskEventInner({
     <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
       <div
         className={cn(
-          "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
+          "group pointer-events-auto cursor-grab rounded-md bg-background p-px transition-shadow",
           "relative",
-          "hover:shadow-md",
+          "hover:shadow-sm",
           isDragging ? "opacity-0" : "",
           isDone ? "opacity-60" : ""
         )}
@@ -143,7 +143,7 @@ export const TaskEvent = memo(function TaskEventInner({
         {...attributes}
         {...listeners}
       >
-        <div className="h-full rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30">
+        <div className="h-full rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10">
           <div
             className={cn(
               "flex h-full gap-1",
@@ -152,22 +152,22 @@ export const TaskEvent = memo(function TaskEventInner({
           >
             <Checkbox
               checked={isDone}
-              className="size-3.5 shrink-0 cursor-pointer"
+              className="size-3.5 shrink-0 cursor-pointer border-foreground/60"
               onClick={handleStatusToggle}
             />
             <div className="min-w-0 flex-1">
               <div
                 className={cn(
                   "truncate font-medium text-xs",
-                  isDone ? "line-through opacity-80" : ""
+                  isDone ? "text-muted-foreground line-through" : ""
                 )}
               >
                 {task.title}
               </div>
               {/* Hide time for short events (<30min) to prevent overflow */}
               {segmentDurationMinutes >= 30 && (
-                <div className="truncate text-[10px] opacity-80">
-                  {formatTime(taskStart)} - {formatTime(taskEnd)}
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {formatTime(taskStart)} – {formatTime(taskEnd)}
                 </div>
               )}
             </div>
@@ -211,13 +211,13 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
     >
       <div
         className={cn(
-          "rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30",
+          "rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10",
           isShortTask ? "flex h-full items-center px-1.5 py-0" : ""
         )}
       >
         <div className="truncate font-medium text-xs">{task.title}</div>
         {startZdt && !isShortTask ? (
-          <div className="truncate text-[10px] opacity-80">
+          <div className="truncate text-[10px] text-muted-foreground">
             {formatTime(startZdt)}
           </div>
         ) : null}

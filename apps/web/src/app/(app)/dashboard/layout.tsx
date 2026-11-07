@@ -166,7 +166,7 @@ export default function DashboardLayout({
           <CommandBar />
           <TaskParserPreload />
           <SidebarLeft />
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset className="min-w-0">{children}</SidebarInset>
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>

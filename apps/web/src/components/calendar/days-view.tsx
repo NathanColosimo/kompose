@@ -55,6 +55,8 @@ import { TimeGutter } from "./time-grid/time-gutter";
 
 /** Default scroll position on mount (8am) */
 const DEFAULT_SCROLL_HOUR = 8;
+/** Pixels above the default hour line, enough to show its whole label. */
+const HOUR_LABEL_CLEARANCE = 12;
 const MAX_ALL_DAY_EVENTS = 2;
 const EMPTY_GOOGLE_EVENTS: GoogleEventWithSource[] = [];
 
@@ -285,10 +287,13 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   // Event creation context for click-and-drag
   const { actions } = useEventCreation();
 
-  // Scroll vertically to 8am on mount for a sensible default view
+  // Scroll vertically to 8am on mount for a sensible default view. Hour
+  // labels sit centered on their line, so stop a little above it to show
+  // the whole "8 AM" label.
   useLayoutEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
+      scrollRef.current.scrollTop =
+        DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR - HOUR_LABEL_CLEARANCE;
     }
   }, []);
 
@@ -789,7 +794,7 @@ function AllDayEventChip({
         type="button"
       >
         <span
-          className={`block w-full max-w-full truncate rounded-[3px] border border-black/20 px-1.5 py-0.5 font-medium text-[11px] dark:border-white/30 ${
+          className={`block w-full max-w-full truncate rounded-[3px] border border-black/10 px-1.5 py-0.5 font-medium text-[11px] dark:border-white/15 ${
             backgroundColor ? "" : "bg-primary/10 text-primary"
           }`}
           style={{

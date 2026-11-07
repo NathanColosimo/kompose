@@ -77,11 +77,11 @@ export function CommandBarContent({
   }, []);
   const handleCreated = useCallback(() => setSearch(""), []);
 
-  let placeholder = "Type a command or search...";
+  let placeholder = "Type a command…";
   if (view === "search-tasks") {
-    placeholder = "Search tasks...";
+    placeholder = "Search tasks…";
   } else if (view === "create-task") {
-    placeholder = "Task title =duration >due ~start...";
+    placeholder = "Task title =duration >due ~start…";
   }
 
   return (

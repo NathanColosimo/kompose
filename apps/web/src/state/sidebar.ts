@@ -130,9 +130,10 @@ export const sidebarLeftViewSelectionAtom =
     { getOnInit: false }
   );
 
+// The right sidebar has no content yet, so it starts closed.
 export const sidebarRightOpenAtom = atomWithStorage<boolean>(
   "sidebar-right-open",
-  true,
+  false,
   undefined,
   { getOnInit: false }
 );

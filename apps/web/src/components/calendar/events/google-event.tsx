@@ -141,17 +141,17 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   };
 
   const fillStyle: React.CSSProperties = {
-    backgroundColor: backgroundColor ?? "hsl(var(--primary))",
-    color: foregroundColor ?? "hsl(var(--primary-foreground))",
+    backgroundColor: backgroundColor ?? "var(--primary)",
+    color: foregroundColor ?? "var(--primary-foreground)",
   };
 
   const eventCard = (
     <div
       className={cn(
-        "group pointer-events-auto rounded-md bg-background p-px shadow-sm transition-shadow",
+        "group pointer-events-auto rounded-md bg-background p-px transition-shadow",
         "relative",
         isEditable
-          ? "cursor-grab hover:shadow-md"
+          ? "cursor-grab hover:shadow-sm"
           : "cursor-default opacity-90",
         isDragging ? "opacity-0" : ""
       )}
@@ -163,7 +163,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     >
       <div
         className={cn(
-          "h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
+          "h-full rounded-[5px] border border-black/10 px-2 py-1 dark:border-white/15",
           isShortEvent ? "flex items-center py-0" : ""
         )}
         style={fillStyle}
@@ -190,7 +190,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
         {/* Hide time for short events (<30min) to prevent overflow */}
         {durationMinutes >= 30 && (
           <div className="truncate text-[10px] opacity-85">
-            {formatTime(start)} - {formatTime(end)}
+            {formatTime(start)} – {formatTime(end)}
           </div>
         )}
       </div>
@@ -264,8 +264,8 @@ export const GoogleCalendarEventPreview = memo(
     const shortEventHeight = (15 / 60) * PIXELS_PER_HOUR;
 
     const fillStyle: React.CSSProperties = {
-      backgroundColor: backgroundColor ?? "hsl(var(--primary))",
-      color: foregroundColor ?? "hsl(var(--primary-foreground))",
+      backgroundColor: backgroundColor ?? "var(--primary)",
+      color: foregroundColor ?? "var(--primary-foreground)",
     };
 
     return (
@@ -275,7 +275,7 @@ export const GoogleCalendarEventPreview = memo(
       >
         <div
           className={cn(
-            "rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
+            "rounded-[5px] border border-black/10 px-2 py-1 dark:border-white/15",
             isShortEvent ? "flex h-full items-center py-0" : ""
           )}
           style={fillStyle}

@@ -24,13 +24,13 @@ const actions: Action[] = [
   {
     icon: ListTodoIcon,
     id: "search-tasks",
-    label: "Search Tasks",
+    label: "Search tasks",
     view: "search-tasks",
   },
   {
     icon: PlusCircleIcon,
     id: "create-task",
-    label: "Create Task",
+    label: "Create task",
     view: "create-task",
   },
 ];

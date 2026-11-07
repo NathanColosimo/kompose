@@ -47,18 +47,27 @@ export const DayHeader = memo(function DayHeaderInner({
       className={cn(
         "flex shrink-0 flex-col items-center justify-center border-border border-r last:border-r-0",
         hasWhoopData ? "gap-0.5 py-1.5" : "h-12",
-        isTodayHighlight ? "bg-primary/5" : ""
+        isTodayHighlight ? "bg-foreground/[0.03]" : ""
       )}
       style={{ scrollSnapAlign: "start", width }}
     >
       <div className="flex items-center gap-2">
-        <span className="font-medium text-muted-foreground text-xs uppercase">
+        <span
+          className={cn(
+            "text-sm",
+            isTodayHighlight
+              ? "font-medium text-foreground"
+              : "text-muted-foreground"
+          )}
+        >
           {date.toLocaleString(undefined, { weekday: "short" })}
         </span>
         <span
           className={cn(
-            "flex size-7 items-center justify-center rounded-full font-semibold text-sm",
-            isTodayHighlight ? "bg-primary text-primary-foreground" : ""
+            "flex size-7 items-center justify-center rounded-full font-medium text-sm tabular-nums",
+            isTodayHighlight
+              ? "bg-primary text-primary-foreground dark:bg-foreground/15 dark:text-foreground"
+              : ""
           )}
         >
           {date.day}

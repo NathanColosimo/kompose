@@ -13,11 +13,10 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useState } from "react";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
-import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/popover";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
-  formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
@@ -68,42 +66,38 @@ function DashboardCalendarToolbar() {
   }, [navigationStep, setCurrentDate]);
 
   return (
-    <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b bg-background px-4 py-2">
-      <div className="flex items-center gap-1">
+    <header className="@container z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
+      {/* Keeps the date title beside the arrows that change it when the toolbar wraps. */}
+      <div className="flex min-w-0 items-center gap-1">
+        <Button onClick={goToToday} size="lg" variant="outline">
+          Today
+        </Button>
         <Button
-          aria-label="Previous period"
+          aria-label="Previous days"
+          className="text-muted-foreground"
           onClick={goToPreviousPeriod}
           size="icon-lg"
           variant="ghost"
         >
-          <ChevronLeft className="size-4" />
+          <ChevronLeft />
         </Button>
         <Button
-          aria-label="Next period"
+          aria-label="Next days"
+          className="text-muted-foreground"
           onClick={goToNextPeriod}
           size="icon-lg"
           variant="ghost"
         >
-          <ChevronRight className="size-4" />
+          <ChevronRight />
         </Button>
-        <Button
-          className="ml-1"
-          onClick={goToToday}
-          size="lg"
-          variant="outline"
-        >
-          Today
-        </Button>
+        <DatePopover />
       </div>
 
-      <DatePopover />
-
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center">
         <GoogleAccountsDropdown
           googleAccounts={googleAccounts}
           googleCalendars={googleCalendars}
         />
-        <ModeToggle />
       </div>
     </header>
   );
@@ -127,15 +121,15 @@ function CalendarGridPlaceholder() {
   return (
     <div className="h-full overflow-hidden bg-background">
       <div className="flex h-full">
-        <div className="w-16 shrink-0 border-r bg-muted/10" />
+        <div className="w-16 shrink-0 border-r" />
         <div className="flex-1">
           <div className="grid h-full grid-rows-[auto_1fr]">
-            <div className="border-b bg-muted/5" />
+            <div className="h-12 border-b" />
             <div
               className="h-full"
               style={{
                 backgroundImage:
-                  "linear-gradient(to bottom, hsl(var(--border) / 0.45) 1px, transparent 1px), linear-gradient(to right, hsl(var(--border) / 0.45) 1px, transparent 1px)",
+                  "linear-gradient(to bottom, color-mix(in oklab, var(--border) 60%, transparent) 1px, transparent 1px), linear-gradient(to right, color-mix(in oklab, var(--border) 60%, transparent) 1px, transparent 1px)",
                 backgroundPosition: "0 0, 0 0",
                 backgroundSize: "100% 80px, 160px 100%",
               }}
@@ -147,14 +141,32 @@ function CalendarGridPlaceholder() {
   );
 }
 
+/** Formats a range as "November 2026", or "October – November 2026" across months. */
+const monthYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "long",
+  year: "numeric",
+});
+const shortMonthYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  year: "numeric",
+});
+
 /** How many years before and after today the date picker's year dropdown spans. */
 const PICKER_YEAR_SPAN = 100;
 
 function DatePopover() {
   const [currentDate, setCurrentDate] = useAtom(currentDateAtom);
+  const visibleDaysCount = useAtomValue(effectiveVisibleDaysCountAtom);
   const [open, setOpen] = useState(false);
 
   const selectedDate = temporalToPickerDate(currentDate);
+  const lastVisibleDate = temporalToPickerDate(
+    currentDate.add({ days: visibleDaysCount - 1 })
+  );
+  const visibleMonths = monthYearFormat.formatRange(
+    selectedDate,
+    lastVisibleDate
+  );
   // react-day-picker's dropdown stops at the end of the current year by default.
   const thisYear = todayPlainDate().year;
   const startMonth = new Date(thisYear - PICKER_YEAR_SPAN, 0);
@@ -174,12 +186,18 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="justify-start gap-1.5 px-2.5 text-left font-normal"
+          className="min-w-0 shrink gap-1.5 px-2 font-medium text-base"
           size="lg"
-          variant="outline"
+          variant="ghost"
         >
-          <CalendarIcon className="size-4" />
-          <span>{formatPlainDate(currentDate)}</span>
+          {/* Narrow toolbars use short month names so the range end stays visible. */}
+          <span className="@md:inline hidden truncate" title={visibleMonths}>
+            {visibleMonths}
+          </span>
+          <span className="@md:hidden truncate" title={visibleMonths}>
+            {shortMonthYearFormat.formatRange(selectedDate, lastVisibleDate)}
+          </span>
+          <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

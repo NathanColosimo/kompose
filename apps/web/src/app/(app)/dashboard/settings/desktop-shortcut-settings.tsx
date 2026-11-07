@@ -4,19 +4,14 @@ import {
   type DesktopCommandBarShortcutPresetId,
   desktopCommandBarShortcutPresets,
 } from "@kompose/desktop";
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { desktopBridge } from "@/lib/desktop";
+import { cn } from "@/lib/utils";
+import { SettingsRowSkeleton, SettingsSection } from "./settings-section";
 
 interface DesktopShortcutFormValues {
   presetId: DesktopCommandBarShortcutPresetId;
@@ -65,7 +60,7 @@ export function DesktopShortcutSettings() {
 
   const applyForm = form.handleSubmit(async ({ presetId }) => {
     await desktopBridge().setShortcut(presetId);
-    toast.success("Desktop command bar shortcut updated.");
+    toast.success("Shortcut updated.");
   });
 
   const handlePresetChange = (
@@ -97,42 +92,42 @@ export function DesktopShortcutSettings() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Desktop Command Bar Shortcut</CardTitle>
-        <CardDescription>
-          Pick a global shortcut preset for opening the desktop command bar
-          popup.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isLoading ? (
-          <p className="text-muted-foreground text-sm">
-            Loading shortcut preference…
-          </p>
-        ) : (
-          <div className="grid gap-2">
-            {desktopCommandBarShortcutPresets.map((preset) => {
-              const isSelected = preset.id === selectedPresetId;
-              return (
-                <Button
-                  className="justify-between"
-                  disabled={form.formState.isSubmitting}
-                  key={preset.id}
-                  onClick={() => handlePresetChange(preset.id)}
-                  type="button"
-                  variant={isSelected ? "secondary" : "outline"}
-                >
-                  <span>{preset.label}</span>
-                  <span className="font-mono text-muted-foreground text-xs">
-                    {preset.accelerator}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <SettingsSection
+      description="Opens the command bar from anywhere on your computer."
+      title="Command bar shortcut"
+    >
+      {isLoading ? (
+        <SettingsRowSkeleton />
+      ) : (
+        <fieldset className="divide-y" disabled={form.formState.isSubmitting}>
+          <legend className="sr-only">Command bar shortcut</legend>
+          {desktopCommandBarShortcutPresets.map((preset) => {
+            const isSelected = preset.id === selectedPresetId;
+            return (
+              <label
+                className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50 has-disabled:opacity-50"
+                key={preset.id}
+              >
+                <input
+                  checked={isSelected}
+                  className="sr-only"
+                  name="command-bar-shortcut"
+                  onChange={() => handlePresetChange(preset.id)}
+                  type="radio"
+                  value={preset.id}
+                />
+                <Check
+                  className={cn("size-4", isSelected ? "" : "invisible")}
+                />
+                <span className="flex-1">{preset.label}</span>
+                <span className="font-mono text-muted-foreground text-xs">
+                  {preset.accelerator}
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+    </SettingsSection>
   );
 }
