@@ -76,7 +76,7 @@ export const whoopSummariesByDayAtom = atom<Map<string, WhoopDaySummary>>(
   }
 );
 
-/** Whether a day's summary has a stat that day headers show. */
+/** Whether a day's summary has recovery, strain, or sleep. */
 export function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
   return Boolean(
     summary &&

@@ -361,12 +361,23 @@ function recoveryColor(score: number): string {
   return score >= 34 ? "bg-amber-400" : "bg-red-500";
 }
 
+/** `value`, or the last non-null value it had. */
+function useLastNonNull<T>(value: T | null): T | null {
+  const last = useRef(value);
+  if (value !== null) {
+    last.current = value;
+  }
+  return value ?? last.current;
+}
+
 /** The date and any WHOOP numbers, as VoiceOver reads a day header. */
 function dayHeaderLabel(
   day: Temporal.PlainDate,
-  summary: WhoopDaySummary | undefined
+  summary: WhoopDaySummary | undefined,
+  isTodayDay: boolean
 ): string {
   return [
+    isTodayDay ? "Today" : null,
     day.toLocaleString(undefined, {
       day: "numeric",
       month: "long",
@@ -776,6 +787,9 @@ export default function CalendarTab() {
     day: Temporal.PlainDate;
     minutes: number;
   } | null>(null);
+  // The chooser sheet animates out after the slot clears; keep showing the
+  // last slot so its line doesn't vanish mid-exit.
+  const shownCreateSlot = useLastNonNull(createSlotSelection);
   const [pendingCreateAction, setPendingCreateAction] = useState<{
     kind: "event" | "task";
     day: Temporal.PlainDate;
@@ -900,6 +914,7 @@ export default function CalendarTab() {
     (day: Temporal.PlainDate) => {
       const now = Temporal.Now.zonedDateTimeISO(timeZone);
       if (day.equals(now.toPlainDate())) {
+        // Late at night this clamps to 11:30 PM, the last slot of the day.
         const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
         openCreateChooserAt(day, Math.min(nextHalfHour, 23 * 60 + 30));
       } else {
@@ -1381,7 +1396,11 @@ export default function CalendarTab() {
                       { label: "New event or task", name: "activate" },
                     ]}
                     accessibilityHint="Creates an event or task on this day"
-                    accessibilityLabel={dayHeaderLabel(day, whoop)}
+                    accessibilityLabel={dayHeaderLabel(
+                      day,
+                      whoop,
+                      isTodayHighlight
+                    )}
                     accessibilityRole="button"
                     accessible
                     className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
@@ -1418,9 +1437,11 @@ export default function CalendarTab() {
           {/* All-day events row; it always shows, so paging doesn't move the grid. */}
           <View className="flex-row border-border border-b">
             <View
-              className="border-border border-r"
+              className="items-end border-border border-r pt-1.5 pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
-            />
+            >
+              <Text className="text-[10px] text-muted-foreground">All day</Text>
+            </View>
             <View className="flex-1 flex-row">
               {visibleDays.map((day) => {
                 const items = allDayEventsByDay.get(day.toString()) ?? [];
@@ -1683,7 +1704,7 @@ export default function CalendarTab() {
         title="Create"
       >
         <Text className="mb-3 text-muted-foreground text-sm">
-          {createChooserCopy(createSlotSelection, timeZone)}
+          {createChooserCopy(shownCreateSlot, timeZone)}
         </Text>
         <View className="gap-3">
           <Button
