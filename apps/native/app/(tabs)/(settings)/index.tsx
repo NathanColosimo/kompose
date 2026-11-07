@@ -1,19 +1,18 @@
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
 import { createURL } from "expo-linking";
-import { Unlink2 } from "lucide-react-native";
+import { Plus } from "lucide-react-native";
 import { useState } from "react";
-import { Image, Alert as RNAlert, ScrollView, View } from "react-native";
+import { Pressable, Alert as RNAlert, ScrollView, View } from "react-native";
 import { ModeToggle } from "@/components/mode-toggle";
-import { ConnectedAgentsCard } from "@/components/settings/connected-agents-card";
-import { Button } from "@/components/ui/button";
+import { ConnectedAgentsSection } from "@/components/settings/connected-agents-card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  RowAction,
+  SettingsNote,
+  SettingsRow,
+  SettingsSection,
+} from "@/components/settings/settings-section";
+import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -91,133 +90,84 @@ export default function SettingsScreen() {
       className="flex-1 bg-background"
       contentInsetAdjustmentBehavior="automatic"
     >
-      <View className="p-4">
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle>Theme</CardTitle>
-            <CardDescription>Choose your preferred appearance</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ModeToggle />
-          </CardContent>
-        </Card>
+      <View className="px-4 pt-4 pb-10">
+        <SettingsSection title="Appearance">
+          <ModeToggle />
+        </SettingsSection>
 
         {session?.user ? (
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>Google Accounts</CardTitle>
-              <CardDescription>
-                Linked accounts used for Google Calendar access.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="gap-3">
-              <Button
-                disabled={isLinking}
-                onPress={handleLinkAnotherGoogleAccount}
-              >
-                <Text className="text-primary-foreground">
-                  {isLinking ? "Linking…" : "Link another Google account"}
-                </Text>
-              </Button>
-
-              {isLoading ? (
-                <Text className="text-muted-foreground text-sm">
-                  Loading Google accounts…
-                </Text>
-              ) : null}
-
-              {!isLoading && googleAccountProfiles.length === 0 ? (
-                <Text className="text-muted-foreground text-sm">
-                  No Google accounts linked yet.
-                </Text>
-              ) : null}
-
-              {googleAccountProfiles.map(
-                ({ account, isLoading: isProfileLoading, profile }) => {
-                  const displayName = profile?.name || "Unknown user";
-                  const displayEmail = profile?.email || "Email unavailable";
-                  const avatarSrc = profile?.image;
-                  const avatarFallback = displayName
-                    .split(" ")
-                    .map((segment) => segment[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase();
-
-                  return (
-                    <View
-                      className="rounded-xl border border-border p-3"
-                      key={account.id}
-                    >
-                      <View className="flex-row items-center gap-3">
-                        {avatarSrc ? (
-                          <Image
-                            source={{ uri: avatarSrc }}
-                            style={{ borderRadius: 20, height: 40, width: 40 }}
-                          />
-                        ) : (
-                          <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-                            <Text className="font-semibold text-xs">
-                              {avatarFallback || "G"}
-                            </Text>
-                          </View>
-                        )}
-                        <View className="min-w-0 flex-1 gap-1">
-                          <Text className="font-semibold text-sm" selectable>
-                            Google account
-                            {isProfileLoading
-                              ? " · Loading name..."
-                              : ` · ${displayName}`}
-                          </Text>
-                          <Text
-                            className="text-muted-foreground text-xs"
-                            selectable
-                          >
-                            {isProfileLoading
-                              ? "Loading email..."
-                              : displayEmail}
-                          </Text>
-                        </View>
-                        <Button
-                          accessibilityLabel="Unlink Google account"
-                          disabled={
-                            isLinking ||
-                            unlinkGoogleAccount.isPending ||
-                            unlinkingAccountId !== null
-                          }
-                          icon={Unlink2}
-                          loading={unlinkingAccountId === account.id}
-                          onPress={() => handleUnlinkGoogleAccount(account.id)}
-                          size="icon"
-                          variant="destructive"
-                        />
-                      </View>
-                    </View>
-                  );
-                }
-              )}
-            </CardContent>
-          </Card>
+          <SettingsSection
+            description="Accounts whose calendars show in Kompose."
+            title="Google Calendar"
+          >
+            {isLoading ? (
+              <SettingsNote first>Loading accounts…</SettingsNote>
+            ) : null}
+            {!isLoading && googleAccountProfiles.length === 0 ? (
+              <SettingsNote first>No Google accounts linked yet.</SettingsNote>
+            ) : null}
+            {googleAccountProfiles.map(
+              ({ account, isLoading: isProfileLoading, profile }, index) => (
+                <SettingsRow
+                  action={
+                    <RowAction
+                      accessibilityLabel={`Unlink ${profile?.email ?? "Google account"}`}
+                      destructive
+                      disabled={
+                        isLinking ||
+                        unlinkGoogleAccount.isPending ||
+                        unlinkingAccountId !== null
+                      }
+                      label={
+                        unlinkingAccountId === account.id
+                          ? "Unlinking…"
+                          : "Unlink"
+                      }
+                      onPress={() => handleUnlinkGoogleAccount(account.id)}
+                    />
+                  }
+                  detail={isProfileLoading ? "Loading…" : profile?.email}
+                  first={index === 0 && !isLoading}
+                  image={profile?.image}
+                  key={account.id}
+                  name={profile?.name || "Google account"}
+                />
+              )
+            )}
+            <Pressable
+              accessibilityRole="button"
+              className="flex-row items-center gap-3 border-border border-t px-4 py-3 active:bg-muted"
+              disabled={isLinking}
+              onPress={handleLinkAnotherGoogleAccount}
+            >
+              <View className="size-8 items-center justify-center rounded-full border border-border border-dashed">
+                <Icon as={Plus} className="text-muted-foreground" size={15} />
+              </View>
+              <Text className="text-foreground text-sm">
+                {isLinking ? "Linking…" : "Link another Google account"}
+              </Text>
+            </Pressable>
+          </SettingsSection>
         ) : null}
 
-        {session?.user ? <ConnectedAgentsCard /> : null}
+        {session?.user ? <ConnectedAgentsSection /> : null}
 
         {session?.user ? (
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>Account</CardTitle>
-              <CardDescription>{session.user.email}</CardDescription>
-            </CardHeader>
-            <CardContent className="gap-2">
-              <Text className="text-sm" selectable>
-                Signed in as{" "}
-                <Text className="font-semibold">{session.user.name}</Text>
-              </Text>
-              <Button onPress={handleSignOut} variant="destructive">
-                <Text className="text-destructive-foreground">Sign Out</Text>
-              </Button>
-            </CardContent>
-          </Card>
+          <SettingsSection title="Account">
+            <SettingsRow
+              action={
+                <RowAction
+                  destructive
+                  label="Sign out"
+                  onPress={handleSignOut}
+                />
+              }
+              detail={session.user.email}
+              first
+              image={session.user.image}
+              name={session.user.name}
+            />
+          </SettingsSection>
         ) : null}
       </View>
     </ScrollView>

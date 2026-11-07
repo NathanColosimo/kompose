@@ -1,4 +1,5 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -20,6 +21,7 @@ import {
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
+import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -43,7 +45,7 @@ import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
+import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
@@ -56,6 +58,13 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
+import {
+  AllDayBlock,
+  type BlockDetail,
+  EventBlock,
+  eventDetails,
+  TaskBlock,
+} from "@/components/calendar/calendar-blocks";
 import type {
   CalendarOption,
   CreateEventDraft,
@@ -65,6 +74,7 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
+import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
   TaskEditorSheet,
@@ -81,15 +91,13 @@ import { useColorScheme } from "@/lib/color-scheme-context";
 
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
-const DEFAULT_SCROLL_HOUR = 8;
+const DEFAULT_SCROLL_HOUR = 7;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 // Swipe thresholds for horizontal navigation without interfering with vertical scroll.
 const SWIPE_ACTIVATION_DISTANCE = 16;
 const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
-const EVENT_OUTLINE_WIDTH_PX = 1;
-const EVENT_OUTLINE_COLOR = "rgba(0,0,0,0.35)";
 const TIME_GUTTER_WIDTH_PX = 56;
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
@@ -147,16 +155,6 @@ function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
       <View className="h-0.5 flex-1 bg-red-500" />
     </View>
   );
-}
-
-function formatTimeShort(zdt: Temporal.ZonedDateTime): string {
-  const hour = zdt.hour;
-  const minute = zdt.minute;
-  const ampm = hour >= 12 ? "pm" : "am";
-  const displayHour = hour % 12 || 12;
-  return minute === 0
-    ? `${displayHour}${ampm}`
-    : `${displayHour}:${minute.toString().padStart(2, "0")}${ampm}`;
 }
 
 function formatHourLabel(hour: number): string {
@@ -245,6 +243,80 @@ function buildCreateTaskDraftFromSlot(
   };
 }
 
+/** WHOOP workouts use one teal, matching the web's --whoop-workout. */
+const WORKOUT_COLOR = {
+  dark: "hsl(176, 45%, 50%)",
+  light: "hsl(178, 45%, 38%)",
+};
+
+interface PositionedWorkout {
+  end: Temporal.ZonedDateTime;
+  id: string;
+  sportName: string | null;
+  start: Temporal.ZonedDateTime;
+  strainScore: number | null;
+}
+
+function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
+  return Boolean(
+    summary &&
+      (summary.recoveryScore !== null ||
+        summary.strainScore !== null ||
+        summary.sleep)
+  );
+}
+
+/** Recovery green (67–100), yellow (34–66) or red (0–33), as on web. */
+function recoveryColor(score: number): string {
+  if (score >= 67) {
+    return "bg-emerald-500";
+  }
+  return score >= 34 ? "bg-amber-400" : "bg-red-500";
+}
+
+/** Recovery and strain under a day's date; sleep hours when there's room. */
+function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
+  if (!(summary && hasWhoopStats(summary))) {
+    // Keep every header the same height.
+    return <View className="h-3.5" />;
+  }
+  const parts = [
+    summary.recoveryScore === null
+      ? null
+      : `Recovery ${summary.recoveryScore}%`,
+    summary.strainScore === null
+      ? null
+      : `strain ${summary.strainScore.toFixed(1)}`,
+  ].filter(Boolean);
+  return (
+    <View
+      accessibilityLabel={parts.join(", ")}
+      accessible
+      className="h-3.5 flex-row items-center gap-2"
+    >
+      {summary.recoveryScore === null ? null : (
+        <View className="flex-row items-center gap-1">
+          <View
+            className={`size-1.5 rounded-full ${recoveryColor(summary.recoveryScore)}`}
+          />
+          <Text className="text-[10px] text-muted-foreground">
+            {summary.recoveryScore}%
+          </Text>
+        </View>
+      )}
+      {summary.strainScore === null ? null : (
+        <View className="flex-row items-center gap-0.5">
+          <Icon as={Activity} className="text-muted-foreground" size={10} />
+          <Text className="text-[10px] text-muted-foreground">
+            {summary.strainScore.toFixed(1)}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** An all-day event chip, colored like its timed events. */
 function AllDayEventChip({
   item,
   onPress,
@@ -252,95 +324,64 @@ function AllDayEventChip({
   item: AllDayGoogleEvent;
   onPress: () => void;
 }) {
-  const { background, foreground } = useGoogleEventColors(item.source);
-
+  const { background } = useGoogleEventColors(item.source);
   return (
-    <Pressable
-      className="rounded-md px-1.5 py-1"
+    <AllDayBlock
+      color={background}
       onPress={onPress}
-      style={{
-        backgroundColor: background,
-        borderColor: EVENT_OUTLINE_COLOR,
-        borderRadius: 6,
-        borderWidth: EVENT_OUTLINE_WIDTH_PX,
-      }}
-    >
-      <Text
-        className="text-[11px]"
-        numberOfLines={1}
-        style={{ color: foreground }}
-      >
-        {item.source.event.summary ?? "All-day"}
-      </Text>
-    </Pressable>
+      title={item.source.event.summary || "(No title)"}
+    />
   );
 }
 
+/** A timed Google event on the grid, tinted with its calendar color. */
 function TimedGoogleEventBlock({
   item,
-  top,
-  height,
-  durationMinutes,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
   onPress,
+  ...position
 }: {
-  item: PositionedGoogleEvent;
-  top: number;
-  height: number;
-  durationMinutes: number;
   columnIndex?: number;
-  totalColumns?: number;
   columnSpan?: number;
-  zIndex?: number;
+  height: number;
+  item: PositionedGoogleEvent;
   onPress: () => void;
+  top: number;
+  totalColumns?: number;
+  zIndex?: number;
 }) {
-  const { background, foreground } = useGoogleEventColors(item.source);
-
-  // Shared column-span layout: see packages/state/src/collision-utils.ts.
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidthPercent = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
-  return (
-    <Pressable
-      className="absolute rounded-md px-1 py-1 shadow-black/5 shadow-sm"
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress();
-      }}
-      style={{
-        backgroundColor: background,
-        borderColor: EVENT_OUTLINE_COLOR,
-        borderRadius: 6,
-        borderWidth: EVENT_OUTLINE_WIDTH_PX,
-        height,
-        left: `${leftPercent}%`,
-        top,
-        width: `${columnWidthPercent}%`,
-        zIndex,
-      }}
-    >
-      <Text
-        className="font-semibold text-[10px]"
-        numberOfLines={1}
-        style={{ color: foreground }}
-      >
-        {item.source.event.summary ?? "Event"}
-      </Text>
-      {durationMinutes >= 30 ? (
-        <Text
-          className="text-[9px] opacity-80"
-          numberOfLines={1}
-          style={{ color: foreground }}
-        >
-          {formatTimeShort(item.start)} - {formatTimeShort(item.end)}
-        </Text>
-      ) : null}
-    </Pressable>
+  const { background } = useGoogleEventColors(item.source);
+  const details = useMemo(
+    () => eventDetails(item.source.event),
+    [item.source.event]
   );
+  return (
+    <EventBlock
+      {...position}
+      color={background}
+      details={details}
+      end={item.end}
+      minutes={Math.round(
+        item.end.since(item.start).total({ unit: "minutes" })
+      )}
+      onPress={onPress}
+      start={item.start}
+      title={item.source.event.summary || "(No title)"}
+    />
+  );
+}
+
+/** The task's first tag, plus a count of the rest. */
+function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const [first, ...rest] = task.tags;
+  if (!first) {
+    return [];
+  }
+  return [
+    {
+      icon: tagIconMap[first.icon],
+      label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
+    },
+  ];
 }
 
 export default function CalendarTab() {
@@ -359,7 +400,7 @@ export default function CalendarTab() {
   const windows = useAtomValue(eventWindowsAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
-  const { tasksQuery } = useTasks();
+  const { tasksQuery, updateTask } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
@@ -405,6 +446,34 @@ export default function CalendarTab() {
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
+  const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
+  const showWhoopRow = visibleDays.some((day) =>
+    hasWhoopStats(whoopSummaries.get(day.toString()))
+  );
+  // Workouts by the day they start, clamped to that day.
+  const workoutsByDay = useMemo(() => {
+    const map = new Map<string, PositionedWorkout[]>();
+    for (const day of visibleDays) {
+      map.set(day.toString(), []);
+    }
+    for (const summary of whoopSummaries.values()) {
+      for (const workout of summary.workouts) {
+        const start = isoStringToZonedDateTime(workout.start, timeZone);
+        const end = isoStringToZonedDateTime(workout.end, timeZone);
+        map.get(start.toPlainDate().toString())?.push({
+          end: start.toPlainDate().equals(end.toPlainDate())
+            ? end
+            : start.startOfDay().add({ days: 1 }),
+          id: workout.id,
+          sportName: workout.sportName,
+          start,
+          strainScore: workout.strainScore,
+        });
+      }
+    }
+    return map;
+  }, [visibleDays, whoopSummaries, timeZone]);
+
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MVP grouping logic kept inline for now.
   const { timedEventsByDay, allDayEventsByDay } = useMemo(() => {
     const timed = new Map<string, PositionedGoogleEvent[]>();
@@ -433,10 +502,19 @@ export default function CalendarTab() {
       const endDateTime = item.event.end.dateTime;
 
       if (startDate && !startDateTime && !endDateTime) {
+        // End dates are exclusive: a trip from the 11th to the 13th shows
+        // on the 11th and 12th.
         const date = Temporal.PlainDate.from(startDate);
-        const bucket = allDay.get(date.toString());
-        if (bucket) {
-          bucket.push({ date, source });
+        const endDate = item.event.end.date
+          ? Temporal.PlainDate.from(item.event.end.date)
+          : date.add({ days: 1 });
+        for (const day of visibleDays) {
+          if (
+            Temporal.PlainDate.compare(day, date) >= 0 &&
+            Temporal.PlainDate.compare(day, endDate) < 0
+          ) {
+            allDay.get(day.toString())?.push({ date, source });
+          }
         }
         continue;
       }
@@ -518,7 +596,11 @@ export default function CalendarTab() {
 
       const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
         const startMinutes = minutesFromMidnight(ge.start);
-        const endMinutes = minutesFromMidnight(ge.end);
+        // An event that ends on a later day (often at midnight) runs to the
+        // bottom of this one.
+        const endMinutes = ge.end.toPlainDate().equals(ge.start.toPlainDate())
+          ? minutesFromMidnight(ge.end)
+          : 24 * 60;
         return {
           endMinutes,
           id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
@@ -527,13 +609,26 @@ export default function CalendarTab() {
         };
       });
 
-      const allItems = [...taskItems, ...googleItems];
+      const workoutItems: PositionedItem[] = (
+        workoutsByDay.get(dayKey) ?? []
+      ).map((workout) => ({
+        endMinutes: workout.end
+          .toPlainDate()
+          .equals(workout.start.toPlainDate())
+          ? minutesFromMidnight(workout.end)
+          : 24 * 60,
+        id: `whoop-${workout.id}`,
+        startMinutes: minutesFromMidnight(workout.start),
+        type: "whoop-workout" as const,
+      }));
+
+      const allItems = [...taskItems, ...googleItems, ...workoutItems];
       const layout = calculateCollisionLayout(allItems);
       layoutsByDay.set(dayKey, layout);
     }
 
     return layoutsByDay;
-  }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
+  }, [visibleDays, tasksByDay, timedEventsByDay, workoutsByDay, timeZone]);
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const editingEventDraft =
@@ -1063,7 +1158,7 @@ export default function CalendarTab() {
     isRefreshingRef.current = isRefreshing;
   }, [isRefreshing]);
 
-  // Defer the initial 8 AM scroll until the time grid has laid out.
+  // Defer the initial 7 AM scroll until the time grid has laid out.
   useEffect(() => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
@@ -1108,8 +1203,8 @@ export default function CalendarTab() {
                   <Text
                     className={
                       visibleDaysCount === n
-                        ? "font-semibold text-foreground"
-                        : "text-muted-foreground"
+                        ? "font-sans-medium text-foreground"
+                        : "text-foreground/70"
                     }
                   >
                     {n}d
@@ -1152,31 +1247,42 @@ export default function CalendarTab() {
           {/* Day headers */}
           <View className="flex-row border-border border-t border-b">
             <View
-              className="border-border border-r"
+              className="items-end justify-center border-border border-r pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
-            />
+            >
+              <Text className="text-[11px] text-muted-foreground">
+                {visibleDays[0]?.toLocaleString(undefined, { month: "short" })}
+              </Text>
+            </View>
             <View className="flex-1 flex-row">
               {visibleDays.map((day) => {
                 const isTodayHighlight = isToday(day, timeZone);
                 const { weekday, dayNumber } = formatDayHeader(day);
 
+                const whoop = whoopSummaries.get(day.toString());
+
                 return (
                   <View
-                    className={`flex-1 flex-row items-center justify-center gap-1.5 border-border border-r py-2 ${isTodayHighlight ? "bg-primary/5" : ""}`}
+                    className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
                     key={day.toString()}
                   >
-                    <Text className="font-medium text-muted-foreground text-xs uppercase">
-                      {weekday}
-                    </Text>
-                    <View
-                      className={`size-6 items-center justify-center rounded-full ${isTodayHighlight ? "bg-primary" : ""}`}
-                    >
+                    <View className="flex-row items-center gap-1.5">
                       <Text
-                        className={`font-semibold text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                        className={`text-sm ${isTodayHighlight ? "font-sans-medium text-foreground" : "text-muted-foreground"}`}
                       >
-                        {dayNumber}
+                        {weekday}
                       </Text>
+                      <View
+                        className={`h-6 min-w-6 items-center justify-center rounded-full px-1 ${isTodayHighlight ? "bg-primary" : ""}`}
+                      >
+                        <Text
+                          className={`font-sans-medium text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                        >
+                          {dayNumber}
+                        </Text>
+                      </View>
                     </View>
+                    {showWhoopRow ? <WhoopDayStats summary={whoop} /> : null}
                   </View>
                 );
               })}
@@ -1195,7 +1301,7 @@ export default function CalendarTab() {
                   const items = allDayEventsByDay.get(day.toString()) ?? [];
                   return (
                     <View
-                      className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
+                      className="min-h-[30px] flex-1 gap-1 border-border border-r px-1 py-1"
                       key={`${day.toString()}-allday`}
                     >
                       {items.slice(0, 3).map((e) => (
@@ -1309,12 +1415,60 @@ export default function CalendarTab() {
                           <TimedGoogleEventBlock
                             columnIndex={layout?.columnIndex}
                             columnSpan={layout?.columnSpan}
-                            durationMinutes={durationMinutes}
                             height={adjustedHeight}
                             item={evt}
                             key={`${eventId}-${evt.start.toString()}`}
                             onPress={() => openEditTimedEvent(evt)}
                             top={adjustedTop}
+                            totalColumns={layout?.totalColumns}
+                            zIndex={layout?.zIndex}
+                          />
+                        );
+                      })}
+
+                      {/* WHOOP workouts */}
+                      {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
+                        const layout = dayLayouts?.get(`whoop-${workout.id}`);
+                        const minutes = Math.round(
+                          workout.end
+                            .since(workout.start)
+                            .total({ unit: "minutes" })
+                        );
+                        return (
+                          <EventBlock
+                            color={
+                              isDarkColorScheme
+                                ? WORKOUT_COLOR.dark
+                                : WORKOUT_COLOR.light
+                            }
+                            columnIndex={layout?.columnIndex}
+                            columnSpan={layout?.columnSpan}
+                            details={
+                              workout.strainScore === null
+                                ? []
+                                : [
+                                    {
+                                      icon: Activity,
+                                      label: `Strain ${workout.strainScore.toFixed(1)}`,
+                                    },
+                                  ]
+                            }
+                            end={workout.end}
+                            height={Math.max(
+                              (Math.max(minutes, MINUTES_STEP) / 60) *
+                                PIXELS_PER_HOUR -
+                                EVENT_BLOCK_INSET_PX,
+                              20
+                            )}
+                            key={workout.id}
+                            minutes={minutes}
+                            start={workout.start}
+                            title={workout.sportName || "Workout"}
+                            top={
+                              (minutesFromMidnight(workout.start) / 60) *
+                                PIXELS_PER_HOUR +
+                              EVENT_BLOCK_INSET_PX / 2
+                            }
                             totalColumns={layout?.totalColumns}
                             zIndex={layout?.zIndex}
                           />
@@ -1347,51 +1501,35 @@ export default function CalendarTab() {
                           20
                         );
 
-                        const columnIndex = layout?.columnIndex ?? 0;
-                        const totalColumns = layout?.totalColumns ?? 1;
-                        const columnSpan = layout?.columnSpan ?? 1;
-                        const zIndexValue = layout?.zIndex ?? 1;
-                        const singleColumnWidth = 100 / totalColumns;
-                        const columnWidthPercent =
-                          singleColumnWidth * columnSpan;
-                        const leftPercent = columnIndex * singleColumnWidth;
                         const end = start.add({ minutes: durationMinutes });
 
                         return (
-                          <Pressable
-                            className="absolute rounded-md bg-primary/90 px-1 py-1 shadow-black/5 shadow-sm"
+                          <TaskBlock
+                            columnIndex={layout?.columnIndex}
+                            columnSpan={layout?.columnSpan}
+                            details={taskTagDetails(task)}
+                            done={task.status === "done"}
+                            end={end}
+                            height={adjustedHeight}
                             key={task.id}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              taskFlow.openEdit(task);
-                            }}
-                            style={{
-                              borderColor: EVENT_OUTLINE_COLOR,
-                              borderRadius: 6,
-                              borderWidth: EVENT_OUTLINE_WIDTH_PX,
-                              height: adjustedHeight,
-                              left: `${leftPercent}%`,
-                              top: adjustedTop,
-                              width: `${columnWidthPercent}%`,
-                              zIndex: zIndexValue,
-                            }}
-                          >
-                            <Text
-                              className="font-semibold text-[10px] text-primary-foreground"
-                              numberOfLines={1}
-                            >
-                              {task.title}
-                            </Text>
-                            {durationMinutes >= 30 ? (
-                              <Text
-                                className="text-[9px] text-primary-foreground/80"
-                                numberOfLines={1}
-                              >
-                                {formatTimeShort(start)} -{" "}
-                                {formatTimeShort(end)}
-                              </Text>
-                            ) : null}
-                          </Pressable>
+                            minutes={durationMinutes}
+                            onPress={() => taskFlow.openEdit(task)}
+                            onToggleDone={() =>
+                              updateTask.mutate({
+                                id: task.id,
+                                scope: "this",
+                                task: {
+                                  status:
+                                    task.status === "done" ? "todo" : "done",
+                                },
+                              })
+                            }
+                            start={start}
+                            title={task.title}
+                            top={adjustedTop}
+                            totalColumns={layout?.totalColumns}
+                            zIndex={layout?.zIndex}
+                          />
                         );
                       })}
 
