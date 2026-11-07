@@ -250,7 +250,7 @@ function buildCreateTaskDraftFromSlot(
   };
 }
 
-/** The create chooser's line, naming its slot ("… at Sat, Nov 7, 11:30 AM."). */
+/** The create chooser's line, naming its slot ("… for Sat, Nov 7 at 11:30 AM."). */
 function createChooserCopy(
   slot: { day: Temporal.PlainDate; minutes: number } | null,
   timeZone: string
@@ -258,10 +258,10 @@ function createChooserCopy(
   if (!slot) {
     return null;
   }
-  return `Create an event or a scheduled task at ${formatSlot(slot.day, slot.minutes, timeZone)}.`;
+  return `Create an event or a scheduled task for ${formatSlot(slot.day, slot.minutes, timeZone)}.`;
 }
 
-/** A slot such as "Sat, Nov 7, 11:30 AM". */
+/** A slot such as "Sat, Nov 7 at 11:30 AM" (the locale's wording). */
 function formatSlot(
   day: Temporal.PlainDate,
   minutes: number,
@@ -359,15 +359,6 @@ function recoveryColor(score: number): string {
     return "bg-emerald-500";
   }
   return score >= 34 ? "bg-amber-400" : "bg-red-500";
-}
-
-/** `value`, or the last non-null value it had. */
-function useLastNonNull<T>(value: T | null): T | null {
-  const last = useRef(value);
-  if (value !== null) {
-    last.current = value;
-  }
-  return value ?? last.current;
 }
 
 /** The date and any WHOOP numbers, as VoiceOver reads a day header. */
@@ -787,9 +778,11 @@ export default function CalendarTab() {
     day: Temporal.PlainDate;
     minutes: number;
   } | null>(null);
-  // The chooser sheet animates out after the slot clears; keep showing the
-  // last slot so its line doesn't vanish mid-exit.
-  const shownCreateSlot = useLastNonNull(createSlotSelection);
+  // The chooser sheet animates out after the slot clears; its line keeps
+  // the last slot so it doesn't vanish mid-exit.
+  const [lastCreateSlot, setLastCreateSlot] =
+    useState<typeof createSlotSelection>(null);
+  const shownCreateSlot = createSlotSelection ?? lastCreateSlot;
   const [pendingCreateAction, setPendingCreateAction] = useState<{
     kind: "event" | "task";
     day: Temporal.PlainDate;
@@ -903,7 +896,9 @@ export default function CalendarTab() {
 
   const openCreateChooserAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
-      setCreateSlotSelection({ day, minutes: snapMinutes(minutes) });
+      const slot = { day, minutes: snapMinutes(minutes) };
+      setCreateSlotSelection(slot);
+      setLastCreateSlot(slot);
     },
     []
   );
