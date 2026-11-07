@@ -1323,10 +1323,6 @@ export default function CalendarTab() {
             className="flex-1"
             onScroll={handleScroll}
             ref={scrollRef}
-            // iOS scrolls to the top on taps in the navigation bar, which
-            // here would jump the day to midnight whenever a header control
-            // is used.
-            scrollsToTop={false}
             refreshControl={
               <RefreshControl
                 onRefresh={refreshCalendarData}
@@ -1335,6 +1331,10 @@ export default function CalendarTab() {
               />
             }
             scrollEventThrottle={16}
+            // iOS scrolls to the top on taps in the navigation bar, which
+            // here would jump the day to midnight whenever a header control
+            // is used.
+            scrollsToTop={false}
           >
             <View className="flex-row">
               {/* Time gutter */}
