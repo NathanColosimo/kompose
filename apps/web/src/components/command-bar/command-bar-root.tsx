@@ -1,11 +1,15 @@
 "use client";
 
-import { ListTodoIcon, PlusCircleIcon } from "lucide-react";
+import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
+import { useSetAtom } from "jotai";
+import { CalendarPlusIcon, ListTodoIcon, PlusCircleIcon } from "lucide-react";
 import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
+import { Kbd } from "@/components/ui/kbd";
+import { createEventRequestedAtom } from "@/state/calendar-navigation";
 
 type CommandBarView = "root" | "search-tasks" | "create-task";
 
@@ -36,6 +40,8 @@ const actions: Action[] = [
 ];
 
 export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
+  const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
+  const requestCreateEvent = useSetAtom(createEventRequestedAtom);
   const handleSelect = (action: Action) => {
     onNavigate(action.view);
   };
@@ -54,6 +60,17 @@ export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
             <span>{action.label}</span>
           </CommandItem>
         ))}
+        <CommandItem
+          onSelect={() => {
+            setCommandBarOpen(false);
+            requestCreateEvent(true);
+          }}
+          value="Create event"
+        >
+          <CalendarPlusIcon className="text-muted-foreground" />
+          <span>Create event</span>
+          <Kbd className="ml-auto">C</Kbd>
+        </CommandItem>
       </CommandGroup>
     </>
   );

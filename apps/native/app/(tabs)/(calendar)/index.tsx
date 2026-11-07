@@ -48,6 +48,7 @@ import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-even
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
 import {
+  formatTimeRange,
   nearestSlotMinutes,
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
@@ -107,6 +108,8 @@ import { useColorScheme } from "@/lib/color-scheme-context";
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
 const DEFAULT_SCROLL_HOUR = 7;
+/** All-day chips shown per day before "+N more". */
+const MAX_ALL_DAY_CHIPS = 2;
 const HOUR_LABEL_CLEARANCE_PX = 10;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 // Swipe thresholds for horizontal navigation without interfering with vertical scroll.
@@ -202,10 +205,52 @@ interface GoogleEventSource {
   event: GoogleEvent;
 }
 
-interface PositionedGoogleEvent {
+/** The part of a timed item on one day, for layout. */
+interface DaySegment {
+  segmentEnd: Temporal.ZonedDateTime;
+  segmentStart: Temporal.ZonedDateTime;
+}
+
+/**
+ * The part of [start, end) on `day`, or null when it doesn't touch that day,
+ * so an overnight item shows on both days.
+ */
+function daySegment(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime,
+  day: Temporal.PlainDate,
+  timeZone: string
+): DaySegment | null {
+  const { compare } = Temporal.ZonedDateTime;
+  const dayStart = day.toZonedDateTime({ timeZone });
+  const dayEnd = dayStart.add({ days: 1 });
+  if (compare(end, dayStart) <= 0 || compare(start, dayEnd) >= 0) {
+    return null;
+  }
+  return {
+    segmentEnd: compare(end, dayEnd) > 0 ? dayEnd : end,
+    segmentStart: compare(start, dayStart) < 0 ? dayStart : start,
+  };
+}
+
+/** A segment's end in minutes from its day's midnight; 1440 at midnight. */
+function segmentEndMinutes({ segmentEnd, segmentStart }: DaySegment): number {
+  return segmentEnd.toPlainDate().equals(segmentStart.toPlainDate())
+    ? minutesFromMidnight(segmentEnd)
+    : 24 * 60;
+}
+
+/** Real start and end (for text and editing) plus the part on one day. */
+interface PositionedGoogleEvent extends DaySegment {
   end: Temporal.ZonedDateTime;
   source: GoogleEventSource;
   start: Temporal.ZonedDateTime;
+}
+
+interface TaskSegment extends DaySegment {
+  end: Temporal.ZonedDateTime;
+  start: Temporal.ZonedDateTime;
+  task: TaskSelectDecoded;
 }
 
 interface AllDayGoogleEvent {
@@ -307,13 +352,10 @@ const WORKOUT_COLOR = {
   light: "hsl(178, 45%, 38%)",
 };
 
-interface PositionedWorkout {
+interface PositionedWorkout extends DaySegment {
   /** The whole workout's end, for its time text. */
   end: Temporal.ZonedDateTime;
   id: string;
-  /** The part on one day, for layout. */
-  segmentEnd: Temporal.ZonedDateTime;
-  segmentStart: Temporal.ZonedDateTime;
   sportName: string | null;
   start: Temporal.ZonedDateTime;
   strainScore: number | null;
@@ -325,26 +367,22 @@ function workoutSegmentsForDay(
   summaries: Iterable<WhoopDaySummary>,
   timeZone: string
 ): PositionedWorkout[] {
-  const { compare } = Temporal.ZonedDateTime;
-  const dayStart = day.toZonedDateTime({ timeZone });
-  const dayEnd = dayStart.add({ days: 1 });
   const segments: PositionedWorkout[] = [];
   for (const summary of summaries) {
     for (const workout of summary.workouts) {
       const start = isoStringToZonedDateTime(workout.start, timeZone);
       const end = isoStringToZonedDateTime(workout.end, timeZone);
-      if (compare(end, dayStart) <= 0 || compare(start, dayEnd) >= 0) {
-        continue;
+      const segment = daySegment(start, end, day, timeZone);
+      if (segment) {
+        segments.push({
+          ...segment,
+          end,
+          id: workout.id,
+          sportName: workout.sportName,
+          start,
+          strainScore: workout.strainScore,
+        });
       }
-      segments.push({
-        end,
-        id: workout.id,
-        segmentEnd: compare(end, dayEnd) > 0 ? dayEnd : end,
-        segmentStart: compare(start, dayStart) < 0 ? dayStart : start,
-        sportName: workout.sportName,
-        start,
-        strainScore: workout.strainScore,
-      });
     }
   }
   return segments;
@@ -472,7 +510,7 @@ function TimedGoogleEventBlock({
       details={details}
       end={item.end}
       minutes={Math.round(
-        item.end.since(item.start).total({ unit: "minutes" })
+        item.segmentEnd.since(item.segmentStart).total({ unit: "minutes" })
       )}
       onPress={onPress}
       start={item.start}
@@ -493,6 +531,113 @@ function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
       label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
     },
   ];
+}
+
+/** A day's first all-day chips, then "+N more" for the rest. */
+function AllDayCellItems({
+  items,
+  onMore,
+  onOpen,
+}: {
+  items: AllDayGoogleEvent[];
+  onMore: () => void;
+  onOpen: (item: AllDayGoogleEvent) => void;
+}) {
+  return (
+    <>
+      {items.slice(0, MAX_ALL_DAY_CHIPS).map((item) => (
+        <AllDayEventChip
+          item={item}
+          key={`${item.source.accountId}-${item.source.calendarId}-${item.source.event.id}`}
+          onPress={() => onOpen(item)}
+        />
+      ))}
+      {items.length > MAX_ALL_DAY_CHIPS ? (
+        <Pressable
+          accessibilityRole="button"
+          className="rounded px-1 active:bg-muted"
+          hitSlop={6}
+          onPress={onMore}
+        >
+          <Text className="text-[10px] text-muted-foreground">
+            +{items.length - MAX_ALL_DAY_CHIPS} more
+          </Text>
+        </Pressable>
+      ) : null}
+    </>
+  );
+}
+
+/** Every all-day event on one day, from its "+N more". */
+function AllDayListSheet({
+  day,
+  itemsByDay,
+  onClose,
+  onOpen,
+}: {
+  day: Temporal.PlainDate | null;
+  itemsByDay: Map<string, AllDayGoogleEvent[]>;
+  onClose: () => void;
+  onOpen: (item: AllDayGoogleEvent) => void;
+}) {
+  return (
+    <BottomSheet
+      isVisible={day !== null}
+      onClose={onClose}
+      snapPoints={[0.4, 0.7]}
+      title={
+        day?.toLocaleString(undefined, {
+          day: "numeric",
+          month: "long",
+          weekday: "long",
+        }) ?? "All day"
+      }
+    >
+      <View className="gap-2">
+        {(day ? (itemsByDay.get(day.toString()) ?? []) : []).map((item) => (
+          <AllDayEventChip
+            item={item}
+            key={`${item.source.accountId}-${item.source.calendarId}-${item.source.event.id}`}
+            onPress={() => onOpen(item)}
+          />
+        ))}
+      </View>
+    </BottomSheet>
+  );
+}
+
+/** A WHOOP workout's details; workouts are read-only in Kompose. */
+function WorkoutSheet({
+  onClose,
+  workout,
+}: {
+  onClose: () => void;
+  workout: PositionedWorkout | null;
+}) {
+  return (
+    <BottomSheet
+      isVisible={workout !== null}
+      onClose={onClose}
+      snapPoints={[0.3]}
+      title={workout?.sportName || "Workout"}
+    >
+      {workout ? (
+        <View className="gap-1.5">
+          <Text className="text-foreground">
+            {formatTimeRange(workout.start, workout.end)}
+          </Text>
+          {workout.strainScore === null ? null : (
+            <Text className="text-foreground">
+              Strain {workout.strainScore.toFixed(1)}
+            </Text>
+          )}
+          <Text className="text-muted-foreground text-sm">
+            From WHOOP. Edit workouts in the WHOOP app.
+          </Text>
+        </View>
+      ) : null}
+    </BottomSheet>
+  );
 }
 
 export default function CalendarTab() {
@@ -645,10 +790,11 @@ export default function CalendarTab() {
       try {
         const start = isoStringToZonedDateTime(startStr, timeZone);
         const end = isoStringToZonedDateTime(endStr, timeZone);
-        const dayKey = start.toPlainDate().toString();
-        const bucket = timed.get(dayKey);
-        if (bucket) {
-          bucket.push({ end, source, start });
+        for (const day of visibleDays) {
+          const segment = daySegment(start, end, day, timeZone);
+          if (segment) {
+            timed.get(day.toString())?.push({ ...segment, end, source, start });
+          }
         }
       } catch {
         // Skip unparseable events.
@@ -658,22 +804,32 @@ export default function CalendarTab() {
     return { allDayEventsByDay: allDay, timedEventsByDay: timed };
   }, [calendarMetadataByKey, googleEvents, timeZone, visibleDays]);
 
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, TaskSelectDecoded[]>();
+  // Each scheduled task's part on every visible day it touches.
+  const taskSegmentsByDay = useMemo(() => {
+    const map = new Map<string, TaskSegment[]>();
     for (const day of visibleDays) {
       map.set(day.toString(), []);
     }
     for (const task of scheduledTasks) {
-      if (!task.startDate) {
+      if (!(task.startDate && task.startTime)) {
         continue;
       }
-      const bucket = map.get(task.startDate.toString());
-      if (bucket) {
-        bucket.push(task);
+      const start = task.startDate.toZonedDateTime({
+        plainTime: task.startTime,
+        timeZone,
+      });
+      const end = start.add({
+        minutes: Math.max(MINUTES_STEP, task.durationMinutes),
+      });
+      for (const day of visibleDays) {
+        const segment = daySegment(start, end, day, timeZone);
+        if (segment) {
+          map.get(day.toString())?.push({ ...segment, end, start, task });
+        }
       }
     }
     return map;
-  }, [scheduledTasks, visibleDays]);
+  }, [scheduledTasks, timeZone, visibleDays]);
 
   // Calculate collision layouts for all visible days (tasks + google events combined).
   const collisionLayoutsByDay = useMemo(() => {
@@ -681,51 +837,28 @@ export default function CalendarTab() {
 
     for (const day of visibleDays) {
       const dayKey = day.toString();
-      const dayTasks = tasksByDay.get(dayKey) ?? [];
-      const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
+      const taskItems: PositionedItem[] = (
+        taskSegmentsByDay.get(dayKey) ?? []
+      ).map((segment) => ({
+        endMinutes: segmentEndMinutes(segment),
+        id: segment.task.id,
+        startMinutes: minutesFromMidnight(segment.segmentStart),
+        type: "task" as const,
+      }));
 
-      const taskItems: PositionedItem[] = dayTasks
-        .filter((task) => task.startDate !== null && task.startTime !== null)
-        .map((task) => {
-          const start = task.startDate?.toZonedDateTime({
-            plainTime:
-              task.startTime ??
-              Temporal.PlainTime.from({ hour: 0, minute: 0, second: 0 }),
-            timeZone,
-          });
-          const startMinutes = start ? minutesFromMidnight(start) : 0;
-          const endMinutes = startMinutes + (task.durationMinutes || 30);
-          return {
-            endMinutes,
-            id: task.id,
-            startMinutes,
-            type: "task" as const,
-          };
-        });
-
-      const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
-        const startMinutes = minutesFromMidnight(ge.start);
-        // An event that ends on a later day (often at midnight) runs to the
-        // bottom of this one.
-        const endMinutes = ge.end.toPlainDate().equals(ge.start.toPlainDate())
-          ? minutesFromMidnight(ge.end)
-          : 24 * 60;
-        return {
-          endMinutes,
-          id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
-          startMinutes,
-          type: "google-event" as const,
-        };
-      });
+      const googleItems: PositionedItem[] = (
+        timedEventsByDay.get(dayKey) ?? []
+      ).map((ge) => ({
+        endMinutes: segmentEndMinutes(ge),
+        id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
+        startMinutes: minutesFromMidnight(ge.segmentStart),
+        type: "google-event" as const,
+      }));
 
       const workoutItems: PositionedItem[] = (
         workoutsByDay.get(dayKey) ?? []
       ).map((workout) => ({
-        endMinutes: workout.segmentEnd
-          .toPlainDate()
-          .equals(workout.segmentStart.toPlainDate())
-          ? minutesFromMidnight(workout.segmentEnd)
-          : 24 * 60,
+        endMinutes: segmentEndMinutes(workout),
         id: `whoop-${workout.id}`,
         startMinutes: minutesFromMidnight(workout.segmentStart),
         type: "whoop-workout" as const,
@@ -740,7 +873,7 @@ export default function CalendarTab() {
     }
 
     return layoutsByDay;
-  }, [visibleDays, tasksByDay, timedEventsByDay, workoutsByDay, timeZone]);
+  }, [visibleDays, taskSegmentsByDay, timedEventsByDay, workoutsByDay]);
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const editingEventDraft =
@@ -794,6 +927,14 @@ export default function CalendarTab() {
 
   const taskFlow = useTaskEditorFlow();
   const openCreateTask = taskFlow.openCreate;
+  // The day whose full all-day list is open, from "+N more".
+  const [allDayListDay, setAllDayListDay] = useState<Temporal.PlainDate | null>(
+    null
+  );
+  // The WHOOP workout whose details are open; workouts are read-only.
+  const [openWorkout, setOpenWorkout] = useState<PositionedWorkout | null>(
+    null
+  );
   const [createSlotSelection, setCreateSlotSelection] = useState<{
     day: Temporal.PlainDate;
     minutes: number;
@@ -1539,13 +1680,11 @@ export default function CalendarTab() {
                     className="min-h-7 flex-1 gap-1 border-border border-r px-1 py-1"
                     key={`${day.toString()}-allday`}
                   >
-                    {items.slice(0, 3).map((e) => (
-                      <AllDayEventChip
-                        item={e}
-                        key={`${e.source.accountId}-${e.source.calendarId}-${e.source.event.id}`}
-                        onPress={() => openEditAllDayEvent(e)}
-                      />
-                    ))}
+                    <AllDayCellItems
+                      items={items}
+                      onMore={() => setAllDayListDay(day)}
+                      onOpen={openEditAllDayEvent}
+                    />
                   </View>
                 );
               })}
@@ -1603,7 +1742,7 @@ export default function CalendarTab() {
                 {visibleDays.map((day) => {
                   const dayKey = day.toString();
                   const dayEvents = timedEventsByDay.get(dayKey) ?? [];
-                  const dayTasks = tasksByDay.get(dayKey) ?? [];
+                  const dayTasks = taskSegmentsByDay.get(dayKey) ?? [];
                   const isTodayColumn = isToday(day, timeZone);
                   const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
@@ -1646,12 +1785,14 @@ export default function CalendarTab() {
                         {dayEvents.map((evt) => {
                           const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
                           const layout = dayLayouts?.get(eventId);
-                          const startMinutes = minutesFromMidnight(evt.start);
+                          const startMinutes = minutesFromMidnight(
+                            evt.segmentStart
+                          );
                           const durationMinutes = Math.max(
                             MINUTES_STEP,
                             Math.round(
-                              evt.end
-                                .since(evt.start)
+                              evt.segmentEnd
+                                .since(evt.segmentStart)
                                 .total({ unit: "minutes" })
                             )
                           );
@@ -1666,7 +1807,7 @@ export default function CalendarTab() {
                               columnSpan={layout?.columnSpan}
                               height={adjustedHeight}
                               item={evt}
-                              key={`${eventId}-${evt.start.toString()}`}
+                              key={`${eventId}-${evt.segmentStart.toString()}`}
                               onLongPressAt={(offsetY) =>
                                 showBlockMenu({
                                   day,
@@ -1725,6 +1866,7 @@ export default function CalendarTab() {
                                   title: workout.sportName || "Workout",
                                 })
                               }
+                              onPress={() => setOpenWorkout(workout)}
                               stackDepth={layout?.stackDepth}
                               start={workout.start}
                               title={workout.sportName || "Workout"}
@@ -1741,25 +1883,19 @@ export default function CalendarTab() {
                         })}
 
                         {/* Scheduled tasks */}
-                        {dayTasks.map((task) => {
-                          if (!(task.startDate && task.startTime)) {
-                            return null;
-                          }
+                        {dayTasks.map((segment) => {
+                          const { end, start, task } = segment;
                           const layout = dayLayouts?.get(task.id);
-                          const start = task.startDate.toZonedDateTime({
-                            plainTime: task.startTime,
-                            timeZone,
-                          });
-                          const startMinutes = minutesFromMidnight(start);
-                          const durationMinutes = Math.max(
-                            MINUTES_STEP,
-                            task.durationMinutes
+                          const durationMinutes = Math.round(
+                            segment.segmentEnd
+                              .since(segment.segmentStart)
+                              .total({ unit: "minutes" })
                           );
-                          const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                          const top =
+                            (minutesFromMidnight(segment.segmentStart) / 60) *
+                            PIXELS_PER_HOUR;
                           const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
                           const adjustedHeight = blockHeight(durationMinutes);
-
-                          const end = start.add({ minutes: durationMinutes });
 
                           return (
                             <TaskBlock
@@ -1770,7 +1906,7 @@ export default function CalendarTab() {
                               done={task.status === "done"}
                               end={end}
                               height={adjustedHeight}
-                              key={task.id}
+                              key={`${task.id}-${segment.segmentStart.toString()}`}
                               minutes={durationMinutes}
                               onLongPressAt={(offsetY) =>
                                 showBlockMenu({
@@ -1824,6 +1960,21 @@ export default function CalendarTab() {
           }}
         />
       ) : null}
+
+      <AllDayListSheet
+        day={allDayListDay}
+        itemsByDay={allDayEventsByDay}
+        onClose={() => setAllDayListDay(null)}
+        onOpen={(e) => {
+          setAllDayListDay(null);
+          openEditAllDayEvent(e);
+        }}
+      />
+
+      <WorkoutSheet
+        onClose={() => setOpenWorkout(null)}
+        workout={openWorkout}
+      />
 
       <BottomSheet
         isVisible={createSlotSelection !== null}

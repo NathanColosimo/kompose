@@ -32,6 +32,11 @@ import {
 } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   clampZonedDateTime,
   getDayBoundsZoned,
   isoStringToZonedDateTime,
@@ -39,7 +44,10 @@ import {
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
-import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
+import {
+  createEventRequestedAtom,
+  scrollToNowRequestedAtom,
+} from "@/state/calendar-navigation";
 import { effectiveVisibleDaysAtom } from "@/state/sidebar";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
@@ -337,6 +345,43 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     setScrollToNowRequested(false);
   }, [scrollToNowRequested, setScrollToNowRequested, timeZone]);
 
+  // Keyboard and command-bar path to a new event; slots are mouse-only.
+  const [createEventRequested, setCreateEventRequested] = useAtom(
+    createEventRequestedAtom
+  );
+  useLayoutEffect(() => {
+    const grid = scrollRef.current;
+    const firstDay = visibleDays[0];
+    if (!(grid && createEventRequested && firstDay)) {
+      return;
+    }
+    setCreateEventRequested(false);
+    const now = Temporal.Now.zonedDateTimeISO(timeZone);
+    const showsToday = visibleDays.some((day) => day.equals(now.toPlainDate()));
+    const nextHalfHour = Math.min(
+      Math.ceil((now.hour * 60 + now.minute) / 30) * 30,
+      23 * 60 + 30
+    );
+    const start = (showsToday ? now.toPlainDate() : firstDay).toZonedDateTime({
+      plainTime: Temporal.PlainTime.from({
+        hour: Math.floor((showsToday ? nextHalfHour : 9 * 60) / 60),
+        minute: (showsToday ? nextHalfHour : 9 * 60) % 60,
+      }),
+      timeZone,
+    });
+    grid.scrollTop = Math.max(
+      0,
+      (start.hour + start.minute / 60) * PIXELS_PER_HOUR - grid.clientHeight / 3
+    );
+    actions.createAt(start);
+  }, [
+    actions,
+    createEventRequested,
+    setCreateEventRequested,
+    timeZone,
+    visibleDays,
+  ]);
+
   // Track header height (dates + all-day row) to align the gutter corner
   useLayoutEffect(() => {
     const node = headerContainerRef.current;
@@ -627,9 +672,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                         />
                       ))}
                     {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
-                      <span className="px-1 text-[11px] text-muted-foreground">
-                        +{dayAllDay.length - MAX_ALL_DAY_EVENTS} more
-                      </span>
+                      <AllDayOverflow
+                        day={day}
+                        items={dayAllDay}
+                        timeZone={timeZone}
+                      />
                     ) : null}
                   </div>
                 );
@@ -790,6 +837,46 @@ function TimeGutterSynced({
 }
 
 DaysView.displayName = "DaysView";
+
+/** "+N more" for a day's all-day row: opens the day's full list. */
+function AllDayOverflow({
+  day,
+  items,
+  timeZone,
+}: {
+  day: Temporal.PlainDate;
+  items: AllDayGoogleEvent[];
+  timeZone: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className="rounded-sm px-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          type="button"
+        >
+          +{items.length - MAX_ALL_DAY_EVENTS} more
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-1.5 p-2">
+        <p className="px-1 font-medium text-muted-foreground text-xs">
+          {day.toLocaleString(undefined, {
+            day: "numeric",
+            month: "long",
+            weekday: "long",
+          })}
+        </p>
+        {items.map((item) => (
+          <AllDayEventChip
+            item={item}
+            key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
+            timeZone={timeZone}
+          />
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function AllDayEventChip({
   item,

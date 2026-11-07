@@ -11,6 +11,13 @@ import { atom } from "jotai";
  */
 export const scrollToNowRequestedAtom = atom(false);
 
+/**
+ * One-shot request to open the new-event popover from the keyboard ("c") or
+ * the command bar, consumed by the calendar grid: today at the next half
+ * hour when today is visible, else 9 AM on the first visible day.
+ */
+export const createEventRequestedAtom = atom(false);
+
 export const goToTodayAtom = atom(null, (get, set) => {
   set(todayTickAtom, (tick) => tick + 1);
   set(currentDateAtom, get(todayPlainDateAtom));

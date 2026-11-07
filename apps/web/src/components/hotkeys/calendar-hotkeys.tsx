@@ -7,7 +7,10 @@ import {
 } from "@kompose/state/atoms/current-date";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
-import { goToTodayAtom } from "@/state/calendar-navigation";
+import {
+  createEventRequestedAtom,
+  goToTodayAtom,
+} from "@/state/calendar-navigation";
 import {
   dashboardResponsiveLayoutAtom,
   effectiveVisibleDaysCountAtom,
@@ -36,6 +39,7 @@ export function CalendarHotkeys() {
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const goToToday = useSetAtom(goToTodayAtom);
+  const requestCreateEvent = useSetAtom(createEventRequestedAtom);
 
   useHotkeys(
     "meta+k",
@@ -46,6 +50,10 @@ export function CalendarHotkeys() {
     { enableOnFormTags: true }, // Allow opening even when in form fields
     [setCommandBarOpen]
   );
+
+  useHotkeys("c", () => requestCreateEvent(true), hotkeyOptions, [
+    requestCreateEvent,
+  ]);
 
   useHotkeys("1", () => setVisibleDaysCount(1), hotkeyOptions, []);
   useHotkeys("2", () => setVisibleDaysCount(2), hotkeyOptions, []);

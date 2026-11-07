@@ -3,7 +3,7 @@ import { extractMeetingLink } from "@kompose/state/meeting";
 import { formatTimeRange } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import { Pressable, View } from "react-native";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
@@ -115,6 +115,9 @@ interface BlockTextProps {
   struck?: boolean;
   title: string;
 }
+
+/** The block's background ring (p-px), between its edge and its card. */
+const BLOCK_RING_PT = 1;
 
 /** Narrower than this, a block shows its title in place of the time. */
 const NARROW_BLOCK_PT = 72;
@@ -325,6 +328,7 @@ export function TaskBlock({
 }: TaskBlockProps) {
   const compact = minutes < COMPACT_MINUTES;
   const placement = positionStyle(position);
+  const bodyTopRef = useRef(0);
   const longPressAt = (offsetInBlock: number) =>
     onLongPressAt?.(position.top + offsetInBlock);
   // The checkbox and the editor are sibling controls, so VoiceOver reaches
@@ -366,8 +370,14 @@ export function TaskBlock({
           accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
           accessibilityRole="button"
           className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
-          // The text starts about 6pt below the block's top (gap, border, padding).
-          onLongPress={(event) => longPressAt(6 + event.nativeEvent.locationY)}
+          // Measured: the text area's top within the block (ring, border,
+          // and padding, or centering in a compact block).
+          onLayout={(event) => {
+            bodyTopRef.current = BLOCK_RING_PT + event.nativeEvent.layout.y;
+          }}
+          onLongPress={(event) =>
+            longPressAt(bodyTopRef.current + event.nativeEvent.locationY)
+          }
           onPress={(event) => {
             event.stopPropagation();
             onPress();

@@ -102,7 +102,10 @@ export const TimeSlot = memo(function TimeSlotInner({
   );
 
   return (
+    // Mouse-only: keyboard and screen readers create through "c" or the
+    // command bar (documents/hotkeys.md), not hundreds of empty slots.
     <button
+      aria-hidden
       className={cn(
         "block min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none",
         isThirtyMinuteBoundary ? "border-border/50 border-t" : ""
@@ -114,6 +117,7 @@ export const TimeSlot = memo(function TimeSlotInner({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       style={slotStyle}
+      tabIndex={-1}
       type="button"
     >
       {children}

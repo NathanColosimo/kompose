@@ -36,6 +36,8 @@ interface EventCreationState {
 interface EventCreationActions {
   cancelCreation: () => void;
   closePopover: () => void;
+  /** Open the new-event popover for a 30-minute range at `start`. */
+  createAt: (start: Temporal.ZonedDateTime) => void;
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotLeave: () => void;
@@ -270,6 +272,27 @@ export function useEventCreationState(): EventCreationContextValue {
     [defaultCalendar, onSlotDragMove, onSlotMouseUp]
   );
 
+  const createAt = useCallback(
+    (start: Temporal.ZonedDateTime) => {
+      if (!defaultCalendar) {
+        return;
+      }
+      documentListenerCleanupRef.current?.();
+      startDateTimeRef.current = start;
+      setState((prev) => ({
+        ...prev,
+        accountId: defaultCalendar.accountId,
+        calendarId: defaultCalendar.calendarId,
+        endDateTime: start.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        hoverDateTime: null,
+        isCreating: false,
+        showPopover: true,
+        startDateTime: start,
+      }));
+    },
+    [defaultCalendar]
+  );
+
   const cancelCreation = useCallback(() => {
     documentListenerCleanupRef.current?.();
     setState(initialState);
@@ -288,6 +311,7 @@ export function useEventCreationState(): EventCreationContextValue {
     () => ({
       cancelCreation,
       closePopover,
+      createAt,
       onSlotDragMove,
       onSlotHover,
       onSlotLeave,
@@ -303,6 +327,7 @@ export function useEventCreationState(): EventCreationContextValue {
       onSlotMouseUp,
       cancelCreation,
       closePopover,
+      createAt,
       setPreviewElement,
     ]
   );
