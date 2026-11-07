@@ -14,6 +14,7 @@ import {
   taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
+import { Keyboard } from "react-native";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
@@ -365,6 +366,7 @@ export function useTaskEditorFlow() {
     }
     // The editor stays open until the edits have saved, so a failed save
     // keeps them.
+    Keyboard.dismiss();
     setIsSavingStatus(true);
     const task = editingTask;
     const session = sessionRef.current;

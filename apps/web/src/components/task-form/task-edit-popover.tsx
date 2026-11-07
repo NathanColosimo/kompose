@@ -745,380 +745,392 @@ export function TaskEditForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      <Input
-        onChange={(e) =>
-          setValue("title", e.target.value, { shouldDirty: true })
-        }
-        placeholder="Task title"
-        value={watchedValues.title}
-      />
+      {/* While Mark done saves, the fields are read-only too: a change typed
+          then would be dropped when the editor closes. */}
+      <fieldset className="contents" disabled={isSavingStatus}>
+        <Input
+          onChange={(e) =>
+            setValue("title", e.target.value, { shouldDirty: true })
+          }
+          placeholder="Task title"
+          value={watchedValues.title}
+        />
 
-      <Textarea
-        onChange={(e) =>
-          setValue("description", e.target.value, { shouldDirty: true })
-        }
-        placeholder="Add details..."
-        value={watchedValues.description}
-      />
+        <Textarea
+          onChange={(e) =>
+            setValue("description", e.target.value, { shouldDirty: true })
+          }
+          placeholder="Add details..."
+          value={watchedValues.description}
+        />
 
-      <Separator />
+        <Separator />
 
-      {/* Row 1: Start date, time, duration (calendar scheduling) */}
-      <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
-        <Controller
-          control={control}
-          name="startDate"
-          render={({ field }) => (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
-                    !field.value && "text-muted-foreground"
+        {/* Row 1: Start date, time, duration (calendar scheduling) */}
+        <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
+          <Controller
+            control={control}
+            name="startDate"
+            render={({ field }) => (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className={cn(
+                      "justify-start gap-2 text-left font-medium text-xs",
+                      !field.value && "text-muted-foreground"
+                    )}
+                    variant="outline"
+                  >
+                    <CalendarClock className="size-4 shrink-0" />
+                    <span className="truncate">
+                      {field.value
+                        ? `Start: ${formatPlainDate(field.value, {
+                            day: "numeric",
+                            month: "short",
+                          })}`
+                        : "Schedule"}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) =>
+                      field.onChange(date ? pickerDateToTemporal(date) : null)
+                    }
+                    selected={
+                      field.value
+                        ? temporalToPickerDate(field.value)
+                        : undefined
+                    }
+                  />
+                  {field.value && (
+                    <div className="border-t p-2">
+                      <Button
+                        className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                        onClick={() => {
+                          field.onChange(null);
+                          setValue("startTime", null, { shouldDirty: true });
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X className="size-4" />
+                        Clear date
+                      </Button>
+                    </div>
                   )}
-                  variant="outline"
-                >
-                  <CalendarClock className="size-4 shrink-0" />
-                  <span className="truncate">
+                </PopoverContent>
+              </Popover>
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="startTime"
+            render={({ field }) => {
+              const value = field.value
+                ? `${String(field.value.hour).padStart(2, "0")}:${String(
+                    field.value.minute
+                  ).padStart(2, "0")}`
+                : "";
+
+              return (
+                <TimePicker
+                  onChange={(nextValue) => {
+                    const [hours, minutes] = nextValue.split(":").map(Number);
+                    field.onChange(
+                      Temporal.PlainTime.from({ hour: hours, minute: minutes })
+                    );
+                  }}
+                  placeholder="Time"
+                  value={value}
+                />
+              );
+            }}
+          />
+
+          <Controller
+            control={control}
+            name="durationMinutes"
+            render={({ field }) => (
+              <DurationPicker
+                onChange={(minutes) => field.onChange(minutes)}
+                value={field.value}
+              />
+            )}
+          />
+        </div>
+
+        {/* Row 2: Due date and Recurrence */}
+        <div className="grid grid-cols-2 gap-2">
+          <Controller
+            control={control}
+            name="dueDate"
+            render={({ field }) => (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className={cn(
+                      "justify-start gap-2 text-left font-medium text-xs",
+                      !field.value && "text-muted-foreground"
+                    )}
+                    variant="outline"
+                  >
+                    <CalendarCheck className="size-4 shrink-0" />
                     {field.value
-                      ? `Start: ${formatPlainDate(field.value, {
+                      ? `Due: ${formatPlainDate(field.value, {
                           day: "numeric",
                           month: "short",
                         })}`
-                      : "Schedule"}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  onSelect={(date) =>
-                    field.onChange(date ? pickerDateToTemporal(date) : null)
-                  }
-                  selected={
-                    field.value ? temporalToPickerDate(field.value) : undefined
-                  }
-                />
-                {field.value && (
-                  <div className="border-t p-2">
-                    <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
-                      onClick={() => {
-                        field.onChange(null);
-                        setValue("startTime", null, { shouldDirty: true });
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <X className="size-4" />
-                      Clear date
-                    </Button>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
-          )}
-        />
+                      : "Due date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) =>
+                      field.onChange(date ? pickerDateToTemporal(date) : null)
+                    }
+                    selected={
+                      field.value === undefined || field.value === null
+                        ? undefined
+                        : temporalToPickerDate(field.value)
+                    }
+                  />
+                  {field.value && (
+                    <div className="border-t p-2">
+                      <Button
+                        className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                        onClick={() => field.onChange(null)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X className="size-4" />
+                        Clear date
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            )}
+          />
 
-        <Controller
-          control={control}
-          name="startTime"
-          render={({ field }) => {
-            const value = field.value
-              ? `${String(field.value.hour).padStart(2, "0")}:${String(
-                  field.value.minute
-                ).padStart(2, "0")}`
-              : "";
-
-            return (
-              <TimePicker
-                onChange={(nextValue) => {
-                  const [hours, minutes] = nextValue.split(":").map(Number);
-                  field.onChange(
-                    Temporal.PlainTime.from({ hour: hours, minute: minutes })
-                  );
-                }}
-                placeholder="Time"
-                value={value}
+          <Controller
+            control={control}
+            name="recurrence"
+            render={({ field }) => (
+              <RecurrenceEditor
+                onChange={field.onChange}
+                referenceDate={startDate}
+                value={field.value}
               />
+            )}
+          />
+        </div>
+
+        <Separator />
+
+        <LinkListEditor
+          isParsing={parseLink.isPending}
+          links={links}
+          onAddLink={(url) => {
+            // Insert an unknown placeholder immediately so the link
+            // is persisted even if the user saves before parse completes.
+            const placeholder: LinkMeta = {
+              fetchedAt: new Date().toISOString(),
+              provider: "unknown",
+              url,
+            };
+            const currentLinks =
+              (getValues("links") as unknown as LinkMeta[]) ?? [];
+            const isFirstLink = currentLinks.length === 0;
+            setValue("links", dedupeLinks([...currentLinks, placeholder]), {
+              shouldDirty: true,
+            });
+
+            parseLink.mutate(url, {
+              onSuccess: (meta) => {
+                const latest =
+                  (getValues("links") as unknown as LinkMeta[]) ?? [];
+                setValue(
+                  "links",
+                  dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
+                  { shouldDirty: true }
+                );
+
+                if (isFirstLink) {
+                  if (meta.title && !getValues("title")?.trim()) {
+                    setValue("title", meta.title, { shouldDirty: true });
+                  }
+                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                    setValue(
+                      "durationMinutes",
+                      Math.ceil(meta.durationSeconds / 60),
+                      { shouldDirty: true }
+                    );
+                  }
+                }
+              },
+            });
+          }}
+          onRemoveLink={(index) => {
+            setValue(
+              "links",
+              links.filter((_, i) => i !== index),
+              { shouldDirty: true }
             );
           }}
         />
 
         <Controller
           control={control}
-          name="durationMinutes"
+          name="tagIds"
           render={({ field }) => (
-            <DurationPicker
-              onChange={(minutes) => field.onChange(minutes)}
-              value={field.value}
-            />
+            <TagPicker onChange={field.onChange} value={field.value ?? []} />
           )}
         />
-      </div>
 
-      {/* Row 2: Due date and Recurrence */}
-      <div className="grid grid-cols-2 gap-2">
-        <Controller
-          control={control}
-          name="dueDate"
-          render={({ field }) => (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
-                    !field.value && "text-muted-foreground"
-                  )}
-                  variant="outline"
+        {showActionButtons ? (
+          <>
+            <Separator />
+            <div className="flex items-center gap-2">
+              {isCreateMode ? null : (
+                <AlertDialog
+                  onOpenChange={setShowDeleteConfirm}
+                  open={showDeleteConfirm}
                 >
-                  <CalendarCheck className="size-4 shrink-0" />
-                  {field.value
-                    ? `Due: ${formatPlainDate(field.value, {
-                        day: "numeric",
-                        month: "short",
-                      })}`
-                    : "Due date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  onSelect={(date) =>
-                    field.onChange(date ? pickerDateToTemporal(date) : null)
-                  }
-                  selected={
-                    field.value === undefined || field.value === null
-                      ? undefined
-                      : temporalToPickerDate(field.value)
-                  }
-                />
-                {field.value && (
-                  <div className="border-t p-2">
+                  <AlertDialogTrigger asChild>
                     <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
-                      onClick={() => field.onChange(null)}
+                      className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      disabled={isSavingStatus}
                       size="sm"
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                     >
-                      <X className="size-4" />
-                      Clear date
+                      <Trash2 className="size-3.5" />
+                      Delete
                     </Button>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="recurrence"
-          render={({ field }) => (
-            <RecurrenceEditor
-              onChange={field.onChange}
-              referenceDate={startDate}
-              value={field.value}
-            />
-          )}
-        />
-      </div>
-
-      <Separator />
-
-      <LinkListEditor
-        isParsing={parseLink.isPending}
-        links={links}
-        onAddLink={(url) => {
-          // Insert an unknown placeholder immediately so the link
-          // is persisted even if the user saves before parse completes.
-          const placeholder: LinkMeta = {
-            fetchedAt: new Date().toISOString(),
-            provider: "unknown",
-            url,
-          };
-          const currentLinks =
-            (getValues("links") as unknown as LinkMeta[]) ?? [];
-          const isFirstLink = currentLinks.length === 0;
-          setValue("links", dedupeLinks([...currentLinks, placeholder]), {
-            shouldDirty: true,
-          });
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              const latest =
-                (getValues("links") as unknown as LinkMeta[]) ?? [];
-              setValue(
-                "links",
-                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
-                { shouldDirty: true }
-              );
-
-              if (isFirstLink) {
-                if (meta.title && !getValues("title")?.trim()) {
-                  setValue("title", meta.title, { shouldDirty: true });
-                }
-                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                  setValue(
-                    "durationMinutes",
-                    Math.ceil(meta.durationSeconds / 60),
-                    { shouldDirty: true }
-                  );
-                }
-              }
-            },
-          });
-        }}
-        onRemoveLink={(index) => {
-          setValue(
-            "links",
-            links.filter((_, i) => i !== index),
-            { shouldDirty: true }
-          );
-        }}
-      />
-
-      <Controller
-        control={control}
-        name="tagIds"
-        render={({ field }) => (
-          <TagPicker onChange={field.onChange} value={field.value ?? []} />
-        )}
-      />
-
-      {showActionButtons ? (
-        <>
-          <Separator />
-          <div className="flex items-center gap-2">
-            {isCreateMode ? null : (
-              <AlertDialog
-                onOpenChange={setShowDeleteConfirm}
-                open={showDeleteConfirm}
-              >
-                <AlertDialogTrigger asChild>
-                  <Button
-                    className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    disabled={isSavingStatus}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Trash2 className="size-3.5" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete task?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {isRecurring
-                        ? "This is a recurring task. Choose what to delete."
-                        : "This action cannot be undone."}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter
-                    className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
-                  >
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    {isRecurring ? (
-                      <>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete task?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {isRecurring
+                          ? "This is a recurring task. Choose what to delete."
+                          : "This action cannot be undone."}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter
+                      className={
+                        isRecurring ? "flex-col gap-2 sm:flex-col" : ""
+                      }
+                    >
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      {isRecurring ? (
+                        <>
+                          <AlertDialogAction
+                            onClick={() => confirmDelete("this")}
+                          >
+                            Only this occurrence
+                          </AlertDialogAction>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => confirmDelete("following")}
+                          >
+                            This and following
+                          </AlertDialogAction>
+                        </>
+                      ) : (
                         <AlertDialogAction
                           onClick={() => confirmDelete("this")}
                         >
-                          Only this occurrence
+                          Delete
                         </AlertDialogAction>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => confirmDelete("following")}
-                        >
-                          This and following
-                        </AlertDialogAction>
-                      </>
-                    ) : (
-                      <AlertDialogAction onClick={() => confirmDelete("this")}>
-                        Delete
-                      </AlertDialogAction>
-                    )}
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-            {isCreateMode || !task ? null : (
-              <TaskDoneButton
-                isDone={task.status === "done"}
-                isSaving={isSavingStatus}
-                onClick={handleToggleDone}
-              />
-            )}
-            <div className="ml-auto flex gap-2">
-              {/* While Mark done saves, leaving would drop the edits if the
+                      )}
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {isCreateMode || !task ? null : (
+                <TaskDoneButton
+                  isDone={task.status === "done"}
+                  isSaving={isSavingStatus}
+                  onClick={handleToggleDone}
+                />
+              )}
+              <div className="ml-auto flex gap-2">
+                {/* While Mark done saves, leaving would drop the edits if the
                   save fails, so the editor holds until it's done. */}
-              <Button
-                disabled={isSavingStatus}
-                onClick={onClose}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={isSavingStatus}
-                onClick={handleSaveClick}
-                size="sm"
-                type="button"
-              >
-                Save
-              </Button>
+                <Button
+                  disabled={isSavingStatus}
+                  onClick={onClose}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={isSavingStatus}
+                  onClick={handleSaveClick}
+                  size="sm"
+                  type="button"
+                >
+                  Save
+                </Button>
+              </div>
             </div>
-          </div>
-        </>
-      ) : null}
+          </>
+        ) : null}
 
-      {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
-      {isCreateMode ? null : (
-        <RecurrenceScopeDialog
-          confirmLabel="Apply"
-          description="This is a recurring task. Choose how broadly to apply the change."
-          onConfirm={() => {
-            const pendingUpdate = pendingUpdateRef.current;
-            if (!pendingUpdate) {
-              return;
-            }
-            const status = pendingStatusRef.current;
-            pendingUpdateRef.current = null;
-            pendingStatusRef.current = null;
-            if (!status) {
-              commitUpdate(pendingUpdate, tagScope);
-              onClose();
-              return;
-            }
-            // With Mark done, the editor stays open ("Saving…") until the
-            // save succeeds, so a failed save keeps the edits.
-            setIsSavingStatus(true);
-            commitWithStatus(pendingUpdate, tagScope, status).then((saved) => {
-              setIsSavingStatus(false);
-              if (saved) {
-                onClose();
+        {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
+        {isCreateMode ? null : (
+          <RecurrenceScopeDialog
+            confirmLabel="Apply"
+            description="This is a recurring task. Choose how broadly to apply the change."
+            onConfirm={() => {
+              const pendingUpdate = pendingUpdateRef.current;
+              if (!pendingUpdate) {
+                return;
               }
-            });
-          }}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) {
+              const status = pendingStatusRef.current;
               pendingUpdateRef.current = null;
               pendingStatusRef.current = null;
-            }
-            setShowTagScopeDialog(nextOpen);
-          }}
-          onValueChange={(value) => setTagScope(value as UpdateScope)}
-          open={showTagScopeDialog}
-          options={TASK_UPDATE_SCOPE_OPTIONS}
-          title="Apply task update"
-          value={tagScope}
-        />
-      )}
+              if (!status) {
+                commitUpdate(pendingUpdate, tagScope);
+                onClose();
+                return;
+              }
+              // With Mark done, the editor stays open ("Saving…") until the
+              // save succeeds, so a failed save keeps the edits.
+              setIsSavingStatus(true);
+              commitWithStatus(pendingUpdate, tagScope, status).then(
+                (saved) => {
+                  setIsSavingStatus(false);
+                  if (saved) {
+                    onClose();
+                  }
+                }
+              );
+            }}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                pendingUpdateRef.current = null;
+                pendingStatusRef.current = null;
+              }
+              setShowTagScopeDialog(nextOpen);
+            }}
+            onValueChange={(value) => setTagScope(value as UpdateScope)}
+            open={showTagScopeDialog}
+            options={TASK_UPDATE_SCOPE_OPTIONS}
+            title="Apply task update"
+            value={tagScope}
+          />
+        )}
+      </fieldset>
     </form>
   );
 }

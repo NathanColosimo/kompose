@@ -196,6 +196,18 @@ export function useTasks(options: UseTasksOptions = {}) {
 
       return { previousTasks };
     },
+    // Without the early update, write the saved tasks in as soon as the
+    // server answers, so the editor that waited closes onto them (the
+    // refetch below can take a while on a cold start).
+    onSuccess: (saved, { optimistic: isOptimistic = true }) => {
+      if (isOptimistic) {
+        return;
+      }
+      const byId = new Map(saved.map((task) => [task.id, task]));
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
+        old?.map((task) => byId.get(task.id) ?? task)
+      );
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
