@@ -94,7 +94,7 @@ function formatParts(
  * A compact time range in the locale's style, shared by web and mobile:
  * "10 AM – 12 PM" on the hour, "9:00 – 9:30 AM" within one half of the day,
  * times only for an overnight range ("11 PM – 7 AM"), and dates once the
- * range spans more than one night ("Nov 6 at 9 AM – Nov 8 at 5 PM").
+ * range lasts a day or more ("Nov 6, 9 AM – Nov 8, 5 PM").
  */
 export function formatTimeRange(
   start: Temporal.ZonedDateTime,

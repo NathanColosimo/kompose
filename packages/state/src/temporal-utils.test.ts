@@ -6,6 +6,20 @@ const zone = "America/New_York";
 const at = (iso: string) =>
   Temporal.PlainDateTime.from(iso).toZonedDateTime(zone);
 
+/**
+ * Both ends carry their date. ICU versions word the join differently
+ * ("Nov 6, 9 AM" or "Nov 6 at 9 AM"), so check the pieces, not the glue.
+ */
+function expectDated(text: string, start: string[], end: string[]) {
+  const [first, second] = text.split(" – ");
+  for (const piece of start) {
+    expect(first).toContain(piece);
+  }
+  for (const piece of end) {
+    expect(second).toContain(piece);
+  }
+}
+
 /** ICU uses narrow and thin spaces; compare with plain ones. */
 const range = (start: string, end: string) =>
   formatTimeRange(at(start), at(end)).replace(/\s/g, " ");
@@ -32,22 +46,30 @@ describe("formatTimeRange", () => {
   });
 
   test("adds dates once a range spans more than one night", () => {
-    expect(range("2026-11-06T09:00", "2026-11-08T17:00")).toBe(
-      "Nov 6 at 9 AM – Nov 8 at 5 PM"
+    expectDated(
+      range("2026-11-06T09:00", "2026-11-08T17:00"),
+      ["Nov 6", "9 AM"],
+      ["Nov 8", "5 PM"]
     );
   });
 });
 
 describe("formatTimeRange edge cases", () => {
   test("adds dates when the range lasts a day or more", () => {
-    expect(range("2026-11-06T09:00", "2026-11-07T17:00")).toBe(
-      "Nov 6 at 9 AM – Nov 7 at 5 PM"
+    expectDated(
+      range("2026-11-06T09:00", "2026-11-07T17:00"),
+      ["Nov 6", "9 AM"],
+      ["Nov 7", "5 PM"]
     );
-    expect(range("2026-11-06T09:00", "2026-11-07T09:00")).toBe(
-      "Nov 6 at 9 AM – Nov 7 at 9 AM"
+    expectDated(
+      range("2026-11-06T09:00", "2026-11-07T09:00"),
+      ["Nov 6", "9 AM"],
+      ["Nov 7", "9 AM"]
     );
-    expect(range("2026-11-07T00:00", "2026-11-08T00:00")).toBe(
-      "Nov 7 at 12 AM – Nov 8 at 12 AM"
+    expectDated(
+      range("2026-11-07T00:00", "2026-11-08T00:00"),
+      ["Nov 7", "12 AM"],
+      ["Nov 8", "12 AM"]
     );
   });
 
