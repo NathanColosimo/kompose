@@ -22,6 +22,8 @@ import {
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
 import {
+  hasWhoopStats,
+  shouldShowWhoopRow,
   WHOOP_DAYS_QUERY_KEY,
   whoopAccountIdAtom,
   whoopSummariesByDayAtom,
@@ -49,7 +51,13 @@ import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
+import {
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Plus,
+} from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type NativeScrollEvent,
@@ -248,6 +256,40 @@ function buildCreateTaskDraftFromSlot(
   };
 }
 
+/** The create chooser's line, naming its slot ("… at Sat, Nov 7, 11:30 AM."). */
+function createChooserCopy(
+  slot: { day: Temporal.PlainDate; minutes: number } | null,
+  timeZone: string
+): string | null {
+  if (!slot) {
+    return null;
+  }
+  return `Create an event or a scheduled task at ${formatSlot(slot.day, slot.minutes, timeZone)}.`;
+}
+
+/** A slot such as "Sat, Nov 7, 11:30 AM". */
+function formatSlot(
+  day: Temporal.PlainDate,
+  minutes: number,
+  timeZone: string
+): string {
+  return day
+    .toZonedDateTime({
+      plainTime: Temporal.PlainTime.from({
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+      }),
+      timeZone,
+    })
+    .toLocaleString(undefined, {
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      month: "short",
+      weekday: "short",
+    });
+}
+
 /** A block's height: at least a 15-minute slot, less the gap between blocks. */
 function blockHeight(minutes: number): number {
   const height = Math.max(
@@ -306,25 +348,14 @@ function workoutSegmentsForDay(
   return segments;
 }
 
-/**
- * Whether day headers keep a WHOOP row. While WHOOP is linked the row stays,
- * so paging to days without data doesn't move the grid.
- */
+/** Whether day headers keep a WHOOP row; see shouldShowWhoopRow. */
 function useShowWhoopRow(days: Temporal.PlainDate[]): boolean {
   const whoopAccountId = useAtomValue(whoopAccountIdAtom);
   const summaries = useAtomValue(whoopSummariesByDayAtom);
-  return (
-    whoopAccountId !== null ||
-    days.some((day) => hasWhoopStats(summaries.get(day.toString())))
-  );
-}
-
-function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
-  return Boolean(
-    summary &&
-      (summary.recoveryScore !== null ||
-        summary.strainScore !== null ||
-        summary.sleep)
+  return shouldShowWhoopRow(
+    whoopAccountId,
+    days.map((day) => day.toString()),
+    summaries
   );
 }
 
@@ -620,11 +651,6 @@ export default function CalendarTab() {
     return map;
   }, [scheduledTasks, visibleDays]);
 
-  const hasAllDayEvents = useMemo(
-    () => Array.from(allDayEventsByDay.values()).some((v) => v.length > 0),
-    [allDayEventsByDay]
-  );
-
   // Calculate collision layouts for all visible days (tasks + google events combined).
   const collisionLayoutsByDay = useMemo(() => {
     const layoutsByDay = new Map<string, Map<string, ItemLayout>>();
@@ -862,6 +888,22 @@ export default function CalendarTab() {
     },
     []
   );
+
+  // The header's "+": today at the next half hour when today is showing,
+  // else 9 AM on the first visible day. It's also the way in for VoiceOver,
+  // which can't tap an empty slot.
+  const openCreateChooserFromHeader = useCallback(() => {
+    const now = Temporal.Now.zonedDateTimeISO(timeZone);
+    const today = now.toPlainDate();
+    const showsToday = visibleDays.some((day) => day.equals(today));
+    const firstDay = visibleDays[0] ?? today;
+    const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
+    if (showsToday) {
+      openCreateChooserAt(today, Math.min(nextHalfHour, 23 * 60 + 30));
+    } else {
+      openCreateChooserAt(firstDay, 9 * 60);
+    }
+  }, [openCreateChooserAt, timeZone, visibleDays]);
 
   const closeCreateChooser = useCallback(() => {
     setCreateSlotSelection(null);
@@ -1300,6 +1342,14 @@ export default function CalendarTab() {
               >
                 <Icon as={ChevronRight} size={18} />
               </Pressable>
+              <Pressable
+                accessibilityLabel="New event or task"
+                accessibilityRole="button"
+                className="rounded-lg p-1.5 active:opacity-70"
+                onPress={openCreateChooserFromHeader}
+              >
+                <Icon as={Plus} size={18} />
+              </Pressable>
             </View>
           ),
           title: "Calendar",
@@ -1357,34 +1407,32 @@ export default function CalendarTab() {
             </View>
           </View>
 
-          {/* All-day events row */}
-          {hasAllDayEvents ? (
-            <View className="flex-row border-border border-b">
-              <View
-                className="border-border border-r"
-                style={{ width: TIME_GUTTER_WIDTH_PX }}
-              />
-              <View className="flex-1 flex-row">
-                {visibleDays.map((day) => {
-                  const items = allDayEventsByDay.get(day.toString()) ?? [];
-                  return (
-                    <View
-                      className="min-h-[30px] flex-1 gap-1 border-border border-r px-1 py-1"
-                      key={`${day.toString()}-allday`}
-                    >
-                      {items.slice(0, 3).map((e) => (
-                        <AllDayEventChip
-                          item={e}
-                          key={`${e.source.accountId}-${e.source.calendarId}-${e.source.event.id}`}
-                          onPress={() => openEditAllDayEvent(e)}
-                        />
-                      ))}
-                    </View>
-                  );
-                })}
-              </View>
+          {/* All-day events row; it always shows, so paging doesn't move the grid. */}
+          <View className="flex-row border-border border-b">
+            <View
+              className="border-border border-r"
+              style={{ width: TIME_GUTTER_WIDTH_PX }}
+            />
+            <View className="flex-1 flex-row">
+              {visibleDays.map((day) => {
+                const items = allDayEventsByDay.get(day.toString()) ?? [];
+                return (
+                  <View
+                    className="min-h-7 flex-1 gap-1 border-border border-r px-1 py-1"
+                    key={`${day.toString()}-allday`}
+                  >
+                    {items.slice(0, 3).map((e) => (
+                      <AllDayEventChip
+                        item={e}
+                        key={`${e.source.accountId}-${e.source.calendarId}-${e.source.event.id}`}
+                        onPress={() => openEditAllDayEvent(e)}
+                      />
+                    ))}
+                  </View>
+                );
+              })}
             </View>
-          ) : null}
+          </View>
 
           {/* Scrollable time grid */}
           <ScrollView
@@ -1627,7 +1675,7 @@ export default function CalendarTab() {
         title="Create"
       >
         <Text className="mb-3 text-muted-foreground text-sm">
-          Create an event or a scheduled task for this time slot.
+          {createChooserCopy(createSlotSelection, timeZone)}
         </Text>
         <View className="gap-3">
           <Button

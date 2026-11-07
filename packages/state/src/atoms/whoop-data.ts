@@ -75,3 +75,29 @@ export const whoopSummariesByDayAtom = atom<Map<string, WhoopDaySummary>>(
     return map;
   }
 );
+
+/** Whether a day's summary has a stat that day headers show. */
+export function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
+  return Boolean(
+    summary &&
+      (summary.recoveryScore !== null ||
+        summary.strainScore !== null ||
+        summary.sleep)
+  );
+}
+
+/**
+ * Whether day headers keep a WHOOP row: while WHOOP is linked, or when any
+ * visible day has stats. Keeping it while linked stops the grid moving when
+ * paging to days without data.
+ */
+export function shouldShowWhoopRow(
+  accountId: string | null,
+  dayKeys: string[],
+  summaries: Map<string, WhoopDaySummary>
+): boolean {
+  return (
+    accountId !== null ||
+    dayKeys.some((key) => hasWhoopStats(summaries.get(key)))
+  );
+}

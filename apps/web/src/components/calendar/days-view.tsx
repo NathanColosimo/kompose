@@ -11,6 +11,7 @@ import {
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
 import {
+  shouldShowWhoopRow,
   whoopAccountIdAtom,
   whoopSummariesByDayAtom,
 } from "@kompose/state/atoms/whoop-data";
@@ -394,34 +395,18 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     [visibleDays, googleEvents, timeZone]
   );
 
-  const hasAllDayEvents = useMemo(
-    () =>
-      Array.from(allDayEventsByDay.values()).some(
-        (eventsForDay) => eventsForDay.length > 0
-      ),
-    [allDayEventsByDay]
-  );
-
   const hasGoogleEvents = googleEvents.length > 0;
   const firstDay = visibleDays[0];
   const zoneLabel = useMemo(
     () => (firstDay ? timeZoneLabel(timeZone, firstDay) : ""),
     [timeZone, firstDay]
   );
-  // While WHOOP is linked the row stays, so paging to days without data
-  // doesn't move the grid.
   const whoopAccountId = useAtomValue(whoopAccountIdAtom);
-  const showWhoopRow =
-    whoopAccountId !== null ||
-    visibleDays.some((day) => {
-      const summary = whoopSummaries.get(day.toString());
-      return Boolean(
-        summary &&
-          (summary.recoveryScore !== null ||
-            summary.strainScore !== null ||
-            summary.sleep)
-      );
-    });
+  const showWhoopRow = shouldShowWhoopRow(
+    whoopAccountId,
+    visibleDays.map((day) => day.toString()),
+    whoopSummaries
+  );
 
   // Collect all sleep blocks across visible WHOOP summaries so each
   // day column can render bands for sleeps that cross midnight.
@@ -582,11 +567,10 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
           >
             {zoneLabel}
           </span>
-          {hasAllDayEvents ? (
-            <span className="flex flex-1 items-start justify-end border-t pt-1.5 pr-2">
-              All day
-            </span>
-          ) : null}
+          {/* The all-day row always shows, so paging doesn't move the grid. */}
+          <span className="flex flex-1 items-start justify-end border-t pt-1.5 pr-2">
+            All day
+          </span>
         </div>
         {/* Time gutter - scrolls vertically with the body */}
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -619,37 +603,35 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
               })}
             </div>
 
-            {hasAllDayEvents ? (
-              <div className="flex border-border border-t bg-background/80">
-                {visibleDays.map((day) => {
-                  const dayKey = day.toString();
-                  const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
+            <div className="flex border-border border-t bg-background/80">
+              {visibleDays.map((day) => {
+                const dayKey = day.toString();
+                const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
-                  return (
-                    <div
-                      className="flex min-h-[32px] flex-col items-start gap-1 overflow-hidden border-border border-r px-2 pt-1 pb-1 last:border-r-0"
-                      key={`${dayKey}-all-day`}
-                      style={{ width: dayColumnWidth }}
-                    >
-                      {dayAllDay
-                        .slice(0, MAX_ALL_DAY_EVENTS)
-                        .map((item: AllDayGoogleEvent) => (
-                          <AllDayEventChip
-                            item={item}
-                            key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
-                            timeZone={timeZone}
-                          />
-                        ))}
-                      {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
-                        <span className="px-1 text-[11px] text-muted-foreground">
-                          +{dayAllDay.length - MAX_ALL_DAY_EVENTS} more
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
+                return (
+                  <div
+                    className="flex min-h-7 flex-col items-start gap-1 overflow-hidden border-border border-r px-2 py-1 last:border-r-0"
+                    key={`${dayKey}-all-day`}
+                    style={{ width: dayColumnWidth }}
+                  >
+                    {dayAllDay
+                      .slice(0, MAX_ALL_DAY_EVENTS)
+                      .map((item: AllDayGoogleEvent) => (
+                        <AllDayEventChip
+                          item={item}
+                          key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
+                          timeZone={timeZone}
+                        />
+                      ))}
+                    {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
+                      <span className="px-1 text-[11px] text-muted-foreground">
+                        +{dayAllDay.length - MAX_ALL_DAY_EVENTS} more
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

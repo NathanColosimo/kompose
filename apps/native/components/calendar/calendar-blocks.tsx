@@ -3,7 +3,7 @@ import { extractMeetingLink } from "@kompose/state/meeting";
 import { formatTimeRange } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
@@ -18,8 +18,6 @@ const TITLE_ONLY_MINUTES = 45;
 const DETAILS_MINUTES = 60;
 /** Blocks at least this long let the title wrap to two lines. */
 const TWO_LINE_TITLE_MINUTES = 90;
-/** Short blocks show their start time beside the title from this width up. */
-const INLINE_TIME_MIN_WIDTH = 96;
 /** Blocks shorter than this center one line with no vertical padding. */
 const COMPACT_MINUTES = 30;
 
@@ -104,9 +102,7 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
-  const [width, setWidth] = useState(0);
-  const showInlineTime =
-    minutes < TITLE_ONLY_MINUTES && width >= INLINE_TIME_MIN_WIDTH;
+  const isShort = minutes < TITLE_ONLY_MINUTES;
   // Until details get their own lines, keep short values in view.
   const shorts = details.flatMap(({ icon, label, short }) =>
     short
@@ -121,31 +117,27 @@ function BlockText({
       : []
   );
   return (
-    <View
-      className="min-w-0 flex-1"
-      // Only short blocks need their width, to fit the start time.
-      onLayout={
-        minutes < TITLE_ONLY_MINUTES
-          ? (event) => setWidth(event.nativeEvent.layout.width)
-          : undefined
-      }
-    >
-      <View className="flex-row items-center gap-1">
+    <View className="min-w-0 flex-1">
+      {/* Short blocks keep one line: the time and strain wrap onto a hidden
+          second line when they don't fit beside the whole title. */}
+      <View
+        className={`flex-row items-center gap-x-1 ${isShort ? "h-[14px] flex-wrap overflow-hidden" : ""}`}
+      >
         <Text
-          className={`shrink font-sans-medium text-[11px] leading-[14px] ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
+          className={`font-sans-medium text-[11px] leading-[14px] ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
           numberOfLines={minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1}
         >
           {title}
         </Text>
-        {showInlineTime ? (
-          <Text className={`shrink-0 text-[10px] leading-[13px] ${meta}`}>
+        {isShort ? (
+          <Text className={`text-[10px] leading-[13px] ${meta}`}>
             {start.toLocaleString(undefined, {
               hour: "numeric",
               minute: "2-digit",
             })}
           </Text>
         ) : null}
-        {minutes < TITLE_ONLY_MINUTES ? shorts : null}
+        {isShort ? shorts : null}
       </View>
       {minutes >= TITLE_ONLY_MINUTES ? (
         <View className="flex-row items-center gap-1">

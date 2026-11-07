@@ -72,22 +72,26 @@ export function BlockContent({
 
   if (minutes < 30) {
     return (
-      <div className="@container flex h-full min-w-0 items-center gap-1.5">
+      <div className="flex h-full min-w-0 items-center gap-1.5">
         {leading}
-        <span className={cn(titleClass, "truncate")}>{title}</span>
-        <span
-          className={cn(
-            "flex @max-[6rem]:hidden shrink-0 items-center gap-1.5 tabular-nums",
-            META
-          )}
-        >
-          {formatTime(shownStart ?? start)}
-          {details
-            .filter((detail) => detail.short)
-            .map((detail) => (
-              <ShortDetail key={detail.label} {...detail} />
-            ))}
-        </span>
+        {/* One visible line: the time wraps onto a hidden second line when
+            it doesn't fit beside the whole title, so the title wins. */}
+        <div className="flex h-4 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 overflow-hidden">
+          <span className={cn(titleClass, "max-w-full truncate")}>{title}</span>
+          <span
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 tabular-nums",
+              META
+            )}
+          >
+            {formatTime(shownStart ?? start)}
+            {details
+              .filter((detail) => detail.short)
+              .map((detail) => (
+                <ShortDetail key={detail.label} {...detail} />
+              ))}
+          </span>
+        </div>
       </div>
     );
   }
