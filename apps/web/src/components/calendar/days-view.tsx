@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { Temporal } from "temporal-polyfill";
 import {
   Popover,
@@ -212,6 +213,37 @@ function toPositionedGoogleEvent(
   }
 }
 
+/**
+ * Where "c" creates: the next half hour today, or 9 AM tomorrow once today
+ * has no half hour left; otherwise 9 AM on the first visible day.
+ */
+function keyboardCreateStart(
+  visibleDays: Temporal.PlainDate[],
+  timeZone: string
+): Temporal.ZonedDateTime {
+  const now = Temporal.Now.zonedDateTimeISO(timeZone);
+  const today = now.toPlainDate();
+  const isVisible = (day: Temporal.PlainDate) =>
+    visibleDays.some((visible) => visible.equals(day));
+  const at = (day: Temporal.PlainDate, minutes: number) =>
+    day.toZonedDateTime({
+      plainTime: Temporal.PlainTime.from({
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+      }),
+      timeZone,
+    });
+  const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
+  if (isVisible(today) && nextHalfHour < 24 * 60) {
+    return at(today, nextHalfHour);
+  }
+  const tomorrow = today.add({ days: 1 });
+  if (isVisible(today) && isVisible(tomorrow)) {
+    return at(tomorrow, 9 * 60);
+  }
+  return at(visibleDays[0] ?? today, 9 * 60);
+}
+
 /** A short name for the zone on `day`, such as "EST" or "GMT+1". */
 function timeZoneLabel(timeZone: string, day: Temporal.PlainDate): string {
   const noon = day.toZonedDateTime({ plainTime: "12:00", timeZone });
@@ -356,24 +388,15 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       return;
     }
     setCreateEventRequested(false);
-    const now = Temporal.Now.zonedDateTimeISO(timeZone);
-    const showsToday = visibleDays.some((day) => day.equals(now.toPlainDate()));
-    const nextHalfHour = Math.min(
-      Math.ceil((now.hour * 60 + now.minute) / 30) * 30,
-      23 * 60 + 30
-    );
-    const start = (showsToday ? now.toPlainDate() : firstDay).toZonedDateTime({
-      plainTime: Temporal.PlainTime.from({
-        hour: Math.floor((showsToday ? nextHalfHour : 9 * 60) / 60),
-        minute: (showsToday ? nextHalfHour : 9 * 60) % 60,
-      }),
-      timeZone,
-    });
+    const start = keyboardCreateStart(visibleDays, timeZone);
+    if (!actions.createAt(start)) {
+      toast("Connect a Google calendar in Settings to create events.");
+      return;
+    }
     grid.scrollTop = Math.max(
       0,
       (start.hour + start.minute / 60) * PIXELS_PER_HOUR - grid.clientHeight / 3
     );
-    actions.createAt(start);
   }, [
     actions,
     createEventRequested,

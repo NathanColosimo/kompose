@@ -37,6 +37,13 @@ interface BlockContentProps {
   title: string;
 }
 
+/** `leading` (a task's checkbox), left out of narrow blocks for the title. */
+function narrowHidden(leading: ReactNode) {
+  return leading ? (
+    <span className="flex @max-[5.5rem]:hidden shrink-0">{leading}</span>
+  ) : null;
+}
+
 /** An icon with a short value, such as a workout's strain. */
 function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
   return (
@@ -72,8 +79,8 @@ export function BlockContent({
 
   if (minutes < 30) {
     return (
-      <div className="flex h-full min-w-0 items-center gap-1.5">
-        {leading}
+      <div className="@container flex h-full min-w-0 items-center gap-1.5">
+        {narrowHidden(leading)}
         {/* One visible line: the time wraps onto a hidden second line when
             it doesn't fit beside the whole title, so the title wins. */}
         <div className="flex h-4 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 overflow-hidden">
@@ -117,16 +124,17 @@ export function BlockContent({
   ));
 
   // In a narrow block (side by side on a busy day) the title is what
-  // matters: it takes the time line's room and hyphenates long words, and
-  // the time is in the hover text.
+  // matters: it takes the time line's and the checkbox's room and
+  // hyphenates long words; the time is in the hover text, and done is in
+  // the popover.
   return (
     <div className="@container flex min-w-0 items-start gap-1.5">
-      {leading}
+      {narrowHidden(leading)}
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <span
           className={cn(
             titleClass,
-            "hyphens-auto [overflow-wrap:break-word]",
+            "hyphens-auto",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"

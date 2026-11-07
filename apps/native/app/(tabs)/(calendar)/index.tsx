@@ -1857,6 +1857,7 @@ export default function CalendarTab() {
                                 showBlockMenu({
                                   day,
                                   offsetY,
+                                  onOpen: () => setOpenWorkout(workout),
                                   title: workout.sportName || "Workout",
                                 })
                               }

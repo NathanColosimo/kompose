@@ -162,11 +162,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const eventCard = (
     <div
       className={cn(
-        "group pointer-events-auto relative rounded-md bg-background p-0.5",
+        "group pointer-events-auto relative rounded-md bg-background p-px",
         BLOCK_RAISE_CLASS,
-        isEditable
-          ? "cursor-grab hover:shadow-sm"
-          : "cursor-default opacity-90",
+        isEditable ? "cursor-grab" : "cursor-default opacity-90",
         isDragging ? "opacity-0" : ""
       )}
       ref={setNodeRef}

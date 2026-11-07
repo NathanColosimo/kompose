@@ -77,7 +77,7 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
 
   return (
     <div
-      className={`pointer-events-auto absolute rounded-md bg-background p-0.5 ${BLOCK_RAISE_CLASS}`}
+      className={`pointer-events-auto absolute rounded-md bg-background p-px ${BLOCK_RAISE_CLASS}`}
       style={{
         ...blockHorizontalStyle(layout),
         height: `${height}px`,

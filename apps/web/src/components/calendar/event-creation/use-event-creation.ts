@@ -36,8 +36,11 @@ interface EventCreationState {
 interface EventCreationActions {
   cancelCreation: () => void;
   closePopover: () => void;
-  /** Open the new-event popover for a 30-minute range at `start`. */
-  createAt: (start: Temporal.ZonedDateTime) => void;
+  /**
+   * Open the new-event popover for a 30-minute range at `start`. False when
+   * no Google calendar is connected to create it in.
+   */
+  createAt: (start: Temporal.ZonedDateTime) => boolean;
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotLeave: () => void;
@@ -275,7 +278,7 @@ export function useEventCreationState(): EventCreationContextValue {
   const createAt = useCallback(
     (start: Temporal.ZonedDateTime) => {
       if (!defaultCalendar) {
-        return;
+        return false;
       }
       documentListenerCleanupRef.current?.();
       startDateTimeRef.current = start;
@@ -289,6 +292,7 @@ export function useEventCreationState(): EventCreationContextValue {
         showPopover: true,
         startDateTime: start,
       }));
+      return true;
     },
     [defaultCalendar]
   );

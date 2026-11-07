@@ -329,6 +329,7 @@ export function TaskBlock({
   const compact = minutes < COMPACT_MINUTES;
   const placement = positionStyle(position);
   const bodyTopRef = useRef(0);
+  const narrow = placement.width < NARROW_BLOCK_PT;
   const longPressAt = (offsetInBlock: number) =>
     onLongPressAt?.(position.top + offsetInBlock);
   // The checkbox and the editor are sibling controls, so VoiceOver reaches
@@ -347,24 +348,28 @@ export function TaskBlock({
       <View
         className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact ? "items-center" : "py-1"}`}
       >
-        <Pressable
-          accessibilityLabel={title}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: done }}
-          hitSlop={8}
-          onPress={(event) => {
-            event.stopPropagation();
-            onToggleDone();
-          }}
-        >
-          <View
-            className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
+        {/* Narrow blocks give the checkbox's room to the title; done is in
+            the editor and the long-press menu. */}
+        {narrow ? null : (
+          <Pressable
+            accessibilityLabel={title}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: done }}
+            hitSlop={8}
+            onPress={(event) => {
+              event.stopPropagation();
+              onToggleDone();
+            }}
           >
-            {done ? (
-              <Icon as={Check} className="text-primary-foreground" size={9} />
-            ) : null}
-          </View>
-        </Pressable>
+            <View
+              className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
+            >
+              {done ? (
+                <Icon as={Check} className="text-primary-foreground" size={9} />
+              ) : null}
+            </View>
+          </Pressable>
+        )}
         <Pressable
           accessibilityHint="Opens the task"
           accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
@@ -388,7 +393,7 @@ export function TaskBlock({
               details={details}
               end={end}
               minutes={minutes}
-              narrow={placement.width < NARROW_BLOCK_PT}
+              narrow={narrow}
               start={start}
               struck={done}
               title={title}

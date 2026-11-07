@@ -136,9 +136,8 @@ export const TaskEvent = memo(function TaskEventInner({
     <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
       <div
         className={cn(
-          "group pointer-events-auto relative cursor-grab rounded-md bg-background p-0.5",
+          "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
           BLOCK_RAISE_CLASS,
-          "hover:shadow-sm",
           isDragging ? "opacity-0" : "",
           isDone ? "opacity-60" : ""
         )}

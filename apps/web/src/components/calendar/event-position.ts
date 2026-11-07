@@ -40,11 +40,14 @@ export function blockStackStyle(zIndex: number | undefined) {
 }
 
 /**
- * Raises a block above its stack after a short hover, and while its popover
- * is open, so an item underneath can show its end and resize handles.
+ * Raises a block above its stack while its popover is open (it's selected),
+ * so an item underneath shows its whole span and both resize grips. Not on
+ * hover: a raised block would hide everything stacked on it and cover the
+ * create and drag previews. The ring drawn outside the box fills the gap
+ * to a side-by-side neighbour, so nothing underneath shows through it.
  */
 export const BLOCK_RAISE_CLASS =
-  "z-(--block-z) [transition:box-shadow_150ms,z-index_0s_200ms] hover:z-50 data-[state=open]:z-50";
+  "z-(--block-z) shadow-[0_0_0_1px_var(--background)] data-[state=open]:z-50";
 
 export function blockHorizontalStyle(
   layout: ItemLayout | undefined
@@ -56,8 +59,7 @@ export function blockHorizontalStyle(
     Math.min(layout?.stackDepth ?? 0, MAX_STACK_INDENT_LEVELS) *
     STACK_INDENT_PX;
   const rest = `(100% - ${indent}px)`;
-  // A 1px gap each side; the block's own 2px background ring fills the
-  // rest, so nothing underneath shows between side-by-side blocks.
+  // A 1px gap each side, filled by the block's outer ring (BLOCK_RAISE_CLASS).
   return {
     left: `calc(${rest} * ${column / columns} + ${indent + 1}px)`,
     width: `calc(${rest} * ${span / columns} - 2px)`,
