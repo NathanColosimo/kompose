@@ -3,12 +3,15 @@
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import { todayPlainDateAtom } from "@kompose/state/atoms/current-date";
 import { useAtomValue } from "jotai";
+import { Activity, Moon } from "lucide-react";
 import { memo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { cn } from "@/lib/utils";
 
 interface DayHeaderProps {
   date: Temporal.PlainDate;
+  /** Any visible day has WHOOP data, so every header keeps the same height. */
+  showWhoopRow: boolean;
   whoopSummary?: WhoopDaySummary | null;
   width: string;
 }
@@ -24,34 +27,61 @@ function recoveryColor(score: number): string {
   return "bg-red-500";
 }
 
+/** "7h 12m" from milliseconds. */
+function formatHours(ms: number): string {
+  const totalMinutes = Math.round(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
+}
+
+/** The day's WHOOP numbers as one sentence, for the tooltip and screen readers. */
+function whoopDescription(summary: WhoopDaySummary, calories: number | null) {
+  return [
+    summary.recoveryScore === null
+      ? null
+      : `Recovery ${summary.recoveryScore}%`,
+    summary.strainScore === null
+      ? null
+      : `Strain ${summary.strainScore.toFixed(1)}`,
+    summary.sleep
+      ? `Slept ${formatHours(summary.sleep.totalSleepMilliseconds)}${
+          summary.sleepPerformance === null
+            ? ""
+            : ` (${summary.sleepPerformance}% of need)`
+        }`
+      : null,
+    calories === null ? null : `${calories.toLocaleString()} calories`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export const DayHeader = memo(function DayHeaderInner({
   date,
+  showWhoopRow,
   width,
   whoopSummary,
 }: DayHeaderProps) {
   const isTodayHighlight = useAtomValue(todayPlainDateAtom).equals(date);
-  const hasWhoopData =
-    whoopSummary &&
-    (whoopSummary.recoveryScore !== null ||
-      whoopSummary.strainScore !== null ||
-      whoopSummary.sleepPerformance !== null ||
-      whoopSummary.kilojoule !== null);
-
   const calories =
     whoopSummary?.kilojoule == null
       ? null
       : Math.round(whoopSummary.kilojoule * 0.239_006);
+  const description = whoopSummary
+    ? whoopDescription(whoopSummary, calories)
+    : "";
 
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col items-center justify-center border-border border-r last:border-r-0",
-        hasWhoopData ? "gap-0.5 py-1.5" : "h-12",
+        "@container flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
+        showWhoopRow ? "h-[3.75rem]" : "h-12",
         isTodayHighlight ? "bg-foreground/[0.03]" : ""
       )}
       style={{ scrollSnapAlign: "start", width }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex h-6 items-center gap-1.5">
         <span
           className={cn(
             "text-sm",
@@ -64,9 +94,9 @@ export const DayHeader = memo(function DayHeaderInner({
         </span>
         <span
           className={cn(
-            "flex size-7 items-center justify-center rounded-full font-medium text-sm tabular-nums",
+            "font-medium text-sm tabular-nums",
             isTodayHighlight
-              ? "bg-primary text-primary-foreground dark:bg-foreground/15 dark:text-foreground"
+              ? "flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-primary-foreground dark:bg-foreground/15 dark:text-foreground"
               : ""
           )}
         >
@@ -74,36 +104,40 @@ export const DayHeader = memo(function DayHeaderInner({
         </span>
       </div>
 
-      {hasWhoopData ? (
-        <div className="flex items-center gap-1.5">
-          {whoopSummary.sleepPerformance === null ? null : (
-            <span className="text-[10px] text-muted-foreground">
-              😴{whoopSummary.sleepPerformance}%
-            </span>
-          )}
-          {whoopSummary.recoveryScore === null ? null : (
-            <span className="flex items-center gap-0.5">
+      {showWhoopRow ? (
+        <div
+          className="flex h-4 min-w-0 items-center gap-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
+          title={description || undefined}
+        >
+          {description ? <span className="sr-only">{description}</span> : null}
+          {whoopSummary?.recoveryScore == null ? null : (
+            <span aria-hidden className="flex items-center gap-1">
               <span
                 className={cn(
-                  "inline-block size-1.5 rounded-full",
+                  "size-1.5 rounded-full",
                   recoveryColor(whoopSummary.recoveryScore)
                 )}
               />
-              <span className="font-medium text-[10px] text-muted-foreground">
-                {whoopSummary.recoveryScore}
+              {whoopSummary.recoveryScore}%
+            </span>
+          )}
+          {whoopSummary?.strainScore == null ? null : (
+            <span aria-hidden className="flex items-center gap-1">
+              <Activity className="size-3" />
+              {whoopSummary.strainScore.toFixed(1)}
+            </span>
+          )}
+          {whoopSummary?.sleep ? (
+            <span
+              aria-hidden
+              className="flex @max-[8.5rem]:hidden min-w-0 items-center gap-1"
+            >
+              <Moon className="size-3 shrink-0" />
+              <span className="truncate">
+                {formatHours(whoopSummary.sleep.totalSleepMilliseconds)}
               </span>
             </span>
-          )}
-          {whoopSummary.strainScore === null ? null : (
-            <span className="text-[10px] text-muted-foreground">
-              ⚡{whoopSummary.strainScore.toFixed(1)}
-            </span>
-          )}
-          {calories === null ? null : (
-            <span className="text-[10px] text-muted-foreground">
-              🔥{calories}
-            </span>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>

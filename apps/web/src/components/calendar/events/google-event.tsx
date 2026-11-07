@@ -11,20 +11,32 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import { extractMeetingLink } from "@kompose/state/meeting";
 import { useAtomValue } from "jotai";
-import { Lock } from "lucide-react";
-import { memo } from "react";
+import { Lock, MapPin, Video } from "lucide-react";
+import { memo, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
+import { zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import { calculateEventPosition } from "../event-position";
+import { BlockContent, type BlockDetail, eventColor } from "./block-content";
 import { EventEditPopover } from "./event-edit-popover";
+
+/** The meeting provider, or else the place, shown under an event's time. */
+function eventDetails(event: GoogleEvent): BlockDetail[] {
+  const meeting = extractMeetingLink(event);
+  if (meeting) {
+    return [{ icon: Video, label: meeting.label }];
+  }
+  const place = event.location?.trim();
+  return place ? [{ icon: MapPin, label: place }] : [];
+}
 
 interface GoogleCalendarEventProps {
   accountId: string;
@@ -53,7 +65,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))
   );
-  const isShortEvent = durationMinutes <= 15;
   const isEditable = isGoogleEventEditable(event);
   const editBlockedReason = getGoogleEventEditBlockReason(event);
 
@@ -118,13 +129,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     (c) => c.accountId === accountId && c.calendar.id === calendarId
   );
 
-  const { background: backgroundColor, foreground: foregroundColor } =
-    resolveGoogleEventColors({
-      calendarBackgroundColor: calendar?.calendar.backgroundColor,
-      calendarForegroundColor: calendar?.calendar.foregroundColor,
-      colorId: event.colorId,
-      palette: normalizedPalette?.event,
-    });
+  const { background: backgroundColor } = resolveGoogleEventColors({
+    calendarBackgroundColor: calendar?.calendar.backgroundColor,
+    calendarForegroundColor: calendar?.calendar.foregroundColor,
+    colorId: event.colorId,
+    palette: normalizedPalette?.event,
+  });
 
   // columnSpan lets items expand into adjacent empty columns
   const singleColumnWidth = 100 / totalColumns;
@@ -140,10 +150,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     zIndex,
   };
 
-  const fillStyle: React.CSSProperties = {
-    backgroundColor: backgroundColor ?? "var(--primary)",
-    color: foregroundColor ?? "var(--primary-foreground)",
-  };
+  const eventColorStyle = eventColor(backgroundColor);
+  const details = useMemo(() => eventDetails(event), [event]);
 
   const eventCard = (
     <div
@@ -163,16 +171,23 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     >
       <div
         className={cn(
-          "h-full rounded-[5px] border border-black/10 px-2 py-1 dark:border-white/15",
-          isShortEvent ? "flex items-center py-0" : ""
+          "event-surface h-full overflow-hidden rounded-[5px] pr-1.5 pl-2",
+          durationMinutes < 30 ? "py-0" : "py-1",
+          isEditable ? "" : "pr-5"
         )}
-        style={fillStyle}
+        style={eventColorStyle}
       >
+        <BlockContent
+          details={details}
+          end={end}
+          start={start}
+          title={event.summary || "(No title)"}
+        />
         {!isEditable && editBlockedReason ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-black/15 text-current opacity-90"
+                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-background/70 text-foreground/70"
                 title=""
               >
                 <Lock className="size-2.5" />
@@ -184,15 +199,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
             </TooltipContent>
           </Tooltip>
         ) : null}
-        <div className="min-w-0 truncate font-medium text-xs">
-          {event.summary ?? "Google event"}
-        </div>
-        {/* Hide time for short events (<30min) to prevent overflow */}
-        {durationMinutes >= 30 && (
-          <div className="truncate text-[10px] opacity-85">
-            {formatTime(start)} – {formatTime(end)}
-          </div>
-        )}
       </div>
       {isEditable ? (
         <>
@@ -249,24 +255,18 @@ export const GoogleCalendarEventPreview = memo(
     const calendar = calendars.find(
       (c) => c.accountId === accountId && c.calendar.id === calendarId
     );
-    const { background: backgroundColor, foreground: foregroundColor } =
-      resolveGoogleEventColors({
-        calendarBackgroundColor: calendar?.calendar.backgroundColor,
-        calendarForegroundColor: calendar?.calendar.foregroundColor,
-        colorId: event.colorId,
-        palette: normalizedPalette?.event,
-      });
+    const { background: backgroundColor } = resolveGoogleEventColors({
+      calendarBackgroundColor: calendar?.calendar.backgroundColor,
+      calendarForegroundColor: calendar?.calendar.foregroundColor,
+      colorId: event.colorId,
+      palette: normalizedPalette?.event,
+    });
     const durationMinutes = Math.max(
       1,
       Math.round(end.since(start).total({ unit: "minutes" }))
     );
     const isShortEvent = durationMinutes <= 15;
     const shortEventHeight = (15 / 60) * PIXELS_PER_HOUR;
-
-    const fillStyle: React.CSSProperties = {
-      backgroundColor: backgroundColor ?? "var(--primary)",
-      color: foregroundColor ?? "var(--primary-foreground)",
-    };
 
     return (
       <div
@@ -275,19 +275,16 @@ export const GoogleCalendarEventPreview = memo(
       >
         <div
           className={cn(
-            "rounded-[5px] border border-black/10 px-2 py-1 dark:border-white/15",
-            isShortEvent ? "flex h-full items-center py-0" : ""
+            "event-surface rounded-[5px] pr-1.5 pl-2",
+            isShortEvent ? "h-full py-0" : "py-1"
           )}
-          style={fillStyle}
+          style={eventColor(backgroundColor)}
         >
-          <div className="min-w-0 truncate font-medium text-xs">
-            {event.summary ?? "Google event"}
-          </div>
-          {isShortEvent ? null : (
-            <div className="truncate text-[10px] opacity-80">
-              {formatTime(start)}
-            </div>
-          )}
+          <BlockContent
+            end={end}
+            start={start}
+            title={event.summary || "(No title)"}
+          />
         </div>
       </div>
     );

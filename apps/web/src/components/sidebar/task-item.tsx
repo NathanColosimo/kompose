@@ -17,14 +17,20 @@ import {
   formatTime,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { tagIconMap } from "../tags/tag-icon-map";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Checkbox } from "../ui/checkbox";
 
 interface TaskItemProps {
+  /** A tag not to show, because the list is already that tag's. */
+  hiddenTagId?: string;
   task: TaskSelectDecoded;
 }
 
-export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
+export const TaskItem = memo(function TaskItemInner({
+  hiddenTagId,
+  task,
+}: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
 
@@ -91,7 +97,7 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
             {task.title}
           </span>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground text-xs tabular-nums">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums">
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
@@ -123,6 +129,20 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
                 })}
               </span>
             ) : null}
+            {task.tags
+              .filter((tag) => tag.id !== hiddenTagId)
+              .map((tag) => {
+                const TagIcon = tagIconMap[tag.icon];
+                return (
+                  <span
+                    className="flex items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
+                    key={tag.id}
+                  >
+                    <TagIcon aria-hidden className="size-3" />
+                    {tag.name}
+                  </span>
+                );
+              })}
           </div>
         </div>
       </div>

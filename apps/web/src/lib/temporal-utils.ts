@@ -58,6 +58,33 @@ export function formatTime(
   });
 }
 
+const timeRangeFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A compact time range in the locale's style: "10 AM – 12 PM" when both
+ * ends are on the hour, else "9:00 – 9:30 AM".
+ */
+export function formatTimeRange(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime
+): string {
+  const onTheHour = start.minute === 0 && end.minute === 0;
+  const key = `${start.timeZoneId}|${onTheHour}`;
+  let format = timeRangeFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: onTheHour ? undefined : "2-digit",
+      timeZone: start.timeZoneId,
+    });
+    timeRangeFormats.set(key, format);
+  }
+  return format.formatRange(
+    start.epochMilliseconds,
+    Math.max(end.epochMilliseconds, start.epochMilliseconds)
+  );
+}
+
 export function isSameDay(
   a: Temporal.ZonedDateTime,
   b: Temporal.ZonedDateTime

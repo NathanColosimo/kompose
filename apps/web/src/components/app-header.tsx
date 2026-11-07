@@ -147,7 +147,9 @@ function SearchButton() {
       type="button"
     >
       <Search className="size-3.5 shrink-0" />
-      <span className="flex-1 truncate text-left">Type a command…</span>
+      <span className="flex-1 truncate text-left">
+        Search or create a task…
+      </span>
       <Kbd>⌘K</Kbd>
     </button>
   );

@@ -34,6 +34,7 @@ import {
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
+import { cn } from "@/lib/utils";
 import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
 import { effectiveVisibleDaysAtom } from "@/state/sidebar";
 import { PIXELS_PER_HOUR } from "./constants";
@@ -44,6 +45,7 @@ import {
   useEventCreation,
   useEventCreationState,
 } from "./event-creation/use-event-creation";
+import { eventColor } from "./events/block-content";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
@@ -150,7 +152,19 @@ function buildGoogleEventMaps({
   for (const sourceEvent of googleEvents) {
     const date = allDayEventDate(sourceEvent);
     if (date) {
-      allDay.get(date.toString())?.push({ ...sourceEvent, date });
+      // All-day end dates are exclusive; a trip from the 11th to the 13th
+      // shows on the 11th and 12th.
+      const endDate = sourceEvent.event.end.date
+        ? Temporal.PlainDate.from(sourceEvent.event.end.date)
+        : date.add({ days: 1 });
+      for (const day of days) {
+        if (
+          Temporal.PlainDate.compare(day, date) >= 0 &&
+          Temporal.PlainDate.compare(day, endDate) < 0
+        ) {
+          allDay.get(day.toString())?.push({ ...sourceEvent, date });
+        }
+      }
       continue;
     }
     const positioned = toPositionedGoogleEvent(sourceEvent, timeZone);
@@ -184,6 +198,15 @@ function toPositionedGoogleEvent(
   } catch {
     return null;
   }
+}
+
+/** A short name for the zone, such as "EST" or "GMT+1". */
+function timeZoneLabel(timeZone: string): string {
+  return (
+    new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((part) => part.type === "timeZoneName")?.value ?? ""
+  );
 }
 
 function isScheduledTask(task: TaskSelectDecoded): task is ScheduledTask {
@@ -376,6 +399,15 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   );
 
   const hasGoogleEvents = googleEvents.length > 0;
+  const showWhoopRow = visibleDays.some((day) => {
+    const summary = whoopSummaries.get(day.toString());
+    return Boolean(
+      summary &&
+        (summary.recoveryScore !== null ||
+          summary.strainScore !== null ||
+          summary.sleep)
+    );
+  });
 
   // Collect all sleep blocks across visible WHOOP summaries so each
   // day column can render bands for sleeps that cross midnight.
@@ -521,8 +553,27 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     <div className="flex h-full">
       {/* Fixed time gutter column */}
       <div className="flex w-16 shrink-0 flex-col border-r bg-background">
-        {/* Empty corner cell above time gutter - height matches header block */}
-        <div className="shrink-0 border-b" style={{ height: headerHeight }} />
+        {/* Corner above the gutter: the time zone, and a label for the
+            all-day row. Its height matches the header block. */}
+        <div
+          className="flex shrink-0 flex-col border-b text-[10px] text-muted-foreground"
+          style={{ height: headerHeight }}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-end pr-2",
+              showWhoopRow ? "h-[3.75rem]" : "h-12"
+            )}
+            title={timeZone}
+          >
+            {timeZoneLabel(timeZone)}
+          </span>
+          {hasAllDayEvents ? (
+            <span className="flex flex-1 items-start justify-end border-t pt-1.5 pr-2">
+              All day
+            </span>
+          ) : null}
+        </div>
         {/* Time gutter - scrolls vertically with the body */}
         <div className="min-h-0 flex-1 overflow-hidden">
           <TimeGutterSynced scrollRef={scrollRef} />
@@ -546,6 +597,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   <DayHeader
                     date={day}
                     key={dayKey}
+                    showWhoopRow={showWhoopRow}
                     whoopSummary={whoopSummaries.get(dayKey)}
                     width={dayColumnWidth}
                   />
@@ -575,8 +627,8 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                           />
                         ))}
                       {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
-                        <span className="block w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-medium text-[11px] text-muted-foreground">
-                          …
+                        <span className="px-1 text-[11px] text-muted-foreground">
+                          +{dayAllDay.length - MAX_ALL_DAY_EVENTS} more
                         </span>
                       ) : null}
                     </div>
@@ -762,13 +814,12 @@ function AllDayEventChip({
     (c) => c.accountId === item.accountId && c.calendar.id === item.calendarId
   );
 
-  const { background: backgroundColor, foreground: foregroundColor } =
-    resolveGoogleEventColors({
-      calendarBackgroundColor: calendar?.calendar.backgroundColor,
-      calendarForegroundColor: calendar?.calendar.foregroundColor,
-      colorId: item.event.colorId,
-      palette: normalizedPalette?.event,
-    });
+  const { background: backgroundColor } = resolveGoogleEventColors({
+    calendarBackgroundColor: calendar?.calendar.backgroundColor,
+    calendarForegroundColor: calendar?.calendar.foregroundColor,
+    colorId: item.event.colorId,
+    palette: normalizedPalette?.event,
+  });
 
   const endDate =
     item.event.end.date && item.event.end.date !== item.date.toString()
@@ -786,26 +837,12 @@ function AllDayEventChip({
       start={zonedDateTimeToDate(startZdt)}
     >
       <button
-        className="block w-full max-w-full rounded-sm bg-background p-px text-left"
-        style={{
-          ...(foregroundColor && { color: foregroundColor }),
-        }}
-        title={item.event.summary ?? "Google event"}
+        className="event-surface block w-full max-w-full truncate rounded-[4px] py-0.5 pr-1.5 pl-2 text-left font-medium text-[11px] leading-4"
+        style={eventColor(backgroundColor)}
+        title={item.event.summary || "(No title)"}
         type="button"
       >
-        <span
-          className={`block w-full max-w-full truncate rounded-[3px] border border-black/10 px-1.5 py-0.5 font-medium text-[11px] dark:border-white/15 ${
-            backgroundColor ? "" : "bg-primary/10 text-primary"
-          }`}
-          style={{
-            ...(backgroundColor && {
-              backgroundColor,
-            }),
-            ...(foregroundColor && { color: foregroundColor }),
-          }}
-        >
-          {item.event.summary ?? "Google event"}
-        </span>
+        {item.event.summary || "(No title)"}
       </button>
     </EventEditPopover>
   );

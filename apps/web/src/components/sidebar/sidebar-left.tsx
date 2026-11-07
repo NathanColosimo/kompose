@@ -157,7 +157,9 @@ interface TaskSection {
 function renderTaskSections(
   sections: TaskSection[],
   emptyMessage: string,
-  emptyHint?: string
+  emptyHint?: string,
+  /** In a tag's own list, rows don't repeat that tag. */
+  hiddenTagId?: string
 ) {
   const visibleSections = sections.filter(({ tasks }) => tasks.length > 0);
   if (visibleSections.length === 0) {
@@ -180,7 +182,7 @@ function renderTaskSections(
             </span>
           </h3>
           {tasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
+            <TaskItem hiddenTagId={hiddenTagId} key={task.id} task={task} />
           ))}
         </section>
       ))}
@@ -227,10 +229,12 @@ function renderTodayContent({
 
 function renderTagContent({
   overdueTasks,
+  tagId,
   todoTasks,
   doneTasks,
 }: {
   overdueTasks: TaskSelectDecoded[];
+  tagId?: string;
   todoTasks: TaskSelectDecoded[];
   doneTasks: TaskSelectDecoded[];
 }) {
@@ -242,7 +246,8 @@ function renderTagContent({
     ],
     "No tasks with this tag yet.",
     // Dropping on a tag list unschedules a task without tagging it.
-    "Use + above to add a task with this tag."
+    "Use + above to add a task with this tag.",
+    tagId
   );
 }
 
@@ -293,6 +298,7 @@ function getSidebarContent({
     return renderTagContent({
       doneTasks: tagDoneTasks,
       overdueTasks: tagOverdueTasks,
+      tagId: activeItem.tagId,
       todoTasks: tagTodoTasks,
     });
   }

@@ -151,6 +151,21 @@ const shortMonthYearFormat = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
 });
 
+/** The month range with each year in a quieter color, as "November 2026". */
+function withMutedYears(parts: Intl.DateTimeRangeFormatPart[]) {
+  return parts.map((part, index) =>
+    part.type === "year" ? (
+      // Parts never reorder, so the index is a stable key.
+      // biome-ignore lint/suspicious/noArrayIndexKey: see above
+      <span className="font-normal text-muted-foreground" key={index}>
+        {part.value}
+      </span>
+    ) : (
+      part.value
+    )
+  );
+}
+
 /** How many years before and after today the date picker's year dropdown spans. */
 const PICKER_YEAR_SPAN = 100;
 
@@ -192,10 +207,17 @@ function DatePopover() {
         >
           {/* Narrow toolbars use short month names so the range end stays visible. */}
           <span className="@md:inline hidden truncate" title={visibleMonths}>
-            {visibleMonths}
+            {withMutedYears(
+              monthYearFormat.formatRangeToParts(selectedDate, lastVisibleDate)
+            )}
           </span>
           <span className="@md:hidden truncate" title={visibleMonths}>
-            {shortMonthYearFormat.formatRange(selectedDate, lastVisibleDate)}
+            {withMutedYears(
+              shortMonthYearFormat.formatRangeToParts(
+                selectedDate,
+                lastVisibleDate
+              )
+            )}
           </span>
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>

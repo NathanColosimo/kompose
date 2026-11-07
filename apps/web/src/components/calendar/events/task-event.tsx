@@ -7,12 +7,27 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
 import { calculateEventPosition } from "../event-position";
+import { BlockContent, type BlockDetail } from "./block-content";
+
+/** The task's first tag, plus a count of the rest. */
+function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const [first, ...rest] = task.tags;
+  if (!first) {
+    return [];
+  }
+  return [
+    {
+      icon: tagIconMap[first.icon],
+      label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
+    },
+  ];
+}
 
 type ScheduledTask = TaskSelectDecoded & {
   startDate: Temporal.PlainDate;
@@ -46,8 +61,6 @@ export const TaskEvent = memo(function TaskEventInner({
   columnSpan = 1,
   zIndex = 1,
 }: TaskEventProps) {
-  const timeZone = useAtomValue(timezoneAtom);
-
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
       task,
@@ -97,23 +110,14 @@ export const TaskEvent = memo(function TaskEventInner({
     [task.id, task.status, updateTask]
   );
 
-  const durationMinutes = task.durationMinutes;
   const segmentDurationMinutes = Math.round(
     segmentEnd.since(segmentStart).total({ unit: "minutes" })
   );
-  const taskStart = task.startDate.toZonedDateTime({
-    plainTime: task.startTime,
-    timeZone,
-  });
-  const taskEnd = taskStart.add({ minutes: durationMinutes });
-
   const { top, height } = calculateEventPosition(
     segmentStart,
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
-  const isShortTask = segmentDurationMinutes <= 15;
-
   // columnSpan lets items expand into adjacent empty columns
   const singleColumnWidth = 100 / totalColumns;
   const columnWidth = singleColumnWidth * columnSpan;
@@ -143,35 +147,27 @@ export const TaskEvent = memo(function TaskEventInner({
         {...attributes}
         {...listeners}
       >
-        <div className="h-full rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10">
-          <div
-            className={cn(
-              "flex h-full gap-1",
-              isShortTask ? "items-center" : "items-start"
-            )}
-          >
-            <Checkbox
-              checked={isDone}
-              className="size-3.5 shrink-0 cursor-pointer border-foreground/60"
-              onClick={handleStatusToggle}
-            />
-            <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  "truncate font-medium text-xs",
-                  isDone ? "text-muted-foreground line-through" : ""
-                )}
-              >
-                {task.title}
-              </div>
-              {/* Hide time for short events (<30min) to prevent overflow */}
-              {segmentDurationMinutes >= 30 && (
-                <div className="truncate text-[10px] text-muted-foreground">
-                  {formatTime(taskStart)} – {formatTime(taskEnd)}
-                </div>
-              )}
-            </div>
-          </div>
+        <div
+          className={cn(
+            "h-full overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
+            segmentDurationMinutes < 30 ? "py-0" : "py-1"
+          )}
+        >
+          <BlockContent
+            details={taskTagDetails(task)}
+            end={segmentEnd}
+            leading={
+              <Checkbox
+                aria-label={isDone ? "Mark as not done" : "Mark as done"}
+                checked={isDone}
+                className="mt-px size-3.5 shrink-0 cursor-pointer border-foreground/60"
+                onClick={handleStatusToggle}
+              />
+            }
+            start={segmentStart}
+            struck={isDone}
+            title={task.title}
+          />
         </div>
         {isFirstSegment ? (
           <div
@@ -211,16 +207,19 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
     >
       <div
         className={cn(
-          "rounded-[5px] border border-foreground/20 bg-card p-1 pl-1.5 text-card-foreground shadow-[inset_2px_0_0_var(--foreground)] dark:border-foreground/10",
-          isShortTask ? "flex h-full items-center px-1.5 py-0" : ""
+          "rounded-[5px] border border-foreground/20 bg-card px-1.5 text-card-foreground dark:border-foreground/12",
+          isShortTask ? "h-full py-0" : "py-1"
         )}
       >
-        <div className="truncate font-medium text-xs">{task.title}</div>
-        {startZdt && !isShortTask ? (
-          <div className="truncate text-[10px] text-muted-foreground">
-            {formatTime(startZdt)}
-          </div>
-        ) : null}
+        {startZdt ? (
+          <BlockContent
+            end={startZdt.add({ minutes: task.durationMinutes })}
+            start={startZdt}
+            title={task.title}
+          />
+        ) : (
+          <div className="truncate font-medium text-xs">{task.title}</div>
+        )}
       </div>
     </div>
   );
