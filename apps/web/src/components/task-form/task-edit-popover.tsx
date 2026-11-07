@@ -506,14 +506,10 @@ export function TaskEditForm({
         values.recurrence
       );
       if (changesPattern && scope !== "this") {
-        // A new pattern replaces this and later occurrences (new ids, and
-        // maybe not this date). Mark this one done with its edits first:
-        // that makes it an exception, which the new pattern keeps (and new
-        // occurrences start open). recurrence: undefined leaves this
-        // occurrence's own pattern to the second save.
-        commitUpdate(values, "this", { recurrence: undefined, status }).then(
-          (saved) => saved && commitUpdate(values, scope)
-        );
+        // One save: the server keeps this occurrence (its edits and the new
+        // status, as an exception) and regenerates the series from its
+        // original date, so a move or a skipped date can't lose it.
+        commitUpdate(values, scope, { status });
         return;
       }
       // Otherwise occurrences keep their ids, and the series shifts by how

@@ -8,7 +8,7 @@ import type {
   TaskUpdate,
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
-import { and, asc, EmptyFilter, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, EmptyFilter, eq, gte, inArray, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
@@ -164,7 +164,9 @@ const dbDeleteBySeriesFrom = (
 const dbDeleteNonExceptionsBySeriesFrom = (
   userId: string,
   seriesMasterId: string,
-  fromDate: string
+  fromDate: string,
+  /** A task to keep even if it isn't an exception yet. */
+  keepId?: string
 ) =>
   Effect.gen(function* () {
     const db = yield* Database;
@@ -175,7 +177,8 @@ const dbDeleteNonExceptionsBySeriesFrom = (
           eq(taskTable.seriesMasterId, seriesMasterId),
           eq(taskTable.userId, userId),
           gte(taskTable.startDate, fromDate),
-          eq(taskTable.isException, false)
+          eq(taskTable.isException, false),
+          keepId ? ne(taskTable.id, keepId) : undefined
         )
       );
   });
@@ -670,25 +673,32 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
 
 /**
  * Replace this and later non-exception occurrences with a new recurrence
- * pattern. Exceptions (edited alone, or done) stay, and the new pattern
- * leaves their dates out instead of doubling them. When the edited
- * occurrence is one of them, it takes the edits itself, without the pattern.
+ * pattern, from the edited occurrence's original date. Exceptions (edited
+ * alone, or done) stay, and the new pattern leaves their dates out instead
+ * of doubling them.
+ *
+ * The edited occurrence stays too when it is an exception or the edit sets
+ * its status (Mark done with a pattern change): it takes the edits, without
+ * the pattern, so a moved or finished occurrence is never lost or doubled.
  */
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
   task: DatedSeriesTask,
   input: TaskUpdateInput
 ) {
+  const keepEdited = task.isException || input.status !== undefined;
   yield* dbDeleteNonExceptionsBySeriesFrom(
     userId,
     task.seriesMasterId,
-    task.startDate
+    task.startDate,
+    keepEdited ? task.id : undefined
   );
 
   const { recurrence, ...occurrenceFields } = input;
-  const updatedAnchor = task.isException
+  const updatedAnchor = keepEdited
     ? yield* dbUpdate(userId, task.id, {
         ...occurrenceFields,
+        isException: true,
         recurrence: null,
       })
     : [];
@@ -714,8 +724,8 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     return updatedAnchor;
   }
 
-  // The first new occurrence is the new series master. One on the edited
-  // occurrence's own date (it wasn't an exception) keeps its status.
+  // The first new occurrence is the new series master. When the edited
+  // occurrence was replaced, the new one on its date keeps its status.
   const seriesMasterId = uuidv7();
   const taskRows = buildOccurrenceRowsFromTask({
     input,
@@ -727,8 +737,8 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   }).map((row, index) => ({
     ...row,
     ...(index === 0 ? { id: seriesMasterId, recurrence } : {}),
-    ...(row.startDate === task.startDate
-      ? { status: input.status ?? task.status }
+    ...(!keepEdited && row.startDate === task.startDate
+      ? { status: task.status }
       : {}),
   }));
   return [...updatedAnchor, ...(yield* dbInsert(taskRows))];
