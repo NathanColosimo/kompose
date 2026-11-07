@@ -117,8 +117,8 @@ export function BlockContent({
   ));
 
   // In a narrow block (side by side on a busy day) the title is what
-  // matters: it takes the time line's room and breaks long words, and the
-  // time is in the hover text.
+  // matters: it takes the time line's room and hyphenates long words, and
+  // the time is in the hover text.
   return (
     <div className="@container flex min-w-0 items-start gap-1.5">
       {leading}
@@ -126,7 +126,7 @@ export function BlockContent({
         <span
           className={cn(
             titleClass,
-            "[overflow-wrap:anywhere]",
+            "hyphens-auto [overflow-wrap:break-word]",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
