@@ -13,11 +13,10 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useState } from "react";
 import { DaysView } from "@/components/calendar/days-view";
 import { GoogleAccountsDropdown } from "@/components/calendar/google-accounts-dropdown";
-import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -68,42 +67,38 @@ function DashboardCalendarToolbar() {
   }, [navigationStep, setCurrentDate]);
 
   return (
-    <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b bg-background px-4 py-2">
-      <div className="flex items-center gap-1">
+    <header className="z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-3">
+      <Button onClick={goToToday} size="lg" variant="outline">
+        Today
+      </Button>
+      <div className="flex items-center">
         <Button
-          aria-label="Previous period"
+          aria-label="Previous days"
+          className="text-muted-foreground"
           onClick={goToPreviousPeriod}
           size="icon-lg"
           variant="ghost"
         >
-          <ChevronLeft className="size-4" />
+          <ChevronLeft />
         </Button>
         <Button
-          aria-label="Next period"
+          aria-label="Next days"
+          className="text-muted-foreground"
           onClick={goToNextPeriod}
           size="icon-lg"
           variant="ghost"
         >
-          <ChevronRight className="size-4" />
-        </Button>
-        <Button
-          className="ml-1"
-          onClick={goToToday}
-          size="lg"
-          variant="outline"
-        >
-          Today
+          <ChevronRight />
         </Button>
       </div>
 
       <DatePopover />
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center">
         <GoogleAccountsDropdown
           googleAccounts={googleAccounts}
           googleCalendars={googleCalendars}
         />
-        <ModeToggle />
       </div>
     </header>
   );
@@ -127,15 +122,15 @@ function CalendarGridPlaceholder() {
   return (
     <div className="h-full overflow-hidden bg-background">
       <div className="flex h-full">
-        <div className="w-16 shrink-0 border-r bg-muted/10" />
+        <div className="w-16 shrink-0 border-r" />
         <div className="flex-1">
           <div className="grid h-full grid-rows-[auto_1fr]">
-            <div className="border-b bg-muted/5" />
+            <div className="h-12 border-b" />
             <div
               className="h-full"
               style={{
                 backgroundImage:
-                  "linear-gradient(to bottom, hsl(var(--border) / 0.45) 1px, transparent 1px), linear-gradient(to right, hsl(var(--border) / 0.45) 1px, transparent 1px)",
+                  "linear-gradient(to bottom, color-mix(in oklab, var(--border) 60%, transparent) 1px, transparent 1px), linear-gradient(to right, color-mix(in oklab, var(--border) 60%, transparent) 1px, transparent 1px)",
                 backgroundPosition: "0 0, 0 0",
                 backgroundSize: "100% 80px, 160px 100%",
               }}
@@ -174,12 +169,12 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="justify-start gap-1.5 px-2.5 text-left font-normal"
+          className="gap-1.5 px-2 font-medium text-base"
           size="lg"
-          variant="outline"
+          variant="ghost"
         >
-          <CalendarIcon className="size-4" />
-          <span>{formatPlainDate(currentDate)}</span>
+          {formatPlainDate(currentDate, { month: "long", year: "numeric" })}
+          <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

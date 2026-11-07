@@ -1,5 +1,5 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 
 interface LegalShellProps {
   readonly children: ReactNode;
@@ -16,51 +16,19 @@ export function LegalShell({
 }: LegalShellProps) {
   return (
     <main className="bg-background text-foreground">
-      <div className="mx-auto flex min-h-svh w-full max-w-4xl flex-col px-6 py-12 sm:px-8">
-        <div className="flex items-center justify-between gap-4 border-border/60 border-b pb-6">
-          <Link
-            className="text-muted-foreground text-sm underline-offset-4 hover:underline"
-            href="/"
-          >
-            Kompose
-          </Link>
-          <div className="flex items-center gap-4 text-muted-foreground text-sm">
-            <Link
-              className="underline-offset-4 hover:underline"
-              href="/privacy"
-            >
-              Privacy
-            </Link>
-            <Link className="underline-offset-4 hover:underline" href="/terms">
-              Terms
-            </Link>
-            <Link className="underline-offset-4 hover:underline" href="/login">
-              Sign in
-            </Link>
-          </div>
-        </div>
+      <SiteHeader />
+      <article className="mx-auto max-w-3xl px-6 pt-10 pb-20 sm:pt-16">
+        <header className="flex flex-col gap-3 border-b pb-8">
+          <h1 className="font-serif text-4xl sm:text-5xl">{title}</h1>
+          <p className="max-w-2xl text-lg text-muted-foreground">{summary}</p>
+          <p className="text-muted-foreground text-sm">
+            Last updated {updatedAt}
+          </p>
+        </header>
 
-        <div className="max-w-3xl space-y-10 py-10">
-          <header className="space-y-4">
-            <p className="text-muted-foreground text-sm uppercase tracking-[0.25em]">
-              Legal
-            </p>
-            <div className="space-y-3">
-              <h1 className="font-serif text-4xl sm:text-5xl">{title}</h1>
-              <p className="max-w-2xl text-base text-muted-foreground sm:text-lg">
-                {summary}
-              </p>
-            </div>
-            <p className="text-muted-foreground text-sm">
-              Last updated: {updatedAt}
-            </p>
-          </header>
-
-          <div className="space-y-8 text-sm leading-7 sm:text-base">
-            {children}
-          </div>
-        </div>
-      </div>
+        <div className="space-y-8 pt-8 text-base leading-7">{children}</div>
+      </article>
+      <SiteFooter />
     </main>
   );
 }

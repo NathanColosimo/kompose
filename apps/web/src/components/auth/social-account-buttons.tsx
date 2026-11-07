@@ -12,37 +12,15 @@ import { Button } from "../ui/button";
 
 type SocialProvider = "google" | "apple";
 
-interface SocialAccountButtonsProps {
-  mode: "sign-in" | "sign-up";
-}
-
-const copyByMode = {
-  "sign-in": {
-    appleLabel: "Continue with Apple",
-    applePendingLabel: "Connecting to Apple...",
-    googleLabel: "Continue with Google",
-    googlePendingLabel: "Connecting to Google...",
-    successMessage: "Signed in. Redirecting to your workspace.",
-  },
-  "sign-up": {
-    appleLabel: "Create with Apple",
-    applePendingLabel: "Contacting Apple...",
-    googleLabel: "Create with Google",
-    googlePendingLabel: "Contacting Google...",
-    successMessage: "You're in! Redirecting to your timeline.",
-  },
-} as const;
-
 function buildSocialAuthUrls() {
   const baseUrl = window.location.origin;
   return {
     callbackURL: `${baseUrl}/dashboard`,
     errorCallbackURL: `${baseUrl}/login`,
-    newUserCallbackURL: `${baseUrl}/dashboard`,
   };
 }
 
-export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
+export function SocialAccountButtons() {
   const [activeProvider, setActiveProvider] = useState<SocialProvider | null>(
     null
   );
@@ -58,8 +36,7 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     try {
       // Runs OAuth in this browser tab. A desktop sign-in request in the URL
       // is forwarded so the app receives the session afterwards.
-      const { callbackURL, errorCallbackURL, newUserCallbackURL } =
-        buildSocialAuthUrls();
+      const { callbackURL, errorCallbackURL } = buildSocialAuthUrls();
 
       const query = getElectronAuthQuery();
       const result = await authClient.signIn.social({
@@ -67,7 +44,6 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
         ...(query ? { fetchOptions: { query } } : {}),
         callbackURL,
         errorCallbackURL,
-        ...(mode === "sign-up" ? { newUserCallbackURL } : {}),
       });
 
       const authError = extractAuthErrorMessage(result);
@@ -76,7 +52,7 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
         return;
       }
 
-      toast.success(copyByMode[mode].successMessage);
+      toast.success("Signed in. Opening your workspace…");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sign-in failed.");
     } finally {
@@ -84,41 +60,33 @@ export function SocialAccountButtons({ mode }: SocialAccountButtonsProps) {
     }
   };
 
+  const providers = [
+    { id: "google", label: "Continue with Google", variant: "default" },
+    { id: "apple", label: "Continue with Apple", variant: "outline" },
+  ] as const;
+
   return (
-    <div className="space-y-3">
-      <Button
-        className="w-full"
-        disabled={activeProvider !== null}
-        onClick={() => handleSocialSignIn("google")}
-        size="lg"
-        type="button"
-      >
-        {activeProvider === "google"
-          ? copyByMode[mode].googlePendingLabel
-          : copyByMode[mode].googleLabel}
-        {lastUsedMethod === "google" && activeProvider !== "google" ? (
-          <Badge className="ml-2" variant="secondary">
-            Last used
-          </Badge>
-        ) : null}
-      </Button>
-      <Button
-        className="w-full"
-        disabled={activeProvider !== null}
-        onClick={() => handleSocialSignIn("apple")}
-        size="lg"
-        type="button"
-        variant="outline"
-      >
-        {activeProvider === "apple"
-          ? copyByMode[mode].applePendingLabel
-          : copyByMode[mode].appleLabel}
-        {lastUsedMethod === "apple" && activeProvider !== "apple" ? (
-          <Badge className="ml-2" variant="secondary">
-            Last used
-          </Badge>
-        ) : null}
-      </Button>
+    <div className="flex flex-col gap-2.5">
+      {providers.map(({ id, label, variant }) => (
+        <Button
+          className="relative h-10 w-full text-sm"
+          disabled={activeProvider !== null}
+          key={id}
+          onClick={() => handleSocialSignIn(id)}
+          type="button"
+          variant={variant}
+        >
+          {activeProvider === id ? "Connecting…" : label}
+          {lastUsedMethod === id && activeProvider !== id ? (
+            <Badge
+              className="absolute right-2.5 font-normal"
+              variant="secondary"
+            >
+              Last used
+            </Badge>
+          ) : null}
+        </Button>
+      ))}
     </div>
   );
 }

@@ -4,10 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { SessionFeedback } from "@/components/auth/session-feedback";
-import SignInForm from "@/components/auth/sign-in-form";
-import SignUpForm from "@/components/auth/sign-up-form";
+import { SocialAccountButtons } from "@/components/auth/social-account-buttons";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, getElectronAuthQuery } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
@@ -33,9 +31,9 @@ function DashboardRedirect() {
   });
 
   return (
-    <p className="p-8 text-center text-muted-foreground">
-      Opening your workspace…
-    </p>
+    <main className="flex min-h-svh items-center justify-center p-6 text-muted-foreground text-sm">
+      <p role="status">Opening your workspace…</p>
+    </main>
   );
 }
 
@@ -50,26 +48,19 @@ function requestBrowserSignIn() {
 
 function DesktopSignIn() {
   return (
-    <section className="space-y-6 rounded-3xl border border-border/60 bg-card/80 p-8 text-center shadow-lg">
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-xs uppercase tracking-[0.35em]">
-          Sign in
-        </p>
-        <h2 className="font-serif text-3xl">Welcome back</h2>
-        <p className="text-muted-foreground text-sm">
-          Continue in your browser. If you're already signed in there, you'll
-          come straight back.
-        </p>
-      </div>
+    <>
+      <p className="text-muted-foreground text-sm">
+        Continue in your browser. If you're already signed in there, you'll come
+        straight back.
+      </p>
       <Button
-        className="w-full"
+        className="h-10 w-full text-sm"
         onClick={requestBrowserSignIn}
-        size="lg"
         type="button"
       >
         Continue in browser
       </Button>
-    </section>
+    </>
   );
 }
 
@@ -113,82 +104,42 @@ export default function LoginPageClient() {
   }
 
   return (
-    <main className="bg-background text-foreground">
-      {/* Keep login/signup screens draggable in the desktop window. */}
+    <main className="flex min-h-svh flex-col bg-background text-foreground">
+      {/* Keep the login screen draggable in the desktop window. */}
       <div
         aria-hidden
         className="fixed inset-x-0 top-0 z-50 h-8 select-none"
         data-desktop-drag-region
       />
-      <div className="grid min-h-svh gap-12 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="relative hidden flex-col justify-between overflow-hidden border-border/50 bg-linear-to-br from-primary/15 via-background to-background p-10 text-left lg:flex">
-          <div className="space-y-6">
-            <Link className="text-muted-foreground text-sm" href="/">
-              Back to kompose.dev
-            </Link>
-            <p className="text-muted-foreground text-sm uppercase tracking-[0.35em]">
-              kompose
-            </p>
-            <h1 className="font-serif text-5xl leading-tight">
-              Your calendar and tasks, orchestrated together.
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Schedule backlog work by drag-and-drop and keep your connected
-              calendars in sync.
-            </p>
-          </div>
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
-              <p className="text-muted-foreground text-sm uppercase tracking-[0.2em]">
-                why teams switch
+      <header className="mx-auto flex h-16 w-full max-w-6xl items-center px-6">
+        <Link className="font-medium font-serif text-lg" href="/">
+          Kompose
+        </Link>
+      </header>
+      <section className="flex flex-1 items-center justify-center px-6 pb-24">
+        <div className="flex w-full max-w-sm flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <h1 className="font-serif text-3xl">Sign in to Kompose</h1>
+            {isDesktop ? null : (
+              <p className="text-muted-foreground text-sm">
+                New here? Continuing creates your account.
               </p>
-              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm">
-                <li>Shared task + calendar source of truth</li>
-                <li>Recurring tasks and flexible scheduling</li>
-                <li>Desktop + mobile apps</li>
-              </ul>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
-              <a className="underline-offset-4 hover:underline" href="/privacy">
-                Privacy Policy
-              </a>
-              <a className="underline-offset-4 hover:underline" href="/terms">
-                Terms of Service
-              </a>
-            </div>
-          </div>
-        </section>
-        <section className="flex items-center justify-center px-6 pt-12 pb-20">
-          <div className="w-full max-w-md">
-            {isDesktop ? (
-              <DesktopSignIn />
-            ) : (
-              <Tabs className="space-y-6" defaultValue="sign-in">
-                <TabsList className="w-full border border-border/60 bg-linear-to-r from-primary/15 via-secondary/15 to-accent/15 shadow-sm">
-                  <TabsTrigger
-                    className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
-                    value="sign-in"
-                  >
-                    Sign in
-                  </TabsTrigger>
-                  <TabsTrigger
-                    className="flex-1 text-foreground/70 data-[state=active]:bg-background/80 data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-ring/30 dark:data-[state=active]:ring-ring/20"
-                    value="sign-up"
-                  >
-                    Sign up
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="sign-in">
-                  <SignInForm />
-                </TabsContent>
-                <TabsContent value="sign-up">
-                  <SignUpForm />
-                </TabsContent>
-              </Tabs>
             )}
           </div>
-        </section>
-      </div>
+          {isDesktop ? <DesktopSignIn /> : <SocialAccountButtons />}
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            By continuing you agree to the{" "}
+            <a className="underline underline-offset-4" href="/terms">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a className="underline underline-offset-4" href="/privacy">
+              Privacy Policy
+            </a>
+            .
+          </p>
+        </div>
+      </section>
     </main>
   );
 }

@@ -8,32 +8,23 @@ import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-accoun
 import { useUnlinkGoogleAccount } from "@kompose/state/hooks/use-unlink-google-account";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
+import { ArrowLeft, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient, extractAuthErrorMessage } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
 import { orpc } from "@/utils/orpc";
 import { ConnectedAgentsSettings } from "./connected-agents-settings";
 import { DesktopShortcutSettings } from "./desktop-shortcut-settings";
+import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRowSkeleton,
+  SettingsSection,
+} from "./settings-section";
 
 export default function SettingsPageClient() {
   const queryClient = useQueryClient();
@@ -200,212 +191,152 @@ export default function SettingsPageClient() {
     }
   };
 
-  let googleLinkButtonLabel = isDesktop
-    ? "Link Google in browser"
-    : "Link another Google account";
+  let googleLinkButtonLabel = isDesktop ? "Link in browser" : "Link account";
   if (linkingProvider === "google") {
-    googleLinkButtonLabel = "Linking...";
+    googleLinkButtonLabel = "Linking…";
   }
-  let whoopLinkButtonLabel = isDesktop
-    ? "Link WHOOP in browser"
-    : "Link WHOOP account";
+  let whoopLinkButtonLabel = isDesktop ? "Link in browser" : "Link account";
   if (linkingProvider === "whoop") {
-    whoopLinkButtonLabel = "Linking...";
-  } else if (whoopAccounts.length >= 1) {
-    whoopLinkButtonLabel = "WHOOP account linked";
+    whoopLinkButtonLabel = "Linking…";
   }
+  const isAccountActionPending =
+    unlinkingAccountId !== null ||
+    unlinkGoogleAccount.isPending ||
+    linkingProvider !== null;
 
   return (
-    <>
-      <header className="absolute inset-x-0 top-0 z-10 flex h-12 items-center gap-2 border-b bg-background px-4">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem className="hidden md:block">
-              <BreadcrumbLink asChild>
-                <Link href="/dashboard">Dashboard</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="hidden md:block" />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Settings</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
+        <Button
+          asChild
+          className="text-muted-foreground"
+          size="icon-lg"
+          variant="ghost"
+        >
+          <Link aria-label="Back to calendar" href="/dashboard">
+            <ArrowLeft />
+          </Link>
+        </Button>
+        <h1 className="font-medium text-base">Settings</h1>
       </header>
 
-      <div className="flex flex-1 flex-col gap-4 p-4">
-        <div className="flex flex-col gap-2">
-          <h1 className="font-semibold text-2xl">Settings</h1>
-          <p className="text-muted-foreground">
-            Link and manage your Google and WHOOP accounts.
-            {isDesktop
-              ? " Link accounts in your browser using the same Kompose account, then return here."
-              : null}
-          </p>
-        </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-2xl flex-col gap-10 px-6 py-8">
+          {isDesktop ? (
+            <p className="rounded-lg border bg-card px-4 py-3 text-muted-foreground text-sm">
+              Accounts link in your browser. Sign in there with this Kompose
+              account, then come back here.
+            </p>
+          ) : null}
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>Google Accounts</CardTitle>
-                <CardDescription>
-                  Linked accounts used for Google Calendar access.
-                </CardDescription>
-              </div>
+          <SettingsSection
+            action={
               <Button
                 disabled={linkingProvider !== null}
                 onClick={handleLinkAnotherGoogleAccount}
+                variant="outline"
               >
+                <Plus />
                 {googleLinkButtonLabel}
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {isLoading ? (
-              <p className="text-muted-foreground text-sm">Loading accounts…</p>
+            }
+            description="Events from these accounts show on your calendar."
+            title="Google Calendar"
+          >
+            {isLoading && googleAccountProfiles.length === 0 ? (
+              <SettingsRowSkeleton />
             ) : null}
-
             {!isLoading && googleAccountProfiles.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No Google accounts linked yet.
-              </p>
+              <SettingsEmpty>No Google accounts linked.</SettingsEmpty>
             ) : null}
-
             {googleAccountProfiles.map(
-              ({ account, isLoading: isProfileLoading, profile }) => {
-                const displayName = profile?.name || "Unknown user";
-                const displayEmail = profile?.email || "Email unavailable";
-                const avatarSrc = profile?.image || "";
-                const avatarFallback = displayName
-                  .split(" ")
-                  .map((segment) => segment[0])
-                  .join("")
-                  .slice(0, 2)
-                  .toUpperCase();
-
-                return (
-                  <div className="rounded-lg border p-3" key={account.id}>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="size-10">
-                        <AvatarImage alt={displayName} src={avatarSrc} />
-                        <AvatarFallback>{avatarFallback || "G"}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-sm">
-                          {isProfileLoading
-                            ? "Loading name..."
-                            : `${displayName}`}
-                        </p>
-                        <p className="truncate text-muted-foreground text-xs">
-                          {isProfileLoading ? "Loading email..." : displayEmail}
-                        </p>
-                      </div>
+              ({ account, isLoading: isProfileLoading, profile }) =>
+                isProfileLoading ? (
+                  <SettingsRowSkeleton key={account.id} />
+                ) : (
+                  <SettingsRow
+                    action={
                       <Button
-                        className="ml-auto"
-                        disabled={
-                          unlinkingAccountId !== null ||
-                          unlinkGoogleAccount.isPending ||
-                          linkingProvider !== null
-                        }
+                        disabled={isAccountActionPending}
                         onClick={() => handleUnlinkGoogleAccount(account.id)}
                         size="sm"
                         type="button"
-                        variant="destructive"
+                        variant="ghost"
                       >
                         {unlinkingAccountId === account.id
-                          ? "Unlinking..."
+                          ? "Unlinking…"
                           : "Unlink"}
                       </Button>
-                    </div>
-                  </div>
-                );
-              }
+                    }
+                    detail={profile?.email || "Email unavailable"}
+                    image={profile?.image}
+                    key={account.id}
+                    name={profile?.name || "Google account"}
+                  />
+                )
             )}
-          </CardContent>
-        </Card>
+          </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>WHOOP Account</CardTitle>
-                <CardDescription>
-                  Link one WHOOP account to sync sleep, recovery, and workouts.
-                </CardDescription>
-              </div>
-              <Button
-                disabled={linkingProvider !== null || whoopAccounts.length >= 1}
-                onClick={handleLinkWhoopAccount}
-              >
-                {whoopLinkButtonLabel}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
+          <SettingsSection
+            action={
+              whoopAccounts.length === 0 ? (
+                <Button
+                  disabled={linkingProvider !== null}
+                  onClick={handleLinkWhoopAccount}
+                  variant="outline"
+                >
+                  <Plus />
+                  {whoopLinkButtonLabel}
+                </Button>
+              ) : null
+            }
+            description="Sleep, recovery, and workouts from one WHOOP account show on your calendar."
+            title="WHOOP"
+          >
             {whoopAccounts.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No WHOOP account linked yet.
-              </p>
+              <SettingsEmpty>No WHOOP account linked.</SettingsEmpty>
             ) : null}
-
             {whoopAccounts.map((account, index) => {
               const profileQuery = whoopProfileQueries[index];
               const profile = profileQuery?.data;
-              const isProfileLoading = Boolean(profileQuery?.isLoading);
-
-              const displayName = profile
-                ? [profile.firstName, profile.lastName]
-                    .filter(Boolean)
-                    .join(" ") || "Unknown user"
-                : "Unknown user";
-              const displayEmail = profile?.email || "Email unavailable";
-              const avatarFallback = displayName
-                .split(" ")
-                .map((segment) => segment[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase();
+              if (profileQuery?.isLoading) {
+                return <SettingsRowSkeleton key={account.id} />;
+              }
 
               return (
-                <div className="rounded-lg border p-3" key={account.id}>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="size-10">
-                      <AvatarFallback>{avatarFallback || "W"}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-sm">
-                        {isProfileLoading ? "Loading name..." : displayName}
-                      </p>
-                      <p className="truncate text-muted-foreground text-xs">
-                        {isProfileLoading ? "Loading email..." : displayEmail}
-                      </p>
-                    </div>
+                <SettingsRow
+                  action={
                     <Button
-                      className="ml-auto"
                       disabled={
                         unlinkingAccountId !== null || linkingProvider !== null
                       }
                       onClick={() => handleUnlinkWhoopAccount(account.id)}
                       size="sm"
                       type="button"
-                      variant="destructive"
+                      variant="ghost"
                     >
                       {unlinkingAccountId === account.id
-                        ? "Unlinking..."
+                        ? "Unlinking…"
                         : "Unlink"}
                     </Button>
-                  </div>
-                </div>
+                  }
+                  detail={profile?.email || "Email unavailable"}
+                  key={account.id}
+                  name={
+                    [profile?.firstName, profile?.lastName]
+                      .filter(Boolean)
+                      .join(" ") || "WHOOP account"
+                  }
+                />
               );
             })}
-          </CardContent>
-        </Card>
+          </SettingsSection>
 
-        <ConnectedAgentsSettings />
+          <ConnectedAgentsSettings />
 
-        {isDesktop ? <DesktopShortcutSettings /> : null}
+          {isDesktop ? <DesktopShortcutSettings /> : null}
+        </div>
       </div>
-    </>
+    </div>
   );
 }

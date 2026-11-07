@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
   return (
     <>
       <div className="flex flex-col items-center gap-3 text-center">
-        <Avatar className="size-14">
+        <Avatar className="size-12">
           {client.icon ? (
             <AvatarImage alt={client.name} src={client.icon} />
           ) : null}
@@ -49,7 +50,7 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
             {client.name.slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
-        <h1 className="font-serif text-2xl">
+        <h1 className="text-balance font-serif text-2xl">
           Allow {client.name} to use Kompose?
         </h1>
         {client.uri ? (
@@ -61,20 +62,25 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
           Signed in as {userEmail}
         </p>
       </div>
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2 border-t pt-5">
         <p className="font-medium text-sm">It will be able to:</p>
-        <ul className="list-disc space-y-1 pl-5 text-sm">
+        <ul className="flex flex-col gap-2 text-sm">
           {scopes.map((scope) => (
-            <li key={scope}>{SCOPE_DESCRIPTIONS[scope] ?? scope}</li>
+            <li className="flex items-start gap-2" key={scope}>
+              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              {SCOPE_DESCRIPTIONS[scope] ?? scope}
+            </li>
           ))}
         </ul>
       </div>
       {submitError ? (
-        <p className="text-destructive text-sm">{submitError}</p>
+        <p className="text-destructive text-sm" role="alert">
+          {submitError}
+        </p>
       ) : null}
       <div className="flex gap-3">
         <Button
-          className="flex-1"
+          className="h-9 flex-1 text-sm"
           disabled={pending !== null}
           onClick={() => respond(false)}
           type="button"
@@ -83,7 +89,7 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
           {pending === "deny" ? "Cancelling…" : "Cancel"}
         </Button>
         <Button
-          className="flex-1"
+          className="h-9 flex-1 text-sm"
           disabled={pending !== null}
           onClick={() => respond(true)}
           type="button"
