@@ -12,6 +12,7 @@ import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
 interface DayColumnProps {
+  /** The column's blocks. */
   children?: React.ReactNode;
   date: Temporal.PlainDate;
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
@@ -19,6 +20,8 @@ interface DayColumnProps {
   onSlotLeave?: () => void;
   onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotMouseUp?: () => void;
+  /** Drawn above every block, such as the new-event preview. */
+  overlay?: React.ReactNode;
   timeZone: string;
   width: string;
 }
@@ -33,6 +36,7 @@ export const DayColumn = memo(function DayColumnInner({
   onSlotMouseDown,
   onSlotDragMove,
   onSlotMouseUp,
+  overlay,
 }: DayColumnProps) {
   const hours = getHoursRange();
 
@@ -61,9 +65,14 @@ export const DayColumn = memo(function DayColumnInner({
       ))}
       <DayColumnDropTarget date={date} timeZone={timeZone} />
       {/* Blocks stop short of the right edge, so a slot is always free to
-          start a new event even on a busy day. */}
-      <div className="pointer-events-none absolute inset-y-0 right-3 left-0">
+          start a new event even on a busy day. Their stacking order stays
+          inside this layer (isolate), so a busy day's blocks never rise
+          above the overlay, the now line, or the grid's header. */}
+      <div className="pointer-events-none absolute inset-y-0 right-3 left-0 isolate">
         {children}
+      </div>
+      <div className="pointer-events-none absolute inset-y-0 right-3 left-0">
+        {overlay}
       </div>
       <CurrentTimeIndicator date={date} />
     </div>

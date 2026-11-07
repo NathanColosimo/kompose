@@ -72,14 +72,26 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   );
   const isEditable = isGoogleEventEditable(event);
   const editBlockedReason = getGoogleEventEditBlockReason(event);
+  // An overnight event is drawn as one part per day (start/end). Its text,
+  // editor, and drags use the whole event's times, so editing or moving
+  // the second day's part never cuts the event at midnight.
+  const shownStart = event.start.dateTime
+    ? isoStringToZonedDateTime(event.start.dateTime, start.timeZoneId)
+    : start;
+  const shownEnd = event.end.dateTime
+    ? isoStringToZonedDateTime(event.end.dateTime, end.timeZoneId)
+    : end;
+  const hasStartEdge = start.equals(shownStart);
+  const hasEndEdge = end.equals(shownEnd);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
       accountId,
       calendarId,
-      end,
+      end: shownEnd,
       event,
-      start,
+      grabOffsetMinutes: start.since(shownStart).total({ unit: "minutes" }),
+      start: shownStart,
       type: "google-event",
     },
     disabled: !isEditable,
@@ -95,12 +107,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       accountId,
       calendarId,
       direction: "start",
-      end,
+      end: shownEnd,
       event,
-      start,
+      start: shownStart,
       type: "google-event-resize",
     },
-    disabled: !isEditable,
+    disabled: !(isEditable && hasStartEdge),
     id: `google-event-${calendarId}-${event.id}-resize-start`,
   });
 
@@ -113,12 +125,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       accountId,
       calendarId,
       direction: "end",
-      end,
+      end: shownEnd,
       event,
-      start,
+      start: shownStart,
       type: "google-event-resize",
     },
-    disabled: !isEditable,
+    disabled: !(isEditable && hasEndEdge),
     id: `google-event-${calendarId}-${event.id}-resize-end`,
   });
 
@@ -151,13 +163,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
 
   const eventColorStyle = eventColor(backgroundColor);
   const details = useMemo(() => eventDetails(event), [event]);
-  // An overnight event is split per day; its time text shows the whole event.
-  const shownStart = event.start.dateTime
-    ? isoStringToZonedDateTime(event.start.dateTime, start.timeZoneId)
-    : start;
-  const shownEnd = event.end.dateTime
-    ? isoStringToZonedDateTime(event.end.dateTime, end.timeZoneId)
-    : end;
 
   const eventCard = (
     <div
@@ -219,21 +224,21 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           </Tooltip>
         ) : null}
       </div>
-      {isEditable ? (
-        <>
-          <div
-            className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
-            ref={setStartHandleRef}
-            {...startAttributes}
-            {...startListeners}
-          />
-          <div
-            className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
-            ref={setEndHandleRef}
-            {...endAttributes}
-            {...endListeners}
-          />
-        </>
+      {isEditable && hasStartEdge ? (
+        <div
+          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
+        />
+      ) : null}
+      {isEditable && hasEndEdge ? (
+        <div
+          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+        />
       ) : null}
     </div>
   );
@@ -242,11 +247,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     <EventEditPopover
       accountId={accountId}
       calendarId={calendarId}
-      end={zonedDateTimeToDate(end)}
+      end={zonedDateTimeToDate(shownEnd)}
       event={event}
       readOnly={!isEditable}
       readOnlyReason={editBlockedReason}
-      start={zonedDateTimeToDate(start)}
+      start={zonedDateTimeToDate(shownStart)}
     >
       {eventCard}
     </EventEditPopover>

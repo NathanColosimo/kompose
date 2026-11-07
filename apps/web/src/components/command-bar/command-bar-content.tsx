@@ -98,7 +98,12 @@ export function CommandBarContent({
         value={search}
       />
       <CommandList>
-        {view === "root" && <CommandBarRoot onNavigate={navigateToView} />}
+        {view === "root" && (
+          <CommandBarRoot
+            canCreateEvent={selectionMode === "local"}
+            onNavigate={navigateToView}
+          />
+        )}
         {view === "search-tasks" && (
           <CommandBarSearchTasks
             search={search}

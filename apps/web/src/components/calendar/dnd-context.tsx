@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
+import { minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   calendarCollisionDetection,
@@ -47,10 +47,10 @@ import {
   buildTaskResizeUpdate,
 } from "./dnd/drop-handlers";
 import {
-  clampResizeEnd,
-  clampResizeStart,
+  clipToDay,
   durationInMinutes,
   MINUTES_STEP,
+  resizedRange,
 } from "./dnd/helpers";
 import type { DragData, PreviewRect } from "./dnd/types";
 import { GoogleCalendarEventPreview } from "./events/google-event";
@@ -318,7 +318,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       switch (data.type) {
         case "task":
-          handleTaskMoveDrop(data.task, targetDateTime);
+          handleTaskMoveDrop(
+            data.task,
+            targetDateTime.subtract({ minutes: data.grabOffsetMinutes ?? 0 })
+          );
           return;
         case "task-resize":
           handleTaskResizeDrop({
@@ -328,7 +331,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           });
           return;
         case "google-event":
-          handleGoogleEventDrop(data, targetDateTime);
+          handleGoogleEventDrop(
+            data,
+            targetDateTime.subtract({ minutes: data.grabOffsetMinutes ?? 0 })
+          );
           return;
         case "google-event-resize":
           handleGoogleEventResizeDrop({
@@ -384,16 +390,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const buildPreviewRect = useCallback(
     ({
-      start,
-      end,
       columnRect,
+      day,
       minimum = MINUTES_STEP,
+      range,
     }: {
-      start: Temporal.ZonedDateTime;
-      end: Temporal.ZonedDateTime;
       columnRect: ClientRect;
+      /** The target column's day; the preview shows the part on that day. */
+      day: Temporal.PlainDate;
       minimum?: number;
+      range: { end: Temporal.ZonedDateTime; start: Temporal.ZonedDateTime };
     }): PreviewRect => {
+      const { end, start } = clipToDay(range, day);
       const startMinutes = minutesFromMidnight(start);
       const duration = durationInMinutes(start, end, minimum);
       // Ensure 15-minute blocks render at slot height (20px).
@@ -415,12 +423,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ) => {
-      const duration = data.task.durationMinutes;
-      const end = targetDateTime.add({ minutes: duration });
+      const start = targetDateTime.subtract({
+        minutes: data.grabOffsetMinutes ?? 0,
+      });
       return buildPreviewRect({
         columnRect,
-        end,
-        start: targetDateTime,
+        day: targetDateTime.toPlainDate(),
+        range: {
+          end: start.add({ minutes: data.task.durationMinutes }),
+          start,
+        },
       });
     },
     [buildPreviewRect]
@@ -435,39 +447,23 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (!(data.task.startDate && data.task.startTime)) {
         return null;
       }
-
-      const originalStart: Temporal.ZonedDateTime =
-        data.task.startDate.toZonedDateTime({
-          plainTime: data.task.startTime,
-          timeZone,
-        });
-      const originalEnd: Temporal.ZonedDateTime = originalStart.add({
-        minutes: data.task.durationMinutes,
+      const start = data.task.startDate.toZonedDateTime({
+        plainTime: data.task.startTime,
+        timeZone,
       });
-
-      if (!isSameDay(originalStart, targetDateTime)) {
-        return null;
-      }
-
-      if (data.direction === "start") {
-        const newStart = clampResizeStart(
-          targetDateTime,
-          originalStart,
-          originalEnd
-        );
-        return buildPreviewRect({
-          columnRect,
-          end: originalEnd,
-          start: newStart,
-        });
-      }
-
-      const newEnd = clampResizeEnd(targetDateTime, originalStart);
-      return buildPreviewRect({
-        columnRect,
-        end: newEnd,
-        start: originalStart,
+      const range = resizedRange({
+        direction: data.direction,
+        end: start.add({ minutes: data.task.durationMinutes }),
+        start,
+        target: targetDateTime,
       });
+      return range
+        ? buildPreviewRect({
+            columnRect,
+            day: targetDateTime.toPlainDate(),
+            range,
+          })
+        : null;
     },
     [buildPreviewRect, timeZone]
   );
@@ -478,13 +474,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ) => {
-      const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
-      const end = targetDateTime.add({ minutes: eventDurationMinutes });
+      const start = targetDateTime.subtract({
+        minutes: data.grabOffsetMinutes ?? 0,
+      });
+      const duration = durationInMinutes(data.start, data.end, 1);
       return buildPreviewRect({
         columnRect,
-        end,
+        day: targetDateTime.toPlainDate(),
         minimum: 1,
-        start: targetDateTime,
+        range: { end: start.add({ minutes: duration }), start },
       });
     },
     [buildPreviewRect]
@@ -496,34 +494,20 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ): PreviewRect | null => {
-      const originalStart = data.start;
-      const originalEnd = data.end;
-
-      if (!isSameDay(originalStart, targetDateTime)) {
-        return null;
-      }
-
-      if (data.direction === "start") {
-        const newStart = clampResizeStart(
-          targetDateTime,
-          originalStart,
-          originalEnd
-        );
-        return buildPreviewRect({
-          columnRect,
-          end: originalEnd,
-          minimum: 1,
-          start: newStart,
-        });
-      }
-
-      const newEnd = clampResizeEnd(targetDateTime, originalStart);
-      return buildPreviewRect({
-        columnRect,
-        end: newEnd,
-        minimum: 1,
-        start: originalStart,
+      const range = resizedRange({
+        direction: data.direction,
+        end: data.end,
+        start: data.start,
+        target: targetDateTime,
       });
+      return range
+        ? buildPreviewRect({
+            columnRect,
+            day: targetDateTime.toPlainDate(),
+            minimum: 1,
+            range,
+          })
+        : null;
     },
     [buildPreviewRect]
   );

@@ -9,11 +9,13 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
-import { createEventRequestedAtom } from "@/state/calendar-navigation";
+import { useRequestCreateEvent } from "@/hooks/use-request-create-event";
 
 type CommandBarView = "root" | "search-tasks" | "create-task";
 
 interface CommandBarRootProps {
+  /** False in the desktop popup, which is a separate window from the calendar. */
+  canCreateEvent: boolean;
   onNavigate: (view: CommandBarView) => void;
 }
 
@@ -39,9 +41,12 @@ const actions: Action[] = [
   },
 ];
 
-export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
+export function CommandBarRoot({
+  canCreateEvent,
+  onNavigate,
+}: CommandBarRootProps) {
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
-  const requestCreateEvent = useSetAtom(createEventRequestedAtom);
+  const requestCreateEvent = useRequestCreateEvent();
   const handleSelect = (action: Action) => {
     onNavigate(action.view);
   };
@@ -60,17 +65,19 @@ export function CommandBarRoot({ onNavigate }: CommandBarRootProps) {
             <span>{action.label}</span>
           </CommandItem>
         ))}
-        <CommandItem
-          onSelect={() => {
-            setCommandBarOpen(false);
-            requestCreateEvent(true);
-          }}
-          value="Create event"
-        >
-          <CalendarPlusIcon className="text-muted-foreground" />
-          <span>Create event</span>
-          <Kbd className="ml-auto">C</Kbd>
-        </CommandItem>
+        {canCreateEvent && (
+          <CommandItem
+            onSelect={() => {
+              setCommandBarOpen(false);
+              requestCreateEvent();
+            }}
+            value="Create event"
+          >
+            <CalendarPlusIcon className="text-muted-foreground" />
+            <span>Create event</span>
+            <Kbd className="ml-auto">C</Kbd>
+          </CommandItem>
+        )}
       </CommandGroup>
     </>
   );

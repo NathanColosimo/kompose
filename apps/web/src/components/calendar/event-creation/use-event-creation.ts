@@ -3,6 +3,7 @@
 import {
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
+  googleCalendarsLoadingAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { useAtomValue } from "jotai";
@@ -23,6 +24,8 @@ import { MINUTES_STEP } from "../dnd/helpers";
 
 export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
+type CreateAtResult = "created" | "unavailable" | "waiting";
+
 interface EventCreationState {
   accountId: string | null;
   calendarId: string | null;
@@ -39,10 +42,11 @@ interface EventCreationActions {
   cancelCreation: () => void;
   closePopover: () => void;
   /**
-   * Open the new-event popover for a 30-minute range at `start`. False when
-   * no Google calendar is connected to create it in.
+   * Open the new-event popover for a 30-minute range at `start`. "waiting"
+   * while the calendars load; "unavailable" (with a toast saying why) when
+   * there's no calendar to create it in.
    */
-  createAt: (start: Temporal.ZonedDateTime) => boolean;
+  createAt: (start: Temporal.ZonedDateTime) => CreateAtResult;
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotLeave: () => void;
@@ -91,16 +95,17 @@ export function useEventCreationState(): EventCreationContextValue {
   const visibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const allCalendars = useAtomValue(googleCalendarsDataAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const isLoadingCalendars = useAtomValue(googleCalendarsLoadingAtom);
   // Says why there's nowhere to create an event, rather than nothing happening.
   const explainNoCalendar = useCallback(() => {
-    if (googleAccounts.length === 0) {
-      toast("Connect a Google calendar in Settings to create events.");
-    } else if (allCalendars.length === 0) {
+    if (isLoadingCalendars) {
       toast("Your calendars are still loading.");
+    } else if (googleAccounts.length === 0) {
+      toast("Connect a Google calendar in Settings to create events.");
     } else {
       toast("Show a calendar from the Calendars menu to create events.");
     }
-  }, [allCalendars.length, googleAccounts.length]);
+  }, [googleAccounts.length, isLoadingCalendars]);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
@@ -290,10 +295,13 @@ export function useEventCreationState(): EventCreationContextValue {
   );
 
   const createAt = useCallback(
-    (start: Temporal.ZonedDateTime) => {
+    (start: Temporal.ZonedDateTime): CreateAtResult => {
       if (!defaultCalendar) {
+        if (isLoadingCalendars) {
+          return "waiting";
+        }
         explainNoCalendar();
-        return false;
+        return "unavailable";
       }
       documentListenerCleanupRef.current?.();
       startDateTimeRef.current = start;
@@ -307,9 +315,9 @@ export function useEventCreationState(): EventCreationContextValue {
         showPopover: true,
         startDateTime: start,
       }));
-      return true;
+      return "created";
     },
-    [defaultCalendar, explainNoCalendar]
+    [defaultCalendar, explainNoCalendar, isLoadingCalendars]
   );
 
   const cancelCreation = useCallback(() => {

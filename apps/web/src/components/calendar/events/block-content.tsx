@@ -42,6 +42,24 @@ interface BlockContentProps {
   uncoveredMinutes?: number;
 }
 
+const LONG_WORD = /\p{L}{6,}/gu;
+
+/**
+ * Allow a hyphenated break inside long words, keeping three letters on each
+ * side. The browser's dictionary has no break points for many words
+ * ("Roadmap", "Vendor"), which then split with no hyphen ("Roadm / ap").
+ */
+function withSoftHyphens(text: string) {
+  return text.replace(LONG_WORD, (word) => {
+    const letters = Array.from(word);
+    return letters
+      .map((letter, i) =>
+        i >= 3 && i <= letters.length - 3 ? `\u00AD${letter}` : letter
+      )
+      .join("");
+  });
+}
+
 /** `leading` (a task's checkbox), left out of narrow blocks for the title. */
 function narrowHidden(leading: ReactNode) {
   return leading ? (
@@ -147,15 +165,15 @@ export function BlockContent({
         <span
           className={cn(
             titleClass,
-            // Hyphenate where the browser can; otherwise break a word that
-            // can't fit rather than clip it.
+            // Long words break at a soft hyphen; a word that still can't
+            // fit breaks anywhere rather than being clipped.
             "hyphens-auto [hyphenate-limit-chars:5_2_2] [overflow-wrap:break-word]",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
           )}
         >
-          {title}
+          {withSoftHyphens(title)}
         </span>
         <span
           className={cn(

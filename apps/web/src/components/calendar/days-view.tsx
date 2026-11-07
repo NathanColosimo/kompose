@@ -398,9 +398,15 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       setCurrentDate(startDay);
       return;
     }
+    const result = actions.createAt(start);
+    if (result === "waiting") {
+      // Opened from another page: the calendars are still loading. The
+      // request stays and runs again once they have.
+      return;
+    }
     setCreateEventRequested(false);
     // createAt explains in a toast when there's no calendar to create in.
-    if (!actions.createAt(start)) {
+    if (result === "unavailable") {
       return;
     }
     grid.scrollTop = Math.max(
@@ -740,6 +746,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   onSlotLeave={actions.onSlotLeave}
                   onSlotMouseDown={actions.onSlotMouseDown}
                   onSlotMouseUp={actions.onSlotMouseUp}
+                  overlay={<CreationPreview columnDate={day} />}
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
@@ -757,8 +764,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                       totalSleepMilliseconds={sleep.totalSleepMilliseconds}
                     />
                   ))}
-                  {/* Creation preview for this column */}
-                  <CreationPreview columnDate={day} />
                   {hasGoogleEvents
                     ? dayGoogleEvents.map(
                         ({

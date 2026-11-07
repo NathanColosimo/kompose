@@ -63,8 +63,16 @@ export const TaskEvent = memo(function TaskEventInner({
   isLastSegment,
   layout,
 }: TaskEventProps) {
+  const taskStart = task.startDate.toZonedDateTime({
+    plainTime: task.startTime,
+    timeZone: segmentStart.timeZoneId,
+  });
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
+      // Moving an overnight task's second-day part shifts the whole task.
+      grabOffsetMinutes: segmentStart
+        .since(taskStart)
+        .total({ unit: "minutes" }),
       task,
       type: "task",
     },
@@ -120,10 +128,6 @@ export const TaskEvent = memo(function TaskEventInner({
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
-  const taskStart = task.startDate.toZonedDateTime({
-    plainTime: task.startTime,
-    timeZone: segmentStart.timeZoneId,
-  });
   const style: React.CSSProperties = {
     ...blockHorizontalStyle(layout),
     height,

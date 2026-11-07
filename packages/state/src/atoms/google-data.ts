@@ -76,6 +76,19 @@ export const googleCalendarsDataAtom = atom<CalendarWithSource[]>((get) => {
   });
 });
 
+/**
+ * True until the linked accounts, each Google account's calendars, and the
+ * saved calendar choice have loaded once.
+ */
+export const googleCalendarsLoadingAtom = atom((get) => {
+  if (!get(visibleCalendarsHydratedAtom) || get(linkedAccountsAtom).isPending) {
+    return true;
+  }
+  return get(googleAccountsDataAtom).some(
+    (account) => get(googleCalendarsAtomFamily(account.accountId)).isPending
+  );
+});
+
 export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
   (get) => {
     const hydrated = get(visibleCalendarsHydratedAtom);
