@@ -47,17 +47,25 @@ import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
-import { todayPlainDate } from "@kompose/state/temporal-utils";
+import {
+  nearestSlotMinutes,
+  todayPlainDate,
+} from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+// biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
+import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionSheetIOS,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
+  Alert as RNAlert,
   ScrollView,
   type ScrollViewInstance,
   useWindowDimensions,
@@ -107,8 +115,10 @@ const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
 const TIME_GUTTER_WIDTH_PX = 56;
-/** Free strip on the right of each day for tapping to create. */
-const CREATE_GUTTER_PT = 10;
+/** Free strip on the right of each day for tapping to create; wider when there's room. */
+function createGutterPt(visibleDays: number): number {
+  return visibleDays >= 3 ? 10 : 16;
+}
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
@@ -172,12 +182,6 @@ function formatHourLabel(hour: number): string {
   return time.toLocaleString(undefined, { hour: "numeric" });
 }
 
-/** The start of the 15-minute slot containing `mins`, where a tap lands. */
-function snapMinutes(mins: number): number {
-  const snapped = Math.floor(mins / MINUTES_STEP) * MINUTES_STEP;
-  return Math.max(0, Math.min(24 * 60 - MINUTES_STEP, snapped));
-}
-
 function isoStringToZonedDateTime(str: string, timeZone: string) {
   const instant = Temporal.Instant.from(str);
   return instant.toZonedDateTimeISO(timeZone);
@@ -233,7 +237,7 @@ function buildCreateTaskDraftFromSlot(
   day: Temporal.PlainDate,
   minutes: number
 ): TaskDraft {
-  const snapped = snapMinutes(minutes);
+  const snapped = nearestSlotMinutes(minutes);
 
   return {
     description: "",
@@ -449,7 +453,7 @@ function TimedGoogleEventBlock({
   columnSpan?: number;
   height: number;
   item: PositionedGoogleEvent;
-  onCreateAt?: (offsetY: number) => void;
+  onLongPressAt?: (offsetY: number) => void;
   onPress: () => void;
   stackDepth?: number;
   top: number;
@@ -570,7 +574,7 @@ export default function CalendarTab() {
   const blockAreaWidth =
     (windowWidth - TIME_GUTTER_WIDTH_PX) / Math.max(visibleDays.length, 1) -
     1 -
-    CREATE_GUTTER_PT;
+    createGutterPt(visibleDays.length);
   // Each workout's part on every visible day it touches, so an overnight
   // workout shows on both days with its real times.
   const workoutsByDay = useMemo(
@@ -728,7 +732,10 @@ export default function CalendarTab() {
       }));
 
       const allItems = [...taskItems, ...googleItems, ...workoutItems];
-      const layout = calculateCollisionLayout(allItems);
+      // Blocks are at least 24pt tall (blockHeight), 24 minutes at 60pt an hour.
+      const layout = calculateCollisionLayout(allItems, {
+        minDrawnMinutes: 24,
+      });
       layoutsByDay.set(dayKey, layout);
     }
 
@@ -870,7 +877,7 @@ export default function CalendarTab() {
       if (!defaultCalendar) {
         return;
       }
-      const snapped = snapMinutes(minutes);
+      const snapped = nearestSlotMinutes(minutes);
       const startTime = Temporal.PlainTime.from({
         hour: Math.floor(snapped / 60),
         minute: snapped % 60,
@@ -909,7 +916,7 @@ export default function CalendarTab() {
 
   const openCreateChooserAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
-      const slot = { day, minutes: snapMinutes(minutes) };
+      const slot = { day, minutes: nearestSlotMinutes(minutes) };
       setCreateSlotSelection(slot);
       setLastCreateSlot(slot);
     },
@@ -930,6 +937,76 @@ export default function CalendarTab() {
       }
     },
     [openCreateChooserAt, timeZone]
+  );
+
+  const toggleTaskDone = useCallback(
+    (task: TaskSelectDecoded) =>
+      updateTask.mutate({
+        id: task.id,
+        scope: "this",
+        task: { status: task.status === "done" ? "todo" : "done" },
+      }),
+    [updateTask]
+  );
+
+  // A long press on a block offers that block's actions and creating at the
+  // pressed time, so the gesture never does something you can't see coming.
+  const showBlockMenu = useCallback(
+    ({
+      day,
+      done,
+      offsetY,
+      onOpen,
+      onToggleDone,
+      title,
+    }: {
+      day: Temporal.PlainDate;
+      done?: boolean;
+      offsetY: number;
+      onOpen?: () => void;
+      onToggleDone?: () => void;
+      title: string;
+    }) => {
+      Haptics.selectionAsync().catch(() => undefined);
+      const minutes = nearestSlotMinutes((offsetY / PIXELS_PER_HOUR) * 60);
+      const time = Temporal.PlainTime.from({
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+      }).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+      const actions: { label: string; run: () => void }[] = [];
+      if (onOpen) {
+        actions.push({ label: "Open", run: onOpen });
+      }
+      if (onToggleDone) {
+        actions.push({
+          label: done ? "Mark as not done" : "Mark as done",
+          run: onToggleDone,
+        });
+      }
+      actions.push({
+        label: `New event or task at ${time}`,
+        run: () => openCreateChooserAt(day, minutes),
+      });
+      if (Platform.OS === "ios") {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            cancelButtonIndex: actions.length,
+            options: [...actions.map((action) => action.label), "Cancel"],
+            title,
+          },
+          (index) => actions[index]?.run()
+        );
+        return;
+      }
+      RNAlert.alert(title, undefined, [
+        ...actions.map((action) => ({
+          onPress: action.run,
+          text: action.label,
+        })),
+        { style: "cancel" as const, text: "Cancel" },
+      ]);
+    },
+    [openCreateChooserAt]
   );
 
   const closeCreateChooser = useCallback(() => {
@@ -1561,7 +1638,7 @@ export default function CalendarTab() {
                           bottom: 0,
                           left: 0,
                           position: "absolute",
-                          right: CREATE_GUTTER_PT,
+                          right: createGutterPt(visibleDays.length),
                           top: 0,
                         }}
                       >
@@ -1590,11 +1667,14 @@ export default function CalendarTab() {
                               height={adjustedHeight}
                               item={evt}
                               key={`${eventId}-${evt.start.toString()}`}
-                              onCreateAt={(offsetY) =>
-                                openCreateChooserAt(
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
                                   day,
-                                  (offsetY / PIXELS_PER_HOUR) * 60
-                                )
+                                  offsetY,
+                                  onOpen: () => openEditTimedEvent(evt),
+                                  title:
+                                    evt.source.event.summary || "(No title)",
+                                })
                               }
                               onPress={() => openEditTimedEvent(evt)}
                               stackDepth={layout?.stackDepth}
@@ -1638,11 +1718,12 @@ export default function CalendarTab() {
                               height={blockHeight(minutes)}
                               key={workout.id}
                               minutes={minutes}
-                              onCreateAt={(offsetY) =>
-                                openCreateChooserAt(
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
                                   day,
-                                  (offsetY / PIXELS_PER_HOUR) * 60
-                                )
+                                  offsetY,
+                                  title: workout.sportName || "Workout",
+                                })
                               }
                               stackDepth={layout?.stackDepth}
                               start={workout.start}
@@ -1691,23 +1772,18 @@ export default function CalendarTab() {
                               height={adjustedHeight}
                               key={task.id}
                               minutes={durationMinutes}
-                              onCreateAt={(offsetY) =>
-                                openCreateChooserAt(
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
                                   day,
-                                  (offsetY / PIXELS_PER_HOUR) * 60
-                                )
-                              }
-                              onPress={() => taskFlow.openEdit(task)}
-                              onToggleDone={() =>
-                                updateTask.mutate({
-                                  id: task.id,
-                                  scope: "this",
-                                  task: {
-                                    status:
-                                      task.status === "done" ? "todo" : "done",
-                                  },
+                                  done: task.status === "done",
+                                  offsetY,
+                                  onOpen: () => taskFlow.openEdit(task),
+                                  onToggleDone: () => toggleTaskDone(task),
+                                  title: task.title,
                                 })
                               }
+                              onPress={() => taskFlow.openEdit(task)}
+                              onToggleDone={() => toggleTaskDone(task)}
                               stackDepth={layout?.stackDepth}
                               start={start}
                               title={task.title}

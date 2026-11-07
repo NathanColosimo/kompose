@@ -104,6 +104,24 @@ describe("calculateCollisionLayout", () => {
     });
   });
 
+  test("lays out short items at their drawn height", () => {
+    // A 5-minute task and one right after it, drawn at least 24 minutes tall.
+    const layout = calculateCollisionLayout(
+      [item("first", at(10), at(10, 5)), item("next", at(10, 5), at(10, 10))],
+      { minDrawnMinutes: 24 }
+    );
+    expect(layout.get("first")?.totalColumns).toBe(2);
+    expect(layout.get("next")?.totalColumns).toBe(2);
+  });
+
+  test("puts zero-length items at the same time side by side", () => {
+    const layout = calculateCollisionLayout([
+      item("a", at(9), at(9)),
+      item("b", at(9), at(9)),
+    ]);
+    expect(layout.get("a")?.totalColumns).toBe(2);
+  });
+
   test("leaves lone items flat", () => {
     expect(calculateCollisionLayout([item("a", 0, 30)]).get("a")).toEqual({
       columnIndex: 0,

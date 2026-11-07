@@ -538,7 +538,10 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
       // Calculate layout for all items on this day
       const allItems = [...taskItems, ...googleItems, ...whoopItems];
-      const layout = calculateCollisionLayout(allItems);
+      // Blocks are at least 20px tall, a 15-minute slot (event-position.ts).
+      const layout = calculateCollisionLayout(allItems, {
+        minDrawnMinutes: 15,
+      });
       layoutsByDay.set(dayKey, layout);
     }
 

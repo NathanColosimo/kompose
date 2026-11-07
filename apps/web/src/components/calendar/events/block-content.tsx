@@ -116,16 +116,27 @@ export function BlockContent({
     </span>
   ));
 
+  // In a narrow block (side by side on a busy day) the title is what
+  // matters: it takes the time line's room and breaks long words, and the
+  // time is in the hover text.
   return (
-    <div className="flex min-w-0 items-start gap-1.5">
+    <div className="@container flex min-w-0 items-start gap-1.5">
       {leading}
       <div className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className={cn(titleClass, isTall ? "line-clamp-2" : "truncate")}>
+        <span
+          className={cn(
+            titleClass,
+            "[overflow-wrap:anywhere]",
+            isTall
+              ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
+              : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"
+          )}
+        >
           {title}
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5 tabular-nums leading-[14px]",
+            "flex @max-[5.5rem]:hidden min-w-0 items-center gap-1.5 tabular-nums leading-[14px]",
             META
           )}
         >
@@ -136,7 +147,10 @@ export function BlockContent({
         </span>
         {isTall && detailRows.length > 0 ? (
           <span
-            className={cn("flex min-w-0 flex-col gap-px leading-[14px]", META)}
+            className={cn(
+              "flex @max-[5.5rem]:hidden min-w-0 flex-col gap-px leading-[14px]",
+              META
+            )}
           >
             {detailRows}
           </span>

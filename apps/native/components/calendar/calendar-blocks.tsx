@@ -53,16 +53,16 @@ export function eventDetails(event: GoogleEvent): BlockDetail[] {
 }
 
 interface BlockPosition {
-  /** Width of the day's block area in points; see CREATE_GUTTER_PT. */
+  /** Width of the day's block area in points, less the create strip. */
   areaWidth: number;
   columnIndex?: number;
   columnSpan?: number;
   height: number;
   /**
-   * Long press: create something at this point, given as points from the
-   * top of the day. A busy hour can be fully covered by blocks.
+   * Long press, with the pressed point in points from the top of the day.
+   * The calendar offers the block's actions and creating at that time.
    */
-  onCreateAt?: (offsetY: number) => void;
+  onLongPressAt?: (offsetY: number) => void;
   /** Indent level from the collision layout; see ItemLayout.stackDepth. */
   stackDepth?: number;
   top: number;
@@ -106,9 +106,28 @@ interface BlockTextProps {
   end: Temporal.ZonedDateTime;
   /** Visible minutes, which set how much text fits. */
   minutes: number;
+  /**
+   * Too narrow for the time (side by side on a busy day): the title takes
+   * its lines instead. There's no hover on a phone, so the title matters most.
+   */
+  narrow?: boolean;
   start: Temporal.ZonedDateTime;
   struck?: boolean;
   title: string;
+}
+
+/** Narrower than this, a block shows its title in place of the time. */
+const NARROW_BLOCK_PT = 72;
+
+/** Title lines that fit: more for a narrow block, which drops its time line. */
+function titleLines(minutes: number, narrow: boolean): number {
+  if (narrow) {
+    if (minutes >= DETAILS_MINUTES) {
+      return 3;
+    }
+    return minutes >= TITLE_ONLY_MINUTES ? 2 : 1;
+  }
+  return minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1;
 }
 
 /** Title, then the time once there's room, then details on long blocks. */
@@ -116,6 +135,7 @@ function BlockText({
   details = [],
   end,
   minutes,
+  narrow = false,
   start,
   struck = false,
   title,
@@ -146,7 +166,7 @@ function BlockText({
       >
         <Text
           className={`font-sans-medium text-[11px] leading-[14px] ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
-          numberOfLines={minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1}
+          numberOfLines={titleLines(minutes, narrow)}
         >
           {title}
         </Text>
@@ -160,7 +180,7 @@ function BlockText({
         ) : null}
         {isShort ? shorts : null}
       </View>
-      {minutes >= TITLE_ONLY_MINUTES ? (
+      {minutes >= TITLE_ONLY_MINUTES && !narrow ? (
         <View className="flex-row items-center gap-1">
           <Text
             className={`shrink text-[10px] leading-[13px] ${meta}`}
@@ -171,7 +191,7 @@ function BlockText({
           {minutes < DETAILS_MINUTES ? shorts : null}
         </View>
       ) : null}
-      {minutes >= DETAILS_MINUTES
+      {minutes >= DETAILS_MINUTES && !narrow
         ? details.map(({ icon, label }) => (
             <View className="mt-0.5 flex-row items-center gap-1" key={label}>
               <Icon as={icon} className={meta} size={10} />
@@ -243,26 +263,29 @@ export function EventBlock({
   details,
   end,
   minutes,
-  onCreateAt,
+  onLongPressAt,
   onPress,
   start,
   title,
   ...position
 }: EventBlockProps) {
   const surface = useEventSurface(color);
+  const placement = positionStyle(position);
   return (
     <Pressable
       accessibilityLabel={describeBlock(title, start, end, details)}
       accessibilityRole={onPress ? "button" : undefined}
-      className={`absolute p-px ${onPress ? "active:opacity-80" : ""}`}
+      // The background ring keeps whatever is underneath from showing
+      // through the gap between side-by-side blocks.
+      className={`absolute rounded-md bg-background p-px ${onPress ? "active:opacity-80" : ""}`}
       onLongPress={(event) =>
-        onCreateAt?.(position.top + event.nativeEvent.locationY)
+        onLongPressAt?.(position.top + event.nativeEvent.locationY)
       }
       onPress={(event) => {
         event.stopPropagation();
         onPress?.();
       }}
-      style={positionStyle(position)}
+      style={placement}
     >
       {/* The block itself takes the touch, so locationY is from its top. */}
       <View className="h-full" pointerEvents="none">
@@ -271,6 +294,7 @@ export function EventBlock({
             details={details}
             end={end}
             minutes={minutes}
+            narrow={placement.width < NARROW_BLOCK_PT}
             start={start}
             title={title}
           />
@@ -292,7 +316,7 @@ export function TaskBlock({
   done,
   end,
   minutes,
-  onCreateAt,
+  onLongPressAt,
   onPress,
   onToggleDone,
   start,
@@ -300,20 +324,21 @@ export function TaskBlock({
   ...position
 }: TaskBlockProps) {
   const compact = minutes < COMPACT_MINUTES;
-  const createAt = (offsetInBlock: number) =>
-    onCreateAt?.(position.top + offsetInBlock);
+  const placement = positionStyle(position);
+  const longPressAt = (offsetInBlock: number) =>
+    onLongPressAt?.(position.top + offsetInBlock);
   // The checkbox and the editor are sibling controls, so VoiceOver reaches
   // both; the outer press area only catches taps on the card's padding.
   return (
     <Pressable
       accessible={false}
-      className={`absolute p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
-      onLongPress={(event) => createAt(event.nativeEvent.locationY)}
+      className={`absolute rounded-md bg-background p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
+      onLongPress={(event) => longPressAt(event.nativeEvent.locationY)}
       onPress={(event) => {
         event.stopPropagation();
         onPress();
       }}
-      style={positionStyle(position)}
+      style={placement}
     >
       <View
         className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact ? "items-center" : "py-1"}`}
@@ -342,7 +367,7 @@ export function TaskBlock({
           accessibilityRole="button"
           className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
           // The text starts about 6pt below the block's top (gap, border, padding).
-          onLongPress={(event) => createAt(6 + event.nativeEvent.locationY)}
+          onLongPress={(event) => longPressAt(6 + event.nativeEvent.locationY)}
           onPress={(event) => {
             event.stopPropagation();
             onPress();
@@ -353,6 +378,7 @@ export function TaskBlock({
               details={details}
               end={end}
               minutes={minutes}
+              narrow={placement.width < NARROW_BLOCK_PT}
               start={start}
               struck={done}
               title={title}

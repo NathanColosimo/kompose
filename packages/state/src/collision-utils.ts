@@ -118,12 +118,22 @@ function layoutGroup(
   }
 }
 
-/** Lay out one day at a time; startMinutes/endMinutes are relative to that day. */
+/**
+ * Lay out one day at a time; startMinutes/endMinutes are relative to that day.
+ * `minDrawnMinutes` is the shortest block the caller draws (its minimum
+ * height in minutes): items are laid out as drawn, so a 5-minute task and
+ * the one right after it sit side by side instead of hiding each other.
+ */
 export function calculateCollisionLayout(
-  items: PositionedItem[]
+  items: PositionedItem[],
+  { minDrawnMinutes = 15 }: { minDrawnMinutes?: number } = {}
 ): Map<string, ItemLayout> {
+  const drawn = items.map((item) => ({
+    ...item,
+    endMinutes: Math.max(item.endMinutes, item.startMinutes + minDrawnMinutes),
+  }));
   // Earlier first; for equal starts the longer item goes first, underneath.
-  const sorted = [...items].sort(
+  const sorted = drawn.sort(
     (a, b) =>
       a.startMinutes - b.startMinutes ||
       b.endMinutes - b.startMinutes - (a.endMinutes - a.startMinutes)

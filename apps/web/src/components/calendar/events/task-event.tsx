@@ -5,6 +5,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
@@ -14,7 +15,9 @@ import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
 import {
+  BLOCK_RAISE_CLASS,
   blockHorizontalStyle,
+  blockStackStyle,
   calculateEventPosition,
 } from "../event-position";
 import { BlockContent, type BlockDetail } from "./block-content";
@@ -126,22 +129,25 @@ export const TaskEvent = memo(function TaskEventInner({
     height,
     position: "absolute",
     top,
-    zIndex: layout?.zIndex ?? 1,
+    ...blockStackStyle(layout?.zIndex),
   };
 
   return (
     <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
       <div
         className={cn(
-          "group pointer-events-auto cursor-grab rounded-md bg-background p-px transition-shadow",
-          "relative",
+          "group pointer-events-auto relative cursor-grab rounded-md bg-background p-0.5",
+          BLOCK_RAISE_CLASS,
           "hover:shadow-sm",
           isDragging ? "opacity-0" : "",
           isDone ? "opacity-60" : ""
         )}
         ref={setNodeRef}
         style={style}
-        title={task.title}
+        title={`${task.title} · ${formatTimeRange(
+          taskStart,
+          taskStart.add({ minutes: task.durationMinutes })
+        )}`}
         {...attributes}
         {...listeners}
       >

@@ -10,7 +10,11 @@ import {
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
-import { blockHorizontalStyle } from "../event-position";
+import {
+  BLOCK_RAISE_CLASS,
+  blockHorizontalStyle,
+  blockStackStyle,
+} from "../event-position";
 import { BlockContent, eventColor } from "./block-content";
 
 const WORKOUT_COLOR = eventColor("var(--whoop-workout)");
@@ -72,12 +76,12 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
 
   return (
     <div
-      className="pointer-events-auto absolute rounded-md bg-background p-px"
+      className={`pointer-events-auto absolute rounded-md bg-background p-0.5 ${BLOCK_RAISE_CLASS}`}
       style={{
         ...blockHorizontalStyle(layout),
         height: `${height}px`,
         top: `${top}px`,
-        zIndex: layout?.zIndex ?? 1,
+        ...blockStackStyle(layout?.zIndex),
       }}
       title={
         strainScore === null

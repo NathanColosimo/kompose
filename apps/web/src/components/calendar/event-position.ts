@@ -29,9 +29,23 @@ const MAX_STACK_INDENT_LEVELS = 4;
 
 /**
  * Left and width for a timed block from its collision layout: indent by its
- * level, split the rest of the column into its group's columns, and leave a
- * 2px gap each side.
+ * level, then split the rest of the column into its group's columns.
  */
+/**
+ * A block's stacking order as a CSS variable, so hover and an open popover
+ * can raise it (see BLOCK_RAISE_CLASS).
+ */
+export function blockStackStyle(zIndex: number | undefined) {
+  return { "--block-z": zIndex ?? 1 } as React.CSSProperties;
+}
+
+/**
+ * Raises a block above its stack after a short hover, and while its popover
+ * is open, so an item underneath can show its end and resize handles.
+ */
+export const BLOCK_RAISE_CLASS =
+  "z-(--block-z) [transition:box-shadow_150ms,z-index_0s_200ms] hover:z-50 data-[state=open]:z-50";
+
 export function blockHorizontalStyle(
   layout: ItemLayout | undefined
 ): Pick<React.CSSProperties, "left" | "width"> {
@@ -42,8 +56,10 @@ export function blockHorizontalStyle(
     Math.min(layout?.stackDepth ?? 0, MAX_STACK_INDENT_LEVELS) *
     STACK_INDENT_PX;
   const rest = `(100% - ${indent}px)`;
+  // A 1px gap each side; the block's own 2px background ring fills the
+  // rest, so nothing underneath shows between side-by-side blocks.
   return {
-    left: `calc(${rest} * ${column / columns} + ${indent + 2}px)`,
-    width: `calc(${rest} * ${span / columns} - 4px)`,
+    left: `calc(${rest} * ${column / columns} + ${indent + 1}px)`,
+    width: `calc(${rest} * ${span / columns} - 2px)`,
   };
 }

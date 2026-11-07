@@ -13,6 +13,7 @@ import {
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import type { ItemLayout } from "@kompose/state/collision-utils";
 import { extractMeetingLink } from "@kompose/state/meeting";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { Lock, MapPin, Video } from "lucide-react";
 import { memo, useMemo } from "react";
@@ -29,7 +30,9 @@ import {
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
 import {
+  BLOCK_RAISE_CLASS,
   blockHorizontalStyle,
+  blockStackStyle,
   calculateEventPosition,
 } from "../event-position";
 import { BlockContent, type BlockDetail, eventColor } from "./block-content";
@@ -143,7 +146,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     height,
     position: "absolute",
     top,
-    zIndex: layout?.zIndex ?? 1,
+    ...blockStackStyle(layout?.zIndex),
   };
 
   const eventColorStyle = eventColor(backgroundColor);
@@ -159,8 +162,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const eventCard = (
     <div
       className={cn(
-        "group pointer-events-auto rounded-md bg-background p-px transition-shadow",
-        "relative",
+        "group pointer-events-auto relative rounded-md bg-background p-0.5",
+        BLOCK_RAISE_CLASS,
         isEditable
           ? "cursor-grab hover:shadow-sm"
           : "cursor-default opacity-90",
@@ -168,12 +171,14 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       )}
       ref={setNodeRef}
       style={style}
-      // The full title on hover, for blocks too narrow to show it.
-      title={
-        editBlockedReason
-          ? `${event.summary || "(No title)"}: ${editBlockedReason}`
-          : event.summary || "(No title)"
-      }
+      // The full title and time on hover, for blocks too narrow to show them.
+      title={[
+        event.summary || "(No title)",
+        formatTimeRange(shownStart, shownEnd),
+        editBlockedReason,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       {...attributes}
       {...listeners}
     >

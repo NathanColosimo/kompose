@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { formatDuration, formatTimeRange } from "./temporal-utils";
+import {
+  formatDuration,
+  formatTimeRange,
+  nearestSlotMinutes,
+} from "./temporal-utils";
 
 const zone = "America/New_York";
 const at = (iso: string) =>
@@ -87,5 +91,22 @@ describe("formatTimeRange edge cases", () => {
 describe("formatDuration", () => {
   test("uses hours and minutes", () => {
     expect([30, 60, 90].map(formatDuration)).toEqual(["30m", "1h", "1h 30m"]);
+  });
+});
+
+describe("nearestSlotMinutes", () => {
+  test("a press on an hour line lands on that hour, even slightly above it", () => {
+    expect(nearestSlotMinutes(11 * 60 + 30)).toBe(11 * 60 + 30);
+    expect(nearestSlotMinutes(11 * 60 + 29.5)).toBe(11 * 60 + 30);
+  });
+
+  test("a press mid-slot takes the nearer line", () => {
+    expect(nearestSlotMinutes(10 * 60 + 5)).toBe(10 * 60);
+    expect(nearestSlotMinutes(10 * 60 + 10)).toBe(10 * 60 + 15);
+  });
+
+  test("stays inside the day", () => {
+    expect(nearestSlotMinutes(-3)).toBe(0);
+    expect(nearestSlotMinutes(24 * 60)).toBe(24 * 60 - 15);
   });
 });

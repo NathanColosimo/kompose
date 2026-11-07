@@ -126,3 +126,12 @@ export function formatTimeRange(
     : startPeriod.text;
   return `${startText} – ${endParts.text}`;
 }
+
+/**
+ * The 15-minute line nearest a touch, clamped to the day. Touch has no hover
+ * preview, so a press on or near an hour line lands on that hour.
+ */
+export function nearestSlotMinutes(minutes: number, step = 15): number {
+  const snapped = Math.round(minutes / step) * step;
+  return Math.max(0, Math.min(24 * 60 - step, snapped));
+}

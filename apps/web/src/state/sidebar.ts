@@ -114,12 +114,54 @@ function computeDashboardResponsiveLayout(args: {
   };
 }
 
-export const sidebarLeftOpenAtom = atomWithStorage<boolean>(
+function getInitialDashboardViewportWidth() {
+  // Start from a deterministic SSR-safe width and measure after mount.
+  return 0;
+}
+
+/** Measured by the dashboard layout after mount. */
+export const dashboardViewportWidthAtom = atom(
+  getInitialDashboardViewportWidth()
+);
+
+/** The saved choice, from wide windows only. */
+const sidebarLeftPreferenceAtom = atomWithStorage<boolean>(
   "sidebar-left-open",
   true,
   undefined,
   // All persisted sidebar atoms hydrate after mount to match SSR on the first render.
   { getOnInit: false }
+);
+
+/** Below this width the task panel folds to its icon strip (Tailwind's md). */
+const NARROW_VIEWPORT_PX = 768;
+
+export const isNarrowViewportAtom = atom((get) => {
+  const width = get(dashboardViewportWidthAtom);
+  return width > 0 && width < NARROW_VIEWPORT_PX;
+});
+
+/**
+ * Whether the panel is open while the window is narrow. It isn't saved, and
+ * resets to folded each time the window narrows (see the dashboard layout).
+ */
+export const sidebarLeftNarrowOpenAtom = atom(false);
+
+/**
+ * The task panel's open state. In a narrow window it folds without touching
+ * the saved choice, so widening again (or another tab) keeps that choice.
+ */
+export const sidebarLeftOpenAtom = atom(
+  (get) =>
+    get(isNarrowViewportAtom)
+      ? get(sidebarLeftNarrowOpenAtom)
+      : get(sidebarLeftPreferenceAtom),
+  (get, set, update: boolean | ((open: boolean) => boolean)) => {
+    const target = get(isNarrowViewportAtom)
+      ? sidebarLeftNarrowOpenAtom
+      : sidebarLeftPreferenceAtom;
+    set(target, typeof update === "function" ? update(get(target)) : update);
+  }
 );
 
 export const sidebarLeftViewSelectionAtom =
@@ -136,16 +178,6 @@ export const sidebarRightOpenAtom = atomWithStorage<boolean>(
   false,
   undefined,
   { getOnInit: false }
-);
-
-function getInitialDashboardViewportWidth() {
-  // Start from a deterministic SSR-safe width and measure after mount.
-  return 0;
-}
-
-/** Measured by the dashboard layout after mount. */
-export const dashboardViewportWidthAtom = atom(
-  getInitialDashboardViewportWidth()
 );
 
 /** Overlay visibility is transient; the docked preference is persisted separately. */
