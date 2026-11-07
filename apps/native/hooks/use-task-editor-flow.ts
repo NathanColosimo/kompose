@@ -12,7 +12,7 @@ import {
   taskRecurrenceEquals,
   taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
@@ -50,6 +50,13 @@ export function useTaskEditorFlow() {
     null
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
+  /**
+   * Cancelling the save scope dialog goes back to the editor, edits kept.
+   * A ref: the dialog's close callback is captured before the cancel.
+   */
+  const reopenEditorRef = useRef(false);
+  /** Mark done is saving the editor's edits; the editor stays open. */
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
   /** Mark done (or not done) waiting on the scope dialog with the edits. */
   const [pendingStatus, setPendingStatus] = useState<
     TaskDraft["status"] | null
@@ -168,6 +175,7 @@ export function useTaskEditorFlow() {
     });
     const hasChanges =
       hasCoreFieldChanges ||
+      JSON.stringify(task.links ?? []) !== JSON.stringify(nextDraft.links) ||
       !taskRecurrenceEquals(task.recurrence, nextDraft.recurrence) ||
       haveTaskTagIdsChanged(
         task.tags.map((tag) => tag.id),
@@ -257,6 +265,38 @@ export function useTaskEditorFlow() {
     close();
   }
 
+  /**
+   * Cancel in the save scope dialog: back to the editor with the edits (and
+   * the old done state), once the dialog has gone.
+   */
+  function cancelScopedSave() {
+    if (!(editingTask && pendingSaveDraft)) {
+      close();
+      return;
+    }
+    setDraft({ ...pendingSaveDraft, status: editingTask.status });
+    setPendingSaveDraft(null);
+    setPendingStatus(null);
+    reopenEditorRef.current = true;
+    setScopeDialog(null);
+  }
+
+  /** The save scope dialog's own close: a cancel keeps the editor going. */
+  function closeScopeDialog() {
+    if (reopenEditorRef.current) {
+      setScopeDialog(null);
+      return;
+    }
+    close();
+  }
+
+  function handleScopeDialogDismissed() {
+    if (reopenEditorRef.current) {
+      reopenEditorRef.current = false;
+      setIsEditorOpen(true);
+    }
+  }
+
   function confirmScopedSave() {
     if (!(editingTask && pendingSaveDraft)) {
       return;
@@ -306,21 +346,30 @@ export function useTaskEditorFlow() {
     }
     // The editor stays open until the edits have saved, so a failed save
     // keeps them.
+    setIsSavingStatus(true);
     commitWithStatus(draft, decision.scope, nextStatus).then((saved) => {
+      setIsSavingStatus(false);
       if (saved) {
         close();
+        return;
       }
+      // Still open with the edits; the checkbox goes back too.
+      updateDraft((current) => ({ ...current, status: editingTask.status }));
     });
   }
 
   return {
+    cancelScopedSave,
     close,
+    closeScopeDialog,
     confirmScopedDelete,
     confirmScopedSave,
     deleteScope,
     draft,
     editingTask,
+    handleScopeDialogDismissed,
     isEditorOpen,
+    isSavingStatus,
     openCreate,
     openEdit,
     requestDelete,

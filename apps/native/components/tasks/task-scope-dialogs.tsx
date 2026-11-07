@@ -18,9 +18,10 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
         confirmText="Apply"
         description="This is a recurring task. Choose how broadly to apply these updates."
         isVisible={flow.scopeDialog === "save"}
-        onCancel={flow.close}
-        onClose={flow.close}
+        onCancel={flow.cancelScopedSave}
+        onClose={flow.closeScopeDialog}
         onConfirm={flow.confirmScopedSave}
+        onDismissed={flow.handleScopeDialogDismissed}
         title="Apply task update"
       >
         <View className="mt-2">

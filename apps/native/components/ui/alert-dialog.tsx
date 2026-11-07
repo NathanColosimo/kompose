@@ -1,6 +1,7 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   Modal,
+  Platform,
   StyleSheet,
   TouchableWithoutFeedback,
   View,
@@ -33,6 +34,11 @@ export type AlertDialogProps = {
   cancelText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  /**
+   * After the dialog has fully gone. Present the next modal here: iOS
+   * can't present one while another is still dismissing.
+   */
+  onDismissed?: () => void;
   dismissible?: boolean;
   showCancelButton?: boolean;
   style?: ViewStyle;
@@ -48,6 +54,7 @@ export function AlertDialog({
   cancelText = "Cancel",
   onConfirm,
   onCancel,
+  onDismissed,
   dismissible = true,
   showCancelButton = true,
   style,
@@ -55,6 +62,14 @@ export function AlertDialog({
   const cardColor = useColor("card");
 
   const [modalVisible, setModalVisible] = React.useState(false);
+  // Android has no dismissal event: the modal is gone once it hides.
+  const wasModalVisible = useRef(false);
+  useEffect(() => {
+    if (wasModalVisible.current && !modalVisible && Platform.OS !== "ios") {
+      onDismissed?.();
+    }
+    wasModalVisible.current = modalVisible;
+  }, [modalVisible, onDismissed]);
   const backdropOpacity = useSharedValue(0);
   const cardOpacity = useSharedValue(0);
 
@@ -112,6 +127,8 @@ export function AlertDialog({
   return (
     <Modal
       animationType="none"
+      // iOS reports the end of dismissal; Android is handled above.
+      onDismiss={onDismissed}
       statusBarTranslucent
       transparent
       visible={modalVisible}

@@ -91,12 +91,6 @@ function formatParts(
 }
 
 /**
- * A compact time range in the locale's style, shared by web and mobile:
- * "10 AM – 12 PM" on the hour, "9:00 – 9:30 AM" within one half of the day,
- * times only for an overnight range ("11 PM – 7 AM"), and dates once the
- * range lasts a day or more ("Nov 6, 9 AM – Nov 8, 5 PM").
- */
-/**
  * Whether formatTimeRange prints dates: for a day or longer. Overnight
  * ranges shorter than a day ("11 PM – 7 AM") read fine as times on the grid.
  */
@@ -134,7 +128,12 @@ export function formatEventWhen(
   const startDay = start.toPlainDate();
   const endDay = end.subtract({ nanoseconds: 1 }).toPlainDate();
   if (Temporal.PlainDate.compare(endDay, startDay) <= 0) {
-    return `${startDay.toLocaleString(locale, WHEN_DAY)} · ${formatTimeRange(start, end, locale)}`;
+    const day = startDay.toLocaleString(locale, WHEN_DAY);
+    // Midnight to midnight is the whole day (formatTimeRange would add
+    // dates for a 24-hour range).
+    return rangeShowsDates(start, end)
+      ? `${day} · All day`
+      : `${day} · ${formatTimeRange(start, end, locale)}`;
   }
   const at = (time: Temporal.ZonedDateTime) =>
     `${time.toPlainDate().toLocaleString(locale, WHEN_DAY)}, ${formatClockTimeWithPeriod(time, locale)}`;
@@ -165,6 +164,12 @@ export function formatAllDayWhen(
     : `${firstText} · All day`;
 }
 
+/**
+ * A compact time range in the locale's style, shared by web and mobile:
+ * "10 AM – 12 PM" on the hour, "9:00 – 9:30 AM" within one half of the day,
+ * times only for an overnight range ("11 PM – 7 AM"), and dates once the
+ * range lasts a day or more ("Nov 6, 9 AM – Nov 8, 5 PM").
+ */
 export function formatTimeRange(
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime,

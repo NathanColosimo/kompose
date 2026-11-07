@@ -476,6 +476,7 @@ export default function TasksScreen() {
 
       <TaskEditorSheet
         draft={taskFlow.draft}
+        isSaving={taskFlow.isSavingStatus}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}

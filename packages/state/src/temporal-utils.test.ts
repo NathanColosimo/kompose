@@ -137,6 +137,9 @@ describe("formatEventWhen", () => {
     expect(
       formatEventWhen(at("2026-11-12T22:00"), at("2026-11-13T00:00"), "en-US")
     ).toBe("Thu, Nov 12 · 10 PM – 12 AM");
+    expect(
+      formatEventWhen(at("2026-11-12T00:00"), at("2026-11-13T00:00"), "en-US")
+    ).toBe("Thu, Nov 12 · All day");
   });
 
   test("names both days for one that ends on a later day", () => {

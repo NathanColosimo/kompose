@@ -779,9 +779,10 @@ export function EventEditPopover({
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
           align={align}
+          className="max-h-(--radix-popover-content-available-height) w-[420px] space-y-3 overflow-y-auto p-4"
           // Fits the space Radix measured, scrolling long notes rather than
           // running off screen.
-          className="max-h-(--radix-popover-content-available-height) w-[420px] space-y-3 overflow-y-auto p-4"
+          collisionPadding={8}
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             handleCancel();

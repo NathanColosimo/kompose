@@ -812,9 +812,15 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
     return yield* dbUpdate(userId, task.id, { ...input, isException: true });
   }
 
-  // If recurrence pattern is changing, regenerate future occurrences
+  // If recurrence pattern is changing, regenerate future occurrences. One
+  // transaction (drizzle's effect driver scopes it to this fiber, so the
+  // helpers' queries join it): the delete, the kept occurrence's update,
+  // the insert, and the move all apply, or none do.
   if (recurrenceChanged) {
-    return yield* regenerateOccurrences(userId, task, input);
+    const db = yield* Database;
+    return yield* db.transaction(() =>
+      regenerateOccurrences(userId, task, input)
+    );
   }
 
   // No recurrence change: update this and following with scaled date/time offsets.

@@ -65,6 +65,8 @@ export interface TaskDraft {
 
 interface TaskEditorSheetProps {
   draft: TaskDraft | null;
+  /** Mark done is saving the edits: Save and the checkbox wait. */
+  isSaving?: boolean;
   isVisible: boolean;
   mode: "create" | "edit";
   onClose: () => void;
@@ -457,7 +459,16 @@ function TaskTagPicker({
   );
 }
 
+/** A draft saves with a title or a link, and not while Mark done is saving. */
+function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
+  if (isSaving || !draft) {
+    return false;
+  }
+  return draft.title.trim().length > 0 || draft.links.length > 0;
+}
+
 export function TaskEditorSheet({
+  isSaving = false,
   isVisible,
   mode,
   draft,
@@ -473,9 +484,7 @@ export function TaskEditorSheet({
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft
-    ? draft.title.trim().length > 0 || draft.links.length > 0
-    : false;
+  const canSave = canSaveDraft(draft, isSaving);
 
   if (!draft) {
     return null;
@@ -497,7 +506,7 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone);
+  const canToggleDone = Boolean(mode === "edit" && onToggleDone) && !isSaving;
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));

@@ -2063,6 +2063,7 @@ export default function CalendarTab() {
       <TaskEditorSheet
         // Drop the content as soon as it closes rather than animating it out.
         draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
+        isSaving={taskFlow.isSavingStatus}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}

@@ -266,6 +266,7 @@ export function TaskEditPopover({
       <PopoverContent
         align={align}
         className="max-h-(--radix-popover-content-available-height) w-[360px] space-y-3 overflow-y-auto p-4"
+        collisionPadding={8}
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           handleCancel();
@@ -316,11 +317,27 @@ function useSyncedSchedule(
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
   isDone,
+  isSaving,
   onClick,
 }: {
   isDone: boolean;
+  /** Saving the editor's edits with it; the editor closes once saved. */
+  isSaving: boolean;
   onClick: () => void;
 }) {
+  if (isSaving) {
+    return (
+      <Button
+        className="gap-1.5"
+        disabled
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        Saving…
+      </Button>
+    );
+  }
   return (
     <Button
       className="gap-1.5"
@@ -362,6 +379,8 @@ export function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
+  /** Mark done is saving the edits; the editor stays open until it has. */
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -616,7 +635,9 @@ export function TaskEditForm({
       setShowTagScopeDialog(true);
       return;
     }
+    setIsSavingStatus(true);
     commitWithStatus(values, decision.scope, status).then((saved) => {
+      setIsSavingStatus(false);
       if (saved) {
         onClose();
       }
@@ -992,6 +1013,7 @@ export function TaskEditForm({
             {isCreateMode || !task ? null : (
               <TaskDoneButton
                 isDone={task.status === "done"}
+                isSaving={isSavingStatus}
                 onClick={handleToggleDone}
               />
             )}
@@ -999,7 +1021,12 @@ export function TaskEditForm({
               <Button onClick={onClose} size="sm" type="button" variant="ghost">
                 Cancel
               </Button>
-              <Button onClick={handleSaveClick} size="sm" type="button">
+              <Button
+                disabled={isSavingStatus}
+                onClick={handleSaveClick}
+                size="sm"
+                type="button"
+              >
                 Save
               </Button>
             </div>
