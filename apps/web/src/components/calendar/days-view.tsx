@@ -103,10 +103,6 @@ interface PositionedTaskSegment {
 type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
 
 /**
- * Clamp a positioned event to a single day's boundaries (midnight to midnight).
- * Returns null if the event doesn't overlap the given day.
- */
-/**
  * Start and end, in minutes from midnight, of an item's part on one day. An
  * end at midnight is the day's end (1440), as on a middle day of a
  * multi-day event, which runs midnight to midnight.
@@ -126,6 +122,10 @@ function dayPartMinutes(
   };
 }
 
+/**
+ * Clamp a positioned event to a single day's boundaries (midnight to midnight).
+ * Returns null if the event doesn't overlap the given day.
+ */
 function clampEventToDay(
   event: PositionedGoogleEvent,
   day: Temporal.PlainDate,

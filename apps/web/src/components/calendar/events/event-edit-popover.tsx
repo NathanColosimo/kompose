@@ -5,6 +5,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
@@ -27,6 +28,7 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
@@ -1393,6 +1395,138 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   };
 }
 
+/** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
+function describeEventWhen(
+  event: GoogleEvent | undefined,
+  start: Date,
+  end: Date,
+  timeZone: string
+): string {
+  const dayFormat: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+    weekday: "short",
+  };
+  if (event?.start?.date) {
+    const first = Temporal.PlainDate.from(event.start.date);
+    // Google's all-day end date is exclusive.
+    const last = event.end?.date
+      ? Temporal.PlainDate.from(event.end.date).subtract({ days: 1 })
+      : first;
+    const firstText = first.toLocaleString(undefined, dayFormat);
+    return Temporal.PlainDate.compare(last, first) > 0
+      ? `${firstText} – ${last.toLocaleString(undefined, dayFormat)}`
+      : `${firstText} · All day`;
+  }
+  const startZdt = Temporal.Instant.fromEpochMilliseconds(
+    start.getTime()
+  ).toZonedDateTimeISO(timeZone);
+  const endZdt = Temporal.Instant.fromEpochMilliseconds(
+    end.getTime()
+  ).toZonedDateTimeISO(timeZone);
+  const range = formatTimeRange(startZdt, endZdt);
+  // A range across days carries its own dates.
+  return startZdt.toPlainDate().equals(endZdt.toPlainDate())
+    ? `${startZdt.toPlainDate().toLocaleString(undefined, dayFormat)} · ${range}`
+    : range;
+}
+
+/**
+ * A locked, Gmail, or birthday event, shown as information rather than a
+ * disabled form: why it can't be edited, then what people open it for (the
+ * time, joining the call, the place on a map, the notes to copy).
+ */
+function ReadOnlyEventDetails({
+  calendarColor,
+  calendarLabel,
+  description,
+  end,
+  event,
+  location,
+  mapsUrl,
+  meetingLink,
+  onClose,
+  reason,
+  start,
+  summary,
+}: {
+  calendarColor: string | undefined;
+  calendarLabel: string | undefined;
+  description: string | undefined;
+  end: Date;
+  event: GoogleEvent | undefined;
+  location: string | undefined;
+  mapsUrl: string | null;
+  meetingLink: MeetingLink | null;
+  onClose?: () => void;
+  reason: string | null | undefined;
+  start: Date;
+  summary: string | undefined;
+}) {
+  const timeZone = useAtomValue(timezoneAtom);
+  const place = location?.trim();
+  const notes = description?.trim();
+  return (
+    <div className="space-y-3 text-sm">
+      {reason ? (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <p className="text-muted-foreground">{reason}</p>
+        </div>
+      ) : null}
+      <div className="space-y-1">
+        <p className="font-medium text-base">{summary || "(No title)"}</p>
+        <p className="text-muted-foreground">
+          {describeEventWhen(event, start, end, timeZone)}
+        </p>
+        {calendarLabel ? (
+          <p className="flex items-center gap-1.5 text-muted-foreground">
+            <span
+              aria-hidden
+              className="size-2 rounded-full"
+              style={{ backgroundColor: calendarColor ?? "currentColor" }}
+            />
+            {calendarLabel}
+          </p>
+        ) : null}
+      </div>
+      {meetingLink ? (
+        <Button asChild size="sm" type="button" variant="outline">
+          <a href={meetingLink.url} rel="noreferrer" target="_blank">
+            <Video className="size-3" />
+            Join {meetingLink.label}
+          </a>
+        </Button>
+      ) : null}
+      {place ? (
+        <p className="flex items-start gap-1.5">
+          <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          {mapsUrl ? (
+            <a
+              className="underline underline-offset-2"
+              href={mapsUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {place}
+            </a>
+          ) : (
+            place
+          )}
+        </p>
+      ) : null}
+      {notes ? <p className="whitespace-pre-wrap">{notes}</p> : null}
+      {onClose ? (
+        <div className="flex justify-end">
+          <Button onClick={onClose} size="sm" type="button" variant="ghost">
+            Close
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function EventFormActionRow({
   isCreateMode,
   readOnly = false,
@@ -1862,6 +1996,28 @@ export function EventEditForm({
         event?.recurringEventId ||
         masterQuery.data?.recurrence?.length
     );
+
+  if (readOnly) {
+    const source = calendars.find(
+      (c) => c.accountId === accountId && c.calendar.id === calendarId
+    );
+    return (
+      <ReadOnlyEventDetails
+        calendarColor={source?.calendar.backgroundColor ?? undefined}
+        calendarLabel={source?.calendar.summary}
+        description={watchedValues.description}
+        end={end}
+        event={event}
+        location={watchedValues.location}
+        mapsUrl={mapsUrl}
+        meetingLink={meetingLink}
+        onClose={onCancel}
+        reason={readOnlyReason}
+        start={start}
+        summary={watchedValues.summary}
+      />
+    );
+  }
 
   return (
     <div className="space-y-3">

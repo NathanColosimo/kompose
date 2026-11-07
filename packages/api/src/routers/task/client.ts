@@ -623,7 +623,8 @@ function buildRecurringTaskRows(
 /**
  * Insert rows for occurrences of a series built from an edited task. Each
  * field takes the edit's value, else the task's, and due dates keep the
- * series' start-to-due offset.
+ * series' start-to-due offset. New occurrences start open: a done task
+ * never makes its future copies done.
  */
 function buildOccurrenceRowsFromTask(params: {
   input: TaskUpdateInput;
@@ -651,7 +652,7 @@ function buildOccurrenceRowsFromTask(params: {
     seriesMasterId: params.seriesMasterId,
     startDate: date.toString(),
     startTime: input.startTime ?? task.startTime,
-    status: input.status ?? task.status,
+    status: "todo",
     title: input.title ?? task.title,
     userId: params.userId,
   }));
@@ -667,7 +668,12 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
   return Boolean(task.seriesMasterId && task.startDate);
 }
 
-/** Replace this and later non-exception occurrences with a new recurrence pattern. */
+/**
+ * Replace this and later non-exception occurrences with a new recurrence
+ * pattern. Exceptions (edited alone, or done) stay, and the new pattern
+ * leaves their dates out instead of doubling them. When the edited
+ * occurrence is one of them, it takes the edits itself, without the pattern.
+ */
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
   task: DatedSeriesTask,
@@ -679,13 +685,19 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     task.startDate
   );
 
+  const { recurrence, ...occurrenceFields } = input;
+  const updatedAnchor = task.isException
+    ? yield* dbUpdate(userId, task.id, {
+        ...occurrenceFields,
+        recurrence: null,
+      })
+    : [];
+
   // If recurrence is being removed, we're done
-  if (!input.recurrence) {
-    return [] as TaskSelect[];
+  if (!recurrence) {
+    return updatedAnchor;
   }
 
-  // Exceptions stay (edited alone, or marked done before the change), so
-  // the new pattern leaves their dates out instead of doubling them.
   const keptDates = new Set(
     (yield* dbSelectExceptionDatesBySeriesFrom(
       userId,
@@ -695,14 +707,15 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   );
   const seriesStartDate = Temporal.PlainDate.from(task.startDate);
   const occurrenceDates = generateOccurrences(
-    input.recurrence,
+    recurrence,
     seriesStartDate
   ).filter((date) => !keptDates.has(date.toString()));
   if (occurrenceDates.length === 0) {
-    return [] as TaskSelect[];
+    return updatedAnchor;
   }
 
-  // The first new occurrence is the new series master.
+  // The first new occurrence is the new series master. One on the edited
+  // occurrence's own date (it wasn't an exception) keeps its status.
   const seriesMasterId = uuidv7();
   const taskRows = buildOccurrenceRowsFromTask({
     input,
@@ -711,12 +724,14 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     seriesStartDate,
     task,
     userId,
-  }).map((row, index) =>
-    index === 0
-      ? { ...row, id: seriesMasterId, recurrence: input.recurrence }
-      : row
-  );
-  return yield* dbInsert(taskRows);
+  }).map((row, index) => ({
+    ...row,
+    ...(index === 0 ? { id: seriesMasterId, recurrence } : {}),
+    ...(row.startDate === task.startDate
+      ? { status: input.status ?? task.status }
+      : {}),
+  }));
+  return [...updatedAnchor, ...(yield* dbInsert(taskRows))];
 });
 
 /** Update a recurring series by scaling date/time offsets across occurrences. */

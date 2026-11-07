@@ -445,17 +445,17 @@ export function TaskEditForm({
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
 
   /**
-   * Saves the edits, plus `extra` fields; resolves once saved (also on
-   * failure, which the mutation reports).
+   * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
+   * failure is reported by the mutation.
    */
   const commitUpdate = useCallback(
     (
       values: TaskFormValues,
       scope: UpdateScope,
       extra: Partial<TaskUpdateDecoded> = {}
-    ): Promise<unknown> => {
+    ): Promise<boolean> => {
       if (!task) {
-        return Promise.resolve();
+        return Promise.resolve(false);
       }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
@@ -479,7 +479,10 @@ export function TaskEditForm({
             ...extra,
           },
         })
-        .catch(() => undefined);
+        .then(
+          () => true,
+          () => false
+        );
     },
     [task, updateTask]
   );
@@ -505,19 +508,21 @@ export function TaskEditForm({
       if (changesPattern && scope !== "this") {
         // A new pattern replaces this and later occurrences (new ids, and
         // maybe not this date). Mark this one done with its edits first:
-        // that makes it an exception, which the new pattern keeps. The
-        // new occurrences keep the old status, not done.
-        // (recurrence: undefined leaves the occurrence's own pattern alone.)
+        // that makes it an exception, which the new pattern keeps (and new
+        // occurrences start open). recurrence: undefined leaves this
+        // occurrence's own pattern to the second save.
         commitUpdate(values, "this", { recurrence: undefined, status }).then(
-          () => commitUpdate(values, scope, { status: task.status })
+          (saved) => saved && commitUpdate(values, scope)
         );
         return;
       }
       // Otherwise occurrences keep their ids, and the series shifts by how
       // this one moved, so the edits go first.
-      commitUpdate(values, scope).then(() =>
-        updateTask.mutate({ id: task.id, scope: "this", task: { status } })
-      );
+      commitUpdate(values, scope).then((saved) => {
+        if (saved) {
+          updateTask.mutate({ id: task.id, scope: "this", task: { status } });
+        }
+      });
     },
     [commitUpdate, resolvedRecurrence, task, updateTask]
   );

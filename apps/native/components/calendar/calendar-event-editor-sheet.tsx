@@ -1088,7 +1088,7 @@ export function EventEditorSheet({
         }
         isVisible
         onClose={onClose}
-        snapPoints={[0.6, 0.95]}
+        snapPoints={[0.42, 0.95]}
         title="Event"
       >
         <ReadOnlyEventView
