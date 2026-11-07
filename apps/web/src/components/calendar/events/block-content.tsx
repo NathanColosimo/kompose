@@ -134,7 +134,9 @@ export function BlockContent({
         <span
           className={cn(
             titleClass,
-            "hyphens-auto",
+            // Hyphenate where the browser can; otherwise break a word that
+            // can't fit rather than clip it.
+            "hyphens-auto [overflow-wrap:break-word]",
             isTall
               ? "@max-[5.5rem]:line-clamp-3 line-clamp-2"
               : "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal"

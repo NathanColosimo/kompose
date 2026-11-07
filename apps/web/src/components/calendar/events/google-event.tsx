@@ -238,6 +238,9 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       calendarId={calendarId}
       end={zonedDateTimeToDate(end)}
       event={event}
+      // Moving or resizing the event remounts its editor closed, so an open
+      // editor can't save the old times over the new ones.
+      key={`${shownStart.toString()}-${shownEnd.toString()}`}
       readOnly={!isEditable}
       readOnlyReason={editBlockedReason}
       start={zonedDateTimeToDate(start)}

@@ -133,7 +133,15 @@ export const TaskEvent = memo(function TaskEventInner({
   };
 
   return (
-    <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
+    <TaskEditPopover
+      align="start"
+      // Moving or resizing the task remounts its editor closed, so an open
+      // editor can't save the old times over the new ones.
+      key={`${task.startDate}-${task.startTime}-${task.durationMinutes}`}
+      side="right"
+      surface="calendar"
+      task={task}
+    >
       <div
         className={cn(
           "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
