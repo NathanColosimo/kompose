@@ -5,6 +5,7 @@ interface LegalShellProps {
   readonly children: ReactNode;
   readonly summary: string;
   readonly title: string;
+  /** ISO calendar date, YYYY-MM-DD. */
   readonly updatedAt: string;
 }
 
@@ -21,7 +22,9 @@ export function LegalShell({
         <article className="mx-auto max-w-3xl px-6 pt-10 pb-20 sm:pt-16">
           <header className="flex flex-col gap-3 border-b pb-8">
             <h1 className="font-serif text-4xl sm:text-5xl">{title}</h1>
-            <p className="max-w-2xl text-lg text-muted-foreground">{summary}</p>
+            <p className="max-w-2xl text-pretty text-lg text-muted-foreground">
+              {summary}
+            </p>
             <p className="text-muted-foreground text-sm">
               {/* An ISO date: read it as a calendar day, not UTC midnight. */}
               Last updated{" "}

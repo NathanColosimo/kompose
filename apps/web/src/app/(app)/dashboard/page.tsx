@@ -67,10 +67,11 @@ function DashboardCalendarToolbar() {
 
   return (
     <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
-      <Button onClick={goToToday} size="lg" variant="outline">
-        Today
-      </Button>
-      <div className="flex items-center">
+      {/* Keeps the date title beside the arrows that change it when the toolbar wraps. */}
+      <div className="flex min-w-0 items-center gap-1">
+        <Button onClick={goToToday} size="lg" variant="outline">
+          Today
+        </Button>
         <Button
           aria-label="Previous days"
           className="text-muted-foreground"
@@ -89,9 +90,8 @@ function DashboardCalendarToolbar() {
         >
           <ChevronRight />
         </Button>
+        <DatePopover />
       </div>
-
-      <DatePopover />
 
       <div className="ml-auto flex items-center">
         <GoogleAccountsDropdown
@@ -175,16 +175,18 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="gap-1.5 px-2 font-medium text-base"
+          className="min-w-0 gap-1.5 px-2 font-medium text-base"
           size="lg"
           variant="ghost"
         >
-          {monthYearFormat.formatRange(
-            selectedDate,
-            temporalToPickerDate(
-              currentDate.add({ days: visibleDaysCount - 1 })
-            )
-          )}
+          <span className="truncate">
+            {monthYearFormat.formatRange(
+              selectedDate,
+              temporalToPickerDate(
+                currentDate.add({ days: visibleDaysCount - 1 })
+              )
+            )}
+          </span>
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>

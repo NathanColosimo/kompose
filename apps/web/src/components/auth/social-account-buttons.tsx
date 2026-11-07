@@ -7,7 +7,6 @@ import {
   extractAuthErrorMessage,
   getElectronAuthQuery,
 } from "@/lib/auth-client";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
 type SocialProvider = "google" | "apple";
@@ -61,9 +60,20 @@ export function SocialAccountButtons() {
   };
 
   const providers = [
-    { id: "google", label: "Continue with Google", variant: "default" },
-    { id: "apple", label: "Continue with Apple", variant: "outline" },
+    {
+      id: "google",
+      label: "Continue with Google",
+      name: "Google",
+      variant: "default",
+    },
+    {
+      id: "apple",
+      label: "Continue with Apple",
+      name: "Apple",
+      variant: "outline",
+    },
   ] as const;
+  const lastUsed = providers.find(({ id }) => id === lastUsedMethod);
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -77,13 +87,13 @@ export function SocialAccountButtons() {
           variant={variant}
         >
           {activeProvider === id ? "Connecting…" : label}
-          {lastUsedMethod === id && activeProvider !== id ? (
-            <Badge className="ml-1 font-normal" variant="secondary">
-              Last used
-            </Badge>
-          ) : null}
         </Button>
       ))}
+      {lastUsed ? (
+        <p className="text-muted-foreground text-xs">
+          You last signed in with {lastUsed.name}.
+        </p>
+      ) : null}
     </div>
   );
 }

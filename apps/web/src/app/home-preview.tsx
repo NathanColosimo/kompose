@@ -15,9 +15,9 @@ interface Block {
 /** Start and end are hours after 9 AM. */
 const BLOCKS: Block[] = [
   { day: 0, end: 0.5, kind: "event-blue", start: 0, title: "Design sync" },
-  { day: 0, end: 2.5, kind: "task", start: 1, title: "Draft Q4 roadmap" },
-  { day: 0, end: 4, kind: "event-green", start: 3, title: "Lunch with Sam" },
-  { day: 1, end: 1, kind: "event-green", start: 0, title: "Sprint planning" },
+  { day: 0, end: 2.5, kind: "task", start: 1, title: "Q4 roadmap" },
+  { day: 0, end: 4, kind: "event-green", start: 3, title: "Lunch" },
+  { day: 1, end: 1, kind: "event-green", start: 0, title: "Planning" },
   { day: 1, end: 4.5, kind: "event-blue", start: 2.5, title: "Focus block" },
   { day: 2, end: 0.5, kind: "event-blue", start: 0, title: "Design sync" },
   { day: 2, end: 3, kind: "event-green", start: 2, title: "Customer call" },
@@ -73,6 +73,7 @@ export function HomePreview() {
                 className={cn(
                   "flex flex-1 items-center justify-center border-r last:border-r-0",
                   index === 0 ? "font-medium" : "text-muted-foreground",
+                  index === 1 ? "max-sm:border-r-0" : "",
                   index === 2 ? "hidden sm:flex" : ""
                 )}
                 key={label}
@@ -98,6 +99,7 @@ export function HomePreview() {
                 <div
                   className={cn(
                     "flex-1 border-r last:border-r-0",
+                    day === 1 ? "max-sm:border-r-0" : "",
                     day === 2 ? "hidden sm:block" : ""
                   )}
                   key={day}

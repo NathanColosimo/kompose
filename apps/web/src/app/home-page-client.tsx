@@ -66,7 +66,7 @@ function HomePageContent() {
             <h1 className="text-balance font-serif text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
               One timeline for your calendar and tasks.
             </h1>
-            <p className="max-w-lg text-lg text-muted-foreground">
+            <p className="max-w-lg text-pretty text-lg text-muted-foreground">
               Kompose puts your events and to-dos on the same calendar, so you
               can plan a week in minutes and adjust when plans change.
             </p>
