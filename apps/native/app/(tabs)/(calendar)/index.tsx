@@ -156,7 +156,17 @@ function calculateTimePosition(timeZone: string): number {
   return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }
 
-function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
+/**
+ * The now line runs under the blocks so it never strikes through a title;
+ * its dot is drawn on top at the column's edge.
+ */
+function CurrentTimeIndicator({
+  part,
+  timeZone,
+}: {
+  part: "dot" | "line";
+  timeZone: string;
+}) {
   const [topPosition, setTopPosition] = useState(() =>
     calculateTimePosition(timeZone)
   );
@@ -171,11 +181,18 @@ function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
 
   return (
     <View
-      className="pointer-events-none absolute right-0 left-0 z-20 flex-row items-center"
-      style={{ top: topPosition, transform: [{ translateY: -4 }] }}
+      className="pointer-events-none absolute right-0 left-0 flex-row items-center"
+      // Centered on the time: the dot is 8pt tall, the line 2pt.
+      style={{
+        top: topPosition,
+        transform: [{ translateY: part === "dot" ? -4 : -1 }],
+      }}
     >
-      <View className="size-2 rounded-full bg-red-500" />
-      <View className="h-0.5 flex-1 bg-red-500" />
+      {part === "dot" ? (
+        <View className="size-2 rounded-full bg-red-500" />
+      ) : (
+        <View className="h-0.5 flex-1 bg-red-500" />
+      )}
     </View>
   );
 }
@@ -1769,6 +1786,10 @@ export default function CalendarTab() {
                         />
                       ))}
 
+                      {isTodayColumn ? (
+                        <CurrentTimeIndicator part="line" timeZone={timeZone} />
+                      ) : null}
+
                       {/* Blocks stop short of the right edge, so a slot
                           is always free to tap for a new event. */}
                       <View
@@ -1935,9 +1956,8 @@ export default function CalendarTab() {
                         })}
                       </View>
 
-                      {/* Current time indicator (today only) */}
                       {isTodayColumn ? (
-                        <CurrentTimeIndicator timeZone={timeZone} />
+                        <CurrentTimeIndicator part="dot" timeZone={timeZone} />
                       ) : null}
                     </Pressable>
                   );

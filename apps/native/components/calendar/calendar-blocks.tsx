@@ -116,6 +116,11 @@ interface BlockTextProps {
    * its lines instead. There's no hover on a phone, so the title matters most.
    */
   narrow?: boolean;
+  /**
+   * Narrower than a short word: one line with an ellipsis, since iOS would
+   * otherwise wrap a word letter by letter.
+   */
+  sliver?: boolean;
   start: Temporal.ZonedDateTime;
   struck?: boolean;
   /** Fit the title on one 12pt line, for a thin strip left above a cover. */
@@ -141,8 +146,14 @@ const BLOCK_RING_PT = 1;
 /** Narrower than this, a block shows its title in place of the time. */
 const NARROW_BLOCK_PT = 72;
 
+/** Narrower than this, the title keeps to one line (see BlockText `sliver`). */
+const SLIVER_BLOCK_PT = 44;
+
 /** Title lines that fit: more for a narrow block, which drops its time line. */
-function titleLines(minutes: number, narrow: boolean): number {
+function titleLines(minutes: number, narrow: boolean, sliver: boolean): number {
+  if (sliver) {
+    return 1;
+  }
   if (narrow) {
     if (minutes >= DETAILS_MINUTES) {
       return 3;
@@ -158,6 +169,7 @@ function BlockText({
   end,
   minutes,
   narrow = false,
+  sliver = false,
   start,
   struck = false,
   tight = false,
@@ -189,7 +201,7 @@ function BlockText({
       >
         <Text
           className={`font-sans-medium text-[11px] ${tight ? "leading-[12px]" : "leading-[14px]"} ${isShort ? "max-w-full" : "shrink"} ${struck ? "text-muted-foreground line-through" : "text-foreground"}`}
-          numberOfLines={titleLines(minutes, narrow)}
+          numberOfLines={titleLines(minutes, narrow, sliver)}
         >
           {title}
         </Text>
@@ -330,6 +342,7 @@ export function EventBlock({
             end={end}
             minutes={textMinutes}
             narrow={placement.width < NARROW_BLOCK_PT}
+            sliver={placement.width < SLIVER_BLOCK_PT}
             start={start}
             tight={isTight(textMinutes, minutes)}
             title={title}
@@ -430,6 +443,7 @@ export function TaskBlock({
               end={end}
               minutes={textMinutes}
               narrow={narrow}
+              sliver={placement.width < SLIVER_BLOCK_PT}
               start={start}
               struck={done}
               tight={tight}

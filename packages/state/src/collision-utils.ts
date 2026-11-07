@@ -2,9 +2,15 @@
  * Horizontal layout for overlapping calendar items (web + native).
  *
  * Items are grouped in start order. An item joins the latest group when it
- * starts within 30 minutes of that group's first item and overlaps one of its
- * members; otherwise it starts a new group. Members of a group sit side by
- * side, splitting the group's width.
+ * overlaps one of its members and starts within 30 minutes of the group's
+ * first item; otherwise it starts a new group. Members of a group sit side
+ * by side, splitting the group's width.
+ *
+ * No item is covered before one line of it shows. When an item would start
+ * within 15 minutes of a member it overlaps, it sits beside that member: if
+ * the member joined its group late, the two (and anything after the member)
+ * move into a new group stacked on the earlier members, so those still show
+ * 15 minutes or more; otherwise the item joins the group.
  *
  * Each group is indented one level deeper than the deepest earlier group
  * still running when it starts, and runs to the right edge. So a long block
@@ -14,6 +20,12 @@
 
 /** Items starting closer together than this sit side by side. */
 const SIDE_BY_SIDE_THRESHOLD_MINUTES = 30;
+
+/**
+ * No item is stacked over before this much of it shows: one line of title
+ * (20px on web; 15pt on a phone, where a covered strip uses a 12pt line).
+ */
+const MIN_SHOWN_MINUTES = 15;
 
 export interface PositionedItem {
   /** End time in minutes from midnight */
@@ -59,28 +71,69 @@ function isRunningAt(item: PositionedItem, minutes: number): boolean {
   return item.startMinutes <= minutes && item.endMinutes > minutes;
 }
 
+/** Indent level for a group starting at `minutes`: one past the deepest running. */
+function depthAt(groups: Group[], minutes: number): number {
+  let depth = 0;
+  for (const group of groups) {
+    if (group.members.some((member) => isRunningAt(member, minutes))) {
+      depth = Math.max(depth, group.depth + 1);
+    }
+  }
+  return depth;
+}
+
+/** The first member `item` overlaps that started under 15 minutes before it. */
+function crowdedMember(
+  item: PositionedItem,
+  group: Group
+): PositionedItem | undefined {
+  return group.members.find(
+    (member) =>
+      itemsOverlap(member, item) &&
+      item.startMinutes - member.startMinutes < MIN_SHOWN_MINUTES
+  );
+}
+
 /** Split items into side-by-side groups and give each its indent level. */
 function groupItems(sorted: PositionedItem[]): Group[] {
   const groups: Group[] = [];
   for (const item of sorted) {
     const latest = groups.at(-1);
+    const crowded = latest && crowdedMember(item, latest);
     if (
       latest &&
-      item.startMinutes - latest.start < SIDE_BY_SIDE_THRESHOLD_MINUTES &&
-      latest.members.some((member) => itemsOverlap(member, item))
+      crowded &&
+      crowded.startMinutes - latest.start >= MIN_SHOWN_MINUTES
+    ) {
+      // Move the crowded member and everything after it into a new group
+      // with the item, stacked on the members that stay.
+      const moved = latest.members.filter(
+        (member) => member.startMinutes >= crowded.startMinutes
+      );
+      latest.members = latest.members.filter(
+        (member) => member.startMinutes < crowded.startMinutes
+      );
+      groups.push({
+        depth: depthAt(groups, crowded.startMinutes),
+        members: [...moved, item],
+        start: crowded.startMinutes,
+      });
+      continue;
+    }
+    if (
+      latest &&
+      (crowded ||
+        (item.startMinutes - latest.start < SIDE_BY_SIDE_THRESHOLD_MINUTES &&
+          latest.members.some((member) => itemsOverlap(member, item))))
     ) {
       latest.members.push(item);
       continue;
     }
-    let depth = 0;
-    for (const group of groups) {
-      if (
-        group.members.some((member) => isRunningAt(member, item.startMinutes))
-      ) {
-        depth = Math.max(depth, group.depth + 1);
-      }
-    }
-    groups.push({ depth, members: [item], start: item.startMinutes });
+    groups.push({
+      depth: depthAt(groups, item.startMinutes),
+      members: [item],
+      start: item.startMinutes,
+    });
   }
   return groups;
 }

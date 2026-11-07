@@ -78,6 +78,38 @@ describe("calculateCollisionLayout", () => {
     });
   });
 
+  test("never covers an item before a line of it shows", () => {
+    const layout = calculateCollisionLayout([
+      item("block", at(10), at(12)),
+      item("early", at(10, 25), at(11, 15)),
+      item("late", at(10, 30), at(11, 30)),
+    ]);
+    // Stacking "late" on its own would leave 5 minutes of "early" in view,
+    // so the two sit side by side, together stacked on "block".
+    expect(layout.get("block")).toMatchObject({
+      stackDepth: 0,
+      totalColumns: 1,
+      uncoveredMinutes: 25,
+    });
+    expect(layout.get("early")).toMatchObject({
+      stackDepth: 1,
+      totalColumns: 2,
+    });
+    expect(layout.get("late")).toMatchObject({
+      stackDepth: 1,
+      totalColumns: 2,
+    });
+  });
+
+  test("keeps items that start close to their group's start side by side", () => {
+    const layout = calculateCollisionLayout([
+      item("a", at(10), at(11)),
+      item("b", at(10, 5), at(11)),
+      item("c", at(10, 10), at(11)),
+    ]);
+    expect(layout.get("c")).toMatchObject({ stackDepth: 0, totalColumns: 3 });
+  });
+
   test("reports how much of an item shows above the group drawn on it", () => {
     const layout = calculateCollisionLayout([
       item("roadmap", at(10), at(11)),
