@@ -177,9 +177,7 @@ function renderTaskSections(
             )}
           >
             {label}
-            <span className="font-normal tabular-nums opacity-70">
-              {tasks.length}
-            </span>
+            <span className="font-normal tabular-nums">{tasks.length}</span>
           </h3>
           {tasks.map((task) => (
             <TaskItem hiddenTagId={hiddenTagId} key={task.id} task={task} />

@@ -1439,6 +1439,9 @@ export default function CalendarTab() {
 
                   return (
                     <Pressable
+                      // Not one accessibility element, so VoiceOver reaches
+                      // each block's own controls inside the column.
+                      accessible={false}
                       className="relative flex-1 border-border border-r"
                       key={dayKey}
                       onPress={(e) => {
