@@ -36,7 +36,7 @@ function clockTime(zdt: Temporal.ZonedDateTime): string {
 const meridiem = (zdt: Temporal.ZonedDateTime) => (zdt.hour < 12 ? "am" : "pm");
 
 /** "9 – 10:30am", or "11pm – 1am" when the halves of the day differ. */
-export function formatTimeRange(
+function formatTimeRange(
   start: Temporal.ZonedDateTime,
   end: Temporal.ZonedDateTime
 ): string {
@@ -142,7 +142,7 @@ function BlockText({
 }
 
 /** Surface colors for an event: a tint of its color, with the full color as a bar. */
-export function useEventSurface(color: string | undefined) {
+function useEventSurface(color: string | undefined) {
   const { isDarkColorScheme } = useColorScheme();
   const theme = isDarkColorScheme ? THEME.dark : THEME.light;
   const base = color ?? theme.foreground;
