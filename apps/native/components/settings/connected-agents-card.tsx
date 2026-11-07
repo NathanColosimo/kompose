@@ -59,7 +59,6 @@ export function ConnectedAgentsSection() {
           action={
             <RowAction
               accessibilityLabel={`Remove ${agent.name}`}
-              destructive
               disabled={revokeAgent.isPending}
               label={
                 revokeAgent.isPending &&

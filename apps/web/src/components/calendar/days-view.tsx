@@ -10,7 +10,10 @@ import {
   type GoogleEventWithSource,
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
-import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
+import {
+  whoopAccountIdAtom,
+  whoopSummariesByDayAtom,
+} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -405,15 +408,20 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     () => (firstDay ? timeZoneLabel(timeZone, firstDay) : ""),
     [timeZone, firstDay]
   );
-  const showWhoopRow = visibleDays.some((day) => {
-    const summary = whoopSummaries.get(day.toString());
-    return Boolean(
-      summary &&
-        (summary.recoveryScore !== null ||
-          summary.strainScore !== null ||
-          summary.sleep)
-    );
-  });
+  // While WHOOP is linked the row stays, so paging to days without data
+  // doesn't move the grid.
+  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
+  const showWhoopRow =
+    whoopAccountId !== null ||
+    visibleDays.some((day) => {
+      const summary = whoopSummaries.get(day.toString());
+      return Boolean(
+        summary &&
+          (summary.recoveryScore !== null ||
+            summary.strainScore !== null ||
+            summary.sleep)
+      );
+    });
 
   // Collect all sleep blocks across visible WHOOP summaries so each
   // day column can render bands for sleeps that cross midnight.

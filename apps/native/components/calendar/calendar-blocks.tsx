@@ -123,7 +123,12 @@ function BlockText({
   return (
     <View
       className="min-w-0 flex-1"
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      // Only short blocks need their width, to fit the start time.
+      onLayout={
+        minutes < TITLE_ONLY_MINUTES
+          ? (event) => setWidth(event.nativeEvent.layout.width)
+          : undefined
+      }
     >
       <View className="flex-row items-center gap-1">
         <Text

@@ -119,7 +119,6 @@ export default function SettingsScreen() {
                   action={
                     <RowAction
                       accessibilityLabel={`Unlink ${profile?.email ?? "Google account"}`}
-                      destructive
                       disabled={
                         isLinking ||
                         unlinkGoogleAccount.isPending ||

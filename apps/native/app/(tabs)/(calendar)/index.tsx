@@ -23,6 +23,7 @@ import {
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
 import {
   WHOOP_DAYS_QUERY_KEY,
+  whoopAccountIdAtom,
   whoopSummariesByDayAtom,
 } from "@kompose/state/atoms/whoop-data";
 import {
@@ -305,6 +306,19 @@ function workoutSegmentsForDay(
   return segments;
 }
 
+/**
+ * Whether day headers keep a WHOOP row. While WHOOP is linked the row stays,
+ * so paging to days without data doesn't move the grid.
+ */
+function useShowWhoopRow(days: Temporal.PlainDate[]): boolean {
+  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
+  const summaries = useAtomValue(whoopSummariesByDayAtom);
+  return (
+    whoopAccountId !== null ||
+    days.some((day) => hasWhoopStats(summaries.get(day.toString())))
+  );
+}
+
 function hasWhoopStats(summary: WhoopDaySummary | undefined): boolean {
   return Boolean(
     summary &&
@@ -505,9 +519,7 @@ export default function CalendarTab() {
   });
   const gutterMonths =
     firstMonth === lastMonth ? firstMonth : `${firstMonth} – ${lastMonth}`;
-  const showWhoopRow = visibleDays.some((day) =>
-    hasWhoopStats(whoopSummaries.get(day.toString()))
-  );
+  const showWhoopRow = useShowWhoopRow(visibleDays);
   // Each workout's part on every visible day it touches, so an overnight
   // workout shows on both days with its real times.
   const workoutsByDay = useMemo(

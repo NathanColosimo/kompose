@@ -45,14 +45,15 @@ export function formatDuration(minutes: number): string {
 const rangeFormats = new Map<string, Intl.DateTimeFormat>();
 
 function rangeFormat(
+  locale: string | undefined,
   timeZone: string,
   withMinutes: boolean,
   withDate: boolean
 ): Intl.DateTimeFormat {
-  const key = `${timeZone}|${withMinutes}|${withDate}`;
+  const key = `${locale}|${timeZone}|${withMinutes}|${withDate}`;
   let format = rangeFormats.get(key);
   if (!format) {
-    format = new Intl.DateTimeFormat(undefined, {
+    format = new Intl.DateTimeFormat(locale, {
       day: withDate ? "numeric" : undefined,
       hour: "numeric",
       minute: withMinutes ? "2-digit" : undefined,
@@ -71,9 +72,15 @@ function formatParts(
 ): { dayPeriod: string; text: string } {
   const parts = format.formatToParts(epochMilliseconds);
   const dayPeriod = parts.find((part) => part.type === "dayPeriod")?.value;
-  const kept = dropDayPeriod
-    ? parts.filter((part) => part.type !== "dayPeriod")
-    : parts;
+  // Only a trailing AM/PM ("9:00 AM") can be dropped from the start; where
+  // it leads ("오전 9:00") both ends keep it.
+  const periodLast =
+    parts.filter((part) => part.type !== "literal").at(-1)?.type ===
+    "dayPeriod";
+  const kept =
+    dropDayPeriod && periodLast
+      ? parts.filter((part) => part.type !== "dayPeriod")
+      : parts;
   return {
     dayPeriod: dayPeriod ?? "",
     text: kept
@@ -91,13 +98,21 @@ function formatParts(
  */
 export function formatTimeRange(
   start: Temporal.ZonedDateTime,
-  end: Temporal.ZonedDateTime
+  end: Temporal.ZonedDateTime,
+  /** Defaults to the runtime's locale. */
+  locale?: string
 ): string {
   const nights = start
     .toPlainDate()
     .until(end.toPlainDate(), { largestUnit: "days" }).days;
-  const withDate = nights > 1;
+  // Overnight ranges shorter than a day ("11 PM – 7 AM") read fine as
+  // times; anything a full day or longer needs its dates.
+  const withDate =
+    nights > 1 ||
+    (nights === 1 &&
+      Temporal.PlainTime.compare(end.toPlainTime(), start.toPlainTime()) >= 0);
   const format = rangeFormat(
+    locale,
     start.timeZoneId,
     !(start.minute === 0 && end.minute === 0),
     withDate
