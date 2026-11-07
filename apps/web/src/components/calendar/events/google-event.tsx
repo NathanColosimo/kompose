@@ -11,6 +11,7 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import type { ItemLayout } from "@kompose/state/collision-utils";
 import { extractMeetingLink } from "@kompose/state/meeting";
 import { useAtomValue } from "jotai";
 import { Lock, MapPin, Video } from "lucide-react";
@@ -27,7 +28,10 @@ import {
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../event-position";
+import {
+  blockHorizontalStyle,
+  calculateEventPosition,
+} from "../event-position";
 import { BlockContent, type BlockDetail, eventColor } from "./block-content";
 import { EventEditPopover } from "./event-edit-popover";
 
@@ -44,13 +48,11 @@ function eventDetails(event: GoogleEvent): BlockDetail[] {
 interface GoogleCalendarEventProps {
   accountId: string;
   calendarId: string;
-  columnIndex?: number;
-  columnSpan?: number;
   end: Temporal.ZonedDateTime;
   event: GoogleEvent;
+  /** Placement among overlapping items on its day. */
+  layout?: ItemLayout;
   start: Temporal.ZonedDateTime;
-  totalColumns?: number;
-  zIndex?: number;
 }
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
@@ -59,10 +61,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   end,
   accountId,
   calendarId,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
+  layout,
 }: GoogleCalendarEventProps) {
   const durationMinutes = Math.max(
     1,
@@ -139,18 +138,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     palette: normalizedPalette?.event,
   });
 
-  // columnSpan lets items expand into adjacent empty columns
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
   const style: React.CSSProperties = {
+    ...blockHorizontalStyle(layout),
     height,
-    left: `calc(${leftPercent}% + 2px)`,
     position: "absolute",
     top,
-    width: `calc(${columnWidth}% - 4px)`,
-    zIndex,
+    zIndex: layout?.zIndex ?? 1,
   };
 
   const eventColorStyle = eventColor(backgroundColor);
@@ -175,7 +168,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       )}
       ref={setNodeRef}
       style={style}
-      title={editBlockedReason ?? undefined}
+      // The full title on hover, for blocks too narrow to show it.
+      title={
+        editBlockedReason
+          ? `${event.summary || "(No title)"}: ${editBlockedReason}`
+          : event.summary || "(No title)"
+      }
       {...attributes}
       {...listeners}
     >

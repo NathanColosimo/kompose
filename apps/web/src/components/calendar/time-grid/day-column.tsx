@@ -60,7 +60,11 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <DayColumnDropTarget date={date} timeZone={timeZone} />
-      <div className="pointer-events-none absolute inset-0">{children}</div>
+      {/* Blocks stop short of the right edge, so a slot is always free to
+          start a new event even on a busy day. */}
+      <div className="pointer-events-none absolute inset-y-0 right-3 left-0">
+        {children}
+      </div>
       <CurrentTimeIndicator date={date} />
     </div>
   );

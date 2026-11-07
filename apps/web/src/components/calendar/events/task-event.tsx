@@ -3,6 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
@@ -12,7 +13,10 @@ import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../event-position";
+import {
+  blockHorizontalStyle,
+  calculateEventPosition,
+} from "../event-position";
 import { BlockContent, type BlockDetail } from "./block-content";
 
 /** The task's first tag, plus a count of the rest. */
@@ -35,19 +39,17 @@ type ScheduledTask = TaskSelectDecoded & {
 };
 
 interface TaskEventProps {
-  columnIndex?: number;
-  columnSpan?: number;
   /** Whether this segment contains the task's actual start time */
   isFirstSegment: boolean;
   /** Whether this segment contains the task's actual end time */
   isLastSegment: boolean;
+  /** Placement among overlapping items on its day. */
+  layout?: ItemLayout;
   /** Clipped end time for this visible day segment */
   segmentEnd: Temporal.ZonedDateTime;
   /** Clipped start time for this visible day segment */
   segmentStart: Temporal.ZonedDateTime;
   task: ScheduledTask;
-  totalColumns?: number;
-  zIndex?: number;
 }
 
 export const TaskEvent = memo(function TaskEventInner({
@@ -56,10 +58,7 @@ export const TaskEvent = memo(function TaskEventInner({
   segmentEnd,
   isFirstSegment,
   isLastSegment,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
+  layout,
 }: TaskEventProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
@@ -122,18 +121,12 @@ export const TaskEvent = memo(function TaskEventInner({
     plainTime: task.startTime,
     timeZone: segmentStart.timeZoneId,
   });
-  // columnSpan lets items expand into adjacent empty columns
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
   const style: React.CSSProperties = {
+    ...blockHorizontalStyle(layout),
     height,
-    left: `calc(${leftPercent}% + 2px)`,
     position: "absolute",
     top,
-    width: `calc(${columnWidth}% - 4px)`,
-    zIndex,
+    zIndex: layout?.zIndex ?? 1,
   };
 
   return (
@@ -148,6 +141,7 @@ export const TaskEvent = memo(function TaskEventInner({
         )}
         ref={setNodeRef}
         style={style}
+        title={task.title}
         {...attributes}
         {...listeners}
       >

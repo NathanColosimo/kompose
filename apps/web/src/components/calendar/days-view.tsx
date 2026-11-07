@@ -690,14 +690,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                             <GoogleCalendarEvent
                               accountId={accountId}
                               calendarId={calendarId}
-                              columnIndex={layout?.columnIndex}
-                              columnSpan={layout?.columnSpan}
                               end={end}
                               event={event}
                               key={`${accountId}-${calendarId}-${event.id}-${start.toString()}`}
+                              layout={layout}
                               start={start}
-                              totalColumns={layout?.totalColumns}
-                              zIndex={layout?.zIndex}
                             />
                           );
                         }
@@ -708,16 +705,13 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                     const layout = dayLayouts?.get(layoutKey);
                     return (
                       <TaskEvent
-                        columnIndex={layout?.columnIndex}
-                        columnSpan={layout?.columnSpan}
                         isFirstSegment={segment.isFirstSegment}
                         isLastSegment={segment.isLastSegment}
                         key={`${segment.task.id}-${segment.start.toString()}`}
+                        layout={layout}
                         segmentEnd={segment.end}
                         segmentStart={segment.start}
                         task={segment.task}
-                        totalColumns={layout?.totalColumns}
-                        zIndex={layout?.zIndex}
                       />
                     );
                   })}

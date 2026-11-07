@@ -60,6 +60,7 @@ import {
   RefreshControl,
   ScrollView,
   type ScrollViewInstance,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -106,6 +107,8 @@ const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
 const TIME_GUTTER_WIDTH_PX = 56;
+/** Free strip on the right of each day for tapping to create. */
+const CREATE_GUTTER_PT = 10;
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
@@ -440,11 +443,14 @@ function TimedGoogleEventBlock({
   onPress,
   ...position
 }: {
+  areaWidth: number;
   columnIndex?: number;
   columnSpan?: number;
   height: number;
   item: PositionedGoogleEvent;
+  onCreateAt?: (offsetY: number) => void;
   onPress: () => void;
+  stackDepth?: number;
   top: number;
   totalColumns?: number;
   zIndex?: number;
@@ -558,6 +564,12 @@ export default function CalendarTab() {
   const gutterMonths =
     firstMonth === lastMonth ? firstMonth : `${firstMonth}–${lastMonth}`;
   const showWhoopRow = useShowWhoopRow(visibleDays);
+  // Each day's block area, less the time gutter, borders, and create strip.
+  const { width: windowWidth } = useWindowDimensions();
+  const blockAreaWidth =
+    (windowWidth - TIME_GUTTER_WIDTH_PX) / Math.max(visibleDays.length, 1) -
+    1 -
+    CREATE_GUTTER_PT;
   // Each workout's part on every visible day it touches, so an overnight
   // workout shows on both days with its real times.
   const workoutsByDay = useMemo(
@@ -1540,131 +1552,171 @@ export default function CalendarTab() {
                         />
                       ))}
 
-                      {/* Google events */}
-                      {dayEvents.map((evt) => {
-                        const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
-                        const layout = dayLayouts?.get(eventId);
-                        const startMinutes = minutesFromMidnight(evt.start);
-                        const durationMinutes = Math.max(
-                          MINUTES_STEP,
-                          Math.round(
-                            evt.end.since(evt.start).total({ unit: "minutes" })
-                          )
-                        );
-                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = blockHeight(durationMinutes);
+                      {/* Blocks stop short of the right edge, so a slot
+                          is always free to tap for a new event. */}
+                      <View
+                        pointerEvents="box-none"
+                        style={{
+                          bottom: 0,
+                          left: 0,
+                          position: "absolute",
+                          right: CREATE_GUTTER_PT,
+                          top: 0,
+                        }}
+                      >
+                        {/* Google events */}
+                        {dayEvents.map((evt) => {
+                          const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
+                          const layout = dayLayouts?.get(eventId);
+                          const startMinutes = minutesFromMidnight(evt.start);
+                          const durationMinutes = Math.max(
+                            MINUTES_STEP,
+                            Math.round(
+                              evt.end
+                                .since(evt.start)
+                                .total({ unit: "minutes" })
+                            )
+                          );
+                          const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                          const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                          const adjustedHeight = blockHeight(durationMinutes);
 
-                        return (
-                          <TimedGoogleEventBlock
-                            columnIndex={layout?.columnIndex}
-                            columnSpan={layout?.columnSpan}
-                            height={adjustedHeight}
-                            item={evt}
-                            key={`${eventId}-${evt.start.toString()}`}
-                            onPress={() => openEditTimedEvent(evt)}
-                            top={adjustedTop}
-                            totalColumns={layout?.totalColumns}
-                            zIndex={layout?.zIndex}
-                          />
-                        );
-                      })}
+                          return (
+                            <TimedGoogleEventBlock
+                              areaWidth={blockAreaWidth}
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              height={adjustedHeight}
+                              item={evt}
+                              key={`${eventId}-${evt.start.toString()}`}
+                              onCreateAt={(offsetY) =>
+                                openCreateChooserAt(
+                                  day,
+                                  (offsetY / PIXELS_PER_HOUR) * 60
+                                )
+                              }
+                              onPress={() => openEditTimedEvent(evt)}
+                              stackDepth={layout?.stackDepth}
+                              top={adjustedTop}
+                              totalColumns={layout?.totalColumns}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
 
-                      {/* WHOOP workouts */}
-                      {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
-                        const layout = dayLayouts?.get(`whoop-${workout.id}`);
-                        const minutes = Math.round(
-                          workout.segmentEnd
-                            .since(workout.segmentStart)
-                            .total({ unit: "minutes" })
-                        );
-                        return (
-                          <EventBlock
-                            color={
-                              isDarkColorScheme
-                                ? WORKOUT_COLOR.dark
-                                : WORKOUT_COLOR.light
-                            }
-                            columnIndex={layout?.columnIndex}
-                            columnSpan={layout?.columnSpan}
-                            details={
-                              workout.strainScore === null
-                                ? []
-                                : [
-                                    {
-                                      icon: Activity,
-                                      label: `Strain ${workout.strainScore.toFixed(1)}`,
-                                      short: workout.strainScore.toFixed(1),
-                                    },
-                                  ]
-                            }
-                            end={workout.end}
-                            height={blockHeight(minutes)}
-                            key={workout.id}
-                            minutes={minutes}
-                            start={workout.start}
-                            title={workout.sportName || "Workout"}
-                            top={
-                              (minutesFromMidnight(workout.segmentStart) / 60) *
-                                PIXELS_PER_HOUR +
-                              EVENT_BLOCK_INSET_PX / 2
-                            }
-                            totalColumns={layout?.totalColumns}
-                            zIndex={layout?.zIndex}
-                          />
-                        );
-                      })}
+                        {/* WHOOP workouts */}
+                        {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
+                          const layout = dayLayouts?.get(`whoop-${workout.id}`);
+                          const minutes = Math.round(
+                            workout.segmentEnd
+                              .since(workout.segmentStart)
+                              .total({ unit: "minutes" })
+                          );
+                          return (
+                            <EventBlock
+                              areaWidth={blockAreaWidth}
+                              color={
+                                isDarkColorScheme
+                                  ? WORKOUT_COLOR.dark
+                                  : WORKOUT_COLOR.light
+                              }
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              details={
+                                workout.strainScore === null
+                                  ? []
+                                  : [
+                                      {
+                                        icon: Activity,
+                                        label: `Strain ${workout.strainScore.toFixed(1)}`,
+                                        short: workout.strainScore.toFixed(1),
+                                      },
+                                    ]
+                              }
+                              end={workout.end}
+                              height={blockHeight(minutes)}
+                              key={workout.id}
+                              minutes={minutes}
+                              onCreateAt={(offsetY) =>
+                                openCreateChooserAt(
+                                  day,
+                                  (offsetY / PIXELS_PER_HOUR) * 60
+                                )
+                              }
+                              stackDepth={layout?.stackDepth}
+                              start={workout.start}
+                              title={workout.sportName || "Workout"}
+                              top={
+                                (minutesFromMidnight(workout.segmentStart) /
+                                  60) *
+                                  PIXELS_PER_HOUR +
+                                EVENT_BLOCK_INSET_PX / 2
+                              }
+                              totalColumns={layout?.totalColumns}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
 
-                      {/* Scheduled tasks */}
-                      {dayTasks.map((task) => {
-                        if (!(task.startDate && task.startTime)) {
-                          return null;
-                        }
-                        const layout = dayLayouts?.get(task.id);
-                        const start = task.startDate.toZonedDateTime({
-                          plainTime: task.startTime,
-                          timeZone,
-                        });
-                        const startMinutes = minutesFromMidnight(start);
-                        const durationMinutes = Math.max(
-                          MINUTES_STEP,
-                          task.durationMinutes
-                        );
-                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = blockHeight(durationMinutes);
+                        {/* Scheduled tasks */}
+                        {dayTasks.map((task) => {
+                          if (!(task.startDate && task.startTime)) {
+                            return null;
+                          }
+                          const layout = dayLayouts?.get(task.id);
+                          const start = task.startDate.toZonedDateTime({
+                            plainTime: task.startTime,
+                            timeZone,
+                          });
+                          const startMinutes = minutesFromMidnight(start);
+                          const durationMinutes = Math.max(
+                            MINUTES_STEP,
+                            task.durationMinutes
+                          );
+                          const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                          const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                          const adjustedHeight = blockHeight(durationMinutes);
 
-                        const end = start.add({ minutes: durationMinutes });
+                          const end = start.add({ minutes: durationMinutes });
 
-                        return (
-                          <TaskBlock
-                            columnIndex={layout?.columnIndex}
-                            columnSpan={layout?.columnSpan}
-                            details={taskTagDetails(task)}
-                            done={task.status === "done"}
-                            end={end}
-                            height={adjustedHeight}
-                            key={task.id}
-                            minutes={durationMinutes}
-                            onPress={() => taskFlow.openEdit(task)}
-                            onToggleDone={() =>
-                              updateTask.mutate({
-                                id: task.id,
-                                scope: "this",
-                                task: {
-                                  status:
-                                    task.status === "done" ? "todo" : "done",
-                                },
-                              })
-                            }
-                            start={start}
-                            title={task.title}
-                            top={adjustedTop}
-                            totalColumns={layout?.totalColumns}
-                            zIndex={layout?.zIndex}
-                          />
-                        );
-                      })}
+                          return (
+                            <TaskBlock
+                              areaWidth={blockAreaWidth}
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              details={taskTagDetails(task)}
+                              done={task.status === "done"}
+                              end={end}
+                              height={adjustedHeight}
+                              key={task.id}
+                              minutes={durationMinutes}
+                              onCreateAt={(offsetY) =>
+                                openCreateChooserAt(
+                                  day,
+                                  (offsetY / PIXELS_PER_HOUR) * 60
+                                )
+                              }
+                              onPress={() => taskFlow.openEdit(task)}
+                              onToggleDone={() =>
+                                updateTask.mutate({
+                                  id: task.id,
+                                  scope: "this",
+                                  task: {
+                                    status:
+                                      task.status === "done" ? "todo" : "done",
+                                  },
+                                })
+                              }
+                              stackDepth={layout?.stackDepth}
+                              start={start}
+                              title={task.title}
+                              top={adjustedTop}
+                              totalColumns={layout?.totalColumns}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
+                      </View>
 
                       {/* Current time indicator (today only) */}
                       {isTodayColumn ? (

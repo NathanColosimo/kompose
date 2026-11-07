@@ -53,29 +53,50 @@ export function eventDetails(event: GoogleEvent): BlockDetail[] {
 }
 
 interface BlockPosition {
+  /** Width of the day's block area in points; see CREATE_GUTTER_PT. */
+  areaWidth: number;
   columnIndex?: number;
   columnSpan?: number;
   height: number;
+  /**
+   * Long press: create something at this point, given as points from the
+   * top of the day. A busy hour can be fully covered by blocks.
+   */
+  onCreateAt?: (offsetY: number) => void;
+  /** Indent level from the collision layout; see ItemLayout.stackDepth. */
+  stackDepth?: number;
   top: number;
   totalColumns?: number;
   zIndex?: number;
 }
 
+/** Points per indent level, so the items underneath keep an edge in view. */
+const STACK_INDENT_PT = 8;
+/** Deeper levels stop indenting, so a block never gets too narrow to read. */
+const MAX_STACK_INDENT_LEVELS = 3;
+
+/**
+ * Shared collision layout (packages/state/src/collision-utils.ts) in points:
+ * indent by the level, then split the rest into the group's columns.
+ */
 function positionStyle({
+  areaWidth,
   columnIndex = 0,
   columnSpan = 1,
   height,
+  stackDepth = 0,
   top,
   totalColumns = 1,
   zIndex = 1,
 }: BlockPosition) {
-  // Shared column-span layout: see packages/state/src/collision-utils.ts.
-  const single = 100 / totalColumns;
+  const indent =
+    Math.min(stackDepth, MAX_STACK_INDENT_LEVELS) * STACK_INDENT_PT;
+  const rest = Math.max(areaWidth - indent, 0);
   return {
     height,
-    left: `${columnIndex * single}%` as const,
+    left: indent + (rest * columnIndex) / totalColumns,
     top,
-    width: `${single * columnSpan}%` as const,
+    width: (rest * columnSpan) / totalColumns,
     zIndex,
   };
 }
@@ -222,6 +243,7 @@ export function EventBlock({
   details,
   end,
   minutes,
+  onCreateAt,
   onPress,
   start,
   title,
@@ -233,21 +255,27 @@ export function EventBlock({
       accessibilityLabel={describeBlock(title, start, end, details)}
       accessibilityRole={onPress ? "button" : undefined}
       className={`absolute p-px ${onPress ? "active:opacity-80" : ""}`}
+      onLongPress={(event) =>
+        onCreateAt?.(position.top + event.nativeEvent.locationY)
+      }
       onPress={(event) => {
         event.stopPropagation();
         onPress?.();
       }}
       style={positionStyle(position)}
     >
-      <Surface compact={minutes < COMPACT_MINUTES} surface={surface}>
-        <BlockText
-          details={details}
-          end={end}
-          minutes={minutes}
-          start={start}
-          title={title}
-        />
-      </Surface>
+      {/* The block itself takes the touch, so locationY is from its top. */}
+      <View className="h-full" pointerEvents="none">
+        <Surface compact={minutes < COMPACT_MINUTES} surface={surface}>
+          <BlockText
+            details={details}
+            end={end}
+            minutes={minutes}
+            start={start}
+            title={title}
+          />
+        </Surface>
+      </View>
     </Pressable>
   );
 }
@@ -264,6 +292,7 @@ export function TaskBlock({
   done,
   end,
   minutes,
+  onCreateAt,
   onPress,
   onToggleDone,
   start,
@@ -271,12 +300,15 @@ export function TaskBlock({
   ...position
 }: TaskBlockProps) {
   const compact = minutes < COMPACT_MINUTES;
+  const createAt = (offsetInBlock: number) =>
+    onCreateAt?.(position.top + offsetInBlock);
   // The checkbox and the editor are sibling controls, so VoiceOver reaches
   // both; the outer press area only catches taps on the card's padding.
   return (
     <Pressable
       accessible={false}
       className={`absolute p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
+      onLongPress={(event) => createAt(event.nativeEvent.locationY)}
       onPress={(event) => {
         event.stopPropagation();
         onPress();
@@ -309,19 +341,23 @@ export function TaskBlock({
           accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
           accessibilityRole="button"
           className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
+          // The text starts about 6pt below the block's top (gap, border, padding).
+          onLongPress={(event) => createAt(6 + event.nativeEvent.locationY)}
           onPress={(event) => {
             event.stopPropagation();
             onPress();
           }}
         >
-          <BlockText
-            details={details}
-            end={end}
-            minutes={minutes}
-            start={start}
-            struck={done}
-            title={title}
-          />
+          <View className="min-w-0 flex-1" pointerEvents="none">
+            <BlockText
+              details={details}
+              end={end}
+              minutes={minutes}
+              start={start}
+              struck={done}
+              title={title}
+            />
+          </View>
         </Pressable>
       </View>
     </Pressable>
