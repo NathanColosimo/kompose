@@ -22,6 +22,7 @@ import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-optio
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  saveThenSetStatus,
   taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
@@ -530,12 +531,17 @@ export function TaskEditForm({
       if (plan === "with-edits") {
         return commitUpdate(values, scope, { status });
       }
-      return commitUpdate(values, scope).then((saved) => {
-        if (saved) {
-          updateTask.mutate({ id: task.id, scope: "this", task: { status } });
-        }
-        return saved;
-      });
+      // Both writes count: the editor stays open until the status has
+      // saved too, and a failure of either keeps it open.
+      return saveThenSetStatus(
+        () => commitUpdate(values, scope),
+        () =>
+          updateTask.mutateAsync({
+            id: task.id,
+            scope: "this",
+            task: { status },
+          })
+      );
     },
     [commitUpdate, resolvedRecurrence, task, updateTask]
   );

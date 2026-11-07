@@ -400,3 +400,22 @@ export function taskStatusSavePlan(params: {
     ? "after-edits"
     : "with-edits";
 }
+
+/**
+ * The "after-edits" plan's two writes: the edits, then the status. True only
+ * when both saved; each mutation reports its own failure.
+ */
+export async function saveThenSetStatus(
+  saveEdits: () => Promise<boolean>,
+  setStatus: () => Promise<unknown>
+): Promise<boolean> {
+  if (!(await saveEdits())) {
+    return false;
+  }
+  try {
+    await setStatus();
+    return true;
+  } catch {
+    return false;
+  }
+}

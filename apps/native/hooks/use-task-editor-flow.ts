@@ -9,6 +9,7 @@ import {
   haveTaskCoreFieldsChanged,
   haveTaskTagIdsChanged,
   resolveTaskRecurrenceForEditor,
+  saveThenSetStatus,
   taskRecurrenceEquals,
   taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
@@ -50,8 +51,12 @@ export function useTaskEditorFlow() {
     null
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
-  /** The task the editor is on, for save callbacks that resolve later. */
-  const openTaskIdRef = useRef<string | null>(null);
+  /**
+   * The editor session: bumped on every open and close, so a save that
+   * resolves later only acts on the session it started in (not a closed
+   * editor, another task, or the same task reopened).
+   */
+  const sessionRef = useRef(0);
   /** Mark done is saving the editor's edits; the editor stays open. */
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   /** Mark done (or not done) waiting on the scope dialog with the edits. */
@@ -63,7 +68,7 @@ export function useTaskEditorFlow() {
   // Stable so callers can use it in effect dependencies.
   const openCreate = useCallback((nextDraft: TaskDraft) => {
     setEditingTask(null);
-    openTaskIdRef.current = null;
+    sessionRef.current += 1;
     setPendingSaveDraft(null);
     setScopeDialog(null);
     setDraft(nextDraft);
@@ -76,7 +81,7 @@ export function useTaskEditorFlow() {
       recurrence: resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []),
     };
     setEditingTask(nextEditingTask);
-    openTaskIdRef.current = nextEditingTask.id;
+    sessionRef.current += 1;
     setDraft(buildDraftFromTask(nextEditingTask));
     setIsEditorOpen(true);
   }
@@ -84,7 +89,8 @@ export function useTaskEditorFlow() {
   function close() {
     setIsEditorOpen(false);
     setEditingTask(null);
-    openTaskIdRef.current = null;
+    sessionRef.current += 1;
+    setIsSavingStatus(false);
     setPendingSaveDraft(null);
     setPendingStatus(null);
     setScopeDialog(null);
@@ -144,13 +150,13 @@ export function useTaskEditorFlow() {
     if (plan === "with-edits") {
       return commitUpdate(nextDraft, scope, status);
     }
+    // Both writes count: the editor stays open until the status has saved
+    // too, and a failure of either keeps it open.
     const { id } = editingTask;
-    return commitUpdate(nextDraft, scope).then((saved) => {
-      if (saved) {
-        updateTask.mutate({ id, scope: "this", task: { status } });
-      }
-      return saved;
-    });
+    return saveThenSetStatus(
+      () => commitUpdate(nextDraft, scope),
+      () => updateTask.mutateAsync({ id, scope: "this", task: { status } })
+    );
   }
 
   /** The scope decision for saving `nextDraft` over the task being edited. */
@@ -294,8 +300,12 @@ export function useTaskEditorFlow() {
     // done state).
     const savedDraft = pendingSaveDraft;
     const task = editingTask;
+    const session = sessionRef.current;
     setIsSavingStatus(true);
     commitWithStatus(savedDraft, saveScope, pendingStatus).then((saved) => {
+      if (sessionRef.current !== session) {
+        return;
+      }
       setIsSavingStatus(false);
       if (saved) {
         close();
@@ -346,12 +356,13 @@ export function useTaskEditorFlow() {
     // keeps them.
     setIsSavingStatus(true);
     const task = editingTask;
+    const session = sessionRef.current;
     commitWithStatus(draft, decision.scope, nextStatus).then((saved) => {
-      setIsSavingStatus(false);
       // The sheet may have been closed (or another task opened) meanwhile.
-      if (openTaskIdRef.current !== task.id) {
+      if (sessionRef.current !== session) {
         return;
       }
+      setIsSavingStatus(false);
       if (saved) {
         close();
         return;

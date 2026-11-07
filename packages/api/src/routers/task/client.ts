@@ -621,6 +621,19 @@ function buildRecurringTaskRows(
   });
 }
 
+/**
+ * Whether a "this" update writes the task: a field changes, or the tags of
+ * a series occurrence do (that makes it an exception, so a later pattern
+ * change keeps it and its tags).
+ */
+function editsThisTask(
+  task: TaskSelect,
+  hasDbUpdates: boolean,
+  tagIds: string[] | undefined
+): boolean {
+  return hasDbUpdates || (task.seriesMasterId !== null && tagIds !== undefined);
+}
+
 /** A series occurrence with a start date, which "following" edits need. */
 type DatedSeriesTask = TaskSelect & {
   seriesMasterId: string;
@@ -701,7 +714,10 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  return [...moved, ...inserted];
+  // The caller gives returned rows the edit's tags: return the edited
+  // occurrence and the new rows, not the other kept exceptions, which keep
+  // their own.
+  return [...moved.filter((row) => row.id === task.id), ...inserted];
 });
 
 /** Update a recurring series by scaling date/time offsets across occurrences. */
@@ -946,7 +962,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         );
       } else if (!task.seriesMasterId && dbInput.recurrence) {
         updatedTasks = yield* convertToRecurring(userId, task, dbInput);
-      } else if (hasDbUpdates) {
+      } else if (editsThisTask(task, hasDbUpdates, normalizedTagIds)) {
         // Edit this task alone, marked as an exception to its series.
         updatedTasks = yield* dbUpdate(userId, taskId, {
           ...dbInput,
