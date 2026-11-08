@@ -154,3 +154,16 @@ export function regeneratedOccurrenceRows(params: {
       : {}),
   }));
 }
+
+/**
+ * Whether a repeat ends before the task starts. It would have no
+ * occurrences, so replacing a series with it would only delete tasks.
+ */
+export function repeatEndsBeforeStart(
+  recurrence: TaskSelect["recurrence"] | undefined,
+  startDate: string | null | undefined
+): boolean {
+  return Boolean(
+    recurrence?.until && startDate && recurrence.until < startDate
+  );
+}

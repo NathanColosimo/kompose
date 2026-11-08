@@ -390,6 +390,38 @@ export function markStatusFailureMessage(
     : "Couldn't reopen the task. Your changes are still here.";
 }
 
+/** A repeat whose end comes before the task's start has no occurrences. */
+export const REPEAT_ENDS_BEFORE_START =
+  "The repeat ends before the task starts.";
+
+export function repeatEndsBeforeStart(
+  recurrence: TaskRecurrence | null | undefined,
+  startDate: Temporal.PlainDate | null | undefined
+): boolean {
+  return Boolean(
+    recurrence?.until && startDate && recurrence.until < startDate.toString()
+  );
+}
+
+/**
+ * What the editor says under Repeat: why it can't save ("ends before the
+ * task starts", blocking), else what a change to a recurring task's
+ * pattern will do (it applies from this occurrence on, with no scope
+ * question). Null when there's nothing to say.
+ */
+export function repeatNote(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+}): { blocking: boolean; text: string } | null {
+  if (repeatEndsBeforeStart(params.next, params.startDate)) {
+    return { blocking: true, text: REPEAT_ENDS_BEFORE_START };
+  }
+  const text = repeatChangeNote(params);
+  return text ? { blocking: false, text } : null;
+}
+
 /**
  * What a repeat change on a recurring task will do, shown before Save: it
  * applies from the edited occurrence on, with no scope question. Null when

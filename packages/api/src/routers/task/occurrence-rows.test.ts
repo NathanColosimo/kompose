@@ -5,6 +5,7 @@ import type { TaskSelect } from "@kompose/db/schema/task";
 import {
   keepsEditedOccurrence,
   regeneratedOccurrenceRows,
+  repeatEndsBeforeStart,
 } from "./occurrence-rows";
 
 // Nov 9, an occurrence of a Mondays series.
@@ -150,5 +151,18 @@ describe("regeneratedOccurrenceRows", () => {
         "2026-11-23",
       ])
     ).toEqual(["2026-11-24 todo R", "2026-12-01 todo", "2026-12-08 todo"]);
+  });
+});
+
+describe("repeatEndsBeforeStart", () => {
+  test("flags a repeat that ends before the task starts", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    expect(
+      repeatEndsBeforeStart({ ...daily, until: "2026-11-11" }, "2026-11-12")
+    ).toBe(true);
+    expect(
+      repeatEndsBeforeStart({ ...daily, until: "2026-11-12" }, "2026-11-12")
+    ).toBe(false);
+    expect(repeatEndsBeforeStart(daily, "2026-11-12")).toBe(false);
   });
 });

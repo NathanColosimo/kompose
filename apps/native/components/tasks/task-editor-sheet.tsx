@@ -17,7 +17,8 @@ import {
   getTaskRecurrenceDisplayText,
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
-  repeatChangeNote,
+  repeatEndsBeforeStart,
+  repeatNote,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceEditorState,
   type TaskRecurrenceFrequency,
@@ -149,6 +150,7 @@ function TaskRecurrenceEndSection({
   updateRecurrence,
 }: {
   recurrenceState: TaskRecurrenceEditorState;
+  /** The task's start (or today): the earliest the repeat can end. */
   fallbackUntil: Temporal.PlainDate;
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
@@ -204,6 +206,8 @@ function TaskRecurrenceEndSection({
                 ? formatPlainDateShort(recurrenceState.until)
                 : "Until date"
             }
+            // The repeat can't end before the task starts.
+            minimumDate={plainDateToDate(fallbackUntil)}
             mode="date"
             onChange={(date) =>
               updateRecurrence({
@@ -550,14 +554,29 @@ function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
   if (isSaving || !draft) {
     return false;
   }
+  // A repeat that ends before the start has no occurrences (the note says so).
+  if (repeatEndsBeforeStart(draft.recurrence, draft.startDate)) {
+    return false;
+  }
   return draft.title.trim().length > 0 || draft.links.length > 0;
 }
 
-/** What a repeat change will do; it saves with no scope question. */
-function RepeatChangeNote({ note }: { note: string | null }) {
-  return note ? (
-    <Text className="mb-2.5 text-muted-foreground text-xs">{note}</Text>
-  ) : null;
+/** What the repeat will do, or why it can't save (repeatNote). */
+function RepeatNote({
+  note,
+}: {
+  note: { blocking: boolean; text: string } | null;
+}) {
+  if (!note) {
+    return null;
+  }
+  return (
+    <Text
+      className={`mb-2.5 text-xs ${note.blocking ? "text-destructive" : "text-muted-foreground"}`}
+    >
+      {note.text}
+    </Text>
+  );
 }
 
 export function TaskEditorSheet({
@@ -833,11 +852,12 @@ export function TaskEditorSheet({
             updateRecurrence={updateRecurrence}
           />
         ) : null}
-        <RepeatChangeNote
-          note={repeatChangeNote({
+        <RepeatNote
+          note={repeatNote({
             isRecurring: savedRecurrence !== undefined,
             next: draft.recurrence,
             previous: savedRecurrence ?? null,
+            startDate: draft.startDate,
           })}
         />
 

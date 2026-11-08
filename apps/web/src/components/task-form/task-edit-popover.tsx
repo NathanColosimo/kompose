@@ -30,7 +30,8 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
-  repeatChangeNote,
+  repeatEndsBeforeStart,
+  repeatNote,
   resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
@@ -344,10 +345,13 @@ function useSyncedSchedule(
 function TaskEditorCloseActions({
   onCancel,
   onSave,
+  saveBlocked,
   saving,
 }: {
   onCancel: () => void;
   onSave: () => void;
+  /** The form can't be saved as is; the form says why. */
+  saveBlocked: boolean;
   saving: "done" | "save" | null;
 }) {
   return (
@@ -362,7 +366,7 @@ function TaskEditorCloseActions({
         Cancel
       </Button>
       <Button
-        disabled={saving !== null}
+        disabled={saving !== null || saveBlocked}
         onClick={onSave}
         size="sm"
         type="button"
@@ -378,9 +382,25 @@ function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
   return saving !== null || externalSaving;
 }
 
-/** What a repeat change will do; it saves with no scope question. */
-function RepeatChangeNote({ note }: { note: string | null }) {
-  return note ? <p className="text-muted-foreground text-xs">{note}</p> : null;
+/** What the repeat will do, or why it can't save (repeatNote). */
+function RepeatNote({
+  note,
+}: {
+  note: { blocking: boolean; text: string } | null;
+}) {
+  if (!note) {
+    return null;
+  }
+  return (
+    <p
+      className={cn(
+        "text-xs",
+        note.blocking ? "text-destructive" : "text-muted-foreground"
+      )}
+    >
+      {note.text}
+    </p>
+  );
 }
 
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
@@ -691,6 +711,10 @@ export function TaskEditForm({
    */
   const submit = useCallback(
     (values: TaskFormValues): boolean | Promise<boolean> => {
+      // The editor says why ("The repeat ends before the task starts.").
+      if (repeatEndsBeforeStart(values.recurrence, values.startDate)) {
+        return false;
+      }
       if (isCreateMode) {
         const payload = buildTaskCreatePayload(values);
         if (!payload) {
@@ -1055,11 +1079,12 @@ export function TaskEditForm({
             )}
           />
         </div>
-        <RepeatChangeNote
-          note={repeatChangeNote({
+        <RepeatNote
+          note={repeatNote({
             isRecurring,
             next: recurrence,
             previous: resolvedRecurrence,
+            startDate,
           })}
         />
 
@@ -1198,6 +1223,7 @@ export function TaskEditForm({
               <TaskEditorCloseActions
                 onCancel={onClose}
                 onSave={handleSaveClick}
+                saveBlocked={repeatEndsBeforeStart(recurrence, startDate)}
                 saving={saving}
               />
             </div>

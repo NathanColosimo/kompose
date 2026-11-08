@@ -21,6 +21,7 @@ import {
   keepsEditedOccurrence,
   parsePlainDate,
   regeneratedOccurrenceRows,
+  repeatEndsBeforeStart,
   type SystemManagedTaskField,
   type TaskInsertInput,
   type TaskInsertRow,
@@ -592,6 +593,8 @@ function buildSeriesOccurrenceUpdate(
   return update;
 }
 
+const REPEAT_ENDS_BEFORE_START = "The repeat ends before the task starts.";
+
 /** Build task rows for a recurring series */
 function buildRecurringTaskRows(
   userId: string,
@@ -1021,6 +1024,11 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           })
         );
       }
+      if (repeatEndsBeforeStart(taskInput.recurrence, taskInput.startDate)) {
+        return yield* Effect.fail(
+          new InvalidTaskError({ message: REPEAT_ENDS_BEFORE_START })
+        );
+      }
 
       const taskRows = buildRecurringTaskRows(
         userId,
@@ -1075,6 +1083,18 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         );
       }
       const recurrenceChanged = changesPattern && scope === "following";
+      // Checked before anything is deleted: a repeat with no occurrences
+      // would replace the series with nothing.
+      if (
+        repeatEndsBeforeStart(
+          dbInput.recurrence,
+          dbInput.startDate ?? task.startDate
+        )
+      ) {
+        return yield* Effect.fail(
+          new InvalidTaskError({ message: REPEAT_ENDS_BEFORE_START })
+        );
+      }
 
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.
