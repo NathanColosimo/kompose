@@ -27,6 +27,7 @@ import {
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  repeatChanged,
   repeatCountingDay,
   setPrimaryRecurrenceRule,
   timeInZone,
@@ -232,11 +233,13 @@ function RecurrenceRow({
 function repeatDayOf(
   values: Pick<
     EventDraft,
-    "allDay" | "recurrenceEdited" | "startDate" | "startTime"
+    "allDay" | "recurrence" | "recurrenceEdited" | "startDate" | "startTime"
   >,
   where: {
     appTimeZone: string;
     event: GoogleEvent | undefined;
+    /** The series' cached recurrence, for whether the repeat changed. */
+    seriesRecurrence: string[] | undefined;
     seriesStart:
       | { date?: string | null; dateTime?: string | null }
       | null
@@ -250,9 +253,19 @@ function repeatDayOf(
     where.appTimeZone,
     where.seriesTimeZone
   );
+  // Changed: differs from the series' (a change set back reads as the
+  // series' again), the same test as the save's recurrenceToSend.
+  const source = where.event?.recurrence?.length
+    ? where.event.recurrence
+    : (where.seriesRecurrence ?? []);
+  const changed = repeatChanged({
+    edited: Boolean(values.recurrenceEdited),
+    recurrence: values.recurrence,
+    source,
+  });
   return (
     repeatCountingDay({
-      edited: Boolean(values.recurrenceEdited),
+      changed,
       event: where.event,
       formDay,
       seriesStart: where.seriesStart,
@@ -713,6 +726,10 @@ function EventMeetingButton({
   isConferencePending: boolean;
   onAddMeeting: () => void;
 }) {
+  // The camera grows with the label at larger text sizes (capped).
+  const iconSize = Math.round(
+    14 * Math.min(useWindowDimensions().fontScale, 2)
+  );
   if (meetingLink) {
     return (
       <Button
@@ -724,7 +741,7 @@ function EventMeetingButton({
         size="sm"
         variant="outline"
       >
-        <Icon as={Video} className="text-foreground" size={14} />
+        <Icon as={Video} className="text-foreground" size={iconSize} />
         <Text>Join {meetingLink.label}</Text>
       </Button>
     );
@@ -740,7 +757,7 @@ function EventMeetingButton({
 
   return (
     <Button onPress={onAddMeeting} size="sm" variant="outline">
-      <Icon as={Video} className="text-foreground" size={14} />
+      <Icon as={Video} className="text-foreground" size={iconSize} />
       <Text>Add Meet</Text>
     </Button>
   );
@@ -1563,6 +1580,7 @@ export function EventEditorSheet({
   const repeatDay = repeatDayOf(values, {
     appTimeZone,
     event: sourceEvent,
+    seriesRecurrence: masterRecurrence,
     seriesStart: masterStart,
     seriesTimeZone,
   });

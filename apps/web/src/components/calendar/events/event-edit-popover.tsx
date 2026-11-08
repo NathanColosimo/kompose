@@ -31,9 +31,11 @@ import {
   followStart,
   getPrimaryRecurrenceRule,
   occurrenceDayMoved,
+  occurrenceOffSeriesDay,
   otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  repeatChanged,
   repeatCountingDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -200,7 +202,7 @@ interface EventFormValues {
 function saveChanges(
   pendingSave: Pick<
     PendingSave,
-    "calendarChanged" | "dateMoved" | "patternChanged"
+    "calendarChanged" | "dateMoved" | "offSeriesDay" | "patternChanged"
   > | null,
   series: Pick<
     EventSaveChanges,
@@ -210,6 +212,7 @@ function saveChanges(
   return {
     calendarChanged: Boolean(pendingSave?.calendarChanged),
     dateMoved: pendingSave?.dateMoved ?? false,
+    offSeriesDay: pendingSave?.offSeriesDay ?? false,
     patternChanged: pendingSave?.patternChanged ?? false,
     ...series,
   };
@@ -235,6 +238,8 @@ export type CloseSaveRequest =
       patternChanged: boolean;
       /** An occurrence moved to another day. */
       dateMoved: boolean;
+      /** It ends up off its series' day (`occurrenceOffSeriesDay`). */
+      offSeriesDay: boolean;
     }
   | {
       type: "create";
@@ -683,6 +688,7 @@ interface PendingSave {
   dateMoved: boolean;
   defaultScope: RecurrenceScope;
   hasDataEdits: boolean;
+  offSeriesDay: boolean;
   patternChanged: boolean;
   variables: UpdateGoogleEventInput;
 }
@@ -1028,6 +1034,7 @@ export function EventEditPopover({
           pendingSave: {
             calendarChanged: request.calendarChanged,
             dateMoved: request.dateMoved,
+            offSeriesDay: request.offSeriesDay,
             defaultScope: request.calendarChanged
               ? "all"
               : request.defaultScope,
@@ -1251,10 +1258,11 @@ function editedPattern(
   const sourceRecurrence = ctx.event?.recurrence?.length
     ? ctx.event.recurrence
     : (ctx.masterRecurrence ?? []);
-  const patternChanged =
-    ctx.recurrenceEdited &&
-    JSON.stringify(values.recurrence ?? []) !==
-      JSON.stringify(sourceRecurrence);
+  const patternChanged = repeatChanged({
+    edited: ctx.recurrenceEdited,
+    recurrence: values.recurrence,
+    source: sourceRecurrence,
+  });
   if (!ctx.event?.recurringEventId) {
     return { defaultScope: "all", patternChanged };
   }
@@ -1363,6 +1371,13 @@ function buildEditPayload(
         })
       : false,
     isRecurring,
+    offSeriesDay: ctx.event
+      ? occurrenceOffSeriesDay({
+          editedStart: variables.event.start,
+          occurrence: ctx.event,
+          timeZone: ctx.timeZone,
+        })
+      : false,
     patternChanged,
     type: "save",
     variables,
@@ -2827,7 +2842,7 @@ export function EventEditForm({
         reason={readOnlyReason}
         recurrence={recurrenceSource}
         repeatDay={repeatCountingDay({
-          edited: false,
+          changed: false,
           event,
           formDay: seriesDayOf(watchedValues),
           seriesStart: masterQuery.data?.start,
@@ -2914,7 +2929,11 @@ export function EventEditForm({
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
         seriesStart={repeatCountingDay({
-          edited: recurrenceEditedRef.current,
+          changed: repeatChanged({
+            edited: recurrenceEditedRef.current,
+            recurrence: watchedValues.recurrence,
+            source: recurrenceSource,
+          }),
           event,
           formDay: seriesDayOf(watchedValues),
           seriesStart: masterQuery.data?.start,

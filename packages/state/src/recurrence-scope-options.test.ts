@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   allowedEventSaveScope,
   chosenScope,
@@ -7,6 +7,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  SCOPE_DIALOG_COPY,
   seriesCutUnsure,
   seriesSplitBlock,
 } from "./recurrence-scope-options";
@@ -229,4 +230,28 @@ test("returns to the preferred scope once it's available", () => {
   expect(chosenScope("all", "following", loaded)).toBe("all");
   // A pick that turns off falls back to the nearest available.
   expect(chosenScope("following", "following", loading)).toBe("all");
+});
+
+describe("a new repeat on an occurrence off its series' day", () => {
+  const changes = {
+    calendarChanged: false,
+    dateMoved: false,
+    offSeriesDay: true,
+    patternChanged: true,
+    seriesRuleLoaded: true,
+  };
+
+  test("All events is off: the series would keep its own day", () => {
+    expect(eventSaveDisabledScopes(changes)).toEqual({ all: true, this: true });
+  });
+
+  test("the dialog says why", () => {
+    expect(eventSaveDescription(changes)).toBe(SCOPE_DIALOG_COPY.repeatOffDay);
+  });
+
+  test("off its day but the repeat unchanged: All events stays", () => {
+    expect(
+      eventSaveDisabledScopes({ ...changes, patternChanged: false })
+    ).toEqual({});
+  });
 });

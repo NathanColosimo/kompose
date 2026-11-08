@@ -37,6 +37,9 @@ export const SCOPE_DIALOG_COPY = {
   },
   /** Shown instead of the description when an occurrence's day moves. */
   moveDate: "A new day applies to this occurrence, or from it on.",
+  /** A new repeat on an occurrence moved off its series' day. */
+  repeatOffDay:
+    "This occurrence is on another day than its series, so a new repeat starts from it.",
   /** Shown when the series' rule couldn't load. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
@@ -88,6 +91,12 @@ export interface EventSaveChanges {
   calendarChanged: boolean;
   /** It moves an occurrence to another day. */
   dateMoved: boolean;
+  /**
+   * The occurrence ends up on another day than its series puts it (moved
+   * now or rescheduled before): a new repeat can't apply to the whole
+   * series (`occurrenceOffSeriesDay`).
+   */
+  offSeriesDay?: boolean;
   /** The user changed the repeat. */
   patternChanged: boolean;
   /** Loading the series' rule failed. */
@@ -210,11 +219,22 @@ export function eventSaveDisabledScopes(
     changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved);
   return {
     ...(changes.patternChanged ? { this: true } : {}),
-    ...(changes.dateMoved ? { all: true } : {}),
+    ...(allEventsOff(changes) ? { all: true } : {}),
     // Until the series loads, it isn't known whether a new series can
     // start here (or where the rule follows a new day to).
     ...(ruleKnown && !changes.splitBlocked ? {} : { following: true }),
   };
+}
+
+/**
+ * Whether "All events" is off: a day moved through one occurrence, or a new
+ * repeat on an occurrence that's off its series' day (the series keeps its
+ * own first day, so the repeat's days would differ from the editor's).
+ */
+function allEventsOff(changes: EventSaveChanges): boolean {
+  return (
+    changes.dateMoved || Boolean(changes.patternChanged && changes.offSeriesDay)
+  );
 }
 
 /** `preferred`, or the narrowest scope the save can use when it can't. */
@@ -254,7 +274,7 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
   }
   if (changes.splitBlocked) {
     const why = SCOPE_DIALOG_COPY.splitBlocked[changes.splitBlocked];
-    if (changes.dateMoved && changes.patternChanged) {
+    if (allEventsOff(changes) && changes.patternChanged) {
       return SCOPE_DIALOG_COPY.splitBlockedAll;
     }
     return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
@@ -270,7 +290,9 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
     return SCOPE_DIALOG_COPY.seriesLoading;
   }
   if (!changes.dateMoved) {
-    return SCOPE_DIALOG_COPY.saveEvent.description;
+    return allEventsOff(changes)
+      ? SCOPE_DIALOG_COPY.repeatOffDay
+      : SCOPE_DIALOG_COPY.saveEvent.description;
   }
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)

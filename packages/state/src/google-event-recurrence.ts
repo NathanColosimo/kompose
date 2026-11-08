@@ -546,8 +546,11 @@ function sameStart(
  * start a new series there).
  */
 export function repeatCountingDay(params: {
-  /** The user changed the repeat in this editor. */
-  edited: boolean;
+  /**
+   * The repeat now differs from the series' (what a save would send), not
+   * merely touched: a change set back reads as the series' again.
+   */
+  changed: boolean;
   event:
     | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
     | null
@@ -558,8 +561,8 @@ export function repeatCountingDay(params: {
   seriesStart?: { date?: string | null; dateTime?: string | null } | null;
   timeZone: string;
 }): Temporal.PlainDate | null {
-  const { edited, event, timeZone } = params;
-  if (edited || !event?.recurringEventId) {
+  const { changed, event, timeZone } = params;
+  if (changed || !event?.recurringEventId) {
     return params.formDay;
   }
   const first = params.seriesStart
@@ -569,6 +572,33 @@ export function repeatCountingDay(params: {
     ? dayOfStart(event.originalStartTime, timeZone)
     : null;
   return first ?? placed ?? params.formDay;
+}
+
+/**
+ * Whether an occurrence's edited start is on another day than its series
+ * puts it (moved now, or rescheduled before), in the series' zone. A new
+ * repeat there can't apply to the whole series: the series keeps its own
+ * first day, so its implicit days would stay the series' while the editor
+ * shows them from this day.
+ */
+export function occurrenceOffSeriesDay(params: {
+  editedStart: { date?: string | null; dateTime?: string | null };
+  occurrence: Pick<
+    GoogleEvent,
+    "originalStartTime" | "recurringEventId" | "start"
+  >;
+  timeZone: string;
+}): boolean {
+  const { occurrence } = params;
+  if (!(occurrence.recurringEventId && occurrence.originalStartTime)) {
+    return false;
+  }
+  const timeZone = eventTimeZone(occurrence, params.timeZone);
+  const placed = dayOfStart(occurrence.originalStartTime, timeZone);
+  const day = dayOfStart(params.editedStart, timeZone);
+  return Boolean(
+    placed && day && Temporal.PlainDate.compare(placed, day) !== 0
+  );
 }
 
 /** Whether a save moves an occurrence to another day (not just its time). */
@@ -803,4 +833,22 @@ export function occurrenceRepeatShown(params: {
       ? params.recurrence
       : (params.seriesRecurrence ?? []);
   return { loading: true, rules };
+}
+
+/**
+ * Whether an editor's repeat now differs from the series' (what a save
+ * sends): the user touched it and it isn't the series' own list, so a
+ * change set back reads as unchanged.
+ */
+export function repeatChanged(params: {
+  /** The user touched the repeat in this editor. */
+  edited: boolean;
+  recurrence: string[] | undefined;
+  /** The series' recurrence (the event's own, or its master's). */
+  source: string[];
+}): boolean {
+  return (
+    params.edited &&
+    JSON.stringify(params.recurrence ?? []) !== JSON.stringify(params.source)
+  );
 }

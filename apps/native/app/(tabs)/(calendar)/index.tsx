@@ -47,6 +47,7 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
   occurrenceDayMoved,
+  occurrenceOffSeriesDay,
   otherTimeZone,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -1636,6 +1637,11 @@ export default function CalendarTab() {
       calendarChanged:
         draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
       dateMoved: occurrenceDayMoved({
+        editedStart: buildEventPayload(draft).start,
+        occurrence: draft.sourceEvent,
+        timeZone,
+      }),
+      offSeriesDay: occurrenceOffSeriesDay({
         editedStart: buildEventPayload(draft).start,
         occurrence: draft.sourceEvent,
         timeZone,
