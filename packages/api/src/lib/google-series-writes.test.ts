@@ -1026,3 +1026,99 @@ describe("edges a series write has to tell apart", () => {
     expect(google.writes()).toHaveLength(2);
   });
 });
+
+describe("series shapes a write has to keep as they are", () => {
+  test("a rename leaves a rule at its own hour, not the start's", async () => {
+    // Starts Mon Nov 9 9:00, then meets Mondays at 10:00 (BYHOUR=10, as an
+    // imported calendar may write it); Nov 23 was moved on its own.
+    const series = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10"],
+    };
+    const google = fakeGoogle(series, [
+      occurrenceOf(series, "2026-11-23T10:00:00-05:00", {
+        end: "2026-11-23T11:30:00-05:00",
+        start: "2026-11-23T11:00:00-05:00",
+      }),
+    ]);
+    const opened = occurrenceOf(series, "2026-11-16T10:00:00-05:00");
+    expect(
+      Exit.isSuccess(await run(edit("all", opened, { summary: "Check-in" })))
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10"],
+      start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+      summary: "Check-in",
+    });
+  });
+
+  test("This and following from the first meeting is refused with meetings added before it", async () => {
+    const series = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261101T090000,20261105T090000",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(series, "2026-11-09T09:00:00-05:00"), {
+          summary: "Planning (new)",
+        })
+      )
+    ).toMatchObject({ data: { reason: "addedBeforeStart" } });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("Repeat: None from a moved occurrence keeps it as one event, as it was", async () => {
+    // Nov 16 was moved to Tue Nov 17 11:00; from it, the repeat is ended.
+    const opened = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-17T11:30:00-05:00",
+      start: "2026-11-17T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [opened]);
+    expect(
+      Exit.isSuccess(await run(edit("following", opened, { recurrence: [] })))
+    ).toBe(true);
+    const [created, cut] = google.writes();
+    expect(created?.body).toMatchObject({
+      recurrence: [],
+      start: { dateTime: "2026-11-17T11:00:00-05:00", timeZone: zone },
+    });
+    // One event: no occurrences to look up or write.
+    expect(
+      google.requests.some((request) =>
+        request.url.pathname.endsWith("/instances")
+      )
+    ).toBe(false);
+    expect(cut?.url.pathname).toEndWith("/events/series");
+    expect(google.writes()).toHaveLength(2);
+  });
+
+  test("a carried occurrence that dropped the series' meeting link keeps it dropped", async () => {
+    const meet = {
+      conferenceId: "abc-defg-hij",
+      conferenceSolution: { key: { type: "hangoutsMeet" } },
+    };
+    const series = { ...weekly, conferenceData: meet };
+    const { conferenceData: _meet, ...withoutLink } = occurrenceOf(
+      series,
+      "2026-11-30T09:00:00-05:00"
+    );
+    const google = fakeGoogle(series, [withoutLink]);
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    // Only Nov 30 is carried: the opened Nov 16 has the series' link,
+    // whatever order its fields come in.
+    const [, carried] = google.writes();
+    expect(google.writes()).toHaveLength(3);
+    expect(carried?.url.pathname).toEndWith("_20261130T140000Z");
+    expect(carried?.url.searchParams.get("conferenceDataVersion")).toBe("1");
+    expect(carried?.body).not.toHaveProperty("conferenceData");
+  });
+});

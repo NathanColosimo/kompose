@@ -18,6 +18,7 @@ export type SeriesRefusal =
   | { readonly reason: "severalRules" }
   | { readonly reason: "addedOccurrence" }
   | { readonly reason: "deleteFromAddedOccurrence" }
+  | { readonly reason: "addedBeforeStart" }
   | { readonly reason: "endsBeforeStart" }
   | { readonly reason: "countUnknown" }
   | { readonly reason: "severalTimesADay" }
@@ -41,6 +42,8 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This and following isn't available for a series with more than one rule.";
     case "addedOccurrence":
       return "This and following isn't available for an occurrence added to the series on its own.";
+    case "addedBeforeStart":
+      return "This and following isn't available from this series' first meeting, since meetings were added before it. Use Entire series, or change them one at a time.";
     case "deleteFromAddedOccurrence":
       return "Deleting this and following isn't available from an occurrence added to this series.";
     case "endsBeforeStart":
@@ -103,8 +106,19 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
   );
 }
 
+/** JSON with each object's keys sorted, so key order never differs. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : 1))
+        )
+      : inner
+  );
+}
+
 const same = (field: keyof CreateEvent, a: unknown, b: unknown) =>
-  JSON.stringify(comparable(field, a)) === JSON.stringify(comparable(field, b));
+  canonical(comparable(field, a)) === canonical(comparable(field, b));
 
 /**
  * The fields the user changed in a save made from `from`, the occurrence

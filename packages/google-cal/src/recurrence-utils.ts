@@ -258,6 +258,25 @@ export function addsSlot(
   );
 }
 
+/**
+ * Whether a series starting at `start` has added (RDATE) meetings before
+ * that start.
+ */
+export function addsBeforeStart(
+  recurrence: string[],
+  start: { date?: string | null; dateTime?: string | null },
+  seriesZone: string
+): boolean {
+  const first = asValue(start.dateTime ?? start.date ?? "", seriesZone);
+  if (!first) {
+    return false;
+  }
+  const from = momentOf(first, seriesZone);
+  return addedValues(recurrence, seriesZone).some(
+    (added) => Temporal.Instant.compare(momentOf(added, seriesZone), from) < 0
+  );
+}
+
 /** A series' added (RDATE) values. */
 function addedValues(
   recurrence: string[],
@@ -325,9 +344,6 @@ function ruleHasSlot(
   slot: RecurrenceValue,
   seriesZone: string
 ): boolean | null {
-  if (Boolean(first.instant) !== Boolean(slot.instant)) {
-    return false;
-  }
   const clock = (value: RecurrenceValue) =>
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const firstClock = clock(first);

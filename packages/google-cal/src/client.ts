@@ -3,6 +3,7 @@ import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
+  addsBeforeStart,
   addsSlot,
   carryCount,
   carryCountExactly,
@@ -709,6 +710,7 @@ const SeriesRefusalSchema = Schema.Union([
       "severalRules",
       "addedOccurrence",
       "deleteFromAddedOccurrence",
+      "addedBeforeStart",
       "endsBeforeStart",
       "countUnknown",
       "severalTimesADay",
@@ -1270,7 +1272,12 @@ export function makeGoogleCalendarService(
         recurringEventId: occurrence.recurringEventId,
         ...carried.changes,
       };
-      const conferenceDataVersion = getConferenceDataVersion(payload);
+      // Google changes or removes a meeting link only at version 1; one
+      // the occurrence dropped on its own is a change too.
+      const conferenceDataVersion =
+        "conferenceData" in carried.changes
+          ? 1
+          : getConferenceDataVersion(payload);
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(occurrence.id, {
@@ -1328,12 +1335,24 @@ export function makeGoogleCalendarService(
         catch: (cause) => new GoogleApiError({ cause }),
       }).pipe(Effect.ignore);
 
-      const conferenceDataVersion = getConferenceDataVersion(newSeries);
+      // A new part that doesn't repeat ("Repeat: None") is one event with
+      // no occurrences: the one carried (at its start) goes on it.
+      const repeats = (newSeries.recurrence ?? []).some(
+        (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
+      );
+      const written = repeats
+        ? newSeries
+        : Object.assign(
+            {},
+            newSeries,
+            ...params.carried.map((carried) => carried.changes)
+          );
+      const conferenceDataVersion = getConferenceDataVersion(written);
       const created = yield* Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
           try: () =>
             client.calendars.events.create(destinationCalendarId, {
-              ...newSeries,
+              ...written,
               id: seriesId,
               ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
             }),
@@ -1341,14 +1360,14 @@ export function makeGoogleCalendarService(
             logGoogleEventUpdateFailure({
               operation: "create",
               calendarId: destinationCalendarId,
-              event: newSeries,
+              event: written,
               cause,
             });
             return new GoogleApiError({ cause });
           },
         });
         const series = yield* parseEventResponse(response);
-        for (const carried of params.carried) {
+        for (const carried of repeats ? params.carried : []) {
           yield* putBack(destinationCalendarId, seriesId, carried);
         }
         return series;
@@ -1504,6 +1523,21 @@ export function makeGoogleCalendarService(
       return yield* parseEventResponse(response);
     });
 
+  /**
+   * "This and following" from a series' first meeting is "Entire series",
+   * from its (possibly moved) date, unless meetings were added before it:
+   * those aren't "following", so it's refused.
+   */
+  const updateFromFirstMeeting = (
+    calendarId: string,
+    edited: CreateEvent,
+    currentEvent: Event,
+    master: Event
+  ) =>
+    addsBeforeStart(master.recurrence ?? [], master.start, seriesZoneOf(master))
+      ? Effect.fail(refused({ reason: "addedBeforeStart" }))
+      : updateEventAll(calendarId, edited, currentEvent, master);
+
   const updateEventFollowing = (
     calendarId: string,
     edited: CreateEvent,
@@ -1518,10 +1552,13 @@ export function makeGoogleCalendarService(
           })
         );
       }
-      // From the first meeting, "following" is the same as "all", from its
-      // (possibly moved) date.
       if (opensSeries(currentEvent, master)) {
-        return yield* updateEventAll(calendarId, edited, currentEvent, master);
+        return yield* updateFromFirstMeeting(
+          calendarId,
+          edited,
+          currentEvent,
+          master
+        );
       }
       const zone = seriesZoneOf(master);
       const originalStart = originalStartOf(currentEvent, zone);

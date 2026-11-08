@@ -140,10 +140,12 @@ function withRuleClock(
 }
 
 /**
- * Whether a series meets more than once a day: a sub-daily rule, or rules
- * at different times (one at 9:00, another at 15:00; a list of times in
- * one rule Google ignores). Its times are then its own: they aren't
- * lined up with the start, and a skipped time stays that time.
+ * Whether a series meets more than once a day: a sub-daily rule, rules at
+ * different times (one at 9:00, another at 15:00; a list of times in one
+ * rule Google ignores), or, with the start's time `base`, a rule at
+ * another time (the start is a meeting too). Its times are then its own:
+ * they aren't lined up with the start, and a skipped time stays that
+ * time.
  * With the series' start time (`base`), a part a rule leaves out is that
  * time's ("BYHOUR=9" and "BYHOUR=9;BYMINUTE=0" are one time for a 9:00
  * series); without it, rules written differently count as different.
@@ -153,10 +155,11 @@ export function meetsSeveralTimesADay(
   base: Temporal.PlainTime | null = null
 ): boolean {
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
-  return (
-    rules.some((line) => SUB_DAILY.test(line)) ||
-    new Set(rules.map((line) => ruleTime(line, base))).size > 1
-  );
+  const times = new Set(rules.map((line) => ruleTime(line, base)));
+  if (base) {
+    times.add(ruleTime("", base));
+  }
+  return rules.some((line) => SUB_DAILY.test(line)) || times.size > 1;
 }
 
 /**
