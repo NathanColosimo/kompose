@@ -25,13 +25,11 @@ describe("keyboardCreateStart", () => {
   test("never a time the clocks repeat, which the editor's form can't tell apart", () => {
     // The form keeps a date and an "HH:mm", so a 1:30 AM as the clocks
     // fall back would save as the first 1:30, 40 minutes in the past.
-    const names = (start: Temporal.ZonedDateTime) =>
-      ["earlier", "later"].map((disambiguation) =>
-        start
+    const names = (time: Temporal.ZonedDateTime) =>
+      (["earlier", "later"] as const).map((disambiguation) =>
+        time
           .toPlainDateTime()
-          .toZonedDateTime(start.timeZoneId, {
-            disambiguation: disambiguation as "earlier" | "later",
-          })
+          .toZonedDateTime(time.timeZoneId, { disambiguation })
           .toString()
       );
     const fallBack = Temporal.PlainDate.from("2026-11-01");
