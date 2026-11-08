@@ -22,33 +22,27 @@ describe("keyboardCreateStart", () => {
     expect(start("09:10")).toBe("2026-11-09T09:30:00");
   });
 
-  test("never a time the clocks repeat, which the editor's form can't tell apart", () => {
-    // The form keeps a date and an "HH:mm", so a 1:30 AM as the clocks
-    // fall back would save as the first 1:30, 40 minutes in the past.
-    const names = (start: Temporal.ZonedDateTime) =>
-      ["earlier", "later"].map((disambiguation) =>
-        start
-          .toPlainDateTime()
-          .toZonedDateTime(start.timeZoneId, {
-            disambiguation: disambiguation as "earlier" | "later",
-          })
-          .toString()
-      );
-    const fallBack = Temporal.PlainDate.from("2026-11-01");
-    for (const at of [
-      "2026-11-01T00:50-04:00[America/New_York]",
-      "2026-11-01T01:10-04:00[America/New_York]",
-      "2026-11-01T01:10-05:00[America/New_York]",
-    ]) {
-      const created = keyboardCreateStart({
+  test("never a time the editor would save as an earlier moment", () => {
+    // The form keeps a date and an "HH:mm", and a wall time the clocks
+    // repeat saves as its first occurrence: the second 1:30 AM as the
+    // clocks fall back would save 40 minutes in the past.
+    const created = (at: string) =>
+      keyboardCreateStart({
         now: Temporal.ZonedDateTime.from(at),
-        visibleDays: [fallBack],
+        visibleDays: [Temporal.PlainDate.from("2026-11-01")],
       });
-      expect(created.toString()).toBe(
-        "2026-11-01T02:00:00-05:00[America/New_York]"
-      );
-      const [earlier, later] = names(created);
-      expect(earlier).toBe(later);
+    const savesAs = (time: Temporal.ZonedDateTime) =>
+      time.toPlainDateTime().toZonedDateTime(time.timeZoneId);
+    for (const [at, expected] of [
+      // The first 1 AM saves as itself.
+      ["2026-11-01T00:50-04:00", "2026-11-01T01:00:00-04:00"],
+      ["2026-11-01T01:10-04:00", "2026-11-01T01:30:00-04:00"],
+      // The second one doesn't: start after it.
+      ["2026-11-01T01:10-05:00", "2026-11-01T02:00:00-05:00"],
+    ] as const) {
+      const begins = created(`${at}[America/New_York]`);
+      expect(begins.toString()).toBe(`${expected}[America/New_York]`);
+      expect(savesAs(begins).equals(begins)).toBe(true);
     }
   });
 
