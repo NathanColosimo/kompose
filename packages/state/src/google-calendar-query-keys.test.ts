@@ -5,7 +5,10 @@ import {
   getGoogleEventsByCalendarQueryKey,
   invalidateGoogleEventQueries,
 } from "./google-calendar-query-keys";
-import { seriesRefreshing } from "./hooks/use-recurring-event-master";
+import {
+  seriesRefreshing,
+  seriesRuleReady,
+} from "./hooks/use-recurring-event-master";
 
 test("a write to a calendar's events leaves none of its series fresh", async () => {
   // A series saved every two weeks, then reopened: its loaded master must
@@ -56,5 +59,28 @@ test("a stale series isn't ready until its new rule is in", async () => {
   expect(observer.getCurrentResult().data).toEqual({
     recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2"],
   });
+  stop();
+});
+
+test("a series whose fetch after a write failed stays unusable", async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const work = { accountId: "acct", calendarId: "work" };
+  const key = [...getGoogleEventMastersByCalendarQueryKey(work), "series"];
+  queryClient.setQueryData(key, { recurrence: ["RRULE:FREQ=WEEKLY"] });
+  const observer = new QueryObserver(queryClient, {
+    queryFn: () => Promise.reject(new Error("offline")),
+    queryKey: key,
+    staleTime: 5 * 60 * 1000,
+  });
+  const stop = observer.subscribe(() => undefined);
+  expect(seriesRuleReady(observer.getCurrentResult())).toBe(true);
+  await invalidateGoogleEventQueries(queryClient, [work]);
+  const result = observer.getCurrentResult();
+  // The old rule is still cached, but a save mustn't use it.
+  expect(result.data).toBeDefined();
+  expect(result.isRefetchError).toBe(true);
+  expect(seriesRuleReady(result)).toBe(false);
   stop();
 });

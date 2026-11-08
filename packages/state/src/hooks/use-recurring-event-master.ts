@@ -70,9 +70,23 @@ export function useRecurringEventMaster(params: {
     refreshing,
     /** The rule isn't usable yet: first load, or a stale copy refreshing. */
     ruleLoading: query.isLoading || refreshing,
-    /** The series' rule can be used: loaded, and not a stale copy being refreshed. */
-    ruleReady: Boolean(query.data) && !refreshing,
+    ruleReady: seriesRuleReady(query),
   };
+}
+
+/**
+ * Whether the series' rule can be used: loaded, and not a stale copy being
+ * fetched again or one whose fetch failed (its old rule stays unusable).
+ */
+export function seriesRuleReady(query: {
+  data?: unknown;
+  isFetching: boolean;
+  isRefetchError: boolean;
+  isStale: boolean;
+}): boolean {
+  return (
+    Boolean(query.data) && !seriesRefreshing(query) && !query.isRefetchError
+  );
 }
 
 /**

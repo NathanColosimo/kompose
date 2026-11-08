@@ -1352,17 +1352,22 @@ export function EventEditorSheet({
     setIsLocationSuggestionsOpen(false);
   }, [draft, reset]);
 
-  // Show the series' pattern once it loads, keeping the other edits, unless
-  // the user has already changed the repeat.
+  // An occurrence shows its series' pattern, kept in step as the series
+  // loads or is fetched again (a fresher rule after a save replaces the
+  // old one), keeping the other edits, unless the user changed the repeat.
+  const isOccurrence =
+    draft.mode === "edit" && Boolean(draft.sourceEvent.recurringEventId);
   React.useEffect(() => {
+    const next = masterRecurrence ?? [];
     if (
-      masterRecurrence?.length &&
+      isOccurrence &&
+      !masterLoading &&
       !getValues("recurrenceEdited") &&
-      getValues("recurrence").length === 0
+      next.join("\n") !== getValues("recurrence").join("\n")
     ) {
-      setValue("recurrence", masterRecurrence);
+      setValue("recurrence", next);
     }
-  }, [getValues, masterRecurrence, setValue]);
+  }, [getValues, isOccurrence, masterLoading, masterRecurrence, setValue]);
 
   const { summary, description, location, recurrence, allDay } = values;
 
