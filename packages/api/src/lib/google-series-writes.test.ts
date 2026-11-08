@@ -2444,3 +2444,66 @@ describe("follow-up checks on the start and length rules", () => {
     ]);
   });
 });
+
+describe("a COUNT carried from Google's list", () => {
+  // Yearly on Nov 9 at 9:00 UTC from 2028, 98 times: too long to walk, so
+  // what's left is counted from Google's list of its meetings.
+  const yearly = (recurrence: string[], startTime = "2028-11-09T09:00:00Z") => {
+    const series: Event = {
+      end: { dateTime: "2028-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=98", ...recurrence],
+      start: { dateTime: startTime, timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    // Google lists its meetings with their offsets.
+    const listed: Event = {
+      ...series,
+      start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
+    };
+    const meetings = Array.from({ length: 98 }, (_, i) =>
+      occurrenceOf(listed, `${2028 + i}-11-09T09:00:00Z`)
+    );
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? { items: meetings }
+        : undefined
+    );
+    const rename = (year: number) =>
+      edit("following", occurrenceOf(listed, `${year}-11-09T09:00:00Z`), {
+        summary: "Anniversary (new)",
+      });
+    return { google, rename };
+  };
+
+  test("doesn't count a skip from before the series began", async () => {
+    // Left by an earlier split: still carrying the old series' Nov 9,
+    // 2027 skip. Split at 2029, one is used (2028), so 97 are left.
+    const { google, rename } = yearly(["EXDATE:20271109T090000Z"]);
+    expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+      "EXDATE:20271109T090000Z",
+    ]);
+  });
+
+  test("refuses when a skip can't be told to be one of its meetings", async () => {
+    // Dec 1, 2029 isn't a meeting, but the rule can't be walked to show
+    // it: counting it would end the new series a meeting early.
+    const { google, rename } = yearly(["EXDATE:20291201T090000Z"]);
+    expect(await refusalOf(rename(2030))).toMatchObject({
+      data: { reason: "countUnknown" },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("reads a series start Google wrote without an offset", async () => {
+    const { google, rename } = yearly([], "2028-11-09T09:00:00");
+    expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+    ]);
+  });
+});
