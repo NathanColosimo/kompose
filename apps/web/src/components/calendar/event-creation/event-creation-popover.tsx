@@ -23,6 +23,7 @@ import {
 } from "@/lib/temporal-utils";
 import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
+  SaveButtonLabel,
   TaskCreateForm,
   type TaskFormValues,
   useHeldSave,
@@ -98,7 +99,6 @@ function CreationChooser({
   const taskSubmitRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   const startDate = useMemo(
     () => zonedDateTimeToDate(popoverTimes.start),
@@ -160,7 +160,11 @@ function CreationChooser({
 
   // The popover stays open ("Saving…") until the create succeeds, so a
   // failed one keeps the draft. Escape and outside clicks wait too.
-  const hold = useHeldSave(actions.closePopover);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const hold = useHeldSave({
+    editorRef: contentRef,
+    onClose: actions.closePopover,
+  });
   const isSaving = hold.saving !== null;
   const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
 
@@ -312,7 +316,7 @@ function CreationChooser({
                   size="sm"
                   type="button"
                 >
-                  {isSaving ? "Saving…" : "Save"}
+                  <SaveButtonLabel saving={isSaving} />
                 </Button>
               </div>
             </div>
@@ -354,6 +358,7 @@ function CreationChooser({
               <TaskCreateForm
                 createInteropRef={taskInteropRef}
                 initialValues={initialTaskValues}
+                saving={isSaving}
                 submitRef={taskSubmitRef}
               />
             </TabsContent>

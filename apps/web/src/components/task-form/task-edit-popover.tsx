@@ -50,6 +50,7 @@ import {
 import Image from "next/image";
 import {
   type ReactElement,
+  type RefObject,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -239,8 +240,8 @@ export function TaskEditPopover({
   const handleCancel = useCallback(() => {
     setOpen(false);
   }, []);
-  const hold = useHeldSave(handleCancel);
   const contentRef = useRef<HTMLDivElement>(null);
+  const hold = useHeldSave({ editorRef: contentRef, onClose: handleCancel });
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
       // Focus moves into the editor, so Tab reaches its fields, but not to
@@ -361,7 +362,7 @@ function TaskEditorCloseActions({
         size="sm"
         type="button"
       >
-        {saving === "save" ? "Saving…" : "Save"}
+        <SaveButtonLabel saving={saving === "save"} />
       </Button>
     </div>
   );
@@ -403,11 +404,22 @@ function canSaveFromKeyboard(params: {
  * it closes when the save succeeds and keeps the draft if not. Owned by the
  * popover, whose Escape and outside clicks wait for it too.
  */
-export function useHeldSave(onClose: () => void) {
+export function useHeldSave({
+  editorRef,
+  onClose,
+}: {
+  /** The popover content: it keeps focus while the editor holds. */
+  editorRef: RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [kind, setKind] = useState<"done" | "save">("save");
   const holdOpen = useCallback(
     (nextKind: "done" | "save", save: Promise<boolean>) => {
+      // The fields remount read-only (HeldFieldset), which would drop focus
+      // to the page, where the calendar's keys could navigate away from the
+      // save; the editor itself holds it instead.
+      editorRef.current?.focus();
       setKind(nextKind);
       startTransition(async () => {
         if (await save) {
@@ -415,9 +427,9 @@ export function useHeldSave(onClose: () => void) {
         }
       });
     },
-    [onClose]
+    [editorRef, onClose]
   );
-  return { holdOpen, saving: isPending ? kind : null };
+  return { editorRef, holdOpen, saving: isPending ? kind : null };
 }
 
 type HeldSave = ReturnType<typeof useHeldSave>;
@@ -440,6 +452,23 @@ function RepeatNote({
     >
       {note.text}
     </p>
+  );
+}
+
+/**
+ * "Save", or "Saving…" while it saves. Both labels share one cell, so the
+ * button keeps the width of "Saving…" and nothing beside it shifts.
+ */
+export function SaveButtonLabel({ saving }: { saving: boolean }) {
+  return (
+    <span className="grid justify-items-center">
+      <span className={cn("col-start-1 row-start-1", saving && "invisible")}>
+        Save
+      </span>
+      <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
+        Saving…
+      </span>
+    </span>
   );
 }
 
@@ -704,12 +733,9 @@ export function TaskEditForm({
     [isRecurring, resolvedRecurrence, task]
   );
 
-  /**
-   * True when the editor can close now, false when it stays (a dialog, or a
-   * save it holds for).
-   */
+  /** Saves, through the scope question for a series; the editor holds open meanwhile. */
   const submit = useCallback(
-    (values: TaskFormValues): boolean => {
+    (values: TaskFormValues) => {
       // The note under Repeat says why ("The repeat ends Nov 10, before...").
       if (
         repeatBlocksSave({
@@ -718,14 +744,14 @@ export function TaskEditForm({
           startDate: values.startDate,
         })
       ) {
-        return false;
+        return;
       }
       const decision = scopeDecisionFor(values);
       if (decision.action === "prompt") {
         pendingUpdateRef.current = values;
         setTagScope(decision.defaultScope);
         setShowTagScopeDialog(true);
-        return false;
+        return;
       }
 
       // The editor holds open ("Saving…") until the save succeeds, so a
@@ -739,7 +765,6 @@ export function TaskEditForm({
           { failureMessage: SAVE_FAILURE_MESSAGE }
         )
       );
-      return false;
     },
     [commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
   );
@@ -776,11 +801,10 @@ export function TaskEditForm({
     updateTask,
   ]);
 
-  const handleSaveClick = useCallback(() => {
-    if (submit(getValues()) === true) {
-      onClose();
-    }
-  }, [getValues, onClose, submit]);
+  const handleSaveClick = useCallback(
+    () => submit(getValues()),
+    [getValues, submit]
+  );
 
   useHotkeys(
     "mod+enter",
@@ -889,6 +913,15 @@ export function TaskEditForm({
         <RecurrenceScopeDialog
           confirmLabel="Apply"
           description={SCOPE_DIALOG_COPY.saveTask.description}
+          // Focus goes back to the editor (on Cancel, or a save still running
+          // or failed). Radix would return it to Save, which a save
+          // remounts, so it would fall to the page, where the calendar's
+          // keys could navigate away. If the editor closed, it stays where
+          // the closing put it.
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            hold.editorRef.current?.focus();
+          }}
           onConfirm={() => {
             const pendingUpdate = pendingUpdateRef.current;
             if (!pendingUpdate) {
@@ -938,10 +971,13 @@ export function TaskEditForm({
 export function TaskCreateForm({
   createInteropRef,
   initialValues,
+  saving,
   submitRef,
 }: {
   createInteropRef: React.Ref<CalendarCreateFormInterop>;
   initialValues: Partial<TaskFormValues>;
+  /** The create popover holds for the create (see useHeldSave). */
+  saving: boolean;
   /** True when there's nothing to create, false when the repeat blocks it, or the create to wait for. */
   submitRef: React.Ref<() => boolean | Promise<boolean>>;
 }) {
@@ -1030,12 +1066,16 @@ export function TaskCreateForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      <TaskFields
-        form={form}
-        isRecurring={false}
-        previousRecurrence={previousRecurrence}
-        undatedMember={false}
-      />
+      {/* Remounts read-only while the create runs, closing an open picker
+          (its options are portaled outside the popover's fieldset). */}
+      <HeldFieldset className="min-w-0 space-y-3" saving={saving}>
+        <TaskFields
+          form={form}
+          isRecurring={false}
+          previousRecurrence={previousRecurrence}
+          undatedMember={false}
+        />
+      </HeldFieldset>
     </form>
   );
 }
