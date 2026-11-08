@@ -120,4 +120,33 @@ describe("skipped occurrences on the series' days", () => {
       )
     ).toBe(same);
   });
+
+  test("lines skipped days up with the series' start, not an occurrence's", () => {
+    // A client lined the skipped Nov 4 up with an occurrence moved to
+    // 11:00; the series is at 9:00, so it's skipped at 9:00.
+    expect(
+      matchRecurrenceToStart(
+        ["RRULE:FREQ=DAILY", "EXDATE;TZID=America/New_York:20261104T110000"],
+        { dateTime: "2026-11-01T09:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE;TZID=America/New_York:20261104T090000",
+    ]);
+  });
+
+  test("leaves a skipped time alone in a rule with several a day", () => {
+    const rule = [
+      "RRULE:FREQ=DAILY;BYHOUR=9,15",
+      "EXDATE;TZID=America/New_York:20261104T150000",
+    ];
+    expect(
+      matchRecurrenceToStart(
+        rule,
+        { dateTime: "2026-11-01T09:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toBe(rule);
+  });
 });

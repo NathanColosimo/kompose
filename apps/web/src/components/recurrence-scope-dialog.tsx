@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 
 /** A moved event and its new time: "Retro" → "Mon, Nov 9 · 4 – 4:45 PM". */
 export interface ScopeDialogSubject {
+  /** It moved (a drop), rather than changing length (a resize). */
+  moved: boolean;
   name: string;
   when: string;
 }
@@ -99,9 +101,12 @@ export function RecurrenceScopeDialog({
               {subject ? (
                 <span className="block font-medium text-foreground">
                   {subject.name}
-                  {/* Read as "Retro, moved to Mon, Nov 9…", not "right arrow". */}
+                  {/* Read as "Retro, moved to Mon, Nov 9…" (or "now", for a
+                      resize), not "right arrow". */}
                   <span aria-hidden> → </span>
-                  <span className="sr-only">, moved to </span>
+                  <span className="sr-only">
+                    , {subject.moved ? "moved to" : "now"}{" "}
+                  </span>
                   {subject.when}
                 </span>
               ) : null}

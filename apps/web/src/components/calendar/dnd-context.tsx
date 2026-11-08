@@ -100,11 +100,17 @@ function droppedSubject(
     Temporal.Instant.from(start.dateTime).toZonedDateTimeISO(timeZone),
     Temporal.Instant.from(end.dateTime).toZonedDateTimeISO(timeZone)
   );
-  return { name: pending.occurrence.summary || "(No title)", when };
+  return {
+    moved: pending.moved,
+    name: pending.occurrence.summary || "(No title)",
+    when,
+  };
 }
 
 /** A recurring event's dropped move or resize, waiting for its scope. */
 interface PendingGoogleUpdate {
+  /** A drop moved it; a resize changed its length. */
+  moved: boolean;
   occurrence: GoogleEvent;
   update: UpdateGoogleEventInput;
 }
@@ -316,7 +322,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const update = buildGoogleMoveUpdate(data, start);
       if (data.event.recurringEventId) {
         setGoogleScope("this");
-        setPendingGoogleUpdate({ occurrence: data.event, update });
+        setPendingGoogleUpdate({ moved: true, occurrence: data.event, update });
         return;
       }
       updateGoogleEventMutation.mutate(update);
@@ -338,7 +344,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
       if (data.event.recurringEventId) {
         setGoogleScope("this");
-        setPendingGoogleUpdate({ occurrence: data.event, update });
+        setPendingGoogleUpdate({
+          moved: false,
+          occurrence: data.event,
+          update,
+        });
         return;
       }
 

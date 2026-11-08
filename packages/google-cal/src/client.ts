@@ -42,22 +42,18 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
 }
 
 /**
- * The series' own rule, kept by an edit that didn't send one, with its
- * UNTIL in the form `start` takes: a series made all day (or timed) before
- * its rule loaded on the client would otherwise keep a mismatched UNTIL,
- * which Google refuses.
+ * A series' rule as written with its `start`: UNTIL and EXDATE/RDATE in
+ * the start's form, skipped occurrences at its time, all counted on the
+ * series' days in its zone. Applied to whatever the series ends up with,
+ * the client's rule or its kept one, so a rule a client lined up with an
+ * occurrence (rescheduled to 11:00, say) can't skip the wrong times.
  */
-function keptRecurrence(
-  master: { recurrence?: string[]; start: { timeZone?: string } },
-  start: { date?: string; dateTime?: string; timeZone?: string }
+function ruleForStart(
+  rule: string[] | undefined,
+  master: { start: { timeZone?: string } },
+  start: { date?: string; dateTime?: string }
 ): string[] | undefined {
-  return master.recurrence
-    ? matchRecurrenceToStart(
-        master.recurrence,
-        start,
-        start.timeZone ?? master.start.timeZone ?? "UTC"
-      )
-    : undefined;
+  return rule && matchRecurrenceToStart(rule, start, seriesZoneOf(master));
 }
 
 /** `time` labelled with the series' zone when it has one (same moment). */
@@ -638,9 +634,13 @@ export function makeGoogleCalendarService(
             occurrenceStart: currentEvent.start,
           }) ?? { end: master.end, start: master.start });
 
-      // Left out keeps the series' pattern (its UNTIL in the form the
-      // new start takes); an empty list ends it ("Repeat: None").
-      const recurrence = event.recurrence ?? keptRecurrence(master, times.start);
+      // Left out keeps the series' pattern; an empty list ends it
+      // ("Repeat: None"). Either way in the form the series' start takes.
+      const recurrence = ruleForStart(
+        event.recurrence ?? master.recurrence,
+        master,
+        times.start
+      );
       const payload = sanitizeEventPayload({
         ...master,
         ...event,
@@ -713,12 +713,16 @@ export function makeGoogleCalendarService(
       // Left out keeps the series' pattern (its UNTIL in the form the
       // new start takes); an empty list ends it ("Repeat: None").
       // A kept COUNT carries on from where the series is cut.
-      const recurrence = yield* followingRecurrence(
-        calendarId,
+      const recurrence = ruleForStart(
+        yield* followingRecurrence(
+          calendarId,
+          master,
+          master.recurrence,
+          event.recurrence,
+          startIso
+        ),
         master,
-        keptRecurrence(master, event.start),
-        event.recurrence,
-        startIso
+        event.start
       );
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(

@@ -12,6 +12,8 @@ const UNTIL_DATE_TIME =
 const UNTIL_PART = /([:;])UNTIL=([^;]+)/;
 const DATE_LIST = /^(EXDATE|RDATE)([^:]*):(.+)$/;
 const TZID_PARAM = /;TZID=([^;:]+)/;
+const SEVERAL_A_DAY =
+  /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BYHOUR=|BYMINUTE=|BYSECOND=)/;
 
 /**
  * UNTIL for a series that ends on `day` in `timeZone`, that day's
@@ -160,7 +162,9 @@ export function parseDateList(
 function matchDateList(
   line: string,
   start: StartTime,
-  seriesZone: string
+  seriesZone: string,
+  /** The rule repeats more than once a day: a skipped time is its own. */
+  severalADay: boolean
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -178,7 +182,13 @@ function matchDateList(
       ? line
       : `${list.name};VALUE=DATE:${values.map((v) => compactDate(v.day)).join(",")}`;
   }
-  if (list.name === "RDATE" && values.every((value) => value.instant)) {
+  // Times of their own stay theirs: an RDATE's, or any in a rule with
+  // several times a day (moving a skipped 15:00 to the start's 9:00 would
+  // un-skip it).
+  if (
+    (list.name === "RDATE" || severalADay) &&
+    values.every((value) => value.instant)
+  ) {
     return line;
   }
   const time = wallClock(start, seriesZone);
@@ -231,11 +241,14 @@ export function matchRecurrenceToStart(
   timeZone: string
 ): string[] {
   const allDay = Boolean(start.date);
+  const severalADay = recurrence.some(
+    (line) => line.startsWith("RRULE:") && SEVERAL_A_DAY.test(line)
+  );
   let changed = false;
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchUntil(line, allDay, timeZone)
-      : matchDateList(line, start, timeZone);
+      : matchDateList(line, start, timeZone, severalADay);
     changed ||= matched !== line;
     return matched;
   });

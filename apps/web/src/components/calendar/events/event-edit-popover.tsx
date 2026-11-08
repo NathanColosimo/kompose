@@ -1493,6 +1493,36 @@ function EventColorAndTitleRow({
 const REPEATS_PREFIX = /^Repeats /;
 const FIRST_LETTER = /^./;
 
+/** "Repeats weekly on Mon" as the Repeat button says it: "Weekly on Mon". */
+function repeatRuleLabel(
+  recurrenceRule: string | undefined,
+  seriesStart: Temporal.PlainDate | null
+): string | null {
+  const repeats = recurrenceRule
+    ? describeEventRecurrence({
+        rules: [recurrenceRule],
+        start: seriesStart ?? undefined,
+      })
+    : null;
+  return repeats
+    ? repeats
+        .replace(REPEATS_PREFIX, "")
+        .replace(FIRST_LETTER, (c) => c.toUpperCase())
+    : null;
+}
+
+/** The Repeat button's words: the rule shortens first, the zone stays. */
+function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
+  return (
+    <>
+      <span className="truncate">{rule}</span>
+      {city ? (
+        <span className="shrink-0 text-muted-foreground">· {city}</span>
+      ) : null}
+    </>
+  );
+}
+
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
@@ -1532,22 +1562,10 @@ function EventAllDayAndRecurrenceRow({
   calendarValue: string;
   onCalendarChange: (value: string) => void;
 }) {
-  // "Repeats weekly on Mon" reads as "Weekly on Mon" on the button.
-  const repeats = recurrenceRule
-    ? describeEventRecurrence({
-        rules: [recurrenceRule],
-        start: seriesStart ?? undefined,
-      })
-    : null;
   // Its days are the series' zone's: say so beside a date shown here.
   const city = showsZone ? timeZoneCity(seriesTimeZone) : null;
-  const repeatLabel = repeats
-    ? `${repeats
-        .replace(REPEATS_PREFIX, "")
-        .replace(FIRST_LETTER, (c) =>
-          c.toUpperCase()
-        )}${city ? ` · ${city}` : ""}`
-    : null;
+  const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
+  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleLabel;
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1587,9 +1605,7 @@ function EventAllDayAndRecurrenceRow({
             variant={repeatLabel ? "secondary" : "outline"}
           >
             <Repeat className="size-4 shrink-0" />
-            {repeatLabel ? (
-              <span className="truncate">{repeatLabel}</span>
-            ) : null}
+            {ruleLabel ? <RepeatChipText city={city} rule={ruleLabel} /> : null}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[360px]">
