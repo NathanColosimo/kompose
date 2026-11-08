@@ -1,5 +1,6 @@
 "use client";
 
+import { canWriteCalendar } from "@kompose/google-cal/schema";
 import {
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
@@ -103,20 +104,31 @@ export function useEventCreationState(): EventCreationContextValue {
     } else if (googleAccounts.length === 0) {
       toast("Connect a Google calendar in Settings to create events.");
     } else {
-      toast("Show a calendar from the Calendars menu to create events.");
+      toast(
+        "Show a calendar you can edit from the Calendars menu to create events."
+      );
     }
   }, [googleAccounts.length, isLoadingCalendars]);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
   const defaultCalendar = useMemo(() => {
-    if (visibleCalendars.length === 0) {
+    // New events go to a calendar the user can write to: the primary one if
+    // it's shown, else the first shown writable one.
+    const writable = visibleCalendars.filter((v) =>
+      canWriteCalendar(
+        allCalendars.find(
+          (c) => c.accountId === v.accountId && c.calendar.id === v.calendarId
+        )?.calendar.accessRole
+      )
+    );
+    if (writable.length === 0) {
       return null;
     }
     const primaryCalendar = allCalendars.find(
       (c) =>
         c.calendar.primary &&
-        visibleCalendars.some(
+        writable.some(
           (v) => v.accountId === c.accountId && v.calendarId === c.calendar.id
         )
     );
@@ -126,7 +138,7 @@ export function useEventCreationState(): EventCreationContextValue {
         calendarId: primaryCalendar.calendar.id,
       };
     }
-    return visibleCalendars[0];
+    return writable[0];
   }, [visibleCalendars, allCalendars]);
 
   const onSlotHover = useCallback((dateTime: Temporal.ZonedDateTime) => {

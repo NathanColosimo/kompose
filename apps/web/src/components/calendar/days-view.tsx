@@ -994,8 +994,13 @@ function AllDayEventChip({
       calendarId={item.calendarId}
       end={zonedDateTimeToDate(endZdt)}
       event={item.event}
-      readOnly={!isGoogleEventEditable(item.event)}
-      readOnlyReason={getGoogleEventEditBlockReason(item.event)}
+      readOnly={
+        !isGoogleEventEditable(item.event, calendar?.calendar.accessRole)
+      }
+      readOnlyReason={getGoogleEventEditBlockReason(
+        item.event,
+        calendar?.calendar.accessRole
+      )}
       start={zonedDateTimeToDate(startZdt)}
     >
       <button

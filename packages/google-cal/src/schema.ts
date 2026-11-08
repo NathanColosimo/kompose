@@ -153,9 +153,23 @@ export function isGoogleEventFromGmail(
   );
 }
 
+/**
+ * Whether events on a calendar can be changed: its owner or a writer. An
+ * unknown role (not loaded yet) doesn't block.
+ */
+export function canWriteCalendar(accessRole: string | null | undefined) {
+  return !accessRole || accessRole === "owner" || accessRole === "writer";
+}
+
 export function getGoogleEventEditBlockReason(
-  event: GoogleEventEditabilityInput
+  event: GoogleEventEditabilityInput,
+  /** The event's calendar's access role, when known. */
+  calendarAccessRole?: string | null
 ): string | null {
+  if (!canWriteCalendar(calendarAccessRole)) {
+    return "You can only view this calendar, so its events can't be edited here.";
+  }
+
   if (event.locked) {
     return "Google marked this event as locked, so it can't be edited here.";
   }
@@ -172,9 +186,10 @@ export function getGoogleEventEditBlockReason(
 }
 
 export function isGoogleEventEditable(
-  event: GoogleEventEditabilityInput
+  event: GoogleEventEditabilityInput,
+  calendarAccessRole?: string | null
 ): boolean {
-  return getGoogleEventEditBlockReason(event) === null;
+  return getGoogleEventEditBlockReason(event, calendarAccessRole) === null;
 }
 
 export const RecurrenceScopeSchema = z.enum(["this", "all", "following"]);

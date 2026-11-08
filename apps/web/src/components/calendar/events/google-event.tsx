@@ -73,8 +73,14 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))
   );
-  const isEditable = isGoogleEventEditable(event);
-  const editBlockedReason = getGoogleEventEditBlockReason(event);
+  const calendars = useAtomValue(googleCalendarsDataAtom);
+  // The event's calendar: its colors, and whether the user can write to it.
+  const calendar = calendars.find(
+    (c) => c.accountId === accountId && c.calendar.id === calendarId
+  );
+  const accessRole = calendar?.calendar.accessRole;
+  const isEditable = isGoogleEventEditable(event, accessRole);
+  const editBlockedReason = getGoogleEventEditBlockReason(event, accessRole);
   // An overnight event is drawn as one part per day (start/end). Its text,
   // editor, and drags use the whole event's times, so editing or moving
   // the second day's part never cuts the event at midnight.
@@ -149,13 +155,6 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const normalizedPalette = useAtomValue(
     normalizedGoogleColorsAtomFamily(accountId)
   );
-  const calendars = useAtomValue(googleCalendarsDataAtom);
-
-  // Find the calendar this event belongs to, for fallback colors
-  const calendar = calendars.find(
-    (c) => c.accountId === accountId && c.calendar.id === calendarId
-  );
-
   const { background: backgroundColor } = resolveGoogleEventColors({
     calendarBackgroundColor: calendar?.calendar.backgroundColor,
     calendarForegroundColor: calendar?.calendar.foregroundColor,

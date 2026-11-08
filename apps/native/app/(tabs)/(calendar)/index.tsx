@@ -4,6 +4,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { canWriteCalendar } from "@kompose/google-cal/schema";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -1130,6 +1131,7 @@ export default function CalendarTab() {
   const allCalendarOptions = useMemo<CalendarOption[]>(
     () =>
       googleCalendars.map((calendar) => ({
+        accessRole: calendar.calendar.accessRole ?? null,
         accountId: calendar.accountId,
         calendarId: calendar.calendar.id,
         color: calendar.calendar.backgroundColor ?? null,
@@ -1149,7 +1151,12 @@ export default function CalendarTab() {
     [allCalendarOptions, visibleCalendarIds]
   );
 
-  const defaultCalendar = visibleCalendarOptions[0] ?? allCalendarOptions[0];
+  // New events go to a calendar the user can write to, a shown one first.
+  const defaultCalendar =
+    visibleCalendarOptions.find((option) =>
+      canWriteCalendar(option.accessRole)
+    ) ??
+    allCalendarOptions.find((option) => canWriteCalendar(option.accessRole));
   // Editing keeps the event within its account; creating can use any calendar.
   const eventCalendarOptions = useMemo(() => {
     if (!editingEventDraft) {

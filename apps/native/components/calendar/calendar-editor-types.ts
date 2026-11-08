@@ -5,6 +5,8 @@ import type { Temporal } from "temporal-polyfill";
 export type CalendarOption = CalendarIdentifier & {
   label: string;
   color?: string | null;
+  /** Google's access role: only owners and writers can change events. */
+  accessRole?: string | null;
 };
 
 interface EventDraftBase {

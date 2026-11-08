@@ -1,5 +1,6 @@
 import type { LocationSuggestion } from "@kompose/api/routers/maps/contract";
 import {
+  canWriteCalendar,
   type Event as GoogleEvent,
   getGoogleEventEditBlockReason,
 } from "@kompose/google-cal/schema";
@@ -463,13 +464,23 @@ function EventMeetingButton({
 }
 
 /**
- * Locked, Gmail, and birthday events can't be changed (Google rejects it),
- * so their sheet shows why, with no Save or Delete.
+ * Locked, Gmail, and birthday events, and those on a calendar the user can
+ * only view, can't be changed (Google rejects it), so their sheet shows
+ * why, with no Save or Delete.
  */
-function readOnlyReasonFor(draft: EventDraft): string | null {
-  return draft.mode === "edit" && draft.sourceEvent
-    ? getGoogleEventEditBlockReason(draft.sourceEvent)
-    : null;
+function readOnlyReasonFor(
+  draft: EventDraft,
+  calendarOptions: CalendarOption[]
+): string | null {
+  if (draft.mode !== "edit" || !draft.sourceEvent) {
+    return null;
+  }
+  const source = calendarOptions.find(
+    (option) =>
+      option.accountId === draft.sourceCalendar.accountId &&
+      option.calendarId === draft.sourceCalendar.calendarId
+  );
+  return getGoogleEventEditBlockReason(draft.sourceEvent, source?.accessRole);
 }
 
 function noop() {
@@ -1110,7 +1121,7 @@ export function EventEditorSheet({
   const { summary, description, location, recurrence, allDay } = values;
 
   const isCreateMode = draft.mode === "create";
-  const readOnlyReason = readOnlyReasonFor(draft);
+  const readOnlyReason = readOnlyReasonFor(draft, calendarOptions);
   const canSubmit = summary.trim().length > 0 && endsAfterStart(values);
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
@@ -1217,11 +1228,14 @@ export function EventEditorSheet({
 
   const calendarPickerOptions = React.useMemo(
     () =>
-      calendarOptions.map((option) => ({
-        color: option.color ?? null,
-        label: option.label,
-        value: toCalendarOptionValue(option),
-      })),
+      // Only calendars the user can write to are destinations.
+      calendarOptions
+        .filter((option) => canWriteCalendar(option.accessRole))
+        .map((option) => ({
+          color: option.color ?? null,
+          label: option.label,
+          value: toCalendarOptionValue(option),
+        })),
     [calendarOptions]
   );
 
