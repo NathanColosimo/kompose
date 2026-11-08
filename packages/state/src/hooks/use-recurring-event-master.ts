@@ -5,6 +5,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 import { getGoogleEventMastersByCalendarQueryKey } from "../google-calendar-query-keys";
 
+declare module "@tanstack/react-query" {
+  interface Register {
+    queryMeta: {
+      /** The query shows its own failure: the app's error toast skips it. */
+      quietError?: boolean;
+    };
+  }
+}
+
 function recurringEventMasterQueryKey(params: {
   accountId: string;
   calendarId: string;
@@ -65,17 +74,11 @@ export function useRecurringEventMaster(params: {
     queryKey,
     staleTime: 5 * 60 * 1000,
   });
-  const refreshing = seriesRefreshing(query);
   // Only the fields callers read: spreading the query would track (and
   // re-render on) every one of its fields.
   return {
     data: query.data,
     isError: query.isError,
-    isLoading: query.isLoading,
-    /** A stale series (marked so by a write) is being fetched again. */
-    refreshing,
-    /** The rule isn't usable yet: first load, or a stale copy refreshing. */
-    ruleLoading: query.isLoading || refreshing,
     ruleReady: seriesRuleReady(query),
     /**
      * An occurrence's series rule that can't be used now (loading, or its
