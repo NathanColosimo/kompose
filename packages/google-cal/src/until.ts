@@ -611,10 +611,10 @@ export function countedRuleMeetings(params: {
  * skipped (EXDATE) values become dates. A date skips or adds the whole
  * day, so: an added meeting that was cancelled goes from both lists; a
  * skip becomes its date only when every meeting that day (the rules'
- * times, from the series' time `base` for parts they leave out, and the
- * added ones) was skipped, so one skipped time never erases a day that
- * still met. Without `base`, a once-a-day series' skip is taken as its
- * meeting's.
+ * times, from the series' time `base` for parts they leave out, the added
+ * ones, and the series' own start) was skipped, so one skipped time never
+ * erases a day that still met. Without `base`, a once-a-day series' skip
+ * is taken as its meeting's.
  */
 function allDayDates(params: {
   /** The day the rules count their days from. */
@@ -622,13 +622,23 @@ function allDayDates(params: {
   base: Temporal.PlainTime | null;
   /** The series' first day, where COUNT counts from; null if not known. */
   countFrom: Temporal.PlainDate | null;
+  /** The series' start: a meeting whatever its rules and added days say. */
+  first: Temporal.Instant | null;
   recurrence: string[];
   rules: string[];
   severalADay: boolean;
   timeZone: string;
 }): (name: string, value: RecurrenceValue) => boolean {
-  const { anchor, base, countFrom, recurrence, rules, severalADay, timeZone } =
-    params;
+  const {
+    anchor,
+    base,
+    countFrom,
+    first,
+    recurrence,
+    rules,
+    severalADay,
+    timeZone,
+  } = params;
   const momentsOf = (name: string) => {
     const moments: Temporal.Instant[] = [];
     for (const line of recurrence) {
@@ -738,6 +748,16 @@ function allDayDates(params: {
       return !severalADay;
     }
     const meetings = [...listed];
+    if (
+      first &&
+      Temporal.PlainDate.compare(
+        first.toZonedDateTimeISO(timeZone).toPlainDate(),
+        value.day
+      ) === 0 &&
+      !meetings.includes(first.epochMilliseconds)
+    ) {
+      meetings.push(first.epochMilliseconds);
+    }
     for (const moment of added) {
       const local = moment.toZonedDateTimeISO(timeZone).toPlainDate();
       if (
@@ -938,6 +958,7 @@ export function matchRecurrenceToStart(
         anchor: days?.rulesFrom ?? Temporal.PlainDate.from(start.date),
         base: countBase,
         countFrom,
+        first: seriesStart ? startInstant(seriesStart, timeZone) : null,
         recurrence,
         rules,
         severalADay,

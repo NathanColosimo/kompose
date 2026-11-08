@@ -1560,3 +1560,40 @@ describe("a series of added days only", () => {
     ]);
   });
 });
+
+describe("a series made all day", () => {
+  test("keeps its deleted first meeting deleted", async () => {
+    // Nov 9 9:00 plus added Nov 16 and Nov 23; the first meeting was
+    // deleted on its own. Made all day through Nov 16, Nov 9 stays
+    // skipped, as a date.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RDATE;TZID=America/New_York:20261116T090000,20261123T090000",
+      ],
+    };
+    const deleted: Event = {
+      ...occurrenceOf(series, "2026-11-09T09:00:00-05:00"),
+      status: "cancelled",
+    };
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    const google = fakeGoogle(series, [deleted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", opened, {
+            end: { date: "2026-11-17" },
+            start: { date: "2026-11-16" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: [
+        "RDATE;VALUE=DATE:20261116,20261123",
+        "EXDATE;VALUE=DATE:20261109",
+      ],
+      start: { date: "2026-11-09" },
+    });
+  });
+});

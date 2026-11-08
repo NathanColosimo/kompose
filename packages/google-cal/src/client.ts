@@ -99,16 +99,19 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
   return master.start.timeZone ?? "UTC";
 }
 
-/**
- * `recurrence` with the occurrences at `starts` (original starts, as
- * Google writes them) skipped. Unchanged when it has no meetings to skip
- * (no rule, no added day).
- */
-function skipping(recurrence: string[], starts: string[]): string[] {
-  const repeats = recurrence.some(
+/** Whether `recurrence` repeats at all: a rule, or an added day. */
+function repeats(recurrence: string[] | undefined): boolean {
+  return (recurrence ?? []).some(
     (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
   );
-  if (starts.length === 0 || !repeats) {
+}
+
+/**
+ * `recurrence` with the occurrences at `starts` (original starts, as
+ * Google writes them) skipped. Unchanged when it doesn't repeat.
+ */
+function skipping(recurrence: string[], starts: string[]): string[] {
+  if (starts.length === 0 || !repeats(recurrence)) {
     return recurrence;
   }
   const dates = starts
@@ -1368,10 +1371,8 @@ export function makeGoogleCalendarService(
 
       // A new part that doesn't repeat ("Repeat: None") is one event with
       // no occurrences: the one carried (at its start) goes on it.
-      const repeats = (newSeries.recurrence ?? []).some(
-        (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
-      );
-      const written = repeats
+      const repeating = repeats(newSeries.recurrence);
+      const written = repeating
         ? newSeries
         : Object.assign(
             {},
@@ -1398,7 +1399,7 @@ export function makeGoogleCalendarService(
           },
         });
         const series = yield* parseEventResponse(response);
-        for (const carried of repeats ? params.carried : []) {
+        for (const carried of repeating ? params.carried : []) {
           yield* putBack(destinationCalendarId, seriesId, carried);
         }
         return series;
