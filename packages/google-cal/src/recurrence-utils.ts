@@ -356,10 +356,9 @@ export function carryCountExactly(
   const seriesClock = seriesStartValue.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
-  // Positions each rule used before the split.
-  const used: (number | null)[] = [];
-  // Whether the split is one of the rules' own meetings (not an added one).
-  let splitIsRuleMeeting = false;
+  // Positions each rule used before the split, and whether the split is
+  // that rule's own meeting.
+  const used: ({ before: number; own: boolean } | null)[] = [];
   for (const rule of masterRules) {
     const count = Number(COUNT_REGEX.exec(rule)?.[1]);
     if (!Number.isFinite(count)) {
@@ -400,8 +399,10 @@ export function carryCountExactly(
             splitInstant
           )
         : Temporal.PlainDate.compare(day, split.day);
-    used.push(positions.filter((day, i) => vsSplit(day, i) < 0).length);
-    splitIsRuleMeeting ||= positions.some((day, i) => vsSplit(day, i) === 0);
+    used.push({
+      before: positions.filter((day, i) => vsSplit(day, i) < 0).length,
+      own: positions.some((day, i) => vsSplit(day, i) === 0),
+    });
   }
   if (used.every((n) => n === null)) {
     return null;
@@ -412,23 +413,24 @@ export function carryCountExactly(
       return [line];
     }
     index += 1;
-    const before = used[index];
+    const rule = used[index];
     const count = Number(COUNT_REGEX.exec(line)?.[1]);
-    if (before === null || before === undefined || !Number.isFinite(count)) {
+    if (!(rule && Number.isFinite(count))) {
       return [line];
     }
-    // Split at an added meeting, the new part's start (counted first, as
-    // RFC 5545 has DTSTART) is one more than the rule's own left.
-    const remaining =
-      count - before + (index === 0 && !splitIsRuleMeeting ? 1 : 0);
+    const left = count - rule.before;
+    // A later rule with none of its own left is done.
+    if (left <= 0 && index > 0) {
+      return [];
+    }
+    // RFC 5545 counts DTSTART as each rule's first: split at a meeting
+    // that isn't this rule's own, the new part's start is one more.
+    const remaining = left + (rule.own ? 0 : 1);
     // The first rule carries the part (at least its start); another with
     // none left is done. Kept at one, a spent first rule still makes the
     // new start an occurrence, as RFC 5545 has DTSTART; with several
     // counted rules on different days (which Google itself never writes)
     // that start may take a position the others would count.
-    if (remaining <= 0 && index > 0) {
-      return [];
-    }
     return [line.replace(COUNT_PART, `$1COUNT=${Math.max(1, remaining)}`)];
   });
 }

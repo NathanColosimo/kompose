@@ -359,7 +359,9 @@ describe("splitting a series", () => {
   test("counts each rule's positions at its own time", () => {
     // Daily 9:00 and 15:00 rules, COUNT=5 each, from Nov 9 at 9:00; split
     // Nov 11 at 15:00: the 9:00 rule used Nov 9, 10, 11 (two left), the
-    // 15:00 one Nov 9 (the series' start), Nov 10 (three left).
+    // 15:00 one Nov 9 (the series' start), Nov 10 (three left). RFC 5545
+    // counts the new start (15:00) as each rule's first: the 9:00 rule,
+    // whose meeting it isn't, keeps one more (COUNT=3).
     const rules = [
       "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
@@ -372,7 +374,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=2",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=3",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3",
     ]);
     // Split at 15:00 on the first day: only the 9:00 rule's first is gone.
@@ -384,7 +386,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
     ]);
   });
@@ -392,7 +394,8 @@ describe("splitting a series", () => {
   test("counts the series' start only for a rule at its time", () => {
     // Mondays at 9:00 (the series' start, Mon Nov 9) and Tuesdays at 15:00:
     // the Tuesday rule's days are Nov 10, 17, 24, never the Monday start.
-    // Split Tue Nov 17 at 15:00: two Mondays and one Tuesday used.
+    // Split Tue Nov 17 at 15:00: two Mondays and one Tuesday used; the
+    // new start isn't a Monday meeting, so the Mondays keep one more.
     const rules = [
       "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
       "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=3",
@@ -405,7 +408,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
       "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=2",
     ]);
   });
@@ -489,7 +492,8 @@ describe("splitting a series", () => {
       )
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=5"]);
     // Morning and afternoon as two rules: Nov 9 15:00 is the afternoon
-    // rule's own meeting, so nothing is added (four and five left).
+    // rule's own meeting (five left, as is), not the morning one's (four
+    // left, one more for the new start).
     const twoRules = [
       "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
@@ -502,7 +506,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
     ]);
   });
