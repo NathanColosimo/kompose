@@ -1,6 +1,7 @@
 import {
   PICK_START_TO_REPEAT,
   repeatEndsBeforeStart,
+  sameRecurrence,
 } from "@kompose/api/lib/recurrence";
 import type {
   TaskRecurrence,
@@ -236,36 +237,11 @@ export function resolveTaskRecurrenceForEditor(
   return seriesMaster?.recurrence ?? null;
 }
 
-function normalizeRecurrenceForCompare(
-  value: TaskRecurrence | null | undefined
-): TaskRecurrence | null {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = buildTaskRecurrence(
-    getTaskRecurrenceEditorState(value, null)
-  );
-
-  if (normalized.freq === "WEEKLY") {
-    return {
-      ...normalized,
-      byDay: [...normalized.byDay].sort(),
-    };
-  }
-
-  return normalized;
-}
-
-export function taskRecurrenceEquals(
-  a: TaskRecurrence | null | undefined,
-  b: TaskRecurrence | null | undefined
-): boolean {
-  return (
-    JSON.stringify(normalizeRecurrenceForCompare(a)) ===
-    JSON.stringify(normalizeRecurrenceForCompare(b))
-  );
-}
+/**
+ * Whether two patterns repeat the same way, compared as the server compares
+ * them, so the editor and the server agree on what a save changes.
+ */
+export const taskRecurrenceEquals = sameRecurrence;
 
 export function haveTaskTagIdsChanged(
   previous: string[],

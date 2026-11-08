@@ -114,6 +114,19 @@ describe("getTaskUpdateScopeDecision", () => {
     ).toEqual({ action: "apply", scope: "following" });
   });
 
+  test("sees a count dropped from a pattern that also has an end date", () => {
+    // Daily x4 until Nov 30 (both ends, as the API allows) made until-only.
+    const until = { freq: "DAILY" as const, interval: 1, until: "2026-11-30" };
+    expect(
+      getTaskUpdateScopeDecision({
+        ...base,
+        hasCoreFieldChanges: false,
+        nextRecurrence: until,
+        previousRecurrence: { ...until, count: 4 },
+      })
+    ).toEqual({ action: "apply", scope: "following" });
+  });
+
   test("applies an inbox occurrence's edits to it alone, with no question", () => {
     expect(
       getTaskUpdateScopeDecision({ ...base, hasFollowing: false })
