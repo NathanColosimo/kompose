@@ -220,6 +220,18 @@ describe("heirPattern", () => {
 });
 
 describe("endedBefore", () => {
+  test("never ends past the last occurrence or the pattern's own end", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    // Master moved to Nov 20; Nov 10-12 are what's left.
+    expect(endedBefore(daily, "2026-11-20", "2026-11-12")).toEqual({
+      ...daily,
+      until: "2026-11-12",
+    });
+    expect(
+      endedBefore({ ...daily, until: "2026-11-11" }, "2026-11-20", "2026-11-12")
+    ).toEqual({ ...daily, until: "2026-11-11" });
+  });
+
   test("stops a pattern the day before, dropping its count", () => {
     expect(
       endedBefore({ count: 4, freq: "DAILY", interval: 1 }, "2026-11-13")

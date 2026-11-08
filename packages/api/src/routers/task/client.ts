@@ -11,6 +11,7 @@ import { taskTable } from "@kompose/db/schema/task";
 import {
   and,
   asc,
+  desc,
   EmptyFilter,
   eq,
   gte,
@@ -914,8 +915,21 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (master.startDate && boundary <= master.startDate) {
     return yield* dbUpdate(userId, master.id, { recurrence: null });
   }
+  const db = yield* Database;
+  const [last] = yield* db
+    .select({ startDate: taskTable.startDate })
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        lt(taskTable.startDate, boundary)
+      )
+    )
+    .orderBy(desc(taskTable.startDate))
+    .limit(1);
   return yield* dbUpdate(userId, master.id, {
-    recurrence: endedBefore(master.recurrence, boundary),
+    recurrence: endedBefore(master.recurrence, boundary, last?.startDate),
   });
 });
 
@@ -948,6 +962,13 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
   if (!(heir && master.recurrence)) {
     return [] as TaskSelect[];
   }
+  // One task left doesn't repeat: it stands alone.
+  if (earlier.length === 1) {
+    return yield* dbUpdate(userId, heir.id, {
+      recurrence: null,
+      seriesMasterId: null,
+    });
+  }
   const moved = yield* db
     .update(taskTable)
     .set({ seriesMasterId: heir.id })
@@ -959,7 +980,11 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
     )
     .returning();
   const [newMaster] = yield* dbUpdate(userId, heir.id, {
-    recurrence: endedBefore(master.recurrence, boundary),
+    recurrence: endedBefore(
+      master.recurrence,
+      boundary,
+      earlier.at(-1)?.startDate
+    ),
   });
   return newMaster
     ? [...moved.filter((row) => row.id !== heir.id), newMaster]
@@ -1295,12 +1320,25 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
-      // scope=following: delete this task and all future tasks in series
-      if (scope === "following" && task.startDate) {
-        yield* dbDeleteBySeriesFrom(
-          userId,
-          task.seriesMasterId,
-          task.startDate
+      // scope=following: delete this task and all future tasks in series.
+      // What's left before it ends its pattern there, or, when this is a
+      // master moved later alone, keeps it as a series of its own.
+      if (scope === "following" && task.startDate && task.seriesMasterId) {
+        const dated = {
+          ...task,
+          seriesMasterId: task.seriesMasterId,
+          startDate: task.startDate,
+        };
+        const db = yield* Database;
+        yield* db.transaction(() =>
+          Effect.gen(function* () {
+            yield* endSeriesBefore(userId, dated, dated.startDate);
+            yield* dbDeleteBySeriesFrom(
+              userId,
+              dated.seriesMasterId,
+              dated.startDate
+            );
+          })
         );
       }
     });

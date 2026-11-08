@@ -192,14 +192,20 @@ export function heirPattern(
     : pattern;
 }
 
-/** A pattern stopped the day before `boundary` (a count no longer applies). */
+/** A pattern stopped before `boundary` (a count no longer applies). */
 export function endedBefore(
   recurrence: NonNullable<TaskSelect["recurrence"]>,
-  boundary: string
+  boundary: string,
+  /** The last occurrence left before the boundary, if known. */
+  lastDate?: string | null
 ): NonNullable<TaskSelect["recurrence"]> {
   const { count: _count, ...pattern } = recurrence;
-  return {
-    ...pattern,
-    until: Temporal.PlainDate.from(boundary).subtract({ days: 1 }).toString(),
-  };
+  // The earliest of: the day before the boundary, the pattern's own end,
+  // and its last remaining occurrence, so it never claims days it lacks.
+  const ends = [
+    Temporal.PlainDate.from(boundary).subtract({ days: 1 }).toString(),
+    recurrence.until,
+    lastDate,
+  ].filter((date): date is string => Boolean(date));
+  return { ...pattern, until: ends.sort()[0] };
 }
