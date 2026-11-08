@@ -8,7 +8,17 @@ import type {
   TaskUpdate,
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
-import { and, asc, EmptyFilter, eq, gte, inArray, ne, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  EmptyFilter,
+  eq,
+  gte,
+  inArray,
+  lt,
+  ne,
+  or,
+} from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
@@ -17,6 +27,7 @@ import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, TaskNotFoundError } from "./errors";
 import {
   buildOccurrenceRowsFromTask,
+  endedBefore,
   getDueDateForOccurrence,
   heirPattern,
   keepsEditedOccurrence,
@@ -892,7 +903,7 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   boundary: string
 ) {
   if (task.seriesMasterId === task.id) {
-    return [] as TaskSelect[];
+    return yield* handOffEarlierPart(userId, task, boundary);
   }
   const [master] = yield* dbSelectById(userId, task.seriesMasterId);
   if (!master?.recurrence) {
@@ -903,13 +914,56 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (master.startDate && boundary <= master.startDate) {
     return yield* dbUpdate(userId, master.id, { recurrence: null });
   }
-  const { count: _count, ...pattern } = master.recurrence;
   return yield* dbUpdate(userId, master.id, {
-    recurrence: {
-      ...pattern,
-      until: Temporal.PlainDate.from(boundary).subtract({ days: 1 }).toString(),
-    },
+    recurrence: endedBefore(master.recurrence, boundary),
   });
+});
+
+/**
+ * The edited task is its series' master but some occurrences come before
+ * the edit (the master was moved later alone, then its repeat changed or
+ * stopped). Those keep the original pattern, ended the day before, under
+ * the earliest of them as their own master, so the master's new pattern
+ * (or none) doesn't reach them.
+ */
+const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
+  userId: string,
+  master: DatedSeriesTask,
+  boundary: string
+) {
+  const db = yield* Database;
+  const earlier = yield* db
+    .select()
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        ne(taskTable.id, master.id),
+        lt(taskTable.startDate, boundary)
+      )
+    )
+    .orderBy(asc(taskTable.startDate));
+  const [heir] = earlier;
+  if (!(heir && master.recurrence)) {
+    return [] as TaskSelect[];
+  }
+  const moved = yield* db
+    .update(taskTable)
+    .set({ seriesMasterId: heir.id })
+    .where(
+      inArray(
+        taskTable.id,
+        earlier.map((row) => row.id)
+      )
+    )
+    .returning();
+  const [newMaster] = yield* dbUpdate(userId, heir.id, {
+    recurrence: endedBefore(master.recurrence, boundary),
+  });
+  return newMaster
+    ? [...moved.filter((row) => row.id !== heir.id), newMaster]
+    : moved;
 });
 
 function ids(rows: TaskSelect[]): string[] {

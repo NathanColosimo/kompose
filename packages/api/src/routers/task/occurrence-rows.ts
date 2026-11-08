@@ -191,3 +191,15 @@ export function heirPattern(
     ? { ...pattern, count: Math.max(1, remaining) }
     : pattern;
 }
+
+/** A pattern stopped the day before `boundary` (a count no longer applies). */
+export function endedBefore(
+  recurrence: NonNullable<TaskSelect["recurrence"]>,
+  boundary: string
+): NonNullable<TaskSelect["recurrence"]> {
+  const { count: _count, ...pattern } = recurrence;
+  return {
+    ...pattern,
+    until: Temporal.PlainDate.from(boundary).subtract({ days: 1 }).toString(),
+  };
+}

@@ -3,6 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import {
+  endedBefore,
   heirPattern,
   keepsEditedOccurrence,
   regeneratedOccurrenceRows,
@@ -215,5 +216,13 @@ describe("heirPattern", () => {
     expect(heirPattern(daily4, 2)).toEqual({ ...daily4, count: 2 });
     const open = { freq: "DAILY" as const, interval: 1 };
     expect(heirPattern(open, 2)).toEqual(open);
+  });
+});
+
+describe("endedBefore", () => {
+  test("stops a pattern the day before, dropping its count", () => {
+    expect(
+      endedBefore({ count: 4, freq: "DAILY", interval: 1 }, "2026-11-13")
+    ).toEqual({ freq: "DAILY", interval: 1, until: "2026-11-12" });
   });
 });
