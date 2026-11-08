@@ -21,7 +21,7 @@ These live in `apps/web/src/components/task-form/task-edit-popover.tsx`;
 - **`TaskFields`**: the fields both forms share (below).
 - **`useHeldSave`**: the held save (below). The popover that owns the editor
   calls it, `TaskEditPopover` or `EventCreationPopover`, so its Escape and
-  outside-click handlers can wait for the save too.
+  outside-click handlers can ignore them while it saves.
 
 Triggers: `components/sidebar/task-item.tsx` (sidebar) and
 `components/calendar/events/task-event.tsx` (calendar). Task queries and
@@ -53,7 +53,7 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
   remount, see `HeldFieldset`), and Escape and outside clicks do nothing.
   These saves aren't optimistic, so a failure can't roll the cache back over
   the draft.
-- **Failures** keep the draft and show the reason beside Save
+- **Failures** keep the draft and show the reason above the buttons
   (`SaveFailure`), which takes focus. The next save clears it.
 - **Mark done with no other edits** saves at once and closes.
 - **Save and Mark done keep their width** while they show "Saving…"
@@ -71,13 +71,14 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
   and following** when the edit could apply beyond it. The question and its
   default come from `getTaskUpdateScopeDecision` in
   `packages/state/src/task-recurrence.ts`, shared with iOS.
-- **A repeat change** applies from this occurrence on, with no question; the
-  note under Repeat says so.
+- **A repeat change** asks no question; the note under Repeat says what it
+  will do. On a dated occurrence it applies from that occurrence on. On an
+  occurrence in the inbox it changes only that task: clearing Repeat takes
+  it out of its series, and a new pattern makes it a series of its own.
 - **Moving an occurrence to the inbox** (clearing its date) asks nothing: it
   changes that occurrence alone, as the server does.
-- **Mark done** with unsaved edits on a series follows the same rules (the
-  question, or a repeat change applying from this occurrence on), then saves
-  the edits and the status in one write; the status applies to this
+- **Mark done** with unsaved edits on a series follows the same rules, then
+  saves the edits and the status in one write; the status applies to this
   occurrence only.
 - **Delete** on a dated occurrence offers this occurrence or this and
   following; otherwise it asks to confirm.
@@ -110,6 +111,6 @@ Below 768px:
   rail icon opens the list full width, with a "Show calendar" button beside
   +. The calendar behind it is clipped and inert. The list folds again on
   leaving the calendar, when the command bar or the **c** key creates an
-  event, and when search or the desktop app opens a task on the calendar. The fold
-  doesn't change the panel choice saved for wide windows
+  event, and when search or the desktop app opens a task on the calendar.
+  The fold doesn't change the panel choice saved for wide windows
   (`apps/web/src/state/sidebar.ts`).

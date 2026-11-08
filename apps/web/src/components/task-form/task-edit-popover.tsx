@@ -421,7 +421,7 @@ function canSaveFromKeyboard(params: {
 /**
  * Holds an editor open on a save, for Mark done ("done") or Save ("save"):
  * it closes when the save succeeds and keeps the draft if not. Owned by the
- * popover, whose Escape and outside clicks wait for it too.
+ * popover, whose Escape and outside clicks are ignored while it saves.
  */
 export function useHeldSave({
   editorRef,
