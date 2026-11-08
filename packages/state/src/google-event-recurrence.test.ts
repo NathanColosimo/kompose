@@ -1988,6 +1988,28 @@ describe("changedMeetingDropped", () => {
     ).toBe("2026-12-07");
   });
 
+  test("through the series' first meeting, a new day is the series' too", () => {
+    // Weekly on the start's weekday from Tue Dec 1; Tue Dec 8 renamed.
+    // Moving the first meeting to Wed Dec 2 moves the series to Wednesdays
+    // (elsewhere, the series would keep Dec 1 and nothing would drop).
+    const weekly = { ...master, recurrence: ["RRULE:FREQ=WEEKLY"] };
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    const tuesday = meeting("2026-12-08T09:00:00-05:00", { summary: "Demo" });
+    expect(
+      changedMeetingDropped({
+        edited: {
+          end: at("2026-12-02T09:30:00-05:00"),
+          start: at("2026-12-02T09:00:00-05:00"),
+        },
+        loaded: [first, tuesday],
+        master: weekly,
+        occurrence: first,
+        recurrence: undefined,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-12-08");
+  });
+
   test("an all-day series' slots are its days", () => {
     // Mondays and Wednesdays all day from Mon Nov 30; Wed Dec 9 renamed.
     const allDay = {
