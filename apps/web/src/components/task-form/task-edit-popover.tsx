@@ -869,7 +869,15 @@ export function TaskEditForm({
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
-            <AlertDialogContent>
+            <AlertDialogContent
+              // Back to the editor, not the Delete icon: there its tooltip
+              // would open and take the next Escape, so closing the editor
+              // took two. Backspace (the usual way here) came from the editor.
+              onCloseAutoFocus={(e) => {
+                e.preventDefault();
+                hold.editorRef.current?.focus();
+              }}
+            >
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete task?</AlertDialogTitle>
                 <AlertDialogDescription>
