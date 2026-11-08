@@ -39,6 +39,17 @@ describe("where This and following can start", () => {
     }
   });
 
+  test("not in a series with an exclusion rule", () => {
+    // A new start would re-anchor the EXRULE's phase (which Sundays it
+    // skips), so it counts as a second rule.
+    expect(
+      blocked(
+        ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU"],
+        "2026-11-16T09:00:00-05:00"
+      )
+    ).toBe("severalRules");
+  });
+
   test("counts a series' first start even off the rule's days", () => {
     // Mondays three times, but starting Wed Nov 4: the meetings are Nov 4,
     // 9 and 16, so an added Nov 23 is past the end, not a rule meeting.
