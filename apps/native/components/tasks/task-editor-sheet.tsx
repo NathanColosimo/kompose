@@ -47,7 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { LOCALE_TIME_FORMAT } from "@/lib/time-format";
+import { localeTimeFormat } from "@/lib/time-format";
 
 export interface TaskDraft {
   description: string;
@@ -741,7 +741,7 @@ export function TaskEditorSheet({
                   minHeight: 38,
                   paddingHorizontal: 4,
                 }}
-                timeFormat={LOCALE_TIME_FORMAT}
+                timeFormat={localeTimeFormat()}
                 value={
                   draft.startTime ? plainTimeToDate(draft.startTime) : undefined
                 }

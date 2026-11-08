@@ -664,6 +664,71 @@ function WorkoutSheet({
   );
 }
 
+/**
+ * Scope for saving a recurring event. It opens over the editor (iOS presents
+ * it from the sheet's modal): Cancel goes back to the editor with the edits,
+ * and Apply holds "Saving…" until the save ends.
+ */
+function EventSaveScopeDialog({
+  draft,
+  isVisible,
+  onCancel,
+  onConfirm,
+  onScopeChange,
+  pending,
+  scope,
+}: {
+  draft: EditEventDraft | null;
+  isVisible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onScopeChange: (scope: RecurrenceScope) => void;
+  pending: boolean;
+  scope: RecurrenceScope;
+}) {
+  // Google can only move a whole series to another calendar, so "this" and
+  // "following" are disabled when the calendar changes.
+  const isMoving =
+    draft != null &&
+    draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
+  return (
+    <AlertDialog
+      closeOnConfirm={false}
+      confirmText="Apply"
+      description={
+        isMoving
+          ? "Moving to a different calendar applies to all events in the series."
+          : "This is a recurring event. Choose how broadly to apply these changes."
+      }
+      isVisible={isVisible}
+      onCancel={onCancel}
+      // Cancel and a backdrop tap already run onCancel.
+      onClose={noop}
+      onConfirm={onConfirm}
+      pending={pending}
+      title="Save recurring event"
+    >
+      <View className="mt-2">
+        <RadioGroup
+          onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
+          options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+            disabled:
+              isMoving &&
+              (option.value === "this" || option.value === "following"),
+            label: option.label,
+            value: option.value,
+          }))}
+          value={scope}
+        />
+      </View>
+    </AlertDialog>
+  );
+}
+
+function noop() {
+  // Intentionally empty: see EventSaveScopeDialog's onClose.
+}
+
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
   const queryClient = useQueryClient();
@@ -1397,9 +1462,9 @@ export default function CalendarTab() {
               event: draft.sourceEvent,
               masterRecurrence: masterSeriesRecurrence,
             });
+        // The scope dialog opens over the editor, which stays open.
         setPendingEventSaveDraft(draft);
         setEventSaveScope(defaultScope);
-        setEventDraft(null);
         setEventDialog("save");
         return;
       }
@@ -1419,7 +1484,17 @@ export default function CalendarTab() {
     if (!pendingEventSaveDraft) {
       return;
     }
-    await commitEventUpdate(pendingEventSaveDraft, eventSaveScope);
+    setIsSavingEvent(true);
+    try {
+      // Closes the editor (and this dialog) when it saves.
+      await commitEventUpdate(pendingEventSaveDraft, eventSaveScope);
+    } catch {
+      // The mutation reports the error; the editor stays with the edits.
+      setEventDialog(null);
+      setPendingEventSaveDraft(null);
+    } finally {
+      setIsSavingEvent(false);
+    }
   }, [commitEventUpdate, eventSaveScope, pendingEventSaveDraft]);
 
   const requestDeleteEvent = useCallback(
@@ -1993,6 +2068,19 @@ export default function CalendarTab() {
               .catch(() => null)
               .finally(() => setIsSavingEvent(false));
           }}
+          overlay={
+            <EventSaveScopeDialog
+              draft={pendingEventSaveDraft}
+              isVisible={eventDialog === "save"}
+              onCancel={dismissEventSaveDialog}
+              onConfirm={() => {
+                confirmScopedEventSave().catch(() => null);
+              }}
+              onScopeChange={setEventSaveScope}
+              pending={isSavingEvent}
+              scope={eventSaveScope}
+            />
+          }
         />
       ) : null}
 
@@ -2085,49 +2173,6 @@ export default function CalendarTab() {
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
-
-      <AlertDialog
-        confirmText="Apply"
-        description={
-          pendingEventSaveDraft &&
-          pendingEventSaveDraft.calendar.calendarId !==
-            pendingEventSaveDraft.sourceCalendar.calendarId
-            ? "Moving to a different calendar applies to all events in the series."
-            : "This is a recurring event. Choose how broadly to apply these changes."
-        }
-        isVisible={eventDialog === "save"}
-        onCancel={dismissEventSaveDialog}
-        onClose={dismissEventSaveDialog}
-        onConfirm={() => {
-          confirmScopedEventSave().catch(() => null);
-        }}
-        title="Save recurring event"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) =>
-              setEventSaveScope(value as RecurrenceScope)
-            }
-            options={RECURRENCE_SCOPE_OPTIONS.map((option) => {
-              // Google can only move a whole series to another calendar, so
-              // "this" and "following" are disabled when the calendar changes.
-              const isMoving =
-                pendingEventSaveDraft != null &&
-                pendingEventSaveDraft.calendar.calendarId !==
-                  pendingEventSaveDraft.sourceCalendar.calendarId;
-              const disabled =
-                isMoving &&
-                (option.value === "this" || option.value === "following");
-              return {
-                disabled,
-                label: option.label,
-                value: option.value,
-              };
-            })}
-            value={eventSaveScope}
-          />
-        </View>
-      </AlertDialog>
 
       <AlertDialog
         confirmText="Delete"

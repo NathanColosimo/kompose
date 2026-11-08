@@ -30,6 +30,7 @@ import {
 import {
   formatAllDayWhen,
   formatEventWhen,
+  moveEventStart,
 } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import {
@@ -42,7 +43,11 @@ import {
   X,
 } from "lucide-react-native";
 import React from "react";
-import { type UseFormSetValue, useForm } from "react-hook-form";
+import {
+  type UseFormGetValues,
+  type UseFormSetValue,
+  useForm,
+} from "react-hook-form";
 import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type {
@@ -64,7 +69,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColor } from "@/hooks/use-color";
-import { LOCALE_TIME_FORMAT } from "@/lib/time-format";
+import { localeTimeFormat } from "@/lib/time-format";
 
 const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
@@ -765,6 +770,7 @@ function EventDateTimeRow({
   allDay,
   canEditRecurrence,
   endDate,
+  getValues,
   endDatePickerValue,
   endTimePickerValue,
   isRecurrenceExpanded,
@@ -779,6 +785,7 @@ function EventDateTimeRow({
   endDate: Temporal.PlainDate;
   endDatePickerValue: Date;
   endTimePickerValue: Date;
+  getValues: UseFormGetValues<EventDraft>;
   isRecurrenceExpanded: boolean;
   onToggleRecurrence: () => void;
   setValue: UseFormSetValue<EventDraft>;
@@ -786,6 +793,17 @@ function EventDateTimeRow({
   startDatePickerValue: Date;
   startTimePickerValue: Date;
 }) {
+  // Moving the start keeps the event's length (shared with web).
+  const moveStart = (next: {
+    date?: Temporal.PlainDate;
+    time?: Temporal.PlainTime;
+  }) => {
+    const moved = moveEventStart(getValues(), next);
+    setValue("startDate", moved.startDate, { shouldDirty: true });
+    setValue("startTime", moved.startTime, { shouldDirty: true });
+    setValue("endDate", moved.endDate, { shouldDirty: true });
+    setValue("endTime", moved.endTime, { shouldDirty: true });
+  };
   return (
     <View className="mb-2.5 flex-row items-center gap-1.5">
       <View className="min-w-0 flex-1">
@@ -796,13 +814,7 @@ function EventDateTimeRow({
             if (!date) {
               return;
             }
-            const nextDate = dateToPlainDate(date);
-            const nextEndDate =
-              Temporal.PlainDate.compare(nextDate, endDate) > 0
-                ? nextDate
-                : endDate;
-            setValue("startDate", nextDate, { shouldDirty: true });
-            setValue("endDate", nextEndDate, { shouldDirty: true });
+            moveStart({ date: dateToPlainDate(date) });
           }}
           placeholder="Start date"
           showIcon={false}
@@ -820,20 +832,12 @@ function EventDateTimeRow({
               if (!date) {
                 return;
               }
-              const nextTime = dateToPlainTime(date);
-              // The end follows 30 minutes later, onto the next day when
-              // that crosses midnight (11:45 PM ends at 12:15 AM tomorrow).
-              const end = startDate
-                .toPlainDateTime(nextTime)
-                .add({ minutes: 30 });
-              setValue("startTime", nextTime, { shouldDirty: true });
-              setValue("endDate", end.toPlainDate(), { shouldDirty: true });
-              setValue("endTime", end.toPlainTime(), { shouldDirty: true });
+              moveStart({ time: dateToPlainTime(date) });
             }}
             placeholder="Start time"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat={LOCALE_TIME_FORMAT}
+            timeFormat={localeTimeFormat()}
             value={startTimePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
@@ -875,7 +879,7 @@ function EventDateTimeRow({
             placeholder="End time"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat={LOCALE_TIME_FORMAT}
+            timeFormat={localeTimeFormat()}
             value={endTimePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
@@ -976,6 +980,8 @@ interface EventEditorSheetProps {
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
+  /** Dialogs that open over the editor (iOS presents them from its modal). */
+  overlay?: React.ReactNode;
 }
 
 /**
@@ -986,6 +992,7 @@ export function EventEditorSheet({
   draft,
   isSaving = false,
   onClose,
+  overlay,
   onSubmit,
   onDelete,
   calendarOptions,
@@ -1200,6 +1207,7 @@ export function EventEditorSheet({
           endDate={endDate}
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}
+          getValues={getValues}
           isRecurrenceExpanded={isRecurrenceExpanded}
           onToggleRecurrence={() =>
             setIsRecurrenceExpanded((current) => !current)
@@ -1209,6 +1217,12 @@ export function EventEditorSheet({
           startDatePickerValue={startDatePickerValue}
           startTimePickerValue={startTimePickerValue}
         />
+        {/* Save stays off until the end comes after the start; say why. */}
+        {endsAfterStart(values) ? null : (
+          <Text className="-mt-1 mb-2.5 text-destructive text-xs">
+            Ends before it starts.
+          </Text>
+        )}
 
         {recurrenceEditor}
 
@@ -1282,6 +1296,7 @@ export function EventEditorSheet({
           variant="outline"
         />
       </HeldWhileSaving>
+      {overlay}
     </BottomSheet>
   );
 }

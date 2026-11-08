@@ -8,6 +8,7 @@ import {
   formatEventWhen,
   formatScheduledAt,
   formatTimeRange,
+  moveEventStart,
   nearestSlotMinutes,
 } from "./temporal-utils";
 
@@ -188,6 +189,62 @@ describe("formatScheduledAt", () => {
     );
     expect(formatScheduledAt(at("2027-01-04T10:00"), today, "en-US")).toBe(
       "Jan 4, 2027, 10:00 AM"
+    );
+  });
+});
+
+describe("moveEventStart", () => {
+  const d = (iso: string) => Temporal.PlainDate.from(iso);
+  const t = (iso: string) => Temporal.PlainTime.from(iso);
+  const text = (r: ReturnType<typeof moveEventStart>) =>
+    `${r.startDate} ${r.startTime ?? "-"} → ${r.endDate} ${r.endTime ?? "-"}`;
+  const meeting = {
+    endDate: d("2026-11-12"),
+    endTime: t("16:00"),
+    startDate: d("2026-11-12"),
+    startTime: t("14:00"),
+  };
+
+  test("keeps the length when the time moves", () => {
+    expect(text(moveEventStart(meeting, { time: t("15:00") }))).toBe(
+      "2026-11-12 15:00:00 → 2026-11-12 17:00:00"
+    );
+    expect(text(moveEventStart(meeting, { time: t("23:00") }))).toBe(
+      "2026-11-12 23:00:00 → 2026-11-13 01:00:00"
+    );
+  });
+
+  test("keeps the length when the date moves, either way", () => {
+    expect(text(moveEventStart(meeting, { date: d("2026-11-10") }))).toBe(
+      "2026-11-10 14:00:00 → 2026-11-10 16:00:00"
+    );
+    const overnight = {
+      ...meeting,
+      endDate: d("2026-11-13"),
+      endTime: t("07:00"),
+      startTime: t("23:00"),
+    };
+    expect(text(moveEventStart(overnight, { date: d("2026-11-14") }))).toBe(
+      "2026-11-14 23:00:00 → 2026-11-15 07:00:00"
+    );
+  });
+
+  test("keeps an all-day event's span", () => {
+    const trip = {
+      endDate: d("2026-11-14"),
+      endTime: null,
+      startDate: d("2026-11-12"),
+      startTime: null,
+    };
+    expect(text(moveEventStart(trip, { date: d("2026-11-20") }))).toBe(
+      "2026-11-20 - → 2026-11-22 -"
+    );
+  });
+
+  test("gives 30 minutes when there's no length to keep", () => {
+    const backwards = { ...meeting, endTime: t("13:00") };
+    expect(text(moveEventStart(backwards, { time: t("09:00") }))).toBe(
+      "2026-11-12 09:00:00 → 2026-11-12 09:30:00"
     );
   });
 });

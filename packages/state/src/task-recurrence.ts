@@ -1,5 +1,6 @@
 import type {
   TaskRecurrence,
+  TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
@@ -382,6 +383,10 @@ export function getTaskUpdateScopeDecision(params: {
  * The error for a Mark done (or not done) that failed while the editor held
  * open on it: what failed, and that the edits are still in the editor.
  */
-export function markStatusFailureMessage(status: string): string {
-  return `Couldn't mark the task ${status === "done" ? "done" : "not done"}. Your changes are still here.`;
+export function markStatusFailureMessage(
+  status: TaskSelectDecoded["status"]
+): string {
+  return status === "done"
+    ? "Couldn't mark the task done. Your changes are still here."
+    : "Couldn't reopen the task. Your changes are still here.";
 }

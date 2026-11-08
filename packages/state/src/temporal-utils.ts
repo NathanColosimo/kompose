@@ -263,3 +263,48 @@ export function formatScheduledAt(
   });
   return `${day}, ${clock}`;
 }
+
+interface EventRange {
+  endDate: Temporal.PlainDate;
+  endTime: Temporal.PlainTime | null;
+  startDate: Temporal.PlainDate;
+  startTime: Temporal.PlainTime | null;
+}
+
+/**
+ * An event's range after its start moves: it keeps its length, so a 2-hour
+ * meeting moved to 3 PM ends at 5 PM, onto the next day when that crosses
+ * midnight. An all-day event keeps its day span. With no length to keep
+ * (no end, or an end before the start), it gets 30 minutes.
+ */
+export function moveEventStart(
+  range: EventRange,
+  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime }
+): EventRange {
+  const startDate = next.date ?? range.startDate;
+  const startTime = next.time ?? range.startTime;
+  if (!startTime) {
+    const days = Math.max(
+      0,
+      range.startDate.until(range.endDate, { largestUnit: "days" }).days
+    );
+    return { ...range, endDate: startDate.add({ days }), startDate };
+  }
+  const oldStart = range.startDate.toPlainDateTime(
+    range.startTime ?? startTime
+  );
+  const length = range.endTime
+    ? oldStart.until(range.endDate.toPlainDateTime(range.endTime), {
+        largestUnit: "minutes",
+      }).minutes
+    : 0;
+  const end = startDate
+    .toPlainDateTime(startTime)
+    .add({ minutes: length > 0 ? length : 30 });
+  return {
+    endDate: end.toPlainDate(),
+    endTime: end.toPlainTime(),
+    startDate,
+    startTime,
+  };
+}

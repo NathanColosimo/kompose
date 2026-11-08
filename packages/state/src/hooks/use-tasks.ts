@@ -139,7 +139,11 @@ export function useTasks(options: UseTasksOptions = {}) {
       return results.map((t) => taskSelectCodec.parse(t));
     },
     onError: (err, { failureMessage }, context) => {
-      notifyError?.(failureMessage ? new Error(failureMessage) : err);
+      // A friendly message for a held save, with the server's error kept as
+      // its cause for logs and debugging.
+      notifyError?.(
+        failureMessage ? new Error(failureMessage, { cause: err }) : err
+      );
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
