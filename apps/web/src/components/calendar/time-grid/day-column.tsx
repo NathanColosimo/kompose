@@ -11,6 +11,12 @@ import type { DayColumnDropData } from "../dnd/types";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
+/**
+ * The free strip at a column's right edge, in pixels: blocks stop short of
+ * it, so a slot is always free to start a new event even on a busy day.
+ */
+export const COLUMN_FREE_STRIP = 12;
+
 interface DayColumnProps {
   /** The column's blocks. */
   children?: React.ReactNode;
@@ -64,17 +70,23 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <DayColumnDropTarget date={date} timeZone={timeZone} />
-      {/* Blocks stop short of the right edge, so a slot is always free to
-          start a new event even on a busy day. Their stacking order stays
+      {/* Blocks stop short of the right edge (COLUMN_FREE_STRIP). Their
+          stacking order stays
           inside this layer (isolate), so a busy day's blocks never rise
           above the overlay, the now line, or the grid's header. */}
       {/* The now line runs under the blocks, so it never strikes through a
           title; its dot stays on top at the column's edge. */}
       <CurrentTimeIndicator date={date} part="line" />
-      <div className="pointer-events-none absolute inset-y-0 right-3 left-0 isolate">
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0 isolate"
+        style={{ right: COLUMN_FREE_STRIP }}
+      >
         {children}
       </div>
-      <div className="pointer-events-none absolute inset-y-0 right-3 left-0">
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0"
+        style={{ right: COLUMN_FREE_STRIP }}
+      >
         {overlay}
       </div>
       <CurrentTimeIndicator date={date} part="dot" />

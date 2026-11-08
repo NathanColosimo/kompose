@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { generateOccurrences } from "./recurrence";
+import { generateOccurrences, sameRecurrence } from "./recurrence";
 
 const dates = (list: Temporal.PlainDate[]) => list.map(String);
 
@@ -37,5 +37,31 @@ describe("generateOccurrences", () => {
         Temporal.PlainDate.from("2026-11-09")
       )
     ).toEqual([]);
+  });
+});
+
+describe("sameRecurrence", () => {
+  test("matches a pattern whatever its key and day order", () => {
+    // Postgres jsonb hands keys back in its own order, unlike the request's.
+    expect(
+      sameRecurrence(
+        { byDay: ["MO", "WE"], count: 4, freq: "WEEKLY", interval: 1 },
+        JSON.parse(
+          '{"freq":"WEEKLY","byDay":["WE","MO"],"count":4,"interval":1}'
+        )
+      )
+    ).toBe(true);
+  });
+
+  test("treats a key set to undefined as missing", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    expect(sameRecurrence({ ...daily, count: undefined }, daily)).toBe(true);
+  });
+
+  test("tells patterns apart", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    expect(sameRecurrence(daily, { ...daily, count: 3 })).toBe(false);
+    expect(sameRecurrence(daily, null)).toBe(false);
+    expect(sameRecurrence(null, undefined)).toBe(true);
   });
 });

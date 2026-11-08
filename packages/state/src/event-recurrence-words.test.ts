@@ -17,6 +17,13 @@ describe("describeEventRecurrence", () => {
     expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,WE")).toBe(
       "Repeats weekly on Mon, Wed"
     );
+    // Days picked in any order read in week order, Monday first.
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR,TH")).toBe(
+      "Repeats weekly on Mon, Wed, Thu, Fri"
+    );
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=SU,MO")).toBe(
+      "Repeats weekly on Mon, Sun"
+    );
     expect(words("RRULE:FREQ=DAILY;INTERVAL=2")).toBe("Repeats every 2 days");
     expect(words("RRULE:FREQ=YEARLY")).toBe("Repeats yearly");
     expect(words("RRULE:FREQ=HOURLY")).toBe("Repeats");
@@ -89,6 +96,27 @@ describe("describeEventRecurrence", () => {
     ] as const) {
       expect(words(rule)).toBe(said);
     }
+  });
+
+  test("marks a series with more than one rule, whose others the words leave out", () => {
+    expect(
+      describeEventRecurrence({
+        rules: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=FR",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+      })
+    ).toBe("Repeats weekly on Mon (custom)");
+    // Skipped days don't change how it repeats.
+    expect(
+      describeEventRecurrence({
+        rules: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+      })
+    ).toBe("Repeats weekly on Mon");
   });
 
   test("still says an instance repeats when its rule isn't loaded", () => {

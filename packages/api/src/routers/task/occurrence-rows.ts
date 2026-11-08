@@ -28,6 +28,15 @@ export type TaskUpdateInput = Omit<TaskUpdate, SystemManagedTaskField> & {
   updatedAt?: never;
 };
 
+/**
+ * A pattern a create or edit sets, with the date it counts from (checked:
+ * it has one, and doesn't end before it).
+ */
+export interface CheckedPattern {
+  recurrence: NonNullable<TaskSelect["recurrence"]>;
+  startDate: string;
+}
+
 /** Parse a date string into Temporal.PlainDate (or null). */
 export function parsePlainDate(
   value: string | null | undefined
@@ -71,12 +80,16 @@ export function buildOccurrenceRowsFromTask(params: {
   const { input, task } = params;
   // A field the edit clears (null) stays cleared; only one it leaves out
   // (undefined) takes the task's value.
-  const pick = <K extends keyof TaskUpdateInput & keyof TaskSelect>(key: K) =>
-    input[key] === undefined ? task[key] : input[key];
-  const baseDueDate = parsePlainDate(pick("dueDate") as string | null);
+  const description =
+    input.description === undefined ? task.description : input.description;
+  const dueDate = input.dueDate === undefined ? task.dueDate : input.dueDate;
+  const links = input.links === undefined ? task.links : input.links;
+  const startTime =
+    input.startTime === undefined ? task.startTime : input.startTime;
+  const baseDueDate = parsePlainDate(dueDate);
 
   return params.occurrenceDates.map((date) => ({
-    description: pick("description") as string | null,
+    description,
     dueDate: getDueDateForOccurrence({
       baseDueDate,
       baseStartDate: params.seriesStartDate,
@@ -85,11 +98,11 @@ export function buildOccurrenceRowsFromTask(params: {
     durationMinutes: input.durationMinutes ?? task.durationMinutes,
     id: uuidv7(),
     isException: false,
-    links: pick("links") as TaskSelect["links"],
+    links,
     recurrence: null,
     seriesMasterId: params.seriesMasterId,
     startDate: date.toString(),
-    startTime: pick("startTime") as string | null,
+    startTime,
     status: "todo",
     title: input.title ?? task.title,
     userId: params.userId,
@@ -97,16 +110,51 @@ export function buildOccurrenceRowsFromTask(params: {
 }
 
 /**
+ * An edit that moves a task but leaves its due date (omits it, or sends it
+ * unchanged) moves the due date along, keeping the start-to-due offset, as
+ * a "following" edit without a pattern change does for each occurrence.
+ */
+export function withMovedDueDate(
+  task: TaskSelect,
+  input: TaskUpdateInput
+): TaskUpdateInput {
+  const from = parsePlainDate(task.startDate);
+  const to = parsePlainDate(input.startDate);
+  const leavesDueDate =
+    input.dueDate === undefined || input.dueDate === task.dueDate;
+  if (!(from && to && leavesDueDate)) {
+    return input;
+  }
+  return {
+    ...input,
+    dueDate: getDueDateForOccurrence({
+      baseDueDate: parsePlainDate(task.dueDate),
+      baseStartDate: from,
+      occurrenceDate: to,
+    }),
+  };
+}
+
+/**
  * Whether a "this and following" pattern change keeps the edited occurrence
  * (it takes the edits, and becomes the new series' master with the pattern)
- * instead of replacing it: it
- * is an exception already, or the edit sets its status (Mark done).
+ * instead of replacing it: it is an exception already, the edit sets its
+ * status (Mark done), or it starts on a date another kept task holds (Nov
+ * 16 done alone, then Nov 9 moved onto it): the two are different tasks.
  */
-export function keepsEditedOccurrence(
-  task: Pick<TaskSelect, "isException">,
-  input: Pick<TaskUpdateInput, "status">
-): boolean {
-  return task.isException || input.status !== undefined;
+export function keepsEditedOccurrence(params: {
+  input: Pick<TaskUpdateInput, "status">;
+  /** The dates other kept tasks (exceptions) hold from the split on. */
+  keptDates: ReadonlySet<string>;
+  /** Where the edited occurrence starts after the edit. */
+  start: string;
+  task: Pick<TaskSelect, "isException">;
+}): boolean {
+  return (
+    params.task.isException ||
+    params.input.status !== undefined ||
+    params.keptDates.has(params.start)
+  );
 }
 
 /**
@@ -114,34 +162,25 @@ export function keepsEditedOccurrence(
  * the edited occurrence now starts: its new date when the edit moves it
  * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
  * one. Dates in `keptDates` (exceptions, including the kept edited
- * occurrence) are left out. The first row is the new series master,
- * unless the edited occurrence is kept: then it is the master
- * (`seriesMasterId` is its id) and carries the pattern. New
- * occurrences start open; when the edited occurrence is replaced, the new
- * one on its date keeps its status.
+ * occurrence) are left out. When the edited occurrence is kept, it is the
+ * master (`seriesMasterId` is its id) and carries the pattern. Otherwise
+ * the first row, on its date, replaces it: the new master, with the
+ * pattern and its status. Other new occurrences start open.
  */
 export function regeneratedOccurrenceRows(params: {
-  input: TaskUpdateInput & {
-    recurrence: NonNullable<TaskUpdateInput["recurrence"]>;
-  };
+  input: TaskUpdateInput;
   keepEdited: boolean;
   keptDates: ReadonlySet<string>;
-  /**
-   * The master is a kept row on the series' first date (the edited
-   * occurrence, or an exception already there), and the caller gives it
-   * the pattern; otherwise the first new row is the master.
-   */
-  masterIsKept: boolean;
+  /** The new pattern, from the edited occurrence's start after the edit. */
+  pattern: CheckedPattern;
   seriesMasterId: string;
-  task: TaskSelect & { startDate: string };
+  task: TaskSelect;
   userId: string;
 }): TaskInsertRow[] {
-  const { input, task } = params;
-  const seriesStartDate = Temporal.PlainDate.from(
-    input.startDate ?? task.startDate
-  );
+  const { input, pattern, task } = params;
+  const seriesStartDate = Temporal.PlainDate.from(pattern.startDate);
   const occurrenceDates = generateOccurrences(
-    input.recurrence,
+    pattern.recurrence,
     seriesStartDate
   ).filter((date) => !params.keptDates.has(date.toString()));
   return buildOccurrenceRowsFromTask({
@@ -153,27 +192,15 @@ export function regeneratedOccurrenceRows(params: {
     seriesStartDate,
     task,
     userId: params.userId,
-  }).map((row, index) => ({
-    ...row,
-    ...(!params.masterIsKept && index === 0
-      ? { id: params.seriesMasterId, recurrence: input.recurrence }
-      : {}),
-    ...(!params.keepEdited && row.startDate === seriesStartDate.toString()
-      ? { status: task.status }
-      : {}),
-  }));
-}
-
-/**
- * Whether a repeat ends before the task starts. It would have no
- * occurrences, so replacing a series with it would only delete tasks.
- */
-export function repeatEndsBeforeStart(
-  recurrence: TaskSelect["recurrence"] | undefined,
-  startDate: string | null | undefined
-): boolean {
-  return Boolean(
-    recurrence?.until && startDate && recurrence.until < startDate
+  }).map((row, index) =>
+    !params.keepEdited && index === 0
+      ? {
+          ...row,
+          id: params.seriesMasterId,
+          recurrence: pattern.recurrence,
+          status: task.status,
+        }
+      : row
   );
 }
 

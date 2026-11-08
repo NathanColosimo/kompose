@@ -9,10 +9,21 @@ import type { Temporal } from "temporal-polyfill";
 import { durationInMinutes, resizedRange } from "./helpers";
 import type { DragData, DragDirection } from "./types";
 
+/** A task's drop: its new day, time and length. */
+export interface TaskDropUpdate {
+  id: string;
+  scope: UpdateScope;
+  task: {
+    durationMinutes: number;
+    startDate: Temporal.PlainDate;
+    startTime: Temporal.PlainTime;
+  };
+}
+
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
   targetDateTime: Temporal.ZonedDateTime
-): { id: string; task: object; scope: UpdateScope } {
+): TaskDropUpdate {
   return {
     id: task.id,
     // Default scope; CalendarDndProvider asks for scope on recurring tasks.
@@ -35,7 +46,7 @@ export function buildTaskResizeUpdate({
   targetDateTime: Temporal.ZonedDateTime;
   direction: DragDirection;
   timeZone: string;
-}): { id: string; task: object; scope: UpdateScope } | null {
+}): TaskDropUpdate | null {
   if (!(task.startDate && task.startTime)) {
     return null;
   }

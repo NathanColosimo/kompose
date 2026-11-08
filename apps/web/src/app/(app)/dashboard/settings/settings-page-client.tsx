@@ -238,6 +238,7 @@ export default function SettingsPageClient() {
               >
                 <Plus />
                 {googleLinkButtonLabel}
+                <span className="sr-only"> for Google Calendar</span>
               </Button>
             }
             description="Events from these accounts show on your calendar."
@@ -267,6 +268,10 @@ export default function SettingsPageClient() {
                         {unlinkingAccountId === account.id
                           ? "Unlinking…"
                           : "Unlink"}
+                        <span className="sr-only">
+                          {" "}
+                          {profile?.email || profile?.name || "Google account"}
+                        </span>
                       </Button>
                     }
                     detail={profile?.email || "Email unavailable"}
@@ -288,6 +293,7 @@ export default function SettingsPageClient() {
                 >
                   <Plus />
                   {whoopLinkButtonLabel}
+                  <span className="sr-only"> for WHOOP</span>
                 </Button>
               ) : null
             }
@@ -320,6 +326,7 @@ export default function SettingsPageClient() {
                       {unlinkingAccountId === account.id
                         ? "Unlinking…"
                         : "Unlink"}
+                      <span className="sr-only"> WHOOP account</span>
                     </Button>
                   }
                   detail={profile?.email || "Email unavailable"}
