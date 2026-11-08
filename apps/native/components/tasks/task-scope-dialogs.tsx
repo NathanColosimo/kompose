@@ -3,6 +3,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
+  SCOPE_DIALOG_COPY,
   TASK_DELETE_SCOPE_OPTIONS,
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
@@ -11,43 +12,62 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { RadioGroup } from "@/components/ui/radio";
 import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
-export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
-  return (
-    <>
-      <AlertDialog
-        confirmText="Apply"
-        description="This is a recurring task. Choose how broadly to apply these updates."
-        isVisible={flow.scopeDialog === "save"}
-        onCancel={flow.close}
-        onClose={flow.close}
-        onConfirm={flow.confirmScopedSave}
-        title="Apply task update"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
-            options={TASK_UPDATE_SCOPE_OPTIONS}
-            value={flow.saveScope}
-          />
-        </View>
-      </AlertDialog>
+function noop() {
+  // Intentionally empty: see TaskSaveScopeDialog's onClose.
+}
 
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring task. Choose what to delete."
-        isVisible={flow.scopeDialog === "delete"}
-        onClose={flow.close}
-        onConfirm={flow.confirmScopedDelete}
-        title="Delete recurring task"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => flow.setDeleteScope(value as DeleteScope)}
-            options={TASK_DELETE_SCOPE_OPTIONS}
-            value={flow.deleteScope}
-          />
-        </View>
-      </AlertDialog>
-    </>
+/**
+ * Save scope for a recurring task. Render it inside the editor sheet: iOS
+ * presents a modal from the one showing, not beside it, and this opens over
+ * the editor so Cancel goes straight back to it.
+ */
+export function TaskSaveScopeDialog({ flow }: { flow: TaskEditorFlow }) {
+  return (
+    <AlertDialog
+      closeOnConfirm={false}
+      confirmText="Apply"
+      description={SCOPE_DIALOG_COPY.saveTask.description}
+      isVisible={flow.scopeDialog === "save"}
+      // Over the editor: Cancel goes back to it, edits kept. After Apply
+      // the flow hides this dialog itself (it may be saving).
+      onCancel={flow.cancelScopedSave}
+      // Cancel and a backdrop tap already run onCancel. The dialog's close
+      // after its fade has nothing left to do, and must not clear a save
+      // started again meanwhile.
+      onClose={noop}
+      onConfirm={flow.confirmScopedSave}
+      pending={flow.isSavingStatus}
+      title={SCOPE_DIALOG_COPY.saveTask.title}
+    >
+      <View className="mt-2">
+        <RadioGroup
+          onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
+          options={TASK_UPDATE_SCOPE_OPTIONS}
+          value={flow.saveScope}
+        />
+      </View>
+    </AlertDialog>
+  );
+}
+
+/** Delete scope for a recurring task (the editor closes before it opens). */
+export function TaskDeleteScopeDialog({ flow }: { flow: TaskEditorFlow }) {
+  return (
+    <AlertDialog
+      confirmText="Delete"
+      description={SCOPE_DIALOG_COPY.deleteTask.description}
+      isVisible={flow.scopeDialog === "delete"}
+      onClose={flow.close}
+      onConfirm={flow.confirmScopedDelete}
+      title={SCOPE_DIALOG_COPY.deleteTask.title}
+    >
+      <View className="mt-2">
+        <RadioGroup
+          onValueChange={(value) => flow.setDeleteScope(value as DeleteScope)}
+          options={TASK_DELETE_SCOPE_OPTIONS}
+          value={flow.deleteScope}
+        />
+      </View>
+    </AlertDialog>
   );
 }

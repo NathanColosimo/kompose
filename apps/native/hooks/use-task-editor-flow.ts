@@ -3,13 +3,22 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import {
+  SAVE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  haveTaskTagIdsChanged,
+  markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { Alert, Keyboard } from "react-native";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
@@ -47,11 +56,24 @@ export function useTaskEditorFlow() {
     null
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
+  /**
+   * The editor session: bumped on every open and close, so a save that
+   * resolves later only acts on the session it started in (not a closed
+   * editor, another task, or the same task reopened).
+   */
+  const sessionRef = useRef(0);
+  /** Mark done is saving the editor's edits; the editor stays open. */
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  /** Mark done (or not done) waiting on the scope dialog with the edits. */
+  const [pendingStatus, setPendingStatus] = useState<
+    TaskDraft["status"] | null
+  >(null);
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
 
   // Stable so callers can use it in effect dependencies.
   const openCreate = useCallback((nextDraft: TaskDraft) => {
     setEditingTask(null);
+    sessionRef.current += 1;
     setPendingSaveDraft(null);
     setScopeDialog(null);
     setDraft(nextDraft);
@@ -64,6 +86,7 @@ export function useTaskEditorFlow() {
       recurrence: resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []),
     };
     setEditingTask(nextEditingTask);
+    sessionRef.current += 1;
     setDraft(buildDraftFromTask(nextEditingTask));
     setIsEditorOpen(true);
   }
@@ -71,7 +94,10 @@ export function useTaskEditorFlow() {
   function close() {
     setIsEditorOpen(false);
     setEditingTask(null);
+    sessionRef.current += 1;
+    setIsSavingStatus(false);
     setPendingSaveDraft(null);
+    setPendingStatus(null);
     setScopeDialog(null);
   }
 
@@ -79,49 +105,141 @@ export function useTaskEditorFlow() {
     setDraft((current) => (current ? updater(current) : current));
   }
 
-  function commitUpdate(nextDraft: TaskDraft, scope: UpdateScope) {
+  /** Saves the draft (plus `status`); resolves to whether it saved. */
+  function commitUpdate(
+    nextDraft: TaskDraft,
+    scope: UpdateScope,
+    status?: TaskDraft["status"],
+    /**
+     * While the editor holds open on the save (Mark done): optimistic
+     * false, and a failure message that says the edits are still here.
+     */
+    hold?: { failureMessage: string }
+  ): Promise<boolean> {
     if (!editingTask) {
-      return;
+      return Promise.resolve(false);
     }
 
-    updateTask.mutate({
-      id: editingTask.id,
-      scope,
-      task: {
-        description: trimmedDescription(nextDraft),
-        dueDate: nextDraft.dueDate,
-        durationMinutes: nextDraft.durationMinutes,
-        links: nextDraft.links,
-        recurrence: nextDraft.recurrence,
-        startDate: nextDraft.startDate,
-        startTime: nextDraft.startTime,
-        tagIds: nextDraft.tagIds,
-        title: nextDraft.title.trim(),
-      },
+    return updateTask
+      .mutateAsync({
+        failureMessage: hold?.failureMessage,
+        id: editingTask.id,
+        optimistic: !hold,
+        scope,
+        task: {
+          ...(status ? { status } : {}),
+          description: trimmedDescription(nextDraft),
+          dueDate: nextDraft.dueDate,
+          durationMinutes: nextDraft.durationMinutes,
+          links: nextDraft.links,
+          // Sent only when it changed: an explicit null ends the repeat, so
+          // an untouched occurrence must not send one.
+          recurrence: taskRecurrenceEquals(
+            editingTask.recurrence,
+            nextDraft.recurrence
+          )
+            ? undefined
+            : nextDraft.recurrence,
+          startDate: nextDraft.startDate,
+          startTime: nextDraft.startTime,
+          tagIds: nextDraft.tagIds,
+          title: nextDraft.title.trim(),
+        },
+      })
+      .then(
+        () => true,
+        () => false
+      );
+  }
+
+  /** Saves the draft with a status change, the same way as on web. */
+  function commitWithStatus(
+    nextDraft: TaskDraft,
+    scope: UpdateScope,
+    status: TaskDraft["status"]
+  ): Promise<boolean> {
+    if (!editingTask) {
+      return Promise.resolve(false);
+    }
+    // One write: the status goes on this occurrence alone (the server keeps
+    // it when a "following" save also changes the series). The editor holds
+    // open until it saves, so the cache waits for the server rather than
+    // rolling back over the draft on failure.
+    return commitUpdate(nextDraft, scope, status, {
+      failureMessage: markStatusFailureMessage(status),
     });
   }
 
-  function create(nextDraft: TaskDraft) {
+  /** The scope decision for saving `nextDraft` over the task being edited. */
+  function scopeDecisionFor(nextDraft: TaskDraft, task: TaskSelectDecoded) {
+    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
+      next: {
+        description: nextDraft.description,
+        dueDate: nextDraft.dueDate,
+        durationMinutes: nextDraft.durationMinutes,
+        startDate: nextDraft.startDate,
+        startTime: nextDraft.startTime,
+        title: nextDraft.title,
+      },
+      previous: {
+        description: task.description,
+        dueDate: task.dueDate,
+        durationMinutes: task.durationMinutes,
+        startDate: task.startDate,
+        startTime: task.startTime,
+        title: task.title,
+      },
+    });
+    const hasChanges =
+      hasCoreFieldChanges ||
+      JSON.stringify(task.links ?? []) !== JSON.stringify(nextDraft.links) ||
+      !taskRecurrenceEquals(task.recurrence, nextDraft.recurrence) ||
+      haveTaskTagIdsChanged(
+        task.tags.map((tag) => tag.id),
+        nextDraft.tagIds
+      );
+    return {
+      decision: getTaskUpdateScopeDecision({
+        hasCoreFieldChanges,
+        hasFollowing: Boolean(task.startDate),
+        isRecurring: task.seriesMasterId !== null,
+        nextRecurrence: nextDraft.recurrence,
+        nextTagIds: nextDraft.tagIds,
+        previousRecurrence: task.recurrence,
+        previousTagIds: task.tags.map((tag) => tag.id),
+      }),
+      hasChanges,
+    };
+  }
+
+  /** Resolves true once the task is created. */
+  function create(nextDraft: TaskDraft): Promise<boolean> {
     let title = nextDraft.title.trim();
     if (!title && nextDraft.links.length > 0) {
       const first = nextDraft.links[0];
       title = first.title ?? new URL(first.url).hostname;
     }
 
-    createTask.mutate({
-      description: trimmedDescription(nextDraft),
-      dueDate: nextDraft.dueDate,
-      durationMinutes: nextDraft.durationMinutes,
-      isException: false,
-      links: nextDraft.links,
-      recurrence: nextDraft.recurrence,
-      seriesMasterId: null,
-      startDate: nextDraft.startDate,
-      startTime: nextDraft.startTime,
-      status: "todo",
-      tagIds: nextDraft.tagIds,
-      title,
-    });
+    return createTask
+      .mutateAsync({
+        description: trimmedDescription(nextDraft),
+        dueDate: nextDraft.dueDate,
+        durationMinutes: nextDraft.durationMinutes,
+        isException: false,
+        links: nextDraft.links,
+        recurrence: nextDraft.recurrence,
+        seriesMasterId: null,
+        startDate: nextDraft.startDate,
+        startTime: nextDraft.startTime,
+        status: "todo",
+        tagIds: nextDraft.tagIds,
+        title,
+        failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+      })
+      .then(
+        () => true,
+        () => false
+      );
   }
 
   function save() {
@@ -136,49 +254,22 @@ export function useTaskEditorFlow() {
     }
 
     if (!editingTask) {
-      create(draft);
-      close();
+      holdUntil(create(draft));
       return;
     }
 
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: draft.description,
-        dueDate: draft.dueDate,
-        durationMinutes: draft.durationMinutes,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
-        title: draft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      nextRecurrence: draft.recurrence,
-      nextTagIds: draft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
+    const { decision } = scopeDecisionFor(draft, editingTask);
 
     if (decision.action === "prompt") {
+      // The dialog opens over the editor, which stays put: Cancel goes
+      // straight back to it with the edits.
       setPendingSaveDraft(draft);
       setSaveScope(decision.defaultScope);
-      setIsEditorOpen(false);
       setScopeDialog("save");
       return;
     }
 
-    commitUpdate(draft, decision.scope);
-    close();
+    holdForSave(draft, decision.scope);
   }
 
   function requestDelete() {
@@ -186,23 +277,105 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    if (editingTask.seriesMasterId) {
+    // An occurrence moved to the inbox has nothing after it: no scope to ask.
+    if (editingTask.seriesMasterId && editingTask.startDate) {
       setDeleteScope("this");
       setIsEditorOpen(false);
       setScopeDialog("delete");
       return;
     }
 
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    close();
+    // No undo, and the trash sits beside Save: confirm first, as web does.
+    const id = editingTask.id;
+    const { description, title } = SCOPE_DIALOG_COPY.deleteTaskAlone;
+    Alert.alert(title, description, [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => {
+          deleteTask.mutate({ id, scope: "this" });
+          close();
+        },
+        style: "destructive",
+        text: "Delete",
+      },
+    ]);
+  }
+
+  /**
+   * The editor stays open ("Saving…") until `saved` resolves true, so a
+   * failed save or create keeps the draft.
+   */
+  function holdUntil(saved: Promise<boolean>) {
+    Keyboard.dismiss();
+    setIsSavingStatus(true);
+    const session = sessionRef.current;
+    saved.then((ok) => {
+      if (sessionRef.current !== session) {
+        return;
+      }
+      setIsSavingStatus(false);
+      if (ok) {
+        close();
+        return;
+      }
+      setPendingSaveDraft(null);
+      setScopeDialog(null);
+    });
+  }
+
+  function holdForSave(nextDraft: TaskDraft, scope: UpdateScope) {
+    holdUntil(
+      commitUpdate(nextDraft, scope, undefined, {
+        failureMessage: SAVE_FAILURE_MESSAGE,
+      })
+    );
+  }
+
+  /**
+   * Cancel (or a backdrop tap) in the save scope dialog: back to the editor
+   * underneath, edits kept, and the done checkbox as it was.
+   */
+  function cancelScopedSave() {
+    if (editingTask && pendingStatus) {
+      updateDraft((current) => ({ ...current, status: editingTask.status }));
+    }
+    setPendingSaveDraft(null);
+    setPendingStatus(null);
+    setScopeDialog(null);
   }
 
   function confirmScopedSave() {
     if (!(editingTask && pendingSaveDraft)) {
       return;
     }
-    commitUpdate(pendingSaveDraft, saveScope);
-    close();
+    if (!pendingStatus) {
+      // The dialog holds "Saving…" until the save ends; a failure leaves
+      // the editor underneath with the edits.
+      holdForSave(pendingSaveDraft, saveScope);
+      return;
+    }
+    // With Mark done the dialog stays up, its Apply reading "Saving…",
+    // until the save resolves: then everything closes, or on failure the
+    // dialog goes and the editor underneath keeps the edits (and the old
+    // done state).
+    const savedDraft = pendingSaveDraft;
+    const task = editingTask;
+    const session = sessionRef.current;
+    setIsSavingStatus(true);
+    commitWithStatus(savedDraft, saveScope, pendingStatus).then((saved) => {
+      if (sessionRef.current !== session) {
+        return;
+      }
+      setIsSavingStatus(false);
+      if (saved) {
+        close();
+        return;
+      }
+      updateDraft((current) => ({ ...current, status: task.status }));
+      setPendingSaveDraft(null);
+      setPendingStatus(null);
+      setScopeDialog(null);
+    });
   }
 
   function confirmScopedDelete() {
@@ -213,19 +386,66 @@ export function useTaskEditorFlow() {
     close();
   }
 
+  /**
+   * Mark done (or not done) from the editor. Unsaved edits are saved with
+   * it, through the scope dialog when the task repeats, so they're never
+   * dropped.
+   */
   function toggleDone(nextStatus: TaskDraft["status"]) {
-    if (!editingTask) {
+    if (!(editingTask && draft)) {
       return;
     }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: nextStatus },
+    const { decision, hasChanges } = scopeDecisionFor(draft, editingTask);
+    if (!hasChanges) {
+      updateTask.mutate({
+        id: editingTask.id,
+        scope: "this",
+        task: { status: nextStatus },
+      });
+      close();
+      return;
+    }
+    if (decision.action === "prompt") {
+      setPendingSaveDraft({ ...draft, status: nextStatus });
+      setPendingStatus(nextStatus);
+      setSaveScope(decision.defaultScope);
+      setScopeDialog("save");
+      return;
+    }
+    // The editor stays open until the edits have saved, so a failed save
+    // keeps them.
+    Keyboard.dismiss();
+    setIsSavingStatus(true);
+    const task = editingTask;
+    const session = sessionRef.current;
+    commitWithStatus(draft, decision.scope, nextStatus).then((saved) => {
+      // The sheet may have been closed (or another task opened) meanwhile.
+      if (sessionRef.current !== session) {
+        return;
+      }
+      setIsSavingStatus(false);
+      if (saved) {
+        close();
+        return;
+      }
+      // Still open with the edits; the checkbox goes back too.
+      updateDraft((current) => ({ ...current, status: task.status }));
     });
-    close();
   }
 
+  // The saved pattern of the recurring task being edited, for the editor's
+  // note on what a repeat change does.
+  const savedRecurrence = editingTask?.seriesMasterId
+    ? editingTask.recurrence
+    : undefined;
+  // An occurrence moved to the inbox: a repeat change takes it out of its
+  // series (the editor says so).
+  const undatedMember = Boolean(
+    editingTask?.seriesMasterId && !editingTask.startDate
+  );
+
   return {
+    cancelScopedSave,
     close,
     confirmScopedDelete,
     confirmScopedSave,
@@ -233,11 +453,14 @@ export function useTaskEditorFlow() {
     draft,
     editingTask,
     isEditorOpen,
+    isSavingStatus,
     openCreate,
     openEdit,
     requestDelete,
     save,
+    savedRecurrence,
     saveScope,
+    undatedMember,
     scopeDialog,
     setDeleteScope,
     setSaveScope,

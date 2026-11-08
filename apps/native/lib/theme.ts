@@ -33,7 +33,7 @@ export const THEME = {
     border: "hsl(42, 20%, 78%)",
     card: "hsl(41, 42%, 93%)",
     cardForeground: "hsl(0, 0%, 12%)",
-    destructive: "hsl(0, 72%, 51%)",
+    destructive: "hsl(0, 72%, 42%)",
     destructiveForeground: "hsl(0, 0%, 100%)",
     foreground: "hsl(0, 0%, 12%)",
     input: "hsl(42, 20%, 78%)",

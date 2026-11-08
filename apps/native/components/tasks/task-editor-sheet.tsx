@@ -17,11 +17,14 @@ import {
   getTaskRecurrenceDisplayText,
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
+  repeatBlocksSave,
+  repeatNote,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceEditorState,
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { Image } from "expo-image";
 import {
   Check,
@@ -46,6 +49,7 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { localeTimeFormat } from "@/lib/time-format";
 
 export interface TaskDraft {
   description: string;
@@ -64,14 +68,25 @@ export interface TaskDraft {
 
 interface TaskEditorSheetProps {
   draft: TaskDraft | null;
+  /** Mark done is saving the edits: Save and the checkbox wait. */
+  isSaving?: boolean;
   isVisible: boolean;
   mode: "create" | "edit";
   onClose: () => void;
   onDelete?: () => void;
   onSave: () => void;
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
+  /** Dialogs that open over the editor (iOS presents them from its modal). */
+  overlay?: React.ReactNode;
+  /**
+   * The saved pattern of the recurring task being edited; undefined when
+   * it's new or doesn't repeat. A change shows what it will do.
+   */
+  savedRecurrence?: TaskRecurrence | null;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
+  /** A series occurrence moved to the inbox (no date). */
+  undatedMember?: boolean;
 }
 
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];
@@ -122,26 +137,13 @@ function formatPlainDateShort(date: Temporal.PlainDate | null): string {
   }).format(plainDateToDate(date));
 }
 
-function formatPlainTime24(time: Temporal.PlainTime | null): string {
+/** In the locale's hour cycle ("4:30 PM"), like the calendar block. */
+function formatPlainTime(time: Temporal.PlainTime | null): string {
   if (!time) {
-    return "--:--";
+    // A placeholder like the "Start" and "Due" chips beside it.
+    return "Time";
   }
-  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
-}
-
-function formatDurationMinutes(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-
-  if (remainder === 0) {
-    return `${hours}h`;
-  }
-
-  return `${hours}h ${remainder}m`;
+  return time.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function TaskRecurrenceEndSection({
@@ -150,6 +152,7 @@ function TaskRecurrenceEndSection({
   updateRecurrence,
 }: {
   recurrenceState: TaskRecurrenceEditorState;
+  /** The task's start (or today): the earliest the repeat can end. */
   fallbackUntil: Temporal.PlainDate;
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
@@ -205,6 +208,8 @@ function TaskRecurrenceEndSection({
                 ? formatPlainDateShort(recurrenceState.until)
                 : "Until date"
             }
+            // The repeat can't end before the task starts.
+            minimumDate={plainDateToDate(fallbackUntil)}
             mode="date"
             onChange={(date) =>
               updateRecurrence({
@@ -270,9 +275,12 @@ function TaskRecurrenceEditor({
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-3">
       <Text className="font-semibold text-foreground text-sm">Repeat</Text>
-      <Text className="mt-0.5 text-muted-foreground text-xs">
-        {recurrenceSummary}
-      </Text>
+      {/* The pattern in words; with no repeat, "None" below says it. */}
+      {hasRecurrence ? (
+        <Text className="mt-0.5 text-muted-foreground text-xs">
+          {recurrenceSummary}
+        </Text>
+      ) : null}
 
       <View className="mt-2 flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
@@ -471,7 +479,122 @@ function TaskTagPicker({
   );
 }
 
+/** The editor's header: delete, then save, or "Saving…" while Mark done saves. */
+function TaskEditorHeaderActions({
+  canSave,
+  isSaving,
+  onDelete,
+  onSave,
+}: {
+  canSave: boolean;
+  isSaving: boolean;
+  onDelete?: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <View className="flex-row items-center gap-2">
+      {onDelete ? (
+        <Button
+          accessibilityLabel="Delete task"
+          accessibilityRole="button"
+          disabled={isSaving}
+          onPress={onDelete}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Trash2}
+            className={isSaving ? "text-muted-foreground" : "text-red-500"}
+            size={18}
+          />
+        </Button>
+      ) : null}
+      {isSaving ? (
+        <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>
+      ) : (
+        <Button
+          accessibilityLabel="Save task"
+          accessibilityRole="button"
+          disabled={!canSave}
+          onPress={onSave}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Check}
+            // Ink, not a light green: it reads on the cream sheet.
+            className={canSave ? "text-primary" : "text-muted-foreground"}
+            size={18}
+          />
+        </Button>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Durations in 15-minute steps up to a day, plus the task's own when it's
+ * off-step (a 20-minute task from web), so the chip shows it.
+ */
+function durationOptionsFor(current: number) {
+  const minutes = Array.from({ length: 24 }, (_, hour) =>
+    DURATION_MINUTE_OPTIONS.map((minute) => hour * 60 + minute)
+  ).flat();
+  if (!minutes.includes(current)) {
+    minutes.push(current);
+    minutes.sort((a, b) => a - b);
+  }
+  return minutes.map((total) => ({
+    label: formatDuration(total),
+    value: String(total),
+  }));
+}
+
+/** A draft saves with a title or a link, and not while Mark done is saving. */
+function canSaveDraft(
+  draft: TaskDraft | null,
+  isSaving: boolean,
+  savedRecurrence: TaskRecurrence | null | undefined
+): boolean {
+  if (isSaving || !draft) {
+    return false;
+  }
+  // A repeat that ends before the start has no occurrences (the note says so).
+  if (
+    repeatBlocksSave({
+      next: draft.recurrence,
+      previous: savedRecurrence ?? null,
+      startDate: draft.startDate,
+    })
+  ) {
+    return false;
+  }
+  return draft.title.trim().length > 0 || draft.links.length > 0;
+}
+
+/** What the repeat will do, or why it can't save (repeatNote). */
+function RepeatNote({
+  note,
+}: {
+  note: { blocking: boolean; text: string } | null;
+}) {
+  if (!note) {
+    return null;
+  }
+  return (
+    <Text
+      className={`mb-2.5 text-xs ${note.blocking ? "text-destructive" : "text-muted-foreground"}`}
+    >
+      {note.text}
+    </Text>
+  );
+}
+
 export function TaskEditorSheet({
+  overlay,
+  isSaving = false,
   isVisible,
   mode,
   draft,
@@ -480,30 +603,22 @@ export function TaskEditorSheet({
   onSave,
   onDelete,
   onToggleDone,
+  savedRecurrence,
   timeZone,
+  undatedMember = false,
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
   const { parseLink } = useTasks();
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft
-    ? draft.title.trim().length > 0 || draft.links.length > 0
-    : false;
+  const canSave = canSaveDraft(draft, isSaving, savedRecurrence);
 
   if (!draft) {
     return null;
   }
 
-  const durationOptions = Array.from({ length: 24 }, (_, hour) =>
-    DURATION_MINUTE_OPTIONS.map((minute) => {
-      const totalMinutes = hour * 60 + minute;
-      return {
-        label: formatDurationMinutes(totalMinutes),
-        value: String(totalMinutes),
-      };
-    })
-  ).flat();
+  const durationOptions = durationOptionsFor(draft.durationMinutes);
 
   const recurrenceState = getTaskRecurrenceEditorState(
     draft.recurrence,
@@ -511,7 +626,15 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone);
+  // Mark done saves the edits with it, so it waits on the same repeat check.
+  const canToggleDone =
+    Boolean(mode === "edit" && onToggleDone) &&
+    !isSaving &&
+    !repeatBlocksSave({
+      next: draft.recurrence,
+      previous: savedRecurrence ?? null,
+      startDate: draft.startDate,
+    });
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));
@@ -562,6 +685,11 @@ export function TaskEditorSheet({
   };
 
   const handleClose = () => {
+    // While Mark done saves, the editor holds: closing would drop the edits
+    // if the save fails.
+    if (isSaving) {
+      return;
+    }
     setIsRecurrenceExpanded(false);
     setIsTagPickerExpanded(false);
     onClose();
@@ -571,273 +699,299 @@ export function TaskEditorSheet({
 
   return (
     <BottomSheet
+      disablePanGesture={isSaving}
+      enableBackdropDismiss={!isSaving}
       headerRight={
-        <View className="flex-row items-center gap-2">
-          {mode === "edit" && onDelete ? (
-            <Button
-              onPress={onDelete}
-              size="icon"
-              style={{ borderRadius: 999 }}
-              variant="ghost"
-            >
-              <Icon as={Trash2} className="text-red-500" size={18} />
-            </Button>
-          ) : null}
-          <Button
-            disabled={!canSave}
-            onPress={onSave}
-            size="icon"
-            style={{ borderRadius: 999 }}
-            variant="ghost"
-          >
-            <Icon
-              as={Check}
-              className={canSave ? "text-green-500" : "text-muted-foreground"}
-              size={18}
-            />
-          </Button>
-        </View>
+        <TaskEditorHeaderActions
+          canSave={canSave}
+          isSaving={isSaving}
+          onDelete={mode === "edit" ? onDelete : undefined}
+          onSave={onSave}
+        />
       }
       isVisible={isVisible}
       onClose={handleClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={mode === "edit" ? "Edit task" : "New task"}
     >
-      <View className="mb-3 flex-row items-center gap-1.5">
-        <View style={{ width: 86 }}>
-          <Picker
-            inputStyle={{ textAlign: "center" }}
-            modalTitle="Duration"
-            onValueChange={(value) => {
-              const nextMinutes = Number.parseInt(value, 10);
-              if (!Number.isFinite(nextMinutes)) {
-                return;
+      {/* While Mark done saves, the fields are read-only too: a change made
+          then would be dropped when the editor closes. */}
+      <View
+        pointerEvents={isSaving ? "none" : "auto"}
+        style={isSaving ? { opacity: 0.6 } : undefined}
+      >
+        {/* One row down to 375pt (64 + 134 + 88 + 34 + gaps = 338); on a
+            narrower phone, due and repeat wrap to a second row before the
+            date has to shrink. */}
+        <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
+          <View style={{ width: 64 }}>
+            <Picker
+              // Same size as the date and time chips beside it.
+              inputStyle={{ fontSize: 13, textAlign: "center" }}
+              modalTitle="Duration"
+              onValueChange={(value) => {
+                const nextMinutes = Number.parseInt(value, 10);
+                if (!Number.isFinite(nextMinutes)) {
+                  return;
+                }
+                setDraft((current) => ({
+                  ...current,
+                  durationMinutes: nextMinutes,
+                }));
+              }}
+              options={durationOptions}
+              placeholder="Duration"
+              showChevron={false}
+              style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 0 }}
+              value={String(draft.durationMinutes)}
+              variant="outline"
+            />
+          </View>
+
+          <View
+            className="flex-row items-center gap-1.5"
+            style={{ flexBasis: 134, flexGrow: 1, minWidth: 134 }}
+          >
+            <View className="min-w-0 flex-1">
+              <DatePicker
+                accessibilityLabel="Start date"
+                displayValue={
+                  draft.startDate
+                    ? formatPlainDateShort(draft.startDate)
+                    : "Start"
+                }
+                mode="date"
+                onChange={(date) =>
+                  setDraft((current) => ({
+                    ...current,
+                    startDate: date ? dateToPlainDate(date) : null,
+                    startTime: date ? current.startTime : null,
+                  }))
+                }
+                placeholder="Start"
+                showIcon={false}
+                style={{
+                  borderRadius: 999,
+                  minHeight: 38,
+                  paddingHorizontal: 4,
+                }}
+                value={
+                  draft.startDate ? plainDateToDate(draft.startDate) : undefined
+                }
+                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+                variant="outline"
+              />
+            </View>
+            <View style={{ minWidth: 78 }}>
+              <DatePicker
+                accessibilityLabel="Start time"
+                disabled={!draft.startDate}
+                displayValue={formatPlainTime(draft.startTime)}
+                mode="time"
+                onChange={(date) =>
+                  setDraft((current) => ({
+                    ...current,
+                    startTime: date ? dateToPlainTime(date) : null,
+                  }))
+                }
+                placeholder="--:--"
+                showIcon={false}
+                style={{
+                  borderRadius: 999,
+                  minHeight: 38,
+                  paddingHorizontal: 4,
+                }}
+                timeFormat={localeTimeFormat()}
+                value={
+                  draft.startTime ? plainTimeToDate(draft.startTime) : undefined
+                }
+                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+                variant="outline"
+              />
+            </View>
+          </View>
+
+          <View className="flex-row items-center gap-1.5">
+            <View style={{ width: 88 }}>
+              <DatePicker
+                accessibilityLabel="Due date"
+                displayValue={
+                  draft.dueDate
+                    ? `Due ${formatPlainDateShort(draft.dueDate)}`
+                    : "Due"
+                }
+                mode="date"
+                onChange={(date) =>
+                  setDraft((current) => ({
+                    ...current,
+                    dueDate: date ? dateToPlainDate(date) : null,
+                  }))
+                }
+                placeholder="Due"
+                showIcon={false}
+                style={{
+                  borderRadius: 999,
+                  minHeight: 38,
+                  paddingHorizontal: 4,
+                }}
+                value={
+                  draft.dueDate ? plainDateToDate(draft.dueDate) : undefined
+                }
+                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+                variant="outline"
+              />
+            </View>
+
+            <Button
+              accessibilityLabel="Repeat"
+              accessibilityState={{ expanded: isRecurrenceExpanded }}
+              onPress={() => setIsRecurrenceExpanded((current) => !current)}
+              size="icon"
+              style={{ borderRadius: 999, height: 38, width: 34 }}
+              variant={isRecurrenceExpanded ? "default" : "outline"}
+            >
+              <Icon
+                as={Repeat2}
+                className={
+                  isRecurrenceExpanded
+                    ? "text-primary-foreground"
+                    : "text-foreground"
+                }
+                size={14}
+              />
+            </Button>
+          </View>
+        </View>
+
+        {isRecurrenceExpanded ? (
+          <TaskRecurrenceEditor
+            activeFrequency={activeFrequency}
+            fallbackUntil={fallbackUntil}
+            handleSelectFrequency={handleSelectFrequency}
+            hasRecurrence={draft.recurrence !== null}
+            recurrenceState={recurrenceState}
+            recurrenceSummary={recurrenceSummary}
+            updateRecurrence={updateRecurrence}
+          />
+        ) : null}
+        <RepeatNote
+          note={repeatNote({
+            isRecurring: savedRecurrence !== undefined,
+            next: draft.recurrence,
+            previous: savedRecurrence ?? null,
+            startDate: draft.startDate,
+            undatedMember,
+          })}
+        />
+
+        <View className="mb-2.5 flex-row items-center gap-2">
+          <Checkbox
+            checked={isDone}
+            disabled={!canToggleDone}
+            onCheckedChange={(checked) => {
+              if (canToggleDone) {
+                const nextStatus: TaskDraft["status"] = checked
+                  ? "done"
+                  : "todo";
+                setDraft((current) => ({ ...current, status: nextStatus }));
+                onToggleDone?.(nextStatus);
               }
-              setDraft((current) => ({
-                ...current,
-                durationMinutes: nextMinutes,
-              }));
             }}
-            options={durationOptions}
-            placeholder="Duration"
-            showChevron={false}
-            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 0 }}
-            value={String(draft.durationMinutes)}
+            style={{
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: 0,
+              width: 36,
+            }}
+          />
+          <Input
+            containerStyle={{ flex: 1 }}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, title: value }))
+            }
+            pill
+            placeholder="Title"
+            value={draft.title}
             variant="outline"
           />
         </View>
 
-        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-          <View className="min-w-0 flex-1">
-            <DatePicker
-              displayValue={
-                draft.startDate
-                  ? formatPlainDateShort(draft.startDate)
-                  : "Start"
-              }
-              mode="date"
-              onChange={(date) =>
-                setDraft((current) => ({
-                  ...current,
-                  startDate: date ? dateToPlainDate(date) : null,
-                  startTime: date ? current.startTime : null,
-                }))
-              }
-              placeholder="Start"
-              showIcon={false}
-              style={{
-                borderRadius: 999,
-                minHeight: 38,
-                paddingHorizontal: 4,
-              }}
-              value={
-                draft.startDate ? plainDateToDate(draft.startDate) : undefined
-              }
-              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-              variant="outline"
-            />
-          </View>
-          <View style={{ width: 74 }}>
-            <DatePicker
-              disabled={!draft.startDate}
-              displayValue={formatPlainTime24(draft.startTime)}
-              mode="time"
-              onChange={(date) =>
-                setDraft((current) => ({
-                  ...current,
-                  startTime: date ? dateToPlainTime(date) : null,
-                }))
-              }
-              placeholder="--:--"
-              showIcon={false}
-              style={{
-                borderRadius: 999,
-                minHeight: 38,
-                paddingHorizontal: 4,
-              }}
-              timeFormat="24"
-              value={
-                draft.startTime ? plainTimeToDate(draft.startTime) : undefined
-              }
-              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-              variant="outline"
-            />
-          </View>
-        </View>
-
-        <View style={{ width: 86 }}>
-          <DatePicker
-            displayValue={
-              draft.dueDate ? formatPlainDateShort(draft.dueDate) : "Due"
-            }
-            mode="date"
-            onChange={(date) =>
-              setDraft((current) => ({
-                ...current,
-                dueDate: date ? dateToPlainDate(date) : null,
-              }))
-            }
-            placeholder="Due"
-            showIcon={false}
-            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 4 }}
-            value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-            variant="outline"
-          />
-        </View>
-
-        <Button
-          onPress={() => setIsRecurrenceExpanded((current) => !current)}
-          size="icon"
-          style={{ borderRadius: 999, height: 38, width: 38 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
-      </View>
-
-      {isRecurrenceExpanded ? (
-        <TaskRecurrenceEditor
-          activeFrequency={activeFrequency}
-          fallbackUntil={fallbackUntil}
-          handleSelectFrequency={handleSelectFrequency}
-          hasRecurrence={draft.recurrence !== null}
-          recurrenceState={recurrenceState}
-          recurrenceSummary={recurrenceSummary}
-          updateRecurrence={updateRecurrence}
+        <TaskTagPicker
+          availableTags={availableTags}
+          isExpanded={isTagPickerExpanded}
+          onAdd={addTag}
+          onRemove={removeTag}
+          onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
+          selectedTags={selectedTags}
         />
-      ) : null}
 
-      <View className="mb-2.5 flex-row items-center gap-2">
-        <Checkbox
-          checked={isDone}
-          disabled={!canToggleDone}
-          onCheckedChange={(checked) => {
-            if (canToggleDone) {
-              const nextStatus: TaskDraft["status"] = checked ? "done" : "todo";
-              setDraft((current) => ({ ...current, status: nextStatus }));
-              onToggleDone?.(nextStatus);
-            }
-          }}
-          style={{
-            alignItems: "center",
-            justifyContent: "center",
-            paddingVertical: 0,
-            width: 36,
-          }}
-        />
-        <Input
-          containerStyle={{ flex: 1 }}
+        <Textarea
+          containerStyle={{ marginBottom: 10 }}
           onChangeText={(value) =>
-            setDraft((current) => ({ ...current, title: value }))
+            setDraft((current) => ({ ...current, description: value }))
           }
-          pill
-          placeholder="Title"
-          value={draft.title}
+          placeholder="Description"
+          value={draft.description}
           variant="outline"
         />
-      </View>
 
-      <TaskTagPicker
-        availableTags={availableTags}
-        isExpanded={isTagPickerExpanded}
-        onAdd={addTag}
-        onRemove={removeTag}
-        onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
-        selectedTags={selectedTags}
-      />
+        <NativeLinkListEditor
+          isParsing={parseLink.isPending}
+          linkInput={draft.linkInput}
+          links={draft.links}
+          onAddLink={(url) => {
+            const isFirstLink = draft.links.length === 0;
 
-      <Textarea
-        containerStyle={{ marginBottom: 10 }}
-        onChangeText={(value) =>
-          setDraft((current) => ({ ...current, description: value }))
-        }
-        placeholder="Description"
-        value={draft.description}
-        variant="outline"
-      />
+            // Insert placeholder immediately so the link survives a quick save
+            setDraft((current) => ({
+              ...current,
+              linkInput: "",
+              links: dedupeLinks([
+                ...current.links,
+                {
+                  fetchedAt: new Date().toISOString(),
+                  provider: "unknown" as const,
+                  url,
+                },
+              ]),
+            }));
 
-      <NativeLinkListEditor
-        isParsing={parseLink.isPending}
-        linkInput={draft.linkInput}
-        links={draft.links}
-        onAddLink={(url) => {
-          const isFirstLink = draft.links.length === 0;
-
-          // Insert placeholder immediately so the link survives a quick save
-          setDraft((current) => ({
-            ...current,
-            linkInput: "",
-            links: dedupeLinks([
-              ...current.links,
-              {
-                fetchedAt: new Date().toISOString(),
-                provider: "unknown" as const,
-                url,
+            parseLink.mutate(url, {
+              onSuccess: (meta) => {
+                setDraft((current) => {
+                  const next = {
+                    ...current,
+                    links: dedupeLinks(
+                      current.links.map((l) => (l.url === url ? meta : l))
+                    ),
+                  };
+                  if (isFirstLink) {
+                    if (meta.title && !current.title.trim()) {
+                      next.title = meta.title;
+                    }
+                    if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                      next.durationMinutes = Math.ceil(
+                        meta.durationSeconds / 60
+                      );
+                    }
+                  }
+                  return next;
+                });
               },
-            ]),
-          }));
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              setDraft((current) => {
-                const next = {
-                  ...current,
-                  links: dedupeLinks(
-                    current.links.map((l) => (l.url === url ? meta : l))
-                  ),
-                };
-                if (isFirstLink) {
-                  if (meta.title && !current.title.trim()) {
-                    next.title = meta.title;
-                  }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
-                  }
-                }
-                return next;
-              });
-            },
-          });
-        }}
-        onLinkInputChange={(value) =>
-          setDraft((current) => ({ ...current, linkInput: value }))
-        }
-        onRemoveLink={(index) =>
-          setDraft((current) => ({
-            ...current,
-            links: current.links.filter((_, i) => i !== index),
-          }))
-        }
-      />
+            });
+          }}
+          onLinkInputChange={(value) =>
+            setDraft((current) => ({ ...current, linkInput: value }))
+          }
+          onRemoveLink={(index) =>
+            setDraft((current) => ({
+              ...current,
+              links: current.links.filter((_, i) => i !== index),
+            }))
+          }
+        />
+      </View>
+      {overlay}
     </BottomSheet>
   );
 }

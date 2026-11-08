@@ -30,6 +30,11 @@ export interface DateRange {
 }
 
 interface BaseDatePickerProps {
+  /**
+   * What the field is, for VoiceOver ("Start time"); it's read with the
+   * value ("Start time, 10:00 AM"), since a filled field has no placeholder.
+   */
+  accessibilityLabel?: string;
   label?: string;
   error?: string;
   placeholder?: string;
@@ -100,6 +105,7 @@ const isDateRange = (
 
 export function DatePicker(props: DatePickerProps) {
   const {
+    accessibilityLabel,
     label,
     error,
     placeholder = "Select date",
@@ -232,6 +238,11 @@ export function DatePicker(props: DatePickerProps) {
     },
     [minimumDate, maximumDate]
   );
+  /** Whether `date`'s day is outside the bounds, whatever its time. */
+  const isDayDisabled = (date: Date) =>
+    isDateDisabled(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    );
 
   const isDateInRange = useCallback(
     (date: Date) => {
@@ -491,13 +502,15 @@ export function DatePicker(props: DatePickerProps) {
   const handleConfirm = () => {
     if (mode === "range") {
       (onChange as (value: DateRange | undefined) => void)?.(tempRange);
-    } else {
+    } else if (!isDayDisabled(currentDate)) {
+      // A day outside the bounds is never handed back, whatever the path.
       (onChange as (value: Date | undefined) => void)?.(currentDate);
     }
     close();
   };
 
   const resetToToday = () => {
+    // The button is off when today is out of bounds.
     const today = new Date();
     setCurrentDate(today);
 
@@ -1127,6 +1140,12 @@ export function DatePicker(props: DatePickerProps) {
   return (
     <>
       <TouchableOpacity
+        accessibilityLabel={
+          accessibilityLabel
+            ? `${accessibilityLabel}, ${resolvedDisplayValue}`
+            : undefined
+        }
+        accessibilityRole="button"
         disabled={disabled}
         onPress={handleOpenPicker}
         style={[triggerStyle, disabled && { opacity: 0.5 }, style]}
@@ -1225,7 +1244,11 @@ export function DatePicker(props: DatePickerProps) {
                 gap: 8,
               }}
             >
-              <Button onPress={resetToToday} variant="outline">
+              <Button
+                disabled={isDayDisabled(new Date())}
+                onPress={resetToToday}
+                variant="outline"
+              >
                 Today
               </Button>
 

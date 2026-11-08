@@ -33,6 +33,19 @@ export type AlertDialogProps = {
   cancelText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  /**
+   * The confirm action is running: its button reads `pendingText`, and
+   * nothing closes the dialog until the caller hides it.
+   */
+  pending?: boolean;
+  pendingText?: string;
+  /** The confirm button is off (nothing to confirm yet). */
+  confirmDisabled?: boolean;
+  /**
+   * False when the caller closes the dialog itself (by `isVisible`), as
+   * after an async confirm.
+   */
+  closeOnConfirm?: boolean;
   dismissible?: boolean;
   showCancelButton?: boolean;
   style?: ViewStyle;
@@ -48,6 +61,10 @@ export function AlertDialog({
   cancelText = "Cancel",
   onConfirm,
   onCancel,
+  pending = false,
+  confirmDisabled = false,
+  pendingText = "Saving…",
+  closeOnConfirm = true,
   dismissible = true,
   showCancelButton = true,
   style,
@@ -93,7 +110,7 @@ export function AlertDialog({
   };
 
   const handleBackdropPress = () => {
-    if (dismissible) {
+    if (dismissible && !pending) {
       animateClose();
       if (onCancel) onCancel();
     }
@@ -106,7 +123,9 @@ export function AlertDialog({
 
   const handleConfirm = () => {
     if (onConfirm) onConfirm();
-    animateClose();
+    if (closeOnConfirm) {
+      animateClose();
+    }
   };
 
   return (
@@ -140,12 +159,20 @@ export function AlertDialog({
               {children ? <CardContent>{children}</CardContent> : null}
               <CardFooter>
                 {showCancelButton && (
-                  <Button onPress={handleCancel} variant="outline">
+                  <Button
+                    disabled={pending}
+                    onPress={handleCancel}
+                    variant="outline"
+                  >
                     {cancelText}
                   </Button>
                 )}
-                <Button onPress={handleConfirm} style={{ flex: 1 }}>
-                  {confirmText}
+                <Button
+                  disabled={pending || confirmDisabled}
+                  onPress={handleConfirm}
+                  style={{ flex: 1 }}
+                >
+                  {pending ? pendingText : confirmText}
                 </Button>
               </CardFooter>
             </Card>

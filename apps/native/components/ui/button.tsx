@@ -17,7 +17,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Icon } from "@/components/ui/icon";
 import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
-import { Text } from "@/components/ui/text";
+import { Text, TextClassContext } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
@@ -47,6 +47,14 @@ export interface ButtonProps extends Omit<TouchableOpacityProps, "style"> {
   style?: ViewStyle | ViewStyle[];
   textStyle?: TextStyle;
 }
+
+/** Label color for <Text> children on filled variants; others keep theirs. */
+const CHILD_TEXT_CLASS: Partial<Record<ButtonVariant, string>> = {
+  default: "text-primary-foreground",
+  destructive: "text-destructive-foreground",
+  secondary: "text-secondary-foreground",
+  success: "text-destructive-foreground",
+};
 
 export const Button = forwardRef<ViewInstance, ButtonProps>(
   (
@@ -307,6 +315,9 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       });
     };
 
+    // <Text> children take the label color too, so a filled button's text
+    // isn't the default dark on dark. (Plain-string children get it above.)
+    const childTextClass = CHILD_TEXT_CLASS[variant];
     const buttonStyle = getButtonStyle();
     const finalTextStyle = getButtonTextStyle();
     const contentColor = getColor();
@@ -342,7 +353,9 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
               {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
-              {children}
+              <TextClassContext.Provider value={childTextClass}>
+                {children}
+              </TextClassContext.Provider>
             </View>
           )}
         </Animated.View>
@@ -368,7 +381,9 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
             <Text style={[finalTextStyle, textStyle]}>{children}</Text>
           </View>
         ) : (
-          children
+          <TextClassContext.Provider value={childTextClass}>
+            {children}
+          </TextClassContext.Provider>
         )}
       </TouchableOpacity>
     );

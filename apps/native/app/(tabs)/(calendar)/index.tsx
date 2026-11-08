@@ -69,7 +69,10 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
+import {
+  TaskDeleteScopeDialog,
+  TaskSaveScopeDialog,
+} from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -1564,7 +1567,8 @@ export default function CalendarTab() {
         title="Delete event"
       />
 
-      <TaskScopeDialogs flow={taskFlow} />
+      <TaskSaveScopeDialog flow={taskFlow} />
+      <TaskDeleteScopeDialog flow={taskFlow} />
     </View>
   );
 }
