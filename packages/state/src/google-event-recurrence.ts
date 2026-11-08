@@ -624,24 +624,42 @@ export function repeatSkipsOccurrence(
   }
   // "day": its day isn't one (an implicit day, an interval's phase);
   // "end": its COUNT or UNTIL ends first.
-  return seriesEndsBefore({ edited: params.editedStart, first, rule, timeZone })
+  // Entire series keeps the series' own time unless this edit retimes the
+  // occurrence (as the server's seriesTimesForEdit does), so a timed
+  // COUNT counts from that time.
+  const seriesTime = timeOfStart(
+    sameStart(params.editedStart, occurrence.start)
+      ? seriesStart
+      : params.editedStart,
+    timeZone
+  );
+  return seriesEndsBefore({
+    edited: params.editedStart,
+    first,
+    rule,
+    seriesTime,
+    timeZone,
+  })
     ? "end"
     : null;
 }
 
 /**
- * Whether a rule counted from the series' `first` day ends (COUNT or
- * UNTIL) before the `edited` start. A timed series' COUNT counts each
- * meeting (several a day, at the edited time otherwise, a time the clocks
- * skip not counted), as the server does; an all-day one's counts days.
+ * Whether a rule counted from the series' first meeting (`first`, at
+ * `seriesTime`) ends (COUNT or UNTIL) before the `edited` start. A timed
+ * series' COUNT counts each meeting (each of a rule's times a day, a time
+ * the clocks skip not counted), as the server does; an all-day one's
+ * counts days.
  */
 function seriesEndsBefore(params: {
   edited: { date?: string | null; dateTime?: string | null };
   first: Temporal.PlainDate;
   rule: string;
+  /** The series' start time once saved; null all day. */
+  seriesTime: Temporal.PlainTime | null;
   timeZone: string;
 }): boolean {
-  const { edited, first, rule, timeZone } = params;
+  const { edited, first, rule, seriesTime, timeZone } = params;
   const day = dayOfStart(edited, timeZone);
   const { end } = parseGoogleEventRecurrenceRule(rule);
   if (!day || end.type === "none") {
@@ -651,11 +669,11 @@ function seriesEndsBefore(params: {
     const last = untilRuleToDay(end.date, timeZone);
     return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
   }
-  const time = timeOfStart(edited, timeZone);
-  const times = time ? ruleTimesOf(rule, time) : null;
-  if (time && times) {
+  const at = edited.dateTime ? Temporal.Instant.from(edited.dateTime) : null;
+  const times = seriesTime ? ruleTimesOf(rule, seriesTime) : null;
+  if (at && times) {
     const meetings = countedRuleMeetings({
-      base: time,
+      base: seriesTime,
       count: end.count,
       from: first,
       rule,
@@ -665,8 +683,7 @@ function seriesEndsBefore(params: {
     // Null, or short of `count`, when its meetings can't all be listed.
     return Boolean(
       meetings?.size === end.count &&
-        Math.max(...meetings) <
-          day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds
+        Math.max(...meetings) < at.epochMilliseconds
     );
   }
   // Null unless it found all `count` days.

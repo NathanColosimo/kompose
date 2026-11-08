@@ -1789,6 +1789,43 @@ describe("repeatSkipsOccurrence", () => {
     expect(ends(5)).toBeNull();
   });
 
+  test("a COUNT counts from the series' own time when this one keeps its time", () => {
+    // From Nov 1 9:00 at 9:00 and 16:00: Nov 1 9:00, Nov 1 16:00, Nov 2
+    // 9:00, Nov 2 16:00, Nov 3 9:00. Entire series keeps the 9:00 start, so
+    // five end before Nov 3 16:00 (six reach it).
+    const nineAm = { dateTime: "2026-11-01T09:00:00-05:00" };
+    const nov3 = {
+      ...later,
+      originalStartTime: { dateTime: "2026-11-03T16:00:00-05:00" },
+      start: { dateTime: "2026-11-03T16:00:00-05:00" },
+    };
+    const ends = (count: number, editedStart = nov3.start) =>
+      repeatSkipsOccurrence({
+        editedStart,
+        occurrence: nov3,
+        recurrence: [`RRULE:FREQ=DAILY;BYHOUR=9,16;COUNT=${count}`],
+        seriesStart: nineAm,
+        timeZone: zone,
+      });
+    expect(ends(5)).toBe("end");
+    expect(ends(6)).toBeNull();
+    // A new time moves the series' start to it (16:00 on Nov 1), so Nov 1
+    // 9:00 isn't a meeting: Nov 3 16:00 is the fifth.
+    const retimed = { dateTime: "2026-11-03T16:00:00-05:00" };
+    expect(
+      repeatSkipsOccurrence({
+        editedStart: retimed,
+        occurrence: {
+          ...nov3,
+          start: { dateTime: "2026-11-03T15:00:00-05:00" },
+        },
+        recurrence: ["RRULE:FREQ=DAILY;BYHOUR=9,16;COUNT=5"],
+        seriesStart: nineAm,
+        timeZone: zone,
+      })
+    ).toBeNull();
+  });
+
   test("yearly with only its month picked still takes its day from the first meeting", () => {
     // BYMONTH=11 from Nov 1 meets Nov 1 each year: not Nov 15.
     expect(off(["RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=11"])).toBe(true);
