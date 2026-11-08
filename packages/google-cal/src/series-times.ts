@@ -3,15 +3,13 @@
  * one of its occurrences.
  */
 import { Temporal } from "temporal-polyfill";
-import { startInstant } from "./until";
+import { OFFSET, startInstant } from "./until";
 
 export interface EventTime {
   date?: string;
   dateTime?: string;
   timeZone?: string;
 }
-
-const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
 
 /**
  * The zone to read and write times in: the series' (Google repeats a
@@ -52,43 +50,24 @@ function googleDateTime(time: Temporal.ZonedDateTime): string {
   return time.toString({ smallestUnit: "second", timeZoneName: "never" });
 }
 
-/** Whether two Google times are the same moment (or the same date). */
-function sameTime(a: EventTime, b: EventTime, timeZone: string): boolean {
-  if (a.date || b.date) {
-    return a.date === b.date;
-  }
-  const from = startInstant(a, timeZone);
-  const to = startInstant(b, timeZone);
-  return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
-}
-
 /**
  * The series keeps its own first day and takes the edit's form, times and
  * length: an occurrence made all day makes the series all day (and back),
  * and a timed edit's wall-clock time applies in the event's time zone, so a
  * series begun before a daylight-saving change keeps its 9:00 (pasting the
- * edit's UTC time onto that day would move it an hour). An edit that left
- * the occurrence's times alone leaves the series' alone, so renaming an
- * occurrence rescheduled before doesn't move the series to its slot. Null
- * only for times that don't parse; the series then keeps its own.
+ * edit's UTC time onto that day would move it an hour). For an edit that
+ * changed the occurrence's times (one that didn't leaves the series'
+ * alone). Null only for times that don't parse; the series then keeps its
+ * own.
  */
 export function seriesTimesForEdit(params: {
   editedEnd: EventTime;
   editedStart: EventTime;
   masterEnd: EventTime;
   masterStart: EventTime;
-  /** The occurrence's times before the edit. */
-  occurrenceEnd: EventTime;
-  occurrenceStart: EventTime;
 }): { end: EventTime; start: EventTime } | null {
   const { editedEnd, editedStart, masterEnd, masterStart } = params;
   const timeZone = zoneOf(editedStart, masterStart);
-  if (
-    sameTime(editedStart, params.occurrenceStart, timeZone) &&
-    sameTime(editedEnd, params.occurrenceEnd, timeZone)
-  ) {
-    return { end: masterEnd, start: masterStart };
-  }
   const day = dayIn(masterStart, timeZone);
   if (!day) {
     return null;

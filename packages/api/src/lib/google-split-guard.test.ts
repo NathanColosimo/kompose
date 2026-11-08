@@ -190,8 +190,9 @@ describe("where This and following can start", () => {
   });
 
   test("a cut always ends a rule that still runs past the split", () => {
-    // Twice a day ten times (to Nov 13), and every 4 hours ten times:
-    // cut at Nov 10 9:00, both end the second before, whatever the rule.
+    // Daily ten times (a list of times Google ignores: to Nov 18), and
+    // every 4 hours ten times: cut at Nov 10 9:00, both end the second
+    // before, whatever the rule.
     for (const rule of [
       "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=10",
       "RRULE:FREQ=HOURLY;INTERVAL=4;COUNT=10",
@@ -347,6 +348,7 @@ describe("the server refuses a split that can't start a series", () => {
     // A refusal the user can read, not "Try again".
     expect("publicError" in error && error.publicError).toEqual({
       code: "BAD_REQUEST",
+      data: { reason: "deleteFromAddedOccurrence" },
       message:
         "Deleting this and following isn't available from an occurrence added to this series.",
     });

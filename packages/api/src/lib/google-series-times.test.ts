@@ -9,26 +9,6 @@ describe("seriesTimesForEdit", () => {
   const masterStart = { dateTime: "2026-10-06T09:00:00-04:00", timeZone: zone };
   const masterEnd = { dateTime: "2026-10-06T09:30:00-04:00", timeZone: zone };
 
-  test("a rename leaves the series' times alone", () => {
-    // A title edit through a 9:00 EST occurrence, sent in UTC.
-    expect(
-      seriesTimesForEdit({
-        editedEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
-        editedStart: { dateTime: "2026-11-10T14:00:00.000Z", timeZone: zone },
-        masterEnd,
-        masterStart,
-        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
-        occurrenceStart: {
-          dateTime: "2026-11-10T14:00:00.000Z",
-          timeZone: zone,
-        },
-      })
-    ).toEqual({
-      end: { dateTime: "2026-10-06T09:30:00-04:00", timeZone: zone },
-      start: { dateTime: "2026-10-06T09:00:00-04:00", timeZone: zone },
-    });
-  });
-
   test("takes an edited time and length on the series' first day", () => {
     expect(
       seriesTimesForEdit({
@@ -36,11 +16,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T15:00:00.000Z", timeZone: zone },
         masterEnd,
         masterStart,
-        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
-        occurrenceStart: {
-          dateTime: "2026-11-10T14:00:00.000Z",
-          timeZone: zone,
-        },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T11:00:00-04:00", timeZone: zone },
@@ -55,11 +30,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { date: "2026-11-10" },
         masterEnd,
         masterStart,
-        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
-        occurrenceStart: {
-          dateTime: "2026-11-10T14:00:00.000Z",
-          timeZone: zone,
-        },
       })
     ).toEqual({ end: { date: "2026-10-07" }, start: { date: "2026-10-06" } });
     expect(
@@ -68,35 +38,11 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T14:00:00.000Z", timeZone: zone },
         masterEnd: { date: "2026-10-07" },
         masterStart: { date: "2026-10-06" },
-        occurrenceEnd: { date: "2026-11-11" },
-        occurrenceStart: { date: "2026-11-10" },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T10:00:00-04:00", timeZone: zone },
       start: { dateTime: "2026-10-06T09:00:00-04:00", timeZone: zone },
     });
-  });
-
-  test("leaves the series' times alone when the edit didn't change them", () => {
-    // An occurrence rescheduled to 14:00 before, now only renamed.
-    const rescheduledStart = {
-      dateTime: "2026-11-10T19:00:00.000Z",
-      timeZone: zone,
-    };
-    const rescheduledEnd = {
-      dateTime: "2026-11-10T19:30:00.000Z",
-      timeZone: zone,
-    };
-    expect(
-      seriesTimesForEdit({
-        editedEnd: rescheduledEnd,
-        editedStart: rescheduledStart,
-        masterEnd,
-        masterStart,
-        occurrenceEnd: rescheduledEnd,
-        occurrenceStart: rescheduledStart,
-      })
-    ).toEqual({ end: masterEnd, start: masterStart });
   });
 
   test("reads the edit's offset when no zone comes with it", () => {
@@ -107,8 +53,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
         masterEnd: { date: "2026-10-07" },
         masterStart: { date: "2026-10-06" },
-        occurrenceEnd: { date: "2026-11-11" },
-        occurrenceStart: { date: "2026-11-10" },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T10:00:00-05:00" },
@@ -123,11 +67,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T10:00:00", timeZone: zone },
         masterEnd,
         masterStart,
-        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
-        occurrenceStart: {
-          dateTime: "2026-11-10T14:00:00.000Z",
-          timeZone: zone,
-        },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T11:00:00-04:00", timeZone: zone },
@@ -143,8 +82,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { date: "2026-11-10" },
         masterEnd: { date: "2026-10-07" },
         masterStart: { date: "2026-10-06" },
-        occurrenceEnd: { date: "2026-11-11" },
-        occurrenceStart: { date: "2026-11-10" },
       })
     ).toEqual({ end: { date: "2026-10-08" }, start: { date: "2026-10-06" } });
   });
@@ -158,14 +95,6 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T01:00:00.000Z", timeZone: zone },
         masterEnd: { dateTime: "2026-10-06T09:30:00+09:00", timeZone: tokyo },
         masterStart: { dateTime: "2026-10-06T09:00:00+09:00", timeZone: tokyo },
-        occurrenceEnd: {
-          dateTime: "2026-11-10T09:30:00+09:00",
-          timeZone: tokyo,
-        },
-        occurrenceStart: {
-          dateTime: "2026-11-10T09:00:00+09:00",
-          timeZone: tokyo,
-        },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T10:30:00+09:00", timeZone: tokyo },
@@ -176,22 +105,12 @@ describe("seriesTimesForEdit", () => {
   test("an edit written in another zone without an offset keeps its moment", () => {
     // 09:00 in Tokyo on Nov 11 is 19:00 New York on Nov 10, the same
     // whether it's written with its offset or without one.
-    const occurrenceStart = {
-      dateTime: "2026-11-10T09:00:00-05:00",
-      timeZone: zone,
-    };
-    const occurrenceEnd = {
-      dateTime: "2026-11-10T09:30:00-05:00",
-      timeZone: zone,
-    };
     const edit = (start: string, end: string) =>
       seriesTimesForEdit({
         editedEnd: { dateTime: end, timeZone: "Asia/Tokyo" },
         editedStart: { dateTime: start, timeZone: "Asia/Tokyo" },
         masterEnd,
         masterStart,
-        occurrenceEnd,
-        occurrenceStart,
       });
     const withOffset = edit(
       "2026-11-11T09:00:00+09:00",

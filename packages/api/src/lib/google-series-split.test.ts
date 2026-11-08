@@ -80,7 +80,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "EXDATE;VALUE=DATE:20261102",
         ],
-        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -97,7 +96,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "EXDATE;VALUE=DATE:20261102",
         ],
-        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -121,7 +119,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261102,20261120",
         ],
-        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -145,7 +142,6 @@ describe("splitting a series", () => {
     expect(
       carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
-        newStart: nyDaily(3),
         originalStart: nyDaily(3),
         seriesStart: nyDaily(1),
         seriesZone: "America/New_York",
@@ -158,7 +154,6 @@ describe("splitting a series", () => {
     expect(
       carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
-        newStart: "2026-11-03T14:00:00.000Z",
         originalStart: "2026-11-03T14:00:00.000Z",
         seriesStart: "2026-11-01T14:00:00.000Z",
         seriesZone: "America/New_York",
@@ -167,56 +162,44 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
-  // Twice a day at 9:00 and 15:00, five times from Nov 1 (Nov 1 and 2 at
-  // both, Nov 3 at 9:00), plus an added Nov 20: a rule not walked here.
-  const twiceDaily = {
-    masterRecurrence: [
-      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-      "RDATE;TZID=America/New_York:20261120T090000",
-    ],
-    seriesStart: nyDaily(1),
-    seriesZone: "America/New_York",
-    starts: [
-      nyDaily(1),
-      nyDaily(1, 15),
-      nyDaily(2),
-      nyDaily(2, 15),
-      nyDaily(3),
-      nyDaily(20),
-    ],
-  };
-
-  test("ends a several-a-day new part at the old rule's last meeting", () => {
-    // Split at Nov 2 9:00: three left (Nov 2 9:00 and 15:00, Nov 3 9:00),
-    // so it ends at Nov 3 9:00, not that day's end (which adds 15:00).
+  test("cuts a rule with a list of times where Google ends it", () => {
+    // Mondays with BYHOUR=9,15 four times from Nov 30: Google meets once a
+    // day, at the start's 9:00 (Nov 30 to Dec 21). Split at Dec 14, the
+    // old part ends the second before and the new one has two left.
+    const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15;COUNT=4";
     expect(
-      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
-        ...twiceDaily,
-        newStart: nyDaily(2),
-        originalStart: nyDaily(2),
+      truncateRecurrenceForFollowing(
+        [rule],
+        "2026-12-14T09:00:00-05:00",
+        "America/New_York",
+        "2026-11-30T09:00:00-05:00"
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15;UNTIL=20261214T135959Z",
+    ]);
+    expect(
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart: "2026-12-14T09:00:00-05:00",
+        seriesStart: "2026-11-30T09:00:00-05:00",
+        seriesZone: "America/New_York",
       })
-    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261103T140000Z"]);
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15;COUNT=2"]);
   });
 
-  test("moves a several-a-day new part's end as many days as its start", () => {
-    // Split at Nov 2 9:00 and moved to Nov 3 10:00: its rule keeps its
-    // hours, so it meets Nov 3 10:00 and 15:00, then Nov 4 9:00, the
-    // old last meeting a day on.
+  test("can't carry a COUNT it can't walk past added days", () => {
+    // A week-number rule isn't walked, and Google's list can't tell its
+    // meetings from the added one: what's left is unknown.
+    const rule = "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=3";
     expect(
-      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
-        ...twiceDaily,
-        newStart: nyDaily(3, 10),
-        originalStart: nyDaily(2),
+      carryCount([rule], {
+        masterRecurrence: [rule, "RDATE;VALUE=DATE:20261117"],
+        originalStart: "2027-11-15",
+        seriesStart: "2026-11-09",
+        seriesZone: "America/New_York",
+        starts: ["2026-11-09", "2026-11-17", "2027-11-15", "2028-11-13"],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261104T140000Z"]);
-    // Split at its last meeting and moved there: it ends at its start.
-    expect(
-      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
-        ...twiceDaily,
-        newStart: nyDaily(4, 10),
-        originalStart: nyDaily(3),
-      })
-    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261104T150000Z"]);
+    ).toBeNull();
   });
 
   test("keeps an added day that's also the rule's last day", () => {
@@ -228,7 +211,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261105",
         ],
-        newStart: "2026-11-04",
         originalStart: "2026-11-03",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -252,7 +234,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4",
           "RDATE;VALUE=DATE:20261103,20261111",
         ],
-        newStart: "2026-11-04",
         originalStart: "2026-11-04",
         seriesStart: "2026-11-02",
         seriesZone: "America/New_York",
@@ -272,7 +253,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261030,20261105",
         ],
-        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -293,7 +273,6 @@ describe("splitting a series", () => {
     expect(
       carryCount(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"], {
         masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"],
-        newStart: "2026-11-09",
         originalStart: "2026-11-09",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
@@ -311,7 +290,6 @@ describe("splitting a series", () => {
           "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
           "RDATE;VALUE=DATE:20261103,20261116",
         ],
-        newStart: "2026-11-10",
         originalStart: "2026-11-09",
         seriesStart: "2026-11-02",
         seriesZone: "America/New_York",
@@ -449,28 +427,21 @@ describe("splitting a series", () => {
     ]);
   });
 
-  test("carries a several-a-day COUNT made all day into days", () => {
-    // 9:00 and 15:00, ten meetings from Mon Nov 9 (Nov 9-13); "This and
-    // following" from Nov 11 9:00, made all day: six meetings left, three
-    // days, once the server lines the rule up with the new series' start.
+  test("counts a rule's list of times as one meeting a day", () => {
+    // Google meets BYHOUR=9,15 once a day, at the start's 9:00: ten
+    // meetings from Nov 9 run to Nov 18, so split at Nov 11 eight are
+    // left, and made all day the rule keeps them.
     const rule = ["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=10"];
-    const starts = ["09", "10", "11", "12", "13"].flatMap((day) => [
-      `2026-11-${day}T09:00:00-05:00`,
-      `2026-11-${day}T15:00:00-05:00`,
-    ]);
-    const carried = carryCount(rule, {
+    const carried = carryCountExactly(rule, {
       masterRecurrence: rule,
-      newStart: "2026-11-11",
       originalStart: "2026-11-11T09:00:00-05:00",
       seriesStart: "2026-11-09T09:00:00-05:00",
       seriesZone: "America/New_York",
-      starts,
     });
-    // As the server's ruleForStart passes it: the new part's first day and
-    // the split meeting's time.
+    expect(carried).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=8"]);
     expect(
       matchRecurrenceToStart(
-        carried,
+        carried ?? [],
         { date: "2026-11-11" },
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" },
@@ -479,25 +450,7 @@ describe("splitting a series", () => {
           firstTime: Temporal.PlainTime.from("09:00"),
         }
       )
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
-  });
-
-  test("counts a split made all day from the split meeting's time", () => {
-    // The same five 9:00/15:00 meetings from Nov 9, split from Nov 9 15:00
-    // and made all day: four left (Nov 9 15:00 to Nov 11 9:00), three days.
-    const rule = ["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=4"];
-    expect(
-      matchRecurrenceToStart(
-        rule,
-        { date: "2026-11-09" },
-        "America/New_York",
-        { dateTime: "2026-11-09T09:00:00-05:00" },
-        {
-          firstDay: Temporal.PlainDate.from("2026-11-09"),
-          firstTime: Temporal.PlainTime.from("15:00"),
-        }
-      )
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=8"]);
   });
 
   test("counts a split at an added meeting as one more", () => {
@@ -753,12 +706,13 @@ describe("isRuleDay", () => {
         day("2026-11-17")
       )
     ).toBe(false);
+    // Google ignores a list of times, so BYSETPOS picks among days.
     expect(
       isRuleDay(
         "RRULE:FREQ=MONTHLY;BYDAY=MO;BYHOUR=9,15;BYSETPOS=1",
         start,
         day("2026-12-07")
       )
-    ).toBeNull();
+    ).toBe(true);
   });
 });

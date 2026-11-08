@@ -8,8 +8,6 @@ import {
   readRecurrenceValue,
   ruleTimesOf,
   untilMoment,
-  untilRuleForDay,
-  withRuleClock,
 } from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
@@ -24,9 +22,7 @@ const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
   SECONDLY: "seconds",
 };
 const COUNT_PART = /([:;])COUNT=[^;]+/;
-const SEVERAL_TIMES = /[:;]BY(?:HOUR|MINUTE|SECOND)=[^;]*,/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 
 /**
  * The series' rule cut to end just before the occurrence that started at
@@ -187,13 +183,6 @@ function momentOf(
   );
 }
 
-/** A value's place in time: its moment, or its day's start (UTC). */
-function order(value: RecurrenceValue): number {
-  return value.instant
-    ? value.instant.epochMilliseconds
-    : Date.UTC(value.day.year, value.day.month - 1, value.day.day);
-}
-
 /** The values, each moment (or day) once. */
 function unique(values: RecurrenceValue[]): RecurrenceValue[] {
   const seen = new Set<string>();
@@ -207,66 +196,6 @@ function unique(values: RecurrenceValue[]): RecurrenceValue[] {
     seen.add(key);
     return true;
   });
-}
-
-/**
- * Whether an added (RDATE) value is also one of the rule's occurrences:
- * on one of its days, at the series' time (or both all day). Null when
- * the rule has parts `isRuleDay` doesn't read, or meets several times a
- * day (which of its times is the series' isn't read here).
- */
-function isRuleOccurrence(
-  rule: string,
-  start: RecurrenceValue,
-  value: RecurrenceValue,
-  seriesZone: string
-): boolean | null {
-  if (SEVERAL_TIMES.test(rule)) {
-    return null;
-  }
-  const onRuleDay = isRuleDay(rule, start.day, value.day);
-  if (onRuleDay !== true) {
-    return onRuleDay;
-  }
-  if (!(start.instant && value.instant)) {
-    return !(start.instant || value.instant);
-  }
-  return (
-    Temporal.PlainTime.compare(
-      start.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
-      value.instant.toZonedDateTimeISO(seriesZone).toPlainTime()
-    ) === 0
-  );
-}
-
-/**
- * The added days that aren't also rule occurrences. Each is checked
- * against the rule; for a rule with parts that can't be read, COUNT says
- * how many there are (distinct days beyond it) and the latest added days
- * are taken, since added days usually run past the rule.
- */
-function extraAddedDays(params: {
-  added: RecurrenceValue[];
-  count: number | undefined;
-  distinctDays: number;
-  masterRecurrence: string[];
-  seriesStart: string;
-  seriesZone: string;
-}): RecurrenceValue[] {
-  const { added, masterRecurrence, seriesZone } = params;
-  const rule = masterRecurrence.find((line) => line.startsWith("RRULE:"));
-  const start = asValue(params.seriesStart, seriesZone);
-  const verdicts = added.map((value) =>
-    rule && start ? isRuleOccurrence(rule, start, value, seriesZone) : null
-  );
-  if (verdicts.every((verdict) => verdict !== null)) {
-    return added.filter((_, index) => !verdicts[index]);
-  }
-  const extras = Math.max(
-    0,
-    params.distinctDays - (params.count ?? params.distinctDays)
-  );
-  return [...added].sort((a, b) => order(b) - order(a)).slice(0, extras);
 }
 
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
@@ -361,24 +290,108 @@ export function followingSplitBlocked(params: {
     params.seriesZone
   );
   const rule = rules[0];
-  const clock = (value: RecurrenceValue | null) =>
-    value?.instant?.toZonedDateTimeISO(params.seriesZone).toPlainTime();
-  const firstClock = clock(first);
-  const splitClock = clock(split);
-  const ruleMeeting =
-    rule &&
+  return rule &&
     first &&
-    isRuleDay(rule, first.day, split.day) === true &&
-    ruleEndsBefore(
-      rule,
-      first,
-      momentOf(split, params.seriesZone),
-      params.seriesZone
-    ) === false &&
-    (!(firstClock && splitClock) ||
-      Temporal.PlainTime.compare(ruleClock(rule, firstClock), splitClock) ===
-        0);
-  return ruleMeeting ? null : "addedOccurrence";
+    ruleMeetsAt(rule, first, split, params.seriesZone) === true
+    ? null
+    : "addedOccurrence";
+}
+
+/**
+ * Whether `rule`, repeating from the series' `first` start, meets at
+ * `slot`: on one of its days, before its end, at its time (Google meets a
+ * rule once a day, at its one BYHOUR / BYMINUTE or the start's; a list
+ * there it ignores). Null when that can't be told.
+ */
+function ruleMeetsAt(
+  rule: string,
+  first: RecurrenceValue,
+  slot: RecurrenceValue,
+  seriesZone: string
+): boolean | null {
+  if (Boolean(first.instant) !== Boolean(slot.instant)) {
+    return false;
+  }
+  const clock = (value: RecurrenceValue) =>
+    value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
+  const firstClock = clock(first);
+  const slotClock = clock(slot);
+  if (
+    firstClock &&
+    slotClock &&
+    Temporal.PlainTime.compare(ruleClock(rule, firstClock), slotClock) !== 0
+  ) {
+    return false;
+  }
+  const onDay = isRuleDay(rule, first.day, slot.day);
+  if (onDay !== true) {
+    return onDay;
+  }
+  const ended = ruleEndsBefore(
+    rule,
+    first,
+    momentOf(slot, seriesZone),
+    seriesZone
+  );
+  return ended === null ? null : !ended;
+}
+
+/**
+ * Whether a series repeating with `recurrence` from `start` has a meeting
+ * at `slot` (an original start, as Google writes them): its start, an
+ * added (RDATE) meeting, or one of its rules' (skipped EXDATE ones
+ * aside). Google keeps an occurrence's own changes only while its series
+ * still has its original slot. Null when that can't be told.
+ */
+export function seriesMeetsAt(params: {
+  recurrence: string[];
+  seriesZone: string;
+  slot: string;
+  start: { date?: string | null; dateTime?: string | null };
+}): boolean | null {
+  const { recurrence, seriesZone } = params;
+  const first = asValue(
+    params.start.dateTime ?? params.start.date ?? "",
+    seriesZone
+  );
+  const slot = asValue(params.slot, seriesZone);
+  if (!(first && slot)) {
+    return null;
+  }
+  const at = (values: RecurrenceValue[]) =>
+    values.some((value) => sameValue(value, slot));
+  const skipped = recurrence.flatMap((line) => {
+    const list = line.startsWith("EXDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
+    return (list?.values ?? []).flatMap((value) => {
+      const read = list && readRecurrenceValue(value, list.zone, seriesZone);
+      return read ? [read] : [];
+    });
+  });
+  if (at(skipped)) {
+    return false;
+  }
+  if (sameValue(first, slot) || at(addedValues(recurrence, seriesZone))) {
+    return true;
+  }
+  if (
+    Temporal.Instant.compare(
+      momentOf(slot, seriesZone),
+      momentOf(first, seriesZone)
+    ) < 0
+  ) {
+    return false;
+  }
+  let unknown = false;
+  for (const rule of recurrence.filter(isRule)) {
+    const meets = ruleMeetsAt(rule, first, slot, seriesZone);
+    if (meets) {
+      return true;
+    }
+    unknown ||= meets === null;
+  }
+  return unknown ? null : false;
 }
 
 /**
@@ -474,13 +487,13 @@ function ruleEndsBefore(
  * The following part of a split series' rule, with the COUNT the user
  * kept carried on. COUNT counts rule positions, EXDATE-skipped ones
  * included, while Google lists rule occurrences (skipped ones aside) and
- * RDATE-added ones, an added day that's also a rule day only once. So:
+ * RDATE-added ones, an added day that's also a rule day only once. So,
+ * when the rule can't be walked (`carryCountExactly`):
  * - with no added days, the positions used before the split are those
  *   listed before it plus the skipped days before it, and the new part
  *   runs what's left (a five-time series split at its third runs three);
  * - with added days, listed ones can't be told apart from rule ones, so
- *   the new part ends where the old series' rule did instead: UNTIL its
- *   last listed occurrence that isn't an added day.
+ *   what's left can't be known: null.
  */
 export function carryCount(
   recurrence: string[],
@@ -490,126 +503,41 @@ export function carryCount(
     seriesZone: string;
     /** Every occurrence's original start, as Google lists them. */
     starts: string[];
-    /** The new part's start (it may move off the split's day or time). */
-    newStart: string;
     /** The series' own first start, where its rule counts from. */
     seriesStart: string;
   }
-): string[] {
-  const {
-    masterRecurrence,
-    newStart,
-    originalStart,
-    seriesStart,
-    seriesZone,
-    starts,
-  } = params;
-  const listed = starts
-    .map((start) => asValue(start, seriesZone))
-    .filter((value): value is RecurrenceValue => value !== null);
-  const listedValues = (name: "EXDATE" | "RDATE") =>
-    masterRecurrence.flatMap((line) => {
-      const list = parseDateList(line, seriesZone);
-      return list?.name === name
-        ? list.values
-            .map((value) => readRecurrenceValue(value, list.zone, seriesZone))
-            .filter((value): value is RecurrenceValue => value !== null)
-        : [];
-    });
+): string[] | null {
   const exact = carryCountExactly(recurrence, params);
   if (exact) {
     return exact;
   }
+  const { masterRecurrence, originalStart, seriesZone, starts } = params;
   if (hasAddedDays(masterRecurrence)) {
-    // The rule's last day is the latest listed one that isn't an extra
-    // added day; an added day that's also a rule day stays one.
-    const extraDays = extraAddedDays({
-      added: unique(listedValues("RDATE")),
-      count: countOf(masterRecurrence),
-      distinctDays: unique([...listed, ...listedValues("EXDATE")]).length,
-      masterRecurrence,
-      seriesStart,
-      seriesZone,
-    });
-    const ruleDays = listed.filter(
-      (value) => !extraDays.some((day) => sameValue(day, value))
-    );
-    const last = ruleDays.reduce<RecurrenceValue | null>(
-      (latest, value) =>
-        !latest || order(value) > order(latest) ? value : latest,
-      null
-    );
-    return last
-      ? untilInstead(
-          recurrence,
-          movedLastUntil(recurrence, last, {
-            allDay: DATE_ONLY.test(newStart),
-            from: asValue(originalStart, seriesZone),
-            seriesZone,
-            to: asValue(newStart, seriesZone),
-          })
-        )
-      : recurrence;
+    return null;
   }
   const before = (value: RecurrenceValue) =>
     beforeSplit(value, originalStart, seriesZone);
+  const skipped = masterRecurrence.flatMap((line) => {
+    const list = parseDateList(line, seriesZone);
+    return list?.name === "EXDATE"
+      ? list.values
+          .map((value) => readRecurrenceValue(value, list.zone, seriesZone))
+          .filter((value): value is RecurrenceValue => value !== null)
+      : [];
+  });
   // Each position once: a skipped day Google also lists (as a cancelled
   // occurrence) isn't counted twice.
   const used = unique([
-    ...listed.filter(before),
-    ...listedValues("EXDATE").filter(before),
+    ...starts
+      .map((start) => asValue(start, seriesZone))
+      .filter((value): value is RecurrenceValue => value !== null)
+      .filter(before),
+    ...skipped.filter(before),
   ]).length;
   return withRemainingCount(recurrence, used);
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
-
-/**
- * UNTIL for a new part that ends at the old rule's `last` meeting, moved
- * as the split's start moved (`from` to `to`): as many days on, and at
- * the time each rule would meet then (a time a rule sets is its own, a
- * part it leaves out follows the start), and never before the new start
- * (the last meeting may be the one the split moved). A timed part ends
- * at that meeting, not its day's end, so a later time that day isn't
- * added; an all-day one, or one without times to go by, ends with the day.
- */
-function movedLastUntil(
-  recurrence: string[],
-  last: RecurrenceValue,
-  move: {
-    allDay: boolean;
-    from: RecurrenceValue | null;
-    seriesZone: string;
-    to: RecurrenceValue | null;
-  }
-): string {
-  const { allDay, from, seriesZone, to } = move;
-  const day = last.day.add({
-    days: from && to ? from.day.until(to.day).days : 0,
-  });
-  const rules = recurrence.filter(isRule);
-  if (allDay || !(last.instant && to?.instant) || rules.length === 0) {
-    return untilRuleForDay(day, allDay, seriesZone);
-  }
-  const lastClock = last.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const startClock = to.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const ends = rules.map((rule) =>
-    day
-      .toZonedDateTime({
-        plainTime: SUB_DAILY.test(rule)
-          ? lastClock
-          : withRuleClock(rule, lastClock, startClock),
-        timeZone: seriesZone,
-      })
-      .toInstant()
-  );
-  const end = ends.reduce(
-    (latest, moment) =>
-      Temporal.Instant.compare(moment, latest) > 0 ? moment : latest,
-    to.instant
-  );
-  return end.toString({ smallestUnit: "second" }).replace(/[-:]/g, "");
-}
 
 /**
  * The new part's rules with each counted rule's meetings left: the
