@@ -1,5 +1,10 @@
 import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
+import {
+  parseDateList,
+  type RecurrenceValue,
+  readRecurrenceValue,
+} from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
@@ -14,7 +19,9 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  */
 export function truncateRecurrenceForFollowing(
   recurrence: string[],
-  originalStart: string
+  originalStart: string,
+  /** The series' zone, for the days of its RDATE values. */
+  seriesZone = "UTC"
 ): string[] {
   const until = DATE_ONLY.test(originalStart)
     ? Temporal.PlainDate.from(originalStart)
@@ -26,7 +33,7 @@ export function truncateRecurrenceForFollowing(
         .toString()
         .slice(0, 19)
         .replace(/[-:]/g, "")}Z`;
-  return recurrence.map((line) => {
+  return splitAddedDays(recurrence, originalStart, seriesZone, "before").map((line) => {
     if (!line.startsWith("RRULE:")) {
       return line;
     }
@@ -63,6 +70,89 @@ export function withRemainingCount(
         )
       : line;
   });
+}
+
+/** Whether a recurrence value comes before the split at `originalStart`. */
+function beforeSplit(
+  value: RecurrenceValue,
+  originalStart: string,
+  seriesZone: string
+): boolean {
+  if (DATE_ONLY.test(originalStart)) {
+    return (
+      Temporal.PlainDate.compare(value.day, Temporal.PlainDate.from(originalStart)) < 0
+    );
+  }
+  const split = Temporal.Instant.from(originalStart);
+  return value.instant
+    ? Temporal.Instant.compare(value.instant, split) < 0
+    : Temporal.PlainDate.compare(
+        value.day,
+        split.toZonedDateTimeISO(seriesZone).toPlainDate()
+      ) < 0;
+}
+
+/**
+ * A split series' RDATE days (added occurrences, which UNTIL doesn't cut):
+ * the ones before the split stay with the old part, the rest go with the
+ * new one, so none is lost or doubled.
+ */
+export function splitAddedDays(
+  recurrence: string[],
+  originalStart: string,
+  seriesZone: string,
+  keep: "before" | "from"
+): string[] {
+  return recurrence.flatMap((line) => {
+    const list = line.startsWith("RDATE") ? parseDateList(line, seriesZone) : null;
+    if (!list) {
+      return [line];
+    }
+    const kept = list.values.filter((value) => {
+      const read = readRecurrenceValue(value, list.zone, seriesZone);
+      return read
+        ? beforeSplit(read, originalStart, seriesZone) === (keep === "before")
+        : true;
+    });
+    if (kept.length === list.values.length) {
+      return [line];
+    }
+    return kept.length > 0
+      ? [`${line.slice(0, line.lastIndexOf(":") + 1)}${kept.join(",")}`]
+      : [];
+  });
+}
+
+/**
+ * How many of a split series' rule positions its listed occurrences before
+ * the split stand for: Google lists rule occurrences (EXDATE-skipped ones
+ * aside) and RDATE-added ones, while COUNT counts rule positions, skipped
+ * ones included. So: listed, less RDATE days before, plus EXDATE days.
+ */
+export function rulePositionsBefore(
+  listed: number,
+  recurrence: string[],
+  originalStart: string,
+  seriesZone: string
+): number {
+  let added = 0;
+  let skipped = 0;
+  for (const line of recurrence) {
+    const list = parseDateList(line, seriesZone);
+    if (!list) {
+      continue;
+    }
+    const before = list.values.filter((value) => {
+      const read = readRecurrenceValue(value, list.zone, seriesZone);
+      return read ? beforeSplit(read, originalStart, seriesZone) : false;
+    }).length;
+    if (list.name === "RDATE") {
+      added += before;
+    } else {
+      skipped += before;
+    }
+  }
+  return Math.max(0, listed - added + skipped);
 }
 
 /** The COUNT a series' rule ends after, if it has one. */

@@ -86,38 +86,119 @@ function wallClock(start: StartTime, timeZone: string): Temporal.PlainTime {
   }
 }
 
-/** An EXDATE/RDATE line with its values in the start's form. */
-function matchDateList(
+/** A recurrence value read: its day in the series' zone, its moment if timed. */
+export interface RecurrenceValue {
+  day: Temporal.PlainDate;
+  instant: Temporal.Instant | null;
+}
+
+/**
+ * Reads "20261128", "20261128T140000Z", or "20261128T090000" (a local time
+ * in `valueZone`, its line's TZID) as the day it falls on in `seriesZone`:
+ * a Tokyo series' Monday skipped as "Sunday 19:00 New York" is Monday.
+ */
+export function readRecurrenceValue(
+  value: string,
+  valueZone: string,
+  seriesZone: string
+): RecurrenceValue | null {
+  const cleaned = value.replace(/[-:]/g, "");
+  const date = UNTIL_DATE.exec(cleaned);
+  if (date) {
+    const [, y, m, d] = date;
+    return { day: Temporal.PlainDate.from(`${y}-${m}-${d}`), instant: null };
+  }
+  const full = UNTIL_DATE_TIME.exec(cleaned);
+  if (!full) {
+    return null;
+  }
+  const [, y, m, d, hh, mm, ss, offset] = full;
+  const local = `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
+  try {
+    let instant: Temporal.Instant;
+    if (!offset) {
+      instant = Temporal.PlainDateTime.from(local)
+        .toZonedDateTime(valueZone)
+        .toInstant();
+    } else {
+      const zone =
+        offset === "Z" ? "Z" : `${offset.slice(0, 3)}:${offset.slice(3)}`;
+      instant = Temporal.Instant.from(`${local}${zone}`);
+    }
+    return {
+      day: instant.toZonedDateTimeISO(seriesZone).toPlainDate(),
+      instant,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** An EXDATE/RDATE line: its name, the zone its values are in, and them. */
+export function parseDateList(
   line: string,
-  allDay: boolean,
-  start: StartTime,
-  timeZone: string
-): string {
+  seriesZone: string
+): { name: string; values: string[]; zone: string } | null {
   const match = DATE_LIST.exec(line);
   if (!match) {
+    return null;
+  }
+  const [, name = "", params = "", list = ""] = match;
+  return {
+    name,
+    values: list.split(","),
+    zone: TZID_PARAM.exec(params)?.[1] ?? seriesZone,
+  };
+}
+
+/**
+ * An EXDATE/RDATE line in the start's form, counted on the series' days:
+ * dates for an all-day series; for a timed one, a skipped occurrence at
+ * the series' (possibly new) start time on its day, so it stays skipped
+ * when the series' time moves. An RDATE's own times stay its own.
+ */
+function matchDateList(
+  line: string,
+  start: StartTime,
+  seriesZone: string
+): string {
+  const list = parseDateList(line, seriesZone);
+  if (!list) {
     return line;
   }
-  const [, name, params = "", list = ""] = match;
-  const values = list.split(",");
-  const datesOnly = values.every((value) => UNTIL_DATE.test(value));
-  if (datesOnly === allDay) {
+  const read = list.values.map((value) =>
+    readRecurrenceValue(value, list.zone, seriesZone)
+  );
+  if (read.some((value) => value === null)) {
     return line;
   }
-  const zone = TZID_PARAM.exec(params)?.[1] ?? timeZone;
-  const days = values.map((value) => untilRuleToDay(value, zone));
-  if (days.some((day) => day === null)) {
+  const values = read as RecurrenceValue[];
+  if (start.date) {
+    return values.every((value) => value.instant === null)
+      ? line
+      : `${list.name};VALUE=DATE:${values.map((v) => compactDate(v.day)).join(",")}`;
+  }
+  if (list.name === "RDATE" && values.every((value) => value.instant)) {
     return line;
   }
-  const valid = days as Temporal.PlainDate[];
-  if (allDay) {
-    return `${name};VALUE=DATE:${valid.map(compactDate).join(",")}`;
+  const time = wallClock(start, seriesZone);
+  const moments = values.map((value) =>
+    value.day.toZonedDateTime({ plainTime: time, timeZone: seriesZone })
+  );
+  const same = moments.every(
+    (moment, index) =>
+      values[index]?.instant &&
+      Temporal.Instant.compare(
+        moment.toInstant(),
+        values[index].instant as Temporal.Instant
+      ) === 0
+  );
+  if (same) {
+    return line;
   }
-  // A date made timed: the occurrence at the series' start time that day.
-  const time = wallClock(start, timeZone)
-    .toString({ smallestUnit: "second" })
-    .replace(/:/g, "");
-  return `${name};TZID=${timeZone}:${valid
-    .map((day) => `${compactDate(day)}T${time}`)
+  const clock = time.toString({ smallestUnit: "second" }).replace(/:/g, "");
+  return `${list.name};TZID=${seriesZone}:${values
+    .map((value) => `${compactDate(value.day)}T${clock}`)
     .join(",")}`;
 }
 
@@ -140,9 +221,9 @@ function matchUntil(line: string, allDay: boolean, timeZone: string): string {
 /**
  * `recurrence` in the form `start` takes, as Google requires: UNTIL and
  * EXDATE/RDATE values are dates for an all-day series and date-times for a
- * timed one (that day's last second for UNTIL; the series' start time for
- * the occurrences, so a skipped one stays skipped). The same array when it
- * already is.
+ * timed one (that day's last second for UNTIL; a skipped occurrence at the
+ * series' start time on its day in `timeZone`, the series' zone, so it
+ * stays skipped). The same array when it already is.
  */
 export function matchRecurrenceToStart(
   recurrence: string[],
@@ -154,7 +235,7 @@ export function matchRecurrenceToStart(
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchUntil(line, allDay, timeZone)
-      : matchDateList(line, allDay, start, timeZone);
+      : matchDateList(line, start, timeZone);
     changed ||= matched !== line;
     return matched;
   });

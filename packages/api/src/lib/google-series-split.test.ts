@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  rulePositionsBefore,
+  splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
 } from "@kompose/google-cal/recurrence-utils";
@@ -46,5 +48,40 @@ describe("splitting a series", () => {
     expect(withRemainingCount(["RRULE:FREQ=DAILY"], 2)).toEqual([
       "RRULE:FREQ=DAILY",
     ]);
+  });
+
+  test("gives each part its own added days", () => {
+    const rule = ["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261101,20261109"];
+    // The old part ends before Nov 3: Nov 9 isn't its any more.
+    expect(
+      truncateRecurrenceForFollowing(rule, "2026-11-03", "America/New_York")
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;UNTIL=20261102",
+      "RDATE;VALUE=DATE:20261101",
+    ]);
+    expect(
+      splitAddedDays(rule, "2026-11-03", "America/New_York", "from")
+    ).toEqual(["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261109"]);
+  });
+
+  test("counts rule positions, skipped ones in, added ones out", () => {
+    // Daily COUNT=5 from Nov 1, Nov 2 skipped, split at Nov 3: Google lists
+    // Nov 1 only, but two positions are used.
+    expect(
+      rulePositionsBefore(
+        1,
+        ["RRULE:FREQ=DAILY;COUNT=5", "EXDATE;VALUE=DATE:20261102"],
+        "2026-11-03",
+        "America/New_York"
+      )
+    ).toBe(2);
+    expect(
+      rulePositionsBefore(
+        3,
+        ["RRULE:FREQ=DAILY;COUNT=5", "RDATE;VALUE=DATE:20261031"],
+        "2026-11-03",
+        "America/New_York"
+      )
+    ).toBe(2);
   });
 });

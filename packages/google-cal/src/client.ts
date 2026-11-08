@@ -14,7 +14,9 @@ import {
 } from "./schema";
 import {
   countOf,
+  rulePositionsBefore,
   sanitizeEventPayload,
+  splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
 } from "./recurrence-utils";
@@ -32,6 +34,11 @@ interface GoogleWatchChannelResult {
   channelId: string;
   expiration?: string;
   resourceId: string;
+}
+
+/** The zone a series' days are counted in. */
+function seriesZoneOf(master: { start: { timeZone?: string } }): string {
+  return master.start.timeZone ?? "UTC";
 }
 
 /**
@@ -584,15 +591,25 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const rule = edited ?? kept;
       const count = countOf(master.recurrence);
-      if (!rule || count === undefined || countOf(rule) !== count) {
-        return rule;
+      // The new part repeats from the split on: added days before it stay
+      // with the old part.
+      const fromSplit =
+        rule && splitAddedDays(rule, originalStart, seriesZoneOf(master), "from");
+      if (!fromSplit || count === undefined || countOf(fromSplit) !== count) {
+        return fromSplit;
       }
-      const used = yield* countOccurrencesBefore(
+      const listed = yield* countOccurrencesBefore(
         calendarId,
         master.id,
         originalStart
       );
-      return withRemainingCount(rule, used);
+      const used = rulePositionsBefore(
+        listed,
+        master.recurrence ?? [],
+        originalStart,
+        seriesZoneOf(master)
+      );
+      return withRemainingCount(fromSplit, used);
     });
 
   const updateEventAll = (
@@ -706,7 +723,8 @@ export function makeGoogleCalendarService(
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
-        startIso
+        startIso,
+        seriesZoneOf(master)
       );
 
       const truncatedPayload = sanitizeEventPayload({
@@ -923,7 +941,8 @@ export function makeGoogleCalendarService(
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
-        originalStartIso
+        originalStartIso,
+        seriesZoneOf(master)
       );
 
       yield* Effect.tryPromise({
@@ -1049,7 +1068,8 @@ export function makeGoogleCalendarService(
         const originalRecurrence = [...master.recurrence];
         const truncatedRecurrence = truncateRecurrenceForFollowing(
           master.recurrence,
-          originalStartIso
+          originalStartIso,
+          seriesZoneOf(master)
         );
 
         const truncatedMasterResponse = yield* Effect.tryPromise({

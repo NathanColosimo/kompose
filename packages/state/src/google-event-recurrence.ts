@@ -467,6 +467,31 @@ export function otherTimeZone(
   return zone && zone !== appZone ? zone : undefined;
 }
 
+/** Whether two Google starts are the same moment (or the same date). */
+function sameStart(
+  a: { date?: string | null; dateTime?: string | null },
+  b: { date?: string | null; dateTime?: string | null } | undefined
+): boolean {
+  if (!b) {
+    return false;
+  }
+  if (a.date || b.date) {
+    return a.date === b.date;
+  }
+  try {
+    return Boolean(
+      a.dateTime &&
+        b.dateTime &&
+        Temporal.Instant.compare(
+          Temporal.Instant.from(a.dateTime),
+          Temporal.Instant.from(b.dateTime)
+        ) === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Whether a save moves an occurrence to another day (not just its time). */
 export function occurrenceDayMoved(params: {
   editedStart: {
@@ -523,6 +548,12 @@ export function seriesRecurrenceForSave(params: {
     !occurrence.recurringEventId ||
     !masterRecurrence?.length
   ) {
+    return;
+  }
+  // An edit that leaves the occurrence's start as it was changes nothing
+  // about the series' days, times or form: renaming one rescheduled before
+  // mustn't retarget the series to its slot.
+  if (sameStart(editedStart, occurrence.start)) {
     return;
   }
   const allDay = Boolean(editedStart.date);

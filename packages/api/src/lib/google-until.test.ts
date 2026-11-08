@@ -85,3 +85,39 @@ describe("matchRecurrenceToStart", () => {
     ]);
   });
 });
+
+describe("skipped occurrences on the series' days", () => {
+  test("reads a skipped day in the series' zone, not its own", () => {
+    // A Tokyo Monday 9:00 skipped as "Sunday 19:00 New York": still Monday.
+    expect(
+      matchRecurrenceToStart(
+        ["RRULE:FREQ=WEEKLY", "EXDATE;TZID=America/New_York:20261115T190000"],
+        { date: "2026-11-09" },
+        "Asia/Tokyo"
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY", "EXDATE;VALUE=DATE:20261116"]);
+  });
+
+  test("moves a skipped occurrence with the series' new time", () => {
+    // 9:00 -> 10:00 New York: the skipped Nov 4 is at 10:00 now.
+    expect(
+      matchRecurrenceToStart(
+        ["RRULE:FREQ=DAILY", "EXDATE:20261104T140000Z"],
+        { dateTime: "2026-11-01T10:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE;TZID=America/New_York:20261104T100000",
+    ]);
+    // Unchanged time: left as written.
+    const same = ["RRULE:FREQ=DAILY", "EXDATE:20261104T140000Z"];
+    expect(
+      matchRecurrenceToStart(
+        same,
+        { dateTime: "2026-11-01T09:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toBe(same);
+  });
+});
