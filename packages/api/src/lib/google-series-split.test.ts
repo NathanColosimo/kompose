@@ -187,6 +187,69 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15;COUNT=2"]);
   });
 
+  test("counts no meeting before the series' start", () => {
+    // Starts Nov 9 9:00, then daily at 8:00 three times: Nov 9's 8:00 is
+    // before the start, so the rule meets Nov 10, 11 and 12. Split at
+    // Nov 10 8:00, all three are left.
+    const rule = "RRULE:FREQ=DAILY;BYHOUR=8;COUNT=3";
+    expect(
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart: "2026-11-10T08:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([rule]);
+  });
+
+  test("leaves a count to Google's list only when a counted day skips its time", () => {
+    // Daily at 2:30 three times from a 9:00 start; New York has no 2:30
+    // on Mar 14 2027. From Mar 11, the meetings run through Mar 14: left
+    // to Google's list. From Mar 14 itself, that 2:30 is before the
+    // start, so the meetings (Mar 15-17) can be counted.
+    const rule = "RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=3";
+    const carry = (seriesStart: string, originalStart: string) =>
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart,
+        seriesStart,
+        seriesZone: "America/New_York",
+      });
+    expect(
+      carry("2027-03-11T09:00:00-05:00", "2027-03-12T02:30:00-05:00")
+    ).toBeNull();
+    expect(
+      carry("2027-03-14T09:00:00-04:00", "2027-03-16T02:30:00-04:00")
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=2"]);
+  });
+
+  test("leaves a count it can't walk to its end to Google's list", () => {
+    // Feb 30 never comes, so the first rule's three meetings aren't found
+    // within the walk; and a yearly rule from 1950 a hundred times runs
+    // past fifty years. Neither is guessed from a partial walk.
+    const never = [
+      "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
+      "RRULE:FREQ=DAILY;COUNT=5",
+    ];
+    expect(
+      carryCountExactly(never, {
+        masterRecurrence: never,
+        originalStart: "2027-03-12T09:00:00-05:00",
+        seriesStart: "2027-03-11T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toBeNull();
+    const yearly = ["RRULE:FREQ=YEARLY;COUNT=100"];
+    expect(
+      carryCountExactly(yearly, {
+        masterRecurrence: yearly,
+        originalStart: "2026-11-09T09:00:00Z",
+        seriesStart: "1950-11-09T09:00:00Z",
+        seriesZone: "UTC",
+      })
+    ).toBeNull();
+  });
+
   test("can't carry a COUNT it can't walk past added days", () => {
     // A week-number rule isn't walked, and Google's list can't tell its
     // meetings from the added one: what's left is unknown.
@@ -690,8 +753,8 @@ describe("isRuleDay", () => {
     expect(
       isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
     ).toBeNull();
-    // Several times a day still meet on the rule's days, unless BYSETPOS
-    // picks among those times.
+    // A list of times still meets on the rule's days: Google ignores the
+    // list and meets once a day.
     expect(
       isRuleDay(
         "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",

@@ -227,12 +227,7 @@ export function followingCutUnsure(params: {
     params.seriesZone
   );
   if (
-    !(
-      split &&
-      addedValues(recurrence, params.seriesZone).some((v) =>
-        sameValue(v, split)
-      )
-    )
+    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
   ) {
     return false;
   }
@@ -246,7 +241,8 @@ export function followingCutUnsure(params: {
 
 /**
  * Whether `slot` (an original start, as Google writes them) is one of the
- * series' added (RDATE) meetings.
+ * series' added (RDATE) meetings, a rule's meeting at the same slot too
+ * (whether it then counts as the rule's is the caller's to say).
  */
 export function addsSlot(
   recurrence: string[],
@@ -259,6 +255,25 @@ export function addsSlot(
       addedValues(recurrence, seriesZone).some((added) =>
         sameValue(added, value)
       )
+  );
+}
+
+/**
+ * Whether a series starting at `start` has added (RDATE) meetings before
+ * that start.
+ */
+export function addsBeforeStart(
+  recurrence: string[],
+  start: { date?: string | null; dateTime?: string | null },
+  seriesZone: string
+): boolean {
+  const first = asValue(start.dateTime ?? start.date ?? "", seriesZone);
+  if (!first) {
+    return false;
+  }
+  const from = momentOf(first, seriesZone);
+  return addedValues(recurrence, seriesZone).some(
+    (added) => Temporal.Instant.compare(momentOf(added, seriesZone), from) < 0
   );
 }
 
@@ -282,9 +297,10 @@ function addedValues(
  * Whether "This and following" can't start a new series at the
  * occurrence whose original start is `originalStart`: a new series repeats
  * from its start, so it must be one of the rule's own meetings. A series
- * with several rules (only imported calendars write them) can't keep each
- * rule's days and phase from one start, nor can an added (RDATE) meeting
- * that isn't a rule meeting too. Null when the split is fine.
+ * with several rules (only imported calendars write them; an exclusion
+ * rule, EXRULE, counts) can't keep each rule's days and phase from one
+ * start, nor can an added (RDATE) meeting that isn't a rule meeting too.
+ * Null when the split is fine.
  */
 export function followingSplitBlocked(params: {
   masterRecurrence: string[] | null | undefined;
@@ -294,12 +310,14 @@ export function followingSplitBlocked(params: {
 }): SplitBlock | null {
   const recurrence = params.masterRecurrence ?? [];
   const rules = recurrence.filter(isRule);
-  if (rules.length > 1) {
+  const exclusions = recurrence.filter((line) => line.startsWith("EXRULE"));
+  if (rules.length + exclusions.length > 1) {
     return "severalRules";
   }
   const split = asValue(params.originalStart, params.seriesZone);
-  const added = addedValues(recurrence, params.seriesZone);
-  if (!(split && added.some((value) => sameValue(value, split)))) {
+  if (
+    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
+  ) {
     return null;
   }
   // An added meeting that's also a rule meeting (its day, the series'
@@ -328,9 +346,6 @@ function ruleHasSlot(
   slot: RecurrenceValue,
   seriesZone: string
 ): boolean | null {
-  if (Boolean(first.instant) !== Boolean(slot.instant)) {
-    return false;
-  }
   const clock = (value: RecurrenceValue) =>
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const firstClock = clock(first);
@@ -376,6 +391,11 @@ export function seriesMeetsAt(params: {
   const slot = asValue(params.slot, seriesZone);
   if (!(first && slot)) {
     return null;
+  }
+  // Every meeting takes the start's form: a date-time slot isn't on an
+  // all-day series, nor a date on a timed one.
+  if (Boolean(first.instant) !== Boolean(slot.instant)) {
+    return false;
   }
   // An exclusion rule isn't read here: whether it drops `slot` can't be
   // told.
@@ -489,9 +509,7 @@ function ruleEndsBefore(
       time,
       timeZone: seriesZone,
     });
-    return meetings && meetings.size === count
-      ? Math.max(...meetings) < split.epochMilliseconds
-      : null;
+    return meetings ? Math.max(...meetings) < split.epochMilliseconds : null;
   }
   const last = countedRuleDays(rule, first.day, count)?.at(-1);
   if (!last) {
@@ -512,12 +530,13 @@ function ruleEndsBefore(
  * kept carried on. COUNT counts rule positions, EXDATE-skipped ones
  * included, while Google lists rule occurrences (skipped ones aside) and
  * RDATE-added ones, an added day that's also a rule day only once. So,
- * when the rule can't be walked (`carryCountExactly`):
- * - with no added days, the positions used before the split are those
- *   listed before it plus the skipped days before it, and the new part
- *   runs what's left (a five-time series split at its third runs three);
- * - with added days, listed ones can't be told apart from rule ones, so
- *   what's left can't be known: null.
+ * when the rule can't be walked (`carryCountExactly`), the positions used
+ * before the split are those listed before it, and the new part runs
+ * what's left (a five-time series split at its third runs three). What's
+ * left can't be known, so null:
+ * - with added days, as listed ones can't be told apart from rule ones;
+ * - with a skip before the split that Google doesn't list, as it can't be
+ *   told to be a position (a skip on no meeting uses none).
  */
 export function carryCount(
   recurrence: string[],
@@ -535,12 +554,22 @@ export function carryCount(
   if (exact) {
     return exact;
   }
-  const { masterRecurrence, originalStart, seriesZone, starts } = params;
+  const { masterRecurrence, originalStart, seriesStart, seriesZone, starts } =
+    params;
   if (hasAddedDays(masterRecurrence)) {
     return null;
   }
+  // A position of this series: from its start (a skip an earlier split
+  // left before it isn't one) and before the split.
   const before = (value: RecurrenceValue) =>
+    !beforeSplit(value, seriesStart, seriesZone) &&
     beforeSplit(value, originalStart, seriesZone);
+  const listed = unique(
+    starts
+      .map((start) => asValue(start, seriesZone))
+      .filter((value): value is RecurrenceValue => value !== null)
+      .filter(before)
+  );
   const skipped = masterRecurrence.flatMap((line) => {
     const list = parseDateList(line, seriesZone);
     return list?.name === "EXDATE"
@@ -549,16 +578,14 @@ export function carryCount(
           .filter((value): value is RecurrenceValue => value !== null)
       : [];
   });
-  // Each position once: a skipped day Google also lists (as a cancelled
-  // occurrence) isn't counted twice.
-  const used = unique([
-    ...starts
-      .map((start) => asValue(start, seriesZone))
-      .filter((value): value is RecurrenceValue => value !== null)
-      .filter(before),
-    ...skipped.filter(before),
-  ]).length;
-  return withRemainingCount(recurrence, used);
+  if (
+    skipped
+      .filter(before)
+      .some((skip) => !listed.some((value) => sameValue(value, skip)))
+  ) {
+    return null;
+  }
+  return withRemainingCount(recurrence, listed.length);
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
@@ -619,6 +646,105 @@ function withCountsLeft(
 }
 
 /**
+ * How many of a COUNT `rule`'s positions come before the split, and
+ * whether the split is one of them, walked from the series' start. Null
+ * when they can't be told.
+ */
+function positionsUsed(params: {
+  count: number;
+  rule: string;
+  seriesClock: Temporal.PlainTime | null;
+  seriesStart: RecurrenceValue;
+  seriesZone: string;
+  split: RecurrenceValue;
+}): { before: number; own: boolean } | null {
+  const { count, rule, seriesClock, seriesStart, seriesZone, split } = params;
+  const splitInstant = split.instant;
+  if (seriesClock && seriesStart.instant && splitInstant) {
+    // Timed: its meetings as moments at its own time (BYHOUR=15 at
+    // 15:00), none before the series' start, which is its first only for
+    // a rule at its time.
+    const clock = ruleClock(rule, seriesClock);
+    const meetings = countedRuleMeetings({
+      base: seriesClock,
+      count,
+      from: seriesStart.day,
+      rule,
+      time: clock,
+      timeZone: seriesZone,
+    });
+    if (
+      !meetings ||
+      skipsAClockGap({
+        clock,
+        from: seriesStart.instant,
+        meetings,
+        rule,
+        seriesZone,
+      })
+    ) {
+      return null;
+    }
+    const at = splitInstant.epochMilliseconds;
+    return {
+      before: [...meetings].filter((ms) => ms < at).length,
+      own: meetings.has(at),
+    };
+  }
+  // All day: positions are days.
+  const positions = countedRuleDays(rule, seriesStart.day, count, true);
+  if (!positions) {
+    return null;
+  }
+  return {
+    before: positions.filter(
+      (day) => Temporal.PlainDate.compare(day, split.day) < 0
+    ).length,
+    own: positions.some(
+      (day) => Temporal.PlainDate.compare(day, split.day) === 0
+    ),
+  };
+}
+
+/**
+ * Whether a rule's counted `meetings` passed a rule day whose `clock`
+ * time the clocks skip (a 2:30 AM meeting on the spring-forward night),
+ * from the series' start to its last meeting. RFC 5545 drops that
+ * meeting, but Google's own list says what it did, so the count is left
+ * to that (see until.ts `existsOn`).
+ */
+function skipsAClockGap(params: {
+  clock: Temporal.PlainTime;
+  from: Temporal.Instant;
+  meetings: Set<number>;
+  rule: string;
+  seriesZone: string;
+}): boolean {
+  const { clock, from, meetings, rule, seriesZone } = params;
+  const start = from.toZonedDateTimeISO(seriesZone).toPlainDate();
+  const last = Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
+    .toZonedDateTimeISO(seriesZone)
+    .toPlainDate();
+  for (
+    let day = start;
+    Temporal.PlainDate.compare(day, last) <= 0;
+    day = day.add({ days: 1 })
+  ) {
+    const at = day
+      .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
+      .toInstant();
+    if (
+      !existsAt(day, clock, seriesZone) &&
+      Temporal.Instant.compare(at, from) >= 0 &&
+      isRuleDay(rule, start, day) === true
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The following part's rules with exactly the positions each has left:
  * every rule is walked from the series' start, its first COUNT days are
  * its positions (skipped ones included, added ones not), and the new part
@@ -660,44 +786,18 @@ export function carryCountExactly(
       used.push(null);
       continue;
     }
-    // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
-    // first start is the first position only of a rule at its time.
-    const clock = seriesClock && ruleClock(rule, seriesClock);
-    const atSeriesTime =
-      !(clock && seriesClock) ||
-      Temporal.PlainTime.compare(clock, seriesClock) === 0;
-    const positions = countedRuleDays(
-      rule,
-      seriesStartValue.day,
+    const positions = positionsUsed({
       count,
-      atSeriesTime
-    );
-    // A position whose time doesn't exist that day (a 2:30 AM meeting on
-    // the spring-forward night): RFC 5545 drops it, but Google's own list
-    // says what it did, so count from that (see until.ts `existsOn`).
-    if (
-      !positions ||
-      (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
-    ) {
+      rule,
+      seriesClock: seriesClock ?? null,
+      seriesStart: seriesStartValue,
+      seriesZone,
+      split,
+    });
+    if (!positions) {
       return null;
     }
-    const splitInstant = split.instant;
-    // How a position compares with the split: by moment, or by day.
-    const vsSplit = (day: Temporal.PlainDate, position: number) =>
-      clock && splitInstant
-        ? Temporal.Instant.compare(
-            position === 0 && atSeriesTime && seriesStartValue.instant
-              ? seriesStartValue.instant
-              : day
-                  .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
-                  .toInstant(),
-            splitInstant
-          )
-        : Temporal.PlainDate.compare(day, split.day);
-    used.push({
-      before: positions.filter((day, i) => vsSplit(day, i) < 0).length,
-      own: positions.some((day, i) => vsSplit(day, i) === 0),
-    });
+    used.push(positions);
   }
   if (used.every((n) => n === null)) {
     return null;

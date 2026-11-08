@@ -193,5 +193,10 @@ describe("monthlyDayOptions", () => {
     expect(
       options("RRULE:FREQ=MONTHLY;BYMONTHDAY=15,30;BYSETPOS=-1", "2026-11-07")
     ).toEqual(["[Custom days]", "Day 7", "The 1st Sat"]);
+    // Nor are weekdays limited to some days of the month only those
+    // weekdays.
+    expect(
+      options("RRULE:FREQ=MONTHLY;BYDAY=1MO;BYMONTHDAY=1,2,3", "2026-11-02")
+    ).toEqual(["[Custom days]", "Day 2", "The 1st Mon"]);
   });
 });
