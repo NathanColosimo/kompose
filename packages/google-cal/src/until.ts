@@ -561,10 +561,16 @@ export function countedRuleMeetings(params: {
   const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
   const first = base ? at(from, base) : null;
-  // The series' first start is its first meeting, a rule day or not (RFC
-  // 5545 counts DTSTART; Google does too).
+  // The series' first start is the first meeting of a rule at its time,
+  // a rule day or not (RFC 5545 counts DTSTART; Google does too). A rule
+  // at another time (15:00 beside a 9:00 start) doesn't meet then.
+  const atStart =
+    base !== null &&
+    times.some((time) => Temporal.PlainTime.compare(time, base) === 0);
   const meetings = new Set<number>(
-    first !== null && base && existsOn(from, base, timeZone) ? [first] : []
+    first !== null && base && atStart && existsOn(from, base, timeZone)
+      ? [first]
+      : []
   );
   if (meetings.size === count) {
     return meetings;

@@ -105,6 +105,26 @@ describe("where This and following can start", () => {
     ).toBe(true);
   });
 
+  test("a rule at another time doesn't count the series' start", () => {
+    // Daily 9:00 and daily 15:00, three each, from Nov 9 9:00: the 15:00
+    // rule meets Nov 9, 10, 11 at 15:00. Deleting from Nov 11 9:00 cuts it
+    // too, so its Nov 11 15:00 goes.
+    expect(
+      truncateRecurrenceForFollowing(
+        [
+          "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=3",
+          "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3",
+        ],
+        "2026-11-11T09:00:00-05:00",
+        zone,
+        seriesStart.dateTime
+      )
+    ).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=9;UNTIL=20261111T135959Z",
+      "RRULE:FREQ=DAILY;BYHOUR=15;UNTIL=20261111T135959Z",
+    ]);
+  });
+
   test("a rule's count skips a time the clocks skip", () => {
     // Daily 2:30 three times from Fri Mar 12 2027: Sun Mar 14 has no 2:30,
     // so the meetings are Mar 12, 13 and 15. Deleting from an added Mar 14
