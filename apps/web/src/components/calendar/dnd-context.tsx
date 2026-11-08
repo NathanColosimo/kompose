@@ -21,10 +21,13 @@ import type {
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
+  eventTimeZone,
+  hasSeveralRules,
   occurrenceDayMoved,
   otherTimeZone,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
+import { keepsEventTimes } from "@kompose/state/google-event-times";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -74,7 +77,7 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
-import { seriesEdit } from "./events/event-edit-utils";
+import { seriesSave } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -118,6 +121,37 @@ function droppedSubject(
     moved: pending.moved,
     name: pending.occurrence.summary || "(No title)",
     when,
+  };
+}
+
+/**
+ * What a recurring event's drop changes, for the scopes its dialog offers:
+ * a new day, or a new time on its own day (`retimed`), which can't go to a
+ * series of several rules.
+ */
+function dropFacts(
+  pending: PendingGoogleUpdate,
+  master: Pick<GoogleEvent, "recurrence"> | null | undefined,
+  timeZone: string
+): Pick<EventSaveChanges, "dateMoved" | "retimed" | "severalRules"> {
+  const { occurrence, update } = pending;
+  const dateMoved = occurrenceDayMoved({
+    editedEnd: update.event.end,
+    editedStart: update.event.start,
+    occurrence,
+    timeZone,
+  });
+  return {
+    dateMoved,
+    retimed: !(
+      dateMoved ||
+      keepsEventTimes(
+        update.event,
+        occurrence,
+        eventTimeZone(occurrence, timeZone)
+      )
+    ),
+    severalRules: hasSeveralRules(master?.recurrence),
   };
 }
 
@@ -746,13 +780,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
         calendarChanged: false,
-        dateMoved: occurrenceDayMoved({
-          editedStart: pendingGoogleUpdate.update.event.start,
-          occurrence: pendingGoogleUpdate.occurrence,
-          timeZone,
-        }),
+        ...dropFacts(pendingGoogleUpdate, pendingMaster.data, timeZone),
         patternChanged: false,
-        seriesRuleFailed: pendingMaster.isError,
+        seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,
         seriesTimeZone: otherTimeZone(pendingGoogleUpdate.occurrence, timeZone),
         splitBlocked: seriesSplitBlock(
@@ -780,6 +810,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       googleScope === "this"
         ? undefined
         : seriesRecurrenceForSave({
+            editedEnd: update.event.end,
             editedStart: update.event.start,
             masterRecurrence: pendingMaster.data?.recurrence,
             masterStart: pendingMaster.data?.start,
@@ -794,11 +825,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       event:
         googleScope === "this"
           ? update.event
-          : seriesEdit({
-              edited: { ...update.event, recurrence },
-              occurrence,
-              series: pendingMaster.data ?? undefined,
-            }),
+          : seriesSave({ ...update.event, recurrence }, occurrence),
       recurrenceScope: googleScope,
     });
   }, [
