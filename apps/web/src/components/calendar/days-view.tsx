@@ -71,6 +71,7 @@ import { GoogleCalendarEvent } from "./events/google-event";
 import { TaskEvent } from "./events/task-event";
 import { WhoopSleepBand } from "./events/whoop-sleep-band";
 import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
+import { keyboardCreateStart } from "./keyboard-create-start";
 import { DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
 import { TimeGutter } from "./time-grid/time-gutter";
@@ -240,38 +241,6 @@ function toPositionedGoogleEvent(
   }
 }
 
-/**
- * Where "c" creates: the next half hour today, or 9 AM tomorrow once today
- * has no half hour left; when today isn't shown, 9 AM on the first visible
- * day (which can be in the past, on a past week).
- */
-function keyboardCreateStart(
-  visibleDays: Temporal.PlainDate[],
-  timeZone: string
-): Temporal.ZonedDateTime {
-  const now = Temporal.Now.zonedDateTimeISO(timeZone);
-  const today = now.toPlainDate();
-  const isVisible = (day: Temporal.PlainDate) =>
-    visibleDays.some((visible) => visible.equals(day));
-  const at = (day: Temporal.PlainDate, minutes: number) =>
-    day.toZonedDateTime({
-      plainTime: Temporal.PlainTime.from({
-        hour: Math.floor(minutes / 60),
-        minute: minutes % 60,
-      }),
-      timeZone,
-    });
-  const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
-  if (isVisible(today) && nextHalfHour < 24 * 60) {
-    return at(today, nextHalfHour);
-  }
-  // Today is over: tomorrow at 9 AM, even if the view has to move there.
-  if (isVisible(today)) {
-    return at(today.add({ days: 1 }), 9 * 60);
-  }
-  return at(visibleDays[0] ?? today, 9 * 60);
-}
-
 /** A short name for the zone on `day`, such as "EST" or "GMT+1". */
 function timeZoneLabel(timeZone: string, day: Temporal.PlainDate): string {
   const noon = day.toZonedDateTime({ plainTime: "12:00", timeZone });
@@ -422,7 +391,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       setCreateEventRequested(null);
       return;
     }
-    const start = keyboardCreateStart(visibleDays, timeZone);
+    const start = keyboardCreateStart({
+      now: Temporal.Now.zonedDateTimeISO(timeZone),
+      timeZone,
+      visibleDays,
+    });
     const startDay = start.toPlainDate();
     if (!visibleDays.some((day) => day.equals(startDay))) {
       // Show that day first; the request stays and runs once it's visible.

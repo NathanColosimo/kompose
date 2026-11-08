@@ -172,8 +172,7 @@ export function BlockContent({
             // split ordinary words like "re-view"). A word that still can't
             // fit breaks anywhere rather than being clipped.
             "hyphens-manual [overflow-wrap:break-word]",
-            titleClampClass(isTall, hasTwoTitleLines),
-            "@max-[4rem]:[overflow-wrap:normal]"
+            titleClampClass(isTall, hasTwoTitleLines)
           )}
         >
           {/* Wide: words move down whole. Narrow: long words break with a

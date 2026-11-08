@@ -1006,15 +1006,21 @@ export function EventEditPopover({
     ]
   );
 
+  // The series' cached occurrences, read once per pending save: the save
+  // stays pending after the dialog closes (so its words hold as it fades),
+  // and a closed editor needn't scan the cache on every render.
+  const pendingOccurrences = useMemo(
+    () =>
+      pendingSave
+        ? cachedOccurrences(queryClient, { accountId, calendarId }, event)
+        : [],
+    [accountId, calendarId, event, pendingSave, queryClient]
+  );
   // The scope the save dialog shows and saves with, worked out each time
   // from the pending edit and the series as loaded now.
   const pendingFacts = scopeFacts(pendingSave?.variables.event, {
     event,
-    // Read only while the dialog is open: the save stays pending after it
-    // closes, and the closed editor needn't scan the cache.
-    loaded: scopeDialogOpen
-      ? cachedOccurrences(queryClient, { accountId, calendarId }, event)
-      : [],
+    loaded: pendingOccurrences,
     master: seriesMaster.data ?? undefined,
     timeZone,
   });
