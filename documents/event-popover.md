@@ -115,6 +115,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 #### Move to calendar flow — Edit Mode Only
 - Moving between calendars is handled via the calendar picker in the form.
 - If the user changes the calendar and clicks **Save**, the save flow handles both the data update and the calendar move.
+- A calendar-only change sends only a move, preserving the series' existing times and details. Selecting another calendar and then returning to the original without other edits sends no write.
 - A recurring event's new calendar applies to the entire series: Google moves a series to another calendar only as a whole, not one occurrence.
 - Non-recurring moves use `this`.
 
@@ -136,6 +137,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Recurrence editor: "every 2 weeks" and monthly "The 2nd Tue" save; an end date includes that day's occurrence; re-picking the current frequency changes nothing.
 - Click-outside: discards changes (no save).
 - Delete: confirmation dialog for non-recurring; scope dialog for recurring.
+- Move a rescheduled recurring occurrence to another calendar without editing its details: only the series move runs, with no update that could spread the occurrence's times to the series. Pick a different calendar and then the original: Save sends no write.
 
 #### Create Mode
 - Hover on calendar: 30-minute preview appears.

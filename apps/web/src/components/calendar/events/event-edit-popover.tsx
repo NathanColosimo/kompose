@@ -2585,7 +2585,6 @@ export function EventEditForm({
             (c) => `${c.accountId}::${c.calendarId}` === val
           );
           if (opt) {
-            hasUserEditedRef.current = true;
             setValue("selectedAccountId", opt.accountId, {
               shouldDirty: true,
             });
