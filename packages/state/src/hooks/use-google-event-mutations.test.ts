@@ -133,7 +133,8 @@ test("a failed delete doesn't add the event twice where a refetch brought it", a
 /**
  * An update of the Standup with `variables` (a rename to Planning), which
  * the server answers with `answer` after `before` sets up the cache and
- * `meanwhile` refreshes it, and November's and October's lists after it.
+ * `meanwhile` refreshes it; and what November's list was while it was
+ * sent, and November's and October's lists after it.
  */
 async function update(params: {
   answer: () => Promise<unknown>;
