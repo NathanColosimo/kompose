@@ -150,6 +150,23 @@ describe("skipped occurrences on the series' days", () => {
     ).toBe(rule);
   });
 
+  test("keeps the times of rules that meet at different hours", () => {
+    // A 9:00 rule and a 15:00 one meet twice a day: neither is lined up
+    // with the 9:00 start, and the skipped 15:00 stays 15:00.
+    const rules = [
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+      "EXDATE;TZID=America/New_York:20261104T150000",
+    ];
+    expect(
+      matchRecurrenceToStart(
+        rules,
+        { dateTime: "2026-11-02T09:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toBe(rules);
+  });
+
   test("moves a single BYHOUR with the series, and its skipped time", () => {
     // The rule's 9:00 is the series' time: moving it to 10:00 moves both.
     expect(

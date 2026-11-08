@@ -17,6 +17,30 @@ const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
 const SEVERAL_A_DAY =
   /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
+const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
+
+/** A rule's own time of day, as it writes it ("BYHOUR=9;BYMINUTE=30"). */
+function clockParts(line: string): string {
+  return [...line.matchAll(CLOCK_PART)]
+    .map((match) => `${match[1]}=${match[2]}`)
+    .sort()
+    .join(";");
+}
+
+/**
+ * Whether a series meets more than once a day: a rule with several times
+ * (BYHOUR=9,15) or a sub-daily frequency, or rules at different times
+ * (one at 9:00, another at 15:00). Its times are then its own: they
+ * aren't lined up with the start, and a skipped time stays that time.
+ */
+export function meetsSeveralTimesADay(recurrence: string[]): boolean {
+  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  return (
+    rules.some((line) => SEVERAL_A_DAY.test(line)) ||
+    new Set(rules.map(clockParts)).size > 1
+  );
+}
+
 /**
  * UNTIL for a series that ends on `day` in `timeZone`, that day's
  * occurrence included: the date itself for an all-day series, otherwise
@@ -230,10 +254,16 @@ function matchDateList(
 /**
  * An RRULE whose single BYHOUR / BYMINUTE / BYSECOND fixes the time set to
  * the start's (moving a "BYHOUR=9" series to 10:00 moves the rule too, or
- * it keeps meeting at 9). Several values are the rule's own times; left.
+ * it keeps meeting at 9). A series that meets several times a day (several
+ * values, or rules at different times) keeps its own times.
  */
-function matchClock(line: string, start: StartTime, timeZone: string): string {
-  if (!start.dateTime || SEVERAL_A_DAY.test(line)) {
+function matchClock(
+  line: string,
+  start: StartTime,
+  timeZone: string,
+  severalADay: boolean
+): string {
+  if (!start.dateTime || severalADay) {
     return line;
   }
   const time = wallClock(start, timeZone);
@@ -274,13 +304,16 @@ export function matchRecurrenceToStart(
   timeZone: string
 ): string[] {
   const allDay = Boolean(start.date);
-  const severalADay = recurrence.some(
-    (line) => line.startsWith("RRULE:") && SEVERAL_A_DAY.test(line)
-  );
+  const severalADay = meetsSeveralTimesADay(recurrence);
   let changed = false;
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")
-      ? matchClock(matchUntil(line, allDay, timeZone), start, timeZone)
+      ? matchClock(
+          matchUntil(line, allDay, timeZone),
+          start,
+          timeZone,
+          severalADay
+        )
       : matchDateList(line, start, timeZone, severalADay);
     changed ||= matched !== line;
     return matched;
@@ -486,7 +519,7 @@ export function moveSkippedDays(params: {
   // The new start is the day the person picked: never left skipped (in a
   // rule with several times a day, only the start's own time is: a
   // skipped other time that day stays).
-  const severalADay = SEVERAL_A_DAY.test(newRule);
+  const severalADay = meetsSeveralTimesADay(recurrence);
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
       value &&

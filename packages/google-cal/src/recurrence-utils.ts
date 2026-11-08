@@ -342,9 +342,7 @@ export function carryCountExactly(
   ) {
     return null;
   }
-  // A position whose time doesn't exist that day (a 2:30 AM meeting on the
-  // spring-forward night) is up to Google: count from its list instead.
-  const clock = seriesStartValue.instant
+  const seriesClock = seriesStartValue.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
   // Positions each rule used before the split.
@@ -356,16 +354,30 @@ export function carryCountExactly(
       continue;
     }
     const positions = countedRuleDays(rule, seriesStartValue.day, count);
+    // Each rule meets at its own time (BYHOUR=15 at 15:00), the series'
+    // first start at its own.
+    const clock = seriesClock && ruleClock(rule, seriesClock);
+    // A position whose time doesn't exist that day (a 2:30 AM meeting on
+    // the spring-forward night) is up to Google: count from its list.
     if (
       !positions ||
       (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
     ) {
       return null;
     }
-    used.push(
-      positions.filter((day) => Temporal.PlainDate.compare(day, split.day) < 0)
-        .length
-    );
+    const splitInstant = split.instant;
+    const isBefore = (day: Temporal.PlainDate, offset: number) =>
+      clock && splitInstant
+        ? Temporal.Instant.compare(
+            offset === 0 && seriesStartValue.instant
+              ? seriesStartValue.instant
+              : day
+                  .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
+                  .toInstant(),
+            splitInstant
+          ) < 0
+        : Temporal.PlainDate.compare(day, split.day) < 0;
+    used.push(positions.filter(isBefore).length);
   }
   if (used.every((n) => n === null)) {
     return null;
@@ -391,6 +403,23 @@ export function carryCountExactly(
       return [];
     }
     return [line.replace(COUNT_PART, `$1COUNT=${Math.max(1, remaining)}`)];
+  });
+}
+
+const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
+
+/** The time of day a rule meets: its single BYHOUR / BYMINUTE / BYSECOND over `base`. */
+function ruleClock(rule: string, base: Temporal.PlainTime): Temporal.PlainTime {
+  const parts = new Map(
+    [...rule.matchAll(SINGLE_CLOCK_PART)].map((match) => [
+      match[1],
+      Number(match[2]),
+    ])
+  );
+  return base.with({
+    hour: parts.get("BYHOUR") ?? base.hour,
+    minute: parts.get("BYMINUTE") ?? base.minute,
+    second: parts.get("BYSECOND") ?? base.second,
   });
 }
 

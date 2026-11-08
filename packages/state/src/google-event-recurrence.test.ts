@@ -527,6 +527,14 @@ describe("followStart", () => {
         "20270501",
         "20270531",
       ],
+      // Sol's: Mar 1 -> Jan 31 (the 31st from now on): Jun 1 -> May 31.
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-01",
+        "2027-01-31",
+        "20270601",
+        "20270531",
+      ],
       // Yearly moved earlier: Dec 9 -> Nov 9 keeps 2027's skip, in Nov.
       ["RRULE:FREQ=YEARLY", "2026-12-09", "2026-11-09", "20271209", "20271109"],
       // Mar 1 -> Feb 28: the 2028 skip is Feb 28 2028.
