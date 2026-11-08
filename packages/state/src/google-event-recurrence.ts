@@ -463,14 +463,25 @@ function dayOfStart(
 }
 
 /**
- * The zone a series' days are counted in: its own (a Tokyo 9:00 meeting is
- * on Tokyo's Tuesday, wherever it's viewed from), else `fallback`.
+ * The zone an event's own times are in: a recurring one's days are
+ * counted, and its edits written, there (a Tokyo 9:00 meeting is on
+ * Tokyo's Tuesday wherever it's viewed from, and Google repeats it in that
+ * zone). `fallback` when the event doesn't say.
  */
-function seriesZone(
-  occurrence: Pick<GoogleEvent, "start">,
+export function eventTimeZone(
+  event: Pick<GoogleEvent, "start"> | undefined,
   fallback: string
 ): string {
-  return occurrence.start?.timeZone ?? fallback;
+  return event?.start?.timeZone ?? fallback;
+}
+
+/** The event's own zone when it isn't `appZone`, for saying so. */
+export function otherTimeZone(
+  event: Pick<GoogleEvent, "start"> | undefined,
+  appZone: string
+): string | undefined {
+  const zone = event?.start?.timeZone;
+  return zone && zone !== appZone ? zone : undefined;
 }
 
 /** Whether a save moves an occurrence to another day (not just its time). */
@@ -490,7 +501,7 @@ export function occurrenceDayMoved(params: {
   if (!occurrence.recurringEventId) {
     return false;
   }
-  const timeZone = seriesZone(occurrence, params.timeZone);
+  const timeZone = eventTimeZone(occurrence, params.timeZone);
   // Against where it is now: one rescheduled before, then only renamed,
   // hasn't moved in this edit.
   const from = dayOfStart(occurrence.start, timeZone);
@@ -557,7 +568,7 @@ export function seriesRecurrenceForSave(params: {
   timeZone: string;
 }): string[] | undefined {
   const { editedStart, masterRecurrence, occurrence } = params;
-  const timeZone = seriesZone(occurrence, params.timeZone);
+  const timeZone = eventTimeZone(occurrence, params.timeZone);
   if (
     params.recurrence !== undefined ||
     !occurrence.recurringEventId ||

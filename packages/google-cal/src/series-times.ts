@@ -33,14 +33,16 @@ function instantOf(
 }
 
 /**
- * The zone to read and write times in: the edit's, the series', or, when
- * neither says, the fixed offset the edit was written with.
+ * The zone to read and write times in: the series' (Google repeats a
+ * series in its start's zone, so a Tokyo meeting edited from New York
+ * stays on Tokyo's days), the edit's, or, when neither says, the fixed
+ * offset the edit was written with.
  */
 function zoneOf(edited: EventTime, master: EventTime): string {
   const offset = edited.dateTime ? OFFSET.exec(edited.dateTime)?.[1] : null;
   return (
-    edited.timeZone ??
     master.timeZone ??
+    edited.timeZone ??
     (offset && offset !== "Z" ? offset : "UTC")
   );
 }
@@ -134,7 +136,7 @@ export function seriesTimesForEdit(params: {
     lengthMs(masterStart, masterEnd, timeZone) ??
     0;
   // A fixed offset reads times but isn't a zone Google takes back.
-  const named = editedStart.timeZone ?? masterStart.timeZone;
+  const named = masterStart.timeZone ?? editedStart.timeZone;
   const zone = named ? { timeZone: named } : {};
   return {
     end: { dateTime: googleDateTime(start.add({ milliseconds: length })), ...zone },

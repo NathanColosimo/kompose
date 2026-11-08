@@ -23,6 +23,7 @@ export function RecurrenceScopeDialog({
   open,
   onOpenChange,
   title,
+  subject,
   description,
   value,
   onValueChange,
@@ -36,6 +37,8 @@ export function RecurrenceScopeDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  /** What the save changes, in a line. */
+  subject?: string;
   description?: string;
   value: RecurrenceScope;
   onValueChange: (value: RecurrenceScope) => void;
@@ -82,6 +85,11 @@ export function RecurrenceScopeDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
+          {/* What's being saved, when the dialog opens away from its editor
+              (a drop on the grid): "Retro → Mon, Nov 9 · 4 – 4:45 PM". */}
+          {subject ? (
+            <p className="font-medium text-foreground text-sm">{subject}</p>
+          ) : null}
           {description ? (
             <DialogDescription>{description}</DialogDescription>
           ) : null}

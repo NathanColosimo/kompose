@@ -28,6 +28,9 @@ export const SCOPE_DIALOG_COPY = {
   },
   /** Shown instead of the description when an occurrence's day moves. */
   moveDate: "A new day applies to this occurrence, or from it on.",
+  /** Shown when the series' rule couldn't load. */
+  seriesFailed:
+    "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
   /** Shown while a moved day waits for the series' rule. */
   seriesLoading: "Loading the series… This and following opens once it's in.",
   /** Shown instead of the description when the event changes calendar. */
@@ -62,8 +65,20 @@ export interface EventSaveChanges {
   dateMoved: boolean;
   /** The user changed the repeat. */
   patternChanged: boolean;
+  /** Loading the series' rule failed. */
+  seriesRuleFailed?: boolean;
   /** The series' rule has loaded (an occurrence's lives on its master). */
   seriesRuleLoaded: boolean;
+  /**
+   * The series' time zone, when it isn't the one the app shows: its days
+   * are counted there, so the dialog says so.
+   */
+  seriesTimeZone?: string;
+}
+
+/** "Tokyo" for "Asia/Tokyo", "New York" for "America/New_York". */
+function zoneCity(timeZone: string): string {
+  return (timeZone.split("/").at(-1) ?? timeZone).replace(/_/g, " ");
 }
 
 /**
@@ -113,7 +128,12 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
   if (!changes.dateMoved) {
     return SCOPE_DIALOG_COPY.saveEvent.description;
   }
-  return changes.seriesRuleLoaded || changes.patternChanged
-    ? SCOPE_DIALOG_COPY.moveDate
-    : SCOPE_DIALOG_COPY.seriesLoading;
+  if (!(changes.seriesRuleLoaded || changes.patternChanged)) {
+    return changes.seriesRuleFailed
+      ? SCOPE_DIALOG_COPY.seriesFailed
+      : SCOPE_DIALOG_COPY.seriesLoading;
+  }
+  return changes.seriesTimeZone
+    ? `A new day in ${zoneCity(changes.seriesTimeZone)} time applies to this occurrence, or from it on.`
+    : SCOPE_DIALOG_COPY.moveDate;
 }

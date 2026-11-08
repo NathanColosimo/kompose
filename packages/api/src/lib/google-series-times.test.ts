@@ -147,4 +147,28 @@ describe("seriesTimesForEdit", () => {
       })
     ).toEqual({ end: { date: "2026-10-08" }, start: { date: "2026-10-06" } });
   });
+
+  test("keeps a series in its own zone when edited from another", () => {
+    // A Tuesday 9:00 Tokyo series, moved to 10:00 from New York.
+    const tokyo = "Asia/Tokyo";
+    expect(
+      seriesTimesForEdit({
+        editedEnd: { dateTime: "2026-11-10T01:30:00.000Z", timeZone: zone },
+        editedStart: { dateTime: "2026-11-10T01:00:00.000Z", timeZone: zone },
+        masterEnd: { dateTime: "2026-10-06T09:30:00+09:00", timeZone: tokyo },
+        masterStart: { dateTime: "2026-10-06T09:00:00+09:00", timeZone: tokyo },
+        occurrenceEnd: {
+          dateTime: "2026-11-10T09:30:00+09:00",
+          timeZone: tokyo,
+        },
+        occurrenceStart: {
+          dateTime: "2026-11-10T09:00:00+09:00",
+          timeZone: tokyo,
+        },
+      })
+    ).toEqual({
+      end: { dateTime: "2026-10-06T10:30:00+09:00", timeZone: tokyo },
+      start: { dateTime: "2026-10-06T10:00:00+09:00", timeZone: tokyo },
+    });
+  });
 });

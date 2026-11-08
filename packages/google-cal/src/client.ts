@@ -31,6 +31,14 @@ interface GoogleWatchChannelResult {
   resourceId: string;
 }
 
+/** `time` labelled with the series' zone when it has one (same moment). */
+function inSeriesZone<T extends { date?: string; dateTime?: string; timeZone?: string }>(
+  time: T,
+  series: { timeZone?: string }
+): T {
+  return time.dateTime && series.timeZone ? { ...time, timeZone: series.timeZone } : time;
+}
+
 function getConferenceDataVersion(event: { conferenceData?: unknown }): number | undefined {
   return event.conferenceData ? 1 : undefined;
 }
@@ -639,10 +647,14 @@ export function makeGoogleCalendarService(
 
       yield* parseEventResponse(truncateMasterResponse);
 
+      // Google repeats a series in its start's zone: the new part keeps
+      // the series' zone, whatever zone the edit was written in.
       const newSeriesPayload = sanitizeEventPayload({
         ...master,
         ...event,
+        end: inSeriesZone(event.end, master.end),
         recurrence,
+        start: inSeriesZone(event.start, master.start),
       });
       const newSeriesConferenceDataVersion =
         getConferenceDataVersion(newSeriesPayload);

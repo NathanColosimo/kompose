@@ -20,11 +20,13 @@ import {
   buildGoogleEventRecurrenceRule,
   defaultUntilDay,
   type EventRecurrencePattern,
+  eventTimeZone,
   type EventRecurrenceFrequency as Frequency,
   followStart,
   getPrimaryRecurrenceRule,
   matchUntilToStart,
   occurrenceDayMoved,
+  otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
@@ -187,13 +189,16 @@ function saveChanges(
     PendingSave,
     "calendarChanged" | "dateMoved" | "patternChanged"
   > | null,
-  seriesRuleLoaded: boolean
+  series: Pick<
+    EventSaveChanges,
+    "seriesRuleFailed" | "seriesRuleLoaded" | "seriesTimeZone"
+  >
 ): EventSaveChanges {
   return {
     calendarChanged: Boolean(pendingSave?.calendarChanged),
     dateMoved: pendingSave?.dateMoved ?? false,
     patternChanged: pendingSave?.patternChanged ?? false,
-    seriesRuleLoaded,
+    ...series,
   };
 }
 
@@ -771,6 +776,11 @@ export function EventEditPopover({
     event?.recurrence?.length || seriesMaster.data
   );
   const timeZone = useAtomValue(timezoneAtom);
+  const seriesStatus = {
+    seriesRuleFailed: seriesMaster.isError,
+    seriesRuleLoaded,
+    seriesTimeZone: otherTimeZone(event, timeZone),
+  };
 
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
@@ -1075,10 +1085,10 @@ export function EventEditPopover({
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
         description={eventSaveDescription(
-          saveChanges(pendingSave, seriesRuleLoaded)
+          saveChanges(pendingSave, seriesStatus)
         )}
         disabledScopes={eventSaveDisabledScopes(
-          saveChanges(pendingSave, seriesRuleLoaded)
+          saveChanges(pendingSave, seriesStatus)
         )}
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
         onConfirm={commitPendingSave}
@@ -1250,7 +1260,8 @@ function buildEditPayload(
         ctx.event?.recurringEventId ||
         ctx.event?.recurrence?.length ||
         ctx.masterRecurrence?.length
-          ? ctx.calendarTimeZone
+          ? // A series is written in its own zone (Google repeats it there).
+            eventTimeZone(ctx.event, ctx.calendarTimeZone ?? ctx.timeZone)
           : undefined,
     }
   );

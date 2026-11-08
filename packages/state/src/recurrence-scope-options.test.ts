@@ -59,6 +59,23 @@ test("says why the scopes are what they are", () => {
     eventSaveDescription({ ...none, dateMoved: true, seriesRuleLoaded: false })
   ).toBe("Loading the series… This and following opens once it's in.");
   expect(
+    eventSaveDescription({
+      ...none,
+      dateMoved: true,
+      seriesRuleFailed: true,
+      seriesRuleLoaded: false,
+    })
+  ).toBe(
+    "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest."
+  );
+  expect(
+    eventSaveDescription({
+      ...none,
+      dateMoved: true,
+      seriesTimeZone: "Asia/Tokyo",
+    })
+  ).toBe("A new day in Tokyo time applies to this occurrence, or from it on.");
+  expect(
     eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
   ).toBe("Moving to another calendar moves the whole series.");
 });

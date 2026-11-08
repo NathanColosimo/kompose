@@ -42,10 +42,12 @@ import {
   getGoogleEventsByCalendarQueryKey,
 } from "@kompose/state/google-calendar-query-keys";
 import {
+  eventTimeZone,
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
   matchUntilToStart,
   occurrenceDayMoved,
+  otherTimeZone,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
@@ -1461,13 +1463,19 @@ export default function CalendarTab() {
           currentDraft.endTime ?? Temporal.PlainTime.from("10:00"),
           timeZone
         );
+        // An existing event keeps its own zone (Google repeats a series
+        // in its start's zone); a new one takes the app's.
+        const zone = eventTimeZone(
+          currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined,
+          timeZone
+        );
         startPayload = {
           dateTime: startZdt.toInstant().toString(),
-          timeZone,
+          timeZone: zone,
         };
         endPayload = {
           dateTime: endZdt.toInstant().toString(),
-          timeZone,
+          timeZone: zone,
         };
       }
 
@@ -1559,11 +1567,19 @@ export default function CalendarTab() {
         timeZone,
       }),
       patternChanged: recurrenceToSend(draft, masterRecurrence) !== undefined,
+      seriesRuleFailed: recurringMasterEvent.isError,
       seriesRuleLoaded: Boolean(
         draft.sourceEvent.recurrence?.length || recurringMasterEvent.data
       ),
+      seriesTimeZone: otherTimeZone(draft.sourceEvent, timeZone),
     }),
-    [buildEventPayload, masterRecurrence, recurringMasterEvent.data, timeZone]
+    [
+      buildEventPayload,
+      masterRecurrence,
+      recurringMasterEvent.data,
+      recurringMasterEvent.isError,
+      timeZone,
+    ]
   );
 
   const [isSavingEvent, setIsSavingEvent] = useState(false);
