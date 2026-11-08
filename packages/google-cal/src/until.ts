@@ -728,9 +728,15 @@ function allDayDates(params: {
       .filter((moment) => {
         const ms = moment.epochMilliseconds;
         const day = moment.toZonedDateTimeISO(timeZone).toPlainDate();
-        // Rules that can't be listed may meet then: not cancelled.
+        // Rules that can't be listed may meet then: not cancelled. An
+        // added day at the series' start is the start's meeting too.
         const listed = ruleMeetings(day);
-        return skipped.has(ms) && listed !== null && !listed.includes(ms);
+        return (
+          skipped.has(ms) &&
+          listed !== null &&
+          !listed.includes(ms) &&
+          ms !== first?.epochMilliseconds
+        );
       })
       .map((moment) => moment.epochMilliseconds)
   );
