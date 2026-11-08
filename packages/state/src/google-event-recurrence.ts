@@ -157,16 +157,54 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
   return { byDay, end: resolveEnd(until, count), freq };
 }
 
+/** The rule parts the repeat editors set; the rest of a rule is kept. */
+const EDITED_PARTS = new Set(["FREQ", "BYDAY", "UNTIL", "COUNT"]);
+/** Parts tied to a frequency, dropped when the frequency changes. */
+const FREQUENCY_PARTS = new Set([
+  "BYMONTHDAY",
+  "BYMONTH",
+  "BYSETPOS",
+  "BYYEARDAY",
+  "BYWEEKNO",
+]);
+
+/**
+ * The parts of `baseRule` an edit keeps: everything the editors don't set
+ * (INTERVAL, WKST...), so changing a biweekly series' end keeps it
+ * biweekly; parts tied to the frequency go when it changes.
+ */
+function keptRuleParts(
+  baseRule: string | undefined,
+  freq: EventRecurrenceFrequency
+): string[] {
+  if (!baseRule?.startsWith("RRULE:")) {
+    return [];
+  }
+  const parts = baseRule.replace("RRULE:", "").split(";");
+  const baseFreq = parts
+    .find((part) => part.startsWith("FREQ="))
+    ?.slice("FREQ=".length);
+  return parts.filter((part) => {
+    const key = part.split("=")[0] ?? "";
+    if (!part || EDITED_PARTS.has(key)) {
+      return false;
+    }
+    return baseFreq === freq || !FREQUENCY_PARTS.has(key);
+  });
+}
+
 export function buildGoogleEventRecurrenceRule(
   freq: EventRecurrenceFrequency,
   byDay: string[],
-  end: EventRecurrenceEnd
+  end: EventRecurrenceEnd,
+  /** The rule being edited, whose other parts are kept. */
+  baseRule?: string
 ): string | null {
   if (freq === "none") {
     return null;
   }
 
-  const parts: string[] = [`FREQ=${freq}`];
+  const parts: string[] = [`FREQ=${freq}`, ...keptRuleParts(baseRule, freq)];
   if (byDay.length > 0) {
     parts.push(`BYDAY=${byDay.join(",")}`);
   }

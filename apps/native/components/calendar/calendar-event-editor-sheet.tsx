@@ -145,7 +145,9 @@ function buildRecurrenceRuleFromCurrent(
   const freq = patch.freq ?? parsed.freq;
   const byDay = patch.byDay ?? parsed.byDay;
   const end = patch.end ?? parsed.end;
-  return buildGoogleEventRecurrenceRule(freq, byDay, end);
+  // Keeps the parts the editor doesn't set (INTERVAL...), so an "every 2
+  // weeks" series stays one.
+  return buildGoogleEventRecurrenceRule(freq, byDay, end, currentRule);
 }
 
 /**
@@ -223,8 +225,9 @@ function RecurrenceEditorSection({
       : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
-      {/* Five equal chips in one row. */}
-      <View className="flex-row gap-1.5">
+      {/* Chips at their own width, wrapping (3 + 2 on a phone), as in the
+          task editor. */}
+      <View className="flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
           const active = parsedRecurrence.freq === frequency.value;
           return (
@@ -243,10 +246,10 @@ function RecurrenceEditorSection({
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
-              style={CHIP_STYLE}
+              style={{ borderRadius: 999 }}
               variant={active ? "default" : "outline"}
             >
-              <ChipLabel>{frequency.label}</ChipLabel>
+              <Text>{frequency.label}</Text>
             </Button>
           );
         })}
@@ -297,20 +300,12 @@ function RecurrenceEditorSection({
   );
 }
 
-const CHIP_STYLE = { borderRadius: 999, flex: 1, paddingHorizontal: 2 };
+const CHIP_STYLE = { borderRadius: 999, flex: 1, paddingHorizontal: 6 };
 
-/**
- * A repeat chip's label: one size for every chip (13pt fits "Monthly" in a
- * fifth of a 375pt sheet), shrinking only for a large text size.
- */
+/** An equal-width chip's label, shrinking only for a large text size. */
 function ChipLabel({ children }: { children: string }) {
   return (
-    <Text
-      adjustsFontSizeToFit
-      className="text-[13px]"
-      minimumFontScale={0.75}
-      numberOfLines={1}
-    >
+    <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
       {children}
     </Text>
   );

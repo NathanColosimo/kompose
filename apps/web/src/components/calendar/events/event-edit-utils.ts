@@ -23,9 +23,11 @@ export function parseRecurrence(rule?: string): {
 export function buildRecurrenceRule(
   freq: Frequency,
   byDay: string[],
-  end: RecurrenceEnd
+  end: RecurrenceEnd,
+  /** The rule being edited; parts the editor doesn't set are kept. */
+  baseRule?: string
 ): string | null {
-  return buildGoogleEventRecurrenceRule(freq, byDay, end);
+  return buildGoogleEventRecurrenceRule(freq, byDay, end, baseRule);
 }
 
 interface TemporalFormValues {

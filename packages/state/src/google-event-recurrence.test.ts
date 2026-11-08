@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildGoogleEventRecurrenceRule,
   describeEventRecurrence,
   getPrimaryRecurrenceRule,
   setPrimaryRecurrenceRule,
@@ -68,5 +69,32 @@ describe("setPrimaryRecurrenceRule", () => {
     expect(getPrimaryRecurrenceRule([exdate, "RRULE:FREQ=DAILY"])).toBe(
       "RRULE:FREQ=DAILY"
     );
+  });
+});
+
+describe("buildGoogleEventRecurrenceRule", () => {
+  const biweekly = "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU";
+
+  test("keeps the parts an edit doesn't set", () => {
+    // "Ends after 10" on an every-2-weeks series stays every 2 weeks.
+    expect(
+      buildGoogleEventRecurrenceRule(
+        "WEEKLY",
+        ["TU"],
+        { count: 10, type: "count" },
+        biweekly
+      )
+    ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU;COUNT=10");
+  });
+
+  test("drops parts tied to a frequency when it changes", () => {
+    expect(
+      buildGoogleEventRecurrenceRule(
+        "WEEKLY",
+        ["MO"],
+        { type: "none" },
+        "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15"
+      )
+    ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=3;BYDAY=MO");
   });
 });

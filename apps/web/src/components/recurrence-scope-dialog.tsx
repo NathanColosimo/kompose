@@ -47,10 +47,23 @@ export function RecurrenceScopeDialog({
   options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
+  const confirm = async () => {
+    await onConfirm();
+    onOpenChange(false);
+  };
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent
+        className="sm:max-w-[420px]"
+        // Cmd+Enter confirms the choice, as it saves the editor behind.
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            confirm().catch(() => null);
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (
@@ -100,9 +113,8 @@ export function RecurrenceScopeDialog({
             {cancelLabel}
           </Button>
           <Button
-            onClick={async () => {
-              await onConfirm();
-              onOpenChange(false);
+            onClick={() => {
+              confirm().catch(() => null);
             }}
             type="button"
           >

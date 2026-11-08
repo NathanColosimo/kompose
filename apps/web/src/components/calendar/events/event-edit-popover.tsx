@@ -326,7 +326,8 @@ function RecurrenceEditor({
     const nextRule = buildRecurrenceRule(
       nextValues.freq,
       nextValues.byDay,
-      end
+      end,
+      recurrenceRule
     );
     const normalizedNext = nextRule ?? null;
     if (normalizedNext === (recurrenceRule ?? null)) {
