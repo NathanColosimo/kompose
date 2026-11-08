@@ -23,7 +23,7 @@ export type SeriesRefusal =
   | { readonly reason: "countUnknown" }
   | { readonly reason: "severalTimesADay" }
   | {
-      readonly reason: "dropsChangedOccurrences";
+      readonly reason: "dropsChangedOccurrences" | "resizesChangedOccurrences";
       readonly originalStarts: readonly string[];
     };
 
@@ -33,6 +33,24 @@ function dayName(originalStart: string): string {
     "en-US",
     { day: "numeric", month: "short" }
   );
+}
+
+/** "Nov 23, Nov 30": the occurrences a refusal names. */
+function namedDays(originalStarts: readonly string[]): string {
+  return originalStarts.map(dayName).join(", ");
+}
+
+/**
+ * Where the save can go instead, from the editor it was made in: to this
+ * occurrence alone, or This and following from after the last one named.
+ */
+function elsewhere(originalStarts: readonly string[]): string {
+  const last = originalStarts
+    .map((start) => start.slice(0, 10))
+    .sort()
+    .at(-1);
+  const after = last ? ` from an occurrence after ${dayName(last)}` : "";
+  return `Save it for this occurrence only, or with This and following${after}.`;
 }
 
 /** The refusal in words for the user. */
@@ -52,17 +70,10 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This and following isn't available for this series: how many times it has left to repeat can't be worked out.";
     case "severalTimesADay":
       return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
-    case "dropsChangedOccurrences": {
-      const days = refusal.originalStarts.map(dayName).join(", ");
-      // The editor shows it where the save was made: from there, the save
-      // can go to this occurrence alone, or start after the last one.
-      const last = refusal.originalStarts
-        .map((start) => start.slice(0, 10))
-        .sort()
-        .at(-1);
-      const after = last ? ` from an occurrence after ${dayName(last)}` : "";
-      return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it for this occurrence only, or with This and following${after}.`;
-    }
+    case "dropsChangedOccurrences":
+      return `This would undo changes made to single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
+    case "resizesChangedOccurrences":
+      return `This would also change the length of single occurrences given a length of their own (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
     default:
       return refusal satisfies never;
   }
@@ -157,6 +168,27 @@ export function sameTime(
   const from = startInstant(a, zone);
   const to = startInstant(b, zone);
   return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
+}
+
+/** Whether two events last as long: as many days, or as much time. */
+export function sameLength(
+  a: Pick<Event, "end" | "start">,
+  b: Pick<Event, "end" | "start">,
+  zone: string
+): boolean {
+  if (a.start.date || b.start.date) {
+    const days = (time: Pick<Event, "end" | "start">) =>
+      time.start.date && time.end.date
+        ? Temporal.PlainDate.from(time.start.date).until(time.end.date).days
+        : null;
+    return days(a) !== null && days(a) === days(b);
+  }
+  const length = (time: Pick<Event, "end" | "start">) => {
+    const from = startInstant(time.start, zone);
+    const to = startInstant(time.end, zone);
+    return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
+  };
+  return length(a) !== null && length(a) === length(b);
 }
 
 /** Whether `edited` keeps `occurrence`'s start and end. */
