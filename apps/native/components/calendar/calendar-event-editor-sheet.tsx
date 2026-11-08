@@ -16,8 +16,7 @@ import {
   type EventRecurrencePattern,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
-  monthlyWeekdayOf,
-  ordinalDayLabel,
+  monthlyWeekdayOption,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
@@ -205,6 +204,7 @@ const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 function RecurrenceEditorSection({
   allDay,
   parsedRecurrence,
+  rule,
   startDate,
   updateRecurrence,
   applyPrimaryRecurrenceRule,
@@ -212,6 +212,8 @@ function RecurrenceEditorSection({
   /** An all-day series ends on a date; a timed one after that day. */
   allDay: boolean;
   parsedRecurrence: EventRecurrencePattern;
+  /** The RRULE being edited, for what the pattern alone doesn't say. */
+  rule: string | undefined;
   /** Its weekday and day of the month are the series' defaults. */
   startDate: Temporal.PlainDate;
   updateRecurrence: (patch: RecurrencePatch) => void;
@@ -304,6 +306,7 @@ function RecurrenceEditorSection({
         <MonthlyDayChoice
           byDay={parsedRecurrence.byDay}
           onChange={(byDay) => updateRecurrence({ byDay })}
+          rule={rule}
           startDate={startDate}
         />
       ) : null}
@@ -380,36 +383,52 @@ function IntervalStepper({
   );
 }
 
-/** Monthly on the start's day of the month, or on its weekday ("2nd Tue"). */
+/**
+ * Monthly on the start's day of the month, or on a weekday of the month
+ * (the rule's own, or the start's: "The 2nd Tue").
+ */
 function MonthlyDayChoice({
   byDay,
   onChange,
+  rule,
   startDate,
 }: {
   byDay: string[];
   onChange: (byDay: string[]) => void;
+  rule: string | undefined;
   startDate: Temporal.PlainDate;
 }) {
-  const weekdayOfMonth = byDay[0] ?? monthlyWeekdayOf(startDate);
+  const onWeekday = byDay.length > 0;
+  const weekdayOption = monthlyWeekdayOption(rule, byDay, startDate);
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">On</Text>
       <View className="mt-1 flex-row gap-1.5">
         <Button
-          onPress={() => onChange([])}
+          accessibilityState={{ selected: !onWeekday }}
+          onPress={() => {
+            if (onWeekday) {
+              onChange([]);
+            }
+          }}
           size="sm"
           style={CHIP_STYLE}
-          variant={byDay.length === 0 ? "default" : "outline"}
+          variant={onWeekday ? "outline" : "default"}
         >
           <ChipLabel>{`Day ${startDate.day}`}</ChipLabel>
         </Button>
         <Button
-          onPress={() => onChange([weekdayOfMonth])}
+          accessibilityState={{ selected: onWeekday }}
+          onPress={() => {
+            if (!onWeekday) {
+              onChange(weekdayOption.byDay);
+            }
+          }}
           size="sm"
           style={CHIP_STYLE}
-          variant={byDay.length > 0 ? "default" : "outline"}
+          variant={onWeekday ? "default" : "outline"}
         >
-          <ChipLabel>{`The ${ordinalDayLabel(weekdayOfMonth) ?? "weekday"}`}</ChipLabel>
+          <ChipLabel>{weekdayOption.label}</ChipLabel>
         </Button>
       </View>
     </View>
@@ -1366,6 +1385,7 @@ export function EventEditorSheet({
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
       recurrence={recurrence}
+      rule={primaryRule}
       startDate={values.startDate}
       updateRecurrence={updateRecurrence}
     />

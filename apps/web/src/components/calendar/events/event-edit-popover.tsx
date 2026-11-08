@@ -19,8 +19,7 @@ import {
   type EventRecurrencePattern,
   type EventRecurrenceFrequency as Frequency,
   getPrimaryRecurrenceRule,
-  monthlyWeekdayOf,
-  ordinalDayLabel,
+  monthlyWeekdayOption,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
@@ -396,7 +395,12 @@ function RecurrenceEditor({
         )}
       </div>
 
-      <RepeatDays emit={emit} pattern={pattern} start={start} />
+      <RepeatDays
+        emit={emit}
+        pattern={pattern}
+        rule={recurrenceRule}
+        start={start}
+      />
       {/* A series that doesn't repeat has no end to pick. */}
       {pattern.freq === "none" ? null : (
         <RepeatEnds
@@ -417,16 +421,24 @@ interface RepeatPartProps {
 }
 
 /** Which days a weekly or monthly series repeats on. */
-function RepeatDays({ emit, pattern, start }: RepeatPartProps) {
+function RepeatDays({
+  emit,
+  pattern,
+  rule,
+  start,
+}: RepeatPartProps & { rule: string | undefined }) {
   const startWeekday = start.getDay() || 7;
   // Weekly with no days picked repeats on the start's weekday: show it lit.
   const startDay = WEEKDAYS[startWeekday - 1]?.value;
   const shownDays =
     pattern.byDay.length > 0 || !startDay ? pattern.byDay : [startDay];
-  // Monthly on the start's day of the month, or on its weekday ("2nd Tue").
-  const weekdayOfMonth =
-    pattern.byDay[0] ??
-    monthlyWeekdayOf({ day: start.getDate(), dayOfWeek: startWeekday });
+  // Monthly on the start's day of the month, or on a weekday of the month
+  // (the rule's own, or the start's: "The 2nd Tue").
+  const onWeekday = pattern.byDay.length > 0;
+  const weekdayOption = monthlyWeekdayOption(rule, pattern.byDay, {
+    day: start.getDate(),
+    dayOfWeek: startWeekday,
+  });
   return (
     <>
       {pattern.freq === "WEEKLY" && (
@@ -468,22 +480,24 @@ function RepeatDays({ emit, pattern, start }: RepeatPartProps) {
           <span className="text-muted-foreground text-xs">On</span>
           <div className="grid grid-cols-2 gap-1.5">
             <Button
+              aria-pressed={!onWeekday}
               className="h-8 text-xs"
               onClick={() => emit({ ...pattern, byDay: [] })}
               size="sm"
               type="button"
-              variant={pattern.byDay.length === 0 ? "default" : "outline"}
+              variant={onWeekday ? "outline" : "default"}
             >
               Day {start.getDate()}
             </Button>
             <Button
+              aria-pressed={onWeekday}
               className="h-8 text-xs"
-              onClick={() => emit({ ...pattern, byDay: [weekdayOfMonth] })}
+              onClick={() => emit({ ...pattern, byDay: weekdayOption.byDay })}
               size="sm"
               type="button"
-              variant={pattern.byDay.length > 0 ? "default" : "outline"}
+              variant={onWeekday ? "default" : "outline"}
             >
-              The {ordinalDayLabel(weekdayOfMonth) ?? "weekday"}
+              {weekdayOption.label}
             </Button>
           </div>
         </div>

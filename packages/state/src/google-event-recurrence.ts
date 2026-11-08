@@ -204,7 +204,12 @@ function keptRuleParts(
     if (!part || EDITED_PARTS.has(key)) {
       return false;
     }
-    if (key === "BYMONTHDAY" && byDay.some((day) => ORDINAL_DAY.test(day))) {
+    const weekdayOfMonth = byDay.some((day) => ORDINAL_DAY.test(day));
+    if (key === "BYMONTHDAY" && weekdayOfMonth) {
+      return false;
+    }
+    // BYSETPOS picks among BYDAY's days; it goes with them.
+    if (key === "BYSETPOS" && (weekdayOfMonth || byDay.length === 0)) {
       return false;
     }
     return baseFreq === freq || !FREQUENCY_PARTS.has(key);
@@ -405,11 +410,8 @@ function dayOfPeriod(
   freq: EventRecurrenceFrequency,
   byDay: string[]
 ): string | null {
-  const weekdays = byDay.map(ordinalDayLabel);
-  const ordinal =
-    weekdays.length > 0 && weekdays.every(Boolean)
-      ? `on the ${weekdays.join(", ")}`
-      : null;
+  const weekday = monthlyWeekdayLabel(rule, byDay);
+  const ordinal = weekday ? `on the ${weekday}` : null;
   const monthDay = BY_MONTH_DAY_PATTERN.exec(rule ?? "")?.[1];
   if (freq === "MONTHLY") {
     if (ordinal || !monthDay) {
@@ -428,6 +430,93 @@ function dayOfPeriod(
   return monthDay && !monthDay.startsWith("-")
     ? `on ${month} ${monthDay}`
     : null;
+}
+
+const BY_SET_POS_PATTERN = /BYSETPOS=(-?\d)(?:;|$)/;
+/** Day sets a BYSETPOS rule picks from, by their sorted BYDAY. */
+const DAY_SET_WORDS: Record<string, string> = {
+  "MO,TU,WE,TH,FR": "weekday",
+  "MO,TU,WE,TH,FR,SA,SU": "day",
+  "SA,SU": "weekend day",
+};
+
+/**
+ * Which weekday of the month a rule's BYDAY (and BYSETPOS) means, in
+ * words: "2nd Tue" for BYDAY=2TU, "last weekday" for
+ * BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1, "2nd Mon" for BYDAY=MO;BYSETPOS=2.
+ * Null when there's none, or it isn't one put in words here.
+ */
+export function monthlyWeekdayLabel(
+  rule: string | undefined,
+  byDay: string[]
+): string | null {
+  const setPos = BY_SET_POS_PATTERN.exec(rule ?? "")?.[1];
+  if (!setPos) {
+    const labels = byDay.map(ordinalDayLabel);
+    return labels.length > 0 && labels.every(Boolean)
+      ? labels.join(", ")
+      : null;
+  }
+  const ordinal = ORDINAL_WORDS[setPos];
+  if (!(ordinal && byDay.every((day) => PLAIN_WEEKDAY.test(day)))) {
+    return null;
+  }
+  const sorted = [...byDay].sort(
+    (a, b) => WEEKDAY_CODES.indexOf(a) - WEEKDAY_CODES.indexOf(b)
+  );
+  const days =
+    DAY_SET_WORDS[sorted.join(",")] ??
+    (sorted.length === 1 ? DAY_NAMES[sorted[0] ?? ""] : undefined);
+  return days ? `${ordinal} ${days}` : null;
+}
+
+/**
+ * The monthly "On" option beside "Day 7": the rule's own weekday of the
+ * month ("The last weekday") when it has one, otherwise the start's ("The
+ * 1st Sat"), with the BYDAY that picks it.
+ */
+export function monthlyWeekdayOption(
+  rule: string | undefined,
+  byDay: string[],
+  start: { day: number; dayOfWeek: number }
+): { byDay: string[]; label: string } {
+  if (byDay.length > 0) {
+    const label = monthlyWeekdayLabel(rule, byDay);
+    return { byDay, label: label ? `The ${label}` : "Custom days" };
+  }
+  const code = monthlyWeekdayOf(start);
+  return { byDay: [code], label: `The ${ordinalDayLabel(code) ?? "weekday"}` };
+}
+
+/** Rule parts the words always cover. */
+const PLAIN_PARTS = new Set(["FREQ", "INTERVAL", "UNTIL", "COUNT", "WKST"]);
+
+/**
+ * Whether `when` (the day words, if any) says everything the rule's BY...
+ * parts do; when not, the words get "(custom)", so a constraint they leave
+ * out isn't hidden.
+ */
+function saysItAll(
+  rule: string | undefined,
+  freq: EventRecurrenceFrequency,
+  byDay: string[],
+  when: string | null
+): boolean {
+  const keys = (rule ?? "")
+    .replace("RRULE:", "")
+    .split(";")
+    .map((part) => part.split("=")[0] ?? "")
+    .filter((key) => key && !PLAIN_PARTS.has(key));
+  if (keys.length === 0) {
+    return true;
+  }
+  if (freq === "WEEKLY") {
+    return (
+      keys.every((key) => key === "BYDAY") &&
+      byDay.every((day) => PLAIN_WEEKDAY.test(day))
+    );
+  }
+  return when !== null;
 }
 
 /** "2nd Tue" for BYDAY=2TU; null for a plain or unknown code. */
@@ -483,9 +572,8 @@ export function describeEventRecurrence(params: {
     .map((code) => DAY_NAMES[code.slice(-2)])
     .filter(Boolean)
     .join(", ");
-  if (freq === "WEEKLY") {
-    return days ? `${base} on ${days}` : base;
-  }
-  const when = dayOfPeriod(rule, freq, byDay);
-  return when ? `${base} ${when}` : base;
+  const when =
+    freq === "WEEKLY" ? days && `on ${days}` : dayOfPeriod(rule, freq, byDay);
+  const said = when ? `${base} ${when}` : base;
+  return saysItAll(rule, freq, byDay, when) ? said : `${said} (custom)`;
 }

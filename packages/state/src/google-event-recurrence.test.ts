@@ -5,6 +5,7 @@ import {
   type EventRecurrencePattern,
   getPrimaryRecurrenceRule,
   monthlyWeekdayOf,
+  monthlyWeekdayOption,
   ordinalDayLabel,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
@@ -40,10 +41,31 @@ describe("describeEventRecurrence", () => {
     expect(
       describeEventRecurrence({ rules: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=15"] })
     ).toBe("Repeats monthly on day 15");
-    // The 4th Thursday of the year, not of a month: not put in words.
+    // The 4th Thursday of the year, not of a month: marked custom.
     expect(
       describeEventRecurrence({ rules: ["RRULE:FREQ=YEARLY;BYDAY=4TH"] })
-    ).toBe("Repeats yearly");
+    ).toBe("Repeats yearly (custom)");
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2"],
+      })
+    ).toBe("Repeats monthly on the 2nd Mon");
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1"],
+      })
+    ).toBe("Repeats monthly on the last weekday");
+    // Parts the words don't cover are marked, not hidden.
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"],
+      })
+    ).toBe("Repeats daily (custom)");
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15"],
+      })
+    ).toBe("Repeats monthly (custom)");
   });
 
   test("still says an instance repeats when its rule isn't loaded", () => {
@@ -168,6 +190,25 @@ describe("buildGoogleEventRecurrenceRule", () => {
     expect(
       pick("RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;WKST=SU", "WEEKLY")
     ).toBe("RRULE:FREQ=WEEKLY;WKST=SU");
+  });
+
+  test("Day N drops a BYSETPOS weekday pick", () => {
+    expect(
+      edit("RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1", (p) => ({
+        ...p,
+        byDay: [],
+      }))
+    ).toBe("RRULE:FREQ=MONTHLY");
+    expect(
+      monthlyWeekdayOption(
+        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+        ["MO", "TU", "WE", "TH", "FR"],
+        { day: 7, dayOfWeek: 6 }
+      ).label
+    ).toBe("The last weekday");
+    expect(
+      monthlyWeekdayOption("RRULE:FREQ=MONTHLY", [], { day: 7, dayOfWeek: 6 })
+    ).toEqual({ byDay: ["1SA"], label: "The 1st Sat" });
   });
 
   test("a weekday of the month replaces a day of the month", () => {
