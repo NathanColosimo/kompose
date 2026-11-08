@@ -117,6 +117,7 @@ import {
   EventBlock,
   eventDetails,
   MAX_CALENDAR_TEXT_SCALE,
+  MIN_DRAWN_MINUTES,
   TaskBlock,
   useCalendarTextScale,
 } from "@/components/calendar/calendar-blocks";
@@ -391,13 +392,10 @@ function formatSlot(
     });
 }
 
-/** A block's height: at least a 15-minute slot, less the gap between blocks. */
+/** A block's height: at least its drawn minutes, less the gap between blocks. */
 function blockHeight(minutes: number): number {
-  const height = Math.max(
-    (Math.max(minutes, MINUTES_STEP) / 60) * PIXELS_PER_HOUR,
-    24
-  );
-  return Math.max(height - EVENT_BLOCK_INSET_PX, 20);
+  const drawn = Math.max(minutes, MIN_DRAWN_MINUTES);
+  return (drawn / 60) * PIXELS_PER_HOUR - EVENT_BLOCK_INSET_PX;
 }
 
 /** WHOOP workouts use one teal, matching the web's --whoop-workout. */
@@ -829,6 +827,8 @@ function EventDeleteDialogs({
       >
         <View className="mt-2">
           <RadioGroup
+            // The choice the delete took stays shown while it runs.
+            disabled={pending}
             onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
             options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
               disabled: followingOff && option.value === "following",
@@ -924,6 +924,8 @@ function EventSaveScopeDialog({
     >
       <View className="mt-2">
         <RadioGroup
+          // The choice the save took stays shown while it runs.
+          disabled={pending}
           onValueChange={(value) => onPick(value as RecurrenceScope)}
           options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
             disabled: Boolean(disabled[option.value]),
@@ -1186,9 +1188,9 @@ export default function CalendarTab() {
       }));
 
       const allItems = [...taskItems, ...googleItems, ...workoutItems];
-      // Blocks are at least 24pt tall (blockHeight), 24 minutes at 60pt an hour.
+      // Cover is measured against each block's drawn length (blockHeight).
       const layout = calculateCollisionLayout(allItems, {
-        minDrawnMinutes: 24,
+        minDrawnMinutes: MIN_DRAWN_MINUTES,
       });
       layoutsByDay.set(dayKey, layout);
     }

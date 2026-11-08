@@ -29,6 +29,22 @@ export function useCalendarTextScale(): number {
   return Math.min(useWindowDimensions().fontScale, MAX_CALENDAR_TEXT_SCALE);
 }
 
+/**
+ * A block is drawn at least this many minutes tall (points, at 60pt an
+ * hour), so a short one stays readable and tappable. The collision layout
+ * measures what covers a block against this drawn length too.
+ */
+export const MIN_DRAWN_MINUTES = 24;
+
+/**
+ * A block's drawn minutes, and the part of them a later block leaves in
+ * view (`ItemLayout.uncoveredMinutes`, measured against the drawn length).
+ */
+function shownMinutes(minutes: number, uncoveredMinutes: number | undefined) {
+  const drawn = Math.max(minutes, MIN_DRAWN_MINUTES);
+  return { drawn, text: Math.min(drawn, uncoveredMinutes ?? drawn) };
+}
+
 /** Blocks shorter than this show only their title. */
 const TITLE_ONLY_MINUTES = 45;
 /** Blocks at least this long also list their details. */
@@ -504,7 +520,10 @@ export function EventBlock({
   title,
   ...position
 }: EventBlockProps) {
-  const textMinutes = Math.min(minutes, position.uncoveredMinutes ?? minutes);
+  const { drawn, text: textMinutes } = shownMinutes(
+    minutes,
+    position.uncoveredMinutes
+  );
   const surface = useEventSurface(color);
   const placement = positionStyle(position);
   return (
@@ -527,10 +546,10 @@ export function EventBlock({
       <View className="h-full" pointerEvents="none">
         <Surface
           compact={textMinutes < COMPACT_MINUTES}
-          covered={textMinutes < minutes}
+          covered={textMinutes < drawn}
           narrow={placement.width < NARROW_BLOCK_PT}
           surface={surface}
-          tight={isTight(textMinutes, minutes)}
+          tight={isTight(textMinutes, drawn)}
         >
           <BlockText
             clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
@@ -538,10 +557,10 @@ export function EventBlock({
             end={end}
             minutes={textMinutes}
             narrow={placement.width < NARROW_BLOCK_PT}
-            room={textRoom(textMinutes, minutes, placement.height)}
+            room={textRoom(textMinutes, drawn, placement.height)}
             sliver={placement.width < SLIVER_BLOCK_PT}
             start={start}
-            tight={isTight(textMinutes, minutes)}
+            tight={isTight(textMinutes, drawn)}
             title={title}
           />
         </Surface>
@@ -569,10 +588,13 @@ export function TaskBlock({
   title,
   ...position
 }: TaskBlockProps) {
-  const textMinutes = Math.min(minutes, position.uncoveredMinutes ?? minutes);
+  const { drawn, text: textMinutes } = shownMinutes(
+    minutes,
+    position.uncoveredMinutes
+  );
   const compact = textMinutes < COMPACT_MINUTES;
-  const isCovered = textMinutes < minutes;
-  const tight = isTight(textMinutes, minutes);
+  const isCovered = textMinutes < drawn;
+  const tight = isTight(textMinutes, drawn);
   const placement = positionStyle(position);
   const bodyTopRef = useRef(0);
   const narrow = placement.width < NARROW_BLOCK_PT;
@@ -641,7 +663,7 @@ export function TaskBlock({
               end={end}
               minutes={textMinutes}
               narrow={narrow}
-              room={textRoom(textMinutes, minutes, placement.height)}
+              room={textRoom(textMinutes, drawn, placement.height)}
               sliver={placement.width < SLIVER_BLOCK_PT}
               start={start}
               struck={done}
