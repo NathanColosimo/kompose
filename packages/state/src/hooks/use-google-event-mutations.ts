@@ -197,8 +197,7 @@ function updatesAtOnce(variables: UpdateGoogleEventVariables): boolean {
  * An update: for one occurrence, unless the editor holds the save
  * (`optimistic: false`), the event changes in the cached lists at once,
  * and on failure each list's old copy comes back where the edit still
- * shows. A
- * failure is reported unless the editor says it (`quiet`).
+ * shows. A failure is reported unless the editor says it (`quiet`).
  */
 export function updateGoogleEventMutationOptions(
   queryClient: QueryClient,
