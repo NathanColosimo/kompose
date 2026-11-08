@@ -259,10 +259,10 @@ test("turns This and following off where a new series can't start", () => {
   const stuck = { ...blocked, dateMoved: true, patternChanged: true };
   expect(off(stuck)).toEqual(["all", "following", "this"]);
   expect(eventSaveDescription(stuck)).toBe(
-    "This and following isn't available for an occurrence added to the series on its own. Change the times and the repeat in two saves."
+    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for an occurrence added to the series on its own. Change the times and the repeat in two saves."
   );
   expect(eventSaveDescription({ ...stuck, splitBlocked: "severalRules" })).toBe(
-    "This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
+    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
   );
 });
 
@@ -546,6 +546,27 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     ).toBe(
       "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. From its first meeting, This and following is the entire series too."
     );
+    // This and following blocked, with a new time and repeat: the time
+    // goes alone first.
+    expect(
+      eventSaveDescription({
+        ...firstRepeat,
+        opensSeries: false,
+        splitBlocked: "addedOccurrence",
+      })
+    ).toBe(
+      "This and following isn't available for an occurrence added to the series on its own. Changing the time for the entire series would reset your changed Dec 7 meeting. Save the new times on their own first."
+    );
+    // Without a new repeat, Only this takes it: no step to add.
+    expect(
+      eventSaveDescription({
+        ...first,
+        opensSeries: false,
+        splitBlocked: "addedOccurrence",
+      })
+    ).toBe(
+      "This and following isn't available for an occurrence added to the series on its own. Changing the time for the entire series would reset your changed Dec 7 meeting."
+    );
     // A series meeting several times a day, given a new time there.
     const several = {
       ...none,
@@ -601,6 +622,18 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(off(andRepeat)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(andRepeat)).toBe(
       "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This series' meetings keep times of their own, so a new time can't apply to the entire series. Change the times and the repeat in two saves. From its first meeting, This and following is the entire series too."
+    );
+    // A meeting changed on its own: the repeat alone may cost it too, so
+    // the times go first, with or without a new day.
+    const changed = {
+      ...andRepeat,
+      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
+    };
+    expect(eventSaveDescription(changed)).toBe(
+      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This series' meetings keep times of their own, so a new time can't apply to the entire series. Save the new times on their own first. From its first meeting, This and following is the entire series too."
+    );
+    expect(eventSaveDescription({ ...changed, dateMoved: false })).toBe(
+      "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. Save the new times on their own first. From its first meeting, This and following is the entire series too."
     );
     // A new day alone keeps every meeting's time: only Entire series is off.
     expect(off({ ...twice, movesSeveralADay: false })).toEqual(["all"]);

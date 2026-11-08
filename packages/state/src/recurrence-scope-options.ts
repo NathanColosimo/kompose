@@ -47,12 +47,6 @@ export const RECURRENCE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<Recurrence
     { label: "Entire series", value: "all" },
   ] as const;
 
-/** Why a series meeting several times a day can't take a new time. */
-const SEVERAL_TIMES_REASON =
-  "This series' meetings keep times of their own, so a new time can't apply to the entire series";
-/** For a save no scope takes, as a new time and a new repeat. */
-const TIMES_AND_REPEAT = "Change the times and the repeat in two saves.";
-
 /** The scope dialogs' words, shared by web and iOS. */
 export const SCOPE_DIALOG_COPY = {
   deleteEvent: { description: "Delete:", title: "Delete recurring event" },
@@ -122,21 +116,22 @@ export const SCOPE_DIALOG_COPY = {
   /** A new time for a series meeting several times a day (the server's words). */
   severalRulesTime: refusalMessage({ reason: "severalTimesADay" }),
   /**
-   * The same with a new repeat, where no scope takes both: from the
-   * series' first meeting, This and following is the entire series too.
+   * The same where a new repeat leaves no scope ("one at a time" can't
+   * take the repeat), before what to do (`noScopeStep`).
    */
-  severalRulesTimeAndRepeat: `${SEVERAL_TIMES_REASON}, nor a new repeat to one occurrence. ${TIMES_AND_REPEAT}`,
+  severalRulesTimeReason:
+    "This series' meetings keep times of their own, so a new time can't apply to the entire series.",
+  /** The same, from the first meeting with a new repeat on its own day. */
+  severalRulesTimeAndRepeatReason:
+    "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence.",
   /**
-   * The same with a new day through the first meeting, after the line
-   * saying a new repeat can't apply to the occurrence alone.
-   */
-  severalRulesNewDayAndRepeat: `${SEVERAL_TIMES_REASON}. ${TIMES_AND_REPEAT}`,
-  /**
-   * For new times and a new repeat that would cost a changed meeting:
-   * the times can be saved alone; whether the repeat then can is the
-   * next save's to say.
+   * For new times and a new repeat where a meeting changed on its own is
+   * at stake: the times can be saved alone; whether the repeat then can
+   * is the next save's to say.
    */
   timesFirst: "Save the new times on their own first.",
+  /** For new times and a new repeat no scope takes together. */
+  timesAndRepeat: "Change the times and the repeat in two saves.",
   /** After why Entire series is off, from the series' first meeting. */
   firstMeetingFollowing:
     "From its first meeting, This and following is the entire series too.",
@@ -157,8 +152,8 @@ export const SCOPE_DIALOG_COPY = {
   /**
    * After `splitBlocked`, for what else the save changes: with This and
    * following off, a new repeat can only go to the entire series, and not
-   * with times the series can't take (another day, or a series of several
-   * rules), nor where it would skip this occurrence.
+   * where it would skip this occurrence (with times the series can't take,
+   * no scope is left: `noScopeStep`).
    */
   splitBlockedThen: {
     repeat: "A new repeat applies to the entire series.",
@@ -167,7 +162,6 @@ export const SCOPE_DIALOG_COPY = {
     repeatEndOff:
       "Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting.",
     severalRulesTime: "A new time applies to this occurrence only.",
-    timesAndRepeat: TIMES_AND_REPEAT,
   },
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
@@ -658,19 +652,31 @@ function firstMeetingNewDayLine(
   switch (refusal.reason) {
     case "severalTimesADay":
       // With a new repeat too, one occurrence can take neither, so the
-      // server's "one at a time" can't work.
+      // server's "one at a time" can't work (`noScopeStep` says what can).
       return changes.patternChanged
-        ? SCOPE_DIALOG_COPY.severalRulesNewDayAndRepeat
+        ? SCOPE_DIALOG_COPY.severalRulesTimeReason
         : SCOPE_DIALOG_COPY.severalRulesTime;
-    case "changedMeeting": {
-      const reset = `Moving the series to this day would reset your changed ${shortDay(refusal.cost.day)} meeting.`;
-      return changes.patternChanged
-        ? `${reset} ${SCOPE_DIALOG_COPY.timesFirst}`
-        : reset;
-    }
+    case "changedMeeting":
+      return `Moving the series to this day would reset your changed ${shortDay(refusal.cost.day)} meeting.`;
     default:
       return refusal satisfies never;
   }
+}
+
+/**
+ * What to do where a new repeat leaves the save no scope, after saying
+ * why: with a meeting changed on its own at stake, save the new times on
+ * their own first (a cost found for them can hide one the repeat has
+ * alone, which the next save's dialog then says); else change the times
+ * and the repeat in two saves. Null for a repeat that itself undoes a
+ * changed meeting, which two saves wouldn't help.
+ */
+function noScopeStep(changes: EventSaveChanges): string | null {
+  const cost = changedMeetingCost(changes);
+  if (cost?.reason === "lostSlot") {
+    return null;
+  }
+  return cost ? SCOPE_DIALOG_COPY.timesFirst : SCOPE_DIALOG_COPY.timesAndRepeat;
 }
 
 /** Whether the server refuses the save's new time for the series (`movesSeveralADay`). */
@@ -782,10 +788,14 @@ export function chosenScope(
  * series, and a new repeat (never one occurrence's) only goes from here.
  * From the series' first meeting, "from here" is the series' new start,
  * which the server can refuse too (`firstMeetingNewDayRefusal`). Where
- * This and following is off as well (`splitBlocked`, said by the caller),
- * the changes apply to the occurrence alone.
+ * This and following is off as well (refused there, or `splitBlockedWhy`
+ * from the caller), the changes apply to the occurrence alone, and with a
+ * new repeat no scope is left (`noScopeStep`).
  */
-function newDayLine(changes: EventSaveChanges, splitBlocked = false): string {
+function newDayLine(
+  changes: EventSaveChanges,
+  splitBlockedWhy?: string
+): string {
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)
     : null;
@@ -793,13 +803,18 @@ function newDayLine(changes: EventSaveChanges, splitBlocked = false): string {
     ? `In ${city} time, this occurrence is now on another day than its series`
     : "This occurrence is now on another day than its series";
   const refusal = firstMeetingNewDayRefusal(changes);
-  if (refusal || splitBlocked) {
+  if (refusal || splitBlockedWhy) {
     const alone = changes.patternChanged
       ? `${where}, and a new repeat can't apply to it alone.`
       : `${where}, so your changes apply to it alone.`;
-    return refusal
-      ? `${alone} ${firstMeetingNewDayLine(changes, refusal)}`
-      : alone;
+    return [
+      alone,
+      refusal && firstMeetingNewDayLine(changes, refusal),
+      splitBlockedWhy,
+      changes.patternChanged && noScopeStep(changes),
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`
@@ -904,24 +919,30 @@ function splitBlockedDescription(
     case undefined:
       return patternChanged ? `${why} ${then.repeat}` : why;
     case "newDay":
-      return patternChanged
-        ? `${why} ${then.timesAndRepeat}`
-        : `${newDayLine(changes, true)} ${why}`;
+      return newDayLine(changes, why);
     case "repeatDay":
       return `${why} ${then.repeatOffDay}`;
     case "repeatEnd":
       return `${why} ${then.repeatEndOff}`;
     case "changedMeeting":
-      return `${why} ${changedMeetingLine(off.cost)}`;
+      return patternChanged
+        ? withNoScopeStep(changes, `${why} ${changedMeetingLine(off.cost)}`)
+        : `${why} ${changedMeetingLine(off.cost)}`;
     case "severalRulesTime":
       return patternChanged
-        ? `${why} ${then.timesAndRepeat}`
+        ? withNoScopeStep(changes, why)
         : `${why} ${then.severalRulesTime}`;
     case "seriesPending":
       return seriesPendingDescription(changes);
     default:
       return off satisfies never;
   }
+}
+
+/** `line`, then what to do with no scope left, where there's a step. */
+function withNoScopeStep(changes: EventSaveChanges, line: string): string {
+  const step = noScopeStep(changes);
+  return step ? `${line} ${step}` : line;
 }
 
 /** The scope dialog's line for a save: why each scope that's off is. */
@@ -958,18 +979,17 @@ function whyScopesOff(changes: EventSaveChanges): string {
       return SCOPE_DIALOG_COPY.repeatOffDay;
     case "repeatEnd":
       return SCOPE_DIALOG_COPY.repeatEndOff;
+    // From the first meeting with a new repeat, no scope is left.
     case "changedMeeting":
-      // From the first meeting with a new repeat, no scope is left; a new
-      // time or length can be saved alone (not a repeat that itself
-      // undoes the meeting).
-      return changes.patternChanged &&
-        firstMeetingRefused(changes) &&
-        off.cost.reason !== "lostSlot"
-        ? `${changedMeetingLine(off.cost)} ${SCOPE_DIALOG_COPY.timesFirst}`
+      return changes.patternChanged && firstMeetingRefused(changes)
+        ? withNoScopeStep(changes, changedMeetingLine(off.cost))
         : changedMeetingLine(off.cost);
     case "severalRulesTime":
       return changes.patternChanged && firstMeetingRefused(changes)
-        ? SCOPE_DIALOG_COPY.severalRulesTimeAndRepeat
+        ? withNoScopeStep(
+            changes,
+            SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason
+          )
         : SCOPE_DIALOG_COPY.severalRulesTime;
     case "seriesPending":
       return seriesPendingDescription(changes);
