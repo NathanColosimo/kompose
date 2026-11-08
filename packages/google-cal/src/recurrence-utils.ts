@@ -13,6 +13,15 @@ import {
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const UNTIL_VALUE = /[:;]UNTIL=([^;]+)/;
+const FREQ_VALUE = /FREQ=([A-Z]+)/;
+const INTERVAL_VALUE = /INTERVAL=(\d+)/;
+const BY_PART = /[:;]BY[A-Z]+=/;
+/** The unit a sub-daily rule steps by. */
+const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
+  HOURLY: "hours",
+  MINUTELY: "minutes",
+  SECONDLY: "seconds",
+};
 const COUNT_PART = /([:;])COUNT=[^;]+/;
 const SEVERAL_TIMES = /[:;]BY(?:HOUR|MINUTE|SECOND)=[^;]*,/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -268,6 +277,58 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 export type SplitBlock = "addedOccurrence" | "severalRules";
 
 /**
+ * Whether deleting from `originalStart` on could lengthen the series: the
+ * split is an added (RDATE) meeting and a rule's end can't be told, so
+ * cutting it there might reach past where it really ended. The delete is
+ * then refused rather than guessed.
+ */
+export function followingCutUnsure(params: {
+  masterRecurrence: string[] | null | undefined;
+  masterStart: { date?: string | null; dateTime?: string | null };
+  originalStart: string;
+  seriesZone: string;
+}): boolean {
+  const recurrence = params.masterRecurrence ?? [];
+  const split = asValue(params.originalStart, params.seriesZone);
+  const first = asValue(
+    params.masterStart.dateTime ?? params.masterStart.date ?? "",
+    params.seriesZone
+  );
+  if (
+    !(
+      split &&
+      addedValues(recurrence, params.seriesZone).some((v) =>
+        sameValue(v, split)
+      )
+    )
+  ) {
+    return false;
+  }
+  const at = momentOf(split, params.seriesZone);
+  return recurrence
+    .filter(isRule)
+    .some(
+      (rule) => ruleEndsBefore(rule, first, at, params.seriesZone) === null
+    );
+}
+
+/** A series' added (RDATE) values. */
+function addedValues(
+  recurrence: string[],
+  seriesZone: string
+): RecurrenceValue[] {
+  return recurrence.flatMap((line) => {
+    const list = line.startsWith("RDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
+    return (list?.values ?? []).flatMap((value) => {
+      const read = list && readRecurrenceValue(value, list.zone, seriesZone);
+      return read ? [read] : [];
+    });
+  });
+}
+
+/**
  * Whether "This and following" can't start a new series at the
  * occurrence whose original start is `originalStart`: a new series repeats
  * from its start, so it must be one of the rule's own meetings. A series
@@ -287,16 +348,7 @@ export function followingSplitBlocked(params: {
     return "severalRules";
   }
   const split = asValue(params.originalStart, params.seriesZone);
-  const added = recurrence.flatMap((line) => {
-    const list = line.startsWith("RDATE")
-      ? parseDateList(line, params.seriesZone)
-      : null;
-    return (list?.values ?? []).flatMap((value) => {
-      const read =
-        list && readRecurrenceValue(value, list.zone, params.seriesZone);
-      return read ? [read] : [];
-    });
-  });
+  const added = addedValues(recurrence, params.seriesZone);
   if (!(split && added.some((value) => sameValue(value, split)))) {
     return null;
   }
@@ -351,6 +403,17 @@ function ruleEndsBefore(
   if (!first) {
     return null;
   }
+  // A plain hourly (minutely, secondly) rule: its last meeting is its
+  // INTERVAL times COUNT - 1 on from the first.
+  const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
+  if (step) {
+    if (!first.instant || BY_PART.test(rule)) {
+      return null;
+    }
+    const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
+    const last = first.instant.add({ [step]: interval * (count - 1) });
+    return Temporal.Instant.compare(last, split) < 0;
+  }
   const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const times = clock ? ruleTimesOf(rule, clock) : null;
   if (clock && times && times.length > 1) {
@@ -370,9 +433,12 @@ function ruleEndsBefore(
   if (!last) {
     return null;
   }
-  // Its last day's meeting, at the series' time (or that day's start).
+  // Its last day's meeting, at the rule's time (or that day's start).
   const lastAt = last
-    .toZonedDateTime({ plainTime: clock ?? undefined, timeZone: seriesZone })
+    .toZonedDateTime({
+      plainTime: times?.[0] ?? clock ?? undefined,
+      timeZone: seriesZone,
+    })
     .toInstant();
   return Temporal.Instant.compare(lastAt, split) < 0;
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeGoogleCalendarService } from "@kompose/google-cal/client";
 import {
+  followingCutUnsure,
   followingSplitBlocked,
   truncateRecurrenceForFollowing,
 } from "@kompose/google-cal/recurrence-utils";
@@ -49,6 +50,33 @@ describe("where This and following can start", () => {
         "2026-11-13T09:00:00-05:00"
       )
     ).toBe("addedOccurrence");
+  });
+
+  test("an hourly rule's end is worked out, and an unknown one refused", () => {
+    // Every 4 hours ten times from Nov 1 9:00 ends Nov 2 21:00: deleting
+    // from an added Nov 10 9:00 keeps it (no 50 meetings brought back).
+    const hourly = "RRULE:FREQ=HOURLY;INTERVAL=4;COUNT=10";
+    const added = "RDATE;TZID=America/New_York:20261110T090000";
+    const from = "2026-11-01T09:00:00-04:00";
+    expect(
+      truncateRecurrenceForFollowing(
+        [hourly, added],
+        "2026-11-10T09:00:00-05:00",
+        zone,
+        from
+      )
+    ).toEqual([hourly]);
+    const unsure = (rule: string) =>
+      followingCutUnsure({
+        masterRecurrence: [rule, added],
+        masterStart: { dateTime: from },
+        originalStart: "2026-11-10T09:00:00-05:00",
+        seriesZone: zone,
+      });
+    expect(unsure(hourly)).toBe(false);
+    // On the hour and half hour: its end isn't worked out, so a delete
+    // from the added meeting is refused rather than guessed.
+    expect(unsure("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10")).toBe(true);
   });
 
   test("a cut always ends a rule that still runs past the split", () => {
@@ -187,6 +215,28 @@ describe("the server refuses a split that can't start a series", () => {
       ),
       requests
     );
+  });
+
+  test("when deleting from an added meeting a rule's end can't be told", async () => {
+    const unsureMaster = {
+      ...master,
+      recurrence: [
+        "RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10",
+        "RDATE;TZID=America/New_York:20261116T090000",
+      ],
+    } as Event;
+    const requests = stubGoogle((url) =>
+      url.includes(added.id) ? added : unsureMaster
+    );
+    const service = makeGoogleCalendarService("token");
+    const exit = await Effect.runPromiseExit(
+      service.deleteEvent("primary", added.id, "following")
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
+      "Delete this and following isn't available"
+    );
+    expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
   });
 
   test("when moving it to another calendar from there", async () => {

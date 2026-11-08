@@ -6,6 +6,7 @@ import {
   carryCount,
   carryCountExactly,
   countOf,
+  followingCutUnsure,
   followingSplitBlocked,
   sanitizeEventPayload,
   splitAddedDays,
@@ -1163,6 +1164,25 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(
           new GoogleApiError({
             cause: new Error("Event start is not a date or dateTime"),
+          })
+        );
+      }
+
+      // From an added meeting, in a rule whose end can't be told, a cut
+      // might reach past where it really ended: refused, not guessed.
+      if (
+        followingCutUnsure({
+          masterRecurrence: master.recurrence,
+          masterStart: master.start,
+          originalStart: originalStartIso,
+          seriesZone: seriesZoneOf(master),
+        })
+      ) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error(
+              "Delete this and following isn't available from an occurrence added to this series"
+            ),
           })
         );
       }
