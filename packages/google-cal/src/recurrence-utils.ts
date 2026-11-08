@@ -6,6 +6,7 @@ import {
   readRecurrenceValue,
   untilRuleForDay,
 } from "./until";
+import { countedRuleDays, isRuleDay } from "./rule-days";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
@@ -143,9 +144,71 @@ function order(value: RecurrenceValue): number {
 
 /** The values, each moment (or day) once. */
 function unique(values: RecurrenceValue[]): RecurrenceValue[] {
-  return values.filter(
-    (value, index) => values.findIndex((other) => sameValue(other, value)) === index
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = value.instant
+      ? `t${value.instant.epochMilliseconds}`
+      : `d${value.day.toString()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Whether an added (RDATE) value is also one of the rule's occurrences:
+ * on one of its days, at the series' time (or both all day). Null when
+ * the rule has parts `isRuleDay` doesn't read.
+ */
+function isRuleOccurrence(
+  rule: string,
+  start: RecurrenceValue,
+  value: RecurrenceValue,
+  seriesZone: string
+): boolean | null {
+  const onRuleDay = isRuleDay(rule, start.day, value.day);
+  if (onRuleDay !== true) {
+    return onRuleDay;
+  }
+  if (!(start.instant && value.instant)) {
+    return !(start.instant || value.instant);
+  }
+  return Temporal.PlainTime.compare(
+    start.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
+    value.instant.toZonedDateTimeISO(seriesZone).toPlainTime()
+  ) === 0;
+}
+
+/**
+ * The added days that aren't also rule occurrences. Each is checked
+ * against the rule; for a rule with parts that can't be read, COUNT says
+ * how many there are (distinct days beyond it) and the latest added days
+ * are taken, since added days usually run past the rule.
+ */
+function extraAddedDays(params: {
+  added: RecurrenceValue[];
+  count: number | undefined;
+  distinctDays: number;
+  masterRecurrence: string[];
+  seriesStart: string;
+  seriesZone: string;
+}): RecurrenceValue[] {
+  const { added, masterRecurrence, seriesZone } = params;
+  const rule = masterRecurrence.find((line) => line.startsWith("RRULE:"));
+  const start = asValue(params.seriesStart, seriesZone);
+  const verdicts = added.map((value) =>
+    rule && start ? isRuleOccurrence(rule, start, value, seriesZone) : null
   );
+  if (verdicts.every((verdict) => verdict !== null)) {
+    return added.filter((_, index) => !verdicts[index]);
+  }
+  const extras = Math.max(
+    0,
+    params.distinctDays - (params.count ?? params.distinctDays)
+  );
+  return [...added].sort((a, b) => order(b) - order(a)).slice(0, extras);
 }
 
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
@@ -176,10 +239,18 @@ export function carryCount(
     starts: string[];
     /** The new part's start (it may move off the split's day or time). */
     newStart: string;
+    /** The series' own first start, where its rule counts from. */
+    seriesStart: string;
   }
 ): string[] {
-  const { masterRecurrence, newStart, originalStart, seriesZone, starts } =
-    params;
+  const {
+    masterRecurrence,
+    newStart,
+    originalStart,
+    seriesStart,
+    seriesZone,
+    starts,
+  } = params;
   const listed = starts
     .map((start) => asValue(start, seriesZone))
     .filter((value): value is RecurrenceValue => value !== null);
@@ -192,19 +263,21 @@ export function carryCount(
             .filter((value): value is RecurrenceValue => value !== null)
         : [];
     });
+  const exact = carryCountExactly(recurrence, params);
+  if (exact) {
+    return exact;
+  }
   if (hasAddedDays(masterRecurrence)) {
-    // The rule has COUNT positions; every distinct day beyond them (listed
-    // or skipped) is an added day that isn't also a rule day. Those extras
-    // are taken from the latest added days (added days usually run past
-    // the rule), and the rule's last day is the latest of the rest. An
-    // added day that's also a rule day stays one.
-    const distinct = unique([...listed, ...listedValues("EXDATE")]);
-    const count = countOf(masterRecurrence) ?? distinct.length;
-    const extras = Math.max(0, distinct.length - count);
-    const latestAddedFirst = unique(listedValues("RDATE")).sort(
-      (a, b) => order(b) - order(a)
-    );
-    const extraDays = latestAddedFirst.slice(0, extras);
+    // The rule's last day is the latest listed one that isn't an extra
+    // added day; an added day that's also a rule day stays one.
+    const extraDays = extraAddedDays({
+      added: unique(listedValues("RDATE")),
+      count: countOf(masterRecurrence),
+      distinctDays: unique([...listed, ...listedValues("EXDATE")]).length,
+      masterRecurrence,
+      seriesStart,
+      seriesZone,
+    });
     const ruleDays = listed.filter(
       (value) => !extraDays.some((day) => sameValue(day, value))
     );
@@ -239,6 +312,40 @@ export function carryCount(
     ...listedValues("EXDATE").filter(before),
   ]).length;
   return withRemainingCount(recurrence, used);
+}
+
+/**
+ * The following part's rule with exactly the rule positions left: a rule
+ * that can be read is walked from the series' start, its first COUNT days
+ * are its positions (skipped ones included, added ones not), and the new
+ * part runs the ones from the split on. Null when the rule can't be read;
+ * `carryCount` then works from Google's list.
+ */
+export function carryCountExactly(
+  recurrence: string[],
+  params: {
+    masterRecurrence: string[];
+    originalStart: string;
+    seriesStart: string;
+    seriesZone: string;
+  }
+): string[] | null {
+  const { masterRecurrence, originalStart, seriesStart, seriesZone } = params;
+  const rule = masterRecurrence.find((line) => line.startsWith("RRULE:"));
+  const count = countOf(masterRecurrence);
+  const seriesStartValue = asValue(seriesStart, seriesZone);
+  const split = asValue(originalStart, seriesZone);
+  const positions =
+    rule && count !== undefined && seriesStartValue
+      ? countedRuleDays(rule, seriesStartValue.day, count)
+      : null;
+  if (!(positions && split)) {
+    return null;
+  }
+  const left = positions.filter(
+    (day) => Temporal.PlainDate.compare(day, split.day) >= 0
+  ).length;
+  return withRemainingCount(recurrence, positions.length - left);
 }
 
 /** The rule with its COUNT swapped for `until`. */

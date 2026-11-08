@@ -14,6 +14,7 @@ import {
 } from "./schema";
 import {
   carryCount,
+  carryCountExactly,
   countOf,
   sanitizeEventPayload,
   splitAddedDays,
@@ -33,6 +34,39 @@ interface GoogleWatchChannelResult {
   channelId: string;
   expiration?: string;
   resourceId: string;
+}
+
+/**
+ * A series' start and end moved to one of its occurrences' original slot
+ * (`originalStart`), keeping the series' length and zone.
+ */
+function seriesSlotAt(
+  master: Event,
+  originalStart: string
+): { end: Event["end"]; start: Event["start"] } {
+  if (master.start.date && master.end.date) {
+    const days = Math.max(
+      1,
+      Math.round(
+        (Date.parse(master.end.date) - Date.parse(master.start.date)) / 86_400_000
+      )
+    );
+    const end = new Date(Date.parse(originalStart.slice(0, 10)) + days * 86_400_000);
+    return {
+      end: { date: end.toISOString().slice(0, 10) },
+      start: { date: originalStart.slice(0, 10) },
+    };
+  }
+  const length =
+    Date.parse(master.end.dateTime ?? "") - Date.parse(master.start.dateTime ?? "");
+  const start = Date.parse(originalStart);
+  return {
+    end: {
+      dateTime: new Date(start + (Number.isFinite(length) ? length : 0)).toISOString(),
+      timeZone: master.end.timeZone ?? master.start.timeZone,
+    },
+    start: { dateTime: new Date(start).toISOString(), timeZone: master.start.timeZone },
+  };
 }
 
 /** The zone a series' days are counted in. */
@@ -587,11 +621,24 @@ export function makeGoogleCalendarService(
       if (!fromSplit || count === undefined || countOf(fromSplit) !== count) {
         return fromSplit;
       }
+      const seriesStart =
+        master.start.dateTime ?? master.start.date ?? originalStart;
+      // A rule that can be read is counted without asking Google.
+      const exact = carryCountExactly(fromSplit, {
+        masterRecurrence: master.recurrence ?? [],
+        originalStart,
+        seriesStart,
+        seriesZone: zone,
+      });
+      if (exact) {
+        return exact;
+      }
       const starts = yield* listOccurrenceStarts(calendarId, master.id);
       return carryCount(fromSplit, {
         masterRecurrence: master.recurrence ?? [],
         newStart,
         originalStart,
+        seriesStart,
         seriesZone: zone,
         starts,
       });
@@ -1049,15 +1096,22 @@ export function makeGoogleCalendarService(
           );
         }
 
-        // The new series carries on with what's left of a COUNT.
-        const movedRecurrence = yield* followingRecurrence(
-          calendarId,
+        // The new series is the series from this occurrence's place on:
+        // its original slot, with the series' own fields and length (not
+        // one occurrence's rescheduled time or edits), and the rest of a
+        // COUNT; its rule lined up with that start.
+        const slot = seriesSlotAt(master, originalStartIso);
+        const movedRecurrence = ruleForStart(
+          yield* followingRecurrence(
+            calendarId,
+            master,
+            master.recurrence,
+            undefined,
+            originalStartIso,
+            originalStartIso
+          ),
           master,
-          master.recurrence,
-          undefined,
-          originalStartIso,
-          // The new series starts where the occurrence is now.
-          instance.start.dateTime ?? instance.start.date ?? originalStartIso
+          slot.start
         );
 
         // 1) Cut off the original series up to the edited occurrence.
@@ -1090,10 +1144,9 @@ export function makeGoogleCalendarService(
         // 2) Create a new series in the destination calendar starting at this occurrence.
         const newSeriesPayload = sanitizeEventPayload({
           ...master,
-          ...instance,
-          start: instance.start,
-          end: instance.end,
+          end: slot.end,
           recurrence: movedRecurrence,
+          start: slot.start,
         });
 
         const restoreMasterRecurrence = Effect.tryPromise({

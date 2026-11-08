@@ -5,6 +5,8 @@ import {
   truncateRecurrenceForFollowing,
   withRemainingCount,
 } from "@kompose/google-cal/recurrence-utils";
+import { isRuleDay } from "@kompose/google-cal/rule-days";
+import { Temporal } from "temporal-polyfill";
 
 describe("splitting a series", () => {
   test("ends an all-day series the day before, as a date", () => {
@@ -75,6 +77,7 @@ describe("splitting a series", () => {
         ],
         newStart: "2026-11-03",
         originalStart: "2026-11-03",
+        seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
         starts: ["2026-11-01", "2026-11-03", "2026-11-04", "2026-11-05"],
       })
@@ -91,6 +94,7 @@ describe("splitting a series", () => {
         ],
         newStart: "2026-11-03",
         originalStart: "2026-11-03",
+        seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
         starts: [
           "2026-11-01",
@@ -103,9 +107,9 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
-  test("with added days, ends where the old rule did", () => {
+  test("carries a COUNT on exactly with added days", () => {
     // Daily COUNT=5 from Nov 1 plus an RDATE on Nov 2 (a rule day too) and
-    // Nov 20: the rule's last day is Nov 5, whatever the duplicates.
+    // Nov 20: walked, the rule's days are Nov 1–5, three from Nov 3.
     expect(
       carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
@@ -114,6 +118,7 @@ describe("splitting a series", () => {
         ],
         newStart: "2026-11-03",
         originalStart: "2026-11-03",
+        seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
         starts: [
           "2026-11-01",
@@ -124,7 +129,7 @@ describe("splitting a series", () => {
           "2026-11-20",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261105"]);
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
   // Google's own date-times: New York's offset is negative.
@@ -137,6 +142,7 @@ describe("splitting a series", () => {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
         newStart: nyDaily(3),
         originalStart: nyDaily(3),
+        seriesStart: nyDaily(1),
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5].map((day) => nyDaily(day)),
       })
@@ -149,6 +155,7 @@ describe("splitting a series", () => {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
         newStart: "2026-11-03T14:00:00.000Z",
         originalStart: "2026-11-03T14:00:00.000Z",
+        seriesStart: "2026-11-01T14:00:00.000Z",
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5].map((day) => `2026-11-0${day}T14:00:00.000Z`),
       })
@@ -156,20 +163,22 @@ describe("splitting a series", () => {
   });
 
   test("ends a moved new part after its last day, at any time that day", () => {
-    // With an added day, moved from 9:00 to 10:00 and a day later: the
-    // old rule's last day (Nov 5) becomes Nov 6, through its last second.
+    // A rule not walked here (BYHOUR) with an added day, moved from 9:00 to
+    // 10:00 and a day later: the old rule's last day (Nov 5) becomes Nov 6,
+    // through its last second.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5"], {
         masterRecurrence: [
-          "RRULE:FREQ=DAILY;COUNT=5",
+          "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
           "RDATE;TZID=America/New_York:20261120T090000",
         ],
         newStart: nyDaily(4, 10),
         originalStart: nyDaily(3),
+        seriesStart: nyDaily(1),
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5, 20].map((day) => nyDaily(day)),
       })
-    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261107T045959Z"]);
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9;UNTIL=20261107T045959Z"]);
   });
 
   test("keeps an added day that's also the rule's last day", () => {
@@ -183,6 +192,7 @@ describe("splitting a series", () => {
         ],
         newStart: "2026-11-04",
         originalStart: "2026-11-03",
+        seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
         starts: [
           "2026-11-01",
@@ -192,6 +202,91 @@ describe("splitting a series", () => {
           "2026-11-05",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261106"]);
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
+  test("tells an added day that's a rule day from an earlier extra one", () => {
+    // Weekly Mon/Wed COUNT=4 (Nov 2, 4, 9, 11) plus an added Tue Nov 3 and
+    // an added Nov 11 that's also a rule day, split at Nov 4: three left.
+    expect(
+      carryCount(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4"], {
+        masterRecurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4",
+          "RDATE;VALUE=DATE:20261103,20261111",
+        ],
+        newStart: "2026-11-04",
+        originalStart: "2026-11-04",
+        seriesStart: "2026-11-02",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-11-02",
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-09",
+          "2026-11-11",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=3"]);
+    // A make-up day before the series and an added rule day.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "RDATE;VALUE=DATE:20261030,20261105",
+        ],
+        newStart: "2026-11-03",
+        originalStart: "2026-11-03",
+        seriesStart: "2026-11-01",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-10-30",
+          "2026-11-01",
+          "2026-11-02",
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-05",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+});
+
+describe("isRuleDay", () => {
+  const day = (iso: string) => Temporal.PlainDate.from(iso);
+  test("reads the rule parts the editors write", () => {
+    const start = day("2026-11-02");
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", start, day("2026-11-11"))
+    ).toBe(true);
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", start, day("2026-11-10"))
+    ).toBe(false);
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;INTERVAL=2", start, day("2026-11-09"))
+    ).toBe(false);
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;INTERVAL=2", start, day("2026-11-16"))
+    ).toBe(true);
+    expect(
+      isRuleDay("RRULE:FREQ=MONTHLY;BYDAY=-1FR", start, day("2026-11-27"))
+    ).toBe(true);
+    expect(
+      isRuleDay("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1", start, day("2026-11-30"))
+    ).toBe(true);
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
+        start,
+        day("2027-11-25")
+      )
+    ).toBe(true);
+    // Parts not read: can't tell.
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2",
+        start,
+        day("2026-11-09")
+      )
+    ).toBeNull();
   });
 });
