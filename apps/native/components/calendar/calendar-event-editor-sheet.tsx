@@ -1115,6 +1115,14 @@ function EventDateTimeRow({
       ? followStart({
           allDay: before.allDay,
           from: seriesDay(before.startDate, before.startTime),
+          fromTime: before.allDay
+            ? null
+            : timeInZone(
+                before.startDate,
+                before.startTime,
+                appTimeZone,
+                timeZone
+              ),
           recurrence: before.recurrence,
           timeZone,
           to: seriesDay(moved.startDate, moved.startTime),

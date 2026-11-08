@@ -41,6 +41,33 @@ function ruleTime(line: string, base: Temporal.PlainTime | null): string {
 }
 
 /**
+ * Whether `rule` meets at `time`: each of its BYHOUR / BYMINUTE / BYSECOND
+ * lists has that part, and a part it leaves out is the series' start's
+ * (`base`), any when that isn't known.
+ */
+function ruleMeetsAt(
+  rule: string,
+  time: Temporal.PlainTime,
+  base: Temporal.PlainTime | null
+): boolean {
+  const parts = new Map(
+    [...rule.matchAll(CLOCK_PART)].map((match) => [
+      match[1],
+      (match[2] ?? "").split(",").map(Number),
+    ])
+  );
+  const actual = [time.hour, time.minute, time.second];
+  const fallback = base ? [base.hour, base.minute, base.second] : null;
+  return ["BYHOUR", "BYMINUTE", "BYSECOND"].every((name, index) => {
+    const values = parts.get(name);
+    if (values) {
+      return values.includes(actual[index] ?? -1);
+    }
+    return !fallback || fallback[index] === actual[index];
+  });
+}
+
+/**
  * Whether a series meets more than once a day: a rule with several times
  * (BYHOUR=9,15) or a sub-daily frequency, or rules at different times
  * (one at 9:00, another at 15:00). Its times are then its own: they
@@ -540,10 +567,13 @@ export function moveSkippedDays(params: {
   recurrence: string[];
   seriesZone: string;
   to: Temporal.PlainDate;
+  /** The series' start time before the move, in its zone; null all day. */
+  fromTime?: Temporal.PlainTime | null;
   /** The new start's time in the series' zone; null for an all-day one. */
   toTime?: Temporal.PlainTime | null;
 }): string[] {
   const { from, newRule, oldRule, recurrence, seriesZone, to, toTime } = params;
+  const fromTime = params.fromTime ?? null;
   const freq = FREQ_PART.exec(newRule)?.[1] ?? "";
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (Temporal.PlainDate.compare(day, from) < 0) {
@@ -570,7 +600,17 @@ export function moveSkippedDays(params: {
   // The new start is the day the person picked: never left skipped (in a
   // rule with several times a day, only the start's own time is: a
   // skipped other time that day stays).
-  const severalADay = meetsSeveralTimesADay(recurrence);
+  const severalADay = meetsSeveralTimesADay(recurrence, fromTime);
+  // In a series that meets several times a day, a skipped time moves only
+  // if the moved rule meets then: another rule's (a 15:00 rule left on
+  // Mondays) stays with it.
+  const ownSkip = (value: RecurrenceValue) =>
+    !(severalADay && value.instant) ||
+    ruleMeetsAt(
+      oldRule,
+      value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
+      fromTime
+    );
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
       value &&
@@ -598,7 +638,9 @@ export function moveSkippedDays(params: {
     const read = list.values.map((value) =>
       readRecurrenceValue(value, list.zone, seriesZone)
     );
-    const moved = read.map((value) => (value ? placeOf(value.day) : null));
+    const moved = read.map((value) =>
+      value && ownSkip(value) ? placeOf(value.day) : null
+    );
     const dropped = read.map((value) => isNewStart(value));
     if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
       return [line];

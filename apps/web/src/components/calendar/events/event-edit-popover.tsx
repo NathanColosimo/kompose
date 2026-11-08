@@ -2414,6 +2414,7 @@ export function EventEditForm({
       allDay: values.allDay,
       from,
       recurrence: values.recurrence,
+      fromTime: seriesTimeOf(before),
       timeZone: seriesTimeZone,
       to,
       toTime: seriesTimeOf(values),

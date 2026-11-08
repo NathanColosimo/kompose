@@ -370,10 +370,12 @@ export function followStart(params: {
   recurrence: string[];
   timeZone: string;
   to: Temporal.PlainDate;
+  /** The start's time before the move, in `timeZone`; null all day. */
+  fromTime?: Temporal.PlainTime | null;
   /** The new start's time in `timeZone`; null for an all-day one. */
   toTime?: Temporal.PlainTime | null;
 }): string[] {
-  const { allDay, from, recurrence, timeZone, to, toTime } = params;
+  const { allDay, from, fromTime, recurrence, timeZone, to, toTime } = params;
   const rule = getPrimaryRecurrenceRule(recurrence);
   if (!rule || Temporal.PlainDate.compare(from, to) === 0) {
     return recurrence;
@@ -415,6 +417,7 @@ export function followStart(params: {
     oldRule: rule,
     recurrence:
       kept === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, kept),
+    fromTime,
     seriesZone: timeZone,
     to,
     toTime,
@@ -629,6 +632,10 @@ export function seriesRecurrenceForSave(params: {
           from,
           recurrence: masterRecurrence,
           timeZone,
+          fromTime: timeOfStart(
+            occurrence.originalStartTime ?? occurrence.start,
+            timeZone
+          ),
           to,
           toTime: timeOfStart(editedStart, timeZone),
         })

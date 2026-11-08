@@ -781,6 +781,45 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
+  test("moves only the moved rule's skipped times", () => {
+    const followed = (recurrence: string[], to: string, toTime: string) =>
+      followStart({
+        allDay: false,
+        from: Temporal.PlainDate.from("2026-11-09"),
+        fromTime: Temporal.PlainTime.from("09:00"),
+        recurrence,
+        timeZone: "America/New_York",
+        to: Temporal.PlainDate.from(to),
+        toTime: Temporal.PlainTime.from(toTime),
+      });
+    // Mondays 9:00 and 15:00 as two rules; the 9:00 one moves to Tuesdays.
+    // Its skipped Nov 16 9:00 moves to Nov 17; the 15:00 rule's skip stays.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
+          "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
+        ],
+        "2026-11-10",
+        "09:00"
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261117T090000,20261116T150000");
+    // BYHOUR=9 and BYHOUR=9;BYMINUTE=0 are one 9:00: moved onto Friday
+    // Nov 13 at 10:00, that day's skipped 9:00 is the picked start's.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+          "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0",
+          "EXDATE;TZID=America/New_York:20261113T090000",
+        ],
+        "2026-11-13",
+        "10:00"
+      ).some((line) => line.startsWith("EXDATE"))
+    ).toBe(false);
+  });
+
   test("carries the series' rule with a moved occurrence", () => {
     expect(after()).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=2SA"]);
   });
