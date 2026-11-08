@@ -69,6 +69,7 @@ import {
   eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
   seriesCutUnsure,
   seriesSplitBlock,
@@ -161,7 +162,14 @@ import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
-import { buildTemporalPayload, WEEKDAYS } from "./event-edit-utils";
+import {
+  buildTemporalPayload,
+  keptSeriesStart,
+  repeatForSeries,
+  seriesEdit,
+  startDay,
+  WEEKDAYS,
+} from "./event-edit-utils";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -219,6 +227,31 @@ function saveChanges(
   };
 }
 
+/**
+ * The scopes a pending save can't use, and the dialog's line saying why:
+ * the shared rules, plus a color set back to the calendar's, which only
+ * one occurrence can take for now (a series save can't clear its color
+ * until the server accepts a clear; tracked with #125).
+ */
+function saveScopeState(
+  pendingSave: PendingSave | null,
+  series: Parameters<typeof saveChanges>[1]
+): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  const changes = saveChanges(pendingSave, series);
+  const disabled = eventSaveDisabledScopes(changes);
+  if (!pendingSave?.colorReset) {
+    return { description: eventSaveDescription(changes), disabled };
+  }
+  return {
+    description:
+      "Going back to the calendar's color applies to this occurrence only. For the series, pick a color instead.",
+    disabled: { ...disabled, all: true, following: true },
+  };
+}
+
 export type CloseSaveRequest =
   | { type: "none" }
   /** The form can't be saved as is (it ends before it starts): stay open. */
@@ -241,6 +274,8 @@ export type CloseSaveRequest =
       dateMoved: boolean;
       /** Why Entire series would skip it (`repeatSkipsOccurrence`). */
       repeatSkips: "day" | "end" | null;
+      /** The color went back to the calendar's (`colorId` cleared). */
+      colorReset: boolean;
     }
   | {
       type: "create";
@@ -588,6 +623,7 @@ function RepeatEnds({
       <div className="grid grid-cols-3 gap-1.5">
         {RECURRENCE_ENDS.map((option) => (
           <Button
+            aria-pressed={pattern.end.type === option.value}
             className="h-8 text-xs"
             key={option.value}
             onClick={() => {
@@ -695,15 +731,11 @@ const RECURRENCE_ENDS = [
 ] as const;
 
 /** A recurring event's save, waiting on the scope dialog. */
-interface PendingSave {
-  calendarChanged?: { destinationCalendarId: string };
-  dateMoved: boolean;
-  defaultScope: RecurrenceScope;
-  hasDataEdits: boolean;
-  patternChanged: boolean;
-  repeatSkips: "day" | "end" | null;
-  variables: UpdateGoogleEventInput;
-}
+/** A recurring event's save, waiting for its scope. */
+type PendingSave = Omit<
+  Extract<CloseSaveRequest, { type: "save" }>,
+  "isRecurring" | "type"
+>;
 
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
@@ -726,8 +758,7 @@ type EventEditDialogAction =
       pendingSave: EventEditDialogState["pendingSave"];
     }
   | { type: "set-scope-dialog-open"; value: boolean }
-  | { type: "set-selected-scope"; value: RecurrenceScope }
-  | { type: "clear-pending-save" };
+  | { type: "set-selected-scope"; value: RecurrenceScope };
 
 const eventEditDialogInitialState: EventEditDialogState = {
   deleteDialogOpen: false,
@@ -764,10 +795,18 @@ function eventEditDialogReducer(
       return { ...state, scopeDialogOpen: action.value };
     case "set-selected-scope":
       return { ...state, selectedScope: action.value };
-    case "clear-pending-save":
-      return { ...state, pendingSave: null };
     default:
-      return state;
+      return action satisfies never;
+  }
+}
+
+/** The edits saved, but the move to another calendar that followed didn't. */
+class SavedNotMovedError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "Saved your changes, but couldn't move the event to the other calendar. Save to try again.",
+      { cause }
+    );
   }
 }
 
@@ -865,18 +904,21 @@ export function EventEditPopover({
       savingRef.current = true;
       setIsSaving(true);
       setSaveFailure(null);
-      const settle = (saved: boolean) => {
+      const settle = (failure: string | null) => {
         savingRef.current = false;
         setIsSaving(false);
-        if (saved) {
-          setOpen(false);
+        if (failure) {
+          setSaveFailure(failure);
         } else {
-          setSaveFailure(failureMessage);
+          setOpen(false);
         }
       };
       save.then(
-        () => settle(true),
-        () => settle(false)
+        () => settle(null),
+        (error: unknown) =>
+          settle(
+            error instanceof SavedNotMovedError ? error.message : failureMessage
+          )
       );
     },
     [setOpen]
@@ -906,9 +948,19 @@ export function EventEditPopover({
                 recurrence: sent,
                 timeZone,
               }));
+        const edited = { ...edits.variables.event, recurrence };
         await updateEvent.mutateAsync({
           ...edits.variables,
-          event: { ...edits.variables.event, recurrence },
+          // For the series, only what the user changed: an occurrence
+          // rescheduled or renamed on its own keeps that to itself.
+          event:
+            scope !== "this" && event?.recurringEventId
+              ? seriesEdit({
+                  edited,
+                  occurrence: event,
+                  series: seriesMaster.data ?? undefined,
+                })
+              : edited,
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
           // The editor says what failed, beside Save.
@@ -917,13 +969,19 @@ export function EventEditPopover({
         });
       }
       if (edits.calendarChanged && event) {
-        await moveEvent.mutateAsync({
+        const move = moveEvent.mutateAsync({
           accountId,
           calendarId,
           destinationCalendarId: edits.calendarChanged.destinationCalendarId,
           eventId: event.id,
           scope,
         });
+        // The edits are in by now: a failed move mustn't say they aren't.
+        await (edits.hasDataEdits
+          ? move.catch((cause: unknown) => {
+              throw new SavedNotMovedError(cause);
+            })
+          : move);
       }
     },
     [
@@ -931,8 +989,7 @@ export function EventEditPopover({
       calendarId,
       event,
       moveEvent,
-      seriesMaster.data?.recurrence,
-      seriesMaster.data?.start,
+      seriesMaster.data,
       timeZone,
       updateEvent,
     ]
@@ -942,18 +999,19 @@ export function EventEditPopover({
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
-    eventSaveDisabledScopes(saveChanges(pendingSave, seriesStatus))
+    saveScopeState(pendingSave, seriesStatus).disabled
   );
   const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
       return;
     }
-    dispatchDialog({ type: "clear-pending-save" });
+    // The save stays pending until the next one replaces it, so the
+    // dialog's words don't change as it fades.
     holdForSave(saveEdits(pendingSave, saveScope), SAVE_FAILURE_MESSAGE);
   }, [holdForSave, pendingSave, saveEdits, saveScope]);
 
   const handleDelete = useCallback(() => {
-    if (readOnly || savingRef.current) {
+    if (savingRef.current) {
       return;
     }
     if (!event) {
@@ -966,7 +1024,7 @@ export function EventEditPopover({
     } else {
       dispatchDialog({ type: "open-simple-delete" });
     }
-  }, [event, readOnly, setOpen]);
+  }, [event, setOpen]);
 
   const confirmSimpleDelete = useCallback(() => {
     if (!event) {
@@ -1010,10 +1068,6 @@ export function EventEditPopover({
     if (savingRef.current) {
       return;
     }
-    if (readOnly) {
-      setOpen(false);
-      return;
-    }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
     if (request.type === "invalid") {
       // The form says why (it, or its repeat, ends before it starts).
@@ -1045,6 +1099,7 @@ export function EventEditPopover({
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
+            colorReset: request.colorReset,
             dateMoved: request.dateMoved,
             repeatSkips: request.repeatSkips,
             defaultScope: request.calendarChanged
@@ -1061,7 +1116,7 @@ export function EventEditPopover({
 
       holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
     }
-  }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
+  }, [createEvent, holdForSave, saveEdits, setOpen]);
 
   const dialogOver =
     scopeDialogOpen || deleteDialogOpen || simpleDeleteConfirmOpen;
@@ -1090,9 +1145,9 @@ export function EventEditPopover({
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
           align={align}
-          className="max-h-(--radix-popover-content-available-height) w-[420px] space-y-3 overflow-y-auto p-4"
-          // Fits the space Radix measured, scrolling long notes rather than
-          // running off screen.
+          className="max-h-(--radix-popover-content-available-height) w-[420px] max-w-[calc(100vw-1rem)] space-y-3 overflow-y-auto p-4"
+          // Fits the space Radix measured and the window's width, scrolling
+          // long notes rather than running off screen.
           collisionPadding={8}
           onEscapeKeyDown={(e) => {
             e.preventDefault();
@@ -1105,9 +1160,15 @@ export function EventEditPopover({
               handleCancel();
             }
           }}
+          // Editing, focus goes to the editor itself rather than its title
+          // (selected, a keystroke would replace it): Tab starts inside,
+          // and the calendar's shortcuts stay out of the dialog.
           onOpenAutoFocus={(e) => {
             if (mode === "edit") {
               e.preventDefault();
+              if (e.currentTarget instanceof HTMLElement) {
+                e.currentTarget.focus();
+              }
             }
           }}
           side={side}
@@ -1136,13 +1197,8 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={eventSaveDescription(
-          saveChanges(pendingSave, seriesStatus)
-        )}
-        disabledScopes={eventSaveDisabledScopes(
-          saveChanges(pendingSave, seriesStatus)
-        )}
-        onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
+        description={saveScopeState(pendingSave, seriesStatus).description}
+        disabledScopes={saveScopeState(pendingSave, seriesStatus).disabled}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -1151,6 +1207,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-selected-scope", value })
         }
         open={scopeDialogOpen}
+        options={RECURRENCE_SCOPE_OPTIONS}
         subject={savedSubject(pendingSave, event, timeZone)}
         title={SCOPE_DIALOG_COPY.saveEvent.title}
         value={saveScope}
@@ -1172,6 +1229,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-delete-scope", value })
         }
         open={deleteDialogOpen}
+        options={RECURRENCE_SCOPE_OPTIONS}
         title={SCOPE_DIALOG_COPY.deleteEvent.title}
         value={deleteChoice}
       />
@@ -1285,6 +1343,39 @@ function editedPattern(
   };
 }
 
+/** What the scope dialog needs to know about an edit to an existing event. */
+function scopeFacts(
+  values: EventFormValues,
+  editedStart: GoogleEvent["start"],
+  ctx: {
+    event: GoogleEvent | undefined;
+    masterStart?: GoogleEvent["start"];
+    timeZone: string;
+  }
+): Pick<PendingSave, "colorReset" | "dateMoved" | "repeatSkips"> {
+  const { event } = ctx;
+  if (!event) {
+    return { colorReset: false, dateMoved: false, repeatSkips: null };
+  }
+  return {
+    colorReset: Boolean(event.colorId) && !values.colorId,
+    dateMoved: occurrenceDayMoved({
+      editedStart,
+      occurrence: event,
+      timeZone: ctx.timeZone,
+    }),
+    repeatSkips: repeatSkipsOccurrence({
+      // The start a series save sends (seriesEdit): a rescheduled
+      // occurrence left where it is saves from its place in the series.
+      editedStart: keptSeriesStart(editedStart, event) ?? editedStart,
+      occurrence: event,
+      recurrence: values.recurrence,
+      seriesStart: ctx.masterStart,
+      timeZone: ctx.timeZone,
+    }),
+  };
+}
+
 function buildEditPayload(
   values: EventFormValues,
   ctx: {
@@ -1375,23 +1466,8 @@ function buildEditPayload(
       : undefined,
     defaultScope,
     hasDataEdits: ctx.hasEdits,
-    dateMoved: ctx.event
-      ? occurrenceDayMoved({
-          editedStart: variables.event.start,
-          occurrence: ctx.event,
-          timeZone: ctx.timeZone,
-        })
-      : false,
+    ...scopeFacts(values, variables.event.start, ctx),
     isRecurring,
-    repeatSkips: ctx.event
-      ? repeatSkipsOccurrence({
-          editedStart: variables.event.start,
-          occurrence: ctx.event,
-          recurrence: values.recurrence,
-          seriesStart: ctx.masterStart,
-          timeZone: ctx.timeZone,
-        })
-      : null,
     patternChanged,
     type: "save",
     variables,
@@ -1401,12 +1477,10 @@ function buildEditPayload(
 function MeetingSection({
   meetingLink,
   isConferencePending,
-  readOnly = false,
   onCreateMeeting,
 }: {
   meetingLink: MeetingLink | null;
   isConferencePending: boolean;
-  readOnly?: boolean;
   onCreateMeeting: () => void;
 }) {
   if (meetingLink) {
@@ -1438,10 +1512,6 @@ function MeetingSection({
     );
   }
 
-  if (readOnly) {
-    return null;
-  }
-
   return (
     <div className="space-y-2">
       <Label className="font-medium text-muted-foreground text-xs">
@@ -1465,7 +1535,6 @@ function EventColorAndTitleRow({
   selectedColorId,
   calendarFallbackColor,
   isCreateMode,
-  readOnly = false,
   summary,
   onSelectColor,
   onSummaryChange,
@@ -1474,7 +1543,6 @@ function EventColorAndTitleRow({
   selectedColorId: string | undefined;
   calendarFallbackColor: string | undefined;
   isCreateMode: boolean;
-  readOnly?: boolean;
   summary: string;
   onSelectColor: (colorKey: string | undefined) => void;
   onSummaryChange: (value: string) => void;
@@ -1492,10 +1560,8 @@ function EventColorAndTitleRow({
             aria-label="Pick color"
             className={cn(
               "size-8 rounded-full border-2 shadow-sm transition",
-              readOnly ? "cursor-default" : "",
               selectedColorId ? "border-transparent" : "border-muted"
             )}
-            disabled={readOnly}
             style={{ background: displayColor }}
             type="button"
           />
@@ -1511,7 +1577,6 @@ function EventColorAndTitleRow({
                     "size-7 rounded-full border-2 transition",
                     isSelected ? "ring-2 ring-primary ring-offset-2" : ""
                   )}
-                  disabled={readOnly}
                   key={colorKey}
                   onClick={(e) => {
                     e.preventDefault();
@@ -1527,7 +1592,6 @@ function EventColorAndTitleRow({
             })}
             <Button
               className="size-7 p-0 text-[10px]"
-              disabled={readOnly}
               onClick={() => onSelectColor(undefined)}
               type="button"
               variant="ghost"
@@ -1542,7 +1606,6 @@ function EventColorAndTitleRow({
         className="flex-1"
         onChange={(e) => onSummaryChange(e.target.value)}
         placeholder={isCreateMode ? "Event title (required)" : "Event title"}
-        readOnly={readOnly}
         value={summary}
       />
     </div>
@@ -1691,7 +1754,11 @@ function RepeatControl({
           {waiting ? <span className="truncate">{ruleText}</span> : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[360px]">
+      <PopoverContent
+        align="end"
+        className="w-[360px] max-w-[calc(100vw-1rem)]"
+        collisionPadding={8}
+      >
         <RecurrenceEditor
           allDay={allDay}
           endFrom={
@@ -1736,7 +1803,6 @@ function EventAllDayAndRecurrenceRow({
   recurrenceFailed = false,
   recurrenceWaitReason,
   onRetryRecurrence,
-  readOnly = false,
   recurrenceRule,
   seriesStart,
   seriesTimeZone,
@@ -1756,7 +1822,6 @@ function EventAllDayAndRecurrenceRow({
   /** Why the repeat waits (offline), for its tooltip. */
   recurrenceWaitReason?: string;
   onRetryRecurrence?: () => void;
-  readOnly?: boolean;
   recurrenceRule: string | undefined;
   /**
    * The series' start day in its own zone, for the rule's words and the
@@ -1797,36 +1862,35 @@ function EventAllDayAndRecurrenceRow({
     setAnnounced(announcement);
   }, [announcement]);
   return (
-    <div className="flex items-center gap-2">
-      {/* Read-only: the dates above already say whether it's all day. */}
-      {readOnly ? null : (
-        <Button
-          className="gap-2 text-xs"
-          onClick={onToggleAllDay}
-          size="sm"
-          type="button"
-          variant="outline"
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        aria-pressed={allDay}
+        className="gap-2 text-xs"
+        onClick={onToggleAllDay}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <div
+          aria-hidden
+          className={cn(
+            "flex size-4 items-center justify-center rounded border transition-colors",
+            allDay
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/50 bg-transparent"
+          )}
         >
-          <div
-            className={cn(
-              "flex size-4 items-center justify-center rounded border transition-colors",
-              allDay
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-muted-foreground/50 bg-transparent"
-            )}
-          >
-            {allDay ? <Check className="size-3" /> : null}
-          </div>
-          All day
-        </Button>
-      )}
+          {allDay ? <Check className="size-3" /> : null}
+        </div>
+        All day
+      </Button>
       {/* A known rule stays, dimmed, while it can't be used; with none
           known, the wait or the retry stands in for the chip. */}
       {waitShown || (retryShown && !ruleLabel) ? null : (
         <RepeatControl
           allDay={allDay}
           city={city}
-          disabled={readOnly || recurrenceLoading}
+          disabled={recurrenceLoading}
           endFrom={endFrom}
           loading={recurrenceLoading}
           onRecurrenceChange={onRecurrenceChange}
@@ -1865,15 +1929,8 @@ function EventAllDayAndRecurrenceRow({
           onRetry={onRetryRecurrence}
         />
       ) : null}
-      <Select
-        disabled={readOnly}
-        onValueChange={onCalendarChange}
-        value={calendarValue}
-      >
-        <SelectTrigger
-          className="ml-auto h-8 w-auto min-w-28 max-w-44 shrink-0 gap-1.5 px-2 text-xs"
-          disabled={readOnly}
-        >
+      <Select onValueChange={onCalendarChange} value={calendarValue}>
+        <SelectTrigger className="ml-auto h-8 w-auto min-w-28 max-w-44 shrink-0 gap-1.5 px-2 text-xs">
           <SelectValue placeholder="Calendar" />
         </SelectTrigger>
         <SelectContent>
@@ -1902,21 +1959,15 @@ function EventAllDayAndRecurrenceRow({
 /** The notes field; left out of a read-only event when empty. */
 function EventDescriptionField({
   onChange,
-  readOnly,
   value,
 }: {
   onChange: (value: string) => void;
-  readOnly: boolean;
   value: string | undefined;
 }) {
-  if (readOnly && !value?.trim()) {
-    return null;
-  }
   return (
     <Textarea
       onChange={(e) => onChange(e.target.value)}
       placeholder="Add details..."
-      readOnly={readOnly}
       value={value}
     />
   );
@@ -1928,7 +1979,6 @@ function EventLocationCombobox({
   isSearching,
   mapsUrl,
   locationPopoverOpen,
-  readOnly = false,
   onInputValueChange,
   onOpenChange,
   onValueChange,
@@ -1944,24 +1994,17 @@ function EventLocationCombobox({
   isSearching: boolean;
   mapsUrl: string | null;
   locationPopoverOpen: boolean;
-  readOnly?: boolean;
   onInputValueChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
   onValueChange: (value: string | null) => void;
   onFocusInput: () => void;
 }) {
-  // A read-only event leaves out empty fields rather than showing inputs
-  // that look editable.
-  if (readOnly && !location.trim()) {
-    return null;
-  }
   return (
     <div className="space-y-2">
       <Label className="font-medium text-muted-foreground text-xs">
         Location
       </Label>
       <Combobox
-        disabled={readOnly}
         inputValue={location}
         onInputValueChange={onInputValueChange}
         onOpenChange={onOpenChange}
@@ -1972,7 +2015,6 @@ function EventLocationCombobox({
           <div className="flex-1">
             <ComboboxInput
               className="w-full"
-              disabled={readOnly}
               onFocus={onFocusInput}
               placeholder="Where?"
               showClear={Boolean(location)}
@@ -2014,6 +2056,57 @@ function EventLocationCombobox({
       </Combobox>
     </div>
   );
+}
+
+/**
+ * The rule the Repeat shows: what Save sends for the series
+ * (`repeatForSeries`), so an occurrence moved from a Wednesday to a
+ * Thursday shows "Weekly on Thu". With it, the start a series save sends
+ * when the user left a rescheduled occurrence's start alone (its place in
+ * the series, `keptSeriesStart`), which a new repeat counts its days from.
+ */
+function shownRepeat(
+  values: ReturnType<typeof resolveWatchedDefaults>,
+  ctx: {
+    edited: boolean;
+    event: GoogleEvent | undefined;
+    master: GoogleEvent | undefined;
+    timeZone: string;
+  }
+): {
+  followsMove: boolean;
+  keptStart: GoogleEvent["start"] | null;
+  recurrence: string[];
+} {
+  const start = buildTemporalPayload(
+    {
+      ...values,
+      endDate: values.endDate ?? null,
+      startDate: values.startDate ?? null,
+    },
+    (from, to) => ({ end: to, start: from })
+  )?.startPayload;
+  if (!start) {
+    return {
+      followsMove: false,
+      keptStart: null,
+      recurrence: values.recurrence,
+    };
+  }
+  const editedStart = withEditedTime(ctx.event?.start, start);
+  return {
+    ...repeatForSeries({
+      edited: ctx.edited,
+      editedStart,
+      master: ctx.master,
+      occurrence: ctx.event,
+      recurrence: values.recurrence,
+      timeZone: ctx.timeZone,
+    }),
+    keptStart: ctx.event?.recurringEventId
+      ? keptSeriesStart(editedStart, ctx.event)
+      : null,
+  };
 }
 
 function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
@@ -2298,7 +2391,6 @@ function saveBlocked(
 
 function EventFormActionRow({
   isCreateMode,
-  readOnly = false,
   saveDisabled = false,
   saving = false,
   onDelete,
@@ -2306,7 +2398,6 @@ function EventFormActionRow({
   onSave,
 }: {
   isCreateMode: boolean;
-  readOnly?: boolean;
   saveDisabled?: boolean;
   /** Saving: the row waits, and Save says so. */
   saving?: boolean;
@@ -2318,7 +2409,7 @@ function EventFormActionRow({
     <>
       <Separator />
       <div className="flex items-center gap-2">
-        {isCreateMode || readOnly ? null : (
+        {isCreateMode ? null : (
           <Button
             className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
             onClick={onDelete}
@@ -2332,18 +2423,16 @@ function EventFormActionRow({
         )}
         <div className="ml-auto flex gap-2">
           <Button onClick={onCancel} size="sm" type="button" variant="ghost">
-            {readOnly ? "Close" : "Cancel"}
+            Cancel
           </Button>
-          {readOnly ? null : (
-            <Button
-              disabled={saveDisabled}
-              onClick={onSave}
-              size="sm"
-              type="button"
-            >
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          )}
+          <Button
+            disabled={saveDisabled}
+            onClick={onSave}
+            size="sm"
+            type="button"
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
         </div>
       </div>
     </>
@@ -2684,9 +2773,6 @@ export function EventEditForm({
   };
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
-    if (readOnly) {
-      return;
-    }
     if (!value) {
       hasUserEditedRef.current = true;
       setValue(field, "", { shouldDirty: true });
@@ -2713,9 +2799,6 @@ export function EventEditForm({
 
   const handleLocationInputChange = useCallback(
     (value: string) => {
-      if (readOnly) {
-        return;
-      }
       hasUserEditedRef.current = true;
       setValue("location", value, { shouldDirty: true });
       if (value.trim().length >= 2) {
@@ -2724,14 +2807,11 @@ export function EventEditForm({
         setLocationOpen(false);
       }
     },
-    [readOnly, setValue]
+    [setValue]
   );
 
   const handleLocationValueChange = useCallback(
     (value: string | null) => {
-      if (readOnly) {
-        return;
-      }
       if (!value) {
         return;
       }
@@ -2739,15 +2819,11 @@ export function EventEditForm({
       setValue("location", value, { shouldDirty: true });
       setLocationOpen(false);
     },
-    [readOnly, setValue]
+    [setValue]
   );
 
   const handleLocationOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (readOnly) {
-        setLocationOpen(false);
-        return;
-      }
       if (!nextOpen) {
         setLocationOpen(false);
         return;
@@ -2756,13 +2832,10 @@ export function EventEditForm({
         setLocationOpen(true);
       }
     },
-    [locationQuery.length, readOnly]
+    [locationQuery.length]
   );
 
   const handleCreateMeeting = useCallback(() => {
-    if (readOnly) {
-      return;
-    }
     if (!canCreateMeeting) {
       return;
     }
@@ -2773,7 +2846,7 @@ export function EventEditForm({
     if (!isCreateMode) {
       onSave();
     }
-  }, [canCreateMeeting, isCreateMode, onSave, readOnly]);
+  }, [canCreateMeeting, isCreateMode, onSave]);
 
   // The repeat differs from the series' (what a save sends).
   const repeatIsChanged = repeatChanged({
@@ -2792,9 +2865,6 @@ export function EventEditForm({
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      if (readOnly) {
-        return { type: "none" };
-      }
       // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
       // comes through here, so none can write an end before the start.
       if (saveBlocked(values, repeatEndsOn)) {
@@ -2835,7 +2905,6 @@ export function EventEditForm({
       calendar?.calendar.timeZone,
       masterQuery.data,
       pendingConference,
-      readOnly,
       repeatEndsOn,
     ]
   );
@@ -2886,7 +2955,13 @@ export function EventEditForm({
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
+  const shown = shownRepeat(watchedValues, {
+    edited: recurrenceEditedRef.current,
+    event,
+    master: masterQuery.data ?? undefined,
+    timeZone,
+  });
+  const recurrenceRule = getPrimaryRecurrenceRule(shown.recurrence);
   // Any editable event can repeat, a one-off one included. While an
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
@@ -2925,12 +3000,6 @@ export function EventEditForm({
   return (
     <HeldFieldset className="min-w-0 space-y-3" saving={isSaving}>
       {headerContent ? <div>{headerContent}</div> : null}
-      {readOnly && readOnlyReason ? (
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-          <p className="text-muted-foreground">{readOnlyReason}</p>
-        </div>
-      ) : null}
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}
@@ -2943,7 +3012,6 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("summary", value, { shouldDirty: true });
         }}
-        readOnly={readOnly}
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
@@ -2952,7 +3020,6 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("description", value, { shouldDirty: true });
         }}
-        readOnly={readOnly}
         value={watchedValues.description}
       />
       <Separator />
@@ -2990,7 +3057,6 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
-        readOnly={readOnly}
         recurrenceFailed={masterQuery.ruleFailed}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
@@ -2998,9 +3064,13 @@ export function EventEditForm({
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
         seriesStart={repeatCountingDay({
-          changed: repeatIsChanged,
+          changed: repeatIsChanged || shown.followsMove,
           event,
-          formDay: seriesDayOf(watchedValues),
+          // A series save from a rescheduled occurrence left where it is
+          // starts at its place in the series; a new repeat counts from it.
+          formDay: shown.keptStart
+            ? startDay(shown.keptStart, seriesTimeZone)
+            : seriesDayOf(watchedValues),
           seriesStart: masterQuery.data?.start,
           timeZone: seriesTimeZone,
         })}
@@ -3019,7 +3089,6 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
-                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="size-4" />
@@ -3033,7 +3102,8 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
-                  disabled={readOnly}
+                  // Opens on the event's month, not today's.
+                  defaultMonth={field.value ?? undefined}
                   mode="single"
                   onSelect={(date) => {
                     if (date && getValues("startDate")) {
@@ -3067,7 +3137,6 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
-                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="size-4" />
@@ -3081,7 +3150,8 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
-                  disabled={readOnly}
+                  // Opens on the event's month, not today's.
+                  defaultMonth={field.value ?? undefined}
                   mode="single"
                   onSelect={(date) => {
                     const next = date ?? null;
@@ -3103,13 +3173,11 @@ export function EventEditForm({
       {watchedValues.allDay ? null : (
         <div className="grid grid-cols-2 gap-2">
           <TimePicker
-            disabled={readOnly}
             onChange={(v) => handleTimeChange("startTime", v)}
             placeholder="Start time"
             value={startTimeValue}
           />
           <TimePicker
-            disabled={readOnly}
             onChange={(v) => handleTimeChange("endTime", v)}
             placeholder="End time"
             value={endTimeValue}
@@ -3121,7 +3189,6 @@ export function EventEditForm({
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
         onCreateMeeting={handleCreateMeeting}
-        readOnly={readOnly}
       />
       <EventLocationCombobox
         isSearching={isLocationSearching}
@@ -3136,7 +3203,6 @@ export function EventEditForm({
         onInputValueChange={handleLocationInputChange}
         onOpenChange={handleLocationOpenChange}
         onValueChange={handleLocationValueChange}
-        readOnly={readOnly}
         suggestions={locationSuggestions}
       />
       <SaveFailure message={saveFailure} />
@@ -3146,7 +3212,6 @@ export function EventEditForm({
           onCancel={onCancel}
           onDelete={onDelete}
           onSave={onSave}
-          readOnly={readOnly}
           saveDisabled={saveBlocked(watchedValues, repeatEndsOn)}
           saving={isSaving}
         />

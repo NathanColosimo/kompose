@@ -36,8 +36,10 @@ import {
   type EventSaveChanges,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
   seriesSplitBlock,
+  TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -48,16 +50,6 @@ import {
   type ScopeDialogSubject,
 } from "@/components/recurrence-scope-dialog";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
@@ -71,6 +63,7 @@ import {
   buildGoogleResizeUpdate,
   buildTaskMoveUpdate,
   buildTaskResizeUpdate,
+  type TaskDropUpdate,
 } from "./dnd/drop-handlers";
 import {
   clipToDay,
@@ -81,12 +74,31 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
+import { seriesEdit } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
+import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
 
+/** A recurring task's drop, waiting for its scope. */
 interface PendingTaskUpdate {
-  id: string;
-  task: object;
+  subject: ScopeDialogSubject;
+  update: TaskDropUpdate;
+}
+
+/** "Standup → Mon, Nov 9 · 9 – 9:15 AM": a dropped task and its new time. */
+function taskDropSubject(
+  title: string,
+  update: TaskDropUpdate,
+  moved: boolean,
+  timeZone: string
+): ScopeDialogSubject {
+  const { durationMinutes, startDate, startTime } = update.task;
+  const start = startDate.toZonedDateTime({ plainTime: startTime, timeZone });
+  return {
+    moved,
+    name: title || "(No title)",
+    when: formatEventWhen(start, start.add({ minutes: durationMinutes })),
+  };
 }
 
 /** "Retro → Mon, Nov 9 · 4 – 4:45 PM": a dropped occurrence and its new time. */
@@ -173,7 +185,7 @@ function dragReducer(state: DragState, action: DragAction): DragState {
     case "reset":
       return initialDragState;
     default:
-      return state;
+      return action satisfies never;
   }
 }
 
@@ -193,19 +205,25 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const setDropSlot = useSetAtom(dropSlotAtom);
   const setMovingItemKey = useSetAtom(movingItemKeyAtom);
 
+  // A recurring task's or event's move or resize waits for its scope, as
+  // in the editors. Each stays after its dialog closes, so the dialog's
+  // words don't change as it fades; the next drop replaces it.
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
     null
   );
-  // A recurring event's move or resize waits for its scope, as in the
-  // editor: a new day applies to this occurrence or from it on.
+  const [taskScope, setTaskScope] = useState<UpdateScope>("this");
+  // For an event, a new day applies to this occurrence or from it on.
   const [pendingGoogleUpdate, setPendingGoogleUpdate] =
     useState<PendingGoogleUpdate | null>(null);
   /** The user's own pick in the drop's scope dialog; null until they pick. */
   const [googlePick, setGooglePick] = useState<RecurrenceScope | null>(null);
+  const [scopeDialog, setScopeDialog] = useState<"google" | "task" | null>(
+    null
+  );
   const pendingMaster = useRecurringEventMaster({
     accountId: pendingGoogleUpdate?.update.accountId ?? "",
     calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
-    enabled: pendingGoogleUpdate !== null,
+    enabled: scopeDialog === "google",
     event: pendingGoogleUpdate?.occurrence ?? null,
   });
 
@@ -246,13 +264,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       // A dated series occurrence asks this-or-following; one moved to the
       // inbox has nothing following it.
       if (task.seriesMasterId && task.startDate) {
-        setPendingUpdate({ id: update.id, task: update.task });
+        setPendingUpdate({
+          subject: taskDropSubject(task.title, update, true, timeZone),
+          update,
+        });
+        setTaskScope("this");
+        setScopeDialog("task");
         return;
       }
 
       updateTask.mutate(update);
     },
-    [updateTask]
+    [updateTask, timeZone]
   );
 
   /** Today keeps a date without a time; other sidebar drops return the task to Inbox. */
@@ -308,7 +331,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
 
       if (payload.task.seriesMasterId && payload.task.startDate) {
-        setPendingUpdate({ id: update.id, task: update.task });
+        setPendingUpdate({
+          subject: taskDropSubject(payload.task.title, update, false, timeZone),
+          update,
+        });
+        setTaskScope("this");
+        setScopeDialog("task");
         return;
       }
 
@@ -326,6 +354,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (data.event.recurringEventId) {
         setGooglePick(null);
         setPendingGoogleUpdate({ moved: true, occurrence: data.event, update });
+        setScopeDialog("google");
         return;
       }
       updateGoogleEventMutation.mutate(update);
@@ -352,6 +381,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           occurrence: data.event,
           update,
         });
+        setScopeDialog("google");
         return;
       }
 
@@ -507,7 +537,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         height,
         left: columnRect.left,
         top: columnRect.top + (startMinutes / 60) * PIXELS_PER_HOUR,
-        width: columnRect.width,
+        // As wide as the blocks, not over the column's free strip.
+        width: columnRect.width - COLUMN_FREE_STRIP,
       };
     },
     []
@@ -706,24 +737,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [clearPreview, computePreviewForDrag, setDropSlot]
   );
 
-  const handleScopeSelect = useCallback(
-    (scope: UpdateScope) => {
-      if (!pendingUpdate) {
-        return;
-      }
-      updateTask.mutate({
-        id: pendingUpdate.id,
-        scope,
-        task: pendingUpdate.task,
-      });
-      setPendingUpdate(null);
-    },
-    [pendingUpdate, updateTask]
-  );
-
-  const handleScopeDialogClose = useCallback(() => {
-    setPendingUpdate(null);
-  }, []);
+  const confirmTaskScope = useCallback(() => {
+    if (pendingUpdate) {
+      updateTask.mutate({ ...pendingUpdate.update, scope: taskScope });
+    }
+  }, [pendingUpdate, taskScope, updateTask]);
 
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
@@ -771,10 +789,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           });
     updateGoogleEventMutation.mutate({
       ...update,
-      event: { ...update.event, recurrence },
+      // For the series, only the new time (and a rule following a moved
+      // day): an occurrence renamed or rescheduled on its own keeps that.
+      event:
+        googleScope === "this"
+          ? update.event
+          : seriesEdit({
+              edited: { ...update.event, recurrence },
+              occurrence,
+              series: pendingMaster.data ?? undefined,
+            }),
       recurrenceScope: googleScope,
     });
-    setPendingGoogleUpdate(null);
   }, [
     googleScope,
     pendingGoogleUpdate,
@@ -830,15 +856,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         disabledScopes={
           googleSaveChanges ? eventSaveDisabledScopes(googleSaveChanges) : {}
         }
-        onCancel={() => setPendingGoogleUpdate(null)}
         onConfirm={confirmGoogleScope}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingGoogleUpdate(null);
-          }
-        }}
+        onOpenChange={(open) => setScopeDialog(open ? "google" : null)}
         onValueChange={setGooglePick}
-        open={pendingGoogleUpdate !== null}
+        open={scopeDialog === "google"}
+        options={RECURRENCE_SCOPE_OPTIONS}
         subject={
           pendingGoogleUpdate
             ? droppedSubject(pendingGoogleUpdate, timeZone)
@@ -848,30 +870,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         value={googleScope}
       />
 
-      <AlertDialog
-        onOpenChange={(open) => !open && handleScopeDialogClose()}
-        open={pendingUpdate !== null}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {SCOPE_DIALOG_COPY.saveTask.title}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {SCOPE_DIALOG_COPY.saveTask.description}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleScopeSelect("this")}>
-              Only this occurrence
-            </AlertDialogAction>
-            <AlertDialogAction onClick={() => handleScopeSelect("following")}>
-              This and following
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RecurrenceScopeDialog
+        description={SCOPE_DIALOG_COPY.saveTask.description}
+        onConfirm={confirmTaskScope}
+        onOpenChange={(open) => setScopeDialog(open ? "task" : null)}
+        onValueChange={setTaskScope}
+        open={scopeDialog === "task"}
+        options={TASK_UPDATE_SCOPE_OPTIONS}
+        subject={pendingUpdate?.subject}
+        title={SCOPE_DIALOG_COPY.saveTask.title}
+        value={taskScope}
+      />
     </>
   );
 }
