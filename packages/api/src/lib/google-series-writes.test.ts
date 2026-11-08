@@ -251,9 +251,10 @@ describe("This and following", () => {
       request.url.pathname.endsWith("/events")
     );
     expect(list?.url.searchParams.get("iCalUID")).toBe("series@google.com");
+    // Skipped at 10:00 (Google takes it in UTC).
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=MO",
-      "EXDATE;TZID=America/New_York:20261130T100000",
+      "EXDATE:20261130T150000Z",
     ]);
   });
 
@@ -713,9 +714,10 @@ describe("what Google keeps as an occurrence's own", () => {
       })
     );
     expect(Exit.isSuccess(exit)).toBe(true);
+    // Skipped at 10:00 (Google takes it in UTC).
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=MO",
-      "EXDATE;TZID=America/New_York:20261130T100000",
+      "EXDATE:20261130T150000Z",
     ]);
   });
 
@@ -1665,6 +1667,39 @@ describe("an Entire series time change, a deleted meeting also an added day", ()
       "RRULE:FREQ=WEEKLY;BYDAY=MO",
       "RDATE;TZID=America/New_York:20261130T090000",
       "EXDATE;TZID=America/New_York:20261130T090000,20261130T100000",
+    ]);
+  });
+});
+
+describe("an Entire series edit that moves the rule's own hour with the start", () => {
+  test("keeps a deleted occurrence skipped at the new time", async () => {
+    // Mondays at 9:00 written with BYHOUR=9; Nov 30 deleted on its own.
+    // Made daily at 10:00 with the rule's hour sent along (BYHOUR=10):
+    // one time a day, so the skip moves to 10:00.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9"],
+    };
+    const deleted: Event = {
+      ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=DAILY;BYHOUR=10"],
+            start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    // Skipped at 10:00 (Google takes it in UTC).
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=10",
+      "EXDATE:20261130T150000Z",
     ]);
   });
 });

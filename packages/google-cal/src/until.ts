@@ -1060,9 +1060,11 @@ export function matchRecurrenceToStart(
             return true;
           }
           const clock = at.toZonedDateTimeISO(timeZone).toPlainTime();
+          // A day a rule can't be read for may be its: a skip where
+          // nothing meets does nothing, one missed brings a meeting back.
           return rules.some(
             (rule) =>
-              isRuleDay(rule, baseDay, value.day) === true &&
+              isRuleDay(rule, baseDay, value.day) !== false &&
               !endedBefore(rule, baseDay, value.day, timeZone) &&
               ruleAtTime(rule, clock, base)
           );

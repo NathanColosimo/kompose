@@ -107,6 +107,48 @@ function repeats(recurrence: string[] | undefined): boolean {
 }
 
 /**
+ * Occurrences deleted on their own (`cancelled`, original starts) as
+ * skips for a series that now starts at `start`: in a series meeting once
+ * a day, each day's meeting moves to the new start's time, and so does
+ * its skip, whatever rule the edit sends (BYHOUR=10 sent with a 10:00
+ * start reads as a time of its own against the old start). One that was
+ * an added (RDATE) meeting keeps its own skip too, as that one keeps its
+ * time. Unchanged otherwise.
+ */
+function skipsAtNewTime(
+  cancelled: string[],
+  master: Event,
+  start: Event["start"]
+): string[] {
+  const zone = seriesZoneOf(master);
+  const clockOf = (time: Event["start"]) =>
+    startInstant(time, zone)?.toZonedDateTimeISO(zone).toPlainTime();
+  const from = clockOf(master.start);
+  const to = clockOf(start);
+  if (
+    !(from && to) ||
+    Temporal.PlainTime.compare(from, to) === 0 ||
+    meetsSeveralTimesADay(master.recurrence ?? [], from)
+  ) {
+    return cancelled;
+  }
+  return cancelled.flatMap((slot) => {
+    const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
+    if (!moment) {
+      return [slot];
+    }
+    const moved = moment
+      .toZonedDateTimeISO(zone)
+      .toPlainDate()
+      .toZonedDateTime({ plainTime: to, timeZone: zone })
+      .toString({ smallestUnit: "second", timeZoneName: "never" });
+    return addsSlot(master.recurrence ?? [], slot, zone)
+      ? [slot, moved]
+      : [moved];
+  });
+}
+
+/**
  * `recurrence` with the occurrences at `starts` (original starts, as
  * Google writes them) skipped. Unchanged when it doesn't repeat.
  */
@@ -1237,7 +1279,7 @@ export function makeGoogleCalendarService(
       }
       const recurrence =
         ruleForStart(
-          skipping(counted, params.cancelled),
+          skipping(counted, skipsAtNewTime(params.cancelled, master, start)),
           master,
           start,
           originalStart
@@ -1501,7 +1543,11 @@ export function makeGoogleCalendarService(
           null
         );
         recurrence =
-          ruleForStart(skipping(rule, cancelled), master, times.start) ?? [];
+          ruleForStart(
+            skipping(rule, skipsAtNewTime(cancelled, master, times.start)),
+            master,
+            times.start
+          ) ?? [];
         const lost = changed
           .map(({ originalStart }) => originalStart)
           .filter(
