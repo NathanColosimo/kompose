@@ -801,6 +801,13 @@ function eventEditDialogReducer(
   }
 }
 
+/** The element with focus, if it's one focus can return to. */
+function focusedElement(): HTMLElement | null {
+  return document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+}
+
 /** The edits saved, but the move to another calendar that followed didn't. */
 class SavedNotMovedError extends Error {
   constructor(cause: unknown) {
@@ -893,6 +900,8 @@ export function EventEditPopover({
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  /** The editor's focused field when the scope dialog opened. */
+  const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   // A failure belongs to the save it came from: reopening starts clean.
@@ -1101,6 +1110,8 @@ export function EventEditPopover({
       // A recurring event asks for the scope over the editor, which stays
       // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
+        // Where the user was (the title, Save), for a Cancel to return to.
+        focusBeforeScopeRef.current = focusedElement();
         // The preferred scope is kept as is: the dialog shows the nearest
         // one available, and returns to it once it's on.
         dispatchDialog({
@@ -1207,14 +1218,25 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         description={scopeState.description}
         disabledScopes={scopeState.disabled}
-        // Focus goes to the editor while it's open (on Cancel, or a save
-        // still running or failed), else stays where the editor's closing
-        // put it (the event). Radix would return it to the Save button,
-        // which a save remounts, so it would fall to the page, where the
-        // calendar's keys could navigate away from the editor.
+        // The dialog has no trigger to return focus to, and a save remounts
+        // the field it came from, so focus would fall to the page, where the
+        // calendar's keys could navigate away from the editor. On Cancel it
+        // goes back where the user was; during a save (or after it failed),
+        // to the editor; once the editor has closed, it stays where that
+        // put it (the event).
         onCloseAutoFocus={(e) => {
           e.preventDefault();
-          if (open) {
+          if (!open) {
+            return;
+          }
+          const before = focusBeforeScopeRef.current;
+          if (
+            !savingRef.current &&
+            before?.isConnected &&
+            contentRef.current?.contains(before)
+          ) {
+            before.focus();
+          } else {
             contentRef.current?.focus();
           }
         }}
