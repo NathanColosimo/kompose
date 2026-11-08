@@ -511,12 +511,19 @@ function EventEditorHeaderRight({
   return (
     <View className="flex-row items-center gap-2">
       {showDelete && onDelete ? (
-        <Button onPress={onDelete} size="icon" variant="ghost">
+        <Button
+          accessibilityLabel="Delete event"
+          accessibilityRole="button"
+          onPress={onDelete}
+          size="icon"
+          variant="ghost"
+        >
           <Icon as={Trash2} className="text-red-500" size={18} />
         </Button>
       ) : null}
       <Button
-        accessibilityLabel={submitLabel}
+        accessibilityLabel={`${submitLabel} event`}
+        accessibilityRole="button"
         disabled={!canSubmit}
         onPress={onSubmit}
         size="icon"

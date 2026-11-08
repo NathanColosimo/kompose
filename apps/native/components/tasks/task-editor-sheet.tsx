@@ -479,6 +479,8 @@ function TaskEditorHeaderActions({
     <View className="flex-row items-center gap-2">
       {onDelete ? (
         <Button
+          accessibilityLabel="Delete task"
+          accessibilityRole="button"
           disabled={isSaving}
           onPress={onDelete}
           size="icon"
@@ -496,6 +498,8 @@ function TaskEditorHeaderActions({
         <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>
       ) : (
         <Button
+          accessibilityLabel="Save task"
+          accessibilityRole="button"
           disabled={!canSave}
           onPress={onSave}
           size="icon"
@@ -654,8 +658,10 @@ export function TaskEditorSheet({
       {/* While Mark done saves, the fields are read-only too: a change made
           then would be dropped when the editor closes. */}
       <View pointerEvents={isSaving ? "none" : "auto"}>
-        <View className="mb-3 flex-row items-center gap-1.5">
-          <View style={{ width: 86 }}>
+        {/* One row on a wide phone; on a narrower one, due and repeat wrap to
+            a second row before the date has to shrink. */}
+        <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
+          <View style={{ width: 76 }}>
             <Picker
               // Same size as the date and time chips beside it.
               inputStyle={{ fontSize: 13, textAlign: "center" }}
@@ -679,7 +685,10 @@ export function TaskEditorSheet({
             />
           </View>
 
-          <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+          <View
+            className="flex-row items-center gap-1.5"
+            style={{ flexBasis: 150, flexGrow: 1, minWidth: 150 }}
+          >
             <View className="min-w-0 flex-1">
               <DatePicker
                 displayValue={
@@ -737,45 +746,53 @@ export function TaskEditorSheet({
             </View>
           </View>
 
-          <View style={{ width: 86 }}>
-            <DatePicker
-              displayValue={
-                draft.dueDate
-                  ? `Due ${formatPlainDateShort(draft.dueDate)}`
-                  : "Due"
-              }
-              mode="date"
-              onChange={(date) =>
-                setDraft((current) => ({
-                  ...current,
-                  dueDate: date ? dateToPlainDate(date) : null,
-                }))
-              }
-              placeholder="Due"
-              showIcon={false}
-              style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 4 }}
-              value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-              variant="outline"
-            />
-          </View>
+          <View className="flex-row items-center gap-1.5">
+            <View style={{ width: 86 }}>
+              <DatePicker
+                displayValue={
+                  draft.dueDate
+                    ? `Due ${formatPlainDateShort(draft.dueDate)}`
+                    : "Due"
+                }
+                mode="date"
+                onChange={(date) =>
+                  setDraft((current) => ({
+                    ...current,
+                    dueDate: date ? dateToPlainDate(date) : null,
+                  }))
+                }
+                placeholder="Due"
+                showIcon={false}
+                style={{
+                  borderRadius: 999,
+                  minHeight: 38,
+                  paddingHorizontal: 4,
+                }}
+                value={
+                  draft.dueDate ? plainDateToDate(draft.dueDate) : undefined
+                }
+                valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+                variant="outline"
+              />
+            </View>
 
-          <Button
-            onPress={() => setIsRecurrenceExpanded((current) => !current)}
-            size="icon"
-            style={{ borderRadius: 999, height: 38, width: 38 }}
-            variant={isRecurrenceExpanded ? "default" : "outline"}
-          >
-            <Icon
-              as={Repeat2}
-              className={
-                isRecurrenceExpanded
-                  ? "text-primary-foreground"
-                  : "text-foreground"
-              }
-              size={14}
-            />
-          </Button>
+            <Button
+              onPress={() => setIsRecurrenceExpanded((current) => !current)}
+              size="icon"
+              style={{ borderRadius: 999, height: 38, width: 38 }}
+              variant={isRecurrenceExpanded ? "default" : "outline"}
+            >
+              <Icon
+                as={Repeat2}
+                className={
+                  isRecurrenceExpanded
+                    ? "text-primary-foreground"
+                    : "text-foreground"
+                }
+                size={14}
+              />
+            </Button>
+          </View>
         </View>
 
         {isRecurrenceExpanded ? (

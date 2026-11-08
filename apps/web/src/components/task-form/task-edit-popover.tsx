@@ -22,8 +22,6 @@ import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-optio
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
-  saveThenSetStatus,
-  taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
@@ -541,34 +539,13 @@ export function TaskEditForm({
       if (!(status && task)) {
         return commitUpdate(values, scope);
       }
-      // Shared with iOS (taskStatusSavePlan): one save carries the status
-      // for this occurrence or a pattern change; otherwise the edits go
-      // first and the status follows, on this occurrence alone.
-      const plan = taskStatusSavePlan({
-        nextRecurrence: values.recurrence,
-        previousRecurrence: resolvedRecurrence,
-        scope,
-      });
-      // The editor holds open until these save, so the cache waits for the
-      // server: an early update could unmount the editor or roll its
-      // fields back over the draft.
-      if (plan === "with-edits") {
-        return commitUpdate(values, scope, { status }, false);
-      }
-      // Both writes count: the editor stays open until the status has
-      // saved too, and a failure of either keeps it open.
-      return saveThenSetStatus(
-        () => commitUpdate(values, scope, {}, false),
-        () =>
-          updateTask.mutateAsync({
-            id: task.id,
-            optimistic: false,
-            scope: "this",
-            task: { status },
-          })
-      );
+      // One write: the status goes on this occurrence alone (the server
+      // keeps it when a "following" save also changes the series). The
+      // editor holds open until it saves, so the cache waits for the server:
+      // an early update could unmount the editor or roll back over the draft.
+      return commitUpdate(values, scope, { status }, false);
     },
-    [commitUpdate, resolvedRecurrence, task, updateTask]
+    [commitUpdate, task]
   );
 
   /** Whether saving `values` needs the scope dialog, or which scope it uses. */

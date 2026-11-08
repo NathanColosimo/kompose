@@ -382,7 +382,10 @@ function buildSeriesUpdateBase(input: TaskUpdateInput): TaskUpdate {
         key !== "dueDate" &&
         key !== "startTime" &&
         key !== "recurrence" &&
-        key !== "tagIds"
+        key !== "tagIds" &&
+        // Status is the edited occurrence's own (Mark done with edits); the
+        // later occurrences get the edits, not the status.
+        key !== "status"
     )
   ) as TaskUpdate;
 }
@@ -746,6 +749,12 @@ const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
         seriesTask,
         timeContext,
       });
+      // The status goes on the edited occurrence alone, which becomes an
+      // exception (so a later pattern change keeps it).
+      if (seriesTask.id === task.id && input.status !== undefined) {
+        update.status = input.status;
+        update.isException = true;
+      }
 
       // Avoid issuing a no-op update.
       if (Object.keys(update).length === 0) {
@@ -839,8 +848,12 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
     );
   }
 
-  // No recurrence change: update this and following with scaled date/time offsets.
-  return yield* updateSeriesWithScaledDates(userId, task, input);
+  // No recurrence change: update this and following with scaled date/time
+  // offsets, in one transaction like the regenerate above.
+  const db = yield* Database;
+  return yield* db.transaction(() =>
+    updateSeriesWithScaledDates(userId, task, input)
+  );
 });
 
 // ============================================================================

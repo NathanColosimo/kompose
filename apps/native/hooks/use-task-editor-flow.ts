@@ -9,9 +9,7 @@ import {
   haveTaskCoreFieldsChanged,
   haveTaskTagIdsChanged,
   resolveTaskRecurrenceForEditor,
-  saveThenSetStatus,
   taskRecurrenceEquals,
-  taskStatusSavePlan,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
 import { Keyboard } from "react-native";
@@ -146,29 +144,11 @@ export function useTaskEditorFlow() {
     if (!editingTask) {
       return Promise.resolve(false);
     }
-    const plan = taskStatusSavePlan({
-      nextRecurrence: nextDraft.recurrence,
-      previousRecurrence: editingTask.recurrence,
-      scope,
-    });
-    if (plan === "with-edits") {
-      // The editor holds open until this saves, so the cache waits for the
-      // server rather than rolling back over the draft on failure.
-      return commitUpdate(nextDraft, scope, status, false);
-    }
-    // Both writes count: the editor stays open until the status has saved
-    // too, and a failure of either keeps it open.
-    const { id } = editingTask;
-    return saveThenSetStatus(
-      () => commitUpdate(nextDraft, scope, undefined, false),
-      () =>
-        updateTask.mutateAsync({
-          id,
-          optimistic: false,
-          scope: "this",
-          task: { status },
-        })
-    );
+    // One write: the status goes on this occurrence alone (the server keeps
+    // it when a "following" save also changes the series). The editor holds
+    // open until it saves, so the cache waits for the server rather than
+    // rolling back over the draft on failure.
+    return commitUpdate(nextDraft, scope, status, false);
   }
 
   /** The scope decision for saving `nextDraft` over the task being edited. */
