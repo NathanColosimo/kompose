@@ -1455,7 +1455,7 @@ export function makeGoogleCalendarService(
   ) =>
     Effect.gen(function* () {
       const zone = seriesZoneOf(master);
-      const { event } = asSeriesEdit(edited, currentEvent, master);
+      const { changes, event } = asSeriesEdit(edited, currentEvent, master);
       const times = entireSeriesTimes(edited, currentEvent, master);
       if (movesSeveralADay(master, times.start)) {
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
@@ -1529,8 +1529,33 @@ export function makeGoogleCalendarService(
         },
       });
 
-      return yield* parseEventResponse(response);
+      const updated = yield* parseEventResponse(response);
+      yield* applyToOpened(calendarId, currentEvent, master, changes);
+      return updated;
     });
+
+  /**
+   * Google keeps an occurrence's own values when its series changes, so a
+   * field the user changed through an occurrence that set its own (one
+   * moved and renamed, say) is written to that occurrence too.
+   */
+  const applyToOpened = (
+    calendarId: string,
+    occurrence: Event,
+    master: Event,
+    changes: Partial<CreateEvent>
+  ) => {
+    const own = changesOwnTo(occurrence, master, {}, seriesZoneOf(master));
+    const overridden = Object.keys(changes).some((field) => field in own);
+    return occurrence.recurringEventId && overridden
+      ? updateEventThis(
+          calendarId,
+          occurrence.id,
+          { ...sanitizeEventPayload(occurrence), ...changes },
+          occurrence
+        ).pipe(Effect.asVoid)
+      : Effect.void;
+  };
 
   /**
    * "This and following" from a series' first meeting is "Entire series",

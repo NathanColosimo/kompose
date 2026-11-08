@@ -650,26 +650,12 @@ function positionsUsed(params: {
   split: RecurrenceValue;
 }): { before: number; own: boolean } | null {
   const { count, rule, seriesClock, seriesStart, seriesZone, split } = params;
-  // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
-  // first start is the first position only of a rule at its time.
-  const clock = seriesClock && ruleClock(rule, seriesClock);
-  const atSeriesTime =
-    !(clock && seriesClock) ||
-    Temporal.PlainTime.compare(clock, seriesClock) === 0;
-  const positions = countedRuleDays(rule, seriesStart.day, count, atSeriesTime);
-  // A position whose time doesn't exist that day (a 2:30 AM meeting on
-  // the spring-forward night): RFC 5545 drops it, but Google's own list
-  // says what it did, so count from that (see until.ts `existsOn`).
-  if (
-    !positions ||
-    (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
-  ) {
-    return null;
-  }
   const splitInstant = split.instant;
-  if (clock && splitInstant && seriesStart.instant) {
-    // Timed: its meetings as moments, none before the series' start (a
-    // rule earlier in the day than the start doesn't meet on its day).
+  if (seriesClock && seriesStart.instant && splitInstant) {
+    // Timed: its meetings as moments at its own time (BYHOUR=15 at
+    // 15:00), none before the series' start, which is its first only for
+    // a rule at its time.
+    const clock = ruleClock(rule, seriesClock);
     const meetings = countedRuleMeetings({
       base: seriesClock,
       count,
@@ -678,7 +664,16 @@ function positionsUsed(params: {
       time: clock,
       timeZone: seriesZone,
     });
-    if (!meetings) {
+    if (
+      !meetings ||
+      skipsAClockGap({
+        clock,
+        from: seriesStart.instant,
+        meetings,
+        rule,
+        seriesZone,
+      })
+    ) {
       return null;
     }
     const at = splitInstant.epochMilliseconds;
@@ -688,6 +683,10 @@ function positionsUsed(params: {
     };
   }
   // All day: positions are days.
+  const positions = countedRuleDays(rule, seriesStart.day, count, true);
+  if (!positions) {
+    return null;
+  }
   return {
     before: positions.filter(
       (day) => Temporal.PlainDate.compare(day, split.day) < 0
@@ -696,6 +695,44 @@ function positionsUsed(params: {
       (day) => Temporal.PlainDate.compare(day, split.day) === 0
     ),
   };
+}
+
+/**
+ * Whether a rule's counted `meetings` passed a rule day whose `clock`
+ * time the clocks skip (a 2:30 AM meeting on the spring-forward night),
+ * from the series' start to its last meeting. RFC 5545 drops that
+ * meeting, but Google's own list says what it did, so the count is left
+ * to that (see until.ts `existsOn`).
+ */
+function skipsAClockGap(params: {
+  clock: Temporal.PlainTime;
+  from: Temporal.Instant;
+  meetings: Set<number>;
+  rule: string;
+  seriesZone: string;
+}): boolean {
+  const { clock, from, meetings, rule, seriesZone } = params;
+  const start = from.toZonedDateTimeISO(seriesZone).toPlainDate();
+  const last = Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
+    .toZonedDateTimeISO(seriesZone)
+    .toPlainDate();
+  for (
+    let day = start;
+    Temporal.PlainDate.compare(day, last) <= 0;
+    day = day.add({ days: 1 })
+  ) {
+    const at = day
+      .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
+      .toInstant();
+    if (
+      !existsAt(day, clock, seriesZone) &&
+      Temporal.Instant.compare(at, from) >= 0 &&
+      isRuleDay(rule, start, day) === true
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

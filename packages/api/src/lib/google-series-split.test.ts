@@ -202,6 +202,27 @@ describe("splitting a series", () => {
     ).toEqual([rule]);
   });
 
+  test("leaves a count to Google's list only when a counted day skips its time", () => {
+    // Daily at 2:30 three times from a 9:00 start; New York has no 2:30
+    // on Mar 14 2027. From Mar 11, the meetings run through Mar 14: left
+    // to Google's list. From Mar 14 itself, that 2:30 is before the
+    // start, so the meetings (Mar 15-17) can be counted.
+    const rule = "RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=3";
+    const carry = (seriesStart: string, originalStart: string) =>
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart,
+        seriesStart,
+        seriesZone: "America/New_York",
+      });
+    expect(
+      carry("2027-03-11T09:00:00-05:00", "2027-03-12T02:30:00-05:00")
+    ).toBeNull();
+    expect(
+      carry("2027-03-14T09:00:00-04:00", "2027-03-16T02:30:00-04:00")
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=2"]);
+  });
+
   test("can't carry a COUNT it can't walk past added days", () => {
     // A week-number rule isn't walked, and Google's list can't tell its
     // meetings from the added one: what's left is unknown.

@@ -1194,3 +1194,45 @@ describe("This and following, where the new series sits", () => {
     expect(google.writes()).toEqual([]);
   });
 });
+
+describe("the opened occurrence takes the user's change", () => {
+  test("from a moved and renamed first meeting, a new title reaches it too", async () => {
+    // Google keeps an occurrence's own title when its series is renamed,
+    // so the first meeting (moved to Tue Nov 10 11:00, titled "Special")
+    // is renamed itself; its move stays.
+    const first = {
+      ...occurrenceOf(weekly, "2026-11-09T09:00:00-05:00", {
+        end: "2026-11-10T11:30:00-05:00",
+        start: "2026-11-10T11:00:00-05:00",
+      }),
+      summary: "Special",
+    };
+    const google = fakeGoogle(weekly, [first]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", first, { summary: "New series" }))
+      )
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.url.pathname).toEndWith("/events/series");
+    expect(series?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+    expect(opened?.url.pathname).toEndWith(`/events/${first.id}`);
+    expect(opened?.body).toMatchObject({
+      start: { dateTime: "2026-11-10T11:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+    expect(google.writes()).toHaveLength(2);
+  });
+
+  test("an occurrence without its own value isn't written on its own", async () => {
+    // Nov 16 is the series' own: renaming the series renames it.
+    const google = fakeGoogle(weekly);
+    expect(
+      Exit.isSuccess(await run(edit("all", nov16, { summary: "New series" })))
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+});
