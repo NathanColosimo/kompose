@@ -48,6 +48,7 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
         // Delete closes the editor, and this dialog with it.
         closeOnConfirm={false}
         confirmText="Delete"
+        confirmVariant="destructive"
         description={SCOPE_DIALOG_COPY.deleteTask.description}
         isVisible={flow.scopeDialog === "delete"}
         onCancel={flow.cancelScopeDialog}

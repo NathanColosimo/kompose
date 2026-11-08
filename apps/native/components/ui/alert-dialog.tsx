@@ -34,6 +34,8 @@ export type AlertDialogProps = {
   description?: string;
   children?: React.ReactNode;
   confirmText?: string;
+  /** "destructive" for an action that can't be undone, such as Delete. */
+  confirmVariant?: "default" | "destructive";
   cancelText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
@@ -62,6 +64,7 @@ export function AlertDialog({
   description,
   children,
   confirmText = "OK",
+  confirmVariant = "default",
   cancelText = "Cancel",
   onConfirm,
   onCancel,
@@ -175,6 +178,7 @@ export function AlertDialog({
                   disabled={pending || confirmDisabled}
                   onPress={handleConfirm}
                   style={{ flex: 1 }}
+                  variant={confirmVariant}
                 >
                   {pending ? pendingText : confirmText}
                 </Button>

@@ -102,7 +102,8 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
   ) => {
     const primaryColor = useColor("primary");
     const secondaryColor = useColor("secondary");
-    const destructiveColor = useColor("red");
+    // The theme's destructive, tuned for white text, not the brighter iOS red.
+    const destructiveColor = useColor("destructive");
     const greenColor = useColor("green");
     const borderColor = useColor("border");
     const labelColor = useColor(LABEL_COLORS[variant].color);

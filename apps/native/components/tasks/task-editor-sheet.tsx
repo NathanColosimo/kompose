@@ -404,15 +404,15 @@ function TaskTagPill({
   const ActionIcon = action === "add" ? Plus : Minus;
 
   return (
+    // A 44pt target around a 32pt pill. The negative margin keeps the rows'
+    // spacing; hitSlop wouldn't do, since iOS clips it at the row's edge.
     <Pressable
       accessibilityLabel={`${action === "add" ? "Add" : "Remove"} tag ${tag.name}`}
       accessibilityRole="button"
-      className="rounded-full border border-border px-2.5 py-2"
-      // 32pt tall; the slop makes the target 44pt.
-      hitSlop={{ bottom: 6, top: 6 }}
+      className="-my-1.5 py-1.5"
       onPress={onPress}
     >
-      <View className="flex-row items-center gap-1.5">
+      <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2.5 py-2">
         <Icon as={TagIcon} className="text-muted-foreground" size={12} />
         <Text className="text-foreground text-xs">{tag.name}</Text>
         <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
@@ -443,10 +443,11 @@ function TaskTagPicker({
         <Button
           accessibilityLabel={isExpanded ? "Hide tags" : "Add tags"}
           accessibilityState={{ expanded: isExpanded }}
-          hitSlop={7}
           onPress={onToggleExpanded}
           size="icon"
-          style={{ borderRadius: 999, height: 30, width: 30 }}
+          // 44pt to touch, laid out as 30pt (the negative margin), so the
+          // row keeps its height; hitSlop would be clipped at the row's edge.
+          style={{ borderRadius: 999, height: 44, margin: -7, width: 44 }}
           variant="ghost"
         >
           <Icon as={Plus} className="text-foreground" size={14} />
@@ -608,10 +609,10 @@ function TaskScheduleChips({
   const chipWidth = (width: number) =>
     Math.round(width * Math.max(1, fontScale));
 
-  // Each chip is as wide as its longest value at 1x ("Due Nov 30"), scaled
-  // with the text, so nothing truncates. One row down to 375pt at the
-  // default size (64 + 50 + 78 + 92 + 34 + gaps = 334); as the text grows,
-  // the row wraps.
+  // Each chip is as wide as its longest value at 1x ("Due Nov 30",
+  // "12:45 PM"), scaled with the text, so nothing truncates. One row down to
+  // 375pt at the default size (64 + 50 + 74 + 92 + 44 + gaps = 340); as the
+  // text grows, the row wraps.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
       {/* Picker takes no accessibility props, so this names it. */}
@@ -668,7 +669,7 @@ function TaskScheduleChips({
           variant="outline"
         />
       </View>
-      <View style={{ width: chipWidth(78) }}>
+      <View style={{ width: chipWidth(74) }}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -719,12 +720,9 @@ function TaskScheduleChips({
           accessibilityValue={{
             text: draft.recurrence ? recurrenceSummary : "None",
           }}
-          // 34pt wide to keep the row on one line at 375pt; the slop makes
-          // the target 44pt.
-          hitSlop={{ left: 5, right: 5 }}
           onPress={onToggleRecurrence}
           size="icon"
-          style={{ borderRadius: 999, height: 44, width: 34 }}
+          style={{ borderRadius: 999, height: 44, width: 44 }}
           variant={isRecurrenceExpanded ? "default" : "outline"}
         >
           <Icon
@@ -909,8 +907,9 @@ export function TaskEditorSheet({
             accessibilityState={{ checked: isDone, disabled: !canToggleDone }}
             checked={isDone}
             disabled={!canToggleDone}
-            // 36 by 26pt; the slop makes the target 44pt.
-            hitSlop={{ bottom: 9, left: 4, right: 4, top: 9 }}
+            // 36 by 26pt. The slop makes 44pt, all inside the row (iOS clips
+            // slop at the parent's edge): up and down, and right into the gap.
+            hitSlop={{ bottom: 9, right: 8, top: 9 }}
             onCheckedChange={(checked) =>
               onToggleDone?.(checked ? "done" : "todo")
             }

@@ -149,9 +149,12 @@ function TaskRow({
         accessibilityState={{ checked: isDone }}
         checked={isDone}
         className="mt-0.5"
-        // 26 by 34pt; the slop makes the target 44pt.
-        hitSlop={{ bottom: 5, left: 9, right: 9, top: 5 }}
+        // 26 by 34pt. The slop makes 44pt inside the row (iOS clips slop at
+        // the parent's edge, and the row starts at the checkbox): up, down,
+        // and right over the title's edge, so it sits above the title.
+        hitSlop={{ bottom: 5, right: 18, top: 5 }}
         onCheckedChange={() => onToggleStatus(item)}
+        style={{ zIndex: 1 }}
       />
 
       <Pressable
@@ -430,7 +433,8 @@ export default function TasksScreen() {
           headerRight: () => (
             <View className="h-11 flex-row items-center gap-1.5 pr-2">
               <View
-                accessibilityRole="tablist"
+                // iOS has no tablist trait; "tabbar" makes VoiceOver say "tab, 1 of 2".
+                accessibilityRole="tabbar"
                 className="h-11 flex-row items-center gap-1.5"
               >
                 <Pressable
