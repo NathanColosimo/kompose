@@ -187,6 +187,69 @@ function skipping(
 }
 
 /**
+ * `recurrence`'s timed skips (as original starts in `zone`), taken out of
+ * it: its EXDATE lines whose every value is a date-time, and the rest.
+ */
+function takeTimedSkips(
+  recurrence: string[],
+  zone: string
+): { rest: string[]; skips: string[] } {
+  const rest: string[] = [];
+  const skips: string[] = [];
+  for (const line of recurrence) {
+    const values = line.startsWith("EXDATE") ? skippedValues([line], zone) : [];
+    const moments = values.flatMap((value) =>
+      value.instant ? [value.instant] : []
+    );
+    if (values.length > 0 && moments.length === values.length) {
+      skips.push(
+        ...moments.map((moment) =>
+          moment
+            .toZonedDateTimeISO(zone)
+            .toString({ smallestUnit: "second", timeZoneName: "never" })
+        )
+      );
+    } else {
+      rest.push(line);
+    }
+  }
+  return { rest, skips };
+}
+
+/**
+ * `recurrence` with only the skip (EXDATE) values `keep` accepts (as
+ * original starts in `zone`), each line otherwise as written; a line left
+ * with none goes.
+ */
+function keepingSkips(
+  recurrence: string[],
+  zone: string,
+  keep: (slot: string) => boolean
+): string[] {
+  return recurrence.flatMap((line) => {
+    const list = line.startsWith("EXDATE") ? parseDateList(line, zone) : null;
+    if (!list) {
+      return [line];
+    }
+    const kept = list.values.filter((value) => {
+      const read = readRecurrenceValue(value, list.zone, zone);
+      const slot = read?.instant
+        ? read.instant
+            .toZonedDateTimeISO(zone)
+            .toString({ smallestUnit: "second", timeZoneName: "never" })
+        : read?.day.toString();
+      return !slot || keep(slot);
+    });
+    if (kept.length === list.values.length) {
+      return [line];
+    }
+    return kept.length > 0
+      ? [`${line.slice(0, line.indexOf(":") + 1)}${kept.join(",")}`]
+      : [];
+  });
+}
+
+/**
  * The rule a series is written with once it starts at `start`: `rule`
  * (the one being saved) lined up with that start, with the occurrences
  * deleted on their own (`cancelled`) skipped.
@@ -211,7 +274,7 @@ function lineUpRule(params: {
   splitAt?: string;
   start: Event["start"];
 }): string[] {
-  const { master, rule, splitAt, start } = params;
+  const { master, splitAt, start } = params;
   const zone = seriesZoneOf(master);
   const before = master.recurrence ?? [];
   const rules = before.filter((line) => line.startsWith("RRULE:"));
@@ -229,9 +292,10 @@ function lineUpRule(params: {
   // onto that day's other meeting.
   const stillMeets = (slot: string) =>
     !addsSlot(before, slot, zone) ||
-    addsSlot(rule, slot, zone) ||
+    addsSlot(params.rule, slot, zone) ||
     ruleMetAt(slot);
   const cancelled = params.cancelled.filter(stillMeets);
+  const rule = keepingSkips(params.rule, zone, stillMeets);
   const change = timeOfDayChange(master, start);
   if (!change || meetsSeveralTimesADay(before, change.from)) {
     return (
@@ -240,21 +304,8 @@ function lineUpRule(params: {
     );
   }
   // The rule's own timed skips are placed with the deleted occurrences.
-  const ownSkips = skippedValues(rule, zone).filter((value) => value.instant);
-  const rest = rule.filter(
-    (line) =>
-      !(
-        line.startsWith("EXDATE") &&
-        skippedValues([line], zone).every((value) => value.instant)
-      )
-  );
-  const slotOfValue = (value: RecurrenceValue) =>
-    (value.instant as Temporal.Instant)
-      .toZonedDateTimeISO(zone)
-      .toString({ smallestUnit: "second", timeZoneName: "never" });
-  const deleted = [...cancelled, ...ownSkips.map(slotOfValue)].filter(
-    stillMeets
-  );
+  const { rest, skips } = takeTimedSkips(rule, zone);
+  const deleted = [...cancelled, ...skips];
   const atNewTime: string[] = [];
   const withRule: string[] = [];
   for (const slot of deleted) {

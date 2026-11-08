@@ -1931,3 +1931,51 @@ describe("a deleted added meeting the save removes", () => {
     ]);
   });
 });
+
+describe("a skipped added meeting the save removes, its skip in the rule", () => {
+  // As above, but Nov 30 15:00 was skipped with an EXDATE, which the save
+  // sends along while dropping the added day.
+  const skip = "EXDATE;TZID=America/New_York:20261130T150000";
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261130T150000",
+      skip,
+    ],
+  };
+  const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+  const cases = [
+    ["all", "09:00"],
+    ["all", "10:00"],
+    ["following", "09:00"],
+    ["following", "10:00"],
+  ] as const;
+
+  test.each(cases)(
+    "takes its skip with it (%s, at %s)",
+    async (scope, time) => {
+      const google = fakeGoogle(series);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              end: {
+                dateTime: `2026-11-16T${time.replace(":00", ":30")}:00-05:00`,
+                timeZone: zone,
+              },
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", skip],
+              start: {
+                dateTime: `2026-11-16T${time}:00-05:00`,
+                timeZone: zone,
+              },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      ]);
+    }
+  );
+});
