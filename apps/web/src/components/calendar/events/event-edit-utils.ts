@@ -103,118 +103,166 @@ type EventTime = GoogleEvent["start"];
 export function repeatForSeries(params: {
   /** The user changed the repeat with the Repeat control. */
   edited: boolean;
+  /** Where the user put the occurrence. */
   editedStart: EventTime;
   master: Pick<GoogleEvent, "recurrence" | "start"> | undefined;
   occurrence: GoogleEvent | undefined;
   /** The form's repeat. */
   recurrence: string[];
   timeZone: string;
-}): string[] {
+}): { followsMove: boolean; recurrence: string[] } {
   const { edited, occurrence, recurrence } = params;
-  if (edited || !occurrence) {
-    return recurrence;
+  const followed =
+    edited || !occurrence
+      ? undefined
+      : seriesRecurrenceForSave({
+          editedStart: params.editedStart,
+          masterRecurrence: params.master?.recurrence,
+          masterStart: params.master?.start,
+          occurrence,
+          recurrence: undefined,
+          timeZone: params.timeZone,
+        });
+  return followed
+    ? { followsMove: true, recurrence: followed }
+    : { followsMove: false, recurrence };
+}
+
+// The same checks as `sameTime`/`lengthMs` in packages/google-cal's
+// series-times.ts and iOS's series-edit.ts; #127 moves them into
+// packages/state as one shared version.
+
+/** The same moment (or date): offsets and formats aside. */
+function sameTime(a: EventTime, b: EventTime): boolean {
+  if (a.date || b.date) {
+    return a.date === b.date && !(a.dateTime || b.dateTime);
   }
-  return (
-    seriesRecurrenceForSave({
-      editedStart: params.editedStart,
-      masterRecurrence: params.master?.recurrence,
-      masterStart: params.master?.start,
-      occurrence,
-      recurrence: undefined,
-      timeZone: params.timeZone,
-    }) ?? recurrence
+  return Boolean(
+    a.dateTime &&
+      b.dateTime &&
+      Temporal.Instant.from(a.dateTime).equals(
+        Temporal.Instant.from(b.dateTime)
+      )
   );
 }
 
-/** The same moment (or date): offsets and formats aside. */
-function sameTime(a: EventTime | undefined, b: EventTime | undefined) {
-  if (a?.dateTime && b?.dateTime) {
-    return Temporal.Instant.from(a.dateTime).equals(
-      Temporal.Instant.from(b.dateTime)
-    );
-  }
-  return Boolean(a?.date) && a?.date === b?.date;
-}
-
-/** How long an event lasts, in exact time or in days. */
-function lengthOf(event: Pick<GoogleEvent, "end" | "start">) {
-  const { end, start } = event;
-  if (start.dateTime && end.dateTime) {
-    return Temporal.Instant.from(start.dateTime).until(
-      Temporal.Instant.from(end.dateTime)
-    );
-  }
+/** How long an event lasts: days when all day, else exact time. */
+function lengthOf(start: EventTime, end: EventTime) {
   if (start.date && end.date) {
     return Temporal.PlainDate.from(start.date).until(
       Temporal.PlainDate.from(end.date)
     );
   }
-  return null;
-}
-
-/** The occurrence's place in its series: its original start, the series' length. */
-function seriesSlot(
-  occurrence: GoogleEvent,
-  master: Pick<GoogleEvent, "end" | "start">
-): { end: EventTime; start: EventTime } | null {
-  const start = occurrence.originalStartTime;
-  const length = lengthOf(master);
-  if (!(start && length)) {
-    return null;
-  }
-  if (start.dateTime) {
-    const end = Temporal.Instant.from(start.dateTime).add(length);
-    return {
-      end: { dateTime: end.toString(), timeZone: master.end.timeZone },
-      start: { dateTime: start.dateTime, timeZone: master.start.timeZone },
-    };
-  }
-  if (start.date) {
-    return {
-      end: { date: Temporal.PlainDate.from(start.date).add(length).toString() },
-      start: { date: start.date },
-    };
+  if (start.dateTime && end.dateTime) {
+    return Temporal.Instant.from(start.dateTime).until(
+      Temporal.Instant.from(end.dateTime)
+    );
   }
   return null;
 }
 
 /**
- * What a save for an occurrence's series ("This and following", "Entire
- * series") sends: the edits, and the series' own value for every field the
- * user left alone. The form starts from the occurrence, so one rescheduled
- * or renamed on its own would otherwise spread its time and title to every
- * later meeting.
+ * The start a save for the series sends when the user left this
+ * occurrence's start alone: its place in the series (its original start),
+ * not where it was rescheduled to. Null when the start is the user's own.
  */
-export function seriesEventForSave({
-  master,
+export function keptSeriesStart(
+  edited: EventTime,
+  occurrence: Pick<GoogleEvent, "originalStartTime" | "start">
+): EventTime | null {
+  const original = occurrence.originalStartTime;
+  if (!(original && sameTime(edited, occurrence.start))) {
+    return null;
+  }
+  return original.date
+    ? { date: original.date }
+    : { dateTime: original.dateTime, timeZone: edited.timeZone };
+}
+
+/** The day a Google start falls on in `timeZone`. */
+export function startDay(start: EventTime, timeZone: string) {
+  return start.date
+    ? Temporal.PlainDate.from(start.date)
+    : Temporal.Instant.from(start.dateTime ?? "")
+        .toZonedDateTimeISO(timeZone)
+        .toPlainDate();
+}
+
+/**
+ * The start and end a series edit sends: the user's when they changed the
+ * start; otherwise the occurrence's place in the series, with the length
+ * they set if they changed the end, else the series'.
+ */
+function seriesEditTimes(
+  edited: GoogleEvent,
+  occurrence: GoogleEvent,
+  series: Pick<GoogleEvent, "end" | "start"> | undefined
+): Pick<GoogleEvent, "end" | "start"> {
+  const start = keptSeriesStart(edited.start, occurrence);
+  const length = sameTime(edited.end, occurrence.end)
+    ? ((series && lengthOf(series.start, series.end)) ??
+      lengthOf(occurrence.start, occurrence.end))
+    : lengthOf(edited.start, edited.end);
+  if (!(start && length)) {
+    return { end: edited.end, start: edited.start };
+  }
+  const end = start.date
+    ? { date: Temporal.PlainDate.from(start.date).add(length).toString() }
+    : {
+        dateTime: Temporal.Instant.from(start.dateTime ?? "")
+          .add(length)
+          .toString(),
+        timeZone: edited.end.timeZone,
+      };
+  return { end, start };
+}
+
+/** A text field as the editor seeded it, or null when the user changed it. */
+function changedText(
+  value: string | undefined,
+  seed: string | undefined
+): string | null {
+  const now = value?.trim() ?? "";
+  // Cleared on purpose: an empty value clears the series' too.
+  return now === (seed?.trim() ?? "") ? null : now;
+}
+
+/**
+ * An edit made through one occurrence, saved for its series ("This and
+ * following", "Entire series"): its id, its repeat, its times, and only
+ * the fields the user changed, measured against the occurrence the edit
+ * started from. Every other field (guests, reminders, a meeting, a title
+ * left alone) is left out, and the server fills it from the series, so a
+ * rescheduled or renamed occurrence's own values don't spread to it.
+ * Mirrors iOS's `seriesEditFields`; both move to packages/state with #127.
+ */
+export function seriesEdit({
+  edited,
   occurrence,
-  sent,
+  series,
 }: {
-  master: GoogleEvent;
+  /** The save built from the form or the drop. */
+  edited: GoogleEvent;
   occurrence: GoogleEvent;
-  /** The save built from the form. */
-  sent: GoogleEvent;
+  /** The series' own start and end, once loaded: its length. */
+  series?: Pick<GoogleEvent, "end" | "start">;
 }): GoogleEvent {
-  const keep = <K extends "colorId" | "description" | "location" | "summary">(
-    key: K
-  ) =>
-    (sent[key] ?? "") === (occurrence[key] ?? "") ? master[key] : sent[key];
-  const timesKept =
-    sameTime(sent.start, occurrence.start) &&
-    sameTime(sent.end, occurrence.end);
-  const slot = timesKept ? seriesSlot(occurrence, master) : null;
-  const rescheduled =
-    slot &&
-    !(
-      sameTime(slot.start, occurrence.start) &&
-      sameTime(slot.end, occurrence.end)
-    );
+  const summary = changedText(edited.summary, occurrence.summary);
+  const description = changedText(edited.description, occurrence.description);
+  const location = changedText(edited.location, occurrence.location);
+  const meetingAdded =
+    JSON.stringify(edited.conferenceData ?? null) !==
+    JSON.stringify(occurrence.conferenceData ?? null);
   return {
-    ...sent,
-    colorId: keep("colorId"),
-    description: keep("description"),
-    location: keep("location"),
-    summary: keep("summary"),
-    ...(rescheduled ? slot : {}),
+    id: edited.id,
+    ...seriesEditTimes(edited, occurrence, series),
+    ...(edited.recurrence ? { recurrence: edited.recurrence } : {}),
+    ...(summary === null ? {} : { summary }),
+    ...(description === null ? {} : { description }),
+    ...(location === null ? {} : { location }),
+    ...((edited.colorId ?? null) === (occurrence.colorId ?? null)
+      ? {}
+      : { colorId: edited.colorId }),
+    ...(meetingAdded ? { conferenceData: edited.conferenceData } : {}),
   };
 }

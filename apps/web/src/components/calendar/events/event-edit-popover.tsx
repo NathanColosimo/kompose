@@ -69,6 +69,7 @@ import {
   eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
   seriesCutUnsure,
   seriesSplitBlock,
@@ -163,8 +164,10 @@ import type {
 } from "../event-creation/create-form-shared";
 import {
   buildTemporalPayload,
+  keptSeriesStart,
   repeatForSeries,
-  seriesEventForSave,
+  seriesEdit,
+  startDay,
   WEEKDAYS,
 } from "./event-edit-utils";
 
@@ -928,11 +931,11 @@ export function EventEditPopover({
           // For the series, only what the user changed: an occurrence
           // rescheduled or renamed on its own keeps that to itself.
           event:
-            scope !== "this" && event?.recurringEventId && seriesMaster.data
-              ? seriesEventForSave({
-                  master: seriesMaster.data,
+            scope !== "this" && event?.recurringEventId
+              ? seriesEdit({
+                  edited,
                   occurrence: event,
-                  sent: edited,
+                  series: seriesMaster.data ?? undefined,
                 })
               : edited,
           failureMessage: SAVE_FAILURE_MESSAGE,
@@ -1184,6 +1187,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-selected-scope", value })
         }
         open={scopeDialogOpen}
+        options={RECURRENCE_SCOPE_OPTIONS}
         subject={savedSubject(pendingSave, event, timeZone)}
         title={SCOPE_DIALOG_COPY.saveEvent.title}
         value={saveScope}
@@ -1205,6 +1209,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-delete-scope", value })
         }
         open={deleteDialogOpen}
+        options={RECURRENCE_SCOPE_OPTIONS}
         title={SCOPE_DIALOG_COPY.deleteEvent.title}
         value={deleteChoice}
       />
@@ -1418,7 +1423,11 @@ function buildEditPayload(
     isRecurring,
     repeatSkips: ctx.event
       ? repeatSkipsOccurrence({
-          editedStart: variables.event.start,
+          // The start a series save sends (seriesEdit): a rescheduled
+          // occurrence left where it is saves from its place in the series.
+          editedStart:
+            keptSeriesStart(variables.event.start, ctx.event) ??
+            variables.event.start,
           occurrence: ctx.event,
           recurrence: values.recurrence,
           seriesStart: ctx.masterStart,
@@ -2018,7 +2027,9 @@ function EventLocationCombobox({
 /**
  * The rule the Repeat shows: what Save sends for the series
  * (`repeatForSeries`), so an occurrence moved from a Wednesday to a
- * Thursday shows "Weekly on Thu".
+ * Thursday shows "Weekly on Thu". With it, the start a series save sends
+ * when the user left a rescheduled occurrence's start alone (its place in
+ * the series, `keptSeriesStart`), which a new repeat counts its days from.
  */
 function shownRepeat(
   values: ReturnType<typeof resolveWatchedDefaults>,
@@ -2028,7 +2039,11 @@ function shownRepeat(
     master: GoogleEvent | undefined;
     timeZone: string;
   }
-): string[] {
+): {
+  followsMove: boolean;
+  keptStart: GoogleEvent["start"] | null;
+  recurrence: string[];
+} {
   const start = buildTemporalPayload(
     {
       ...values,
@@ -2038,16 +2053,26 @@ function shownRepeat(
     (from, to) => ({ end: to, start: from })
   )?.startPayload;
   if (!start) {
-    return values.recurrence;
+    return {
+      followsMove: false,
+      keptStart: null,
+      recurrence: values.recurrence,
+    };
   }
-  return repeatForSeries({
-    edited: ctx.edited,
-    editedStart: withEditedTime(ctx.event?.start, start),
-    master: ctx.master,
-    occurrence: ctx.event,
-    recurrence: values.recurrence,
-    timeZone: ctx.timeZone,
-  });
+  const editedStart = withEditedTime(ctx.event?.start, start);
+  return {
+    ...repeatForSeries({
+      edited: ctx.edited,
+      editedStart,
+      master: ctx.master,
+      occurrence: ctx.event,
+      recurrence: values.recurrence,
+      timeZone: ctx.timeZone,
+    }),
+    keptStart: ctx.event?.recurringEventId
+      ? keptSeriesStart(editedStart, ctx.event)
+      : null,
+  };
 }
 
 function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
@@ -2896,14 +2921,13 @@ export function EventEditForm({
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const shownRecurrence = shownRepeat(watchedValues, {
+  const shown = shownRepeat(watchedValues, {
     edited: recurrenceEditedRef.current,
     event,
     master: masterQuery.data ?? undefined,
     timeZone,
   });
-  const repeatFollowsMove = shownRecurrence !== watchedValues.recurrence;
-  const recurrenceRule = getPrimaryRecurrenceRule(shownRecurrence);
+  const recurrenceRule = getPrimaryRecurrenceRule(shown.recurrence);
   // Any editable event can repeat, a one-off one included. While an
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
@@ -3006,9 +3030,13 @@ export function EventEditForm({
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
         seriesStart={repeatCountingDay({
-          changed: repeatIsChanged || repeatFollowsMove,
+          changed: repeatIsChanged || shown.followsMove,
           event,
-          formDay: seriesDayOf(watchedValues),
+          // A series save from a rescheduled occurrence left where it is
+          // starts at its place in the series; a new repeat counts from it.
+          formDay: shown.keptStart
+            ? startDay(shown.keptStart, seriesTimeZone)
+            : seriesDayOf(watchedValues),
           seriesStart: masterQuery.data?.start,
           timeZone: seriesTimeZone,
         })}

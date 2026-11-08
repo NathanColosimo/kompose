@@ -1,10 +1,7 @@
 "use client";
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
-import {
-  RECURRENCE_SCOPE_OPTIONS,
-  type RecurrenceScopeOption,
-} from "@kompose/state/recurrence-scope-options";
+import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +24,8 @@ export interface ScopeDialogSubject {
   when: string;
 }
 
-export function RecurrenceScopeDialog({
+/** Asks which occurrences a change applies to; `S` is the scopes offered. */
+export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   open,
   onOpenChange,
   title,
@@ -40,7 +38,7 @@ export function RecurrenceScopeDialog({
   onCancel,
   onConfirm,
   disabledScopes,
-  options = RECURRENCE_SCOPE_OPTIONS,
+  options,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,14 +46,14 @@ export function RecurrenceScopeDialog({
   /** What the save changes, in a line. */
   subject?: ScopeDialogSubject;
   description?: string;
-  value: RecurrenceScope;
-  onValueChange: (value: RecurrenceScope) => void;
+  value: S;
+  onValueChange: (value: S) => void;
   confirmLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
   onConfirm: () => void | Promise<void>;
-  disabledScopes?: Partial<Record<RecurrenceScope, boolean>>;
-  options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
+  disabledScopes?: Partial<Record<S, boolean>>;
+  options: readonly RecurrenceScopeOption<S>[];
 }) {
   const idBase = useId();
   // One confirm at a time: a held Cmd+Enter or a double click on Delete
@@ -121,7 +119,13 @@ export function RecurrenceScopeDialog({
         </DialogHeader>
 
         <RadioGroup
-          onValueChange={(next) => onValueChange(next as RecurrenceScope)}
+          onValueChange={(next) => {
+            // The radio group gives a string; pass on the option it names.
+            const picked = options.find((opt) => opt.value === next);
+            if (picked) {
+              onValueChange(picked.value);
+            }
+          }}
           value={value}
         >
           {options.map((opt) => {

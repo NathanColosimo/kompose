@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { repeatForSeries, seriesEventForSave } from "./event-edit-utils";
+import { repeatForSeries, seriesEdit } from "./event-edit-utils";
 
 const zone = "America/New_York";
 const at = (dateTime: string) => ({ dateTime, timeZone: zone });
@@ -57,7 +57,8 @@ describe("repeatForSeries", () => {
       recurrence: weekly.master.recurrence ?? [],
       timeZone: zone,
     });
-    expect(shown[0]).toContain("BYDAY=TH");
+    expect(shown.followsMove).toBe(true);
+    expect(shown.recurrence[0]).toContain("BYDAY=TH");
   });
 
   test("follows an occurrence moved to another day of the month", () => {
@@ -76,19 +77,20 @@ describe("repeatForSeries", () => {
       recurrence: monthly.master.recurrence ?? [],
       timeZone: zone,
     });
-    expect(shown[0]).toContain("BYMONTHDAY=29");
+    expect(shown.recurrence[0]).toContain("BYMONTHDAY=29");
   });
 
   test("keeps the series' rule when the day doesn't move", () => {
+    const rule = ["RRULE:FREQ=WEEKLY;BYDAY=WE"];
     const shown = repeatForSeries({
       edited: false,
       editedStart: at("2026-11-11T11:00:00-05:00"),
       master: weekly.master,
       occurrence: weekly.occurrence,
-      recurrence: weekly.master.recurrence ?? [],
+      recurrence: rule,
       timeZone: zone,
     });
-    expect(shown).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+    expect(shown).toEqual({ followsMove: false, recurrence: rule });
   });
 
   test("keeps a repeat the user set", () => {
@@ -101,13 +103,13 @@ describe("repeatForSeries", () => {
       recurrence: own,
       timeZone: zone,
     });
-    expect(shown).toBe(own);
+    expect(shown).toEqual({ followsMove: false, recurrence: own });
   });
 });
 
-describe("seriesEventForSave", () => {
-  // Mondays 10:00-10:30; this one was rescheduled to Tue 11:00-12:00 and
-  // renamed on its own.
+describe("seriesEdit", () => {
+  // Mondays 10:00-10:30; this one was rescheduled to Tue 11:00-12:00, and
+  // renamed and given its own guest on its own.
   const { master, occurrence: slot } = series({
     first: "2026-11-02T10:00:00-05:00",
     firstEnd: "2026-11-02T10:30:00-05:00",
@@ -117,53 +119,78 @@ describe("seriesEventForSave", () => {
   });
   const rescheduled: GoogleEvent = {
     ...slot,
+    attendees: [{ email: "guest@example.com" }],
     end: at("2026-11-10T12:00:00-05:00"),
+    location: "Offsite",
     start: at("2026-11-10T11:00:00-05:00"),
-    summary: "Sync (moved for the offsite)",
+    summary: "Sync (offsite)",
   };
-  const instant = (time: GoogleEvent["start"]) =>
-    time.dateTime ? new Date(time.dateTime).toISOString() : time.date;
+  const instant = (time: GoogleEvent["start"] | undefined) =>
+    time?.dateTime ? new Date(time.dateTime).toISOString() : time?.date;
 
-  test("leaves the occurrence's own time and title out of the series", () => {
-    const sent = seriesEventForSave({
-      master,
-      occurrence: rescheduled,
-      // Only the repeat changed: the form still holds the occurrence's values.
-      sent: {
+  test("sends only the repeat when only the repeat changed", () => {
+    const sent = seriesEdit({
+      // The form still holds the occurrence's values.
+      edited: {
         ...rescheduled,
         end: at("2026-11-10T17:00:00.000Z"),
         recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
         start: at("2026-11-10T16:00:00.000Z"),
       },
+      occurrence: rescheduled,
+      series: master,
     });
-    expect(sent.summary).toBe("Weekly sync");
+    expect(sent).toEqual({
+      end: expect.anything(),
+      id: rescheduled.id,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+      start: expect.anything(),
+    });
+    // Its place in the series, with the series' length.
     expect(instant(sent.start)).toBe(instant(at("2026-11-09T10:00:00-05:00")));
     expect(instant(sent.end)).toBe(instant(at("2026-11-09T10:30:00-05:00")));
-    expect(sent.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"]);
   });
 
-  test("keeps the fields the user changed", () => {
-    const sent = seriesEventForSave({
-      master,
+  test("a changed end keeps the series' start and takes the new length", () => {
+    const sent = seriesEdit({
+      edited: { ...rescheduled, end: at("2026-11-10T12:30:00-05:00") },
       occurrence: rescheduled,
-      sent: {
+      series: master,
+    });
+    expect(instant(sent.start)).toBe(instant(at("2026-11-09T10:00:00-05:00")));
+    expect(instant(sent.end)).toBe(instant(at("2026-11-09T11:30:00-05:00")));
+  });
+
+  test("sends the fields the user changed, and a start they moved", () => {
+    const sent = seriesEdit({
+      edited: {
         ...rescheduled,
         end: at("2026-11-10T13:00:00-05:00"),
-        location: "Room 2",
+        location: "",
         start: at("2026-11-10T12:00:00-05:00"),
         summary: "Planning",
       },
+      occurrence: rescheduled,
+      series: master,
     });
     expect(sent.summary).toBe("Planning");
-    expect(sent.location).toBe("Room 2");
+    // Cleared on purpose clears the series' too.
+    expect(sent.location).toBe("");
+    expect(sent.attendees).toBeUndefined();
     expect(instant(sent.start)).toBe(instant(at("2026-11-10T12:00:00-05:00")));
     expect(instant(sent.end)).toBe(instant(at("2026-11-10T13:00:00-05:00")));
   });
 
-  test("an occurrence on its series' own slot sends its edits as they are", () => {
-    const edited: GoogleEvent = { ...slot, description: "Agenda in the doc" };
-    expect(
-      seriesEventForSave({ master, occurrence: slot, sent: edited })
-    ).toEqual(edited);
+  test("a drag through the occurrence sends its new time, not its own title or place", () => {
+    const sent = seriesEdit({
+      edited: {
+        ...rescheduled,
+        end: at("2026-11-10T15:00:00-05:00"),
+        start: at("2026-11-10T14:00:00-05:00"),
+      },
+      occurrence: rescheduled,
+      series: master,
+    });
+    expect(Object.keys(sent).sort()).toEqual(["end", "id", "start"]);
   });
 });

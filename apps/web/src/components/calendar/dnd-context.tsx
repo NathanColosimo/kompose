@@ -36,6 +36,7 @@ import {
   type EventSaveChanges,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
   seriesSplitBlock,
   TASK_UPDATE_SCOPE_OPTIONS,
@@ -73,6 +74,7 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
+import { seriesEdit } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -787,7 +789,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           });
     updateGoogleEventMutation.mutate({
       ...update,
-      event: { ...update.event, recurrence },
+      // For the series, only the new time (and a rule following a moved
+      // day): an occurrence renamed or rescheduled on its own keeps that.
+      event:
+        googleScope === "this"
+          ? update.event
+          : seriesEdit({
+              edited: { ...update.event, recurrence },
+              occurrence,
+              series: pendingMaster.data ?? undefined,
+            }),
       recurrenceScope: googleScope,
     });
   }, [
@@ -849,6 +860,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         onOpenChange={(open) => setScopeDialog(open ? "google" : null)}
         onValueChange={setGooglePick}
         open={scopeDialog === "google"}
+        options={RECURRENCE_SCOPE_OPTIONS}
         subject={
           pendingGoogleUpdate
             ? droppedSubject(pendingGoogleUpdate, timeZone)
@@ -862,8 +874,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         description={SCOPE_DIALOG_COPY.saveTask.description}
         onConfirm={confirmTaskScope}
         onOpenChange={(open) => setScopeDialog(open ? "task" : null)}
-        // It offers only the task scopes (TASK_UPDATE_SCOPE_OPTIONS).
-        onValueChange={(value) => setTaskScope(value as UpdateScope)}
+        onValueChange={setTaskScope}
         open={scopeDialog === "task"}
         options={TASK_UPDATE_SCOPE_OPTIONS}
         subject={pendingUpdate?.subject}

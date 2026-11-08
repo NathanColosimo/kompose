@@ -55,14 +55,14 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 - Minimum duration: 15 minutes (`MINUTES_STEP`). Resizes clamp to original day (no cross-day expansion).
 - End-handle resizes snap to the bottom of the hovered slot by adding one 15-minute step.
 - Start-handle resizes clamp to min duration and day start; end-handle resizes clamp to min duration and day end.
-- Clamping uses `clampResizeStart` / `clampResizeEnd` from `dnd/helpers.ts`.
+- `resizedRange` in `dnd/helpers.ts` does the clamping: the dragged edge stays on its own day (`edgeDay`; an end at midnight belongs to the day before, so an overnight item's end can be dragged on its second day), and a target on another day is no resize.
 
 ## Preview logic
 
 - `handleDragMove` (dnd-kit `onDragMove`) reads the slot from the top collision and builds previews via `computePreviewForDrag`, positioned from the column rect. It skips moves whose slot and column rect are unchanged. `onDragOver` is not used, since it fires only when the hovered column changes.
 - Hovered-slot highlight: `handleDragMove` writes the `DropSlot` to `dropSlotAtom`; each column renders one absolutely positioned highlight that re-renders only when its own slot changes.
 - Height = duration/60 \* `PIXELS_PER_HOUR`, min 20px.
-- Preview follows the same snapping/clamping rules (including end-handle +15min adjust).
+- Preview follows the same snapping/clamping rules (including end-handle +15min adjust), and is as wide as the blocks, leaving the column's free strip (`COLUMN_FREE_STRIP`).
 - Drag overlay (title pill) is shown only for move drags; hidden during resize drags.
 
 ## Colors
@@ -74,6 +74,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 - Tasks: `orpc.tasks.update` with optimistic updates and refetch on settle.
 - Google events: `orpc.googleCal.events.update` with invalidate on settle.
 - A recurring event's occurrence (moved or resized) asks for the scope first, in the shared event scope dialog (`eventSaveDisabledScopes`), as the editor does: a new day applies to this occurrence, or from it on (the rule following the new day, once the series' rule has loaded); a time-only change can also apply to the entire series. The dialog names the event and its new time ("Retro → Mon, Nov 9 · 4:00 – 4:45 PM"). The write keeps the event's own time zone (`eventTimeZone`), since Google repeats a series in its start's zone. Recurring tasks ask this-or-following in the same dialog, naming the task and its new time.
+- For the series (This and following, Entire series), a drop sends only its new time and, for a moved day, the rule following it (`seriesEdit`, as the editor's save does): an occurrence renamed or rescheduled on its own keeps its title, guests and place to itself.
 - Payloads built via `buildTaskMoveUpdate`, `buildTaskResizeUpdate`, `buildGoogleMoveUpdate`, `buildGoogleResizeUpdate`.
 - Task payloads carry `Temporal.PlainDate` and `Temporal.PlainTime`; Google event payloads carry offset date-time strings plus `timeZone`. See [temporal.md](./temporal.md#task-scheduling) for task storage and codecs.
 
@@ -81,6 +82,4 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 - Granularity: 15 minutes (`MINUTES_STEP`), slot list in `SLOT_MINUTES`.
 - Timezone: passed through component tree, stored in `ZonedDateTime`.
-- Default scroll: 8am on mount.
-
-The same-day resize check uses `isSameDay(a, b)`, which compares `ZonedDateTime.toPlainDate()`.
+- Default scroll: 7 AM on mount (`DEFAULT_SCROLL_HOUR`).
