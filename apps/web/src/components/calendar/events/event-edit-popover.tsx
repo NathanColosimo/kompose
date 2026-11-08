@@ -229,9 +229,9 @@ function saveChanges(
 
 /**
  * The scopes a pending save can't use, and the dialog's line: the shared
- * rules, and a note when the color went back to the calendar's. A series
- * save can't clear its color until the server accepts a clear (tracked
- * with #125), so the series keeps its own; one occurrence can go back.
+ * rules, led by a note when the color went back to the calendar's. A
+ * series save can't clear a color until the server accepts a clear
+ * (tracked with #125), so only this occurrence goes back.
  */
 function saveScopeState(
   pendingSave: PendingSave | null,
@@ -244,7 +244,7 @@ function saveScopeState(
   const description = eventSaveDescription(changes);
   return {
     description: pendingSave?.colorReset
-      ? `${description} The series keeps its own color for now: going back to the calendar's color works on one occurrence only.`
+      ? `Going back to the calendar's color works on this occurrence only. ${description}`
       : description,
     disabled: eventSaveDisabledScopes(changes),
   };
@@ -889,6 +889,8 @@ export function EventEditPopover({
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  /** The scope dialog closed by its Save, for where focus goes next. */
+  const savedFromDialogRef = useRef(false);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   // A failure belongs to the save it came from: reopening starts clean.
@@ -1008,6 +1010,7 @@ export function EventEditPopover({
     if (!pendingSave) {
       return;
     }
+    savedFromDialogRef.current = true;
     // The save stays pending until the next one replaces it, so the
     // dialog's words don't change as it fades.
     holdForSave(saveEdits(pendingSave, saveScope), SAVE_FAILURE_MESSAGE);
@@ -1203,11 +1206,16 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         description={scopeState.description}
         disabledScopes={scopeState.disabled}
-        // Closing on a save, focus goes back to the editor (its Save button
-        // remounted read-only); on Cancel, back to that button.
+        // Closed by its Save, focus doesn't go back to the editor's Save
+        // button (remounted read-only): to the editor while it's open, else
+        // where the editor's closing put it. On Cancel, back to that button.
         onCloseAutoFocus={(e) => {
-          if (savingRef.current) {
-            e.preventDefault();
+          if (!savedFromDialogRef.current) {
+            return;
+          }
+          savedFromDialogRef.current = false;
+          e.preventDefault();
+          if (open) {
             contentRef.current?.focus();
           }
         }}
@@ -1361,7 +1369,6 @@ function scopeFacts(
   editedStart: GoogleEvent["start"],
   ctx: {
     event: GoogleEvent | undefined;
-    masterColorId?: string | null;
     masterStart?: GoogleEvent["start"];
     timeZone: string;
   }
@@ -1371,10 +1378,7 @@ function scopeFacts(
     return { colorReset: false, dateMoved: false, repeatSkips: null };
   }
   return {
-    // Set back to the calendar's, from a color the series has too (one
-    // with none already gets the calendar's).
-    colorReset:
-      Boolean(event.colorId) && !values.colorId && ctx.masterColorId !== null,
+    colorReset: Boolean(event.colorId) && !values.colorId,
     dateMoved: occurrenceDayMoved({
       editedStart,
       occurrence: event,
@@ -1405,8 +1409,6 @@ function buildEditPayload(
     calendarTimeZone?: string;
     event: GoogleEvent | undefined;
     hasEdits: boolean;
-    /** The series' color: null when it has none, undefined until loaded. */
-    masterColorId?: string | null;
     masterRecurrence: string[] | null | undefined;
     /** The series' own start, when the event is one of its occurrences. */
     masterStart?: GoogleEvent["start"];
@@ -2449,7 +2451,23 @@ function EventFormActionRow({
             size="sm"
             type="button"
           >
-            {saving ? "Saving…" : "Save"}
+            {/* Both labels share one cell, so the button keeps the
+                width of "Saving…" and Cancel doesn't shift. */}
+            <span className="grid justify-items-center">
+              <span
+                className={cn("col-start-1 row-start-1", saving && "invisible")}
+              >
+                Save
+              </span>
+              <span
+                className={cn(
+                  "col-start-1 row-start-1",
+                  saving ? null : "invisible"
+                )}
+              >
+                Saving…
+              </span>
+            </span>
           </Button>
         </div>
       </div>
@@ -2907,10 +2925,6 @@ export function EventEditForm({
         conferenceData: resolvedConference ?? event?.conferenceData,
         event,
         hasEdits: hasUserEditedRef.current,
-        // Unknown (undefined) until the series loads; null when it has none.
-        masterColorId: masterQuery.data
-          ? (masterQuery.data.colorId ?? null)
-          : undefined,
         masterRecurrence: masterQuery.data?.recurrence,
         masterStart: masterQuery.data?.start,
         recurrenceEdited: recurrenceEditedRef.current,
