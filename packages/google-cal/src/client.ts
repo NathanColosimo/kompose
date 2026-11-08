@@ -6,6 +6,7 @@ import {
   carryCount,
   carryCountExactly,
   countOf,
+  pinRuleTimes,
   sanitizeEventPayload,
   splitAddedDays,
   truncateRecurrenceForFollowing,
@@ -697,8 +698,16 @@ export function makeGoogleCalendarService(
       const zone = seriesZoneOf(master);
       // The new part repeats from the split on: added days before it stay
       // with the old part.
+      // A rule that took its time from the series' start keeps it when
+      // the new part starts at another rule's time.
       const fromSplit =
-        rule && splitAddedDays(rule, originalStart, zone, "from");
+        rule &&
+        pinRuleTimes(
+          splitAddedDays(rule, originalStart, zone, "from"),
+          master.start,
+          originalStart,
+          zone
+        );
       if (!fromSplit || count === undefined || countOf(fromSplit) !== count) {
         return fromSplit;
       }

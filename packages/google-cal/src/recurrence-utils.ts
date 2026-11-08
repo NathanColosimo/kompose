@@ -325,6 +325,60 @@ export function carryCount(
   return withRemainingCount(recurrence, used);
 }
 
+const isRule = (line: string) => line.startsWith("RRULE:");
+
+/**
+ * The new part's rules with each counted rule's meetings left: the
+ * positions after the split, and its start counted first for a rule that
+ * meets at its time (as the series' start counts only for a rule at its
+ * time), one more when it isn't the rule's own. A rule with none of its
+ * own left is done, unless no rule is left to carry the part: the first
+ * such is then kept at one, so the part has its start.
+ */
+function withCountsLeft(
+  recurrence: string[],
+  used: ({ before: number; own: boolean } | null)[],
+  splitClock: Temporal.PlainTime | null
+): string[] {
+  // null: not a counted rule, left as is.
+  const left: (number | null)[] = [];
+  let index = -1;
+  for (const line of recurrence) {
+    if (isRule(line)) {
+      index += 1;
+    }
+    const rule = isRule(line) ? used[index] : null;
+    const count = Number(COUNT_REGEX.exec(line)?.[1]);
+    if (!(rule && Number.isFinite(count))) {
+      left.push(null);
+      continue;
+    }
+    const own = count - rule.before;
+    const atSplitTime =
+      !splitClock ||
+      Temporal.PlainTime.compare(ruleClock(line, splitClock), splitClock) === 0;
+    left.push(own > 0 && atSplitTime && !rule.own ? own + 1 : own);
+  }
+  const carried = recurrence.some(
+    (line, i) => isRule(line) && (left[i] ?? 1) > 0
+  );
+  let keptSpent = false;
+  return recurrence.flatMap((line, i) => {
+    const n = left[i];
+    if (n === null || n === undefined) {
+      return [line];
+    }
+    if (n > 0) {
+      return [line.replace(COUNT_PART, `$1COUNT=${n}`)];
+    }
+    if (carried || keptSpent) {
+      return [];
+    }
+    keptSpent = true;
+    return [line.replace(COUNT_PART, "$1COUNT=1")];
+  });
+}
+
 /**
  * The following part's rules with exactly the positions each has left:
  * every rule is walked from the series' start, its first COUNT days are
@@ -343,7 +397,6 @@ export function carryCountExactly(
   }
 ): string[] | null {
   const { masterRecurrence, originalStart, seriesStart, seriesZone } = params;
-  const isRule = (line: string) => line.startsWith("RRULE:");
   const masterRules = masterRecurrence.filter(isRule);
   const seriesStartValue = asValue(seriesStart, seriesZone);
   const split = asValue(originalStart, seriesZone);
@@ -356,11 +409,9 @@ export function carryCountExactly(
   const seriesClock = seriesStartValue.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
-  // Positions each rule used before the split, and whether the new part's
-  // start counts as one more of its own: the split isn't one of its
-  // meetings, but it meets at the split's time (as the series' start
-  // counts only for a rule at its time).
-  const used: ({ before: number; startCounts: boolean } | null)[] = [];
+  // Positions each rule used before the split, and whether the split is
+  // one of its own meetings.
+  const used: ({ before: number; own: boolean } | null)[] = [];
   const splitClock = split.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
@@ -404,47 +455,70 @@ export function carryCountExactly(
             splitInstant
           )
         : Temporal.PlainDate.compare(day, split.day);
-    const own = positions.some((day, i) => vsSplit(day, i) === 0);
-    const atSplitTime =
-      !splitClock ||
-      Temporal.PlainTime.compare(ruleClock(rule, splitClock), splitClock) === 0;
     used.push({
       before: positions.filter((day, i) => vsSplit(day, i) < 0).length,
-      startCounts: !own && atSplitTime,
+      own: positions.some((day, i) => vsSplit(day, i) === 0),
     });
   }
   if (used.every((n) => n === null)) {
     return null;
   }
-  let index = -1;
-  return recurrence.flatMap((line) => {
-    if (!isRule(line)) {
-      return [line];
-    }
-    index += 1;
-    const rule = used[index];
-    const count = Number(COUNT_REGEX.exec(line)?.[1]);
-    if (!(rule && Number.isFinite(count))) {
-      return [line];
-    }
-    const left = count - rule.before;
-    // A later rule with none of its own left is done.
-    if (left <= 0 && index > 0) {
-      return [];
-    }
-    // The new part's start, counted first for a rule at its time (as the
-    // series' start is), is one more when it isn't the rule's own meeting.
-    const remaining = left + (rule.startCounts ? 1 : 0);
-    // The first rule carries the part (at least its start); another with
-    // none left is done. Kept at one, a spent first rule still makes the
-    // new start an occurrence, as RFC 5545 has DTSTART; with several
-    // counted rules on different days (which Google itself never writes)
-    // that start may take a position the others would count.
-    return [line.replace(COUNT_PART, `$1COUNT=${Math.max(1, remaining)}`)];
-  });
+  return withCountsLeft(recurrence, used, splitClock ?? null);
 }
 
 const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
+
+const CLOCK_NAMES = ["BYHOUR", "BYMINUTE", "BYSECOND"] as const;
+
+/**
+ * A series with several rules split at a meeting not at the series' own
+ * time (another rule's 15:00, say): the new part's start takes that time,
+ * so a rule that left its time (or part of it) to the start would move
+ * there. Its left-out parts are written from the series' time instead.
+ * The same recurrence when nothing needs pinning.
+ */
+export function pinRuleTimes(
+  recurrence: string[],
+  seriesStart: { dateTime?: string | null },
+  originalStart: string,
+  seriesZone: string
+): string[] {
+  const rules = recurrence.filter(isRule);
+  const series = seriesStart.dateTime
+    ? asValue(seriesStart.dateTime, seriesZone)?.instant
+    : null;
+  const split = asValue(originalStart, seriesZone)?.instant;
+  if (rules.length < 2 || !(series && split)) {
+    return recurrence;
+  }
+  const seriesClock = series.toZonedDateTimeISO(seriesZone).toPlainTime();
+  const splitClock = split.toZonedDateTimeISO(seriesZone).toPlainTime();
+  if (Temporal.PlainTime.compare(seriesClock, splitClock) === 0) {
+    return recurrence;
+  }
+  const values = {
+    BYHOUR: seriesClock.hour,
+    BYMINUTE: seriesClock.minute,
+    BYSECOND: seriesClock.second,
+  };
+  let changed = false;
+  const next = recurrence.map((line) => {
+    if (!isRule(line)) {
+      return line;
+    }
+    const missing = CLOCK_NAMES.filter(
+      (name) =>
+        !(line.includes(`;${name}=`) || line.includes(`:${name}=`)) &&
+        (name !== "BYSECOND" || values.BYSECOND !== splitClock.second)
+    );
+    if (missing.length === 0) {
+      return line;
+    }
+    changed = true;
+    return `${line};${missing.map((name) => `${name}=${values[name]}`).join(";")}`;
+  });
+  return changed ? next : recurrence;
+}
 
 /** The time of day a rule meets: its single BYHOUR / BYMINUTE / BYSECOND over `base`. */
 function ruleClock(rule: string, base: Temporal.PlainTime): Temporal.PlainTime {
