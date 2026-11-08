@@ -1151,9 +1151,12 @@ export function DatePicker(props: DatePickerProps) {
         onPress={handleOpenPicker}
         style={[triggerStyle, disabled && { opacity: 0.5 }, style]}
       >
+        {/* As wide as the content (not flex: 1's zero basis), so a trigger
+            without a set width fits its value; the trigger's justifyContent
+            places it. */}
         <View
           style={{
-            flex: 1,
+            flexShrink: 1,
             flexDirection: "row",
             alignItems: "center",
             gap: 8,
@@ -1202,7 +1205,7 @@ export function DatePicker(props: DatePickerProps) {
             </View>
           ) : null}
 
-          <View style={{ flex: 1 }}>
+          <View style={{ flexShrink: 1 }}>
             <Text
               ellipsizeMode="tail"
               numberOfLines={1}

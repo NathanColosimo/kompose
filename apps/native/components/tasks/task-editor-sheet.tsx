@@ -587,6 +587,8 @@ function RepeatNote({
   );
 }
 
+const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
+
 /**
  * The schedule row: duration, start date and time, due date, and the
  * Repeat toggle.
@@ -605,15 +607,25 @@ function TaskScheduleChips({
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
 }) {
   const { fontScale } = useWindowDimensions();
-  // The chips' text grows with Dynamic Type, so their widths grow with it.
-  const chipWidth = (width: number) =>
-    Math.round(width * Math.max(1, fontScale));
+  const scaled = (points: number) =>
+    Math.round(points * Math.max(1, fontScale));
+  // A date, time or due chip: as wide as its text (the picker's trigger
+  // otherwise spans its parent), so it fits any locale's format, with its
+  // text centered when the chip grows. (Centering the text itself would
+  // make iOS measure it at the full width available.) The side padding
+  // grows with the text.
+  const chipStyle = {
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: scaled(6),
+    width: "auto",
+  } as const;
 
-  // Each chip is as wide as its widest value at 1x in Sentient 13pt, plus
-  // 10pt of padding and border ("May 20" 45, "10:00 AM" 58, "Due May 20"
-  // 73), scaled with the text, so nothing truncates. One row down to 375pt
-  // at the default size (64 + 56 + 70 + 86 + 44 + gaps = 336); as the text
-  // grows, the row wraps.
+  // The date, time and due chips fit their text, in any locale and at any
+  // text size ("Due 20. Sept." in German), and the row wraps when they
+  // don't fit one line. The longest English values ("May 20", "10:00 AM",
+  // "Due May 20") still share one line at 375pt with the default text.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
       {/* Picker takes no accessibility props, so this names it. */}
@@ -621,7 +633,9 @@ function TaskScheduleChips({
         accessibilityLabel={`Duration, ${spokenDuration(draft.durationMinutes)}`}
         accessibilityRole="button"
         accessible
-        style={{ width: chipWidth(64) }}
+        // Durations are compact and not localized ("23h 45m"), so this one
+        // chip has a set width, scaled with the text.
+        style={{ width: scaled(64) }}
       >
         <Picker
           // Same size as the date and time chips beside it.
@@ -646,9 +660,8 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Grows to fill its line, never below its text: the minimum, not
-          the basis, is what makes the row wrap instead of crushing it. */}
-      <View style={{ flexGrow: 1, minWidth: chipWidth(56) }}>
+      {/* Fills what's left of its line. */}
+      <View style={{ flexGrow: 1, maxWidth: "100%" }}>
         <DatePicker
           accessibilityLabel="Start date"
           displayValue={
@@ -664,13 +677,13 @@ function TaskScheduleChips({
           }
           placeholder="Start"
           showIcon={false}
-          style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+          style={chipStyle}
           value={draft.startDate ? plainDateToDate(draft.startDate) : undefined}
-          valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+          valueTextStyle={CHIP_TEXT_STYLE}
           variant="outline"
         />
       </View>
-      <View style={{ width: chipWidth(70) }}>
+      <View style={{ maxWidth: "100%" }}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -684,16 +697,17 @@ function TaskScheduleChips({
           }
           placeholder="Time"
           showIcon={false}
-          style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+          style={chipStyle}
           timeFormat={localeTimeFormat()}
           value={draft.startTime ? plainTimeToDate(draft.startTime) : undefined}
-          valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+          valueTextStyle={CHIP_TEXT_STYLE}
           variant="outline"
         />
       </View>
 
-      <View className="flex-row items-center gap-1">
-        <View style={{ width: chipWidth(86) }}>
+      {/* Due and Repeat stay together when the row wraps. */}
+      <View className="max-w-full flex-row items-center gap-1">
+        <View style={{ flexShrink: 1 }}>
           <DatePicker
             accessibilityLabel="Due date"
             displayValue={
@@ -708,9 +722,9 @@ function TaskScheduleChips({
             }
             placeholder="Due"
             showIcon={false}
-            style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+            style={chipStyle}
             value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+            valueTextStyle={CHIP_TEXT_STYLE}
             variant="outline"
           />
         </View>

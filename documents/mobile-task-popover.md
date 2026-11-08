@@ -31,9 +31,10 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 ## Form layout
 
 - Schedule row: duration, start date, start time, due date, and the Repeat
-  toggle. Each chip is as wide as its longest value at the default text
-  size and scales with Dynamic Type; the row fits on one line down to a
-  375pt phone and wraps as the text grows, so no value truncates.
+  toggle. The date, time and due chips fit their text in any locale and at
+  any Dynamic Type size, and the row wraps when they don't fit one line, so
+  no value truncates. In English at the default size the row fits one line
+  down to a 375pt phone.
 - Collapsible repeat block below the schedule row:
   - Frequency: none/daily/weekly/monthly/yearly
   - Interval
@@ -121,4 +122,5 @@ Mark done / not done:
   and calendar entry; a failed save keeps the editor and its edits.
 - Mark done/todo from the edit sheet toggles status, saving any edits with
   it.
-- At large text sizes and on a 375pt phone, no schedule chip truncates.
+- At large text sizes, in another locale (German dates are longer), and on
+  a 375pt phone, no schedule chip truncates.
