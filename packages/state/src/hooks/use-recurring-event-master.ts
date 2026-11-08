@@ -85,6 +85,7 @@ export function useRecurringEventMaster(params: {
 export function seriesRuleReady(query: {
   data?: unknown;
   isFetching: boolean;
+  isPaused?: boolean;
   isRefetchError: boolean;
   isStale: boolean;
 }): boolean {
@@ -101,7 +102,13 @@ export function seriesRuleReady(query: {
 export function seriesRefreshing(query: {
   data?: unknown;
   isFetching: boolean;
+  isPaused?: boolean;
   isStale: boolean;
 }): boolean {
-  return Boolean(query.data) && query.isStale && query.isFetching;
+  // A fetch waiting for the network (paused) is still owed.
+  return (
+    Boolean(query.data) &&
+    query.isStale &&
+    (query.isFetching || Boolean(query.isPaused))
+  );
 }

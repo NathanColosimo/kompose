@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import {
+  onlineManager,
+  QueryClient,
+  QueryObserver,
+} from "@tanstack/react-query";
 import {
   getGoogleEventMastersByCalendarQueryKey,
   getGoogleEventsByCalendarQueryKey,
@@ -85,4 +89,54 @@ test("a series whose fetch after a write failed stays unusable", async () => {
   expect(result.isRefetchError).toBe(true);
   expect(seriesRuleReady(result)).toBe(false);
   stop();
+});
+
+test("a series whose fetch waits for the network isn't ready", async () => {
+  // Offline when a save marks the series stale: its fetch pauses, and the
+  // old rule stays unusable until it's back with the new one. (A mounted
+  // client hears the network come back.)
+  const queryClient = new QueryClient();
+  queryClient.mount();
+  const work = { accountId: "acct", calendarId: "work" };
+  const key = [...getGoogleEventMastersByCalendarQueryKey(work), "series"];
+  queryClient.setQueryData(key, { recurrence: ["RRULE:FREQ=WEEKLY"] });
+  const observer = new QueryObserver(queryClient, {
+    queryFn: () => Promise.resolve({ recurrence: ["RRULE:FREQ=DAILY"] }),
+    queryKey: key,
+    staleTime: 5 * 60 * 1000,
+  });
+  const stop = observer.subscribe(() => undefined);
+  onlineManager.setOnline(false);
+  try {
+    invalidateGoogleEventQueries(queryClient, [work]).catch(() => undefined);
+    await Promise.resolve();
+    const paused = observer.getCurrentResult();
+    expect(paused.isPaused).toBe(true);
+    expect(seriesRuleReady(paused)).toBe(false);
+  } finally {
+    onlineManager.setOnline(true);
+  }
+  // Back online, the paused fetch resumes and the new rule is in.
+  const waiting = () => {
+    const result = observer.getCurrentResult();
+    return result.isPaused || result.isFetching;
+  };
+  await new Promise<void>((resolve) => {
+    if (!waiting()) {
+      resolve();
+      return;
+    }
+    const done = observer.subscribe(() => {
+      if (!waiting()) {
+        done();
+        resolve();
+      }
+    });
+  });
+  expect(seriesRuleReady(observer.getCurrentResult())).toBe(true);
+  expect(observer.getCurrentResult().data).toEqual({
+    recurrence: ["RRULE:FREQ=DAILY"],
+  });
+  stop();
+  queryClient.unmount();
 });

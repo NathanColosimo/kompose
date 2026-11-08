@@ -1065,35 +1065,43 @@ describe("seriesRecurrenceForSave", () => {
 
   test("counts from the occurrence's place when its day didn't move", () => {
     // Mon Nov 9, rescheduled before to Tue Nov 10, made all day there for
-    // the series: the day didn't move, so the rule and its skip stay on
-    // the series' days (Nov 16, Dec 9).
-    const madeAllDay = (rule: string, exdate: string) =>
-      seriesRecurrenceForSave({
-        editedStart: { date: "2026-11-10" },
-        masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
-        masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
-        occurrence: {
-          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
-          recurringEventId: "series",
-          start: { dateTime: "2026-11-10T09:00:00-05:00" },
-        },
-        recurrence: undefined,
-        timeZone: "America/New_York",
-      });
-    expect(madeAllDay("RRULE:FREQ=WEEKLY", "20261116T090000")).toEqual([
-      "RRULE:FREQ=WEEKLY",
-      "EXDATE;VALUE=DATE:20261116",
-    ]);
-    expect(madeAllDay("RRULE:FREQ=MONTHLY", "20261209T090000")).toEqual([
-      "RRULE:FREQ=MONTHLY",
-      "EXDATE;VALUE=DATE:20261209",
-    ]);
+    // the series: the day didn't move, so the client sends nothing, and the
+    // server lines the series' own rule up with its first day (Nov 9), the
+    // rule and its skip staying on the series' days (Nov 16, Dec 9).
+    for (const [rule, exdate, expected] of [
+      ["RRULE:FREQ=WEEKLY", "20261116T090000", "EXDATE;VALUE=DATE:20261116"],
+      ["RRULE:FREQ=MONTHLY", "20261209T090000", "EXDATE;VALUE=DATE:20261209"],
+    ] as const) {
+      const recurrence = [rule, `EXDATE;TZID=America/New_York:${exdate}`];
+      expect(
+        seriesRecurrenceForSave({
+          editedStart: { date: "2026-11-10" },
+          masterRecurrence: recurrence,
+          masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
+          occurrence: {
+            originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+            recurringEventId: "series",
+            start: { dateTime: "2026-11-10T09:00:00-05:00" },
+          },
+          recurrence: undefined,
+          timeZone: "America/New_York",
+        })
+      ).toBeUndefined();
+      expect(
+        matchRecurrenceToStart(
+          recurrence,
+          { date: "2026-11-09" },
+          "America/New_York",
+          { dateTime: "2026-11-09T09:00:00-05:00" }
+        )
+      ).toEqual([rule, expected]);
+    }
   });
 
   test("keeps skips before the occurrence made all day for the series", () => {
     // Daily from Nov 9, Nov 10 and Nov 17 skipped; the Nov 16 occurrence
-    // made all day for the series: both skips stay, with or without the
-    // series' own start to count from, and on the server's lining-up.
+    // made all day for the series: the client sends nothing (the day didn't
+    // move), and the server's lining-up keeps both skips.
     const rule = [
       "RRULE:FREQ=DAILY",
       "EXDATE;TZID=America/New_York:20261110T090000,20261117T090000",
@@ -1119,7 +1127,7 @@ describe("seriesRecurrenceForSave", () => {
           recurrence: undefined,
           timeZone: "America/New_York",
         })
-      ).toEqual(expected);
+      ).toBeUndefined();
     }
     expect(
       matchRecurrenceToStart(rule, { date: "2026-11-09" }, "America/New_York", {
@@ -1156,14 +1164,16 @@ describe("seriesRecurrenceForSave", () => {
   test("counts from the series' own start time, not the occurrence's", () => {
     // 9:00 and 15:00 five times from Nov 9 9:00 (the fifth Nov 11 9:00,
     // skipped); the Nov 9 15:00 occurrence made all day for the series:
-    // Nov 11's only meeting stays skipped.
+    // the client sends nothing, and the server counts from the series' own
+    // 9:00, so Nov 11's only meeting stays skipped (three days).
+    const recurrence = [
+      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
+      "EXDATE;TZID=America/New_York:20261111T090000",
+    ];
     expect(
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-09" },
-        masterRecurrence: [
-          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-          "EXDATE;TZID=America/New_York:20261111T090000",
-        ],
+        masterRecurrence: recurrence,
         masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
         occurrence: {
           originalStartTime: { dateTime: "2026-11-09T15:00:00-05:00" },
@@ -1173,10 +1183,17 @@ describe("seriesRecurrenceForSave", () => {
         recurrence: undefined,
         timeZone: "America/New_York",
       })
-    ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-      "EXDATE;VALUE=DATE:20261111",
-    ]);
+    ).toBeUndefined();
+    expect(
+      matchRecurrenceToStart(
+        recurrence,
+        { date: "2026-11-09" },
+        "America/New_York",
+        {
+          dateTime: "2026-11-09T09:00:00-05:00",
+        }
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", "EXDATE;VALUE=DATE:20261111"]);
   });
 
   test("names the series' first day for an occurrence's edit", () => {
@@ -1208,15 +1225,17 @@ describe("seriesRecurrenceForSave", () => {
 
   test("counts a COUNT from the series' first day", () => {
     // From Nov 2: daily 9:00, and 15:00 five times (Nov 2-6). Made all day
-    // through the Nov 12 occurrence: Nov 9's only meeting was skipped.
+    // through the Nov 12 occurrence: the client sends nothing; the server,
+    // from the series' first day, keeps Nov 9 (its only meeting skipped).
+    const recurrence = [
+      "RRULE:FREQ=DAILY;BYHOUR=9",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+      "EXDATE;TZID=America/New_York:20261109T090000",
+    ];
     expect(
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-12" },
-        masterRecurrence: [
-          "RRULE:FREQ=DAILY;BYHOUR=9",
-          "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
-          "EXDATE;TZID=America/New_York:20261109T090000",
-        ],
+        masterRecurrence: recurrence,
         masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
         occurrence: {
           originalStartTime: { dateTime: "2026-11-12T09:00:00-05:00" },
@@ -1226,11 +1245,19 @@ describe("seriesRecurrenceForSave", () => {
         recurrence: undefined,
         timeZone: "America/New_York",
       })
-      // Edited through an occurrence, the rules go with their times: the
-      // server converts them from the series' own start.
+    ).toBeUndefined();
+    expect(
+      matchRecurrenceToStart(
+        recurrence,
+        { date: "2026-11-02" },
+        "America/New_York",
+        {
+          dateTime: "2026-11-02T09:00:00-05:00",
+        }
+      )
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9",
-      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+      "RRULE:FREQ=DAILY",
+      "RRULE:FREQ=DAILY;COUNT=5",
       "EXDATE;VALUE=DATE:20261109",
     ]);
   });
@@ -1423,10 +1450,11 @@ describe("seriesRecurrenceForSave", () => {
   });
 
   test("gives the series' end the form its start takes", () => {
+    const rule = ["RRULE:FREQ=WEEKLY;UNTIL=20261206T045959Z"];
     const save = (editedStart: { date?: string; dateTime?: string }) =>
       seriesRecurrenceForSave({
         editedStart,
-        masterRecurrence: ["RRULE:FREQ=WEEKLY;UNTIL=20261206T045959Z"],
+        masterRecurrence: rule,
         occurrence: {
           originalStartTime: { dateTime: "2026-11-07T16:00:00-05:00" },
           recurringEventId: "series",
@@ -1435,12 +1463,13 @@ describe("seriesRecurrenceForSave", () => {
         recurrence: undefined,
         timeZone: "America/New_York",
       });
-    // Made all day: the end is the date.
-    expect(save({ date: "2026-11-07" })).toEqual([
-      "RRULE:FREQ=WEEKLY;UNTIL=20261205",
-    ]);
-    // Unchanged: nothing to send.
+    // Made all day in place, or unchanged: the client sends nothing, and
+    // the server gives the series' own end the date form.
+    expect(save({ date: "2026-11-07" })).toBeUndefined();
     expect(save({ dateTime: "2026-11-07T16:00:00-05:00" })).toBeUndefined();
+    expect(
+      matchRecurrenceToStart(rule, { date: "2026-11-07" }, "America/New_York")
+    ).toEqual(["RRULE:FREQ=WEEKLY;UNTIL=20261205"]);
   });
 
   test("follows only a day this edit moves, from the series' slot", () => {

@@ -601,15 +601,20 @@ export function seriesRecurrenceForSave(params: {
   const allDay = Boolean(editedStart.date);
   // The rule follows only a day this edit moves, from the occurrence's
   // place in the series (where the rule puts it, even if it was
-  // rescheduled before).
+  // rescheduled before). Without a move, nothing is sent: the server lines
+  // the series' own rule, freshly read, up with the new time or form (All
+  // day), so a copy cached here can't write an old rule back.
   const moved = occurrenceDayMoved({ editedStart, occurrence, timeZone });
+  if (!moved) {
+    return;
+  }
   const from = dayOfStart(
     occurrence.originalStartTime ?? occurrence.start,
     timeZone
   );
   const to = dayOfStart(editedStart, timeZone);
   const followed =
-    moved && from && to
+    from && to
       ? followStart({
           allDay,
           from,
@@ -629,7 +634,7 @@ export function seriesRecurrenceForSave(params: {
   const firstDay = params.masterStart
     ? dayOfStart(params.masterStart, timeZone)
     : null;
-  const rulesFrom = (moved ? to : (firstDay ?? from)) ?? undefined;
+  const rulesFrom = to ?? undefined;
   const matched = matchRecurrenceToStart(
     followed,
     editedStart,
@@ -639,7 +644,7 @@ export function seriesRecurrenceForSave(params: {
     // later occurrence's day can only run long, which keeps skips), from
     // the series' own start time.
     {
-      firstDay: moved ? to : firstDay,
+      firstDay: to ?? firstDay,
       firstTime: params.masterStart
         ? timeOfStart(params.masterStart, timeZone)
         : null,
