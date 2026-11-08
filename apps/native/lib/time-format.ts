@@ -1,10 +1,10 @@
 import type { Temporal } from "temporal-polyfill";
 
 /**
- * The device's clock style for time pickers: "12" where the locale shows
- * AM/PM ("4:30 PM"), "24" where it doesn't ("16:30"), so pickers match the
- * calendar's own times. Read at render, so a change in Settings applies
- * without a restart.
+ * The locale's clock style for time pickers: "12" where it shows AM/PM
+ * ("4:30 PM"), "24" where it doesn't ("16:30"), so pickers match the
+ * times the app shows elsewhere, which Intl formats the same way. iOS's
+ * separate 24-Hour Time switch doesn't reach Intl, so neither follows it.
  */
 export function localeTimeFormat(): "12" | "24" {
   const { hourCycle } = new Intl.DateTimeFormat(undefined, {
