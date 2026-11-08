@@ -64,6 +64,7 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   allowedEventSaveScope,
   type EventSaveChanges,
+  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
@@ -749,6 +750,7 @@ function recurrenceToSend(
  * editor with its edits, and Delete holds "Deleting…" until it's done.
  */
 function EventDeleteDialogs({
+  description,
   dialog,
   followingOff,
   onCancel,
@@ -757,8 +759,10 @@ function EventDeleteDialogs({
   pending,
   scope,
 }: {
+  /** The recurring delete's line (`eventDeleteScopeState`). */
+  description: string;
   dialog: EventDialog;
-  /** Deleting This and following isn't available (`seriesCutUnsure`). */
+  /** Deleting This and following isn't available (`eventDeleteScopeState`). */
   followingOff: boolean;
   onCancel: () => void;
   onConfirm: (scope: RecurrenceScope) => void;
@@ -778,11 +782,7 @@ function EventDeleteDialogs({
         closeOnConfirm={false}
         confirmDisabled={off}
         confirmText="Delete"
-        description={
-          followingOff
-            ? SCOPE_DIALOG_COPY.deleteFollowingOff
-            : SCOPE_DIALOG_COPY.deleteEvent.description
-        }
+        description={description}
         isVisible={dialog === "delete"}
         onCancel={onCancel}
         onClose={noop}
@@ -882,6 +882,22 @@ function EventSaveScopeDialog({
       </View>
     </AlertDialog>
   );
+}
+
+/**
+ * The recurring delete's This and following: off until the series loads,
+ * or where the cut is unsure.
+ */
+function deleteStateFor(
+  event: GoogleEvent | undefined,
+  master: { data?: GoogleEvent; isError: boolean },
+  timeZone: string
+) {
+  return eventDeleteScopeState({
+    cutUnsure: seriesCutUnsure(event, master.data, timeZone),
+    seriesRuleFailed: master.isError,
+    seriesRuleLoaded: Boolean(event?.recurrence?.length || master.data),
+  });
 }
 
 function noop() {
@@ -1136,6 +1152,11 @@ export default function CalendarTab() {
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
   const masterStart = recurringMasterEvent.data?.start;
+  const eventDeleteState = deleteStateFor(
+    editingEventDraft?.sourceEvent,
+    recurringMasterEvent,
+    timeZone
+  );
   const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
   const [eventDeleteScope, setEventDeleteScope] =
     useState<RecurrenceScope>("this");
@@ -2308,12 +2329,9 @@ export default function CalendarTab() {
           overlay={
             <>
               <EventDeleteDialogs
+                description={eventDeleteState.description}
                 dialog={eventDialog}
-                followingOff={seriesCutUnsure(
-                  editingEventDraft?.sourceEvent,
-                  recurringMasterEvent.data,
-                  timeZone
-                )}
+                followingOff={Boolean(eventDeleteState.disabled.following)}
                 onCancel={dismissEventDeleteDialog}
                 onConfirm={(scope) => {
                   confirmEventDelete(scope).catch(() => null);

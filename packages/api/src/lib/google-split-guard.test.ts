@@ -146,16 +146,18 @@ describe("where This and following can start", () => {
     // 23:30 (spring forward), each with an added meeting at 5:00 the next
     // morning: which wall hour the last lands on depends on how a calendar
     // steps across the change, so a delete from the added meeting is off.
-    // A year of hourly meetings crosses both changes, which cancel out at
-    // its ends: still unsure.
+    // A year of hourly meetings, Nov 2 2026 to Nov 10 2027, both ends in
+    // standard time: it crosses both changes, which cancel out at its ends
+    // (an offset check would call it known, ending 9:00 before the added
+    // 9:30). Still unsure.
     expect(
       followingCutUnsure({
         masterRecurrence: [
-          "RRULE:FREQ=HOURLY;COUNT=8761",
-          "RDATE;TZID=America/New_York:20271102T100000",
+          "RRULE:FREQ=HOURLY;COUNT=8953",
+          "RDATE;TZID=America/New_York:20271110T093000",
         ],
         masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
-        originalStart: "2027-11-02T10:00:00-04:00",
+        originalStart: "2027-11-10T09:30:00-05:00",
         seriesZone: zone,
       })
     ).toBe(true);

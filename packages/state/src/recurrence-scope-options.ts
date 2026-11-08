@@ -60,7 +60,7 @@ export const SCOPE_DIALOG_COPY = {
   } satisfies Record<SplitBlock, string>,
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
-    "This occurrence was added to the series on its own, and where the series' repeat ends can't be told, so This and following can't be deleted from it.",
+    "This occurrence was added to the series on its own, and Kompose can't tell where the series' repeat ends, so This and following isn't available.",
   /** An added occurrence moved to a new day with a new repeat: no scope fits. */
   splitBlockedAll:
     "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other.",
@@ -101,6 +101,35 @@ export interface EventSaveChanges {
   seriesTimeZone?: string;
   /** Why a new series can't start at this occurrence (`seriesSplitBlock`). */
   splitBlocked?: SplitBlock | null;
+}
+
+/**
+ * The recurring delete dialog's state: This and following is off until the
+ * series loads (and if it failed), or where the cut is unsure; with the
+ * line that says why.
+ */
+export function eventDeleteScopeState(params: {
+  cutUnsure: boolean;
+  seriesRuleFailed?: boolean;
+  seriesRuleLoaded: boolean;
+}): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  if (!params.seriesRuleLoaded) {
+    return {
+      description: params.seriesRuleFailed
+        ? SCOPE_DIALOG_COPY.seriesFailedSave
+        : SCOPE_DIALOG_COPY.seriesLoading,
+      disabled: { following: true },
+    };
+  }
+  return params.cutUnsure
+    ? {
+        description: SCOPE_DIALOG_COPY.deleteFollowingOff,
+        disabled: { following: true },
+      }
+    : { description: SCOPE_DIALOG_COPY.deleteEvent.description, disabled: {} };
 }
 
 /**

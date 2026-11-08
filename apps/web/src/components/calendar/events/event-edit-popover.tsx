@@ -62,6 +62,7 @@ import {
 import {
   allowedEventSaveScope,
   type EventSaveChanges,
+  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   SCOPE_DIALOG_COPY,
@@ -818,11 +819,11 @@ export function EventEditPopover({
     seriesTimeZone: otherTimeZone(event, timeZone),
     splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
-  const deleteFollowingOff = seriesCutUnsure(
-    event,
-    seriesMaster.data,
-    timeZone
-  );
+  const deleteScopeState = eventDeleteScopeState({
+    cutUnsure: seriesCutUnsure(event, seriesMaster.data, timeZone),
+    seriesRuleFailed: seriesMaster.isError,
+    seriesRuleLoaded,
+  });
 
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
@@ -1140,12 +1141,8 @@ export function EventEditPopover({
       {/* Delete scope dialog for recurring events */}
       <RecurrenceScopeDialog
         confirmLabel="Delete"
-        description={
-          deleteFollowingOff
-            ? SCOPE_DIALOG_COPY.deleteFollowingOff
-            : SCOPE_DIALOG_COPY.deleteEvent.description
-        }
-        disabledScopes={deleteFollowingOff ? { following: true } : undefined}
+        description={deleteScopeState.description}
+        disabledScopes={deleteScopeState.disabled}
         onCancel={() =>
           dispatchDialog({ type: "set-delete-dialog-open", value: false })
         }

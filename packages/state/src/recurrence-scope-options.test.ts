@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   allowedEventSaveScope,
   type EventSaveChanges,
+  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
@@ -190,4 +191,28 @@ test("turns deleting This and following off where the cut is unsure", () => {
   ).toBe(false);
   // Before the series loads, nothing is turned off.
   expect(seriesCutUnsure(occurrence, null, zone)).toBe(false);
+});
+
+test("keeps deleting This and following off until the series is known", () => {
+  const known = { cutUnsure: false, seriesRuleLoaded: true };
+  expect(eventDeleteScopeState(known)).toEqual({
+    description: "Delete:",
+    disabled: {},
+  });
+  expect(eventDeleteScopeState({ ...known, seriesRuleLoaded: false })).toEqual({
+    description: "Loading the series… This and following opens once it's in.",
+    disabled: { following: true },
+  });
+  expect(
+    eventDeleteScopeState({
+      ...known,
+      seriesRuleFailed: true,
+      seriesRuleLoaded: false,
+    }).disabled
+  ).toEqual({ following: true });
+  expect(eventDeleteScopeState({ ...known, cutUnsure: true })).toEqual({
+    description:
+      "This occurrence was added to the series on its own, and Kompose can't tell where the series' repeat ends, so This and following isn't available.",
+    disabled: { following: true },
+  });
 });
