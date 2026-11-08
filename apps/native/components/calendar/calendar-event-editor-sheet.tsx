@@ -79,7 +79,7 @@ import type {
   EditEventDraft,
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
-import { draftTimes } from "@/components/calendar/event-times";
+import { type DraftTimes, draftTimes } from "@/components/calendar/event-times";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -815,16 +815,17 @@ function EndsBeforeStartNote({
  * one zero-length, as Google allows. Read from the same instants as the
  * save, so the hour a DST change repeats can't make them disagree.
  */
-function endsAfterStart({
-  end,
-  start,
-}: ReturnType<typeof draftTimes>): boolean {
-  if (start.date && end.date) {
-    return Temporal.PlainDate.compare(end.date, start.date) > 0;
+function endsAfterStart(times: DraftTimes): boolean {
+  if ("date" in times.start && "date" in times.end) {
+    return Temporal.PlainDate.compare(times.end.date, times.start.date) > 0;
   }
-  return (
-    Temporal.Instant.compare(end.dateTime ?? "", start.dateTime ?? "") >= 0
-  );
+  if ("dateTime" in times.start && "dateTime" in times.end) {
+    return (
+      Temporal.Instant.compare(times.end.dateTime, times.start.dateTime) >= 0
+    );
+  }
+  // draftTimes gives both ends the same form.
+  return false;
 }
 
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
@@ -1575,8 +1576,6 @@ export function EventEditorSheet({
   // An existing series' days (its end day, its start's weekday) count in
   // its own zone; a new event's in the app's.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
-  // The repeat a save would send, and the days it counts from
-  // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
   // The times a save sends, as instants (the event's own while untouched).
   const sentTimes = draftTimes(
     values,
@@ -1585,6 +1584,8 @@ export function EventEditorSheet({
     sourceEvent
   );
   const endsInOrder = endsAfterStart(sentTimes);
+  // The repeat a save would send, and the days it counts from
+  // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
   const seriesEdit = seriesRepeatForEdit({
     edited: sentTimes,
     event: sourceEvent,

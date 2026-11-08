@@ -262,7 +262,8 @@ interface DaySegment {
 
 /**
  * The part of [start, end) on `day`, or null when it doesn't touch that day,
- * so an overnight item shows on both days.
+ * so an overnight item shows on both days. A zero-length item (Google allows
+ * one) is a point on its start's day, midnight included.
  */
 function daySegment(
   start: Temporal.ZonedDateTime,
@@ -273,7 +274,11 @@ function daySegment(
   const { compare } = Temporal.ZonedDateTime;
   const dayStart = day.toZonedDateTime({ timeZone });
   const dayEnd = dayStart.add({ days: 1 });
-  if (compare(end, dayStart) <= 0 || compare(start, dayEnd) >= 0) {
+  const point = compare(start, end) === 0;
+  const endsBefore = point
+    ? compare(start, dayStart) < 0
+    : compare(end, dayStart) <= 0;
+  if (endsBefore || compare(start, dayEnd) >= 0) {
     return null;
   }
   return {
@@ -721,9 +726,7 @@ function savedSeriesRecurrence(
  * A write the server won't make to a series (its typed refusal, sent as a
  * BAD_REQUEST with the reason in `data`), or null for any other failure.
  */
-function seriesRefusalOf(
-  error: unknown
-): { originalStarts?: unknown; reason: string } | null {
+function seriesRefusalOf(error: unknown): { reason: string } | null {
   if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
     return null;
   }
@@ -732,7 +735,7 @@ function seriesRefusalOf(
     data !== null &&
     "reason" in data &&
     typeof data.reason === "string"
-    ? (data as { originalStarts?: unknown; reason: string })
+    ? { reason: data.reason }
     : null;
 }
 

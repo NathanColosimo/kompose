@@ -1,11 +1,13 @@
 import { Temporal } from "temporal-polyfill";
 import type { EventDraft } from "@/components/calendar/calendar-editor-types";
 
-interface DraftTime {
-  date?: string;
-  dateTime?: string;
-  timeZone?: string;
-}
+/** An all-day event's dates (the end exclusive), or a timed one's instants. */
+export type DraftTimes =
+  | { end: { date: string }; start: { date: string } }
+  | {
+      end: { dateTime: string; timeZone: string };
+      start: { dateTime: string; timeZone: string };
+    };
 
 /** A Google start or end as loaded. */
 interface SourceTime {
@@ -31,7 +33,7 @@ export function draftTimes(
   eventZone: string,
   /** The event's own start and end, when editing one. */
   source?: { end: SourceTime; start: SourceTime }
-): { end: DraftTime; start: DraftTime } {
+): DraftTimes {
   if (draft.allDay) {
     return {
       end: { date: draft.endDate.add({ days: 1 }).toString() },
@@ -42,7 +44,7 @@ export function draftTimes(
     date: Temporal.PlainDate,
     time: Temporal.PlainTime,
     own: SourceTime | undefined
-  ): DraftTime => {
+  ): { dateTime: string; timeZone: string } => {
     const shown = own?.dateTime
       ? Temporal.Instant.from(own.dateTime).toZonedDateTimeISO(appTimeZone)
       : null;
