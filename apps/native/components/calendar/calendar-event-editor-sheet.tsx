@@ -4,6 +4,7 @@ import {
   type Event as GoogleEvent,
   getGoogleEventEditBlockReason,
 } from "@kompose/google-cal/schema";
+import { untilRuleForDay, untilRuleToDay } from "@kompose/google-cal/until";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -24,8 +25,6 @@ import {
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
-  untilRuleForDay,
-  untilRuleToDay,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { getMapsSearchUrl } from "@kompose/state/locations";

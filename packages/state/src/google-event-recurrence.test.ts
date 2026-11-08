@@ -12,8 +12,6 @@ import {
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
-  untilRuleForDay,
-  untilRuleToDay,
 } from "./google-event-recurrence";
 
 describe("setPrimaryRecurrenceRule", () => {
@@ -163,34 +161,6 @@ describe("weekdays of the month", () => {
     expect(monthlyWeekdayOf(day("2026-11-27"))).toBe("4FR");
     expect(lastWeekdayOf(day("2026-11-27"))).toBe("-1FR");
     expect(lastWeekdayOf(day("2026-11-20"))).toBeNull();
-  });
-});
-
-describe("untilRuleForDay", () => {
-  const zone = "America/New_York";
-  test("ends after the picked day's occurrence, in the event's zone", () => {
-    expect(untilRuleForDay(day("2026-12-05"), true, zone)).toBe("20261205");
-    // The day's last second in New York, in UTC.
-    expect(untilRuleForDay(day("2026-12-05"), false, zone)).toBe(
-      "20261206T045959Z"
-    );
-    expect(untilRuleForDay(day("2027-03-14"), false, zone)).toBe(
-      "20270315T035959Z"
-    );
-    expect(untilRuleForDay(day("2026-12-05"), false, "Asia/Tokyo")).toBe(
-      "20261205T145959Z"
-    );
-  });
-
-  test("reads back as the same day", () => {
-    for (const allDay of [true, false]) {
-      expect(
-        untilRuleToDay(
-          untilRuleForDay(day("2026-12-05"), allDay, zone),
-          zone
-        )?.toString()
-      ).toBe("2026-12-05");
-    }
   });
 });
 

@@ -17,6 +17,7 @@ import {
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
 import { seriesTimesForEdit } from "./series-times";
+import { matchUntilToStart } from "./until";
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -29,6 +30,25 @@ interface GoogleWatchChannelResult {
   channelId: string;
   expiration?: string;
   resourceId: string;
+}
+
+/**
+ * The series' own rule, kept by an edit that didn't send one, with its
+ * UNTIL in the form `start` takes: a series made all day (or timed) before
+ * its rule loaded on the client would otherwise keep a mismatched UNTIL,
+ * which Google refuses.
+ */
+function keptRecurrence(
+  master: { recurrence?: string[]; start: { timeZone?: string } },
+  start: { date?: string; timeZone?: string }
+): string[] | undefined {
+  return master.recurrence
+    ? matchUntilToStart(
+        master.recurrence,
+        Boolean(start.date),
+        start.timeZone ?? master.start.timeZone ?? "UTC"
+      )
+    : undefined;
 }
 
 /** `time` labelled with the series' zone when it has one (same moment). */
@@ -532,8 +552,9 @@ export function makeGoogleCalendarService(
             occurrenceStart: currentEvent.start,
           }) ?? { end: master.end, start: master.start });
 
-      // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").
-      const recurrence = event.recurrence === undefined ? master.recurrence : event.recurrence;
+      // Left out keeps the series' pattern (its UNTIL in the form the
+      // new start takes); an empty list ends it ("Repeat: None").
+      const recurrence = event.recurrence ?? keptRecurrence(master, times.start);
       const payload = sanitizeEventPayload({
         ...master,
         ...event,
@@ -603,8 +624,9 @@ export function makeGoogleCalendarService(
       }
 
       const originalRecurrence = [...master.recurrence];
-      // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").
-      const recurrence = event.recurrence === undefined ? master.recurrence : event.recurrence;
+      // Left out keeps the series' pattern (its UNTIL in the form the
+      // new start takes); an empty list ends it ("Repeat: None").
+      const recurrence = event.recurrence ?? keptRecurrence(master, event.start);
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,

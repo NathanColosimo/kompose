@@ -5,6 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { canWriteCalendar } from "@kompose/google-cal/schema";
+import { matchUntilToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -45,7 +46,6 @@ import {
   eventTimeZone,
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
-  matchUntilToStart,
   occurrenceDayMoved,
   otherTimeZone,
   seriesRecurrenceForSave,

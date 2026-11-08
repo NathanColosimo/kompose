@@ -6,6 +6,11 @@ import {
   type Event as GoogleEvent,
   type RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import {
+  matchUntilToStart,
+  untilRuleForDay,
+  untilRuleToDay,
+} from "@kompose/google-cal/until";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -24,15 +29,12 @@ import {
   type EventRecurrenceFrequency as Frequency,
   followStart,
   getPrimaryRecurrenceRule,
-  matchUntilToStart,
   occurrenceDayMoved,
   otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
-  untilRuleForDay,
-  untilRuleToDay,
   weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
