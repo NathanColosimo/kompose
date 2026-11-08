@@ -910,10 +910,18 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (!master?.recurrence) {
     return [] as TaskSelect[];
   }
-  // The edit starts on or before the master: none of the old series is
-  // left, so its pattern goes rather than ending before its own start.
+  // The edit starts on or before the master, so the master's pattern goes
+  // rather than ending before its own start. Occurrences before the edit
+  // (the master was moved later alone) keep the original pattern as a
+  // series of their own first.
   if (master.startDate && boundary <= master.startDate) {
-    return yield* dbUpdate(userId, master.id, { recurrence: null });
+    const handedOff = yield* handOffEarlierPart(
+      userId,
+      { ...master, seriesMasterId: master.id, startDate: master.startDate },
+      boundary
+    );
+    const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
+    return [...handedOff, ...cleared];
   }
   const db = yield* Database;
   const [last] = yield* db
