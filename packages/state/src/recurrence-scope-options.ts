@@ -11,6 +11,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import type { Temporal } from "temporal-polyfill";
 import { eventTimeZone, timeZoneCity } from "./google-event-recurrence";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
@@ -50,6 +51,9 @@ export const SCOPE_DIALOG_COPY = {
   /** Shown when the series' rule couldn't load, for a save in place. */
   seriesFailedSave:
     "Couldn't load the series, so This and following isn't available. Try again later.",
+  /** Shown when the series' rule couldn't load, for a new time. */
+  seriesFailedTime:
+    "Couldn't load the series, so the new time applies to this occurrence only. Try again later for the rest.",
   /** Shown when the series' rule couldn't load, for a new repeat. */
   seriesFailedRepeat:
     "Couldn't load the series, so a new repeat can't be saved. Try again later.",
@@ -61,6 +65,12 @@ export const SCOPE_DIALOG_COPY = {
    */
   seriesLoadingRepeat:
     "Loading the series… A new repeat can be saved once it's in.",
+  /**
+   * Shown while a new time waits for the series' rule: whether it repeats
+   * by more than one rule, which a new time can't keep, isn't known yet.
+   */
+  seriesLoadingTime:
+    "Loading the series… This and following and Entire series open once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
   /** A calendar move with a new day for this occurrence. */
@@ -72,6 +82,12 @@ export const SCOPE_DIALOG_COPY = {
   /** The same, when it's the new end that comes first. */
   moveEventRepeatEnd:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new end comes before this occurrence. Move the calendar and change the repeat in two saves.",
+  /** A calendar move with a new time for a series of several rules. */
+  moveEventSeveralRulesTime:
+    "Moving to another calendar moves the whole series, but a new time can't apply to a series that repeats by more than one rule. Move the calendar and change the time in two saves.",
+  /** A new time for a series of several rules: Google would mix them up. */
+  severalRulesTime:
+    "This series repeats by more than one rule, so a new time can't apply to the entire series.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -95,6 +111,8 @@ export const SCOPE_DIALOG_COPY = {
       "Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting.",
     repeatEndOff:
       "Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting.",
+    severalRulesTime: "A new time applies to this occurrence only.",
+    timeAndRepeat: "Change the time and the repeat in two saves.",
   },
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
@@ -123,6 +141,12 @@ export interface EventSaveChanges {
   calendarChanged: boolean;
   /** It moves an occurrence to another day. */
   dateMoved: boolean;
+  /**
+   * The day of a moved (rescheduled) meeting of the series that the new
+   * repeat would cancel for Entire series, as the calendar shows it
+   * (`movedMeetingDropped`, or the meeting a refused save names).
+   */
+  droppedMovedDay?: Temporal.PlainDate | null;
   /** The user changed the repeat. */
   patternChanged: boolean;
   /**
@@ -131,6 +155,11 @@ export interface EventSaveChanges {
    * implicit day, an interval's phase) or its end (`repeatSkipsOccurrence`).
    */
   repeatSkips?: "day" | "end" | null;
+  /**
+   * It changes this occurrence's start or end time (or makes it all day,
+   * or timed) without moving its day: for the series, a new time.
+   */
+  retimed?: boolean;
   /** Loading the series' rule failed. */
   seriesRuleFailed?: boolean;
   /** The series' rule has loaded (an occurrence's lives on its master). */
@@ -140,6 +169,8 @@ export interface EventSaveChanges {
    * are counted there, so the dialog says so.
    */
   seriesTimeZone?: string;
+  /** The series repeats by more than one rule (`hasSeveralRules`). */
+  severalRules?: boolean;
   /** Why a new series can't start at this occurrence (`seriesSplitBlock`). */
   splitBlocked?: SplitBlock | null;
 }
@@ -239,21 +270,23 @@ function splitAt(
 /**
  * Scopes a recurring event's save can't use. A calendar move applies to
  * the whole series. One occurrence can't repeat differently from its
- * series. Entire series keeps the series' first day (see
- * `entireSeriesOff`). This and following waits for the series' rule
- * (`followingRuleKnown`), and is off where a new series can't start.
+ * series. Entire series keeps the series' first day and every meeting the
+ * user moved (`entireSeriesOff`). This and following waits for the
+ * series' rule (`followingRuleKnown`), and is off where a new series
+ * can't start.
  */
 export function eventSaveDisabledScopes(
   changes: EventSaveChanges
 ): Partial<Record<RecurrenceScope, boolean>> {
+  const allOff = entireSeriesOff(changes) !== null;
   if (changes.calendarChanged) {
-    return entireSeriesOff(changes)
+    return allOff
       ? { all: true, following: true, this: true }
       : { following: true, this: true };
   }
   return {
     ...(changes.patternChanged ? { this: true } : {}),
-    ...(entireSeriesOff(changes) ? { all: true } : {}),
+    ...(allOff ? { all: true } : {}),
     ...(followingRuleKnown(changes) && !changes.splitBlocked
       ? {}
       : { following: true }),
@@ -273,18 +306,46 @@ function followingRuleKnown(changes: EventSaveChanges): boolean {
   );
 }
 
+/** Why Entire series is off (`entireSeriesOff`). */
+type EntireSeriesOff =
+  | { reason: "movedMeeting"; day: Temporal.PlainDate }
+  | {
+      reason:
+        | "newDay"
+        | "repeatDay"
+        | "repeatEnd"
+        | "seriesPending"
+        | "severalRulesTime";
+    };
+
 /**
- * Whether Entire series is off. It keeps the series' first day (Google's
- * editor offers the same), so it can't take a day moved through one
- * occurrence, nor a new repeat that, counted from that first day, would
- * skip this occurrence (`repeatSkips`), or might, before the series loads.
+ * Why Entire series is off, or null when it's on. It keeps the series'
+ * first day (Google's editor offers the same), so it can't take a day
+ * moved through one occurrence ("newDay"). A new repeat can't skip this
+ * occurrence's own slot, counted from that first day ("repeatDay",
+ * "repeatEnd"), nor cancel a meeting the user moved ("movedMeeting"):
+ * Google keeps one only while the rule still has its original slot. A new
+ * time can't apply to a series of several rules ("severalRulesTime"):
+ * Google would mix them up. Before the series loads, a new repeat or time
+ * waits for it ("seriesPending").
  */
-function entireSeriesOff(changes: EventSaveChanges): boolean {
-  return (
-    changes.dateMoved ||
-    (changes.patternChanged &&
-      Boolean(changes.repeatSkips || !changes.seriesRuleLoaded))
-  );
+function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
+  const { droppedMovedDay, patternChanged, repeatSkips } = changes;
+  if (changes.dateMoved) {
+    return { reason: "newDay" };
+  }
+  if ((patternChanged || changes.retimed) && !changes.seriesRuleLoaded) {
+    return { reason: "seriesPending" };
+  }
+  if (patternChanged && repeatSkips) {
+    return { reason: repeatSkips === "day" ? "repeatDay" : "repeatEnd" };
+  }
+  if (patternChanged && droppedMovedDay) {
+    return { day: droppedMovedDay, reason: "movedMeeting" };
+  }
+  return changes.retimed && changes.severalRules
+    ? { reason: "severalRulesTime" }
+    : null;
 }
 
 /**
@@ -327,41 +388,58 @@ function newDayLine(changes: EventSaveChanges): string {
     : `${day} applies to this occurrence, or from it on.`;
 }
 
+/** "Dec 7": a moved meeting's day, as the dialog names it. */
+function shortDay(day: Temporal.PlainDate): string {
+  return day.toLocaleString("en-US", { day: "numeric", month: "short" });
+}
+
+/** Why Entire series is off for a new repeat that drops a moved meeting. */
+function movedMeetingLine(day: Temporal.PlainDate): string {
+  return `The new repeat would drop your moved ${shortDay(day)} meeting, so it can't apply to the entire series.`;
+}
+
 /** The scope dialog's line for a calendar move. */
 function calendarMoveDescription(changes: EventSaveChanges): string {
-  if (changes.patternChanged && changes.repeatSkips) {
-    return changes.repeatSkips === "day"
-      ? SCOPE_DIALOG_COPY.moveEventRepeatDay
-      : SCOPE_DIALOG_COPY.moveEventRepeatEnd;
+  const copy = SCOPE_DIALOG_COPY;
+  const off = entireSeriesOff(changes);
+  switch (off?.reason) {
+    case undefined:
+      return copy.moveEvent;
+    case "newDay":
+      return copy.moveEventDay;
+    case "repeatDay":
+      return copy.moveEventRepeatDay;
+    case "repeatEnd":
+      return copy.moveEventRepeatEnd;
+    case "movedMeeting":
+      return `Moving to another calendar moves the whole series, but the new repeat would drop your moved ${shortDay(off.day)} meeting. Move the calendar and change the repeat in two saves.`;
+    case "severalRulesTime":
+      return copy.moveEventSeveralRulesTime;
+    case "seriesPending":
+      return `${copy.moveEvent} ${seriesPendingDescription(changes)}`;
+    default:
+      return off satisfies never;
   }
-  if (changes.dateMoved) {
-    return SCOPE_DIALOG_COPY.moveEventDay;
-  }
-  if (changes.patternChanged && !changes.seriesRuleLoaded) {
-    return `${SCOPE_DIALOG_COPY.moveEvent} ${
-      changes.seriesRuleFailed
-        ? SCOPE_DIALOG_COPY.seriesFailedRepeat
-        : SCOPE_DIALOG_COPY.seriesLoadingRepeat
-    }`;
-  }
-  return SCOPE_DIALOG_COPY.moveEvent;
 }
 
 /** The scope dialog's line while the series' rule loads, or failed to. */
 function seriesPendingDescription(changes: EventSaveChanges): string {
+  const copy = SCOPE_DIALOG_COPY;
   if (changes.patternChanged) {
     return changes.seriesRuleFailed
-      ? SCOPE_DIALOG_COPY.seriesFailedRepeat
-      : SCOPE_DIALOG_COPY.seriesLoadingRepeat;
+      ? copy.seriesFailedRepeat
+      : copy.seriesLoadingRepeat;
   }
   if (changes.seriesRuleFailed) {
-    return changes.dateMoved
-      ? SCOPE_DIALOG_COPY.seriesFailed
-      : SCOPE_DIALOG_COPY.seriesFailedSave;
+    if (changes.dateMoved) {
+      return copy.seriesFailed;
+    }
+    return changes.retimed ? copy.seriesFailedTime : copy.seriesFailedSave;
   }
-  return changes.dateMoved
-    ? `${newDayLine(changes)} ${SCOPE_DIALOG_COPY.seriesLoading}`
-    : SCOPE_DIALOG_COPY.seriesLoading;
+  if (changes.dateMoved) {
+    return `${newDayLine(changes)} ${copy.seriesLoading}`;
+  }
+  return changes.retimed ? copy.seriesLoadingTime : copy.seriesLoading;
 }
 
 /** The scope dialog's line where This and following can't start a series. */
@@ -371,20 +449,30 @@ function splitBlockedDescription(
 ): string {
   const why = SCOPE_DIALOG_COPY.splitBlocked[block];
   const then = SCOPE_DIALOG_COPY.splitBlockedThen;
-  if (changes.dateMoved) {
-    return changes.patternChanged
-      ? `${why} ${then.dayAndRepeat}`
-      : `${newDayLine(changes)} ${why}`;
+  const { patternChanged } = changes;
+  const off = entireSeriesOff(changes);
+  switch (off?.reason) {
+    case undefined:
+      return patternChanged ? `${why} ${then.repeat}` : why;
+    case "newDay":
+      return patternChanged
+        ? `${why} ${then.dayAndRepeat}`
+        : `${newDayLine(changes)} ${why}`;
+    case "repeatDay":
+      return `${why} ${then.repeatOffDay}`;
+    case "repeatEnd":
+      return `${why} ${then.repeatEndOff}`;
+    case "movedMeeting":
+      return `${why} ${movedMeetingLine(off.day)}`;
+    case "severalRulesTime":
+      return patternChanged
+        ? `${why} ${then.timeAndRepeat}`
+        : `${why} ${then.severalRulesTime}`;
+    case "seriesPending":
+      return seriesPendingDescription(changes);
+    default:
+      return off satisfies never;
   }
-  if (!changes.patternChanged) {
-    return why;
-  }
-  if (changes.repeatSkips === "day") {
-    return `${why} ${then.repeatOffDay}`;
-  }
-  return changes.repeatSkips === "end"
-    ? `${why} ${then.repeatEndOff}`
-    : `${why} ${then.repeat}`;
 }
 
 /** The scope dialog's line for a save: why each scope that's off is. */
@@ -398,16 +486,25 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.splitBlocked) {
     return splitBlockedDescription(changes, changes.splitBlocked);
   }
-  if (changes.dateMoved) {
-    return newDayLine(changes);
+  const off = entireSeriesOff(changes);
+  switch (off?.reason) {
+    case undefined:
+      return changes.patternChanged
+        ? SCOPE_DIALOG_COPY.repeatChange
+        : SCOPE_DIALOG_COPY.saveEvent.description;
+    case "newDay":
+      return newDayLine(changes);
+    case "repeatDay":
+      return SCOPE_DIALOG_COPY.repeatOffDay;
+    case "repeatEnd":
+      return SCOPE_DIALOG_COPY.repeatEndOff;
+    case "movedMeeting":
+      return movedMeetingLine(off.day);
+    case "severalRulesTime":
+      return SCOPE_DIALOG_COPY.severalRulesTime;
+    case "seriesPending":
+      return seriesPendingDescription(changes);
+    default:
+      return off satisfies never;
   }
-  if (!changes.patternChanged) {
-    return SCOPE_DIALOG_COPY.saveEvent.description;
-  }
-  if (changes.repeatSkips === "day") {
-    return SCOPE_DIALOG_COPY.repeatOffDay;
-  }
-  return changes.repeatSkips === "end"
-    ? SCOPE_DIALOG_COPY.repeatEndOff
-    : SCOPE_DIALOG_COPY.repeatChange;
 }

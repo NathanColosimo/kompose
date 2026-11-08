@@ -628,9 +628,9 @@ export function repeatSkipsOccurrence(params: {
 /**
  * The series' first moved (rescheduled) meeting, among those `loaded`,
  * that a new repeat saved for the entire series would cancel: Google keeps
- * one only while the rule still produces its original slot. Its start, as
- * moved, for the scope dialog to name; null when none would go, or before
- * the series loads. Only the edited rule's: in a series with several
+ * one only while the rule still produces its original slot. The day it's
+ * on now in `timeZone` (the app's), for the scope dialog to name; null
+ * when none would go, or before the series loads. Only the edited rule's: in a series with several
  * rules, a meeting at another rule's time is that rule's, which the save
  * keeps. The edited occurrence is `repeatSkipsOccurrence`'s.
  */
@@ -646,14 +646,14 @@ export function movedMeetingDropped(params: {
   /** The series' own start (its master's), once loaded. */
   seriesStart?: StartTime | null;
   timeZone: string;
-}): GoogleEvent["start"] | null {
+}): Temporal.PlainDate | null {
   const { occurrence, seriesStart } = params;
   const rule = getPrimaryRecurrenceRule(params.recurrence);
   if (!(occurrence.recurringEventId && seriesStart && rule)) {
     return null;
   }
   const timeZone = eventTimeZone(occurrence, params.timeZone);
-  const severalRules = (params.recurrence ?? []).filter(isRule).length > 1;
+  const severalRules = hasSeveralRules(params.recurrence);
   const ruleTime = ruleLineTime(rule, timeOfStart(seriesStart, timeZone));
   const dropped = params.loaded.flatMap((event) => {
     const slot = event.originalStartTime;
@@ -679,7 +679,7 @@ export function movedMeetingDropped(params: {
   const slotDay = (event: (typeof dropped)[number]) =>
     dayOfStart(event.slot, timeZone)?.toString() ?? "";
   const [first] = dropped.sort((a, b) => slotDay(a).localeCompare(slotDay(b)));
-  return first?.start ?? null;
+  return first ? dayOfStart(first.start, params.timeZone) : null;
 }
 
 /**
@@ -916,6 +916,16 @@ export function seriesCountingDays(
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/**
+ * Whether a series repeats by more than one RRULE (Mondays at 9:00, and
+ * Mondays at 15:00, as two lines): EXDATE and RDATE lines don't count.
+ */
+export function hasSeveralRules(
+  recurrence: string[] | null | undefined
+): boolean {
+  return (recurrence ?? []).filter(isRule).length > 1;
+}
 
 /** The series' RRULE line; Google may list EXDATE/RDATE lines with it. */
 export function getPrimaryRecurrenceRule(

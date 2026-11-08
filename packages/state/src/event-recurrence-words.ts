@@ -7,6 +7,7 @@ import {
   type EventRecurrencePattern,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
+  hasSeveralRules,
   isPlainWeekday,
   lastWeekdayOf,
   parseGoogleEventRecurrenceRule,
@@ -265,9 +266,7 @@ export function describeEventRecurrence(params: {
       : `Repeats ${words[0]}`;
   const { complete, text } = dayWords(rule, pattern, params.start);
   const said = text ? `${base} ${text}` : base;
-  const severalRules =
-    (params.rules ?? []).filter((line) => line.startsWith("RRULE:")).length > 1;
-  return complete && !severalRules ? said : `${said} (custom)`;
+  return complete && !hasSeveralRules(params.rules) ? said : `${said} (custom)`;
 }
 
 /** One monthly "On" choice: its label and the BYDAY / BYMONTHDAY it sets. */

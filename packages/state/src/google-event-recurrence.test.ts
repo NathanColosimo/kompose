@@ -1837,6 +1837,8 @@ describe("movedMeetingDropped", () => {
     "2026-12-07T09:00:00-05:00",
     "2026-12-07T14:00:00-05:00"
   );
+  // Where the calendar shows it.
+  const dec7 = Temporal.PlainDate.from("2026-12-07");
   const dropped = (
     recurrence: string[],
     loaded: ReturnType<typeof meeting>[] = [edited, moved],
@@ -1852,9 +1854,9 @@ describe("movedMeetingDropped", () => {
 
   test("names a moved meeting whose original slot the new repeat drops", () => {
     // Weekly on Thursdays: Mon Dec 7 isn't one, so Google cancels it.
-    expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH"])).toEqual(moved.start);
+    expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH"])).toEqual(dec7);
     // A COUNT that ends before it, too.
-    expect(dropped(["RRULE:FREQ=DAILY;COUNT=5"])).toEqual(moved.start);
+    expect(dropped(["RRULE:FREQ=DAILY;COUNT=5"])).toEqual(dec7);
   });
 
   test("keeps one whose original slot the new repeat still has", () => {
@@ -1886,7 +1888,7 @@ describe("movedMeetingDropped", () => {
       "2026-12-15T09:00:00-05:00"
     );
     expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH"], [later, moved])).toEqual(
-      moved.start
+      dec7
     );
   });
 
@@ -1906,7 +1908,7 @@ describe("movedMeetingDropped", () => {
     ).toBeNull();
     expect(
       dropped(rules("RRULE:FREQ=WEEKLY;BYDAY=TH"), [fromSecond, moved])
-    ).toEqual(moved.start);
+    ).toEqual(dec7);
   });
 
   test("before the series loads, can't tell", () => {

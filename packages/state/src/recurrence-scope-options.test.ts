@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Temporal } from "temporal-polyfill";
 import {
   chosenScope,
   type EventSaveChanges,
@@ -39,38 +40,38 @@ test("disables the scopes a save can't use", () => {
   ]);
 });
 
+/** Every combination of the given values, one per key. */
+function combinations<T extends Record<string, readonly unknown[]>>(
+  values: T
+): { [K in keyof T]: T[K][number] }[] {
+  // Built key by key, which the mapped type can't follow: cast once.
+  return Object.entries(values).reduce<Record<string, unknown>[]>(
+    (sets, [key, options]) =>
+      sets.flatMap((set) =>
+        options.map((option) => ({ ...set, [key]: option }))
+      ),
+    [{}]
+  ) as { [K in keyof T]: T[K][number] }[];
+}
+
 test("says why whenever a scope is off", () => {
   const plain = SCOPE_DIALOG_COPY.saveEvent.description;
-  const flags = [false, true];
-  for (const calendarChanged of flags) {
-    for (const dateMoved of flags) {
-      for (const patternChanged of flags) {
-        for (const seriesRuleLoaded of flags) {
-          for (const seriesRuleFailed of flags) {
-            for (const repeatSkips of [null, "day", "end"] as const) {
-              for (const splitBlocked of [
-                null,
-                "addedOccurrence",
-                "severalRules",
-              ] as const) {
-                const changes = {
-                  calendarChanged,
-                  dateMoved,
-                  patternChanged,
-                  repeatSkips,
-                  seriesRuleFailed,
-                  seriesRuleLoaded,
-                  splitBlocked,
-                };
-                const anyOff =
-                  Object.keys(eventSaveDisabledScopes(changes)).length > 0;
-                expect(eventSaveDescription(changes) === plain).toBe(!anyOff);
-              }
-            }
-          }
-        }
-      }
-    }
+  const flags = [false, true] as const;
+  const all = combinations({
+    calendarChanged: flags,
+    dateMoved: flags,
+    droppedMovedDay: [null, Temporal.PlainDate.from("2026-12-07")],
+    patternChanged: flags,
+    repeatSkips: [null, "day", "end"],
+    retimed: flags,
+    seriesRuleFailed: flags,
+    seriesRuleLoaded: flags,
+    severalRules: flags,
+    splitBlocked: [null, "addedOccurrence", "severalRules"],
+  } as const);
+  for (const changes of all) {
+    const anyOff = Object.keys(eventSaveDisabledScopes(changes)).length > 0;
+    expect(eventSaveDescription(changes) === plain).toBe(!anyOff);
   }
 });
 
@@ -90,6 +91,18 @@ test("leaves no scope only for a save that needs two, or one waiting on the seri
   expect(noneLeft({ patternChanged: true, seriesRuleLoaded: false })).toBe(
     true
   );
+  // A calendar move whose new repeat drops a moved meeting, or whose new
+  // time can't apply to a series of several rules.
+  expect(
+    noneLeft({
+      calendarChanged: true,
+      droppedMovedDay: Temporal.PlainDate.from("2026-12-07"),
+      patternChanged: true,
+    })
+  ).toBe(true);
+  expect(
+    noneLeft({ calendarChanged: true, retimed: true, severalRules: true })
+  ).toBe(true);
   // Everything else leaves at least one.
   expect(noneLeft({ dateMoved: true, patternChanged: true })).toBe(false);
   expect(noneLeft({ dateMoved: true, seriesRuleLoaded: false })).toBe(false);
@@ -408,4 +421,95 @@ test("a new end before this occurrence says so", () => {
       seriesRuleLoaded: true,
     })
   ).toBe(SCOPE_DIALOG_COPY.repeatEndOff);
+});
+
+describe("a new repeat that would drop a moved meeting", () => {
+  const changes = {
+    ...none,
+    droppedMovedDay: Temporal.PlainDate.from("2026-12-07"),
+    patternChanged: true,
+  };
+
+  test("turns Entire series off and names the meeting", () => {
+    expect(off(changes)).toEqual(["all", "this"]);
+    expect(eventSaveDescription(changes)).toBe(
+      "The new repeat would drop your moved Dec 7 meeting, so it can't apply to the entire series."
+    );
+  });
+
+  test("says it after why This and following is off too", () => {
+    const blocked = { ...changes, splitBlocked: "addedOccurrence" as const };
+    expect(off(blocked)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(blocked)).toBe(
+      "This occurrence was added to the series on its own, so This and following isn't available. The new repeat would drop your moved Dec 7 meeting, so it can't apply to the entire series."
+    );
+  });
+
+  test("holds a calendar move, which takes the whole series", () => {
+    const move = { ...changes, calendarChanged: true };
+    expect(off(move)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(move)).toBe(
+      "Moving to another calendar moves the whole series, but the new repeat would drop your moved Dec 7 meeting. Move the calendar and change the repeat in two saves."
+    );
+  });
+
+  test("a repeat that skips this occurrence itself says that first", () => {
+    expect(eventSaveDescription({ ...changes, repeatSkips: "day" })).toBe(
+      SCOPE_DIALOG_COPY.repeatOffDay
+    );
+  });
+
+  test("doesn't matter without a new repeat", () => {
+    expect(off({ ...changes, patternChanged: false })).toEqual([]);
+  });
+});
+
+describe("a new time for a series of several rules", () => {
+  const changes = { ...none, retimed: true, severalRules: true };
+
+  test("applies to this occurrence only, and says why", () => {
+    const occurrence = { ...changes, splitBlocked: "severalRules" as const };
+    expect(off(occurrence)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(occurrence)).toBe(
+      "This series repeats by more than one rule, so This and following isn't available. A new time applies to this occurrence only."
+    );
+    // Opened from the series itself (no occurrence to split at).
+    expect(off(changes)).toEqual(["all"]);
+    expect(eventSaveDescription(changes)).toBe(
+      "This series repeats by more than one rule, so a new time can't apply to the entire series."
+    );
+  });
+
+  test("with a new repeat too, needs two saves", () => {
+    const both = {
+      ...changes,
+      patternChanged: true,
+      splitBlocked: "severalRules" as const,
+    };
+    expect(off(both)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(both)).toBe(
+      "This series repeats by more than one rule, so This and following isn't available. Change the time and the repeat in two saves."
+    );
+  });
+
+  test("holds a calendar move", () => {
+    expect(eventSaveDescription({ ...changes, calendarChanged: true })).toBe(
+      SCOPE_DIALOG_COPY.moveEventSeveralRulesTime
+    );
+  });
+
+  test("a series of one rule takes a new time in full", () => {
+    expect(off({ ...changes, severalRules: false })).toEqual([]);
+  });
+
+  test("waits for the series, which says how many rules it has", () => {
+    const loading = { ...none, retimed: true, seriesRuleLoaded: false };
+    expect(off(loading)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(loading)).toBe(
+      "Loading the series… This and following and Entire series open once it's in."
+    );
+    expect(eventSaveDescription({ ...loading, seriesRuleFailed: true })).toBe(
+      "Couldn't load the series, so the new time applies to this occurrence only. Try again later for the rest."
+    );
+  });
 });
