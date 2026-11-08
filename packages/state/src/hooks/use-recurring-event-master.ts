@@ -43,14 +43,12 @@ export function useRecurringEventMaster(params: {
         recurringEventId: recurringEventId ?? "",
       })
     : ([
-        "google-event-master",
-        params.accountId,
-        params.calendarId,
+        ...getGoogleEventMastersByCalendarQueryKey(params),
         params.event?.id ?? "no-event",
         "disabled",
       ] as const);
 
-  return useQuery({
+  const query = useQuery({
     enabled,
     queryFn: () => {
       if (!recurringEventId) {
@@ -65,4 +63,27 @@ export function useRecurringEventMaster(params: {
     queryKey,
     staleTime: 5 * 60 * 1000,
   });
+  const refreshing = seriesRefreshing(query);
+  return {
+    ...query,
+    /** A stale series (marked so by a write) is being fetched again. */
+    refreshing,
+    /** The rule isn't usable yet: first load, or a stale copy refreshing. */
+    ruleLoading: query.isLoading || refreshing,
+    /** The series' rule can be used: loaded, and not a stale copy being refreshed. */
+    ruleReady: Boolean(query.data) && !refreshing,
+  };
+}
+
+/**
+ * Whether a loaded series is a stale copy being fetched again: after a
+ * write marks it stale, its old rule mustn't feed a save until the new one
+ * is in.
+ */
+export function seriesRefreshing(query: {
+  data?: unknown;
+  isFetching: boolean;
+  isStale: boolean;
+}): boolean {
+  return Boolean(query.data) && query.isStale && query.isFetching;
 }

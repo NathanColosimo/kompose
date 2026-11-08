@@ -733,7 +733,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         }),
         patternChanged: false,
         seriesRuleFailed: pendingMaster.isError,
-        seriesRuleLoaded: Boolean(pendingMaster.data),
+        seriesRuleLoaded: pendingMaster.ruleReady,
         seriesTimeZone: otherTimeZone(pendingGoogleUpdate.occurrence, timeZone),
         splitBlocked: seriesSplitBlock(
           pendingGoogleUpdate.occurrence,

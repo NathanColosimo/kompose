@@ -890,13 +890,13 @@ function EventSaveScopeDialog({
  */
 function deleteStateFor(
   event: GoogleEvent | undefined,
-  master: { data?: GoogleEvent; isError: boolean },
+  master: { data?: GoogleEvent; isError: boolean; ruleReady: boolean },
   timeZone: string
 ) {
   return eventDeleteScopeState({
     cutUnsure: seriesCutUnsure(event, master.data, timeZone),
     seriesRuleFailed: master.isError,
-    seriesRuleLoaded: Boolean(event?.recurrence?.length || master.data),
+    seriesRuleLoaded: Boolean(event?.recurrence?.length || master.ruleReady),
   });
 }
 
@@ -1639,7 +1639,7 @@ export default function CalendarTab() {
       patternChanged: recurrenceToSend(draft, masterRecurrence) !== undefined,
       seriesRuleFailed: recurringMasterEvent.isError,
       seriesRuleLoaded: Boolean(
-        draft.sourceEvent.recurrence?.length || recurringMasterEvent.data
+        draft.sourceEvent.recurrence?.length || recurringMasterEvent.ruleReady
       ),
       seriesTimeZone: otherTimeZone(draft.sourceEvent, timeZone),
       splitBlocked: seriesSplitBlock(
@@ -1653,6 +1653,7 @@ export default function CalendarTab() {
       masterRecurrence,
       recurringMasterEvent.data,
       recurringMasterEvent.isError,
+      recurringMasterEvent.ruleReady,
       timeZone,
     ]
   );
@@ -2312,7 +2313,7 @@ export default function CalendarTab() {
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
           isSaving={isSavingEvent || isDeletingEvent}
-          masterLoading={recurringMasterEvent.isLoading}
+          masterLoading={recurringMasterEvent.ruleLoading}
           masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}

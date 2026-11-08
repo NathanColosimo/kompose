@@ -810,7 +810,7 @@ export function EventEditPopover({
     event: event ?? null,
   });
   const seriesRuleLoaded = Boolean(
-    event?.recurrence?.length || seriesMaster.data
+    event?.recurrence?.length || seriesMaster.ruleReady
   );
   const timeZone = useAtomValue(timezoneAtom);
   const seriesStatus = {
@@ -2640,7 +2640,7 @@ export function EventEditForm({
   // Any editable event can repeat, a one-off one included. While an
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
-  const recurrenceLoading = masterQuery.isLoading;
+  const recurrenceLoading = masterQuery.ruleLoading;
 
   if (readOnly) {
     const source = calendars.find(
