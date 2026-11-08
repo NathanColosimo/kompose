@@ -91,6 +91,27 @@ describe("describeEventRecurrence", () => {
     }
   });
 
+  test("marks a series with more than one rule, whose others the words leave out", () => {
+    expect(
+      describeEventRecurrence({
+        rules: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=FR",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+      })
+    ).toBe("Repeats weekly on Mon (custom)");
+    // Skipped days don't change how it repeats.
+    expect(
+      describeEventRecurrence({
+        rules: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+      })
+    ).toBe("Repeats weekly on Mon");
+  });
+
   test("still says an instance repeats when its rule isn't loaded", () => {
     expect(
       describeEventRecurrence({ recurringEventId: "series", rules: [] })

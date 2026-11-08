@@ -233,8 +233,9 @@ function dayWords(
  * How a Google event repeats, for a read-only view ("Repeats weekly on Mon,
  * Wed"). `rules` is the series' RRULE list (the event's own, or its
  * master's). An instance whose rule isn't loaded still says it repeats.
- * A rule whose parts the words don't all cover ends in "(custom)", so a
- * constraint they leave out isn't hidden. Null for a one-off event.
+ * A rule whose parts the words don't all cover, or a series with more
+ * than one rule, ends in "(custom)", so what they leave out isn't hidden.
+ * Null for a one-off event.
  */
 export function describeEventRecurrence(params: {
   eventType?: string | null;
@@ -263,7 +264,9 @@ export function describeEventRecurrence(params: {
       : `Repeats ${words[0]}`;
   const { complete, text } = dayWords(rule, pattern, params.start);
   const said = text ? `${base} ${text}` : base;
-  return complete ? said : `${said} (custom)`;
+  const otherRules =
+    (params.rules ?? []).filter((line) => line.startsWith("RRULE:")).length > 1;
+  return complete && !otherRules ? said : `${said} (custom)`;
 }
 
 /** One monthly "On" choice: its label and the BYDAY / BYMONTHDAY it sets. */
