@@ -219,17 +219,6 @@ function RecurrenceRow({
   );
 }
 
-/** What the repeat row says while an occurrence's pattern isn't in. */
-function recurrenceWaitingLabel(
-  loading: boolean,
-  paused: boolean
-): string | null {
-  if (!loading) {
-    return null;
-  }
-  return paused ? "Repeat loads when you're online" : "Loading repeat…";
-}
-
 const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 function RecurrenceEditorSection({
@@ -1332,8 +1321,6 @@ interface EventEditorSheetProps {
   masterFailed?: boolean;
   /** The occurrence's series pattern isn't usable yet (loading or failed). */
   masterLoading?: boolean;
-  /** Its load waits for the network. */
-  masterPaused?: boolean;
   /**
    * The series' pattern when the event is an occurrence; it can load after
    * the editor opens.
@@ -1356,7 +1343,6 @@ export function EventEditorSheet({
   isSaving = false,
   masterFailed = false,
   masterLoading = false,
-  masterPaused = false,
   onRetryMaster,
   masterRecurrence,
   onClose,
@@ -1517,7 +1503,9 @@ export function EventEditorSheet({
       )}
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
-      waitingLabel={recurrenceWaitingLabel(masterLoading, masterPaused)}
+      // It repeats, but how isn't known yet. (Offline, React Native's
+      // queries fail rather than pause, and the row offers a retry.)
+      waitingLabel={masterLoading ? "Loading repeat…" : null}
       zoneCity={
         seriesTimeZone === appTimeZone ? null : timeZoneCity(seriesTimeZone)
       }

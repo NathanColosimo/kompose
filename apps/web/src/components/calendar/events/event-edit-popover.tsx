@@ -1598,6 +1598,7 @@ function RepeatControl({
   seriesStart,
   seriesTimeZone,
   showsZone,
+  waitReason,
 }: {
   allDay: boolean;
   city: string | null;
@@ -1613,6 +1614,8 @@ function RepeatControl({
   seriesStart: Temporal.PlainDate | null;
   seriesTimeZone: string;
   showsZone: boolean;
+  /** Why a known rule waits to be refreshed (offline), for its tooltip. */
+  waitReason?: string;
 }) {
   const waiting = loading && !ruleLabel;
   const ruleText = waiting ? "Loading repeat…" : ruleLabel;
@@ -1640,7 +1643,11 @@ function RepeatControl({
           )}
           disabled={disabled}
           size={repeatLabel ? "sm" : "icon"}
-          title={repeatLabel ?? "Repeat"}
+          title={
+            waitReason && repeatLabel
+              ? `${repeatLabel} · ${waitReason}`
+              : (repeatLabel ?? "Repeat")
+          }
           variant={repeatLabel ? "secondary" : "outline"}
         >
           <Repeat className="size-4 shrink-0" />
@@ -1716,6 +1723,8 @@ function EventAllDayAndRecurrenceRow({
   // Its days are the series' zone's: say so beside a date shown here.
   const city = showsZone ? timeZoneCity(seriesTimeZone) : null;
   const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
+  const waitShown = Boolean(recurrenceWaitReason) && !ruleLabel;
+  const retryShown = !recurrenceWaitReason && recurrenceFailed;
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1740,20 +1749,34 @@ function EventAllDayAndRecurrenceRow({
           All day
         </Button>
       )}
-      {/* Offline: say why the repeat waits (failed or not, a retry would
-          only wait too); failed: offer a retry; else the chip. */}
-      {recurrenceWaitReason ? (
-        <span
-          className="min-w-0 shrink truncate text-muted-foreground text-xs"
-          role="status"
-        >
-          {recurrenceWaitReason}
+      {/* Offline: why the repeat waits, in a live region that stays
+          mounted so it's announced when it fills. It stands in for the
+          chip when no rule is known (a retry would only wait too); a known
+          rule stays, dimmed. Failed: offer a retry. Else the chip. */}
+      <span
+        className={
+          waitShown
+            ? "flex h-8 min-w-0 shrink items-center gap-1.5 px-1 text-muted-foreground text-xs"
+            : "sr-only"
+        }
+        role="status"
+        title={waitShown ? recurrenceWaitReason : undefined}
+      >
+        {waitShown ? (
+          <>
+            <Repeat aria-hidden className="size-4 shrink-0" />
+            <span aria-hidden className="truncate">
+              Offline
+            </span>
+          </>
+        ) : null}
+        {/* The full reason, for screen readers (the short word is visual). */}
+        <span className={waitShown ? "sr-only" : undefined}>
+          {recurrenceWaitReason ?? ""}
         </span>
-      ) : null}
-      {!recurrenceWaitReason && recurrenceFailed ? (
-        <RepeatRetryButton onRetry={onRetryRecurrence} />
-      ) : null}
-      {recurrenceWaitReason || recurrenceFailed ? null : (
+      </span>
+      {retryShown ? <RepeatRetryButton onRetry={onRetryRecurrence} /> : null}
+      {waitShown || retryShown ? null : (
         <RepeatControl
           allDay={allDay}
           city={city}
@@ -1765,6 +1788,7 @@ function EventAllDayAndRecurrenceRow({
           seriesStart={seriesStart}
           seriesTimeZone={seriesTimeZone}
           showsZone={showsZone}
+          waitReason={recurrenceWaitReason}
         />
       )}
       <Select
