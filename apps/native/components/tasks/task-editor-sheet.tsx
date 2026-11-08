@@ -609,10 +609,11 @@ function TaskScheduleChips({
   const chipWidth = (width: number) =>
     Math.round(width * Math.max(1, fontScale));
 
-  // Each chip is as wide as its longest value at 1x ("Due Nov 30",
-  // "12:45 PM"), scaled with the text, so nothing truncates. One row down to
-  // 375pt at the default size (64 + 50 + 74 + 92 + 44 + gaps = 340); as the
-  // text grows, the row wraps.
+  // Each chip is as wide as its widest value at 1x in Sentient 13pt, plus
+  // 10pt of padding and border ("May 20" 45, "10:00 AM" 58, "Due May 20"
+  // 73), scaled with the text, so nothing truncates. One row down to 375pt
+  // at the default size (64 + 56 + 70 + 86 + 44 + gaps = 332); as the text
+  // grows, the row wraps.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
       {/* Picker takes no accessibility props, so this names it. */}
@@ -647,7 +648,7 @@ function TaskScheduleChips({
 
       {/* Grows to fill its line, never below its text: the minimum, not
           the basis, is what makes the row wrap instead of crushing it. */}
-      <View style={{ flexGrow: 1, minWidth: chipWidth(50) }}>
+      <View style={{ flexGrow: 1, minWidth: chipWidth(56) }}>
         <DatePicker
           accessibilityLabel="Start date"
           displayValue={
@@ -669,7 +670,7 @@ function TaskScheduleChips({
           variant="outline"
         />
       </View>
-      <View style={{ width: chipWidth(74) }}>
+      <View style={{ width: chipWidth(70) }}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -692,7 +693,7 @@ function TaskScheduleChips({
       </View>
 
       <View className="flex-row items-center gap-1">
-        <View style={{ width: chipWidth(92) }}>
+        <View style={{ width: chipWidth(86) }}>
           <DatePicker
             accessibilityLabel="Due date"
             displayValue={
