@@ -26,6 +26,20 @@ describe("setPrimaryRecurrenceRule", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", exdate]);
   });
 
+  test("keeps a series' other rules", () => {
+    // Mondays and Fridays as two rules: changing the first keeps Fridays.
+    expect(
+      setPrimaryRecurrenceRule(
+        ["RRULE:FREQ=WEEKLY;BYDAY=MO", "RRULE:FREQ=WEEKLY;BYDAY=FR", exdate],
+        "RRULE:FREQ=WEEKLY;BYDAY=TU"
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "RRULE:FREQ=WEEKLY;BYDAY=FR",
+      exdate,
+    ]);
+  });
+
   test("clears every line when the repeat ends", () => {
     expect(
       setPrimaryRecurrenceRule(["RRULE:FREQ=DAILY", exdate], null)
@@ -420,6 +434,20 @@ describe("followStart", () => {
       "RRULE:FREQ=YEARLY;BYMONTHDAY=10",
       "EXDATE;VALUE=DATE:20270610",
     ]);
+  });
+
+  test("keeps a month's skip in its month when the day moves a little", () => {
+    // Monthly on the 31st moved to the 30th: the skipped May 31 is May 30,
+    // not April's meeting.
+    expect(
+      followStart({
+        allDay: true,
+        from: day("2027-01-31"),
+        recurrence: ["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270531"],
+        timeZone: zone,
+        to: day("2027-01-30"),
+      })
+    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270530"]);
   });
 
   test("keeps skips off real meetings and the picked day", () => {

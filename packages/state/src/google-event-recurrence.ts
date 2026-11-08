@@ -606,9 +606,11 @@ export function getPrimaryRecurrenceRule(
 }
 
 /**
- * Replace the RRULE, keeping the series' other lines (deleted occurrences
- * stay deleted). Without a rule nothing repeats, so the whole list clears:
- * EXDATE lines alone aren't a series.
+ * Replace the series' primary RRULE (the one the editors show), keeping
+ * every other line: deleted occurrences stay deleted, and a series with
+ * more than one RRULE (Mondays and Fridays as two rules) keeps the others.
+ * Without a rule nothing repeats, so the whole list clears: EXDATE lines
+ * alone aren't a series.
  */
 export function setPrimaryRecurrenceRule(
   recurrence: string[] | null | undefined,
@@ -617,7 +619,9 @@ export function setPrimaryRecurrenceRule(
   if (!rule) {
     return [];
   }
-  return [rule, ...(recurrence ?? []).filter((line) => !isRule(line))];
+  const lines = recurrence ?? [];
+  const primary = lines.findIndex(isRule);
+  return [rule, ...lines.filter((_, index) => index !== primary)];
 }
 
 export function isRecurringGoogleEvent(params: {
