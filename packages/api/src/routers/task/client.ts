@@ -16,6 +16,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lt,
   ne,
   or,
@@ -904,7 +905,10 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   boundary: string
 ) {
   if (task.seriesMasterId === task.id) {
-    return yield* handOffEarlierPart(userId, task, boundary);
+    return [
+      ...(yield* handOffEarlierPart(userId, task, boundary)),
+      ...(yield* dbDetachUndated(userId, task.id)),
+    ];
   }
   const [master] = yield* dbSelectById(userId, task.seriesMasterId);
   if (!master?.recurrence) {
@@ -920,8 +924,9 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
       { ...master, seriesMasterId: master.id, startDate: master.startDate },
       boundary
     );
+    const detached = yield* dbDetachUndated(userId, master.id);
     const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
-    return [...handedOff, ...cleared];
+    return [...handedOff, ...detached, ...cleared];
   }
   const db = yield* Database;
   const [last] = yield* db
@@ -940,6 +945,28 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
     recurrence: endedBefore(master.recurrence, boundary, last?.startDate),
   });
 });
+
+/**
+ * A series' undated occurrences (moved to the inbox alone) have no place
+ * before or after a split, so when the split retires their master they
+ * become standalone tasks rather than members of a series that's gone.
+ */
+const dbDetachUndated = (userId: string, seriesMasterId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .update(taskTable)
+      .set({ isException: false, recurrence: null, seriesMasterId: null })
+      .where(
+        and(
+          eq(taskTable.userId, userId),
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          ne(taskTable.id, seriesMasterId),
+          isNull(taskTable.startDate)
+        )
+      )
+      .returning();
+  });
 
 /**
  * The edited task is its series' master but some occurrences come before
