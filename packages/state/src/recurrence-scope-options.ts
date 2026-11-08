@@ -47,7 +47,7 @@ export const SCOPE_DIALOG_COPY = {
     "Counted from the series' first meeting, the new end comes before this occurrence, so it applies from here on.",
   /** Shown when the series' rule couldn't load, for a moved day. */
   seriesFailed:
-    "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
+    "Couldn't load the series, so your changes apply to this occurrence only. Try again later for the rest.",
   /** Shown when the series' rule couldn't load, for a save in place. */
   seriesFailedSave:
     "Couldn't load the series, so This and following isn't available. Try again later.",
@@ -73,9 +73,9 @@ export const SCOPE_DIALOG_COPY = {
     "Loading the series… This and following and Entire series open once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
-  /** A calendar move with a new day for this occurrence. */
+  /** A calendar move while the occurrence is on another day (`dateMoved`). */
   moveEventDay:
-    "Moving to another calendar moves the whole series, but a new day applies only to this occurrence, or from it on. Move the calendar and change the day in two saves.",
+    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the day in two saves.",
   /** A calendar move with a new repeat that would skip this occurrence. */
   moveEventRepeatDay:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
@@ -147,7 +147,11 @@ export const TASK_DELETE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<DeleteSco
 export interface EventSaveChanges {
   /** It moves to another calendar. */
   calendarChanged: boolean;
-  /** It moves an occurrence to another day. */
+  /**
+   * A save would put the series on another day than the occurrence's
+   * place in it: moved there in this edit, or before and given new times
+   * now (`occurrenceDayMoved`).
+   */
   dateMoved: boolean;
   /**
    * The day of a moved (rescheduled) meeting of the series that the new
@@ -382,19 +386,22 @@ export function chosenScope(
 }
 
 /**
- * The scope dialog's line for a moved day, in the series' zone when it
- * isn't the app's ("A new day in Tokyo time"): it can't move the whole
- * series, and with a new repeat (never one occurrence's) only goes from
- * this occurrence on.
+ * The scope dialog's line when a save would put the series on another
+ * day: the occurrence is now on a day other than its place in the series
+ * (moved in this edit, or before and given new times now), counted in the
+ * series' zone, named when it isn't the app's. That can't move the whole
+ * series, and a new repeat (never one occurrence's) only goes from here.
  */
 function newDayLine(changes: EventSaveChanges): string {
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)
     : null;
-  const day = city ? `A new day in ${city} time` : "A new day";
+  const where = city
+    ? `In ${city} time, this occurrence is now on another day than its series`
+    : "This occurrence is now on another day than its series";
   return changes.patternChanged
-    ? `${day} with a new repeat applies from this occurrence on.`
-    : `${day} applies to this occurrence, or from it on.`;
+    ? `${where}, so a new repeat applies from it on.`
+    : `${where}, so your changes apply to it, or from it on.`;
 }
 
 /** "Dec 7": a moved meeting's day, as the dialog names it. */

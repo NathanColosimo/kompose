@@ -668,7 +668,8 @@ function ruleLineTime(
  * as the server reads it (`seriesMeetsAt`: the series' first meeting, an
  * added RDATE one, or a rule's, skipped ones aside): "end" when a rule at
  * the slot's time still has its day but its COUNT or UNTIL comes first,
- * else "day" (not a rule's day: an implicit day, an interval's phase).
+ * else "day" (not a rule's day or time: an implicit day, an interval's
+ * phase, another time of day).
  * Null while the series still has it, or when that can't be told.
  */
 function slotDropped(params: {
@@ -694,13 +695,10 @@ function slotDropped(params: {
   const day = dayOfStart(slot, timeZone);
   const seriesTime = timeOfStart(seriesStart, timeZone);
   const slotTime = timeOfStart(slot, timeZone);
-  const rules = recurrence.filter(isRule);
-  // In a series of several rules, only one at the slot's time could have
-  // had it.
-  const slotRules = rules.filter((rule) => {
+  // Only a rule at the slot's time could have had it.
+  const slotRules = recurrence.filter(isRule).filter((rule) => {
     const ruleTime = ruleLineTime(rule, seriesTime);
     return (
-      rules.length === 1 ||
       !(ruleTime && slotTime) ||
       Temporal.PlainTime.compare(ruleTime, slotTime) === 0
     );
@@ -774,11 +772,7 @@ export function seriesRecurrenceForSave(params: {
   /** The edited end. */
   editedEnd: StartTime;
   /** The edited start. */
-  editedStart: {
-    date?: string | null;
-    dateTime?: string | null;
-    timeZone?: string | null;
-  };
+  editedStart: StartTime;
   masterRecurrence: string[] | null | undefined;
   /** The series' own start, its first day (where COUNT counts from). */
   masterStart?: StartTime | null;

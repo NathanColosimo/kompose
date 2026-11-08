@@ -111,17 +111,19 @@ test("leaves no scope only for a save that needs two, or one waiting on the seri
 
 test("says why the scopes are what they are", () => {
   expect(eventSaveDescription({ ...none, dateMoved: true })).toBe(
-    "A new day applies to this occurrence, or from it on."
+    "This occurrence is now on another day than its series, so your changes apply to it, or from it on."
   );
   expect(
     eventSaveDescription({ ...none, dateMoved: true, seriesRuleLoaded: false })
   ).toBe(
-    "A new day applies to this occurrence, or from it on. Loading the series… This and following opens once it's in."
+    "This occurrence is now on another day than its series, so your changes apply to it, or from it on. Loading the series… This and following opens once it's in."
   );
   // A new repeat on a new day can only go from here on.
   expect(
     eventSaveDescription({ ...none, dateMoved: true, patternChanged: true })
-  ).toBe("A new day with a new repeat applies from this occurrence on.");
+  ).toBe(
+    "This occurrence is now on another day than its series, so a new repeat applies from it on."
+  );
   expect(
     eventSaveDescription({
       ...none,
@@ -130,7 +132,7 @@ test("says why the scopes are what they are", () => {
       seriesTimeZone: "Asia/Tokyo",
     })
   ).toBe(
-    "A new day in Tokyo time with a new repeat applies from this occurrence on."
+    "In Tokyo time, this occurrence is now on another day than its series, so a new repeat applies from it on."
   );
   // A new repeat alone: never one occurrence's.
   expect(eventSaveDescription({ ...none, patternChanged: true })).toBe(
@@ -144,7 +146,7 @@ test("says why the scopes are what they are", () => {
       seriesRuleLoaded: false,
     })
   ).toBe(
-    "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest."
+    "Couldn't load the series, so your changes apply to this occurrence only. Try again later for the rest."
   );
   expect(
     eventSaveDescription({
@@ -152,21 +154,25 @@ test("says why the scopes are what they are", () => {
       dateMoved: true,
       seriesTimeZone: "Asia/Tokyo",
     })
-  ).toBe("A new day in Tokyo time applies to this occurrence, or from it on.");
+  ).toBe(
+    "In Tokyo time, this occurrence is now on another day than its series, so your changes apply to it, or from it on."
+  );
   expect(
     eventSaveDescription({
       ...none,
       dateMoved: true,
       seriesTimeZone: "Etc/GMT-9",
     })
-  ).toBe("A new day applies to this occurrence, or from it on.");
+  ).toBe(
+    "This occurrence is now on another day than its series, so your changes apply to it, or from it on."
+  );
   expect(eventSaveDescription({ ...none, calendarChanged: true })).toBe(
     "Moving to another calendar moves the whole series."
   );
   expect(
     eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
   ).toBe(
-    "Moving to another calendar moves the whole series, but a new day applies only to this occurrence, or from it on. Move the calendar and change the day in two saves."
+    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the day in two saves."
   );
   expect(
     eventSaveDescription({
@@ -226,7 +232,7 @@ test("turns This and following off where a new series can't start", () => {
   expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
   // A moved day keeps its own sentence, with the reason after it.
   expect(eventSaveDescription({ ...blocked, dateMoved: true })).toBe(
-    "A new day applies to this occurrence, or from it on. This occurrence was added to the series on its own, so This and following isn't available."
+    "This occurrence is now on another day than its series, so your changes apply to it, or from it on. This occurrence was added to the series on its own, so This and following isn't available."
   );
   // A new repeat can then only go to the entire series.
   expect(eventSaveDescription({ ...blocked, patternChanged: true })).toBe(

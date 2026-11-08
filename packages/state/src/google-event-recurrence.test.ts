@@ -1752,6 +1752,19 @@ describe("repeatSkipsOccurrence", () => {
     expect(off([])).toBe(false);
   });
 
+  test("a new rule at another time drops the slot by its day, not its end", () => {
+    // Mondays at the series' 9:00 become Mondays at 15:00: the 9:00 slot
+    // is gone, and no end came before it.
+    expect(
+      repeatSkipsOccurrence({
+        occurrence: later,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYHOUR=15"],
+        seriesStart,
+        timeZone: zone,
+      })
+    ).toBe("day");
+  });
+
   test("an added meeting the series still lists keeps its slot", () => {
     // Mondays from Nov 2 at 9:00, with Tue Nov 10 added on its own; the
     // repeat becomes Mondays and Fridays, the added date kept.
