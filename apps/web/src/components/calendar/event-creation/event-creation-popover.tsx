@@ -140,7 +140,9 @@ export function EventCreationPopover() {
   // Event tab says why), else on the user's pick. Before paint, so the
   // Event tab never flashes.
   const blockedRef = useRef(false);
-  blockedRef.current = eventUnavailableReason !== null;
+  useLayoutEffect(() => {
+    blockedRef.current = eventUnavailableReason !== null;
+  }, [eventUnavailableReason]);
   // Only on opening: a calendar that loads later doesn't switch tabs.
   useLayoutEffect(() => {
     if (state.showPopover) {

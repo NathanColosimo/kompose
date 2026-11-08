@@ -131,16 +131,24 @@ export function useEventCreationState(): EventCreationContextValue {
     return writable[0];
   }, [visibleCalendars, allCalendars]);
 
-  const onSlotHover = useCallback((dateTime: Temporal.ZonedDateTime) => {
-    setState((prev) => {
-      // Don't update hover if we're in creation mode. Mouse moves within the
-      // same 15-minute slot snap to the same time; keep state so nothing re-renders.
-      if (prev.isCreating || prev.hoverDateTime?.equals(dateTime)) {
-        return prev;
+  // While the calendars load, a press waits, so the grid doesn't invite one.
+  const waitingForCalendars = !defaultCalendar && isLoadingCalendars;
+  const onSlotHover = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      if (waitingForCalendars) {
+        return;
       }
-      return { ...prev, hoverDateTime: dateTime };
-    });
-  }, []);
+      setState((prev) => {
+        // Don't update hover if we're in creation mode. Mouse moves within the
+        // same 15-minute slot snap to the same time; keep state so nothing re-renders.
+        if (prev.isCreating || prev.hoverDateTime?.equals(dateTime)) {
+          return prev;
+        }
+        return { ...prev, hoverDateTime: dateTime };
+      });
+    },
+    [waitingForCalendars]
+  );
 
   const onSlotLeave = useCallback(() => {
     setState((prev) => {

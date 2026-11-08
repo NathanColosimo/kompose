@@ -4,7 +4,7 @@ Keyboard shortcuts for Kompose calendar. Implemented using `react-hotkeys-hook`.
 
 ## Global Hotkeys
 
-These hotkeys work anywhere in the app (except when typing in input fields, unless noted).
+These hotkeys work anywhere in the app, except when typing in input fields (unless noted), inside a dialog or popover (the command bar, an editor), or on a key another control already handled (arrow keys on a popover's tabs).
 
 | Key       | Action                                 |
 | --------- | -------------------------------------- |
