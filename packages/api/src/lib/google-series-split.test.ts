@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  rulePositionsBefore,
+  carryCount,
   splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
@@ -64,24 +64,42 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261109"]);
   });
 
-  test("counts rule positions, skipped ones in, added ones out", () => {
+  test("carries a COUNT on by rule positions, skipped ones in", () => {
     // Daily COUNT=5 from Nov 1, Nov 2 skipped, split at Nov 3: Google lists
-    // Nov 1 only, but two positions are used.
+    // Nov 1, 3, 4, 5; two positions are used before the split, three left.
     expect(
-      rulePositionsBefore(
-        1,
-        ["RRULE:FREQ=DAILY;COUNT=5", "EXDATE;VALUE=DATE:20261102"],
-        "2026-11-03",
-        "America/New_York"
-      )
-    ).toBe(2);
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "EXDATE;VALUE=DATE:20261102",
+        ],
+        originalStart: "2026-11-03",
+        seriesZone: "America/New_York",
+        starts: ["2026-11-01", "2026-11-03", "2026-11-04", "2026-11-05"],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
+  test("with added days, ends where the old rule did", () => {
+    // Daily COUNT=5 from Nov 1 plus an RDATE on Nov 2 (a rule day too) and
+    // Nov 20: the rule's last day is Nov 5, whatever the duplicates.
     expect(
-      rulePositionsBefore(
-        3,
-        ["RRULE:FREQ=DAILY;COUNT=5", "RDATE;VALUE=DATE:20261031"],
-        "2026-11-03",
-        "America/New_York"
-      )
-    ).toBe(2);
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "RDATE;VALUE=DATE:20261102,20261120",
+        ],
+        originalStart: "2026-11-03",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-11-01",
+          "2026-11-02",
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-05",
+          "2026-11-20",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261105"]);
   });
 });

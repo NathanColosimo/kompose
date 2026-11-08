@@ -13,12 +13,11 @@ import {
   RecurrenceScope,
 } from "./schema";
 import {
+  carryCount,
   countOf,
-  rulePositionsBefore,
   sanitizeEventPayload,
   splitAddedDays,
   truncateRecurrenceForFollowing,
-  withRemainingCount,
 } from "./recurrence-utils";
 import { seriesTimesForEdit } from "./series-times";
 import { matchRecurrenceToStart } from "./until";
@@ -532,21 +531,13 @@ export function makeGoogleCalendarService(
     });
 
   /**
-   * How many of a series' occurrences came before the one that started at
-   * `before` (cancelled ones too: COUNT counts them), for what's left of
-   * its COUNT after a split.
+   * The original starts of all a COUNT series' occurrences (it's finite),
+   * cancelled ones too, as Google lists them: one rescheduled past the
+   * split still has its place.
    */
-  const countOccurrencesBefore = (
-    calendarId: string,
-    masterId: string,
-    before: string
-  ) =>
+  const listOccurrenceStarts = (calendarId: string, masterId: string) =>
     Effect.gen(function* () {
-      const allDay = !before.includes("T");
-      const cutoff = allDay ? null : Date.parse(before);
-      // All of a COUNT series (it's finite), filtered by each one's
-      // original start: one rescheduled past the split still counts.
-      let count = 0;
+      const starts: string[] = [];
       let pageToken: string | undefined;
       do {
         const response = yield* Effect.tryPromise({
@@ -561,21 +552,21 @@ export function makeGoogleCalendarService(
         });
         for (const item of response.items ?? []) {
           const start = item.originalStartTime ?? item.start;
-          const isBefore = allDay
-            ? (start?.date ?? "") < before
-            : Date.parse(start?.dateTime ?? "") < (cutoff ?? 0);
-          count += isBefore ? 1 : 0;
+          const value = start?.dateTime ?? start?.date;
+          if (value) {
+            starts.push(value);
+          }
         }
         pageToken = response.nextPageToken ?? undefined;
       } while (pageToken);
-      return count;
+      return starts;
     });
 
   /**
    * The rule a series' following part repeats with: the edit's own, or the
    * series' kept rule; either way, a COUNT the user didn't change carries
-   * on with what's left of it (a five-time series moved to another day at
-   * its third runs three more, not five).
+   * on (a five-time series moved to another day at its third runs three
+   * more, not five).
    */
   const followingRecurrence = (
     calendarId: string,
@@ -587,25 +578,20 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const rule = edited ?? kept;
       const count = countOf(master.recurrence);
+      const zone = seriesZoneOf(master);
       // The new part repeats from the split on: added days before it stay
       // with the old part.
-      const fromSplit =
-        rule && splitAddedDays(rule, originalStart, seriesZoneOf(master), "from");
+      const fromSplit = rule && splitAddedDays(rule, originalStart, zone, "from");
       if (!fromSplit || count === undefined || countOf(fromSplit) !== count) {
         return fromSplit;
       }
-      const listed = yield* countOccurrencesBefore(
-        calendarId,
-        master.id,
-        originalStart
-      );
-      const used = rulePositionsBefore(
-        listed,
-        master.recurrence ?? [],
+      const starts = yield* listOccurrenceStarts(calendarId, master.id);
+      return carryCount(fromSplit, {
+        masterRecurrence: master.recurrence ?? [],
         originalStart,
-        seriesZoneOf(master)
-      );
-      return withRemainingCount(fromSplit, used);
+        seriesZone: zone,
+        starts,
+      });
     });
 
   const updateEventAll = (

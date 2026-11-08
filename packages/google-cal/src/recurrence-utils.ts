@@ -123,36 +123,103 @@ export function splitAddedDays(
   });
 }
 
+/** Whether the series adds days of its own (RDATE). */
+function hasAddedDays(recurrence: string[]): boolean {
+  return recurrence.some((line) => line.startsWith("RDATE"));
+}
+
+/** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
+function asValue(start: string, seriesZone: string): RecurrenceValue | null {
+  return readRecurrenceValue(
+    DATE_ONLY.test(start) ? start.replace(/-/g, "") : start,
+    seriesZone,
+    seriesZone
+  );
+}
+
+/** A value's place in time: its moment, or its day's start (UTC). */
+function order(value: RecurrenceValue): number {
+  return value.instant
+    ? value.instant.epochMilliseconds
+    : Date.UTC(value.day.year, value.day.month - 1, value.day.day);
+}
+
+function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
+  return a.instant && b.instant
+    ? Temporal.Instant.compare(a.instant, b.instant) === 0
+    : Temporal.PlainDate.compare(a.day, b.day) === 0;
+}
+
 /**
- * How many of a split series' rule positions its listed occurrences before
- * the split stand for: Google lists rule occurrences (EXDATE-skipped ones
- * aside) and RDATE-added ones, while COUNT counts rule positions, skipped
- * ones included. So: listed, less RDATE days before, plus EXDATE days.
+ * The following part of a split series' rule, with the COUNT the user
+ * kept carried on. COUNT counts rule positions, EXDATE-skipped ones
+ * included, while Google lists rule occurrences (skipped ones aside) and
+ * RDATE-added ones, an added day that's also a rule day only once. So:
+ * - with no added days, the positions used before the split are those
+ *   listed before it plus the skipped days before it, and the new part
+ *   runs what's left (a five-time series split at its third runs three);
+ * - with added days, listed ones can't be told apart from rule ones, so
+ *   the new part ends where the old series' rule did instead: UNTIL its
+ *   last listed occurrence that isn't an added day.
  */
-export function rulePositionsBefore(
-  listed: number,
+export function carryCount(
   recurrence: string[],
-  originalStart: string,
-  seriesZone: string
-): number {
-  let added = 0;
-  let skipped = 0;
-  for (const line of recurrence) {
-    const list = parseDateList(line, seriesZone);
-    if (!list) {
-      continue;
-    }
-    const before = list.values.filter((value) => {
-      const read = readRecurrenceValue(value, list.zone, seriesZone);
-      return read ? beforeSplit(read, originalStart, seriesZone) : false;
-    }).length;
-    if (list.name === "RDATE") {
-      added += before;
-    } else {
-      skipped += before;
-    }
+  params: {
+    masterRecurrence: string[];
+    originalStart: string;
+    seriesZone: string;
+    /** Every occurrence's original start, as Google lists them. */
+    starts: string[];
   }
-  return Math.max(0, listed - added + skipped);
+): string[] {
+  const { masterRecurrence, originalStart, seriesZone, starts } = params;
+  const listed = starts
+    .map((start) => asValue(start, seriesZone))
+    .filter((value): value is RecurrenceValue => value !== null);
+  const listedValues = (name: "EXDATE" | "RDATE") =>
+    masterRecurrence.flatMap((line) => {
+      const list = parseDateList(line, seriesZone);
+      return list?.name === name
+        ? list.values
+            .map((value) => readRecurrenceValue(value, list.zone, seriesZone))
+            .filter((value): value is RecurrenceValue => value !== null)
+        : [];
+    });
+  if (hasAddedDays(masterRecurrence)) {
+    const added = listedValues("RDATE");
+    const ruleDays = listed.filter(
+      (value) => !added.some((day) => sameValue(day, value))
+    );
+    const last = ruleDays.reduce<RecurrenceValue | null>(
+      (latest, value) =>
+        !latest || order(value) > order(latest) ? value : latest,
+      null
+    );
+    return last ? countToUntil(recurrence, last) : recurrence;
+  }
+  const before = (value: RecurrenceValue) =>
+    beforeSplit(value, originalStart, seriesZone);
+  const used =
+    listed.filter(before).length + listedValues("EXDATE").filter(before).length;
+  return withRemainingCount(recurrence, used);
+}
+
+/** The rule with its COUNT swapped for an UNTIL at `last` (inclusive). */
+function countToUntil(recurrence: string[], last: RecurrenceValue): string[] {
+  const until = last.instant
+    ? `${last.instant.toString().slice(0, 19).replace(/[-:]/g, "")}Z`
+    : last.day.toString().replace(/-/g, "");
+  return recurrence.map((line) =>
+    line.startsWith("RRULE:")
+      ? `RRULE:${[
+          ...line
+            .slice("RRULE:".length)
+            .split(";")
+            .filter((part) => part && !part.startsWith("COUNT=")),
+          `UNTIL=${until}`,
+        ].join(";")}`
+      : line
+  );
 }
 
 /** The COUNT a series' rule ends after, if it has one. */
