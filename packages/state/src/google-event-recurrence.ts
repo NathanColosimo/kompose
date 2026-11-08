@@ -4,9 +4,11 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
+  countedRuleMeetings,
   dayOfStart,
   matchRecurrenceToStart,
   moveSkippedDays,
+  ruleTimesOf,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
@@ -590,9 +592,9 @@ interface RepeatSkipParams {
 
 /**
  * Why a new repeat, saved for the entire series, would skip this
- * occurrence (null when it wouldn't): an Entire series save keeps the
- * series' first meeting (its DTSTART; before the series loads, where the
- * series puts this occurrence) and counts the rule from there, so a day
+ * occurrence (null when it wouldn't, or before the series loads: the
+ * scope rules wait for it): an Entire series save keeps the series' first
+ * meeting (its DTSTART) and counts the rule from there, so a day
  * left implicit (weekly with no days picked, monthly on "Day N", yearly)
  * comes from that first meeting, an interval counts its weeks or months
  * from it, and a COUNT or UNTIL can end the series before today. When the
@@ -604,14 +606,13 @@ interface RepeatSkipParams {
 export function repeatSkipsOccurrence(
   params: RepeatSkipParams
 ): "day" | "end" | null {
-  const { occurrence } = params;
-  const anchor = params.seriesStart ?? occurrence.originalStartTime;
+  const { occurrence, seriesStart } = params;
   const rule = getPrimaryRecurrenceRule(params.recurrence);
-  if (!(occurrence.recurringEventId && anchor && rule)) {
+  if (!(occurrence.recurringEventId && seriesStart && rule)) {
     return null;
   }
   const timeZone = eventTimeZone(occurrence, params.timeZone);
-  const first = dayOfStart(anchor, timeZone);
+  const first = dayOfStart(seriesStart, timeZone);
   const day = dayOfStart(params.editedStart, timeZone);
   if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
     return null;
@@ -623,27 +624,54 @@ export function repeatSkipsOccurrence(
   }
   // "day": its day isn't one (an implicit day, an interval's phase);
   // "end": its COUNT or UNTIL ends first.
-  return seriesEndsBefore(rule, first, day, timeZone) ? "end" : null;
+  return seriesEndsBefore({ edited: params.editedStart, first, rule, timeZone })
+    ? "end"
+    : null;
 }
 
-/** Whether a rule counted from `first` ends (COUNT or UNTIL) before `day`. */
-function seriesEndsBefore(
-  rule: string,
-  first: Temporal.PlainDate,
-  day: Temporal.PlainDate,
-  timeZone: string
-): boolean {
+/**
+ * Whether a rule counted from the series' `first` day ends (COUNT or
+ * UNTIL) before the `edited` start. A timed series' COUNT counts each
+ * meeting (several a day, at the edited time otherwise, a time the clocks
+ * skip not counted), as the server does; an all-day one's counts days.
+ */
+function seriesEndsBefore(params: {
+  edited: { date?: string | null; dateTime?: string | null };
+  first: Temporal.PlainDate;
+  rule: string;
+  timeZone: string;
+}): boolean {
+  const { edited, first, rule, timeZone } = params;
+  const day = dayOfStart(edited, timeZone);
   const { end } = parseGoogleEventRecurrenceRule(rule);
+  if (!day || end.type === "none") {
+    return false;
+  }
   if (end.type === "until") {
     const last = untilRuleToDay(end.date, timeZone);
     return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
   }
-  if (end.type === "count") {
-    // Null unless it found all `count` days.
-    const last = countedRuleDays(rule, first, end.count)?.at(-1);
-    return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
+  const time = timeOfStart(edited, timeZone);
+  const times = time ? ruleTimesOf(rule, time) : null;
+  if (time && times) {
+    const meetings = countedRuleMeetings({
+      base: time,
+      count: end.count,
+      from: first,
+      rule,
+      times,
+      timeZone,
+    });
+    // Null, or short of `count`, when its meetings can't all be listed.
+    return Boolean(
+      meetings?.size === end.count &&
+        Math.max(...meetings) <
+          day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds
+    );
   }
-  return false;
+  // Null unless it found all `count` days.
+  const last = countedRuleDays(rule, first, end.count)?.at(-1);
+  return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
 }
 
 /**

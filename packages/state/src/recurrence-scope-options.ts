@@ -35,27 +35,37 @@ export const SCOPE_DIALOG_COPY = {
     description: "This can't be undone.",
     title: "Delete task?",
   },
-  /** Shown instead of the description when an occurrence's day moves. */
-  moveDate: "A new day applies to this occurrence, or from it on.",
+  /** A new repeat: one occurrence can't repeat differently from its series. */
+  repeatChange:
+    "A new repeat applies from this occurrence on, or to the entire series.",
   /** A new repeat that, counted from the series' first meeting, skips this one. */
   repeatOffDay:
     "Counted from the series' first meeting, the new repeat would skip this occurrence, so it applies from here on.",
   /** The same, when it's the new end (COUNT or UNTIL) that comes first. */
   repeatEndOff:
     "Counted from the series' first meeting, the new end comes before this occurrence, so it applies from here on.",
-  /** The same, on an occurrence added on its own (no new series there). */
-  repeatOffDayAdded:
-    "This occurrence was added to the series on its own, and counted from the series' first meeting the new repeat would skip it. Change the repeat from one of the series' regular occurrences.",
-  /** Shown when the series' rule couldn't load. */
+  /** Shown when the series' rule couldn't load, for a moved day. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
   /** Shown when the series' rule couldn't load, for a save in place. */
   seriesFailedSave:
     "Couldn't load the series, so This and following isn't available. Try again later.",
+  /** Shown when the series' rule couldn't load, for a new repeat. */
+  seriesFailedRepeat:
+    "Couldn't load the series, so a new repeat can't be saved. Try again later.",
   /** Shown while a save waits for the series' rule. */
   seriesLoading: "Loading the series… This and following opens once it's in.",
+  /**
+   * Shown while a new repeat waits for the series' rule: whether, counted
+   * from its first meeting, it skips this one isn't known yet.
+   */
+  seriesLoadingRepeat:
+    "Loading the series… A new repeat can be saved once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
+  /** A calendar move with a new day for this occurrence. */
+  moveEventDay:
+    "Moving to another calendar moves the whole series, but a new day applies only to this occurrence, or from it on. Move the calendar and change the day in two saves.",
   /** A calendar move with a new repeat that takes this occurrence's day. */
   moveEventRepeatDay:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
@@ -70,12 +80,22 @@ export const SCOPE_DIALOG_COPY = {
     severalRules:
       "This series repeats by more than one rule, so This and following isn't available.",
   } satisfies Record<SplitBlock, string>,
+  /**
+   * After `splitBlocked`, for what else the save changes: with This and
+   * following off, a new repeat can only go to the entire series, and not
+   * together with a new day, nor where it would skip this occurrence.
+   */
+  splitBlockedThen: {
+    dayAndRepeat: "Change the day and the repeat in two saves.",
+    repeat: "A new repeat applies to the entire series.",
+    repeatOffDay:
+      "Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting.",
+    repeatEndOff:
+      "Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting.",
+  },
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
     "This occurrence was added to the series on its own, and Kompose can't tell where the series' repeat ends, so This and following isn't available.",
-  /** An added occurrence moved to a new day with a new repeat: no scope fits. */
-  splitBlockedAll:
-    "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other.",
   saveTask: {
     description: "Apply your changes to:",
     title: "Save recurring task",
@@ -216,24 +236,21 @@ function splitAt(
 /**
  * Scopes a recurring event's save can't use. A calendar move applies to
  * the whole series. One occurrence can't repeat differently from its
- * series. A day moved through one occurrence can't apply to the whole
- * series (it keeps its first date; Google's editor offers the same two),
- * and applies from that occurrence on only once the series' rule is known,
- * since the rule follows the new day.
+ * series. Entire series keeps the series' first day (see
+ * `entireSeriesOff`). This and following waits for the series' rule
+ * (`followingRuleKnown`), and is off where a new series can't start.
  */
 export function eventSaveDisabledScopes(
   changes: EventSaveChanges
 ): Partial<Record<RecurrenceScope, boolean>> {
   if (changes.calendarChanged) {
-    // Only the whole series moves calendars; a new repeat that takes its
-    // day from this occurrence can't go with it (the series keeps its own).
-    return repeatTakesOccurrenceDay(changes)
+    return entireSeriesOff(changes)
       ? { all: true, following: true, this: true }
       : { following: true, this: true };
   }
   return {
     ...(changes.patternChanged ? { this: true } : {}),
-    ...(allEventsOff(changes) ? { all: true } : {}),
+    ...(entireSeriesOff(changes) ? { all: true } : {}),
     ...(followingRuleKnown(changes) && !changes.splitBlocked
       ? {}
       : { following: true }),
@@ -254,36 +271,22 @@ function followingRuleKnown(changes: EventSaveChanges): boolean {
 }
 
 /**
- * Whether "All events" is off: a day moved through one occurrence, or a new
- * repeat on an occurrence that's off its series' day (the series keeps its
- * own first day, so the repeat's days would differ from the editor's).
+ * Whether Entire series is off. It keeps the series' first day (Google's
+ * editor offers the same), so it can't take a day moved through one
+ * occurrence, nor a new repeat that, counted from that first day, would
+ * skip this occurrence (`repeatSkips`), or might, before the series loads.
  */
-function allEventsOff(changes: EventSaveChanges): boolean {
-  return changes.dateMoved || repeatTakesOccurrenceDay(changes);
-}
-
-/** A new repeat whose implicit day comes from this occurrence. */
-function repeatTakesOccurrenceDay(changes: EventSaveChanges): boolean {
-  return Boolean(changes.patternChanged && changes.repeatSkips);
-}
-
-/** `preferred`, or the narrowest scope the save can use when it can't. */
-export function allowedEventSaveScope(
-  preferred: RecurrenceScope,
-  disabled: Partial<Record<RecurrenceScope, boolean>>
-): RecurrenceScope {
-  if (!disabled[preferred]) {
-    return preferred;
-  }
+function entireSeriesOff(changes: EventSaveChanges): boolean {
   return (
-    RECURRENCE_SCOPE_OPTIONS.find((option) => !disabled[option.value])?.value ??
-    preferred
+    changes.dateMoved ||
+    (changes.patternChanged &&
+      Boolean(changes.repeatSkips || !changes.seriesRuleLoaded))
   );
 }
 
 /**
  * The scope a save dialog shows and saves with: the user's own pick while
- * it's available, else the nearest available to the preferred one. Worked
+ * it's available, else the preferred one, else the narrowest on. Worked
  * out each time, so a preferred scope that's off for a moment (the series
  * loading) comes back once it's on, unless the user chose another.
  */
@@ -292,9 +295,68 @@ export function chosenScope(
   preferred: RecurrenceScope,
   disabled: Partial<Record<RecurrenceScope, boolean>>
 ): RecurrenceScope {
-  return pick && !disabled[pick]
-    ? pick
-    : allowedEventSaveScope(preferred, disabled);
+  if (pick && !disabled[pick]) {
+    return pick;
+  }
+  if (!disabled[preferred]) {
+    return preferred;
+  }
+  // `preferred` when none is left: the dialog then says why and holds Save.
+  return (
+    RECURRENCE_SCOPE_OPTIONS.find((option) => !disabled[option.value])?.value ??
+    preferred
+  );
+}
+
+/**
+ * The scope dialog's line for a moved day, in the series' zone when it
+ * isn't the app's ("A new day in Tokyo time"): it can't move the whole
+ * series, and with a new repeat (never one occurrence's) only goes from
+ * this occurrence on.
+ */
+function newDayLine(changes: EventSaveChanges): string {
+  const city = changes.seriesTimeZone
+    ? timeZoneCity(changes.seriesTimeZone)
+    : null;
+  const day = city ? `A new day in ${city} time` : "A new day";
+  return changes.patternChanged
+    ? `${day} with a new repeat applies from this occurrence on.`
+    : `${day} applies to this occurrence, or from it on.`;
+}
+
+/** The scope dialog's line for a calendar move. */
+function calendarMoveDescription(changes: EventSaveChanges): string {
+  if (changes.patternChanged && changes.repeatSkips) {
+    return SCOPE_DIALOG_COPY.moveEventRepeatDay;
+  }
+  if (changes.dateMoved) {
+    return SCOPE_DIALOG_COPY.moveEventDay;
+  }
+  if (changes.patternChanged && !changes.seriesRuleLoaded) {
+    return `${SCOPE_DIALOG_COPY.moveEvent} ${
+      changes.seriesRuleFailed
+        ? SCOPE_DIALOG_COPY.seriesFailedRepeat
+        : SCOPE_DIALOG_COPY.seriesLoadingRepeat
+    }`;
+  }
+  return SCOPE_DIALOG_COPY.moveEvent;
+}
+
+/** The scope dialog's line while the series' rule loads, or failed to. */
+function seriesPendingDescription(changes: EventSaveChanges): string {
+  if (changes.patternChanged) {
+    return changes.seriesRuleFailed
+      ? SCOPE_DIALOG_COPY.seriesFailedRepeat
+      : SCOPE_DIALOG_COPY.seriesLoadingRepeat;
+  }
+  if (changes.seriesRuleFailed) {
+    return changes.dateMoved
+      ? SCOPE_DIALOG_COPY.seriesFailed
+      : SCOPE_DIALOG_COPY.seriesFailedSave;
+  }
+  return changes.dateMoved
+    ? `${newDayLine(changes)} ${SCOPE_DIALOG_COPY.seriesLoading}`
+    : SCOPE_DIALOG_COPY.seriesLoading;
 }
 
 /** The scope dialog's line where This and following can't start a series. */
@@ -303,45 +365,44 @@ function splitBlockedDescription(
   block: SplitBlock
 ): string {
   const why = SCOPE_DIALOG_COPY.splitBlocked[block];
-  if (changes.dateMoved && changes.patternChanged) {
-    return SCOPE_DIALOG_COPY.splitBlockedAll;
+  const then = SCOPE_DIALOG_COPY.splitBlockedThen;
+  if (changes.dateMoved) {
+    return changes.patternChanged
+      ? `${why} ${then.dayAndRepeat}`
+      : `${newDayLine(changes)} ${why}`;
   }
-  if (allEventsOff(changes) && changes.patternChanged) {
-    return SCOPE_DIALOG_COPY.repeatOffDayAdded;
+  if (!changes.patternChanged) {
+    return why;
   }
-  return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
+  if (changes.repeatSkips === "day") {
+    return `${why} ${then.repeatOffDay}`;
+  }
+  return changes.repeatSkips === "end"
+    ? `${why} ${then.repeatEndOff}`
+    : `${why} ${then.repeat}`;
 }
 
-/** The scope dialog's line for a save. */
+/** The scope dialog's line for a save: why each scope that's off is. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
-    return repeatTakesOccurrenceDay(changes)
-      ? SCOPE_DIALOG_COPY.moveEventRepeatDay
-      : SCOPE_DIALOG_COPY.moveEvent;
+    return calendarMoveDescription(changes);
+  }
+  if (!followingRuleKnown(changes)) {
+    return seriesPendingDescription(changes);
   }
   if (changes.splitBlocked) {
     return splitBlockedDescription(changes, changes.splitBlocked);
   }
-  if (!followingRuleKnown(changes)) {
-    if (changes.seriesRuleFailed) {
-      return changes.dateMoved
-        ? SCOPE_DIALOG_COPY.seriesFailed
-        : SCOPE_DIALOG_COPY.seriesFailedSave;
-    }
-    return SCOPE_DIALOG_COPY.seriesLoading;
+  if (changes.dateMoved) {
+    return newDayLine(changes);
   }
-  if (!changes.dateMoved) {
-    if (!allEventsOff(changes)) {
-      return SCOPE_DIALOG_COPY.saveEvent.description;
-    }
-    return changes.repeatSkips === "end"
-      ? SCOPE_DIALOG_COPY.repeatEndOff
-      : SCOPE_DIALOG_COPY.repeatOffDay;
+  if (!changes.patternChanged) {
+    return SCOPE_DIALOG_COPY.saveEvent.description;
   }
-  const city = changes.seriesTimeZone
-    ? timeZoneCity(changes.seriesTimeZone)
-    : null;
-  return city
-    ? `A new day in ${city} time applies to this occurrence, or from it on.`
-    : SCOPE_DIALOG_COPY.moveDate;
+  if (changes.repeatSkips === "day") {
+    return SCOPE_DIALOG_COPY.repeatOffDay;
+  }
+  return changes.repeatSkips === "end"
+    ? SCOPE_DIALOG_COPY.repeatEndOff
+    : SCOPE_DIALOG_COPY.repeatChange;
 }

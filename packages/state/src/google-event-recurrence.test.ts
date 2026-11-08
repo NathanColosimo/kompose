@@ -1767,6 +1767,28 @@ describe("repeatSkipsOccurrence", () => {
     expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20270131T235959Z"])).toBe(false);
   });
 
+  test("a COUNT that meets several times a day counts each meeting", () => {
+    // Daily at 9:00 and 16:00 from Nov 1 16:00: Nov 1 16:00, Nov 2 9:00,
+    // Nov 2 16:00, Nov 3 9:00, then Nov 3 16:00 (this one) fifth.
+    const nov3 = {
+      ...later,
+      originalStartTime: { dateTime: "2026-11-03T16:00:00-05:00" },
+      start: { dateTime: "2026-11-03T16:00:00-05:00" },
+    };
+    const ends = (count: number) =>
+      repeatSkipsOccurrence({
+        editedStart: nov3.start,
+        occurrence: nov3,
+        recurrence: [`RRULE:FREQ=DAILY;BYHOUR=9,16;COUNT=${count}`],
+        seriesStart,
+        timeZone: zone,
+      });
+    expect(ends(3)).toBe("end");
+    // Its 9:00 meeting that day is the fourth: still before this one.
+    expect(ends(4)).toBe("end");
+    expect(ends(5)).toBeNull();
+  });
+
   test("yearly with only its month picked still takes its day from the first meeting", () => {
     // BYMONTH=11 from Nov 1 meets Nov 1 each year: not Nov 15.
     expect(off(["RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=11"])).toBe(true);
@@ -1778,7 +1800,7 @@ describe("repeatSkipsOccurrence", () => {
     expect(off([])).toBe(false);
   });
 
-  test("before the series loads, counts from the meeting's own place", () => {
+  test("before the series loads, can't tell (Entire series waits for it)", () => {
     expect(
       skipped({
         editedStart: later.start,
