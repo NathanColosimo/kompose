@@ -43,6 +43,7 @@ const rows = (
     input,
     keepEdited,
     keptDates: new Set(keptDates),
+    masterIsKept: keepEdited,
     seriesMasterId: "new-master",
     task: nov9,
     userId: "user",
@@ -65,6 +66,7 @@ describe("regeneratedOccurrenceRows", () => {
     const rowsKept = regeneratedOccurrenceRows({
       input: { recurrence: tuesdays },
       keepEdited: true,
+      masterIsKept: true,
       keptDates: new Set(["2026-11-09"]),
       seriesMasterId: "nov9",
       task: nov9,
@@ -108,6 +110,7 @@ describe("regeneratedOccurrenceRows", () => {
         startDate: "2026-11-10",
       },
       keepEdited: true,
+      masterIsKept: true,
       keptDates: new Set(["2026-11-10"]),
       seriesMasterId: "new-master",
       task: nov9,
@@ -124,6 +127,7 @@ describe("regeneratedOccurrenceRows", () => {
     const [first] = regeneratedOccurrenceRows({
       input: { dueDate: null, recurrence: tuesdays, startTime: null },
       keepEdited: true,
+      masterIsKept: true,
       keptDates: new Set(["2026-11-09"]),
       seriesMasterId: "new-master",
       task: { ...nov9, dueDate: "2026-11-11" },

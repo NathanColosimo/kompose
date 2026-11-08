@@ -126,6 +126,12 @@ export function regeneratedOccurrenceRows(params: {
   };
   keepEdited: boolean;
   keptDates: ReadonlySet<string>;
+  /**
+   * The master is a kept row on the series' first date (the edited
+   * occurrence, or an exception already there), and the caller gives it
+   * the pattern; otherwise the first new row is the master.
+   */
+  masterIsKept: boolean;
   seriesMasterId: string;
   task: TaskSelect & { startDate: string };
   userId: string;
@@ -149,9 +155,7 @@ export function regeneratedOccurrenceRows(params: {
     userId: params.userId,
   }).map((row, index) => ({
     ...row,
-    // A kept edited occurrence is the master (the caller gives it the
-    // pattern); otherwise the first new row is.
-    ...(!params.keepEdited && index === 0
+    ...(!params.masterIsKept && index === 0
       ? { id: params.seriesMasterId, recurrence: input.recurrence }
       : {}),
     ...(!params.keepEdited && row.startDate === seriesStartDate.toString()

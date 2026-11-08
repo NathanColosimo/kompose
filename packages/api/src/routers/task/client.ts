@@ -225,7 +225,7 @@ const dbDeleteNonExceptionsBySeriesFrom = (
   });
 
 /** Dates from `fromDate` on that keep an exception (an occurrence edited alone). */
-const dbSelectExceptionDatesBySeriesFrom = (
+const dbSelectExceptionsBySeriesFrom = (
   userId: string,
   seriesMasterId: string,
   fromDate: string
@@ -233,7 +233,7 @@ const dbSelectExceptionDatesBySeriesFrom = (
   Effect.gen(function* () {
     const db = yield* Database;
     return yield* db
-      .select({ startDate: taskTable.startDate })
+      .select({ id: taskTable.id, startDate: taskTable.startDate })
       .from(taskTable)
       .where(
         and(
@@ -818,21 +818,37 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
+  const kept = yield* dbSelectExceptionsBySeriesFrom(
+    userId,
+    task.seriesMasterId,
+    boundary
+  );
   const keptDates = new Set(
-    (yield* dbSelectExceptionDatesBySeriesFrom(
-      userId,
-      task.seriesMasterId,
-      boundary
-    )).flatMap((row) => (row.startDate ? [row.startDate] : []))
+    kept.flatMap((row) => (row.startDate ? [row.startDate] : []))
   );
   if (updatedAnchor[0]?.startDate) {
     keptDates.add(updatedAnchor[0].startDate);
   }
-  const seriesMasterId = keepEdited ? task.id : uuidv7();
+  // Whoever is on the new series' first date is its master and carries the
+  // pattern: the kept edited occurrence, an exception already there (Nov 16
+  // done alone, then Nov 9 moved onto it), else the first new row.
+  const seriesStart = input.startDate ?? task.startDate;
+  const keptOnStart = keepEdited
+    ? undefined
+    : kept.find((row) => row.startDate === seriesStart);
+  const keptMasterId = keepEdited ? task.id : keptOnStart?.id;
+  const seriesMasterId = keptMasterId ?? uuidv7();
+  const startMaster = keptOnStart
+    ? yield* dbUpdate(userId, keptOnStart.id, {
+        recurrence,
+        seriesMasterId: keptOnStart.id,
+      })
+    : [];
   const taskRows = regeneratedOccurrenceRows({
     input: { ...input, recurrence },
     keepEdited,
     keptDates,
+    masterIsKept: keptMasterId !== undefined,
     seriesMasterId,
     task,
     userId,
@@ -852,10 +868,13 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // occurrence and the new rows take the edit's tags: the other kept
   // exceptions keep their own.
   const rows = new Map(
-    [...updatedAnchor, ...endedMaster, ...inserted, ...moved].map((row) => [
-      row.id,
-      row,
-    ])
+    [
+      ...updatedAnchor,
+      ...endedMaster,
+      ...startMaster,
+      ...inserted,
+      ...moved,
+    ].map((row) => [row.id, row])
   );
   return {
     retagIds: [...(keepEdited ? [task.id] : []), ...ids(inserted)],
