@@ -5,15 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
 import { getGoogleEventMastersByCalendarQueryKey } from "../google-calendar-query-keys";
 
-declare module "@tanstack/react-query" {
-  interface Register {
-    queryMeta: {
-      /** The query shows its own failure: the app's error toast skips it. */
-      quietError?: boolean;
-    };
-  }
-}
-
 function recurringEventMasterQueryKey(params: {
   accountId: string;
   calendarId: string;
