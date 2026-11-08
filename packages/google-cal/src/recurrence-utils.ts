@@ -333,12 +333,15 @@ const isRule = (line: string) => line.startsWith("RRULE:");
  * meets at its time (as the series' start counts only for a rule at its
  * time), one more when it isn't the rule's own. A rule with none of its
  * own left is done, unless no rule is left to carry the part: the first
- * such is then kept at one, so the part has its start.
+ * such then ends at the part's start (`splitUntil`), so the part has its
+ * start and nothing more, whatever the rule's time.
  */
 function withCountsLeft(
   recurrence: string[],
   used: ({ before: number; own: boolean } | null)[],
-  splitClock: Temporal.PlainTime | null
+  splitClock: Temporal.PlainTime | null,
+  /** The new part's start as an UNTIL value. */
+  splitUntil: string
 ): string[] {
   // null: not a counted rule, left as is.
   const left: (number | null)[] = [];
@@ -375,7 +378,7 @@ function withCountsLeft(
       return [];
     }
     keptSpent = true;
-    return [line.replace(COUNT_PART, "$1COUNT=1")];
+    return untilInstead([line], splitUntil);
   });
 }
 
@@ -463,7 +466,14 @@ export function carryCountExactly(
   if (used.every((n) => n === null)) {
     return null;
   }
-  return withCountsLeft(recurrence, used, splitClock ?? null);
+  return withCountsLeft(
+    recurrence,
+    used,
+    splitClock ?? null,
+    split.instant
+      ? split.instant.toString({ smallestUnit: "second" }).replace(/[-:]/g, "")
+      : split.day.toString().replace(/-/g, "")
+  );
 }
 
 const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
@@ -471,8 +481,8 @@ const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
 const CLOCK_NAMES = ["BYHOUR", "BYMINUTE", "BYSECOND"] as const;
 
 /**
- * A series with several rules split at a meeting not at the series' own
- * time (another rule's 15:00, say): the new part's start takes that time,
+ * A series split at a meeting not at the series' own time (another rule's
+ * 15:00, or an added one): the new part's start takes that time,
  * so a rule that left its time (or part of it) to the start would move
  * there. Its left-out parts are written from the series' time instead.
  * The same recurrence when nothing needs pinning.
@@ -488,7 +498,9 @@ export function pinRuleTimes(
     ? asValue(seriesStart.dateTime, seriesZone)?.instant
     : null;
   const split = asValue(originalStart, seriesZone)?.instant;
-  if (rules.length < 2 || !(series && split)) {
+  // One rule too: its start's time differs from the split's only at an
+  // added meeting (or across a clock change), and it keeps its own.
+  if (rules.length === 0 || !(series && split)) {
     return recurrence;
   }
   const seriesClock = series.toZonedDateTimeISO(seriesZone).toPlainTime();

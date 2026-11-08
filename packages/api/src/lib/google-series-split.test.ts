@@ -627,6 +627,65 @@ describe("splitting a series", () => {
     ).toBe(rules);
   });
 
+  test("ends a part whose rules are all spent at its start", () => {
+    // Daily at the series' 9:00 and daily 15:00, three each from Nov 9,
+    // split at an added Nov 20 15:00: both rules are spent, so the part is
+    // just its start, in either order (no new 9:00 meeting on Nov 21).
+    const clockless = "RRULE:FREQ=DAILY;COUNT=3";
+    const fifteen = "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3";
+    const added = "RDATE;TZID=America/New_York:20261120T150000";
+    for (const rules of [
+      [clockless, fifteen],
+      [fifteen, clockless],
+    ]) {
+      const master = [...rules, added];
+      const split = "2026-11-20T15:00:00-05:00";
+      const carried = carryCountExactly(
+        pinRuleTimes(
+          master,
+          { dateTime: "2026-11-09T09:00:00-05:00" },
+          split,
+          "America/New_York"
+        ),
+        {
+          masterRecurrence: master,
+          originalStart: split,
+          seriesStart: "2026-11-09T09:00:00-05:00",
+          seriesZone: "America/New_York",
+        }
+      );
+      const kept = carried?.filter((line) => line.startsWith("RRULE:")) ?? [];
+      expect(kept).toHaveLength(1);
+      expect(kept[0]).toContain("UNTIL=20261120T200000Z");
+      expect(kept[0]).not.toContain("COUNT=");
+    }
+  });
+
+  test("keeps a lone rule's time when split at an added meeting", () => {
+    // Daily 9:00 five times from Nov 9 plus an added Nov 11 15:00, split
+    // there: the new part's meetings after its start stay at 9:00 (Nov 12
+    // and 13), not 15:00.
+    const master = [
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "RDATE;TZID=America/New_York:20261111T150000",
+    ];
+    const split = "2026-11-11T15:00:00-05:00";
+    const pinned = pinRuleTimes(
+      master,
+      { dateTime: "2026-11-09T09:00:00-05:00" },
+      split,
+      "America/New_York"
+    );
+    expect(
+      carryCountExactly(pinned, {
+        masterRecurrence: master,
+        originalStart: split,
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })?.[0]
+    ).toBe("RRULE:FREQ=DAILY;COUNT=2;BYHOUR=9;BYMINUTE=0");
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(
