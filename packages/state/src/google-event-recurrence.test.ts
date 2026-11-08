@@ -11,9 +11,9 @@ import {
   monthlyWeekdayOf,
   occurrenceDayMoved,
   occurrenceRepeatShown,
-  occurrenceSeriesDay,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  repeatCountingDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
@@ -1580,51 +1580,78 @@ describe("occurrenceRepeatShown", () => {
   });
 });
 
-describe("occurrenceSeriesDay", () => {
+describe("repeatCountingDay", () => {
   const zone = "America/New_York";
+  const sunday = {
+    originalStartTime: {
+      dateTime: "2026-11-08T16:00:00-05:00",
+      timeZone: zone,
+    },
+    recurringEventId: "m1",
+  };
+  const tuesday = Temporal.PlainDate.from("2026-11-10");
 
-  test("a moved occurrence keeps its series' day for the repeat", () => {
+  test("a moved occurrence's unchanged repeat counts from its series' day", () => {
     // Sunday's meeting, moved to Tuesday: "weekly" is still on Sundays.
-    const seriesDay = occurrenceSeriesDay(
-      {
-        originalStartTime: {
-          dateTime: "2026-11-08T16:00:00-05:00",
-          timeZone: zone,
-        },
-        recurringEventId: "m1",
-      },
-      zone
-    );
-    expect(seriesDay?.toString()).toBe("2026-11-08");
-    expect(seriesDay?.dayOfWeek).toBe(7);
+    expect(
+      repeatCountingDay({
+        edited: false,
+        event: sunday,
+        formDay: tuesday,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-11-08");
+  });
+
+  test("a moved occurrence's changed repeat counts from the moved day", () => {
+    // The only save left starts a new series on Tuesday.
+    expect(
+      repeatCountingDay({
+        edited: true,
+        event: sunday,
+        formDay: tuesday,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-11-10");
   });
 
   test("an all-day occurrence's day is its date", () => {
     expect(
-      occurrenceSeriesDay(
-        { originalStartTime: { date: "2026-11-30" }, recurringEventId: "m1" },
-        zone
-      )?.toString()
+      repeatCountingDay({
+        edited: false,
+        event: {
+          originalStartTime: { date: "2026-11-30" },
+          recurringEventId: "m1",
+        },
+        formDay: tuesday,
+        timeZone: zone,
+      })?.toString()
     ).toBe("2026-11-30");
   });
 
   test("counts in the series' zone", () => {
     // 20:00 Sunday in New York is Monday in Tokyo.
     expect(
-      occurrenceSeriesDay(
-        {
+      repeatCountingDay({
+        edited: false,
+        event: {
           originalStartTime: { dateTime: "2026-11-08T20:00:00-05:00" },
           recurringEventId: "m1",
         },
-        "Asia/Tokyo"
-      )?.toString()
+        formDay: null,
+        timeZone: "Asia/Tokyo",
+      })?.toString()
     ).toBe("2026-11-09");
   });
 
-  test("not an occurrence: null", () => {
-    expect(occurrenceSeriesDay({ recurringEventId: undefined }, zone)).toBe(
-      null
-    );
-    expect(occurrenceSeriesDay(null, zone)).toBe(null);
+  test("not an occurrence: the form's day", () => {
+    expect(
+      repeatCountingDay({
+        edited: false,
+        event: null,
+        formDay: tuesday,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-11-10");
   });
 });

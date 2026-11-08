@@ -25,9 +25,9 @@ import {
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
   occurrenceRepeatShown,
-  occurrenceSeriesDay,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  repeatCountingDay,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
@@ -976,7 +976,7 @@ function EventAllDayAndMeetingRow({
           value={allDay}
         />
       </View>
-      <View className={stacked ? "items-start" : "flex-1 items-end"}>
+      <View className={stacked ? undefined : "flex-1 items-end"}>
         <EventMeetingButton
           isConferencePending={isConferencePending}
           meetingLink={meetingLink}
@@ -1556,17 +1556,19 @@ export function EventEditorSheet({
       parsedRecurrence={parsedRecurrence}
       recurrence={shownRepeat.rules}
       rule={primaryRule}
-      // The start's day in the series' zone: its repeat's days count there.
-      // An occurrence's count from its place in the series, not from where
-      // it's being moved to.
+      // The day its repeat's implicit days count from, in the series' zone.
       startDate={
-        occurrenceSeriesDay(sourceEvent, seriesTimeZone) ??
-        dayInZone(
-          values.startDate,
-          values.allDay ? null : values.startTime,
-          appTimeZone,
-          seriesTimeZone
-        )
+        repeatCountingDay({
+          edited: Boolean(values.recurrenceEdited),
+          event: sourceEvent,
+          formDay: dayInZone(
+            values.startDate,
+            values.allDay ? null : values.startTime,
+            appTimeZone,
+            seriesTimeZone
+          ),
+          timeZone: seriesTimeZone,
+        }) ?? values.startDate
       }
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}

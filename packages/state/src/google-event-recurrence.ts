@@ -533,22 +533,32 @@ function sameStart(
 }
 
 /**
- * The day an occurrence's repeat counts its implicit days from: its place
- * in the series (where the rule puts it), in the series' zone, so moving
- * this one occurrence doesn't change how the series is described ("weekly"
- * stays on the series' Sunday, not the Tuesday it was moved to). Null for
- * an event that isn't an occurrence: its own start is the series'.
+ * The day a repeat counts its implicit days from ("weekly" on which
+ * weekday, "monthly" on which date), in the series' zone. An occurrence's
+ * unchanged repeat is the series', so it counts from the occurrence's place
+ * in the series (where the rule puts it): moving this one occurrence
+ * doesn't change how the series is described ("weekly" stays on the
+ * series' Sunday, not the Tuesday it's moved to). A repeat the user
+ * changed, or any other event's, counts from the form's start, where the
+ * save puts the series (a changed repeat on a moved occurrence can only
+ * start a new series there).
  */
-export function occurrenceSeriesDay(
+export function repeatCountingDay(params: {
+  /** The user changed the repeat in this editor. */
+  edited: boolean;
   event:
     | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
     | null
-    | undefined,
-  timeZone: string
-): Temporal.PlainDate | null {
-  return event?.recurringEventId && event.originalStartTime
-    ? dayOfStart(event.originalStartTime, timeZone)
-    : null;
+    | undefined;
+  /** The form's start day, in the series' zone. */
+  formDay: Temporal.PlainDate | null;
+  timeZone: string;
+}): Temporal.PlainDate | null {
+  const { edited, event } = params;
+  if (!edited && event?.recurringEventId && event.originalStartTime) {
+    return dayOfStart(event.originalStartTime, params.timeZone);
+  }
+  return params.formDay;
 }
 
 /** Whether a save moves an occurrence to another day (not just its time). */
