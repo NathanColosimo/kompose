@@ -372,7 +372,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
   );
 });
 
-test("a calendar move with a new repeat that takes this occurrence's day can't be saved", () => {
+test("a calendar move with a new repeat that would skip this occurrence can't be saved", () => {
   const changes = {
     calendarChanged: true,
     dateMoved: false,

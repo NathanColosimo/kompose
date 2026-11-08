@@ -617,31 +617,30 @@ export function repeatSkipsOccurrence(
   if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
     return null;
   }
-  // Its days, counted from the series' first meeting (unknown parts: as
-  // shown, as before).
+  // "day": its day isn't one, counted from the series' first meeting (an
+  // implicit day, an interval's phase; unknown parts: as shown, as before).
   if (isRuleDay(rule, first, day) === false) {
     return "day";
   }
-  // "day": its day isn't one (an implicit day, an interval's phase);
-  // "end": its COUNT or UNTIL ends first.
-  // Entire series keeps the series' own time unless this edit retimes the
-  // occurrence (as the server's seriesTimesForEdit does), so a timed
-  // COUNT counts from that time.
-  const seriesTime = timeOfStart(
-    sameStart(params.editedStart, occurrence.start)
-      ? seriesStart
-      : params.editedStart,
-    timeZone
+  // "end": its COUNT or UNTIL ends first. Entire series keeps the series'
+  // own start time unless the edit retimes this occurrence (the server's
+  // seriesTimesForEdit), and a timed COUNT counts from that time. A kept
+  // start can still be a retime, by a new end, which isn't known here, so
+  // both times count.
+  const editedTime = timeOfStart(params.editedStart, timeZone);
+  const savedTimes = sameStart(params.editedStart, occurrence.start)
+    ? [timeOfStart(seriesStart, timeZone), editedTime]
+    : [editedTime];
+  const ends = savedTimes.some((seriesTime) =>
+    seriesEndsBefore({
+      edited: params.editedStart,
+      first,
+      rule,
+      seriesTime,
+      timeZone,
+    })
   );
-  return seriesEndsBefore({
-    edited: params.editedStart,
-    first,
-    rule,
-    seriesTime,
-    timeZone,
-  })
-    ? "end"
-    : null;
+  return ends ? "end" : null;
 }
 
 /**

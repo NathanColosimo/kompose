@@ -1826,6 +1826,26 @@ describe("repeatSkipsOccurrence", () => {
     ).toBeNull();
   });
 
+  test("a COUNT that ends first counting from either time the save may keep", () => {
+    // From Nov 1 16:00 at 9:00 and 16:00, its Nov 4 9:00 meeting kept at
+    // 9:00. A new end moves the series' start to 9:00 too (the start
+    // alone doesn't say), and six meetings from Nov 1 9:00 end Nov 3 16:00.
+    const nov4 = {
+      ...later,
+      originalStartTime: { dateTime: "2026-11-04T09:00:00-05:00" },
+      start: { dateTime: "2026-11-04T09:00:00-05:00" },
+    };
+    expect(
+      repeatSkipsOccurrence({
+        editedStart: nov4.start,
+        occurrence: nov4,
+        recurrence: ["RRULE:FREQ=DAILY;BYHOUR=9,16;COUNT=6"],
+        seriesStart,
+        timeZone: zone,
+      })
+    ).toBe("end");
+  });
+
   test("yearly with only its month picked still takes its day from the first meeting", () => {
     // BYMONTH=11 from Nov 1 meets Nov 1 each year: not Nov 15.
     expect(off(["RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=11"])).toBe(true);
