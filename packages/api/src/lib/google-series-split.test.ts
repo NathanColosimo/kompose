@@ -26,6 +26,15 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261110T135959Z"]);
   });
 
+  test("cuts a rule written COUNT-first without an empty part", () => {
+    expect(
+      truncateRecurrenceForFollowing(
+        ["RRULE:COUNT=5;FREQ=DAILY"],
+        "2026-11-10T09:00:00-05:00"
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261110T135959Z"]);
+  });
+
   test("carries on a kept COUNT from where the series is cut", () => {
     // A five-time series split at its third: three left.
     expect(withRemainingCount(["RRULE:FREQ=DAILY;COUNT=5"], 2)).toEqual([

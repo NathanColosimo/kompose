@@ -1539,10 +1539,14 @@ function EventAllDayAndRecurrenceRow({
         start: seriesStart ?? undefined,
       })
     : null;
+  // Its days are the series' zone's: say so beside a date shown here.
+  const city = showsZone ? timeZoneCity(seriesTimeZone) : null;
   const repeatLabel = repeats
-    ? repeats
+    ? `${repeats
         .replace(REPEATS_PREFIX, "")
-        .replace(FIRST_LETTER, (c) => c.toUpperCase())
+        .replace(FIRST_LETTER, (c) =>
+          c.toUpperCase()
+        )}${city ? ` · ${city}` : ""}`
     : null;
   return (
     <div className="flex items-center gap-2">

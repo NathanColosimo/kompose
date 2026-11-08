@@ -41,7 +41,10 @@ import { formatEventWhen } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
-import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
+import {
+  RecurrenceScopeDialog,
+  type ScopeDialogSubject,
+} from "@/components/recurrence-scope-dialog";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import {
   AlertDialog,
@@ -88,7 +91,7 @@ interface PendingTaskUpdate {
 function droppedSubject(
   pending: PendingGoogleUpdate,
   timeZone: string
-): string | undefined {
+): ScopeDialogSubject | undefined {
   const { end, start } = pending.update.event;
   if (!(start?.dateTime && end?.dateTime)) {
     return;
@@ -97,7 +100,7 @@ function droppedSubject(
     Temporal.Instant.from(start.dateTime).toZonedDateTimeISO(timeZone),
     Temporal.Instant.from(end.dateTime).toZonedDateTimeISO(timeZone)
   );
-  return `${pending.occurrence.summary || "(No title)"} → ${when}`;
+  return { name: pending.occurrence.summary || "(No title)", when };
 }
 
 /** A recurring event's dropped move or resize, waiting for its scope. */

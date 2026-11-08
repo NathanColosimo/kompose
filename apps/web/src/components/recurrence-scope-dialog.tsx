@@ -19,6 +19,12 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
+/** A moved event and its new time: "Retro" → "Mon, Nov 9 · 4 – 4:45 PM". */
+export interface ScopeDialogSubject {
+  name: string;
+  when: string;
+}
+
 export function RecurrenceScopeDialog({
   open,
   onOpenChange,
@@ -38,7 +44,7 @@ export function RecurrenceScopeDialog({
   onOpenChange: (open: boolean) => void;
   title: string;
   /** What the save changes, in a line. */
-  subject?: string;
+  subject?: ScopeDialogSubject;
   description?: string;
   value: RecurrenceScope;
   onValueChange: (value: RecurrenceScope) => void;
@@ -92,7 +98,11 @@ export function RecurrenceScopeDialog({
             <DialogDescription className="space-y-1">
               {subject ? (
                 <span className="block font-medium text-foreground">
-                  {subject}
+                  {subject.name}
+                  {/* Read as "Retro, moved to Mon, Nov 9…", not "right arrow". */}
+                  <span aria-hidden> → </span>
+                  <span className="sr-only">, moved to </span>
+                  {subject.when}
                 </span>
               ) : null}
               {description ? (

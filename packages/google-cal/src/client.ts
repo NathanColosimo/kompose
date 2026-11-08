@@ -13,7 +13,7 @@ import {
   RecurrenceScope,
 } from "./schema";
 import {
-  hasCount,
+  countOf,
   sanitizeEventPayload,
   truncateRecurrenceForFollowing,
   withRemainingCount,
@@ -42,7 +42,7 @@ interface GoogleWatchChannelResult {
  */
 function keptRecurrence(
   master: { recurrence?: string[]; start: { timeZone?: string } },
-  start: { date?: string; timeZone?: string }
+  start: { date?: string; dateTime?: string; timeZone?: string }
 ): string[] | undefined {
   return master.recurrence
     ? matchRecurrenceToStart(
@@ -541,11 +541,8 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const allDay = !before.includes("T");
       const cutoff = allDay ? null : Date.parse(before);
-      // A day past the start, then filtered exactly (an all-day start's
-      // own midnight depends on the calendar's zone).
-      const timeMax = new Date(
-        (allDay ? Date.parse(`${before}T00:00:00Z`) : (cutoff ?? 0)) + 86_400_000
-      ).toISOString();
+      // All of a COUNT series (it's finite), filtered by each one's
+      // original start: one rescheduled past the split still counts.
       let count = 0;
       let pageToken: string | undefined;
       do {
@@ -556,7 +553,6 @@ export function makeGoogleCalendarService(
               maxResults: 2500,
               pageToken,
               showDeleted: true,
-              timeMax,
             }),
           catch: (cause) => new GoogleApiError({ cause }),
         });
@@ -573,8 +569,10 @@ export function makeGoogleCalendarService(
     });
 
   /**
-   * The rule a series' following part repeats with: the edit's own, or
-   * the series' kept rule with what's left of its COUNT.
+   * The rule a series' following part repeats with: the edit's own, or the
+   * series' kept rule; either way, a COUNT the user didn't change carries
+   * on with what's left of it (a five-time series moved to another day at
+   * its third runs three more, not five).
    */
   const followingRecurrence = (
     calendarId: string,
@@ -584,15 +582,17 @@ export function makeGoogleCalendarService(
     originalStart: string
   ) =>
     Effect.gen(function* () {
-      if (edited !== undefined || !kept || !hasCount(kept)) {
-        return edited ?? kept;
+      const rule = edited ?? kept;
+      const count = countOf(master.recurrence);
+      if (!rule || count === undefined || countOf(rule) !== count) {
+        return rule;
       }
       const used = yield* countOccurrencesBefore(
         calendarId,
         master.id,
         originalStart
       );
-      return withRemainingCount(kept, used);
+      return withRemainingCount(rule, used);
     });
 
   const updateEventAll = (

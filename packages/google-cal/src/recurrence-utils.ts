@@ -1,7 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
 
-const UNTIL_REGEX = /;?UNTIL=[^;]+/;
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -27,11 +26,21 @@ export function truncateRecurrenceForFollowing(
         .toString()
         .slice(0, 19)
         .replace(/[-:]/g, "")}Z`;
-  return recurrence.map((line) =>
-    line.startsWith("RRULE:")
-      ? `${line.replace(COUNT_REGEX, "").replace(UNTIL_REGEX, "")};UNTIL=${until}`
-      : line
-  );
+  return recurrence.map((line) => {
+    if (!line.startsWith("RRULE:")) {
+      return line;
+    }
+    // Part by part, so a rule written COUNT-first ("RRULE:COUNT=5;...")
+    // leaves no empty part behind.
+    const parts = line
+      .slice("RRULE:".length)
+      .split(";")
+      .filter(
+        (part) =>
+          part && !part.startsWith("COUNT=") && !part.startsWith("UNTIL=")
+      );
+    return `RRULE:${[...parts, `UNTIL=${until}`].join(";")}`;
+  });
 }
 
 /**
@@ -56,11 +65,16 @@ export function withRemainingCount(
   });
 }
 
-/** Whether a series' rule ends after a number of times. */
-export function hasCount(recurrence: string[]): boolean {
-  return recurrence.some(
-    (line) => line.startsWith("RRULE:") && COUNT_REGEX.test(line)
-  );
+/** The COUNT a series' rule ends after, if it has one. */
+export function countOf(recurrence: string[] | undefined): number | undefined {
+  for (const line of recurrence ?? []) {
+    const count = line.startsWith("RRULE:")
+      ? Number(COUNT_REGEX.exec(line)?.[1])
+      : Number.NaN;
+    if (Number.isFinite(count)) {
+      return count;
+    }
+  }
 }
 
 // Strip server-managed fields so create/update inputs stay valid.
