@@ -20,8 +20,8 @@ These live in `apps/web/src/components/task-form/task-edit-popover.tsx`;
   `createInteropRef`. See [event-popover.md](./event-popover.md).
 - **`TaskFields`**: the fields both forms share (below).
 - **`useHeldSave`**: the held save (below). The popover that owns the editor
-  calls it, `TaskEditPopover` or `EventCreationPopover`, so its Escape and
-  outside-click handlers can ignore them while it saves.
+  calls it, `TaskEditPopover` or `EventCreationPopover`, so it can ignore
+  Escape and outside clicks while it saves.
 
 Triggers: `components/sidebar/task-item.tsx` (sidebar) and
 `components/calendar/events/task-event.tsx` (calendar). Task queries and
