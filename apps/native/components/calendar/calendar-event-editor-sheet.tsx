@@ -23,18 +23,15 @@ import {
   followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
-  occurrenceDayMoved,
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
-  repeatChanged,
-  repeatCountingDay,
   repeatEndsBeforeStart,
-  seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
   untilDefaultDay,
+  weekOrdered,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { getMapsSearchUrl } from "@kompose/state/locations";
@@ -43,6 +40,7 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
+import { seriesRepeatForEdit } from "@kompose/state/series-edit";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -81,12 +79,7 @@ import type {
   EditEventDraft,
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
-import {
-  dayOf,
-  editedStartOf,
-  keptSeriesStart,
-  savedSeriesRecurrence,
-} from "@/components/calendar/series-edit";
+import { draftTimes } from "@/components/calendar/event-times";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -239,86 +232,6 @@ function RecurrenceRow({
 }
 
 /**
- * The repeat a save for the series would send, and the day its implicit
- * days count from, in the series' zone. Moving an occurrence to another
- * day takes the series' rule along ("weekly on Wed" to "weekly on Thu",
- * `seriesRecurrenceForSave`), so the row says so before the save; a
- * rescheduled occurrence left where it is saves from its place in the
- * series (`keptSeriesStart`), so that's the day its repeat counts from.
- */
-function seriesRepeatOf(
-  values: Pick<
-    EventDraft,
-    "allDay" | "recurrence" | "recurrenceEdited" | "startDate" | "startTime"
-  >,
-  where: {
-    appTimeZone: string;
-    event: GoogleEvent | undefined;
-    /** The series' cached recurrence, for whether the repeat changed. */
-    seriesRecurrence: string[] | undefined;
-    seriesStart:
-      | { date?: string | null; dateTime?: string | null }
-      | null
-      | undefined;
-    seriesTimeZone: string;
-  }
-): {
-  changed: boolean;
-  counting: Temporal.PlainDate;
-  formDay: Temporal.PlainDate;
-  recurrence: string[];
-} {
-  const { event, seriesTimeZone } = where;
-  const editedStart = editedStartOf(values, where.appTimeZone, seriesTimeZone);
-  const occurrence = event?.recurringEventId ? event : undefined;
-  const formDay = dayOf(
-    (occurrence && keptSeriesStart(editedStart, occurrence)) ?? editedStart,
-    seriesTimeZone
-  );
-  // Changed: differs from the series' (a change set back reads as the
-  // series' again), the same test as the save's recurrenceToSend.
-  const changed = repeatChanged({
-    edited: Boolean(values.recurrenceEdited),
-    recurrence: values.recurrence,
-    source: savedSeriesRecurrence(event, where.seriesRecurrence),
-  });
-  const moved = Boolean(
-    occurrence &&
-      occurrenceDayMoved({
-        editedStart,
-        occurrence,
-        timeZone: seriesTimeZone,
-      })
-  );
-  const followed =
-    occurrence && moved && !changed
-      ? seriesRecurrenceForSave({
-          editedStart,
-          masterRecurrence: where.seriesRecurrence,
-          masterStart: where.seriesStart,
-          occurrence,
-          recurrence: undefined,
-          timeZone: seriesTimeZone,
-        })
-      : undefined;
-  const counting =
-    repeatCountingDay({
-      // A moved occurrence's series would start again on its new day.
-      changed: changed || moved,
-      event,
-      formDay,
-      seriesStart: where.seriesStart,
-      timeZone: seriesTimeZone,
-    }) ?? formDay;
-  return {
-    changed,
-    counting,
-    formDay,
-    recurrence: followed ?? values.recurrence,
-  };
-}
-
-/**
  * The repeat row, or, when the series' rule didn't load, a retry: its
  * repeat can't be edited from a copy that may be old. A copy already shown
  * stays, dimmed, above the retry.
@@ -456,7 +369,7 @@ function RecurrenceEditorSection({
                   onPress={() => {
                     const nextByDay = selected
                       ? shownDays.filter((value) => value !== weekday.value)
-                      : [...shownDays, weekday.value];
+                      : weekOrdered([...shownDays, weekday.value]);
                     updateRecurrence({ byDay: nextByDay });
                   }}
                   size="sm"
@@ -1654,18 +1567,21 @@ export function EventEditorSheet({
   // An existing series' days (its end day, its start's weekday) count in
   // its own zone; a new event's in the app's.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
-  const {
-    changed: repeatIsChanged,
-    counting: repeatDay,
-    formDay,
-    recurrence: seriesRepeat,
-  } = seriesRepeatOf(values, {
-    appTimeZone,
+  // The repeat a save would send, and the days it counts from
+  // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
+  const seriesEdit = seriesRepeatForEdit({
+    edited: draftTimes(values, appTimeZone, seriesTimeZone),
     event: sourceEvent,
+    recurrence: values.recurrence,
+    recurrenceEdited: Boolean(values.recurrenceEdited),
     seriesRecurrence: masterRecurrence,
     seriesStart: masterStart,
-    seriesTimeZone,
+    timeZone: seriesTimeZone,
   });
+  const repeatIsChanged = seriesEdit.changed;
+  const seriesRepeat = seriesEdit.recurrence;
+  const formDay = seriesEdit.startDay ?? values.startDate;
+  const repeatDay = seriesEdit.countingDay ?? formDay;
   const shownRepeat = occurrenceRepeatShown({
     edited: Boolean(values.recurrenceEdited),
     recurrence: seriesRepeat,

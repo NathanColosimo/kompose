@@ -37,6 +37,7 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { useStateConfig } from "@kompose/state/config";
 import { eventCreationBlockedReason } from "@kompose/state/event-creation";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
@@ -45,7 +46,9 @@ import {
 import {
   eventTimeZone,
   getDefaultRecurrenceScopeForEvent,
+  hasSeveralRules,
   isRecurringGoogleEvent,
+  movedMeetingDropped,
   occurrenceDayMoved,
   otherTimeZone,
   repeatChanged,
@@ -53,9 +56,13 @@ import {
   seriesCountingDays,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
-import { withEditedTime } from "@kompose/state/google-event-times";
+import {
+  keepsEventTimes,
+  withEditedTime,
+} from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
+  heldSaveError,
   SAVE_FAILURE_MESSAGE,
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
@@ -74,11 +81,13 @@ import {
   seriesCutUnsure,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
+import { seriesEditFields } from "@kompose/state/series-edit";
 import {
   formatTimeRange,
   nearestSlotMinutes,
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
+import { ORPCError } from "@orpc/client";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 // biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
 import * as Haptics from "expo-haptics";
@@ -120,10 +129,7 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
-import {
-  savedSeriesRecurrence,
-  seriesEditFields,
-} from "@/components/calendar/series-edit";
+import { draftTimes } from "@/components/calendar/event-times";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
@@ -159,14 +165,6 @@ function createGutterPt(visibleDays: number): number {
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
-
-function combineDateTime(
-  date: Temporal.PlainDate,
-  time: Temporal.PlainTime,
-  timeZone: string
-): Temporal.ZonedDateTime {
-  return date.toZonedDateTime({ plainTime: time, timeZone });
-}
 
 function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
   return zdt.hour * 60 + zdt.minute;
@@ -709,6 +707,52 @@ function WorkoutSheet({
 }
 
 /**
+ * The saved event's series pattern: its own rules, or its master's. Not the
+ * draft's, which may add a repeat to a one-off event that isn't a series yet.
+ */
+function savedSeriesRecurrence(
+  event: GoogleEvent,
+  masterRecurrence: string[]
+): string[] {
+  return event.recurrence?.length ? event.recurrence : masterRecurrence;
+}
+
+/**
+ * A write the server won't make to a series (its typed refusal, sent as a
+ * BAD_REQUEST with the reason in `data`), or null for any other failure.
+ */
+function seriesRefusalOf(
+  error: unknown
+): { originalStarts?: unknown; reason: string } | null {
+  if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
+    return null;
+  }
+  const data: unknown = error.data;
+  return typeof data === "object" &&
+    data !== null &&
+    "reason" in data &&
+    typeof data.reason === "string"
+    ? (data as { originalStarts?: unknown; reason: string })
+    : null;
+}
+
+/**
+ * The day of the first moved or edited meeting a refused Entire series
+ * save would have dropped, by its original start; null for anything else.
+ */
+function droppedMeetingOf(error: unknown): Temporal.PlainDate | null {
+  const refusal = seriesRefusalOf(error);
+  const first =
+    refusal?.reason === "dropsChangedOccurrences" &&
+    Array.isArray(refusal.originalStarts)
+      ? refusal.originalStarts[0]
+      : null;
+  return typeof first === "string"
+    ? Temporal.PlainDate.from(first.slice(0, 10))
+    : null;
+}
+
+/**
  * The repeat in the start's form: an all-day series' UNTIL and skipped
  * days are dates, a timed one's date-times.
  */
@@ -848,9 +892,11 @@ function EventSaveScopeDialog({
   /** The scope the save suggests, shown once it's available. */
   preferred: RecurrenceScope;
 }) {
-  const { description, disabled } = changes
-    ? saveScopes(changes)
-    : { description: SCOPE_DIALOG_COPY.saveEvent.description, disabled: {} };
+  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
+  // Why each scope that's off is.
+  const description = changes
+    ? eventSaveDescription(changes)
+    : SCOPE_DIALOG_COPY.saveEvent.description;
   // Worked out each time: a preferred scope off for a moment (the series
   // loading) comes back once it's on, unless the user chose another.
   const scope = chosenScope(pick, preferred, disabled);
@@ -885,45 +931,17 @@ function EventSaveScopeDialog({
 }
 
 /**
- * The save dialog's scopes and line. A save for the series is measured
- * against the series (series-edit.ts: what the user left alone stays the
- * series'), so Entire series waits for the series to load, as This and
- * following does.
- */
-function saveScopes(changes: EventSaveChanges): {
-  description: string;
-  disabled: Partial<Record<RecurrenceScope, boolean>>;
-} {
-  const disabled = eventSaveDisabledScopes(changes);
-  if (changes.seriesRuleLoaded) {
-    return { description: eventSaveDescription(changes), disabled };
-  }
-  let description = SERIES_LOADING_COPY;
-  if (changes.seriesRuleFailed) {
-    description = changes.dateMoved
-      ? SCOPE_DIALOG_COPY.seriesFailed
-      : SERIES_FAILED_COPY;
-  }
-  return { description, disabled: { ...disabled, all: true } };
-}
-
-const SERIES_LOADING_COPY =
-  "Loading the series… This and following and Entire series open once it's in.";
-const SERIES_FAILED_COPY =
-  "Couldn't load the series, so only this occurrence can change. Try again later.";
-
-/**
  * The recurring delete's This and following: off until the series loads,
  * or where the cut is unsure.
  */
 function deleteStateFor(
   event: GoogleEvent | undefined,
-  master: { data?: GoogleEvent; isError: boolean; ruleReady: boolean },
+  master: { data?: GoogleEvent; ruleFailed: boolean; ruleReady: boolean },
   timeZone: string
 ) {
   return eventDeleteScopeState({
     cutUnsure: seriesCutUnsure(event, master.data, timeZone),
-    seriesRuleFailed: master.isError,
+    seriesRuleFailed: master.ruleFailed,
     seriesRuleLoaded: Boolean(event?.recurrence?.length || master.ruleReady),
   });
 }
@@ -936,6 +954,7 @@ export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
   const textScale = useCalendarTextScale();
   const queryClient = useQueryClient();
+  const { notifyError } = useStateConfig();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
 
@@ -1199,8 +1218,14 @@ export default function CalendarTab() {
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
+  // The moved meeting a refused save named (the server's own check), shown
+  // by the scope dialog until the dialog closes.
+  const [refusedMovedDay, setRefusedMovedDay] =
+    useState<Temporal.PlainDate | null>(null);
+
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
+    setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
     setPendingEventDeleteDraft(null);
     setEventDraft(draft);
@@ -1547,32 +1572,11 @@ export default function CalendarTab() {
         currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined,
         timeZone
       );
-      let startPayload: { date?: string; dateTime?: string; timeZone?: string };
-      let endPayload: { date?: string; dateTime?: string; timeZone?: string };
-
-      if (currentDraft.allDay) {
-        startPayload = { date: currentDraft.startDate.toString() };
-        endPayload = { date: currentDraft.endDate.add({ days: 1 }).toString() };
-      } else {
-        const startZdt = combineDateTime(
-          currentDraft.startDate,
-          currentDraft.startTime ?? Temporal.PlainTime.from("09:00"),
-          timeZone
-        );
-        const endZdt = combineDateTime(
-          currentDraft.endDate,
-          currentDraft.endTime ?? Temporal.PlainTime.from("10:00"),
-          timeZone
-        );
-        startPayload = {
-          dateTime: startZdt.toInstant().toString(),
-          timeZone: zone,
-        };
-        endPayload = {
-          dateTime: endZdt.toInstant().toString(),
-          timeZone: zone,
-        };
-      }
+      const { end: endPayload, start: startPayload } = draftTimes(
+        currentDraft,
+        timeZone,
+        zone
+      );
 
       return {
         colorId: currentDraft.colorId ?? undefined,
@@ -1616,7 +1620,6 @@ export default function CalendarTab() {
               ...seriesEditFields({
                 edited: formPayload,
                 occurrence: draft.sourceEvent,
-                series: recurringMasterEvent.data,
               }),
             };
       // A moved date carries the series' rule along, for the series.
@@ -1625,30 +1628,45 @@ export default function CalendarTab() {
           ? eventPayload.recurrence
           : (eventPayload.recurrence ??
             seriesRecurrenceForSave({
-              // Where the user put this occurrence, against where it is.
-              editedStart: formPayload.start,
+              editedEnd: eventPayload.end,
+              editedStart: eventPayload.start,
               masterRecurrence,
               masterStart,
               occurrence: draft.sourceEvent,
               recurrence: eventPayload.recurrence,
               timeZone,
             }));
-      await updateEvent.mutateAsync({
-        accountId: sourceCalendar.accountId,
-        calendarId: sourceCalendar.calendarId,
-        failureMessage: SAVE_FAILURE_MESSAGE,
-        // The editor holds on the save; the cache changes once it's in.
-        optimistic: false,
-        event: {
-          ...draft.sourceEvent,
-          ...eventPayload,
-          recurrence,
-          end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
-          start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
-        },
-        eventId: draft.eventId,
-        recurrenceScope: scope,
-      });
+      await updateEvent
+        .mutateAsync({
+          accountId: sourceCalendar.accountId,
+          calendarId: sourceCalendar.calendarId,
+          // The editor holds on the save; the cache changes once it's in.
+          optimistic: false,
+          // Reported below: a refusal says what it would have undone.
+          quiet: true,
+          event: {
+            ...draft.sourceEvent,
+            ...eventPayload,
+            recurrence,
+            end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
+            start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
+          },
+          eventId: draft.eventId,
+          recurrenceScope: scope,
+        })
+        .catch((error: Error) => {
+          // A refusal in the server's words (it names the meetings it would
+          // have undone); anything else as a failed save.
+          notifyError?.(
+            heldSaveError(
+              error,
+              seriesRefusalOf(error) ? undefined : SAVE_FAILURE_MESSAGE
+            )
+          );
+          // The scope dialog stays, and turns Entire series off for it.
+          setRefusedMovedDay(droppedMeetingOf(error));
+          throw error;
+        });
 
       if (destinationCalendarId) {
         await moveEvent.mutateAsync({
@@ -1668,7 +1686,7 @@ export default function CalendarTab() {
       masterRecurrence,
       masterStart,
       moveEvent,
-      recurringMasterEvent.data,
+      notifyError,
       timeZone,
       updateEvent,
     ]
@@ -1676,39 +1694,75 @@ export default function CalendarTab() {
 
   /** What a save changes, for the scopes its dialog offers. */
   const eventSaveChanges = useCallback(
-    (draft: EditEventDraft): EventSaveChanges => ({
-      calendarChanged:
-        draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
-      dateMoved: occurrenceDayMoved({
-        editedStart: buildEventPayload(draft).start,
-        occurrence: draft.sourceEvent,
+    (draft: EditEventDraft): EventSaveChanges => {
+      const occurrence = draft.sourceEvent;
+      const edited = buildEventPayload(draft);
+      const recurrence = recurrenceToSend(draft, masterRecurrence);
+      const seriesStart = recurringMasterEvent.data?.start;
+      const dateMoved = occurrenceDayMoved({
+        editedEnd: edited.end,
+        editedStart: edited.start,
+        occurrence,
         timeZone,
-      }),
-      repeatSkips: repeatSkipsOccurrence({
-        editedStart: buildEventPayload(draft).start,
-        occurrence: draft.sourceEvent,
-        recurrence: recurrenceToSend(draft, masterRecurrence),
-        seriesStart: recurringMasterEvent.data?.start,
-        timeZone,
-      }),
-      patternChanged: recurrenceToSend(draft, masterRecurrence) !== undefined,
-      seriesRuleFailed: recurringMasterEvent.isError,
-      seriesRuleLoaded: Boolean(
-        draft.sourceEvent.recurrence?.length || recurringMasterEvent.ruleReady
-      ),
-      seriesTimeZone: otherTimeZone(draft.sourceEvent, timeZone),
-      splitBlocked: seriesSplitBlock(
-        draft.sourceEvent,
-        recurringMasterEvent.data,
-        timeZone
-      ),
-    }),
+      });
+      // The series' moved meetings this app has loaded.
+      const loaded = googleEvents.flatMap((item) =>
+        item.calendarId === draft.sourceCalendar.calendarId &&
+        item.event.recurringEventId === occurrence.recurringEventId
+          ? [item.event]
+          : []
+      );
+      return {
+        calendarChanged:
+          draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
+        dateMoved,
+        droppedMovedDay:
+          refusedMovedDay ??
+          movedMeetingDropped({
+            loaded,
+            occurrence,
+            recurrence,
+            seriesStart,
+            timeZone,
+          }),
+        patternChanged: recurrence !== undefined,
+        repeatSkips: repeatSkipsOccurrence({
+          occurrence,
+          recurrence,
+          seriesStart,
+          timeZone,
+        }),
+        retimed: !(
+          dateMoved ||
+          keepsEventTimes(
+            edited,
+            occurrence,
+            eventTimeZone(occurrence, timeZone)
+          )
+        ),
+        seriesRuleFailed: recurringMasterEvent.ruleFailed,
+        seriesRuleLoaded: Boolean(
+          occurrence.recurrence?.length || recurringMasterEvent.ruleReady
+        ),
+        seriesTimeZone: otherTimeZone(occurrence, timeZone),
+        severalRules: hasSeveralRules(
+          savedSeriesRecurrence(occurrence, masterRecurrence)
+        ),
+        splitBlocked: seriesSplitBlock(
+          occurrence,
+          recurringMasterEvent.data,
+          timeZone
+        ),
+      };
+    },
     [
       buildEventPayload,
+      googleEvents,
       masterRecurrence,
       recurringMasterEvent.data,
-      recurringMasterEvent.isError,
+      recurringMasterEvent.ruleFailed,
       recurringMasterEvent.ruleReady,
+      refusedMovedDay,
       timeZone,
     ]
   );
@@ -1754,6 +1808,7 @@ export default function CalendarTab() {
         // The scope dialog opens over the editor, which stays open; it
         // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
+        setRefusedMovedDay(null);
         setEventSavePreferred(
           suggested === "this" && changes.patternChanged
             ? "following"
@@ -1786,10 +1841,13 @@ export default function CalendarTab() {
       try {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
-      } catch {
-        // The mutation reports the error; the editor stays with the edits.
-        setEventDialog(null);
-        setPendingEventSaveDraft(null);
+      } catch (error) {
+        // A save refused for a moved meeting it would drop keeps the dialog,
+        // which now says so; otherwise the editor stays with the edits.
+        if (!droppedMeetingOf(error)) {
+          setEventDialog(null);
+          setPendingEventSaveDraft(null);
+        }
       } finally {
         setIsSavingEvent(false);
       }
@@ -1928,6 +1986,7 @@ export default function CalendarTab() {
 
   function dismissEventSaveDialog() {
     setEventDialog(null);
+    setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
   }
 
