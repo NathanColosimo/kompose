@@ -988,24 +988,30 @@ describe("seriesRecurrenceForSave", () => {
   });
 
   test("keeps a cancelled added meeting on the day the start moves to", () => {
-    // Mondays 9:00 with an added, then cancelled, Tue Nov 10 15:00; the
-    // series moved onto Tue Nov 10 9:00: that 15:00 stays cancelled.
-    const saved = seriesRecurrenceForSave({
-      editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
-      masterRecurrence: [
-        "RRULE:FREQ=WEEKLY;BYDAY=MO",
-        "RDATE;TZID=America/New_York:20261110T150000",
-        "EXDATE;TZID=America/New_York:20261110T150000",
-      ],
-      occurrence: {
-        originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
-        recurringEventId: "series",
-        start: { dateTime: "2026-11-09T09:00:00-05:00" },
-      },
-      recurrence: undefined,
-      timeZone: "America/New_York",
-    });
-    expect(saved?.at(-1)).toBe("EXDATE;TZID=America/New_York:20261110T150000");
+    // Mondays 9:00 with an added, then cancelled, Tue Nov 10 15:00 (and a
+    // 9:00 skip that day); the series moved onto Tue Nov 10 9:00: the 9:00
+    // skip goes (that's the start just placed), the 15:00 stays cancelled.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        masterRecurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261110T150000",
+          "EXDATE;TZID=America/New_York:20261110T150000,20261110T090000",
+        ],
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "RDATE;TZID=America/New_York:20261110T150000",
+      "EXDATE;TZID=America/New_York:20261110T150000",
+    ]);
   });
 
   test("keeps a retimed skip off another rule's real meeting", () => {
