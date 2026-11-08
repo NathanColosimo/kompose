@@ -395,6 +395,25 @@ function isDoneBlocked(saving: "done" | "save" | null, repeatBlocked: boolean) {
   return saving === "save" || repeatBlocked;
 }
 
+/**
+ * Cmd+Enter saves the open editor, but not while it saves, and not behind
+ * a dialog over it (the scope or delete question), where it would re-ask
+ * and drop the choice made in it.
+ */
+function canSaveFromKeyboard(params: {
+  dialogOpen: boolean;
+  open: boolean;
+  saving: boolean;
+  showActionButtons: boolean;
+}): boolean {
+  return (
+    params.open &&
+    params.showActionButtons &&
+    !params.saving &&
+    !params.dialogOpen
+  );
+}
+
 /** Whether the editor holds for a save: its own, or the caller's. */
 function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
   return saving !== null || externalSaving;
@@ -877,10 +896,22 @@ export function TaskEditForm({
       handleSaveClick();
     },
     {
-      enabled: open && showActionButtons && !isSavingStatus,
+      enabled: canSaveFromKeyboard({
+        dialogOpen: showTagScopeDialog || showDeleteConfirm,
+        open,
+        saving: isSavingStatus,
+        showActionButtons,
+      }),
       enableOnFormTags: true,
     },
-    [handleSaveClick, isSavingStatus, open, showActionButtons]
+    [
+      handleSaveClick,
+      isSavingStatus,
+      open,
+      showActionButtons,
+      showDeleteConfirm,
+      showTagScopeDialog,
+    ]
   );
 
   const applySharedFields = useCallback(

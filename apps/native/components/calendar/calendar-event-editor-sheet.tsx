@@ -81,6 +81,7 @@ const RECURRENCE_FREQUENCIES: Array<{
   { label: "Daily", value: "DAILY" },
   { label: "Weekly", value: "WEEKLY" },
   { label: "Monthly", value: "MONTHLY" },
+  { label: "Yearly", value: "YEARLY" },
 ];
 
 function dateToPlainDate(date: Date): Temporal.PlainDate {
@@ -222,7 +223,7 @@ function RecurrenceEditorSection({
       : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
-      {/* Four equal chips in one row. */}
+      {/* Five equal chips in one row. */}
       <View className="flex-row gap-1.5">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
           const active = parsedRecurrence.freq === frequency.value;
@@ -242,17 +243,10 @@ function RecurrenceEditorSection({
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
-              style={{ borderRadius: 999, flex: 1, paddingHorizontal: 6 }}
+              style={CHIP_STYLE}
               variant={active ? "default" : "outline"}
             >
-              {/* Shrinks to fit a narrow phone or a large text size. */}
-              <Text
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
-                numberOfLines={1}
-              >
-                {frequency.label}
-              </Text>
+              <ChipLabel>{frequency.label}</ChipLabel>
             </Button>
           );
         })}
@@ -303,7 +297,24 @@ function RecurrenceEditorSection({
   );
 }
 
-const END_CHIP_STYLE = { borderRadius: 999, flex: 1, paddingHorizontal: 6 };
+const CHIP_STYLE = { borderRadius: 999, flex: 1, paddingHorizontal: 2 };
+
+/**
+ * A repeat chip's label: one size for every chip (13pt fits "Monthly" in a
+ * fifth of a 375pt sheet), shrinking only for a large text size.
+ */
+function ChipLabel({ children }: { children: string }) {
+  return (
+    <Text
+      adjustsFontSizeToFit
+      className="text-[13px]"
+      minimumFontScale={0.75}
+      numberOfLines={1}
+    >
+      {children}
+    </Text>
+  );
+}
 
 function RecurrenceEndSection({
   parsedRecurrence,
@@ -320,12 +331,10 @@ function RecurrenceEndSection({
         <Button
           onPress={() => updateRecurrence({ end: { type: "none" } })}
           size="sm"
-          style={END_CHIP_STYLE}
+          style={CHIP_STYLE}
           variant={parsedRecurrence.end.type === "none" ? "default" : "outline"}
         >
-          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
-            Never
-          </Text>
+          <ChipLabel>Never</ChipLabel>
         </Button>
         <Button
           onPress={() => {
@@ -340,14 +349,12 @@ function RecurrenceEndSection({
             });
           }}
           size="sm"
-          style={END_CHIP_STYLE}
+          style={CHIP_STYLE}
           variant={
             parsedRecurrence.end.type === "until" ? "default" : "outline"
           }
         >
-          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
-            On date
-          </Text>
+          <ChipLabel>On date</ChipLabel>
         </Button>
         <Button
           onPress={() =>
@@ -362,14 +369,12 @@ function RecurrenceEndSection({
             })
           }
           size="sm"
-          style={END_CHIP_STYLE}
+          style={CHIP_STYLE}
           variant={
             parsedRecurrence.end.type === "count" ? "default" : "outline"
           }
         >
-          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
-            After…
-          </Text>
+          <ChipLabel>After…</ChipLabel>
         </Button>
       </View>
 

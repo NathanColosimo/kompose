@@ -3,7 +3,12 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 
-export type EventRecurrenceFrequency = "none" | "DAILY" | "WEEKLY" | "MONTHLY";
+export type EventRecurrenceFrequency =
+  | "none"
+  | "DAILY"
+  | "WEEKLY"
+  | "MONTHLY"
+  | "YEARLY";
 
 export type EventRecurrenceEnd =
   | { type: "none" }
@@ -86,6 +91,7 @@ const VALID_FREQUENCIES = new Set<EventRecurrenceFrequency>([
   "DAILY",
   "WEEKLY",
   "MONTHLY",
+  "YEARLY",
 ]);
 
 function resolveEnd(
@@ -267,7 +273,8 @@ export function describeEventRecurrence(params: {
     if (params.eventType === "birthday") {
       return "Repeats yearly";
     }
-    return params.recurringEventId ? "Repeats" : null;
+    // A rule this app can't put in words (hourly, say) still repeats.
+    return params.recurringEventId || rule ? "Repeats" : null;
   }
   const interval = Number.parseInt(
     INTERVAL_PATTERN.exec(rule ?? "")?.[1] ?? "1",

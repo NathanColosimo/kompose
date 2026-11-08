@@ -378,6 +378,7 @@ function RecurrenceEditor({
             <SelectItem value="DAILY">Daily</SelectItem>
             <SelectItem value="WEEKLY">Weekly</SelectItem>
             <SelectItem value="MONTHLY">Monthly</SelectItem>
+            <SelectItem value="YEARLY">Yearly</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -831,8 +832,25 @@ export function EventEditPopover({
       e.preventDefault();
       handleSave();
     },
-    { enabled: open && !readOnly, enableOnFormTags: true },
-    [handleSave, open, readOnly]
+    // Not behind a dialog over the editor (the scope or delete question):
+    // there Cmd+Enter would re-ask and drop the choice made in it.
+    {
+      enabled:
+        open &&
+        !readOnly &&
+        !scopeDialogOpen &&
+        !deleteDialogOpen &&
+        !simpleDeleteConfirmOpen,
+      enableOnFormTags: true,
+    },
+    [
+      deleteDialogOpen,
+      handleSave,
+      open,
+      readOnly,
+      scopeDialogOpen,
+      simpleDeleteConfirmOpen,
+    ]
   );
 
   return (

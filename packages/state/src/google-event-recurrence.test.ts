@@ -26,6 +26,15 @@ describe("describeEventRecurrence", () => {
   });
 });
 
+test("describes a yearly rule, and any other as repeating", () => {
+  expect(describeEventRecurrence({ rules: ["RRULE:FREQ=YEARLY"] })).toBe(
+    "Repeats yearly"
+  );
+  expect(describeEventRecurrence({ rules: ["RRULE:FREQ=HOURLY"] })).toBe(
+    "Repeats"
+  );
+});
+
 test("names the start's weekday for a weekly rule with no days", () => {
   expect(
     describeEventRecurrence({ rules: ["RRULE:FREQ=WEEKLY"], startWeekday: 6 })
