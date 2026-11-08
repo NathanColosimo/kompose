@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import type { StateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  getGoogleEventMastersByCalendarQueryKey,
+  getGoogleEventsByCalendarQueryKey,
+} from "../google-calendar-query-keys";
 import { moveGoogleEventMutationOptions } from "./use-move-google-event-mutation";
 
 const move = {
@@ -72,4 +75,47 @@ test("a failed move leaves the lists as they've since been refreshed", async () 
   // Nothing changed them before the move, so nothing is put back.
   const { cached } = await failedMove({ quiet: true });
   expect(cached).toEqual([{ id: "event" }, { id: "new" }]);
+});
+
+test("a move marks both calendars' events and series stale, moved or refused", async () => {
+  const keys = ["work", "home"].flatMap((calendarId) => [
+    [
+      ...getGoogleEventsByCalendarQueryKey({ accountId: "acct", calendarId }),
+      "2026-11",
+    ],
+    [
+      ...getGoogleEventMastersByCalendarQueryKey({
+        accountId: "acct",
+        calendarId,
+      }),
+      "series",
+    ],
+  ]);
+  const answers = [
+    () => Promise.resolve(null),
+    () => Promise.reject(new Error("refused")),
+  ];
+  const runs = answers.map(async (answer) => {
+    const queryClient = new QueryClient();
+    for (const key of keys) {
+      queryClient.setQueryData(key, []);
+    }
+    // Only the call a move makes: the client's type has every route.
+    const orpc = {
+      googleCal: { events: { move: answer } },
+    } as unknown as StateConfig["orpc"];
+    const observer = new MutationObserver(
+      queryClient,
+      moveGoogleEventMutationOptions(queryClient, {
+        notifyError: () => undefined,
+        orpc,
+      })
+    );
+    await observer.mutate(move).catch(() => undefined);
+    return keys.map((key) => queryClient.getQueryState(key)?.isInvalidated);
+  });
+  expect(await Promise.all(runs)).toEqual([
+    [true, true, true, true],
+    [true, true, true, true],
+  ]);
 });

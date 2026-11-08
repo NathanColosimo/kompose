@@ -4,7 +4,10 @@ import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import type { StateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  getGoogleEventMastersByCalendarQueryKey,
+  getGoogleEventsByCalendarQueryKey,
+} from "../google-calendar-query-keys";
 import {
   createGoogleEventMutationOptions,
   deleteGoogleEventMutationOptions,
@@ -365,4 +368,57 @@ test("a repeating create shows no stand-in: its meetings come with the refetch",
   };
   const { whileSent } = await create({ answer: refused, input: weekly });
   expect(whileSent).toEqual([[{ id: "other" }]]);
+});
+
+// --- every write ---
+
+test("every write marks the calendar's events and series stale, saved or refused", async () => {
+  // A series kept fresh past a write would hand its old rule to the next.
+  const seriesKey = [
+    ...getGoogleEventMastersByCalendarQueryKey(calendar),
+    "series",
+  ];
+  const config = (orpc: StateConfig["orpc"]) => ({
+    notifyError: () => undefined,
+    orpc,
+  });
+  /** Each write, run once on `queryClient` against `orpc`. */
+  const writes: Record<
+    Route,
+    (queryClient: QueryClient, orpc: StateConfig["orpc"]) => Promise<unknown>
+  > = {
+    create: (queryClient, orpc) =>
+      new MutationObserver(
+        queryClient,
+        createGoogleEventMutationOptions(queryClient, config(orpc))
+      ).mutate(lunch),
+    delete: (queryClient, orpc) =>
+      new MutationObserver(
+        queryClient,
+        deleteGoogleEventMutationOptions(queryClient, config(orpc))
+      ).mutate(removal),
+    update: (queryClient, orpc) =>
+      new MutationObserver(
+        queryClient,
+        updateGoogleEventMutationOptions(queryClient, config(orpc))
+      ).mutate({ ...calendar, event: standup, eventId: "event" }),
+  };
+  const answers = [() => Promise.resolve(standup), refused];
+  const routes: Route[] = ["create", "delete", "update"];
+  const runs = routes.flatMap((route) =>
+    answers.map(async (answer) => {
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(november, [standup]);
+      queryClient.setQueryData(seriesKey, standup);
+      const server = stubbedServer(queryClient, route, answer);
+      await writes[route](queryClient, server.orpc).catch(() => undefined);
+      return [
+        queryClient.getQueryState(november)?.isInvalidated,
+        queryClient.getQueryState(seriesKey)?.isInvalidated,
+      ];
+    })
+  );
+  expect(await Promise.all(runs)).toEqual(
+    Array.from({ length: 6 }, () => [true, true])
+  );
 });
