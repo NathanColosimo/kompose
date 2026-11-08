@@ -637,6 +637,68 @@ function withCountsLeft(
 }
 
 /**
+ * How many of a COUNT `rule`'s positions come before the split, and
+ * whether the split is one of them, walked from the series' start. Null
+ * when they can't be told.
+ */
+function positionsUsed(params: {
+  count: number;
+  rule: string;
+  seriesClock: Temporal.PlainTime | null;
+  seriesStart: RecurrenceValue;
+  seriesZone: string;
+  split: RecurrenceValue;
+}): { before: number; own: boolean } | null {
+  const { count, rule, seriesClock, seriesStart, seriesZone, split } = params;
+  // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
+  // first start is the first position only of a rule at its time.
+  const clock = seriesClock && ruleClock(rule, seriesClock);
+  const atSeriesTime =
+    !(clock && seriesClock) ||
+    Temporal.PlainTime.compare(clock, seriesClock) === 0;
+  const positions = countedRuleDays(rule, seriesStart.day, count, atSeriesTime);
+  // A position whose time doesn't exist that day (a 2:30 AM meeting on
+  // the spring-forward night): RFC 5545 drops it, but Google's own list
+  // says what it did, so count from that (see until.ts `existsOn`).
+  if (
+    !positions ||
+    (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
+  ) {
+    return null;
+  }
+  const splitInstant = split.instant;
+  if (clock && splitInstant && seriesStart.instant) {
+    // Timed: its meetings as moments, none before the series' start (a
+    // rule earlier in the day than the start doesn't meet on its day).
+    const meetings = countedRuleMeetings({
+      base: seriesClock,
+      count,
+      from: seriesStart.day,
+      rule,
+      time: clock,
+      timeZone: seriesZone,
+    });
+    if (!meetings) {
+      return null;
+    }
+    const at = splitInstant.epochMilliseconds;
+    return {
+      before: [...meetings].filter((ms) => ms < at).length,
+      own: meetings.has(at),
+    };
+  }
+  // All day: positions are days.
+  return {
+    before: positions.filter(
+      (day) => Temporal.PlainDate.compare(day, split.day) < 0
+    ).length,
+    own: positions.some(
+      (day) => Temporal.PlainDate.compare(day, split.day) === 0
+    ),
+  };
+}
+
+/**
  * The following part's rules with exactly the positions each has left:
  * every rule is walked from the series' start, its first COUNT days are
  * its positions (skipped ones included, added ones not), and the new part
@@ -678,44 +740,18 @@ export function carryCountExactly(
       used.push(null);
       continue;
     }
-    // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
-    // first start is the first position only of a rule at its time.
-    const clock = seriesClock && ruleClock(rule, seriesClock);
-    const atSeriesTime =
-      !(clock && seriesClock) ||
-      Temporal.PlainTime.compare(clock, seriesClock) === 0;
-    const positions = countedRuleDays(
-      rule,
-      seriesStartValue.day,
+    const positions = positionsUsed({
       count,
-      atSeriesTime
-    );
-    // A position whose time doesn't exist that day (a 2:30 AM meeting on
-    // the spring-forward night): RFC 5545 drops it, but Google's own list
-    // says what it did, so count from that (see until.ts `existsOn`).
-    if (
-      !positions ||
-      (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
-    ) {
+      rule,
+      seriesClock: seriesClock ?? null,
+      seriesStart: seriesStartValue,
+      seriesZone,
+      split,
+    });
+    if (!positions) {
       return null;
     }
-    const splitInstant = split.instant;
-    // How a position compares with the split: by moment, or by day.
-    const vsSplit = (day: Temporal.PlainDate, position: number) =>
-      clock && splitInstant
-        ? Temporal.Instant.compare(
-            position === 0 && atSeriesTime && seriesStartValue.instant
-              ? seriesStartValue.instant
-              : day
-                  .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
-                  .toInstant(),
-            splitInstant
-          )
-        : Temporal.PlainDate.compare(day, split.day);
-    used.push({
-      before: positions.filter((day, i) => vsSplit(day, i) < 0).length,
-      own: positions.some((day, i) => vsSplit(day, i) === 0),
-    });
+    used.push(positions);
   }
   if (used.every((n) => n === null)) {
     return null;

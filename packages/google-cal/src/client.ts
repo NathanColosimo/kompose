@@ -238,8 +238,10 @@ function ruleForStart(
   master: { start: { date?: string; dateTime?: string; timeZone?: string } },
   start: { date?: string; dateTime?: string; timeZone?: string },
   /**
-   * A split's original start: the new series' first meeting, whose time
-   * its COUNT counts from when it's made all day.
+   * A split's original start: the new series' first meeting before the
+   * edit. Its times are read from there (the old series' start isn't in
+   * the new one), and its COUNT counts from its time when it's made all
+   * day.
    */
   splitAt?: string
 ): string[] | undefined {
@@ -252,7 +254,8 @@ function ruleForStart(
     start.date && splitClock
       ? { firstDay: Temporal.PlainDate.from(start.date), firstTime: splitClock }
       : undefined;
-  return rule && matchRecurrenceToStart(rule, start, zone, master.start, days);
+  const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
+  return rule && matchRecurrenceToStart(rule, start, zone, from, days);
 }
 
 /**
@@ -514,7 +517,10 @@ function placeCarried(params: {
   zone: string;
 }): CarriedOccurrence[] | SeriesRefusal {
   const carried: CarriedOccurrence[] = [];
-  const lost: string[] = [];
+  const lost = new Set<string>();
+  // Each slot holds one occurrence: two that land on one can't both keep
+  // their changes.
+  const placed = new Map<number, string>();
   for (const { at, changes, originalStart } of params.occurrences) {
     if (Object.keys(changes).length === 0) {
       continue;
@@ -527,14 +533,17 @@ function placeCarried(params: {
         slot: at,
         start: params.start,
       });
-    if (at && meets === true) {
-      carried.push({ at, changes });
-    } else {
-      lost.push(originalStart);
+    const moment = at && meets === true ? slotMoment(at, params.zone) : null;
+    const taken = moment && placed.get(moment.epochMilliseconds);
+    if (!(at && moment) || taken) {
+      lost.add(taken || originalStart).add(originalStart);
+      continue;
     }
+    placed.set(moment.epochMilliseconds, originalStart);
+    carried.push({ at, changes });
   }
-  return lost.length > 0
-    ? { originalStarts: lost, reason: "dropsChangedOccurrences" }
+  return lost.size > 0
+    ? { originalStarts: [...lost], reason: "dropsChangedOccurrences" }
     : carried;
 }
 

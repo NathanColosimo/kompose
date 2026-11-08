@@ -1122,3 +1122,75 @@ describe("series shapes a write has to keep as they are", () => {
     expect(carried?.body).not.toHaveProperty("conferenceData");
   });
 });
+
+describe("This and following, where the new series sits", () => {
+  test("a time change moves a rule that sets its own hour", async () => {
+    // Starts Mon Nov 9 9:00, then meets Mondays at 10:00 (BYHOUR=10).
+    // From Nov 16's 10:00, the following meetings move to 11:00.
+    const series = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10"],
+    };
+    const google = fakeGoogle(series);
+    const opened = occurrenceOf(series, "2026-11-16T10:00:00-05:00");
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", opened, {
+            end: { dateTime: "2026-11-16T11:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=11"],
+      start: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("refuses two moved occurrences that would land on one meeting", async () => {
+    // Mondays plus an added Tue Dec 1, both Nov 30 and Dec 1 moved on
+    // their own. From Nov 16 the series moves to Tuesdays: Nov 30 would
+    // land on Dec 1, which the added meeting holds.
+    const series = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261201T090000",
+      ],
+    };
+    const movedTo = (original: string, start: string, end: string) =>
+      occurrenceOf(series, original, { end, start });
+    const google = fakeGoogle(series, [
+      movedTo(
+        "2026-11-30T09:00:00-05:00",
+        "2026-11-30T13:00:00-05:00",
+        "2026-11-30T13:30:00-05:00"
+      ),
+      movedTo(
+        "2026-12-01T09:00:00-05:00",
+        "2026-12-01T15:00:00-05:00",
+        "2026-12-01T15:30:00-05:00"
+      ),
+    ]);
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    const refusal = await refusalOf(
+      edit("following", opened, {
+        end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+        start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(refusal).toMatchObject({
+      data: { reason: "dropsChangedOccurrences" },
+    });
+    expect(
+      [
+        ...(refusal as { data: { originalStarts: string[] } }).data
+          .originalStarts,
+      ].sort()
+    ).toEqual(["2026-11-30T09:00:00-05:00", "2026-12-01T09:00:00-05:00"]);
+    expect(google.writes()).toEqual([]);
+  });
+});

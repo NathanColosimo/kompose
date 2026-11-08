@@ -187,6 +187,21 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15;COUNT=2"]);
   });
 
+  test("counts no meeting before the series' start", () => {
+    // Starts Nov 9 9:00, then daily at 8:00 three times: Nov 9's 8:00 is
+    // before the start, so the rule meets Nov 10, 11 and 12. Split at
+    // Nov 10 8:00, all three are left.
+    const rule = "RRULE:FREQ=DAILY;BYHOUR=8;COUNT=3";
+    expect(
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart: "2026-11-10T08:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([rule]);
+  });
+
   test("can't carry a COUNT it can't walk past added days", () => {
     // A week-number rule isn't walked, and Google's list can't tell its
     // meetings from the added one: what's left is unknown.

@@ -51,7 +51,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "countUnknown":
       return "This and following isn't available for this series: how many times it has left to repeat can't be worked out.";
     case "severalTimesADay":
-      return "This series meets more than once a day, so its time can't be changed for the entire series. Change one occurrence at a time.";
+      return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences": {
       const days = refusal.originalStarts.map(dayName).join(", ");
       return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.`;
