@@ -358,6 +358,8 @@ export function carryCountExactly(
     .toPlainTime();
   // Positions each rule used before the split.
   const used: (number | null)[] = [];
+  // Whether the split is one of the rules' own meetings (not an added one).
+  let splitIsRuleMeeting = false;
   for (const rule of masterRules) {
     const count = Number(COUNT_REGEX.exec(rule)?.[1]);
     if (!Number.isFinite(count)) {
@@ -386,7 +388,8 @@ export function carryCountExactly(
       return null;
     }
     const splitInstant = split.instant;
-    const isBefore = (day: Temporal.PlainDate, position: number) =>
+    // How a position compares with the split: by moment, or by day.
+    const vsSplit = (day: Temporal.PlainDate, position: number) =>
       clock && splitInstant
         ? Temporal.Instant.compare(
             position === 0 && atSeriesTime && seriesStartValue.instant
@@ -395,9 +398,10 @@ export function carryCountExactly(
                   .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
                   .toInstant(),
             splitInstant
-          ) < 0
-        : Temporal.PlainDate.compare(day, split.day) < 0;
-    used.push(positions.filter(isBefore).length);
+          )
+        : Temporal.PlainDate.compare(day, split.day);
+    used.push(positions.filter((day, i) => vsSplit(day, i) < 0).length);
+    splitIsRuleMeeting ||= positions.some((day, i) => vsSplit(day, i) === 0);
   }
   if (used.every((n) => n === null)) {
     return null;
@@ -413,7 +417,10 @@ export function carryCountExactly(
     if (before === null || before === undefined || !Number.isFinite(count)) {
       return [line];
     }
-    const remaining = count - before;
+    // Split at an added meeting, the new part's start (counted first, as
+    // RFC 5545 has DTSTART) is one more than the rule's own left.
+    const remaining =
+      count - before + (index === 0 && !splitIsRuleMeeting ? 1 : 0);
     // The first rule carries the part (at least its start); another with
     // none left is done. Kept at one, a spent first rule still makes the
     // new start an occurrence, as RFC 5545 has DTSTART; with several

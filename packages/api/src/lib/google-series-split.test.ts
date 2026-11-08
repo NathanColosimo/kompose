@@ -461,6 +461,52 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
+  test("counts a split at an added meeting as one more", () => {
+    // Daily 9:00 five times from Nov 9, plus an added Nov 9 15:00: split
+    // there ("This and following"), the new part's start is a meeting the
+    // rule doesn't make, so the rule's four left (Nov 10-13) need COUNT=5.
+    // Made all day from that start, it runs Nov 9-13.
+    const carried = carryCountExactly(["RRULE:FREQ=DAILY;COUNT=5"], {
+      masterRecurrence: [
+        "RRULE:FREQ=DAILY;COUNT=5",
+        "RDATE;TZID=America/New_York:20261109T150000",
+      ],
+      originalStart: "2026-11-09T15:00:00-05:00",
+      seriesStart: "2026-11-09T09:00:00-05:00",
+      seriesZone: "America/New_York",
+    });
+    expect(carried).toEqual(["RRULE:FREQ=DAILY;COUNT=5"]);
+    expect(
+      matchRecurrenceToStart(
+        carried ?? [],
+        { date: "2026-11-09" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" },
+        {
+          firstDay: Temporal.PlainDate.from("2026-11-09"),
+          firstTime: Temporal.PlainTime.from("15:00"),
+        }
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=5"]);
+    // Morning and afternoon as two rules: Nov 9 15:00 is the afternoon
+    // rule's own meeting, so nothing is added (four and five left).
+    const twoRules = [
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+    ];
+    expect(
+      carryCountExactly(twoRules, {
+        masterRecurrence: twoRules,
+        originalStart: "2026-11-09T15:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+    ]);
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(
