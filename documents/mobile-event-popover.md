@@ -85,7 +85,7 @@ Edit (recurring):
   - Entire series
 - A scope that can't apply is off, and the dialog's line says why (a moved day, the series still loading, a repeat that would skip this occurrence; see [event-popover.md](./event-popover.md)). If the calendar changes, only `all` is enabled and the entire series moves.
 - A save for the series (`following`/`all`) sends only its times, its repeat, and the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
-- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server refuses a save, the app shows its words. When the refusal is for a moved meeting a new repeat would drop, the dialog stays open with Entire series off and names that meeting by the day the calendar shows it on.
+- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server refuses a save, the app shows its words. When it refuses an Entire series save because a new repeat would drop a moved meeting, the dialog stays open with Entire series off and names that meeting by the day the calendar shows it on (or its original day when it isn't loaded); any other refusal returns to the editor with the edits.
 
 Delete:
 - Non-recurring: simple confirm dialog.

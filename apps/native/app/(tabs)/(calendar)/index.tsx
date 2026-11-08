@@ -1662,8 +1662,8 @@ export default function CalendarTab() {
           recurrenceScope: scope,
         })
         .catch((error: Error) => {
-          // A refusal in the server's words (a dropped meeting's names its
-          // day); anything else as a failed save.
+          // A refusal in the server's words (a refusal for a dropped meeting
+          // names its day); anything else as a failed save.
           notifyError?.(
             heldSaveError(
               error,
@@ -1712,6 +1712,7 @@ export default function CalendarTab() {
       });
       // The series' moved meetings this app has loaded.
       const loaded = googleEvents.flatMap((item) =>
+        item.accountId === draft.sourceCalendar.accountId &&
         item.calendarId === draft.sourceCalendar.calendarId &&
         item.event.recurringEventId === occurrence.recurringEventId
           ? [item.event]
@@ -1838,7 +1839,8 @@ export default function CalendarTab() {
 
   /**
    * The day a refused save's moved meeting is on now, as the calendar shows
-   * it (its loaded occurrence), else its original day in the series' zone.
+   * it (its loaded occurrence, from this calendar), else its original day
+   * in the series' zone.
    */
   const movedMeetingDay = useCallback(
     (original: string, draft: EditEventDraft): Temporal.PlainDate | null => {
@@ -1846,6 +1848,8 @@ export default function CalendarTab() {
       const seriesZone = eventTimeZone(occurrence, timeZone);
       const moved = googleEvents.find(
         (item) =>
+          item.accountId === draft.sourceCalendar.accountId &&
+          item.calendarId === draft.sourceCalendar.calendarId &&
           item.event.recurringEventId === occurrence.recurringEventId &&
           item.event.originalStartTime &&
           sameEventTime(
@@ -1872,14 +1876,15 @@ export default function CalendarTab() {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
       } catch (error) {
-        // A save refused for a moved meeting it would drop keeps the dialog
-        // when that turns Entire series off, so the dialog says why;
-        // otherwise the editor stays with the edits.
+        // An Entire series save refused for a moved meeting it would drop
+        // keeps the dialog, which turns that scope off and says why;
+        // anything else returns to the editor with the edits.
         const original = droppedOriginalStart(error);
         const day = original
           ? movedMeetingDay(original, pendingEventSaveDraft)
           : null;
         const turnsOff =
+          scope === "all" &&
           day !== null &&
           Boolean(
             eventSaveDisabledScopes({
