@@ -530,12 +530,13 @@ function ruleEndsBefore(
  * kept carried on. COUNT counts rule positions, EXDATE-skipped ones
  * included, while Google lists rule occurrences (skipped ones aside) and
  * RDATE-added ones, an added day that's also a rule day only once. So,
- * when the rule can't be walked (`carryCountExactly`):
- * - with no added days, the positions used before the split are those
- *   listed before it plus the skipped days before it, and the new part
- *   runs what's left (a five-time series split at its third runs three);
- * - with added days, listed ones can't be told apart from rule ones, so
- *   what's left can't be known: null.
+ * when the rule can't be walked (`carryCountExactly`), the positions used
+ * before the split are those listed before it, and the new part runs
+ * what's left (a five-time series split at its third runs three). What's
+ * left can't be known, so null:
+ * - with added days, as listed ones can't be told apart from rule ones;
+ * - with a skip before the split that Google doesn't list, as it can't be
+ *   told to be a position (a skip on no meeting uses none).
  */
 export function carryCount(
   recurrence: string[],
@@ -563,6 +564,12 @@ export function carryCount(
   const before = (value: RecurrenceValue) =>
     !beforeSplit(value, seriesStart, seriesZone) &&
     beforeSplit(value, originalStart, seriesZone);
+  const listed = unique(
+    starts
+      .map((start) => asValue(start, seriesZone))
+      .filter((value): value is RecurrenceValue => value !== null)
+      .filter(before)
+  );
   const skipped = masterRecurrence.flatMap((line) => {
     const list = parseDateList(line, seriesZone);
     return list?.name === "EXDATE"
@@ -571,16 +578,14 @@ export function carryCount(
           .filter((value): value is RecurrenceValue => value !== null)
       : [];
   });
-  // Each position once: a skipped day Google also lists (as a cancelled
-  // occurrence) isn't counted twice.
-  const used = unique([
-    ...starts
-      .map((start) => asValue(start, seriesZone))
-      .filter((value): value is RecurrenceValue => value !== null)
-      .filter(before),
-    ...skipped.filter(before),
-  ]).length;
-  return withRemainingCount(recurrence, used);
+  if (
+    skipped
+      .filter(before)
+      .some((skip) => !listed.some((value) => sameValue(value, skip)))
+  ) {
+    return null;
+  }
+  return withRemainingCount(recurrence, listed.length);
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

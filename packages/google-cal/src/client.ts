@@ -1581,7 +1581,7 @@ export function makeGoogleCalendarService(
         masterRecurrence: master.recurrence ?? [],
         originalStart,
         seriesStart:
-          master.start.dateTime ?? master.start.date ?? originalStart,
+          slotOf(master.start, seriesZoneOf(master)) ?? originalStart,
         seriesZone: seriesZoneOf(master),
       };
       // A rule that can be read is counted without asking Google.
