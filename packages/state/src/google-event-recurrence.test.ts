@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 import {
   buildGoogleEventRecurrenceRule,
@@ -976,15 +977,26 @@ describe("seriesRecurrenceForSave", () => {
   test("keeps a retimed skip off another rule's real meeting", () => {
     // Mondays at the start's time plus Mondays fixed at 9:00 and 10:00,
     // Nov 16 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the
-    // series: the 9:00 skip stays, and the fixed 10:00 meeting isn't hidden.
+    // series. The client sends nothing (the series keeps its rule), and
+    // the server lines that rule up with the new start: the 9:00 skip
+    // stays, and the fixed 10:00 meeting isn't hidden.
+    const rules = [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,10;BYMINUTE=0",
+      "EXDATE;TZID=America/New_York:20261116T090000",
+    ];
+    expect(
+      matchRecurrenceToStart(
+        rules,
+        { dateTime: "2026-11-09T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      )
+    ).toEqual(rules);
     expect(
       seriesRecurrenceForSave({
         editedStart: { dateTime: "2026-11-09T10:00:00-05:00" },
-        masterRecurrence: [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO",
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,10;BYMINUTE=0",
-          "EXDATE;TZID=America/New_York:20261116T090000",
-        ],
+        masterRecurrence: rules,
         occurrence: {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
