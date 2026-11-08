@@ -228,10 +228,10 @@ function saveChanges(
 }
 
 /**
- * The scopes a pending save can't use, and the dialog's line saying why:
- * the shared rules, plus a color set back to the calendar's, which only
- * one occurrence can take for now (a series save can't clear its color
- * until the server accepts a clear; tracked with #125).
+ * The scopes a pending save can't use, and the dialog's line: the shared
+ * rules, led by a note when the color went back to the calendar's. A
+ * series save can't clear a color until the server accepts a clear
+ * (tracked with #125), so only this occurrence goes back.
  */
 function saveScopeState(
   pendingSave: PendingSave | null,
@@ -241,15 +241,17 @@ function saveScopeState(
   disabled: Partial<Record<RecurrenceScope, boolean>>;
 } {
   const changes = saveChanges(pendingSave, series);
+  const description = eventSaveDescription(changes);
   const disabled = eventSaveDisabledScopes(changes);
   if (!pendingSave?.colorReset) {
-    return { description: eventSaveDescription(changes), disabled };
+    return { description, disabled };
   }
-  return {
-    description:
-      "Going back to the calendar's color applies to this occurrence only. For the series, pick a color instead.",
-    disabled: { ...disabled, all: true, following: true },
-  };
+  // With this occurrence off (a calendar move, a new repeat), say what
+  // Save does instead of pointing at a choice that isn't there.
+  const note = disabled.this
+    ? "The series keeps its own color. To go back to the calendar's color, save that on one occurrence by itself."
+    : "Going back to the calendar's color works on this occurrence only.";
+  return { description: `${note} ${description}`, disabled };
 }
 
 export type CloseSaveRequest =
@@ -730,7 +732,6 @@ const RECURRENCE_ENDS = [
   { label: "After", value: "count" },
 ] as const;
 
-/** A recurring event's save, waiting on the scope dialog. */
 /** A recurring event's save, waiting for its scope. */
 type PendingSave = Omit<
   Extract<CloseSaveRequest, { type: "save" }>,
@@ -891,6 +892,7 @@ export function EventEditPopover({
   // save keeps the edits. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   // A failure belongs to the save it came from: reopening starts clean.
@@ -902,6 +904,10 @@ export function EventEditPopover({
   const holdForSave = useCallback(
     (save: Promise<unknown>, failureMessage: string) => {
       savingRef.current = true;
+      // The fields remount read-only (HeldFieldset), which would drop focus
+      // to the page, where the calendar's keys could navigate away from the
+      // save; the editor itself holds it instead.
+      contentRef.current?.focus();
       setIsSaving(true);
       setSaveFailure(null);
       const settle = (failure: string | null) => {
@@ -996,10 +1002,11 @@ export function EventEditPopover({
   );
 
   // The scope the save dialog shows and saves with, worked out each time.
+  const scopeState = saveScopeState(pendingSave, seriesStatus);
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
-    saveScopeState(pendingSave, seriesStatus).disabled
+    scopeState.disabled
   );
   const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
@@ -1171,6 +1178,7 @@ export function EventEditPopover({
               }
             }
           }}
+          ref={contentRef}
           side={side}
         >
           <EventEditForm
@@ -1197,8 +1205,19 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={saveScopeState(pendingSave, seriesStatus).description}
-        disabledScopes={saveScopeState(pendingSave, seriesStatus).disabled}
+        description={scopeState.description}
+        disabledScopes={scopeState.disabled}
+        // Focus goes to the editor while it's open (on Cancel, or a save
+        // still running or failed), else stays where the editor's closing
+        // put it (the event). Radix would return it to the Save button,
+        // which a save remounts, so it would fall to the page, where the
+        // calendar's keys could navigate away from the editor.
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (open) {
+            contentRef.current?.focus();
+          }
+        }}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -2431,7 +2450,23 @@ function EventFormActionRow({
             size="sm"
             type="button"
           >
-            {saving ? "Saving…" : "Save"}
+            {/* Both labels share one cell, so the button keeps the
+                width of "Saving…" and Cancel doesn't shift. */}
+            <span className="grid justify-items-center">
+              <span
+                className={cn("col-start-1 row-start-1", saving && "invisible")}
+              >
+                Save
+              </span>
+              <span
+                className={cn(
+                  "col-start-1 row-start-1",
+                  saving ? null : "invisible"
+                )}
+              >
+                Saving…
+              </span>
+            </span>
           </Button>
         </div>
       </div>

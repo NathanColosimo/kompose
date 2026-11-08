@@ -36,6 +36,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   confirmLabel = "Save",
   cancelLabel = "Cancel",
   onCancel,
+  onCloseAutoFocus,
   onConfirm,
   disabledScopes,
   options,
@@ -51,6 +52,8 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   confirmLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
+  /** Where focus goes as it closes; by default, back where it was. */
+  onCloseAutoFocus?: (event: Event) => void;
   onConfirm: () => void | Promise<void>;
   disabledScopes?: Partial<Record<S, boolean>>;
   options: readonly RecurrenceScopeOption<S>[];
@@ -82,6 +85,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
         className="sm:max-w-[420px]"
+        onCloseAutoFocus={onCloseAutoFocus}
         // Cmd+Enter confirms the choice, as it saves the editor behind.
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
