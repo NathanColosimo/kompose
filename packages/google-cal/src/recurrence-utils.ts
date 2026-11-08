@@ -377,7 +377,8 @@ export function carryCountExactly(
       atSeriesTime
     );
     // A position whose time doesn't exist that day (a 2:30 AM meeting on
-    // the spring-forward night) is up to Google: count from its list.
+    // the spring-forward night): RFC 5545 drops it, but Google's own list
+    // says what it did, so count from that (see until.ts `existsOn`).
     if (
       !positions ||
       (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))

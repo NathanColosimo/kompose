@@ -427,13 +427,17 @@ describe("splitting a series", () => {
       seriesZone: "America/New_York",
       starts,
     });
+    // As the server's ruleForStart passes it: the new part's first day and
+    // the split meeting's time.
     expect(
       matchRecurrenceToStart(
         carried,
         { date: "2026-11-11" },
         "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" },
         {
-          dateTime: "2026-11-09T09:00:00-05:00",
+          firstDay: Temporal.PlainDate.from("2026-11-11"),
+          firstTime: Temporal.PlainTime.from("09:00"),
         }
       )
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);

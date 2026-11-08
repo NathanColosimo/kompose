@@ -520,7 +520,13 @@ function countInDays(
   return line.replace(COUNT_SWAP, `$1COUNT=${days.size}`);
 }
 
-/** Whether `time` is on the clock on `day` in `timeZone` (not skipped by DST). */
+/**
+ * Whether `time` is on the clock on `day` in `timeZone` (not skipped by
+ * DST). RFC 5545 (3.3.10) says a rule's time that doesn't exist that day
+ * isn't a meeting and isn't counted; that's assumed wherever Google can't
+ * be asked. Where it can (splitting a COUNT, `carryCount`), its own list
+ * of meetings is used instead.
+ */
 function existsOn(
   day: Temporal.PlainDate,
   time: Temporal.PlainTime,
