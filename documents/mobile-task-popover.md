@@ -84,8 +84,8 @@ Edit:
   - A recurrence change applies to `following` with no prompt: one
     occurrence can't repeat differently from its series. The note under
     the repeat block says so.
-  - An occurrence moved to the inbox (no date) has nothing after it, so
-    its edits apply to it alone.
+  - An occurrence in the inbox (no date), or moved there by this edit, has
+    nothing after it, so its edits apply to it alone.
   - Non-recurring edits apply immediately with scope `this`.
 - Scoped update dialog options use shared constants:
   - Only this occurrence

@@ -110,7 +110,10 @@ function scopeDecisionFor(draft: TaskDraft, task: TaskSelectDecoded) {
   return {
     decision: getTaskUpdateScopeDecision({
       hasCoreFieldChanges,
-      hasFollowing: Boolean(task.startDate),
+      // Later occurrences follow only a dated one that stays dated: moving
+      // an occurrence to the inbox affects it alone, so there's no scope to
+      // ask.
+      hasFollowing: task.startDate !== null && draft.startDate !== null,
       isRecurring: task.seriesMasterId !== null,
       nextRecurrence: draft.recurrence,
       nextTagIds: draft.tagIds,
