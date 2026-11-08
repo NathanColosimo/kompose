@@ -1577,18 +1577,21 @@ function RepeatRetryButton({
   besideRule: boolean;
   onRetry?: () => void;
 }) {
+  const reason = besideRule
+    ? "The series' repeat didn't refresh. Retry"
+    : "The series' repeat didn't load. Retry";
   return (
     <Button
-      aria-label="The series' repeat didn't load. Retry"
+      aria-label={reason}
       // Gives way first, like the repeat chip: the calendar beside it stays.
       className="h-8 min-w-0 shrink gap-1.5 px-2 text-xs"
       onClick={onRetry}
       size="sm"
-      title="The series' repeat didn't load. Retry"
+      title={reason}
       variant="outline"
     >
       {besideRule ? null : <Repeat className="size-4 shrink-0" />}
-      <span className="truncate">{besideRule ? "Retry" : "Retry repeat"}</span>
+      <span className="truncate">Retry repeat</span>
     </Button>
   );
 }
@@ -1673,6 +1676,23 @@ function RepeatControl({
   );
 }
 
+/** What the repeat row's live region says: why it waits, or that it failed. */
+function repeatAnnouncement(
+  waitReason: string | undefined,
+  failed: boolean,
+  ruleKnown: boolean
+): string {
+  if (waitReason) {
+    return waitReason;
+  }
+  if (!failed) {
+    return "";
+  }
+  return ruleKnown
+    ? "The series' repeat didn't refresh"
+    : "The series' repeat didn't load";
+}
+
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
@@ -1725,12 +1745,18 @@ function EventAllDayAndRecurrenceRow({
   const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
   const waitShown = Boolean(recurrenceWaitReason) && !ruleLabel;
   const retryShown = !recurrenceWaitReason && recurrenceFailed;
-  // Filled after mount: a live region that mounts already filled often
-  // isn't announced (an editor opened offline).
-  const [announcedWait, setAnnouncedWait] = useState("");
+  // What the live region says: why the repeat waits, or that it didn't
+  // load. Filled after mount: a live region that mounts already filled
+  // often isn't announced (an editor opened offline).
+  const announcement = repeatAnnouncement(
+    recurrenceWaitReason,
+    retryShown,
+    Boolean(ruleLabel)
+  );
+  const [announced, setAnnounced] = useState("");
   useEffect(() => {
-    setAnnouncedWait(recurrenceWaitReason ?? "");
-  }, [recurrenceWaitReason]);
+    setAnnounced(announcement);
+  }, [announcement]);
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1773,7 +1799,8 @@ function EventAllDayAndRecurrenceRow({
       )}
       {/* Offline: why the repeat waits ("Offline", the full reason for
           screen readers), in a live region that stays mounted and fills
-          after it mounts, so it's announced. A retry would only wait too. */}
+          after it mounts, so it's announced. A retry would only wait too.
+          A failed load is announced there as well. */}
       <span
         className={
           recurrenceWaitReason
@@ -1790,7 +1817,7 @@ function EventAllDayAndRecurrenceRow({
             <span aria-hidden>Offline</span>
           </>
         ) : null}
-        <span className="sr-only">{announcedWait}</span>
+        <span className="sr-only">{announced}</span>
       </span>
       {retryShown ? (
         <RepeatRetryButton
