@@ -8,6 +8,7 @@ import {
   entireSeriesCost,
   entireSeriesMovesSeveralADay,
   entireSeriesStartMoves,
+  followingCost,
   followStart,
   getPrimaryRecurrenceRule,
   lastWeekdayOf,
@@ -2390,6 +2391,122 @@ describe("entireSeriesCost", () => {
     expect(
       dropped({ loaded: [other], recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"] })
     ).toBeUndefined();
+  });
+});
+
+describe("followingCost", () => {
+  const zone = "America/New_York";
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+  // Mondays and Wednesdays 9:00-9:30 from Mon Nov 2 2026.
+  const master = {
+    end: at("2026-11-02T09:30:00-05:00"),
+    id: "series",
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+    start: at("2026-11-02T09:00:00-05:00"),
+    summary: "Sync",
+  };
+  /** An occurrence at `original`, now at `start` (9:00-9:30 by default). */
+  const meeting = (
+    original: string,
+    changes: { end?: string; start?: string; summary?: string } = {}
+  ) => ({
+    end: at(changes.end ?? original.replace("T09:00", "T09:30")),
+    id: `series_${original.slice(0, 10)}`,
+    originalStartTime: at(original),
+    recurringEventId: "series",
+    start: at(changes.start ?? original),
+    summary: changes.summary ?? "Sync",
+  });
+  // Opened at Mon Nov 9; Wed Nov 18 and Wed Nov 4 renamed.
+  const opened = meeting("2026-11-09T09:00:00-05:00");
+  const later = meeting("2026-11-18T09:00:00-05:00", { summary: "Demo" });
+  const earlier = meeting("2026-11-04T09:00:00-05:00", { summary: "Kickoff" });
+  interface Time {
+    date?: string;
+    dateTime?: string;
+    timeZone?: string;
+  }
+  const costOf = (params: {
+    edited?: { end?: Time; start?: Time; summary?: string };
+    loaded?: ReturnType<typeof meeting>[];
+    recurrence?: string[];
+  }) => {
+    const cost = followingCost({
+      edited: { ...opened, ...params.edited },
+      loaded: params.loaded ?? [opened, earlier, later],
+      master,
+      occurrence: opened,
+      recurrence: params.recurrence,
+      timeZone: zone,
+    });
+    return cost ? `${cost.reason} ${cost.day.toString()}` : undefined;
+  };
+
+  test("names a later meeting changed on its own the new repeat loses", () => {
+    // Mondays only from Nov 9: the renamed Wed Nov 18 has no slot.
+    expect(costOf({ recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"] })).toBe(
+      "lostSlot 2026-11-18"
+    );
+    // Its slot kept (Mondays, Wednesdays and Fridays), nothing is lost.
+    expect(
+      costOf({ recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"] })
+    ).toBeUndefined();
+    // Nor by keeping the series' rule.
+    expect(costOf({})).toBeUndefined();
+  });
+
+  test("leaves meetings before the split to the old series", () => {
+    expect(
+      costOf({
+        loaded: [opened, earlier],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+      })
+    ).toBeUndefined();
+  });
+
+  test("counts only changes the save doesn't make for the series", () => {
+    // The save renames the series from Nov 9 on: Nov 18's own title is
+    // the series' now, so nothing of its own is lost.
+    expect(
+      costOf({
+        edited: { summary: "Demo" },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+      })
+    ).toBeUndefined();
+  });
+
+  test("follows a new time: later meetings move with the series", () => {
+    // From Nov 9 at 10:00: Nov 18's slot moves to 10:00 too, still met.
+    expect(
+      costOf({
+        edited: {
+          end: at("2026-11-09T10:30:00-05:00"),
+          start: at("2026-11-09T10:00:00-05:00"),
+        },
+      })
+    ).toBeUndefined();
+  });
+
+  test("a meeting moved to another day keeps its original slot's place", () => {
+    // Nov 18 rescheduled to Fri Nov 20: still Wednesday's slot.
+    const moved = meeting("2026-11-18T09:00:00-05:00", {
+      end: "2026-11-20T09:30:00-05:00",
+      start: "2026-11-20T09:00:00-05:00",
+    });
+    expect(
+      costOf({
+        loaded: [opened, moved],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,FR"],
+      })
+    ).toBe("lostSlot 2026-11-20");
+  });
+
+  test("a switch to all day can't carry a timed meeting's changes", () => {
+    expect(
+      costOf({
+        edited: { end: { date: "2026-11-10" }, start: { date: "2026-11-09" } },
+      })
+    ).toBe("newStart 2026-11-18");
   });
 });
 

@@ -8,6 +8,7 @@ import {
   eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  eventSaveScopeState,
   RECURRENCE_SCOPE_OPTIONS,
   refusalReason,
   refuseSave,
@@ -81,6 +82,10 @@ test("says why whenever a scope is off", () => {
     seriesRuleLoaded: flags,
     severalRules: flags,
     movesSeveralADay: [undefined, false, true],
+    followingCost: [
+      null,
+      { day: Temporal.PlainDate.from("2026-12-09"), reason: "lostSlot" },
+    ],
     splitBlocked: [null, "addedOccurrence", "severalRules"],
     refused: [
       null,
@@ -696,6 +701,31 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     );
   });
 
+  test("turns This and following off for a later meeting it would undo", () => {
+    const dec9 = Temporal.PlainDate.from("2026-12-09");
+    const later = {
+      ...none,
+      followingCost: { day: dec9, reason: "lostSlot" } as const,
+      patternChanged: true,
+    };
+    expect(off(later)).toEqual(["following", "this"]);
+    expect(eventSaveDescription(later)).toBe(
+      "This and following would undo your changes to the Dec 9 meeting. A new repeat applies to the entire series."
+    );
+    // Entire series off too: no scope is left, so a repeat that keeps it.
+    const both = {
+      ...later,
+      entireSeriesCost: { day: dec9, reason: "lostSlot" } as const,
+    };
+    expect(off(both)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(both)).toBe(
+      "This and following would undo your changes to the Dec 9 meeting. The new repeat would undo your changes to the Dec 9 meeting, so it can't apply to the entire series. One occurrence can't take a new repeat either. Pick a repeat that keeps the Dec 9 meeting."
+    );
+    // From the first meeting, This and following is Entire series: its
+    // own cost decides.
+    expect(off({ ...later, opensSeries: true })).toEqual(["this"]);
+  });
+
   test("still reads the field it replaces, droppedMovedDay", () => {
     expect(
       off({ ...none, droppedMovedDay: dec7, patternChanged: true })
@@ -1100,6 +1130,44 @@ describe("the server's refusal of a series write", () => {
         seriesRuleLoaded: false,
       }).description
     ).toBe(`${refusalReason(refusal)} Delete:`);
+  });
+
+  test("gives a save dialog its scopes and line from one place, refusals included", () => {
+    // Refused This and following for a new repeat: the line says where
+    // the repeat can still go, and never offers what was refused.
+    const unknown = { reason: "countUnknown" } as const;
+    const state = eventSaveScopeState({
+      ...none,
+      patternChanged: true,
+      refused: refuseSave(null, "following", unknown),
+    });
+    expect(state.disabled).toEqual({ following: true, this: true });
+    expect(state.description).toBe(
+      `${refusalReason(unknown)} A new repeat applies to the entire series.`
+    );
+    // An app's own record of refusals (a message and the scopes) does too.
+    const own = eventSaveScopeState({
+      ...none,
+      patternChanged: true,
+      refused: { message: refusalReason(unknown), scopes: { following: true } },
+    });
+    expect(own).toEqual(state);
+  });
+
+  test("says when the refusals leave no scope at all", () => {
+    // Even Only this refused: nothing the dialog offers can save it.
+    const state = eventSaveScopeState({
+      ...none,
+      refused: refuseSave(
+        refuseSave(refuseSave(null, "all", drops), "following", {
+          reason: "countUnknown",
+        }),
+        "this",
+        { reason: "severalRules" }
+      ),
+    });
+    expect(state.disabled).toEqual({ all: true, following: true, this: true });
+    expect(state.description).toEndWith(SCOPE_DIALOG_COPY.noScopeLeft);
   });
 
   test("keeps every scope refused for the save off, with each reason, latest first", () => {

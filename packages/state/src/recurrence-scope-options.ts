@@ -20,15 +20,12 @@ import {
   type SeriesRefusal,
   sameTime,
 } from "@kompose/google-cal/series-edits";
-import {
-  googleDateTime,
-  meetsSeveralTimesADay,
-  startInstant,
-} from "@kompose/google-cal/until";
+import { meetsSeveralTimesADay, startInstant } from "@kompose/google-cal/until";
 import { ORPCError } from "@orpc/client";
 import type { Temporal } from "temporal-polyfill";
 import {
   type EntireSeriesCost,
+  seriesSlotOf,
   seriesTimeZone,
   timeZoneCity,
 } from "./google-event-recurrence";
@@ -150,6 +147,9 @@ export const SCOPE_DIALOG_COPY = {
    * saved from that first meeting, could take it.
    */
   repeatFromFirstMeeting: "Change the repeat from that first meeting.",
+  /** Where the server refused every scope, Only this included. */
+  noScopeLeft:
+    "None of these can save this change as it is. Change it, or cancel.",
   /** For new times and a new repeat no scope takes together. */
   timesAndRepeat: "Change the times and the repeat in two saves.",
   /** After why Entire series is off, from the series' first meeting. */
@@ -226,6 +226,13 @@ export interface EventSaveChanges {
    */
   entireSeriesCost?: EntireSeriesCost | null;
   /**
+   * What a This and following save would cost a later meeting changed on
+   * its own (`followingCost`): the server refuses it, so This and
+   * following is off. Read only away from the series' first meeting,
+   * where This and following is Entire series (`entireSeriesCost`).
+   */
+  followingCost?: EntireSeriesCost | null;
+  /**
    * An Entire series save would give a series meeting several times a day
    * a new time of day, which the server refuses
    * (`entireSeriesMovesSeveralADay`). Left out, `retimed` with
@@ -290,8 +297,12 @@ export interface SaveRefusals {
    * says where else the save can go, from the scopes left.
    */
   message: string;
-  /** Each refusal, latest first, with the scope it was for. */
-  refusals: readonly { refusal: SeriesRefusal; scope: RecurrenceScope }[];
+  /**
+   * Each refusal, latest first, with the scope it was for (`refuseSave`
+   * keeps them; an app's own record of a message and scopes can leave
+   * them out, losing only the steps that name the meetings refused).
+   */
+  refusals?: readonly { refusal: SeriesRefusal; scope: RecurrenceScope }[];
   scopes: Partial<Record<RecurrenceScope, true>>;
 }
 
@@ -604,19 +615,6 @@ function splitAt(
 }
 
 /**
- * A start as its series' slot, as the server reads one (its `slotOf`): a
- * date, or a date-time with the series' offset (one Google wrote without
- * an offset read in its own zone). Null when it has neither.
- */
-function seriesSlotOf(start: StartTime, seriesZone: string): string | null {
-  if (start.date) {
-    return start.date;
-  }
-  const moment = startInstant(start, seriesZone);
-  return moment ? googleDateTime(moment.toZonedDateTimeISO(seriesZone)) : null;
-}
-
-/**
  * Scopes a recurring event's save can't use. A calendar move applies to
  * the whole series. One occurrence can't repeat differently from its
  * series. Entire series keeps the series' first day and every meeting the
@@ -644,7 +642,8 @@ function scopesOff(
     followingRuleKnown(changes) &&
     !changes.splitBlocked &&
     !firstMeetingRefused(changes) &&
-    !refusedScopes(changes).following;
+    !refusedScopes(changes).following &&
+    !laterMeetingCost(changes);
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(allOff ? { all: true } : {}),
@@ -713,6 +712,12 @@ function firstMeetingNewDayLine(
  * this off.
  */
 function noScopeStepFor(changes: EventSaveChanges): string | null {
+  const off = eventSaveDisabledScopes(changes);
+  const noneLeft = Boolean(off.all && off.following && off.this);
+  // Only this refused too: no other save of these changes is left.
+  if (noneLeft && changes.refused?.scopes.this) {
+    return SCOPE_DIALOG_COPY.noScopeLeft;
+  }
   if (changes.calendarChanged) {
     return null;
   }
@@ -721,8 +726,7 @@ function noScopeStepFor(changes: EventSaveChanges): string | null {
   if (pending && (opens.all || opens.following)) {
     return null;
   }
-  const off = eventSaveDisabledScopes(changes);
-  return off.all && off.following && off.this ? noScopeStep(changes) : null;
+  return noneLeft ? noScopeStep(changes) : null;
 }
 
 /**
@@ -737,13 +741,13 @@ function noScopeStepFor(changes: EventSaveChanges): string | null {
  * saves.
  */
 function noScopeStep(changes: EventSaveChanges): string {
-  const cost = changedMeetingCost(changes);
+  const cost = changedMeetingCost(changes) ?? laterMeetingCost(changes);
   if (cost) {
     return cost.reason === "lostSlot" && !changes.dateMoved
       ? `Pick a repeat that keeps the ${shortDay(cost.day)} meeting.`
       : SCOPE_DIALOG_COPY.timesFirst;
   }
-  const named = changes.refused?.refusals.find(({ refusal }) =>
+  const named = changes.refused?.refusals?.find(({ refusal }) =>
     isListReason(refusal.reason)
   );
   if (named) {
@@ -851,7 +855,7 @@ function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
 function refusedAsWholeSeries(changes: EventSaveChanges): boolean {
   return Boolean(
     changes.opensSeries &&
-      changes.refused?.refusals.some(
+      changes.refused?.refusals?.some(
         ({ refusal, scope }) =>
           scope === "following" && refusal.reason !== "addedBeforeStart"
       )
@@ -1074,15 +1078,14 @@ function loadingLine(opens: { all: boolean; following: boolean }): string {
 }
 
 /**
- * The scope dialog's line where This and following can't start a series:
- * `block`'s reason, or, where the server refused it (`block` null), none,
- * as the server's leads the line.
+ * The scope dialog's line where This and following is off for a split
+ * block or a later meeting (`why`), or where the server refused it (`why`
+ * null: the server's reason leads the line).
  */
 function splitBlockedDescription(
   changes: EventSaveChanges,
-  block: FollowingBlock | null
+  why: string | null
 ): string {
-  const why = block && SCOPE_DIALOG_COPY.splitBlocked[block];
   const then = SCOPE_DIALOG_COPY.splitBlockedThen;
   const { patternChanged } = changes;
   const off = entireSeriesOff(changes);
@@ -1158,6 +1161,21 @@ function severalRulesTimeLine(changes: EventSaveChanges): string {
 }
 
 /**
+ * A recurring save dialog's state: the scopes it can't use and its line
+ * saying why, both from the same changes, refusals included
+ * (`changes.refused`), so the line never offers a scope that's off.
+ */
+export function eventSaveScopeState(changes: EventSaveChanges): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  return {
+    description: eventSaveDescription(changes),
+    disabled: eventSaveDisabledScopes(changes),
+  };
+}
+
+/**
  * The scope dialog's line for a save: the server's reasons for scopes it
  * refused, why each scope the save itself rules out is off, and, where no
  * scope is left, what to do (`noScopeStepFor`). Where the save rules out
@@ -1179,14 +1197,28 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
 
 /**
  * Why This and following can't start a series here, where the server's
- * refusal, which leads the line, doesn't say it already.
+ * refusal, which leads the line, doesn't say it already: a split block
+ * first (the server checks those first), then a later meeting it would
+ * undo (`followingCost`).
  */
-function ownSplitBlock(changes: EventSaveChanges): FollowingBlock | null {
+function followingOffWhy(changes: EventSaveChanges): string | null {
   const block = changes.splitBlocked;
-  return block &&
-    !changes.refused?.refusals.some(({ refusal }) => refusal.reason === block)
-    ? block
+  if (block) {
+    return changes.refused?.refusals?.some(
+      ({ refusal }) => refusal.reason === block
+    )
+      ? null
+      : SCOPE_DIALOG_COPY.splitBlocked[block];
+  }
+  const cost = laterMeetingCost(changes);
+  return cost
+    ? `This and following would undo your changes to the ${shortDay(cost.day)} meeting.`
     : null;
+}
+
+/** A This and following save's cost to a later meeting (`followingCost`). */
+function laterMeetingCost(changes: EventSaveChanges): EntireSeriesCost | null {
+  return changes.opensSeries ? null : (changes.followingCost ?? null);
 }
 
 /** Why the save's own changes rule out what they do (`eventSaveDescription`). */
@@ -1197,8 +1229,12 @@ function whyScopesOff(changes: EventSaveChanges): string {
   if (!followingRuleKnown(changes)) {
     return seriesPendingDescription(changes);
   }
-  if (changes.splitBlocked || refusedScopes(changes).following) {
-    return splitBlockedDescription(changes, ownSplitBlock(changes));
+  if (
+    changes.splitBlocked ||
+    refusedScopes(changes).following ||
+    laterMeetingCost(changes)
+  ) {
+    return splitBlockedDescription(changes, followingOffWhy(changes));
   }
   const off = entireSeriesOff(changes);
   switch (off?.reason) {

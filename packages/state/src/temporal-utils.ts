@@ -331,10 +331,10 @@ export function moveEventStart(
 
 /** A moment a range's ends can be read as: on the clock, or in a zone. */
 interface RangeMoment<T> {
-  add(duration: Temporal.Duration | Temporal.DurationLike): T;
-  toPlainDate(): Temporal.PlainDate;
-  toPlainTime(): Temporal.PlainTime;
-  until(other: T, options: { largestUnit: "hours" }): Temporal.Duration;
+  add: (duration: Temporal.Duration | Temporal.DurationLike) => T;
+  toPlainDate: () => Temporal.PlainDate;
+  toPlainTime: () => Temporal.PlainTime;
+  until: (other: T, options: { largestUnit: "hours" }) => Temporal.Duration;
 }
 
 /**
