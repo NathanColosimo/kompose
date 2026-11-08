@@ -35,20 +35,46 @@ function googleDateTime(time: Temporal.ZonedDateTime): string {
   return time.toString({ timeZoneName: "never", smallestUnit: "second" });
 }
 
+/** Whether two Google times are the same moment (or the same date). */
+function sameTime(a: EventTime, b: EventTime): boolean {
+  if (a.date || b.date) {
+    return a.date === b.date;
+  }
+  return Boolean(
+    a.dateTime &&
+      b.dateTime &&
+      Temporal.Instant.compare(
+        Temporal.Instant.from(a.dateTime),
+        Temporal.Instant.from(b.dateTime)
+      ) === 0
+  );
+}
+
 /**
  * The series keeps its own first day and takes the edit's form, times and
  * length: an occurrence made all day makes the series all day (and back),
  * and a timed edit's wall-clock time applies in the event's time zone, so a
  * series begun before a daylight-saving change keeps its 9:00 (pasting the
- * edit's UTC time onto that day would move it an hour).
+ * edit's UTC time onto that day would move it an hour). An edit that left
+ * the occurrence's times alone leaves the series' alone, so renaming an
+ * occurrence rescheduled before doesn't move the series to its slot.
  */
 export function seriesTimesForEdit(params: {
   editedEnd: EventTime;
   editedStart: EventTime;
   masterEnd: EventTime;
   masterStart: EventTime;
+  /** The occurrence's times before the edit. */
+  occurrenceEnd: EventTime;
+  occurrenceStart: EventTime;
 }): { end: EventTime; start: EventTime } | null {
   const { editedEnd, editedStart, masterEnd, masterStart } = params;
+  if (
+    sameTime(editedStart, params.occurrenceStart) &&
+    sameTime(editedEnd, params.occurrenceEnd)
+  ) {
+    return { end: masterEnd, start: masterStart };
+  }
   const timeZone = editedStart.timeZone ?? masterStart.timeZone;
   if (!timeZone) {
     return null;

@@ -7,6 +7,7 @@ import {
   getPrimaryRecurrenceRule,
   lastWeekdayOf,
   monthlyWeekdayOf,
+  occurrenceDayMoved,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
@@ -309,6 +310,36 @@ describe("seriesRecurrenceForSave", () => {
     ]);
     // Unchanged: nothing to send.
     expect(save({ dateTime: "2026-11-07T16:00:00-05:00" })).toBeUndefined();
+  });
+
+  test("follows only a day this edit moves, from the series' slot", () => {
+    // A Monday occurrence rescheduled to Tuesday before.
+    const rescheduled = {
+      originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-10T09:00:00-05:00" },
+    };
+    const save = (dateTime: string) =>
+      seriesRecurrenceForSave({
+        editedStart: { dateTime },
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+        occurrence: rescheduled,
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      });
+    // Only renamed: the series keeps its Mondays.
+    expect(save("2026-11-10T09:00:00-05:00")).toBeUndefined();
+    expect(
+      occurrenceDayMoved({
+        editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        occurrence: rescheduled,
+        timeZone: "America/New_York",
+      })
+    ).toBe(false);
+    // Moved on to Wednesday: Mondays become Wednesdays.
+    expect(save("2026-11-11T09:00:00-05:00")).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=WE",
+    ]);
   });
 
   test("leaves a rule the save already sends alone", () => {

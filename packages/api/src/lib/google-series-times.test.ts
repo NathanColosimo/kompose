@@ -16,6 +16,11 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T14:00:00.000Z", timeZone: zone },
         masterEnd,
         masterStart,
+        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
+        occurrenceStart: {
+          dateTime: "2026-11-10T14:00:00.000Z",
+          timeZone: zone,
+        },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T09:30:00-04:00", timeZone: zone },
@@ -30,6 +35,11 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T15:00:00.000Z", timeZone: zone },
         masterEnd,
         masterStart,
+        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
+        occurrenceStart: {
+          dateTime: "2026-11-10T14:00:00.000Z",
+          timeZone: zone,
+        },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T11:00:00-04:00", timeZone: zone },
@@ -44,6 +54,11 @@ describe("seriesTimesForEdit", () => {
         editedStart: { date: "2026-11-10" },
         masterEnd,
         masterStart,
+        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
+        occurrenceStart: {
+          dateTime: "2026-11-10T14:00:00.000Z",
+          timeZone: zone,
+        },
       })
     ).toEqual({ end: { date: "2026-10-07" }, start: { date: "2026-10-06" } });
     expect(
@@ -52,10 +67,34 @@ describe("seriesTimesForEdit", () => {
         editedStart: { dateTime: "2026-11-10T14:00:00.000Z", timeZone: zone },
         masterEnd: { date: "2026-10-07" },
         masterStart: { date: "2026-10-06" },
+        occurrenceEnd: { date: "2026-11-11" },
+        occurrenceStart: { date: "2026-11-10" },
       })
     ).toEqual({
       end: { dateTime: "2026-10-06T10:00:00-04:00", timeZone: zone },
       start: { dateTime: "2026-10-06T09:00:00-04:00", timeZone: zone },
     });
+  });
+
+  test("leaves the series' times alone when the edit didn't change them", () => {
+    // An occurrence rescheduled to 14:00 before, now only renamed.
+    const rescheduledStart = {
+      dateTime: "2026-11-10T19:00:00.000Z",
+      timeZone: zone,
+    };
+    const rescheduledEnd = {
+      dateTime: "2026-11-10T19:30:00.000Z",
+      timeZone: zone,
+    };
+    expect(
+      seriesTimesForEdit({
+        editedEnd: rescheduledEnd,
+        editedStart: rescheduledStart,
+        masterEnd,
+        masterStart,
+        occurrenceEnd: rescheduledEnd,
+        occurrenceStart: rescheduledStart,
+      })
+    ).toEqual({ end: masterEnd, start: masterStart });
   });
 });

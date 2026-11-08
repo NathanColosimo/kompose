@@ -520,6 +520,8 @@ export function makeGoogleCalendarService(
             editedStart: event.start,
             masterEnd: master.end,
             masterStart: master.start,
+            occurrenceEnd: currentEvent.end,
+            occurrenceStart: currentEvent.start,
           }) ?? { end: master.end, start: master.start });
 
       // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").

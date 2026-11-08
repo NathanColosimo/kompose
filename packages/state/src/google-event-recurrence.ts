@@ -475,10 +475,9 @@ export function occurrenceDayMoved(params: {
   if (!occurrence.recurringEventId) {
     return false;
   }
-  const from = dayOfStart(
-    occurrence.originalStartTime ?? occurrence.start,
-    timeZone
-  );
+  // Against where it is now: one rescheduled before, then only renamed,
+  // hasn't moved in this edit.
+  const from = dayOfStart(occurrence.start, timeZone);
   const to = dayOfStart(editedStart, timeZone);
   return Boolean(from && to && Temporal.PlainDate.compare(from, to) !== 0);
 }
@@ -546,13 +545,17 @@ export function seriesRecurrenceForSave(params: {
     return;
   }
   const allDay = Boolean(editedStart.date);
+  // The rule follows only a day this edit moves, from the occurrence's
+  // place in the series (where the rule puts it, even if it was
+  // rescheduled before).
+  const moved = occurrenceDayMoved({ editedStart, occurrence, timeZone });
   const from = dayOfStart(
     occurrence.originalStartTime ?? occurrence.start,
     timeZone
   );
   const to = dayOfStart(editedStart, timeZone);
   const followed =
-    from && to
+    moved && from && to
       ? followStart({
           allDay,
           from,
