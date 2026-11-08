@@ -121,7 +121,7 @@ export const SCOPE_DIALOG_COPY = {
    */
   severalRulesTimeReason:
     "This series' meetings keep times of their own, so a new time can't apply to the entire series.",
-  /** The same, from the first meeting with a new repeat on its own day. */
+  /** The same with a new repeat on the meeting's own day. */
   severalRulesTimeAndRepeatReason:
     "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence.",
   /**
@@ -669,11 +669,13 @@ function firstMeetingNewDayLine(
  * their own first (a cost found for them can hide one the repeat has
  * alone, which the next save's dialog then says); else change the times
  * and the repeat in two saves. Null for a repeat that itself undoes a
- * changed meeting, which two saves wouldn't help.
+ * changed meeting, whose line the dialog shows: two saves wouldn't help.
+ * Behind a new day, that line isn't shown, and the new times can still
+ * go first.
  */
 function noScopeStep(changes: EventSaveChanges): string | null {
   const cost = changedMeetingCost(changes);
-  if (cost?.reason === "lostSlot") {
+  if (cost?.reason === "lostSlot" && !changes.dateMoved) {
     return null;
   }
   return cost ? SCOPE_DIALOG_COPY.timesFirst : SCOPE_DIALOG_COPY.timesAndRepeat;
@@ -930,7 +932,10 @@ function splitBlockedDescription(
         : `${why} ${changedMeetingLine(off.cost)}`;
     case "severalRulesTime":
       return patternChanged
-        ? withNoScopeStep(changes, why)
+        ? withNoScopeStep(
+            changes,
+            `${why} ${SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason}`
+          )
         : `${why} ${then.severalRulesTime}`;
     case "seriesPending":
       return seriesPendingDescription(changes);

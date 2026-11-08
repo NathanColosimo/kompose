@@ -264,6 +264,19 @@ test("turns This and following off where a new series can't start", () => {
   expect(eventSaveDescription({ ...stuck, splitBlocked: "severalRules" })).toBe(
     "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
   );
+  // A meeting the repeat would undo, behind the new day: the new times
+  // go first, and the next save's dialog names the meeting.
+  expect(
+    eventSaveDescription({
+      ...stuck,
+      entireSeriesCost: {
+        day: Temporal.PlainDate.from("2026-12-07"),
+        reason: "lostSlot",
+      },
+    })
+  ).toBe(
+    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for an occurrence added to the series on its own. Save the new times on their own first."
+  );
 });
 
 test("keeps This and following off until the series loads", () => {
@@ -680,7 +693,7 @@ describe("a new time for a series of several rules", () => {
     };
     expect(off(both)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(both)).toBe(
-      "This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
+      "This and following isn't available for a series with more than one rule. This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. Change the times and the repeat in two saves."
     );
   });
 
