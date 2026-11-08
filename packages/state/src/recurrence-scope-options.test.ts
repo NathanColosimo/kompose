@@ -153,6 +153,10 @@ test("keeps This and following off until the series loads", () => {
   expect(eventSaveDescription({ ...loading, seriesRuleFailed: true })).toBe(
     "Couldn't load the series, so This and following isn't available. Try again later."
   );
-  // A repeat the user set doesn't wait for the series'.
-  expect(off({ ...loading, patternChanged: true })).toEqual(["this"]);
+  // A repeat the user set waits too: the series says whether This and
+  // following can start here.
+  expect(off({ ...loading, patternChanged: true })).toEqual([
+    "following",
+    "this",
+  ]);
 });

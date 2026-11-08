@@ -824,6 +824,13 @@ function EventSaveScopeDialog({
   scope: RecurrenceScope;
 }) {
   const disabled = changes ? eventSaveDisabledScopes(changes) : {};
+  // A choice that turns off once the series loads moves to one still on.
+  const allowed = allowedEventSaveScope(scope, disabled);
+  useEffect(() => {
+    if (isVisible && allowed !== scope) {
+      onScopeChange(allowed);
+    }
+  }, [allowed, isVisible, onScopeChange, scope]);
   return (
     <AlertDialog
       closeOnConfirm={false}

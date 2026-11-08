@@ -139,9 +139,11 @@ export function eventSaveDisabledScopes(
   if (changes.calendarChanged) {
     return { following: true, this: true };
   }
-  // A changed rule is the user's own, sent with the save: it doesn't wait
-  // for the series' rule to load.
-  const ruleKnown = changes.seriesRuleLoaded || changes.patternChanged;
+  // Whether a new series can start here is known once the series loads.
+  // A new repeat on a new day can only go from here on, so it stays
+  // offered (the server still refuses it where a series can't start).
+  const ruleKnown =
+    changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved);
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(changes.dateMoved ? { all: true } : {}),
@@ -177,7 +179,9 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
     }
     return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
   }
-  if (!(changes.seriesRuleLoaded || changes.patternChanged)) {
+  if (
+    !(changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved))
+  ) {
     if (changes.seriesRuleFailed) {
       return changes.dateMoved
         ? SCOPE_DIALOG_COPY.seriesFailed

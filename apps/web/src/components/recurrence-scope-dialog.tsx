@@ -5,7 +5,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
 } from "@kompose/state/recurrence-scope-options";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -65,6 +65,15 @@ export function RecurrenceScopeDialog({
   // The chosen scope can turn off after the dialog opens (the series
   // loads): nothing is sent until an available one is chosen.
   const chosenOff = Boolean(disabledScopes?.[value]);
+  // ...and the choice moves to the first one still available.
+  const firstAvailable = options.find(
+    (option) => !disabledScopes?.[option.value]
+  )?.value;
+  useEffect(() => {
+    if (open && chosenOff && firstAvailable) {
+      onValueChange(firstAvailable);
+    }
+  }, [chosenOff, firstAvailable, onValueChange, open]);
   const confirm = async () => {
     if (pendingRef.current || chosenOff) {
       return;
@@ -140,6 +149,9 @@ export function RecurrenceScopeDialog({
                 key={opt.value}
               >
                 <RadioGroupItem
+                  // The label dims the whole row; the circle keeps a
+                  // visible border rather than fading twice.
+                  className="disabled:border-muted-foreground disabled:opacity-100"
                   disabled={isDisabled}
                   id={id}
                   value={opt.value}

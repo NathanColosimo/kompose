@@ -190,7 +190,10 @@ export function untilRuleToDay(
  * The last moment an UNTIL lets a meeting start: its date-time, or the
  * end of its date (in `timeZone`); null when it doesn't parse.
  */
-function untilMoment(until: string, timeZone: string): Temporal.Instant | null {
+export function untilMoment(
+  until: string,
+  timeZone: string
+): Temporal.Instant | null {
   const cleaned = until.replace(/[-:]/g, "");
   const full = UNTIL_DATE_TIME.exec(cleaned);
   try {

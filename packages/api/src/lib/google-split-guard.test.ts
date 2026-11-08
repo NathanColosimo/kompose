@@ -52,6 +52,23 @@ describe("where This and following can start", () => {
         )
       ).toEqual([rule]);
     }
+    // Deleting from an added Nov 14 10:00, the day after the rule's last
+    // (COUNT, or UNTIL that night, or UNTIL mid-morning Nov 14): the rule
+    // keeps its end, and no Nov 14 9:00 meeting appears.
+    for (const rule of [
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "RRULE:FREQ=DAILY;UNTIL=20261114T045959Z",
+      "RRULE:FREQ=DAILY;UNTIL=20261114T143000Z",
+    ]) {
+      expect(
+        truncateRecurrenceForFollowing(
+          [rule, "RDATE;TZID=America/New_York:20261114T100000"],
+          "2026-11-14T10:00:00-05:00",
+          zone,
+          seriesStart.dateTime
+        )
+      ).toEqual([rule]);
+    }
     // A rule still running is cut the second before the split.
     expect(
       truncateRecurrenceForFollowing(

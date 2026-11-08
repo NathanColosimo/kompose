@@ -5,6 +5,7 @@ import {
   parseDateList,
   type RecurrenceValue,
   readRecurrenceValue,
+  untilMoment,
   untilRuleForDay,
   untilRuleToDay,
 } from "./until";
@@ -46,17 +47,33 @@ export function truncateRecurrenceForFollowing(
     : Temporal.Instant.from(originalStart)
         .toZonedDateTimeISO(seriesZone)
         .toPlainDate();
+  // The split as a moment (a date: its day's start), to compare ends with.
+  const splitMoment = DATE_ONLY.test(originalStart)
+    ? splitDay.toZonedDateTime({ timeZone: seriesZone }).toInstant()
+    : Temporal.Instant.from(originalStart);
+  // Whether a rule already ends before the split: its UNTIL's moment, or
+  // its last COUNT position's day (unreadable counts as ended).
+  const endsBeforeSplit = (line: string) => {
+    const ownUntil = UNTIL_VALUE.exec(line)?.[1];
+    if (ownUntil) {
+      const end = untilMoment(ownUntil, seriesZone);
+      return !end || Temporal.Instant.compare(end, splitMoment) < 0;
+    }
+    const count = Number(COUNT_REGEX.exec(line)?.[1]);
+    if (!(first && Number.isFinite(count))) {
+      return false;
+    }
+    const last = countedRuleDays(line, first, count)?.at(-1);
+    return !last || Temporal.PlainDate.compare(last, splitDay) < 0;
+  };
   return splitAddedDays(recurrence, originalStart, seriesZone, "before").map(
     (line) => {
       if (!line.startsWith("RRULE:")) {
         return line;
       }
-      // A rule that already ends before the split (its UNTIL, or its
-      // last COUNT position) keeps its end: the cut never lengthens it.
-      if (
-        first &&
-        ruleEndedBy(line, first, splitDay.subtract({ days: 1 }), seriesZone)
-      ) {
+      // A rule that already ends before the split keeps its end: the cut
+      // never lengthens it.
+      if (endsBeforeSplit(line)) {
         return line;
       }
       // Part by part, so a rule written COUNT-first ("RRULE:COUNT=5;...")
