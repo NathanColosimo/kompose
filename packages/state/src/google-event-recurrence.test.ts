@@ -284,6 +284,45 @@ describe("followStart", () => {
     ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=3WE", "EXDATE;VALUE=DATE:20261216"]);
   });
 
+  test("never moves a skip onto a real meeting", () => {
+    const zone = "America/New_York";
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    // Daily, moved Nov 9 -> Nov 12 with Nov 10 skipped: the skip is a date.
+    const daily = ["RRULE:FREQ=DAILY", "EXDATE;VALUE=DATE:20261110"];
+    expect(followed(daily, "2026-11-09", "2026-11-12")).toBe(daily);
+    // Mondays moved to Wed Nov 18 with Nov 16 skipped: its week's Wednesday
+    // is the meeting just moved, so the skip stays (Nov 25 still meets).
+    expect(
+      followed(
+        ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261116"],
+        "2026-11-09",
+        "2026-11-18"
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE", "EXDATE;VALUE=DATE:20261116"]);
+    // Every 2 months on the 4th Thu, moved Nov 26 -> Wed Dec 2 (1st Wed):
+    // the skipped Jan 28 is two months on, so Feb 3.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=4TH",
+          "EXDATE;VALUE=DATE:20270128",
+        ],
+        "2026-11-26",
+        "2026-12-02"
+      )
+    ).toEqual([
+      "RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=1WE",
+      "EXDATE;VALUE=DATE:20270203",
+    ]);
+  });
+
   test("moves an end the start passed three months on", () => {
     expect(
       follow(

@@ -56,6 +56,18 @@ function readRule(rule: string): Rule | null {
   if (byDay.some((day) => day.weekday === 0)) {
     return null;
   }
+  // Combinations not modeled here (an intersection like "Friday the 13th",
+  // a yearly or weekly day of the month without its month) aren't read;
+  // the caller then falls back to Google's list.
+  const byMonthDay = list("BYMONTHDAY");
+  if (
+    byMonthDay.length > 0 &&
+    (byDay.length > 0 ||
+      freq === "WEEKLY" ||
+      (freq === "YEARLY" && list("BYMONTH").length === 0))
+  ) {
+    return null;
+  }
   return {
     byDay,
     byMonth: list("BYMONTH").map(Number),
@@ -140,7 +152,9 @@ export function countedRuleDays(
   const days: Temporal.PlainDate[] = [];
   for (let offset = 0; offset < MAX_DAYS && days.length < count; offset += 1) {
     const day = start.add({ days: offset });
-    if (matches(read, start, day)) {
+    // The series' first start is its first occurrence, rule day or not
+    // (Google counts it so).
+    if (offset === 0 || matches(read, start, day)) {
       days.push(day);
     }
   }

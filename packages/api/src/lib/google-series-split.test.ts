@@ -249,6 +249,21 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
+  test("counts a first start that isn't a rule day as the first", () => {
+    // Weekly on Mondays, first start Sun Nov 1 (made elsewhere): Google
+    // meets Nov 1, 2, 9; split at Nov 9 leaves one.
+    expect(
+      carryCount(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"], {
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"],
+        newStart: "2026-11-09",
+        originalStart: "2026-11-09",
+        seriesStart: "2026-11-01",
+        seriesZone: "America/New_York",
+        starts: ["2026-11-01", "2026-11-02", "2026-11-09"],
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
+  });
+
   test("carries Sol's Mondays exactly, with an added day on a rule day", () => {
     // Mondays Nov 2, 9, 16 (COUNT=3) plus added Nov 3 and Nov 16, split at
     // Nov 9 and moved to Tuesdays: two left (Nov 10, 17).
@@ -297,6 +312,21 @@ describe("isRuleDay", () => {
         day("2027-11-25")
       )
     ).toBe(true);
+    // Combinations not modeled (Friday the 13th; a yearly or weekly day of
+    // the month without its month): can't tell.
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
+        start,
+        day("2027-08-13")
+      )
+    ).toBeNull();
+    expect(
+      isRuleDay("RRULE:FREQ=YEARLY;BYMONTHDAY=1", start, day("2027-02-01"))
+    ).toBeNull();
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;BYMONTHDAY=1", start, day("2027-01-08"))
+    ).toBeNull();
     // Parts not read: can't tell.
     expect(
       isRuleDay(

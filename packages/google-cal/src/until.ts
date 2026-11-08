@@ -288,6 +288,52 @@ export function matchRecurrenceToStart(
   return changed ? next : recurrence;
 }
 
+/** The first day of `month` (any day in it) the new rule has. */
+function firstRuleDayIn(
+  newRule: string,
+  to: Temporal.PlainDate,
+  month: Temporal.PlainDate
+): Temporal.PlainDate | null {
+  const first = month.with({ day: 1 });
+  for (let offset = 0; offset < first.daysInMonth; offset += 1) {
+    const candidate = first.add({ days: offset });
+    if (isRuleDay(newRule, to, candidate) === true) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a skipped occurrence of the old pattern sits in the new one: the
+ * same week's new weekday (weekly); the new rule's day in the period as
+ * many periods after the new start as the skip was after the old one
+ * (monthly, yearly). A daily skip is a date and never moves.
+ */
+function placeInNewPattern(
+  freq: string,
+  newRule: string,
+  from: Temporal.PlainDate,
+  to: Temporal.PlainDate,
+  day: Temporal.PlainDate
+): Temporal.PlainDate | null {
+  if (freq === "WEEKLY") {
+    return day.add({ days: to.dayOfWeek - from.dayOfWeek });
+  }
+  if (freq === "MONTHLY") {
+    const months = (day.year - from.year) * 12 + day.month - from.month;
+    return firstRuleDayIn(newRule, to, to.with({ day: 1 }).add({ months }));
+  }
+  if (freq === "YEARLY") {
+    return firstRuleDayIn(
+      newRule,
+      to,
+      to.with({ day: 1 }).add({ years: day.year - from.year })
+    );
+  }
+  return null;
+}
+
 /**
  * EXDATE days moved with a series whose pattern followed its start from
  * `from` to `to` (Mondays became Tuesdays, the 2nd Tue the 3rd Wed): a
@@ -307,7 +353,6 @@ export function moveSkippedDays(params: {
   to: Temporal.PlainDate;
 }): string[] {
   const { from, newRule, oldRule, recurrence, seriesZone, to } = params;
-  const shift = from.until(to).days;
   const freq = /FREQ=([A-Z]+)/.exec(newRule)?.[1] ?? "";
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (Temporal.PlainDate.compare(day, from) < 0) {
@@ -321,17 +366,10 @@ export function moveSkippedDays(params: {
     ) {
       return null;
     }
-    if (freq === "DAILY" || freq === "WEEKLY") {
-      return day.add({ days: shift });
-    }
-    const first = day.with({ day: 1 });
-    for (let offset = 0; offset < first.daysInMonth; offset += 1) {
-      const candidate = first.add({ days: offset });
-      if (isRuleDay(newRule, to, candidate) === true) {
-        return candidate;
-      }
-    }
-    return null;
+    const place = placeInNewPattern(freq, newRule, from, to, day);
+    // A place before the new start matches nothing, and the new start is
+    // the meeting just moved there: either way the skip stays.
+    return place && Temporal.PlainDate.compare(place, to) > 0 ? place : null;
   };
   let changed = false;
   const next = recurrence.map((line) => {

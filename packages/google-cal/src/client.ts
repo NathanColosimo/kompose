@@ -644,6 +644,71 @@ export function makeGoogleCalendarService(
       });
     });
 
+  /**
+   * After a series is moved from one of its occurrences on, that
+   * occurrence's own changes (a rescheduled time, a new title or notes)
+   * are put back on the new series' first occurrence. Best effort: a
+   * failure is logged, since the move itself has happened.
+   */
+  const keepOccurrenceInMovedSeries = (params: {
+    calendarId: string;
+    instance: Event;
+    seriesId: string;
+    slot: { end: Event["end"]; start: Event["start"] };
+  }) =>
+    Effect.gen(function* () {
+      const { calendarId, instance, seriesId, slot } = params;
+      const sameMoment = (a: Event["start"], b: Event["start"]) =>
+        (a.date ?? Date.parse(a.dateTime ?? "")) ===
+        (b.date ?? Date.parse(b.dateTime ?? ""));
+      if (
+        sameMoment(instance.start, slot.start) &&
+        sameMoment(instance.end, slot.end) &&
+        !instance.originalStartTime
+      ) {
+        return;
+      }
+      const originalStart = slot.start.dateTime ?? slot.start.date;
+      const listed = yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.instances(seriesId, {
+            calendarId,
+            maxResults: 1,
+            originalStart,
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+      const parsed = EventSchema.safeParse(listed.items?.[0]);
+      if (!parsed.success) {
+        return;
+      }
+      const first = parsed.data;
+      const payload = sanitizeEventPayload({
+        ...first,
+        colorId: instance.colorId,
+        description: instance.description,
+        end: instance.end,
+        location: instance.location,
+        start: instance.start,
+        summary: instance.summary,
+      });
+      yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(first.id, { ...payload, calendarId }),
+        catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId: first.id,
+            scope: "following-move-occurrence",
+            event: payload,
+            cause,
+          });
+          return new GoogleApiError({ cause });
+        },
+      });
+    }).pipe(Effect.catch(() => Effect.void));
+
   const updateEventAll = (
     calendarId: string,
     event: CreateEvent,
@@ -1185,6 +1250,15 @@ export function makeGoogleCalendarService(
             new GoogleCalendarZodError({ cause: createdParsed.error })
           );
         }
+
+        // 3) The occurrence the user acted on keeps its own reschedule and
+        // edits in the new series (best effort: the move itself is done).
+        yield* keepOccurrenceInMovedSeries({
+          calendarId: destinationCalendarId,
+          instance,
+          seriesId: createdParsed.data.id,
+          slot,
+        });
 
         return createdParsed.data;
       }
