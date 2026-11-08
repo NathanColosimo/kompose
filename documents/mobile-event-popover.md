@@ -59,7 +59,7 @@ Locked, Gmail, and birthday events, and those on a calendar the user can only vi
 
 ## Header actions
 
-- Save is a green check icon in header-right.
+- Save is a check icon in header-right; while the save runs it reads "Saving…".
 - Delete is a red trash icon in header-right (edit mode only).
 - There is no separate `Move...` button; changing the calendar picker handles move.
 

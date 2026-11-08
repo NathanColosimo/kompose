@@ -340,16 +340,20 @@ function RepeatSection({
   return (
     <>
       {hasRule ? editor : null}
-      <Button
-        accessibilityHint="Loads the series' repeat again"
-        className="mb-2.5"
-        onPress={onRetry}
-        variant="outline"
-      >
-        {hasRule
-          ? "Repeat didn't refresh · Try again"
-          : "Repeat didn't load · Try again"}
-      </Button>
+      {/* What failed beside a short action, wrapping at large text. */}
+      <View className="mb-2.5 flex-row flex-wrap items-center gap-x-3 gap-y-1.5">
+        <Text className="shrink text-muted-foreground text-sm">
+          {hasRule ? "The repeat didn't refresh." : "The repeat didn't load."}
+        </Text>
+        <Button
+          accessibilityHint="Loads the series' repeat again"
+          onPress={onRetry}
+          size="sm"
+          variant="outline"
+        >
+          Try again
+        </Button>
+      </View>
     </>
   );
 }
@@ -402,6 +406,7 @@ function RecurrenceEditorSection({
               : parsedRecurrence.freq === frequency.value;
           return (
             <Button
+              accessibilityState={{ selected: active }}
               key={frequency.value}
               onPress={() => {
                 // Tapping the picked chip again changes nothing.
@@ -631,6 +636,7 @@ function RecurrenceEndSection({
       {/* Three equal chips in one row. */}
       <View className="mt-1 flex-row gap-1.5">
         <Button
+          accessibilityState={{ selected: end.type === "none" }}
           onPress={() => updateRecurrence({ end: { type: "none" } })}
           size="sm"
           style={CHIP_STYLE}
@@ -639,6 +645,7 @@ function RecurrenceEndSection({
           <ChipLabel>Never</ChipLabel>
         </Button>
         <Button
+          accessibilityState={{ selected: end.type === "until" }}
           onPress={() => {
             if (end.type === "until") {
               return;
@@ -662,6 +669,7 @@ function RecurrenceEndSection({
           <ChipLabel>On date</ChipLabel>
         </Button>
         <Button
+          accessibilityState={{ selected: end.type === "count" }}
           onPress={() => {
             if (end.type !== "count") {
               updateRecurrence({ end: { count: 10, type: "count" } });
