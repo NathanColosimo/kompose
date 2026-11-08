@@ -1,13 +1,46 @@
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  TaskSelectDecoded,
+  TaskUpdateDecoded,
+} from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
+import {
+  resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
+} from "./task-recurrence";
+
+/**
+ * The edit without a pattern its task's series already has. Editors may
+ * send the pattern along unchanged; the server ignores it, so the cache
+ * must too.
+ */
+export function withoutUnchangedPattern(
+  cached: TaskSelectDecoded[],
+  id: string,
+  task: TaskUpdateDecoded
+): TaskUpdateDecoded {
+  const edited = cached.find((cachedTask) => cachedTask.id === id);
+  if (
+    task.recurrence === undefined ||
+    !edited ||
+    !taskRecurrenceEquals(
+      task.recurrence,
+      resolveTaskRecurrenceForEditor(edited, cached)
+    )
+  ) {
+    return task;
+  }
+  const { recurrence: _unchanged, ...edit } = task;
+  return edit;
+}
 
 /**
  * The task list after a save the editor waited on: saved rows replace their
  * cached copies, and for a "this and following" save the edited occurrence's
- * series loses its non-exception rows from where the edit starts (the
- * earlier of the occurrence's date and its new one, as the server splits
- * the series) that the server didn't return (a pattern change replaced
- * them), and gains the new ones.
+ * series loses its non-exception rows from where the edit starts that the
+ * server didn't return (a pattern change replaced them), and gains the new
+ * ones. A pattern change splits the series at the earlier of the
+ * occurrence's date and its new one, as the server does; any other edit
+ * keeps the rows before the occurrence.
  * So the editor closes onto the result rather than waiting for the refetch.
  */
 export function mergeSavedTasks(
@@ -16,18 +49,20 @@ export function mergeSavedTasks(
   edit: {
     id: string;
     scope: "following" | "this";
-    /** The edit's new start date, when it moves the occurrence. */
-    startDate?: Temporal.PlainDate | null;
+    /** The fields the save sent. */
+    task: TaskUpdateDecoded;
   }
 ): TaskSelectDecoded[] {
   const savedById = new Map(saved.map((task) => [task.id, task]));
   const edited = cached.find((task) => task.id === edit.id);
   const seriesId = edited?.seriesMasterId;
+  const sent = withoutUnchangedPattern(cached, edit.id, edit.task);
+  const splitDate = sent.recurrence === undefined ? null : sent.startDate;
   const from =
-    edit.startDate &&
+    splitDate &&
     edited?.startDate &&
-    Temporal.PlainDate.compare(edit.startDate, edited.startDate) < 0
-      ? edit.startDate
+    Temporal.PlainDate.compare(splitDate, edited.startDate) < 0
+      ? splitDate
       : edited?.startDate;
   const replaced = (task: TaskSelectDecoded) =>
     edit.scope === "following" &&

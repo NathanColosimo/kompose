@@ -129,14 +129,23 @@ export function withMovedDueDate(
 /**
  * Whether a "this and following" pattern change keeps the edited occurrence
  * (it takes the edits, and becomes the new series' master with the pattern)
- * instead of replacing it: it
- * is an exception already, or the edit sets its status (Mark done).
+ * instead of replacing it: it is an exception already, the edit sets its
+ * status (Mark done), or it starts on a date another kept task holds (Nov
+ * 16 done alone, then Nov 9 moved onto it): the two are different tasks.
  */
-export function keepsEditedOccurrence(
-  task: Pick<TaskSelect, "isException">,
-  input: Pick<TaskUpdateInput, "status">
-): boolean {
-  return task.isException || input.status !== undefined;
+export function keepsEditedOccurrence(params: {
+  input: Pick<TaskUpdateInput, "startDate" | "status">;
+  /** The dates other kept tasks (exceptions) hold from the split on. */
+  keptDates: ReadonlySet<string>;
+  task: Pick<TaskSelect, "isException" | "startDate">;
+}): boolean {
+  const { input, task } = params;
+  const start = input.startDate ?? task.startDate;
+  return (
+    task.isException ||
+    input.status !== undefined ||
+    (start !== null && params.keptDates.has(start))
+  );
 }
 
 /**

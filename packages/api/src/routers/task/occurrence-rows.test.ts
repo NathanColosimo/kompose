@@ -53,12 +53,31 @@ const rows = (
   );
 
 describe("keepsEditedOccurrence", () => {
+  const keeps = (
+    task: { isException: boolean },
+    input: { startDate?: string; status?: "done" },
+    keptDates: string[] = []
+  ) =>
+    keepsEditedOccurrence({
+      input,
+      keptDates: new Set(keptDates),
+      task: { ...task, startDate: "2026-11-09" },
+    });
+
   test("keeps an exception, or one whose status the edit sets", () => {
-    expect(keepsEditedOccurrence({ isException: true }, {})).toBe(true);
+    expect(keeps({ isException: true }, {})).toBe(true);
+    expect(keeps({ isException: false }, { status: "done" })).toBe(true);
+    expect(keeps({ isException: false }, {})).toBe(false);
+  });
+
+  test("keeps one moved onto a date another kept task holds", () => {
+    // Nov 16 done alone; Nov 9 moved onto it.
     expect(
-      keepsEditedOccurrence({ isException: false }, { status: "done" })
+      keeps({ isException: false }, { startDate: "2026-11-16" }, ["2026-11-16"])
     ).toBe(true);
-    expect(keepsEditedOccurrence({ isException: false }, {})).toBe(false);
+    expect(
+      keeps({ isException: false }, { startDate: "2026-11-17" }, ["2026-11-16"])
+    ).toBe(false);
   });
 });
 

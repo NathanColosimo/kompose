@@ -687,26 +687,35 @@ function buildSeriesOccurrenceUpdate(
 
 const REPEAT_ENDS_BEFORE_START = "The repeat ends before the task starts.";
 
-/**
- * Why an edit can't set its pattern (a series' new one, or one that makes a
- * lone task repeat), if it can't. A pattern counts from the start date, so
- * it needs one, and one ending before it has no occurrences and would
- * replace the series with nothing.
- */
-function newPatternProblem(
-  task: TaskSelect,
-  input: TaskUpdateInput
-): string | null {
-  const startDate =
-    input.startDate === undefined ? task.startDate : input.startDate;
-  if (input.recurrence && !startDate) {
-    return PICK_START_TO_REPEAT;
-  }
-  if (repeatEndsBeforeStart(input.recurrence, startDate)) {
-    return REPEAT_ENDS_BEFORE_START;
-  }
-  return null;
+/** A pattern a create or edit sets, with the date it counts from. */
+interface CheckedPattern {
+  recurrence: TaskRecurrence;
+  startDate: string;
 }
+
+/**
+ * Check a pattern a create or edit sets (a new task's, a series' new one,
+ * or one that makes a lone task repeat). It counts from the start date, so
+ * it needs one, and one ending before it has no occurrences and would
+ * replace a series with nothing.
+ */
+const checkPattern = Effect.fn("checkPattern")(function* (
+  recurrence: TaskRecurrence,
+  startDate: string | null | undefined
+) {
+  if (!startDate) {
+    return yield* Effect.fail(
+      new InvalidTaskError({ message: PICK_START_TO_REPEAT })
+    );
+  }
+  if (repeatEndsBeforeStart(recurrence, startDate)) {
+    return yield* Effect.fail(
+      new InvalidTaskError({ message: REPEAT_ENDS_BEFORE_START })
+    );
+  }
+  const checked: CheckedPattern = { recurrence, startDate };
+  return checked;
+});
 
 /** Build task rows for a recurring series */
 function buildRecurringTaskRows(
@@ -772,6 +781,8 @@ function allRetagged(rows: TaskSelect[]): WrittenRows {
 const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   dbInput: TaskUpdateInput;
   hasDbUpdates: boolean;
+  /** The pattern the edit sets, checked. */
+  newPattern: CheckedPattern | null;
   normalizedTagIds: string[] | undefined;
   recurrenceChanged: boolean;
   scope: UpdateScope;
@@ -780,15 +791,18 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
 }) {
   const { dbInput, task, userId } = params;
   if (task.seriesMasterId && params.scope === "following") {
-    return yield* updateFollowing(
-      userId,
+    return yield* updateFollowing({
+      input: dbInput,
+      newPattern: params.newPattern,
+      recurrenceChanged: params.recurrenceChanged,
       task,
-      dbInput,
-      params.recurrenceChanged
-    );
+      userId,
+    });
   }
-  if (!task.seriesMasterId && dbInput.recurrence) {
-    return allRetagged(yield* convertToRecurring(userId, task, dbInput));
+  if (!task.seriesMasterId && params.newPattern) {
+    return allRetagged(
+      yield* convertToRecurring(userId, task, dbInput, params.newPattern)
+    );
   }
   if (editsThisTask(task, params.hasDbUpdates, params.normalizedTagIds)) {
     // Edit this task alone, marked as an exception to its series.
@@ -839,25 +853,24 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     input.startDate && input.startDate < task.startDate
       ? input.startDate
       : task.startDate;
-  // updateTask rejects a pattern without a start, so a new pattern starts on
-  // a date.
-  const seriesStart = input.startDate ?? task.startDate;
-  // Other exceptions from the boundary on stay, and the new pattern leaves
-  // their dates out.
-  const kept = recurrence
-    ? (yield* dbSelectExceptionsBySeriesFrom(
-        userId,
-        task.seriesMasterId,
-        boundary
-      )).filter((row) => row.id !== task.id)
-    : [];
+  // The dates other exceptions from the boundary on hold: they stay, and
+  // the new pattern leaves their dates out.
+  const otherKeptDates = new Set(
+    recurrence
+      ? (yield* dbSelectExceptionsBySeriesFrom(
+          userId,
+          task.seriesMasterId,
+          boundary
+        )).flatMap((row) =>
+          row.id !== task.id && row.startDate ? [row.startDate] : []
+        )
+      : []
+  );
   // Ending the repeat ("Repeat: None") keeps the edited task, as a
   // standalone task, and drops the later ordinary occurrences.
   const ending = !recurrence;
   const keepEdited =
-    ending ||
-    keepsEditedOccurrence(task, input) ||
-    kept.some((row) => row.startDate === seriesStart);
+    ending || keepsEditedOccurrence({ input, keptDates: otherKeptDates, task });
   // The earlier part of the series stops before the edit, so its master no
   // longer claims to repeat past it. First, while the master is still
   // there: a split before it deletes it below, and its undated and earlier
@@ -911,11 +924,12 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
-  const keptDates = new Set(
-    [...kept, ...updatedAnchor].flatMap((row) =>
-      row.startDate ? [row.startDate] : []
-    )
-  );
+  // A kept edited occurrence holds the new series' first date. (updateTask
+  // rejects a pattern without a start, so there is one.)
+  const seriesStart = input.startDate ?? task.startDate;
+  const keptDates = keepEdited
+    ? new Set([...otherKeptDates, seriesStart])
+    : otherKeptDates;
   const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
     input: { ...input, recurrence },
@@ -1154,28 +1168,13 @@ const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
 const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdateInput
+  input: TaskUpdateInput,
+  pattern: CheckedPattern
 ) {
-  const startDate = input.startDate ?? task.startDate;
-  if (!startDate) {
-    return yield* Effect.fail(
-      new InvalidTaskError({
-        message: "Task must have startDate to convert",
-      })
-    );
-  }
-  if (!input.recurrence) {
-    return yield* Effect.fail(
-      new InvalidTaskError({
-        message: "Recurrence is required to convert",
-      })
-    );
-  }
-
   // Generate occurrence dates (first one is the existing task's date)
-  const seriesStartDate = Temporal.PlainDate.from(startDate);
+  const seriesStartDate = Temporal.PlainDate.from(pattern.startDate);
   const occurrenceDates = generateOccurrences(
-    input.recurrence,
+    pattern.recurrence,
     seriesStartDate
   );
 
@@ -1208,12 +1207,13 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
 /**
  * A repeat change on an undated occurrence (moved to the inbox): it leaves
  * its series as a standalone task, and a new pattern makes it a series of
- * its own, from the start date the edit gives it (updateTask requires one).
+ * its own, from the start date the edit gives it.
  */
 const repatternUndated = Effect.fn("repatternUndated")(function* (
   userId: string,
   task: TaskSelect,
-  input: TaskUpdateInput
+  input: TaskUpdateInput,
+  newPattern: CheckedPattern | null
 ) {
   const released = yield* releaseFromSeries(userId, task);
   const standalone: TaskSelect = {
@@ -1222,24 +1222,27 @@ const repatternUndated = Effect.fn("repatternUndated")(function* (
     recurrence: null,
     seriesMasterId: null,
   };
-  const rows = input.recurrence
-    ? yield* convertToRecurring(userId, standalone, input)
+  const rows = newPattern
+    ? yield* convertToRecurring(userId, standalone, input, newPattern)
     : yield* dbUpdate(userId, task.id, { ...input, recurrence: null });
   const written = new Map([...released, ...rows].map((row) => [row.id, row]));
   return { retagIds: ids(rows), rows: [...written.values()] };
 });
 
 /** Handle scope=following update for recurring task */
-const updateFollowing = Effect.fn("updateFollowing")(function* (
-  userId: string,
-  task: TaskSelect,
-  input: TaskUpdateInput,
-  recurrenceChanged: boolean
-) {
+const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
+  input: TaskUpdateInput;
+  /** The pattern the edit sets, checked. */
+  newPattern: CheckedPattern | null;
+  recurrenceChanged: boolean;
+  task: TaskSelect;
+  userId: string;
+}) {
+  const { input, recurrenceChanged, task, userId } = params;
   // Without a start date there is no "following"; edit this occurrence alone.
   if (!isDatedSeriesTask(task)) {
     if (recurrenceChanged) {
-      return yield* repatternUndated(userId, task, input);
+      return yield* repatternUndated(userId, task, input, params.newPattern);
     }
     return allRetagged(
       yield* dbUpdate(userId, task.id, { ...input, isException: true })
@@ -1306,22 +1309,15 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
 
       // Recurring task: validate and generate occurrences
-      if (!taskInput.startDate) {
-        return yield* Effect.fail(
-          new InvalidTaskError({ message: PICK_START_TO_REPEAT })
-        );
-      }
-      if (repeatEndsBeforeStart(taskInput.recurrence, taskInput.startDate)) {
-        return yield* Effect.fail(
-          new InvalidTaskError({ message: REPEAT_ENDS_BEFORE_START })
-        );
-      }
-
+      const pattern = yield* checkPattern(
+        taskInput.recurrence,
+        taskInput.startDate
+      );
       const taskRows = buildRecurringTaskRows(
         userId,
         taskInput,
-        taskInput.recurrence,
-        taskInput.startDate
+        pattern.recurrence,
+        pattern.startDate
       );
       const tasks = yield* dbInsert(taskRows);
       if (normalizedTagIds) {
@@ -1361,7 +1357,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
       const { recurrence: _unchangedPattern, ...withoutPattern } = sent;
-      const dbInput =
+      const dbInput: TaskUpdateInput =
         task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
       const hasDbUpdates = Object.keys(dbInput).length > 0;
       // One occurrence can't repeat differently from its series: a new
@@ -1376,12 +1372,12 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
       const recurrenceChanged = changesPattern && scope === "following";
       // Checked before anything is deleted.
-      const patternProblem = newPatternProblem(task, dbInput);
-      if (patternProblem) {
-        return yield* Effect.fail(
-          new InvalidTaskError({ message: patternProblem })
-        );
-      }
+      const newPattern = dbInput.recurrence
+        ? yield* checkPattern(
+            dbInput.recurrence,
+            dbInput.startDate === undefined ? task.startDate : dbInput.startDate
+          )
+        : null;
 
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.
@@ -1401,6 +1397,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           const written = yield* writeTaskUpdate({
             dbInput,
             hasDbUpdates,
+            newPattern,
             normalizedTagIds,
             recurrenceChanged,
             scope,

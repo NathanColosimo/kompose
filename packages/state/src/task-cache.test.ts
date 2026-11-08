@@ -33,7 +33,9 @@ describe("mergeSavedTasks", () => {
   test("replaces a this-occurrence save in place", () => {
     const saved = [row("nov9", "2026-11-09", { status: "done" })];
     expect(
-      ids(mergeSavedTasks(cached, saved, { id: "nov9", scope: "this" }))
+      ids(
+        mergeSavedTasks(cached, saved, { id: "nov9", scope: "this", task: {} })
+      )
     ).toEqual([
       "nov2:todo",
       "nov9:done",
@@ -51,7 +53,13 @@ describe("mergeSavedTasks", () => {
     ];
     // Nov 16 was replaced; Nov 23 is an exception and stays; Nov 2 is before.
     expect(
-      ids(mergeSavedTasks(cached, saved, { id: "nov9", scope: "following" }))
+      ids(
+        mergeSavedTasks(cached, saved, {
+          id: "nov9",
+          scope: "following",
+          task: { recurrence: { freq: "DAILY", interval: 1 } },
+        })
+      )
     ).toEqual([
       "nov2:todo",
       "nov9:done",
@@ -74,7 +82,15 @@ describe("mergeSavedTasks", () => {
         mergeSavedTasks(cached, saved, {
           id: "nov16",
           scope: "following",
-          startDate: Temporal.PlainDate.from("2026-11-09"),
+          task: {
+            recurrence: {
+              count: 2,
+              freq: "WEEKLY",
+              byDay: ["MO"],
+              interval: 1,
+            },
+            startDate: Temporal.PlainDate.from("2026-11-09"),
+          },
         })
       )
     ).toEqual([
@@ -84,5 +100,32 @@ describe("mergeSavedTasks", () => {
       "new9:todo",
       "new16:todo",
     ]);
+  });
+
+  test("keeps the rows before a move when the pattern sent is unchanged", () => {
+    // Every 2 days x2 from Nov 9; Nov 11 moved to Nov 8, "following", with
+    // the series' pattern sent along: the server shifts Nov 11 alone and
+    // keeps the Nov 9 master.
+    const pattern = { count: 2, freq: "DAILY" as const, interval: 2 };
+    const series = [
+      row("nov9", "2026-11-09", {
+        recurrence: pattern,
+        seriesMasterId: "nov9",
+      }),
+      row("nov11", "2026-11-11", { seriesMasterId: "nov9" }),
+    ];
+    const saved = [row("nov11", "2026-11-08", { seriesMasterId: "nov9" })];
+    expect(
+      ids(
+        mergeSavedTasks(series, saved, {
+          id: "nov11",
+          scope: "following",
+          task: {
+            recurrence: { freq: "DAILY", interval: 2, count: 2 },
+            startDate: Temporal.PlainDate.from("2026-11-08"),
+          },
+        })
+      )
+    ).toEqual(["nov9:todo", "nov11:todo"]);
   });
 });
