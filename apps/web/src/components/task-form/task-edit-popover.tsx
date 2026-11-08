@@ -22,6 +22,7 @@ import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-optio
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  markStatusFailureMessage,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
@@ -489,8 +490,11 @@ export function TaskEditForm({
       values: TaskFormValues,
       scope: UpdateScope,
       extra: Partial<TaskUpdateDecoded> = {},
-      /** False while the editor holds open on the save (Mark done). */
-      optimistic = true
+      /**
+       * While the editor holds open on the save (Mark done): optimistic
+       * false, and a failure message that says the edits are still here.
+       */
+      hold?: { failureMessage: string }
     ): Promise<boolean> => {
       if (!task) {
         return Promise.resolve(false);
@@ -502,8 +506,9 @@ export function TaskEditForm({
 
       return updateTask
         .mutateAsync({
+          failureMessage: hold?.failureMessage,
           id: task.id,
-          optimistic,
+          optimistic: !hold,
           scope,
           task: {
             description: values.description ?? "",
@@ -543,7 +548,12 @@ export function TaskEditForm({
       // keeps it when a "following" save also changes the series). The
       // editor holds open until it saves, so the cache waits for the server:
       // an early update could unmount the editor or roll back over the draft.
-      return commitUpdate(values, scope, { status }, false);
+      return commitUpdate(
+        values,
+        scope,
+        { status },
+        { failureMessage: markStatusFailureMessage(status) }
+      );
     },
     [commitUpdate, task]
   );

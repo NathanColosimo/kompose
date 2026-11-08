@@ -377,3 +377,11 @@ export function getTaskUpdateScopeDecision(params: {
     defaultScope: recurrenceChanged ? "following" : "this",
   };
 }
+
+/**
+ * The error for a Mark done (or not done) that failed while the editor held
+ * open on it: what failed, and that the edits are still in the editor.
+ */
+export function markStatusFailureMessage(status: string): string {
+  return `Couldn't mark the task ${status === "done" ? "done" : "not done"}. Your changes are still here.`;
+}

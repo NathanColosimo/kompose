@@ -69,10 +69,14 @@ export function buildOccurrenceRowsFromTask(params: {
   userId: string;
 }): TaskInsertRow[] {
   const { input, task } = params;
-  const baseDueDate = parsePlainDate(input.dueDate ?? task.dueDate);
+  // A field the edit clears (null) stays cleared; only one it leaves out
+  // (undefined) takes the task's value.
+  const pick = <K extends keyof TaskUpdateInput & keyof TaskSelect>(key: K) =>
+    input[key] === undefined ? task[key] : input[key];
+  const baseDueDate = parsePlainDate(pick("dueDate") as string | null);
 
   return params.occurrenceDates.map((date) => ({
-    description: input.description ?? task.description,
+    description: pick("description") as string | null,
     dueDate: getDueDateForOccurrence({
       baseDueDate,
       baseStartDate: params.seriesStartDate,
@@ -81,11 +85,11 @@ export function buildOccurrenceRowsFromTask(params: {
     durationMinutes: input.durationMinutes ?? task.durationMinutes,
     id: uuidv7(),
     isException: false,
-    links: input.links ?? task.links,
+    links: pick("links") as TaskSelect["links"],
     recurrence: null,
     seriesMasterId: params.seriesMasterId,
     startDate: date.toString(),
-    startTime: input.startTime ?? task.startTime,
+    startTime: pick("startTime") as string | null,
     status: "todo",
     title: input.title ?? task.title,
     userId: params.userId,

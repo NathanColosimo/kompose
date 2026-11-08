@@ -413,7 +413,10 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         activeItem,
         dateTitle,
         doneTasks,
-        error: tasksQuery.error,
+        // A failed refresh keeps the tasks already loaded (the query's error
+        // toast offers a retry); the error replaces the list only when
+        // there is nothing to show.
+        error: tasksQuery.data === undefined ? tasksQuery.error : null,
         inboxTasks,
         isLoading: isSidebarLoading,
         overdueTasks,
@@ -431,6 +434,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       isSidebarLoading,
       overdueTasks,
       plannedTasks,
+      tasksQuery.data,
       tasksQuery.error,
       tagDoneTasks,
       tagOverdueTasks,

@@ -1051,7 +1051,8 @@ export default function CalendarTab() {
         minute: snapped % 60,
         second: 0,
       });
-      const endTime = startTime.add({ minutes: 30 });
+      // 30 minutes, onto the next day from 11:45 PM.
+      const end = day.toPlainDateTime(startTime).add({ minutes: 30 });
       const createDraft: CreateEventDraft = {
         allDay: false,
         calendar: {
@@ -1061,8 +1062,8 @@ export default function CalendarTab() {
         colorId: null,
         conferenceData: null,
         description: "",
-        endDate: day,
-        endTime,
+        endDate: end.toPlainDate(),
+        endTime: end.toPlainTime(),
         location: "",
         mode: "create",
         recurrence: [],
@@ -1360,6 +1361,7 @@ export default function CalendarTab() {
     [buildEventPayload, closeEventModal, moveEvent, updateEvent]
   );
 
+  const [isSavingEvent, setIsSavingEvent] = useState(false);
   const saveEvent = useCallback(
     async (draft: EventDraft) => {
       if (!draft.summary.trim()) {
@@ -1980,10 +1982,16 @@ export default function CalendarTab() {
         <EventEditorSheet
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
+          isSaving={isSavingEvent}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onSubmit={(draft) => {
-            saveEvent(draft).catch(() => null);
+            // The sheet holds ("Saving…") until the save ends; a failure
+            // leaves it open with the draft.
+            setIsSavingEvent(true);
+            saveEvent(draft)
+              .catch(() => null)
+              .finally(() => setIsSavingEvent(false));
           }}
         />
       ) : null}

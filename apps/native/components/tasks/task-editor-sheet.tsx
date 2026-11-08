@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { LOCALE_TIME_FORMAT } from "@/lib/time-format";
 
 export interface TaskDraft {
   description: string;
@@ -657,11 +658,15 @@ export function TaskEditorSheet({
     >
       {/* While Mark done saves, the fields are read-only too: a change made
           then would be dropped when the editor closes. */}
-      <View pointerEvents={isSaving ? "none" : "auto"}>
-        {/* One row on a wide phone; on a narrower one, due and repeat wrap to
-            a second row before the date has to shrink. */}
+      <View
+        pointerEvents={isSaving ? "none" : "auto"}
+        style={isSaving ? { opacity: 0.6 } : undefined}
+      >
+        {/* One row down to 375pt (64 + 134 + 88 + 34 + gaps = 338); on a
+            narrower phone, due and repeat wrap to a second row before the
+            date has to shrink. */}
         <View className="mb-3 flex-row flex-wrap items-center gap-1.5">
-          <View style={{ width: 76 }}>
+          <View style={{ width: 64 }}>
             <Picker
               // Same size as the date and time chips beside it.
               inputStyle={{ fontSize: 13, textAlign: "center" }}
@@ -687,7 +692,7 @@ export function TaskEditorSheet({
 
           <View
             className="flex-row items-center gap-1.5"
-            style={{ flexBasis: 150, flexGrow: 1, minWidth: 150 }}
+            style={{ flexBasis: 134, flexGrow: 1, minWidth: 134 }}
           >
             <View className="min-w-0 flex-1">
               <DatePicker
@@ -718,7 +723,7 @@ export function TaskEditorSheet({
                 variant="outline"
               />
             </View>
-            <View style={{ minWidth: 84 }}>
+            <View style={{ minWidth: 78 }}>
               <DatePicker
                 disabled={!draft.startDate}
                 displayValue={formatPlainTime(draft.startTime)}
@@ -736,7 +741,7 @@ export function TaskEditorSheet({
                   minHeight: 38,
                   paddingHorizontal: 4,
                 }}
-                timeFormat="24"
+                timeFormat={LOCALE_TIME_FORMAT}
                 value={
                   draft.startTime ? plainTimeToDate(draft.startTime) : undefined
                 }
@@ -747,7 +752,7 @@ export function TaskEditorSheet({
           </View>
 
           <View className="flex-row items-center gap-1.5">
-            <View style={{ width: 86 }}>
+            <View style={{ width: 88 }}>
               <DatePicker
                 displayValue={
                   draft.dueDate
@@ -779,7 +784,7 @@ export function TaskEditorSheet({
             <Button
               onPress={() => setIsRecurrenceExpanded((current) => !current)}
               size="icon"
-              style={{ borderRadius: 999, height: 38, width: 38 }}
+              style={{ borderRadius: 999, height: 38, width: 34 }}
               variant={isRecurrenceExpanded ? "default" : "outline"}
             >
               <Icon

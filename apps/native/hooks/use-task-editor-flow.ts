@@ -8,6 +8,7 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   haveTaskTagIdsChanged,
+  markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
@@ -104,8 +105,11 @@ export function useTaskEditorFlow() {
     nextDraft: TaskDraft,
     scope: UpdateScope,
     status?: TaskDraft["status"],
-    /** False while the editor holds open on the save (Mark done). */
-    optimistic = true
+    /**
+     * While the editor holds open on the save (Mark done): optimistic
+     * false, and a failure message that says the edits are still here.
+     */
+    hold?: { failureMessage: string }
   ): Promise<boolean> {
     if (!editingTask) {
       return Promise.resolve(false);
@@ -113,8 +117,9 @@ export function useTaskEditorFlow() {
 
     return updateTask
       .mutateAsync({
+        failureMessage: hold?.failureMessage,
         id: editingTask.id,
-        optimistic,
+        optimistic: !hold,
         scope,
         task: {
           ...(status ? { status } : {}),
@@ -148,7 +153,9 @@ export function useTaskEditorFlow() {
     // it when a "following" save also changes the series). The editor holds
     // open until it saves, so the cache waits for the server rather than
     // rolling back over the draft on failure.
-    return commitUpdate(nextDraft, scope, status, false);
+    return commitUpdate(nextDraft, scope, status, {
+      failureMessage: markStatusFailureMessage(status),
+    });
   }
 
   /** The scope decision for saving `nextDraft` over the task being edited. */

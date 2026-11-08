@@ -86,6 +86,19 @@ describe("regeneratedOccurrenceRows", () => {
     ]);
   });
 
+  test("keeps a field the edit clears cleared", () => {
+    const [first] = regeneratedOccurrenceRows({
+      input: { dueDate: null, recurrence: tuesdays, startTime: null },
+      keepEdited: true,
+      keptDates: new Set(["2026-11-09"]),
+      seriesMasterId: "new-master",
+      task: { ...nov9, dueDate: "2026-11-11" },
+      userId: "user",
+    });
+    expect(first?.dueDate).toBeNull();
+    expect(first?.startTime).toBeNull();
+  });
+
   test("regenerates from the original date when the edit moves it", () => {
     // Moved to Nov 23 (kept there); the series still starts after Nov 9.
     expect(

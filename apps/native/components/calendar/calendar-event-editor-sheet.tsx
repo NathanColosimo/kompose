@@ -64,6 +64,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColor } from "@/hooks/use-color";
+import { LOCALE_TIME_FORMAT } from "@/lib/time-format";
 
 const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
@@ -380,6 +381,41 @@ function readOnlyReasonFor(draft: EventDraft): string | null {
     : null;
 }
 
+function noop() {
+  // Intentionally empty: the sheet holds while its save runs.
+}
+
+/** The sheet's fields, dimmed and inert while its save runs. */
+function HeldWhileSaving({
+  children,
+  isSaving,
+}: {
+  children: React.ReactNode;
+  isSaving: boolean;
+}) {
+  return (
+    <View
+      pointerEvents={isSaving ? "none" : "auto"}
+      style={isSaving ? { opacity: 0.6 } : undefined}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Whether the draft ends after it starts (an all-day event may be one day). */
+function endsAfterStart(draft: EventDraft): boolean {
+  if (draft.allDay || !(draft.startTime && draft.endTime)) {
+    return Temporal.PlainDate.compare(draft.endDate, draft.startDate) >= 0;
+  }
+  return (
+    Temporal.PlainDateTime.compare(
+      draft.endDate.toPlainDateTime(draft.endTime),
+      draft.startDate.toPlainDateTime(draft.startTime)
+    ) > 0
+  );
+}
+
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
 function describeWhen(draft: EventDraft): string {
   if (draft.allDay || !(draft.startTime && draft.endTime)) {
@@ -497,17 +533,23 @@ function ReadOnlyEventView({
 
 function EventEditorHeaderRight({
   canSubmit,
+  isSaving,
   showDelete,
   onDelete,
   onSubmit,
   submitLabel,
 }: {
   canSubmit: boolean;
+  /** The save is running: "Saving…" replaces the actions until it ends. */
+  isSaving: boolean;
   showDelete: boolean;
   onDelete?: () => void;
   onSubmit: () => void;
   submitLabel: string;
 }) {
+  if (isSaving) {
+    return <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>;
+  }
   return (
     <View className="flex-row items-center gap-2">
       {showDelete && onDelete ? (
@@ -779,15 +821,19 @@ function EventDateTimeRow({
                 return;
               }
               const nextTime = dateToPlainTime(date);
+              // The end follows 30 minutes later, onto the next day when
+              // that crosses midnight (11:45 PM ends at 12:15 AM tomorrow).
+              const end = startDate
+                .toPlainDateTime(nextTime)
+                .add({ minutes: 30 });
               setValue("startTime", nextTime, { shouldDirty: true });
-              setValue("endTime", nextTime.add({ minutes: 30 }), {
-                shouldDirty: true,
-              });
+              setValue("endDate", end.toPlainDate(), { shouldDirty: true });
+              setValue("endTime", end.toPlainTime(), { shouldDirty: true });
             }}
             placeholder="Start time"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat="24"
+            timeFormat={LOCALE_TIME_FORMAT}
             value={startTimePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
@@ -829,7 +875,7 @@ function EventDateTimeRow({
             placeholder="End time"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat="24"
+            timeFormat={LOCALE_TIME_FORMAT}
             value={endTimePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
@@ -922,6 +968,11 @@ function useEventMeeting(ctx: {
 interface EventEditorSheetProps {
   calendarOptions: CalendarOption[];
   draft: EventDraft;
+  /**
+   * The save is running: the sheet holds (no second submit, no edits, no
+   * dismissal) until it ends.
+   */
+  isSaving?: boolean;
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
@@ -933,6 +984,7 @@ interface EventEditorSheetProps {
  */
 export function EventEditorSheet({
   draft,
+  isSaving = false,
   onClose,
   onSubmit,
   onDelete,
@@ -955,7 +1007,7 @@ export function EventEditorSheet({
 
   const isCreateMode = draft.mode === "create";
   const readOnlyReason = readOnlyReasonFor(draft);
-  const canSubmit = summary.trim().length > 0;
+  const canSubmit = summary.trim().length > 0 && endsAfterStart(values);
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
 
@@ -1123,6 +1175,7 @@ export function EventEditorSheet({
   const headerRight = (
     <EventEditorHeaderRight
       canSubmit={canSubmit}
+      isSaving={isSaving}
       onDelete={draft.mode === "edit" ? handleDelete : undefined}
       onSubmit={handleSheetSubmit}
       showDelete={draft.mode === "edit" && Boolean(onDelete)}
@@ -1132,99 +1185,103 @@ export function EventEditorSheet({
 
   return (
     <BottomSheet
+      disablePanGesture={isSaving}
+      enableBackdropDismiss={!isSaving}
       headerRight={headerRight}
       isVisible
-      onClose={onClose}
+      onClose={isSaving ? noop : onClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >
-      <EventDateTimeRow
-        allDay={allDay}
-        canEditRecurrence={canEditRecurrence}
-        endDate={endDate}
-        endDatePickerValue={endDatePickerValue}
-        endTimePickerValue={endTimePickerValue}
-        isRecurrenceExpanded={isRecurrenceExpanded}
-        onToggleRecurrence={() =>
-          setIsRecurrenceExpanded((current) => !current)
-        }
-        setValue={setValue}
-        startDate={startDate}
-        startDatePickerValue={startDatePickerValue}
-        startTimePickerValue={startTimePickerValue}
-      />
-
-      {recurrenceEditor}
-
-      <View className="mb-2.5 flex-row items-center gap-2">
-        <EventColorPicker
-          borderColor={borderColor}
-          colorEntries={colorEntries}
-          onSelectColor={(colorKey) =>
-            setValue("colorId", colorKey, { shouldDirty: true })
+      <HeldWhileSaving isSaving={isSaving}>
+        <EventDateTimeRow
+          allDay={allDay}
+          canEditRecurrence={canEditRecurrence}
+          endDate={endDate}
+          endDatePickerValue={endDatePickerValue}
+          endTimePickerValue={endTimePickerValue}
+          isRecurrenceExpanded={isRecurrenceExpanded}
+          onToggleRecurrence={() =>
+            setIsRecurrenceExpanded((current) => !current)
           }
-          selectedColorBackground={selectedColorBackground}
-          selectedColorBorder={selectedColorBorder}
-          selectedColorId={values.colorId ?? null}
+          setValue={setValue}
+          startDate={startDate}
+          startDatePickerValue={startDatePickerValue}
+          startTimePickerValue={startTimePickerValue}
         />
 
-        <Input
-          containerStyle={{ flex: 1 }}
-          onChangeText={(value) =>
-            setValue("summary", value, { shouldDirty: true })
+        {recurrenceEditor}
+
+        <View className="mb-2.5 flex-row items-center gap-2">
+          <EventColorPicker
+            borderColor={borderColor}
+            colorEntries={colorEntries}
+            onSelectColor={(colorKey) =>
+              setValue("colorId", colorKey, { shouldDirty: true })
+            }
+            selectedColorBackground={selectedColorBackground}
+            selectedColorBorder={selectedColorBorder}
+            selectedColorId={values.colorId ?? null}
+          />
+
+          <Input
+            containerStyle={{ flex: 1 }}
+            onChangeText={(value) =>
+              setValue("summary", value, { shouldDirty: true })
+            }
+            placeholder="Title"
+            value={summary}
+            variant="outline"
+          />
+        </View>
+
+        <EventAllDayAndMeetingRow
+          allDay={allDay}
+          isConferencePending={isConferencePending}
+          meetingLink={meetingLink}
+          mutedColor={mutedColor}
+          onAddMeeting={() =>
+            setValue("conferenceData", buildGoogleMeetConferenceData(), {
+              shouldDirty: true,
+            })
           }
-          placeholder="Title"
-          value={summary}
+          onToggleAllDay={(nextValue) =>
+            setValue("allDay", nextValue, { shouldDirty: true })
+          }
+        />
+
+        <EventLocationInput
+          location={location}
+          locationSuggestions={locationSuggestions}
+          mapsUrl={mapsUrl}
+          onLocationChange={(value) => {
+            setValue("location", value, { shouldDirty: true });
+          }}
+          onSuggestionClose={() => setIsLocationSuggestionsOpen(false)}
+          onSuggestionOpen={() => setIsLocationSuggestionsOpen(true)}
+          showLocationSuggestions={showLocationSuggestions}
+        />
+
+        <Textarea
+          containerStyle={{ marginBottom: 10 }}
+          onChangeText={(value) =>
+            setValue("description", value, { shouldDirty: true })
+          }
+          placeholder="Description"
+          value={description}
           variant="outline"
         />
-      </View>
 
-      <EventAllDayAndMeetingRow
-        allDay={allDay}
-        isConferencePending={isConferencePending}
-        meetingLink={meetingLink}
-        mutedColor={mutedColor}
-        onAddMeeting={() =>
-          setValue("conferenceData", buildGoogleMeetConferenceData(), {
-            shouldDirty: true,
-          })
-        }
-        onToggleAllDay={(nextValue) =>
-          setValue("allDay", nextValue, { shouldDirty: true })
-        }
-      />
-
-      <EventLocationInput
-        location={location}
-        locationSuggestions={locationSuggestions}
-        mapsUrl={mapsUrl}
-        onLocationChange={(value) => {
-          setValue("location", value, { shouldDirty: true });
-        }}
-        onSuggestionClose={() => setIsLocationSuggestionsOpen(false)}
-        onSuggestionOpen={() => setIsLocationSuggestionsOpen(true)}
-        showLocationSuggestions={showLocationSuggestions}
-      />
-
-      <Textarea
-        containerStyle={{ marginBottom: 10 }}
-        onChangeText={(value) =>
-          setValue("description", value, { shouldDirty: true })
-        }
-        placeholder="Description"
-        value={description}
-        variant="outline"
-      />
-
-      <Picker
-        modalTitle="Select calendar"
-        onValueChange={handleCalendarChange}
-        options={calendarPickerOptions}
-        placeholder="Select calendar"
-        style={{ marginBottom: 10 }}
-        value={selectedCalendarValue}
-        variant="outline"
-      />
+        <Picker
+          modalTitle="Select calendar"
+          onValueChange={handleCalendarChange}
+          options={calendarPickerOptions}
+          placeholder="Select calendar"
+          style={{ marginBottom: 10 }}
+          value={selectedCalendarValue}
+          variant="outline"
+        />
+      </HeldWhileSaving>
     </BottomSheet>
   );
 }

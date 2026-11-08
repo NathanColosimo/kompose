@@ -24,6 +24,7 @@ import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
+import { mergeSavedTasks } from "../task-cache";
 
 interface UseTasksOptions {
   refetchOnMount?: boolean | "always";
@@ -122,6 +123,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       scope,
     }: {
       id: string;
+      /** Shown instead of the generic error when the save fails. */
+      failureMessage?: string;
       /** False to wait for the server instead of updating the cache first. */
       optimistic?: boolean;
       task: TaskUpdateDecoded;
@@ -135,8 +138,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, { failureMessage }, context) => {
+      notifyError?.(failureMessage ? new Error(failureMessage) : err);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -148,6 +151,7 @@ export function useTasks(options: UseTasksOptions = {}) {
       scope,
     }: {
       id: string;
+      failureMessage?: string;
       optimistic?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
@@ -199,13 +203,12 @@ export function useTasks(options: UseTasksOptions = {}) {
     // Without the early update, write the saved tasks in as soon as the
     // server answers, so the editor that waited closes onto them (the
     // refetch below can take a while on a cold start).
-    onSuccess: (saved, { optimistic: isOptimistic = true }) => {
+    onSuccess: (saved, { id, optimistic: isOptimistic = true, scope }) => {
       if (isOptimistic) {
         return;
       }
-      const byId = new Map(saved.map((task) => [task.id, task]));
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
-        old?.map((task) => byId.get(task.id) ?? task)
+        old ? mergeSavedTasks(old, saved, { id, scope }) : old
       );
     },
     onSettled: () => {

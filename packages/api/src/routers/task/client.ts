@@ -637,6 +637,38 @@ function editsThisTask(
   return hasDbUpdates || (task.seriesMasterId !== null && tagIds !== undefined);
 }
 
+/** Writes an update's rows for its scope (no tags), returning them. */
+const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
+  dbInput: TaskUpdateInput;
+  hasDbUpdates: boolean;
+  normalizedTagIds: string[] | undefined;
+  recurrenceChanged: boolean;
+  scope: UpdateScope;
+  task: TaskSelect;
+  userId: string;
+}) {
+  const { dbInput, task, userId } = params;
+  if (task.seriesMasterId && params.scope === "following") {
+    return yield* updateFollowing(
+      userId,
+      task,
+      dbInput,
+      params.recurrenceChanged
+    );
+  }
+  if (!task.seriesMasterId && dbInput.recurrence) {
+    return yield* convertToRecurring(userId, task, dbInput);
+  }
+  if (editsThisTask(task, params.hasDbUpdates, params.normalizedTagIds)) {
+    // Edit this task alone, marked as an exception to its series.
+    return yield* dbUpdate(userId, task.id, {
+      ...dbInput,
+      isException: true,
+    });
+  }
+  return [task];
+});
+
 /** A series occurrence with a start date, which "following" edits need. */
 type DatedSeriesTask = TaskSelect & {
   seriesMasterId: string;
@@ -837,23 +869,15 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
     return yield* dbUpdate(userId, task.id, { ...input, isException: true });
   }
 
-  // If recurrence pattern is changing, regenerate future occurrences. One
-  // transaction (drizzle's effect driver scopes it to this fiber, so the
-  // helpers' queries join it): the delete, the kept occurrence's update,
-  // the insert, and the move all apply, or none do.
+  // If recurrence pattern is changing, regenerate future occurrences (inside
+  // updateTask's transaction, like everything below).
   if (recurrenceChanged) {
-    const db = yield* Database;
-    return yield* db.transaction(() =>
-      regenerateOccurrences(userId, task, input)
-    );
+    return yield* regenerateOccurrences(userId, task, input);
   }
 
   // No recurrence change: update this and following with scaled date/time
-  // offsets, in one transaction like the regenerate above.
-  const db = yield* Database;
-  return yield* db.transaction(() =>
-    updateSeriesWithScaledDates(userId, task, input)
-  );
+  // offsets.
+  return yield* updateSeriesWithScaledDates(userId, task, input);
 });
 
 // ============================================================================
@@ -965,35 +989,34 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
             ) ?? [])
           : [];
 
-      let updatedTasks: TaskSelect[];
-      if (task.seriesMasterId && scope === "following") {
-        updatedTasks = yield* updateFollowing(
-          userId,
-          task,
-          dbInput,
-          recurrenceChanged
-        );
-      } else if (!task.seriesMasterId && dbInput.recurrence) {
-        updatedTasks = yield* convertToRecurring(userId, task, dbInput);
-      } else if (editsThisTask(task, hasDbUpdates, normalizedTagIds)) {
-        // Edit this task alone, marked as an exception to its series.
-        updatedTasks = yield* dbUpdate(userId, taskId, {
-          ...dbInput,
-          isException: true,
-        });
-      } else {
-        updatedTasks = [task];
-      }
+      // Every write (the rows, then their tags) in one transaction: drizzle's
+      // effect driver scopes it to this fiber, so the helpers' queries join
+      // it, and a failure leaves nothing half-saved.
+      const db = yield* Database;
+      const updatedTasks = yield* db.transaction(() =>
+        Effect.gen(function* () {
+          const rows = yield* writeTaskUpdate({
+            dbInput,
+            hasDbUpdates,
+            normalizedTagIds,
+            recurrenceChanged,
+            scope,
+            task,
+            userId,
+          });
 
-      const tagIdsToSet =
-        normalizedTagIds ??
-        (carriedTagIds.length > 0 ? carriedTagIds : undefined);
-      if (tagIdsToSet !== undefined) {
-        yield* replaceTaskTagsForTasks(
-          updatedTasks.map((updated) => updated.id),
-          tagIdsToSet
-        );
-      }
+          const tagIdsToSet =
+            normalizedTagIds ??
+            (carriedTagIds.length > 0 ? carriedTagIds : undefined);
+          if (tagIdsToSet !== undefined) {
+            yield* replaceTaskTagsForTasks(
+              rows.map((updated) => updated.id),
+              tagIdsToSet
+            );
+          }
+          return rows;
+        })
+      );
 
       return yield* dbSelectByIdsWithTags(
         userId,
