@@ -63,7 +63,6 @@ import {
 import {
   chosenScope,
   type EventSaveChanges,
-  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
@@ -71,7 +70,6 @@ import {
   refuseSave,
   type SaveRefusals,
   SCOPE_DIALOG_COPY,
-  seriesCutUnsure,
   seriesRefusalOf,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
@@ -82,7 +80,7 @@ import {
   moveEventStart,
 } from "@kompose/state/temporal-utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   CalendarIcon,
   Check,
@@ -177,6 +175,7 @@ import {
   saveFacts,
   WEEKDAYS,
 } from "./event-edit-utils";
+import { recurringDeleteAtom } from "./recurring-delete-dialog";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -724,12 +723,6 @@ type PendingSave = Omit<
 };
 
 interface EventEditDialogState {
-  deleteDialogOpen: boolean;
-  /** The last delete failed other than by a refusal. */
-  deleteFailed: boolean;
-  /** The scopes the server refused for this delete, and why. */
-  deleteRefused: SaveRefusals | null;
-  deleteScope: RecurrenceScope;
   pendingSave: PendingSave | null;
   scopeDialogOpen: boolean;
   /** The user's own pick in the scope dialog; null until they pick. */
@@ -738,11 +731,6 @@ interface EventEditDialogState {
 }
 
 type EventEditDialogAction =
-  | { type: "open-recurring-delete"; scope: RecurrenceScope }
-  | { type: "set-delete-dialog-open"; value: boolean }
-  | { type: "set-delete-scope"; value: RecurrenceScope }
-  | { type: "refuse-delete"; refused: SaveRefusals }
-  | { type: "fail-delete" }
   | { type: "open-simple-delete" }
   | { type: "set-simple-delete-open"; value: boolean }
   | {
@@ -753,10 +741,6 @@ type EventEditDialogAction =
   | { type: "set-selected-scope"; value: RecurrenceScope };
 
 const eventEditDialogInitialState: EventEditDialogState = {
-  deleteDialogOpen: false,
-  deleteFailed: false,
-  deleteRefused: null,
-  deleteScope: "this",
   pendingSave: null,
   scopeDialogOpen: false,
   selectedScope: null,
@@ -768,22 +752,6 @@ function eventEditDialogReducer(
   action: EventEditDialogAction
 ): EventEditDialogState {
   switch (action.type) {
-    case "open-recurring-delete":
-      return {
-        ...state,
-        deleteDialogOpen: true,
-        deleteFailed: false,
-        deleteRefused: null,
-        deleteScope: action.scope,
-      };
-    case "refuse-delete":
-      return { ...state, deleteFailed: false, deleteRefused: action.refused };
-    case "fail-delete":
-      return { ...state, deleteFailed: true };
-    case "set-delete-dialog-open":
-      return { ...state, deleteDialogOpen: action.value };
-    case "set-delete-scope":
-      return { ...state, deleteScope: action.value };
     case "open-simple-delete":
       return { ...state, simpleDeleteConfirmOpen: true };
     case "set-simple-delete-open":
@@ -823,8 +791,6 @@ function heldFailure(error: unknown, fallback: string): string {
   const refusal = seriesRefusalOf(error);
   return refusal ? refusalReason(refusal) : fallback;
 }
-
-const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
 
 /** The edits saved, but the move to another calendar that followed didn't. */
 class SavedNotMovedError extends Error {
@@ -870,6 +836,7 @@ export function EventEditPopover({
 
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const queryClient = useQueryClient();
+  const setRecurringDelete = useSetAtom(recurringDeleteAtom);
   const moveEvent = useMoveGoogleEventMutation();
   // The series' rule (an occurrence's lives on its master; shared with the
   // form's query): a moved day follows it for the series.
@@ -878,10 +845,6 @@ export function EventEditPopover({
     eventEditDialogInitialState
   );
   const {
-    deleteDialogOpen,
-    deleteFailed,
-    deleteRefused,
-    deleteScope,
     simpleDeleteConfirmOpen,
     scopeDialogOpen,
     pendingSave,
@@ -893,7 +856,7 @@ export function EventEditPopover({
   const seriesMaster = useRecurringEventMaster({
     accountId,
     calendarId,
-    enabled: open || deleteDialogOpen,
+    enabled: open,
     event: event ?? null,
   });
   const seriesRuleLoaded = Boolean(
@@ -905,19 +868,6 @@ export function EventEditPopover({
     seriesRuleLoaded,
     splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
-  const deleteState = eventDeleteScopeState({
-    cutUnsure: seriesCutUnsure(event, seriesMaster.data, timeZone),
-    refused: deleteRefused,
-    seriesRuleFailed: seriesMaster.ruleFailed,
-    seriesRuleLoaded,
-  });
-  // A delete that failed for another reason says so, leading its line.
-  const deleteScopeState = deleteFailed
-    ? {
-        ...deleteState,
-        description: `${DELETE_FAILURE_MESSAGE} ${deleteState.description}`,
-      }
-    : deleteState;
 
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
@@ -1093,11 +1043,16 @@ export function EventEditPopover({
     setOpen(false);
     if (event.recurringEventId || event.recurrence?.length) {
       const defaultScope = event.recurringEventId ? "this" : "all";
-      dispatchDialog({ scope: defaultScope, type: "open-recurring-delete" });
+      // Asked outside this block, which a delete takes off the calendar.
+      setRecurringDelete((before) => ({
+        id: (before?.id ?? 0) + 1,
+        open: true,
+        target: { accountId, calendarId, defaultScope, event },
+      }));
     } else {
       dispatchDialog({ type: "open-simple-delete" });
     }
-  }, [event, setOpen]);
+  }, [accountId, calendarId, event, setOpen, setRecurringDelete]);
 
   const confirmSimpleDelete = useCallback(() => {
     if (!event) {
@@ -1111,42 +1066,6 @@ export function EventEditPopover({
     });
     dispatchDialog({ type: "set-simple-delete-open", value: false });
   }, [accountId, calendarId, deleteEvent, event]);
-
-  // The delete's scope: the one asked for, or the nearest available while
-  // it's off (the series loading), worked out each time.
-  const deleteChoice = chosenScope(
-    deleteScope,
-    deleteScope,
-    deleteScopeState.disabled
-  );
-  const commitDelete = useCallback(async () => {
-    if (!event) {
-      return;
-    }
-    try {
-      await deleteEvent.mutateAsync({
-        accountId,
-        calendarId,
-        eventId: event.id,
-        failureMessage: DELETE_FAILURE_MESSAGE,
-        // The dialog says what failed, and stays open.
-        quiet: true,
-        scope: deleteChoice,
-      });
-    } catch (error) {
-      // A refused scope turns off, led by why; another failure says so.
-      const refusal = seriesRefusalOf(error);
-      dispatchDialog(
-        refusal
-          ? {
-              refused: refuseSave(deleteRefused, deleteChoice, refusal),
-              type: "refuse-delete",
-            }
-          : { type: "fail-delete" }
-      );
-      throw error;
-    }
-  }, [accountId, calendarId, deleteChoice, deleteEvent, deleteRefused, event]);
 
   const handleCancel = useCallback(() => {
     if (!savingRef.current) {
@@ -1207,8 +1126,7 @@ export function EventEditPopover({
     }
   }, [createEvent, holdForSave, saveEdits, setOpen]);
 
-  const dialogOver =
-    scopeDialogOpen || deleteDialogOpen || simpleDeleteConfirmOpen;
+  const dialogOver = scopeDialogOpen || simpleDeleteConfirmOpen;
   useHotkeys(
     "mod+enter",
     (e) => {
@@ -1335,27 +1253,6 @@ export function EventEditPopover({
         )}
         title={SCOPE_DIALOG_COPY.saveEvent.title}
         value={saveScope}
-      />
-
-      {/* Delete scope dialog for recurring events */}
-      <RecurrenceScopeDialog
-        confirmLabel="Delete"
-        description={deleteScopeState.description}
-        disabledScopes={deleteScopeState.disabled}
-        onCancel={() =>
-          dispatchDialog({ type: "set-delete-dialog-open", value: false })
-        }
-        onConfirm={commitDelete}
-        onOpenChange={(value) =>
-          dispatchDialog({ type: "set-delete-dialog-open", value })
-        }
-        onValueChange={(value) =>
-          dispatchDialog({ type: "set-delete-scope", value })
-        }
-        open={deleteDialogOpen}
-        options={RECURRENCE_SCOPE_OPTIONS}
-        title={SCOPE_DIALOG_COPY.deleteEvent.title}
-        value={deleteChoice}
       />
 
       {/* Simple delete confirmation for non-recurring events */}

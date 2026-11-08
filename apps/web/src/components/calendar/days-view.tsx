@@ -69,6 +69,7 @@ import {
 import { eventColor } from "./events/block-content";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
+import { RecurringDeleteDialog } from "./events/recurring-delete-dialog";
 import { TaskEvent } from "./events/task-event";
 import { WhoopSleepBand } from "./events/whoop-sleep-band";
 import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
@@ -844,6 +845,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
         {/* Event creation popover - shows after click-and-drag */}
         <EventCreationPopover />
+        <RecurringDeleteDialog />
       </div>
     </div>
   );

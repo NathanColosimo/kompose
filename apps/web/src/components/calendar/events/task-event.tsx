@@ -198,9 +198,11 @@ export const TaskEvent = memo(function TaskEventInner({
           task={task}
         >
           <button
+            // A column, so its text starts at the top as in any block (a
+            // button centers its content); a short block centers its own.
             // dnd-kit's drag instructions (set on DndContext).
             aria-describedby={attributes["aria-describedby"]}
-            className="h-full min-w-0 flex-1 cursor-grab text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+            className="flex h-full min-w-0 flex-1 cursor-grab flex-col text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
             type="button"
           >
             <BlockContent
