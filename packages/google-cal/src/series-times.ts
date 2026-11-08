@@ -139,7 +139,10 @@ export function seriesTimesForEdit(params: {
   const named = masterStart.timeZone ?? editedStart.timeZone;
   const zone = named ? { timeZone: named } : {};
   return {
-    end: { dateTime: googleDateTime(start.add({ milliseconds: length })), ...zone },
+    end: {
+      dateTime: googleDateTime(start.add({ milliseconds: length })),
+      ...zone,
+    },
     start: { dateTime: googleDateTime(start), ...zone },
   };
 }
