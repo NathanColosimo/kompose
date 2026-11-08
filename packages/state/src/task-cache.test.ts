@@ -159,4 +159,25 @@ describe("mergeSavedTasks", () => {
       )
     ).toEqual(["new8:todo", "new9:todo"]);
   });
+
+  test("keeps later occurrences when the save moves one to the inbox", () => {
+    // Nov 9 moved to the inbox, "following", no pattern change: the server
+    // edits it alone and returns only it.
+    const saved = [row("nov9", "2026-11-09", { startDate: null })];
+    expect(
+      ids(
+        mergeSavedTasks(cached, saved, {
+          id: "nov9",
+          scope: "following",
+          task: { startDate: null },
+        })
+      )
+    ).toEqual([
+      "nov2:todo",
+      "nov9:todo",
+      "nov16:todo",
+      "nov23:todo",
+      "other:todo",
+    ]);
+  });
 });
