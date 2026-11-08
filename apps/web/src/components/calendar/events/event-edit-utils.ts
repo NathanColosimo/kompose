@@ -140,14 +140,29 @@ export function seriesRefusal(
   return { message: error.message, reason: data.reason };
 }
 
+/** The scopes the server refused for one pending save, and its latest reason. */
+export interface Refusals {
+  message: string;
+  scopes: Partial<Record<RecurrenceScope, true>>;
+}
+
+/** `refused` with `scope` refused too, for `message`. */
+export function refuse(
+  refused: Refusals | null,
+  scope: RecurrenceScope,
+  message: string
+): Refusals {
+  return { message, scopes: { ...refused?.scopes, [scope]: true } };
+}
+
 /**
  * The save scope dialog: the shared rules and the line saying why each
- * scope that's off is, plus a scope the server just refused for this save,
- * turned off and led by the server's reason.
+ * scope that's off is, plus the scopes the server refused for this save,
+ * turned off and led by its latest reason.
  */
 export function saveScopeDialog(
   changes: EventSaveChanges,
-  refused: { message: string; scope: RecurrenceScope } | null
+  refused: Refusals | null
 ): {
   description: string;
   disabled: Partial<Record<RecurrenceScope, boolean>>;
@@ -157,7 +172,7 @@ export function saveScopeDialog(
   return refused
     ? {
         description: `${refused.message} ${description}`,
-        disabled: { ...disabled, [refused.scope]: true },
+        disabled: { ...disabled, ...refused.scopes },
       }
     : { description, disabled };
 }

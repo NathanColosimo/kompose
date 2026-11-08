@@ -171,6 +171,8 @@ import type {
 } from "../event-creation/create-form-shared";
 import {
   buildTemporalPayload,
+  type Refusals,
+  refuse,
   saveScopeDialog,
   seriesRefusal,
   seriesSave,
@@ -717,8 +719,8 @@ type PendingSave = Omit<
   Extract<CloseSaveRequest, { type: "save" }>,
   "isRecurring" | "type"
 > & {
-  /** A scope the server refused for this save, and its reason. */
-  refused?: { message: string; scope: RecurrenceScope } | null;
+  /** The scopes the server refused for this save, and its latest reason. */
+  refused?: Refusals | null;
 };
 
 interface EventEditDialogState {
@@ -1008,7 +1010,9 @@ export function EventEditPopover({
   // from the pending edit and the series as loaded now.
   const pendingFacts = scopeFacts(pendingSave?.variables.event, {
     event,
-    loaded: pendingSave
+    // Read only while the dialog is open: the save stays pending after it
+    // closes, and the closed editor needn't scan the cache.
+    loaded: scopeDialogOpen
       ? cachedOccurrences(queryClient, { accountId, calendarId }, event)
       : [],
     master: seriesMaster.data ?? undefined,
@@ -1036,7 +1040,11 @@ export function EventEditPopover({
         dispatchDialog({
           pendingSave: {
             ...pendingSave,
-            refused: { message: refusal.message, scope: saveScope },
+            refused: refuse(
+              pendingSave.refused ?? null,
+              saveScope,
+              refusal.message
+            ),
           },
           type: "open-scope-dialog",
         });
