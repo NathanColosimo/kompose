@@ -787,10 +787,25 @@ export function EventEditPopover({
   const moveEvent = useMoveGoogleEventMutation();
   // The series' rule (an occurrence's lives on its master; shared with the
   // form's query): a moved day follows it for the series.
+  const [dialogState, dispatchDialog] = useReducer(
+    eventEditDialogReducer,
+    eventEditDialogInitialState
+  );
+  const {
+    deleteDialogOpen,
+    deleteScope,
+    simpleDeleteConfirmOpen,
+    scopeDialogOpen,
+    pendingSave,
+    selectedScope,
+  } = dialogState;
+
+  // The series stays loaded while its delete dialog asks, after the
+  // editor has closed.
   const seriesMaster = useRecurringEventMaster({
     accountId,
     calendarId,
-    enabled: open,
+    enabled: open || deleteDialogOpen,
     event: event ?? null,
   });
   const seriesRuleLoaded = Boolean(
@@ -808,19 +823,6 @@ export function EventEditPopover({
     seriesMaster.data,
     timeZone
   );
-
-  const [dialogState, dispatchDialog] = useReducer(
-    eventEditDialogReducer,
-    eventEditDialogInitialState
-  );
-  const {
-    deleteDialogOpen,
-    deleteScope,
-    simpleDeleteConfirmOpen,
-    scopeDialogOpen,
-    pendingSave,
-    selectedScope,
-  } = dialogState;
 
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
