@@ -25,11 +25,17 @@ import { useColor } from "@/hooks/use-color";
 
 export type AlertDialogProps = {
   isVisible: boolean;
-  onClose: () => void;
+  /**
+   * After the dialog fades out from its own Cancel, backdrop tap or
+   * confirm. Omit it when the caller hides the dialog by `isVisible`.
+   */
+  onClose?: () => void;
   title?: string;
   description?: string;
   children?: React.ReactNode;
   confirmText?: string;
+  /** "destructive" for an action that can't be undone, such as Delete. */
+  confirmVariant?: "default" | "destructive";
   cancelText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
@@ -58,6 +64,7 @@ export function AlertDialog({
   description,
   children,
   confirmText = "OK",
+  confirmVariant = "default",
   cancelText = "Cancel",
   onConfirm,
   onCancel,
@@ -102,7 +109,7 @@ export function AlertDialog({
   const animateClose = () => {
     "worklet";
     backdropOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-      if (finished) {
+      if (finished && onClose) {
         runOnJS(onClose)();
       }
     });
@@ -171,6 +178,7 @@ export function AlertDialog({
                   disabled={pending || confirmDisabled}
                   onPress={handleConfirm}
                   style={{ flex: 1 }}
+                  variant={confirmVariant}
                 >
                   {pending ? pendingText : confirmText}
                 </Button>

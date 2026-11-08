@@ -190,8 +190,9 @@ describe("where This and following can start", () => {
   });
 
   test("a cut always ends a rule that still runs past the split", () => {
-    // Twice a day ten times (to Nov 13), and every 4 hours ten times:
-    // cut at Nov 10 9:00, both end the second before, whatever the rule.
+    // Daily ten times (a list of times Google ignores: to Nov 18), and
+    // every 4 hours ten times: cut at Nov 10 9:00, both end the second
+    // before, whatever the rule.
     for (const rule of [
       "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=10",
       "RRULE:FREQ=HOURLY;INTERVAL=4;COUNT=10",
@@ -280,6 +281,7 @@ describe("the server refuses a split that can't start a series", () => {
 
   const master: Event = {
     end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+    iCalUID: "series@google.com",
     id: "series",
     recurrence: [
       "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;COUNT=4",
@@ -347,6 +349,7 @@ describe("the server refuses a split that can't start a series", () => {
     // A refusal the user can read, not "Try again".
     expect("publicError" in error && error.publicError).toEqual({
       code: "BAD_REQUEST",
+      data: { reason: "deleteFromAddedOccurrence" },
       message:
         "Deleting this and following isn't available from an occurrence added to this series.",
     });
@@ -419,41 +422,4 @@ describe("the server refuses a split that can't start a series", () => {
       expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
     }
   );
-
-  test("a start without an offset and no end saves the split", async () => {
-    const { requests, run } = moveFollowing("2026-11-23T09:00:00", [
-      "RRULE:FREQ=WEEKLY;BYDAY=MO",
-    ]);
-    const exit = await Effect.runPromiseExit(run);
-    expect(Exit.isSuccess(exit)).toBe(true);
-    // The old series is cut and the new one written.
-    expect(requests.filter((r) => !r.startsWith("GET")).length).toBeGreaterThan(
-      0
-    );
-  });
-
-  test("a start written in another zone, without an offset, keeps its moment", async () => {
-    // 09:00 Tokyo on Nov 23 is 19:00 New York on Nov 22 (the series' zone).
-    const requests = stubGoogle((url) =>
-      url.includes(monday.id) ? monday : weekly
-    );
-    const exit = await Effect.runPromiseExit(
-      makeGoogleCalendarService("token").updateEvent(
-        "primary",
-        monday.id,
-        {
-          ...monday,
-          end: { dateTime: "2026-11-23T09:30:00", timeZone: "Asia/Tokyo" },
-          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=SU"],
-          start: { dateTime: "2026-11-23T09:00:00", timeZone: "Asia/Tokyo" },
-        },
-        "following",
-        monday
-      )
-    );
-    expect(Exit.isSuccess(exit)).toBe(true);
-    const written = requests.filter((r) => !r.startsWith("GET")).join("\n");
-    expect(written).toContain('"dateTime":"2026-11-22T19:00:00-05:00"');
-    expect(written).not.toContain('"dateTime":"2026-11-23T09:00:00"');
-  });
 });

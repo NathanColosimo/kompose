@@ -32,6 +32,13 @@ import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { formatShortDate, spokenDuration } from "@/lib/time-format";
 
+/**
+ * Header text stops growing here, as iOS bar items do: past it the items
+ * outgrow the bar, and iOS folds them into a "More" button that can't show
+ * custom views, leaving Inbox, Today and New task unreachable.
+ */
+const HEADER_MAX_FONT_SCALE = 1.35;
+
 interface TaskSection {
   data: TaskSelectDecoded[];
   title: string;
@@ -142,9 +149,12 @@ function TaskRow({
         accessibilityState={{ checked: isDone }}
         checked={isDone}
         className="mt-0.5"
-        // 26 by 34pt; the slop makes the target 44pt.
-        hitSlop={{ bottom: 5, left: 9, right: 9, top: 5 }}
+        // 26 by 34pt. The slop makes 44pt inside the row (iOS clips slop at
+        // the parent's edge, and the row starts at the checkbox): up, down,
+        // and right over the title's edge, so it sits above the title.
+        hitSlop={{ bottom: 5, right: 18, top: 5 }}
         onCheckedChange={() => onToggleStatus(item)}
+        style={{ zIndex: 1 }}
       />
 
       <Pressable
@@ -405,68 +415,85 @@ export default function TasksScreen() {
           headerLeft: () => (
             <Pressable
               accessibilityLabel="Manage tags"
-              className="flex-row items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-4 active:opacity-70"
+              accessibilityRole="button"
+              className="h-11 flex-row items-center gap-1.5 rounded-lg pr-3 pl-4 active:opacity-70"
               onPress={() => setIsTagManagerOpen(true)}
             >
               <Icon as={SelectedTagIcon} size={18} />
               {selectedTag ? (
-                <Text className="font-medium text-foreground text-sm">
+                <Text
+                  className="font-medium text-foreground text-sm"
+                  maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                >
                   {selectedTag.name}
                 </Text>
               ) : null}
             </Pressable>
           ),
           headerRight: () => (
-            <View className="flex-row items-center gap-1.5 pr-2">
-              <Pressable
-                accessibilityLabel="Show inbox tasks"
-                accessibilityRole="tab"
-                accessibilityState={{
-                  selected: !isTagView && activeTab === "Inbox",
-                }}
-                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Inbox" ? "bg-foreground/15" : ""
-                }`}
-                // 32pt to sit in the header's glass; the slop makes 44pt.
-                hitSlop={{ bottom: 6, top: 6 }}
-                onPress={() => selectBaseTab("Inbox")}
+            <View className="h-11 flex-row items-center gap-1.5 pr-2">
+              <View
+                // iOS has no tablist trait; "tabbar" makes VoiceOver say "tab, 1 of 2".
+                accessibilityRole="tabbar"
+                className="h-11 flex-row items-center gap-1.5"
               >
-                <Text
-                  className={
+                <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{
+                    selected: !isTagView && activeTab === "Inbox",
+                  }}
+                  className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
                     !isTagView && activeTab === "Inbox"
-                      ? "font-sans-medium text-foreground"
-                      : "text-foreground"
-                  }
+                      ? "bg-foreground/15"
+                      : ""
+                  }`}
+                  // 32pt to sit in the header's glass; the slop makes 44pt.
+                  hitSlop={{ bottom: 6, top: 6 }}
+                  onPress={() => selectBaseTab("Inbox")}
                 >
-                  Inbox
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Show today tasks"
-                accessibilityRole="tab"
-                accessibilityState={{
-                  selected: !isTagView && activeTab === "Today",
-                }}
-                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Today" ? "bg-foreground/15" : ""
-                }`}
-                // 32pt to sit in the header's glass; the slop makes 44pt.
-                hitSlop={{ bottom: 6, top: 6 }}
-                onPress={() => selectBaseTab("Today")}
-              >
-                <Text
-                  className={
+                  <Text
+                    className={
+                      !isTagView && activeTab === "Inbox"
+                        ? "font-sans-medium text-foreground"
+                        : "text-foreground"
+                    }
+                    maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                  >
+                    Inbox
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{
+                    selected: !isTagView && activeTab === "Today",
+                  }}
+                  className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
                     !isTagView && activeTab === "Today"
-                      ? "font-sans-medium text-foreground"
-                      : "text-foreground"
-                  }
+                      ? "bg-foreground/15"
+                      : ""
+                  }`}
+                  // 32pt to sit in the header's glass; the slop makes 44pt.
+                  hitSlop={{ bottom: 6, top: 6 }}
+                  onPress={() => selectBaseTab("Today")}
                 >
-                  Today
-                </Text>
-              </Pressable>
+                  <Text
+                    className={
+                      !isTagView && activeTab === "Today"
+                        ? "font-sans-medium text-foreground"
+                        : "text-foreground"
+                    }
+                    maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                  >
+                    Today
+                  </Text>
+                </Pressable>
+              </View>
               <Pressable
                 accessibilityLabel="New task"
+                accessibilityRole="button"
                 className="items-center justify-center rounded-lg p-1.5 active:opacity-70"
+                // 30pt square; the slop makes the target 44pt.
+                hitSlop={7}
                 onPress={() => taskFlow.openCreate(buildEmptyDraft(timeZone))}
               >
                 <Icon as={Plus} size={18} />

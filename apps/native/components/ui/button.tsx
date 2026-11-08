@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/icon";
 import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
 import { Text, TextClassContext } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
+import { THEME } from "@/lib/theme";
 import type { Colors } from "@/theme/colors";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
@@ -102,7 +103,10 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
   ) => {
     const primaryColor = useColor("primary");
     const secondaryColor = useColor("secondary");
-    const destructiveColor = useColor("red");
+    // The light theme's destructive in both themes: it carries white text
+    // (about 6.4:1), where the dark theme's brighter red, tuned for red text
+    // on dark, and the iOS red would not (under 4:1).
+    const destructiveColor = THEME.light.destructive;
     const greenColor = useColor("green");
     const borderColor = useColor("border");
     const labelColor = useColor(LABEL_COLORS[variant].color);
@@ -307,7 +311,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
     const childTextClass = LABEL_COLORS[variant].childClass;
     const buttonStyle = getButtonStyle();
     const finalTextStyle = getButtonTextStyle();
-    const contentColor = labelColor;
     const iconSize = getIconSize();
     const styleWithoutFlex = getStyleWithoutFlex();
 
@@ -326,7 +329,7 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
         <Animated.View style={[animatedStyle, buttonStyle, styleWithoutFlex]}>
           {loading ? (
             <ButtonSpinner
-              color={contentColor}
+              color={labelColor}
               size={size}
               variant={loadingVariant}
             />
@@ -334,14 +337,14 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
-              {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+              {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
               <Text style={[finalTextStyle, textStyle]}>{children}</Text>
             </View>
           ) : (
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
-              {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+              {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
               <TextClassContext.Provider value={childTextClass}>
                 {children}
               </TextClassContext.Provider>
@@ -361,13 +364,13 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       >
         {loading ? (
           <ButtonSpinner
-            color={contentColor}
+            color={labelColor}
             size={size}
             variant={loadingVariant}
           />
         ) : typeof children === "string" ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+            {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
             <Text style={[finalTextStyle, textStyle]}>{children}</Text>
           </View>
         ) : (

@@ -3,11 +3,12 @@
 import { describe, expect, test } from "bun:test";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import {
+  type CheckedPattern,
   endedBefore,
   heirPattern,
   keepsEditedOccurrence,
   regeneratedOccurrenceRows,
-  repeatEndsBeforeStart,
+  withMovedDueDate,
 } from "./occurrence-rows";
 
 // Nov 9, an occurrence of a Mondays series.
@@ -36,16 +37,38 @@ const tuesdays = {
 };
 const monTue = { ...tuesdays, byDay: ["MO" as const, "TU" as const] };
 
+type RegenerateParams = Parameters<typeof regeneratedOccurrenceRows>[0];
+
+/**
+ * Regenerate with the edit's pattern, from where the edit puts the task, as
+ * updateTask checks it.
+ */
+const regenerate = ({
+  input,
+  ...params
+}: Omit<RegenerateParams, "pattern"> & {
+  input: RegenerateParams["input"] & {
+    recurrence: CheckedPattern["recurrence"];
+  };
+}) =>
+  regeneratedOccurrenceRows({
+    ...params,
+    input,
+    pattern: {
+      recurrence: input.recurrence,
+      startDate: input.startDate ?? params.task.startDate ?? "",
+    },
+  });
+
 const rows = (
-  input: Parameters<typeof regeneratedOccurrenceRows>[0]["input"],
+  input: Parameters<typeof regenerate>[0]["input"],
   keepEdited: boolean,
   keptDates: string[] = []
 ) =>
-  regeneratedOccurrenceRows({
+  regenerate({
     input,
     keepEdited,
     keptDates: new Set(keptDates),
-    masterIsKept: keepEdited,
     seriesMasterId: "new-master",
     task: nov9,
     userId: "user",
@@ -54,21 +77,41 @@ const rows = (
   );
 
 describe("keepsEditedOccurrence", () => {
+  const keeps = (
+    task: { isException: boolean },
+    input: { status?: "done" },
+    start = "2026-11-09",
+    keptDates: string[] = []
+  ) =>
+    keepsEditedOccurrence({
+      input,
+      keptDates: new Set(keptDates),
+      start,
+      task,
+    });
+
   test("keeps an exception, or one whose status the edit sets", () => {
-    expect(keepsEditedOccurrence({ isException: true }, {})).toBe(true);
+    expect(keeps({ isException: true }, {})).toBe(true);
+    expect(keeps({ isException: false }, { status: "done" })).toBe(true);
+    expect(keeps({ isException: false }, {})).toBe(false);
+  });
+
+  test("keeps one moved onto a date another kept task holds", () => {
+    // Nov 16 done alone; Nov 9 moved onto it.
     expect(
-      keepsEditedOccurrence({ isException: false }, { status: "done" })
+      keeps({ isException: false }, {}, "2026-11-16", ["2026-11-16"])
     ).toBe(true);
-    expect(keepsEditedOccurrence({ isException: false }, {})).toBe(false);
+    expect(
+      keeps({ isException: false }, {}, "2026-11-17", ["2026-11-16"])
+    ).toBe(false);
   });
 });
 
 describe("regeneratedOccurrenceRows", () => {
   test("leaves the pattern to a kept edited occurrence, the master", () => {
-    const rowsKept = regeneratedOccurrenceRows({
+    const rowsKept = regenerate({
       input: { recurrence: tuesdays },
       keepEdited: true,
-      masterIsKept: true,
       keptDates: new Set(["2026-11-09"]),
       seriesMasterId: "nov9",
       task: nov9,
@@ -76,29 +119,6 @@ describe("regeneratedOccurrenceRows", () => {
     });
     expect(rowsKept.every((r) => r.seriesMasterId === "nov9")).toBe(true);
     expect(rowsKept.every((r) => r.recurrence === null)).toBe(true);
-  });
-
-  test("leaves the master role to an exception already on the start", () => {
-    // Nov 16 done alone; Nov 9 (ordinary, replaced) moved onto it, Daily x3:
-    // Nov 16 is the master (the caller gives it the pattern), 17 and 18 join.
-    const rowsOnKept = regeneratedOccurrenceRows({
-      input: {
-        recurrence: { count: 3, freq: "DAILY", interval: 1 },
-        startDate: "2026-11-16",
-      },
-      keepEdited: false,
-      keptDates: new Set(["2026-11-16"]),
-      masterIsKept: true,
-      seriesMasterId: "nov16",
-      task: nov9,
-      userId: "user",
-    });
-    expect(rowsOnKept.map((r) => `${r.startDate} ${r.seriesMasterId}`)).toEqual(
-      ["2026-11-17 nov16", "2026-11-18 nov16"]
-    );
-    expect(rowsOnKept.some((r) => r.id === "nov16" || r.recurrence)).toBe(
-      false
-    );
   });
 
   test("starts every new occurrence open, even from a done one", () => {
@@ -128,14 +148,13 @@ describe("regeneratedOccurrenceRows", () => {
   });
 
   test("measures due dates from the edited task's new start", () => {
-    const rowsWithDue = regeneratedOccurrenceRows({
+    const rowsWithDue = regenerate({
       input: {
         dueDate: "2026-11-11",
         recurrence: tuesdays,
         startDate: "2026-11-10",
       },
       keepEdited: true,
-      masterIsKept: true,
       keptDates: new Set(["2026-11-10"]),
       seriesMasterId: "new-master",
       task: nov9,
@@ -149,10 +168,9 @@ describe("regeneratedOccurrenceRows", () => {
   });
 
   test("keeps a field the edit clears cleared", () => {
-    const [first] = regeneratedOccurrenceRows({
+    const [first] = regenerate({
       input: { dueDate: null, recurrence: tuesdays, startTime: null },
       keepEdited: true,
-      masterIsKept: true,
       keptDates: new Set(["2026-11-09"]),
       seriesMasterId: "new-master",
       task: { ...nov9, dueDate: "2026-11-11" },
@@ -196,19 +214,6 @@ describe("regeneratedOccurrenceRows", () => {
   });
 });
 
-describe("repeatEndsBeforeStart", () => {
-  test("flags a repeat that ends before the task starts", () => {
-    const daily = { freq: "DAILY" as const, interval: 1 };
-    expect(
-      repeatEndsBeforeStart({ ...daily, until: "2026-11-11" }, "2026-11-12")
-    ).toBe(true);
-    expect(
-      repeatEndsBeforeStart({ ...daily, until: "2026-11-12" }, "2026-11-12")
-    ).toBe(false);
-    expect(repeatEndsBeforeStart(daily, "2026-11-12")).toBe(false);
-  });
-});
-
 describe("heirPattern", () => {
   test("counts the occurrences left for the next master", () => {
     const daily4 = { count: 4, freq: "DAILY" as const, interval: 1 };
@@ -236,5 +241,59 @@ describe("endedBefore", () => {
     expect(
       endedBefore({ count: 4, freq: "DAILY", interval: 1 }, "2026-11-13")
     ).toEqual({ freq: "DAILY", interval: 1, until: "2026-11-12" });
+  });
+});
+
+describe("withMovedDueDate", () => {
+  // Nov 9, due Nov 10.
+  const due = { ...nov9, dueDate: "2026-11-10" };
+
+  test("moves the due date with the task when the edit leaves it", () => {
+    expect(withMovedDueDate(due, { startDate: "2026-11-13" }).dueDate).toBe(
+      "2026-11-14"
+    );
+    // Editors send every field: the same due date counts as left alone.
+    expect(
+      withMovedDueDate(due, {
+        dueDate: "2026-11-10",
+        startDate: "2026-11-13",
+      }).dueDate
+    ).toBe("2026-11-14");
+  });
+
+  test("keeps a due date the edit sets or clears", () => {
+    const moved = { startDate: "2026-11-13" };
+    expect(
+      withMovedDueDate(due, { ...moved, dueDate: "2026-11-20" }).dueDate
+    ).toBe("2026-11-20");
+    expect(withMovedDueDate(due, { ...moved, dueDate: null }).dueDate).toBe(
+      null
+    );
+  });
+
+  test("gives the series the moved task's offset", () => {
+    // Nov 9 due Nov 10, moved to Nov 13 with every 2 days x3: each is due
+    // the day after, as before the move.
+    const input = withMovedDueDate(due, {
+      recurrence: { count: 3, freq: "DAILY", interval: 2 },
+      startDate: "2026-11-13",
+    });
+    expect(
+      regenerate({
+        input: {
+          ...input,
+          recurrence: { count: 3, freq: "DAILY", interval: 2 },
+        },
+        keepEdited: false,
+        keptDates: new Set(),
+        seriesMasterId: "new-master",
+        task: due,
+        userId: "user",
+      }).map((r) => `${r.startDate}>${r.dueDate}`)
+    ).toEqual([
+      "2026-11-13>2026-11-14",
+      "2026-11-15>2026-11-16",
+      "2026-11-17>2026-11-18",
+    ]);
   });
 });

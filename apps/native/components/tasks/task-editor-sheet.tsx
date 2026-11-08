@@ -366,7 +366,7 @@ function TaskRecurrenceEditor({
               <Input
                 accessibilityLabel="Day of month"
                 containerStyle={{ width: 78 }}
-                inputStyle={{ fontSize: 13 }}
+                inputStyle={{ fontSize: 17 }}
                 keyboardType="number-pad"
                 onChangeText={(value) => {
                   const nextMonthDay = Number.parseInt(value, 10) || 1;
@@ -404,15 +404,15 @@ function TaskTagPill({
   const ActionIcon = action === "add" ? Plus : Minus;
 
   return (
+    // A 44pt target around a 32pt pill. The negative margin keeps the rows'
+    // spacing; hitSlop wouldn't do, since iOS clips it at the row's edge.
     <Pressable
       accessibilityLabel={`${action === "add" ? "Add" : "Remove"} tag ${tag.name}`}
       accessibilityRole="button"
-      className="rounded-full border border-border px-2.5 py-2"
-      // 32pt tall; the slop makes the target 44pt.
-      hitSlop={{ bottom: 6, top: 6 }}
+      className="-my-1.5 py-1.5"
       onPress={onPress}
     >
-      <View className="flex-row items-center gap-1.5">
+      <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2.5 py-2">
         <Icon as={TagIcon} className="text-muted-foreground" size={12} />
         <Text className="text-foreground text-xs">{tag.name}</Text>
         <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
@@ -443,10 +443,11 @@ function TaskTagPicker({
         <Button
           accessibilityLabel={isExpanded ? "Hide tags" : "Add tags"}
           accessibilityState={{ expanded: isExpanded }}
-          hitSlop={7}
           onPress={onToggleExpanded}
           size="icon"
-          style={{ borderRadius: 999, height: 30, width: 30 }}
+          // 44pt to touch, laid out as 30pt (the negative margin), so the
+          // row keeps its height; hitSlop would be clipped at the row's edge.
+          style={{ borderRadius: 999, height: 44, margin: -7, width: 44 }}
           variant="ghost"
         >
           <Icon as={Plus} className="text-foreground" size={14} />
@@ -512,7 +513,6 @@ function TaskEditorHeaderActions({
       {onDelete ? (
         <Button
           accessibilityLabel="Delete task"
-          accessibilityRole="button"
           disabled={isSaving}
           onPress={onDelete}
           size="icon"
@@ -531,7 +531,6 @@ function TaskEditorHeaderActions({
       ) : (
         <Button
           accessibilityLabel="Save task"
-          accessibilityRole="button"
           disabled={!canSave}
           onPress={onSave}
           size="icon"
@@ -588,6 +587,8 @@ function RepeatNote({
   );
 }
 
+const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
+
 /**
  * The schedule row: duration, start date and time, due date, and the
  * Repeat toggle.
@@ -606,14 +607,25 @@ function TaskScheduleChips({
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
 }) {
   const { fontScale } = useWindowDimensions();
-  // The chips' text grows with Dynamic Type, so their widths grow with it.
-  const chipWidth = (width: number) =>
-    Math.round(width * Math.max(1, fontScale));
+  const scaled = (points: number) =>
+    Math.round(points * Math.max(1, fontScale));
+  // A date, time or due chip: as wide as its text (the picker's trigger
+  // otherwise spans its parent), so it fits any locale's format, with its
+  // text centered when the chip grows. (Centering the text itself would
+  // make iOS measure it at the full width available.) The side padding
+  // grows with the text.
+  const chipStyle = {
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: scaled(6),
+    width: "auto",
+  } as const;
 
-  // Each chip is as wide as its longest value at 1x ("Due Nov 30"), scaled
-  // with the text, so nothing truncates. One row down to 375pt at the
-  // default size (64 + 50 + 78 + 92 + 34 + gaps = 334); as the text grows,
-  // the row wraps.
+  // The date, time and due chips fit their text, in any locale and at any
+  // text size ("Due 20. Sept." in German), and the row wraps when they
+  // don't fit one line. The longest English values ("May 20", "10:00 AM",
+  // "Due May 20") still share one line at 375pt with the default text.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
       {/* Picker takes no accessibility props, so this names it. */}
@@ -621,7 +633,9 @@ function TaskScheduleChips({
         accessibilityLabel={`Duration, ${spokenDuration(draft.durationMinutes)}`}
         accessibilityRole="button"
         accessible
-        style={{ width: chipWidth(64) }}
+        // Durations are compact and not localized ("23h 45m"), so this one
+        // chip has a set width, scaled with the text.
+        style={{ width: scaled(64) }}
       >
         <Picker
           // Same size as the date and time chips beside it.
@@ -646,9 +660,8 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Grows to fill its line, never below its text: the minimum, not
-          the basis, is what makes the row wrap instead of crushing it. */}
-      <View style={{ flexGrow: 1, minWidth: chipWidth(50) }}>
+      {/* Fills what's left of its line. */}
+      <View style={{ flexGrow: 1, maxWidth: "100%" }}>
         <DatePicker
           accessibilityLabel="Start date"
           displayValue={
@@ -664,13 +677,13 @@ function TaskScheduleChips({
           }
           placeholder="Start"
           showIcon={false}
-          style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+          style={chipStyle}
           value={draft.startDate ? plainDateToDate(draft.startDate) : undefined}
-          valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+          valueTextStyle={CHIP_TEXT_STYLE}
           variant="outline"
         />
       </View>
-      <View style={{ width: chipWidth(78) }}>
+      <View style={{ maxWidth: "100%" }}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -684,16 +697,17 @@ function TaskScheduleChips({
           }
           placeholder="Time"
           showIcon={false}
-          style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+          style={chipStyle}
           timeFormat={localeTimeFormat()}
           value={draft.startTime ? plainTimeToDate(draft.startTime) : undefined}
-          valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+          valueTextStyle={CHIP_TEXT_STYLE}
           variant="outline"
         />
       </View>
 
-      <View className="flex-row items-center gap-1">
-        <View style={{ width: chipWidth(92) }}>
+      {/* Due and Repeat stay together when the row wraps. */}
+      <View className="max-w-full flex-row items-center gap-1">
+        <View style={{ flexShrink: 1 }}>
           <DatePicker
             accessibilityLabel="Due date"
             displayValue={
@@ -708,9 +722,9 @@ function TaskScheduleChips({
             }
             placeholder="Due"
             showIcon={false}
-            style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 4 }}
+            style={chipStyle}
             value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={{ fontSize: 13, textAlign: "center" }}
+            valueTextStyle={CHIP_TEXT_STYLE}
             variant="outline"
           />
         </View>
@@ -721,12 +735,9 @@ function TaskScheduleChips({
           accessibilityValue={{
             text: draft.recurrence ? recurrenceSummary : "None",
           }}
-          // 34pt wide to keep the row on one line at 375pt; the slop makes
-          // the target 44pt.
-          hitSlop={{ left: 5, right: 5 }}
           onPress={onToggleRecurrence}
           size="icon"
-          style={{ borderRadius: 999, height: 44, width: 34 }}
+          style={{ borderRadius: 999, height: 44, width: 44 }}
           variant={isRecurrenceExpanded ? "default" : "outline"}
         >
           <Icon
@@ -911,8 +922,9 @@ export function TaskEditorSheet({
             accessibilityState={{ checked: isDone, disabled: !canToggleDone }}
             checked={isDone}
             disabled={!canToggleDone}
-            // 36 by 26pt; the slop makes the target 44pt.
-            hitSlop={{ bottom: 9, left: 4, right: 4, top: 9 }}
+            // 36 by 26pt. The slop makes 44pt, all inside the row (iOS clips
+            // slop at the parent's edge): up and down, and right into the gap.
+            hitSlop={{ bottom: 9, right: 8, top: 9 }}
             onCheckedChange={(checked) =>
               onToggleDone?.(checked ? "done" : "todo")
             }
@@ -1017,6 +1029,21 @@ export function TaskEditorSheet({
   );
 }
 
+/**
+ * An http(s) address the URL parser accepts too: the pattern alone lets
+ * through "https://host:abc", whose hostname the title fallback reads.
+ */
+function isWebUrl(text: string): boolean {
+  if (!URL_REGEX.test(text)) {
+    return false;
+  }
+  try {
+    return new URL(text).hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function NativeLinkListEditor({
   links,
   linkInput,
@@ -1037,7 +1064,7 @@ function NativeLinkListEditor({
     if (!trimmed) {
       return;
     }
-    if (!URL_REGEX.test(trimmed)) {
+    if (!isWebUrl(trimmed)) {
       return;
     }
     if (links.some((l) => l.url === trimmed)) {
@@ -1087,9 +1114,19 @@ function NativeLinkListEditor({
           <Pressable
             accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
             accessibilityRole="button"
-            hitSlop={14}
             onPress={() => onRemoveLink(index)}
-            style={{ paddingTop: 2 }}
+            // 44pt to touch around the 16pt icon, laid out as before (16pt,
+            // 2pt down) by the negative margins; hitSlop would be clipped
+            // at the card's edge.
+            style={{
+              alignItems: "center",
+              height: 44,
+              justifyContent: "center",
+              marginBottom: -14,
+              marginHorizontal: -14,
+              marginTop: -12,
+              width: 44,
+            }}
           >
             <Icon as={XCircle} className="text-muted-foreground" size={16} />
           </Pressable>

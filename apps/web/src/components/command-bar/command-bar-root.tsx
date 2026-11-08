@@ -7,6 +7,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import { useRequestCreateEvent } from "@/hooks/use-request-create-event";
@@ -75,7 +76,9 @@ export function CommandBarRoot({
           >
             <CalendarPlusIcon className="text-muted-foreground" />
             <span>Create event</span>
-            <Kbd className="ml-auto">C</Kbd>
+            <CommandShortcut>
+              <Kbd>C</Kbd>
+            </CommandShortcut>
           </CommandItem>
         )}
       </CommandGroup>

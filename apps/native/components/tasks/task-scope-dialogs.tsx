@@ -12,10 +12,6 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { RadioGroup } from "@/components/ui/radio";
 import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
-function noop() {
-  // Intentionally empty: see onClose below.
-}
-
 /**
  * Save and delete scope for a recurring task. Render them inside the
  * editor sheet (its `overlay`): iOS presents a modal only from the one
@@ -31,11 +27,9 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
         confirmText="Apply"
         description={SCOPE_DIALOG_COPY.saveTask.description}
         isVisible={flow.scopeDialog === "save"}
+        // No onClose: Cancel and a backdrop tap run onCancel, and the flow
+        // hides the dialog by `isVisible`.
         onCancel={flow.cancelScopeDialog}
-        // Cancel and a backdrop tap already run onCancel. The dialog's close
-        // after its fade has nothing left to do, and must not clear a save
-        // started again meanwhile.
-        onClose={noop}
         onConfirm={flow.confirmScopedSave}
         pending={flow.isSaving}
         title={SCOPE_DIALOG_COPY.saveTask.title}
@@ -54,10 +48,10 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
         // Delete closes the editor, and this dialog with it.
         closeOnConfirm={false}
         confirmText="Delete"
+        confirmVariant="destructive"
         description={SCOPE_DIALOG_COPY.deleteTask.description}
         isVisible={flow.scopeDialog === "delete"}
         onCancel={flow.cancelScopeDialog}
-        onClose={noop}
         onConfirm={flow.confirmScopedDelete}
         title={SCOPE_DIALOG_COPY.deleteTask.title}
       >

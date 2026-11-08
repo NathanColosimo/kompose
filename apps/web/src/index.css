@@ -265,6 +265,26 @@
   }
 }
 
+/* macOS draws the window buttons over the top-left of the desktop window
+   (hiddenInset title bar), in about this much width. */
+:root {
+  --window-controls-width: 76px;
+}
+/* A site header's centered max-w-6xl row starts clear of them: its own
+   1.5rem padding, or more once the window is too narrow for the row's
+   centering margin to cover them. A padding's 100% is the header's width,
+   which leaves out a classic scrollbar. */
+[data-desktop-runtime="electron"] [data-window-controls-inset] {
+  padding-left: max(
+    1.5rem,
+    calc(
+      var(--window-controls-width) +
+      0.5rem -
+      max(0px, (100% - var(--container-6xl)) / 2)
+    )
+  );
+}
+
 /* Electron implements drag regions in Chromium; interactive children remain
    clickable. Only opt out controls inside a drag region: Electron subtracts
    every no-drag box, including content scrolled out of view behind the header. */

@@ -243,7 +243,7 @@ function toPositionedGoogleEvent(
 /**
  * Where "c" creates: the next half hour today, or 9 AM tomorrow once today
  * has no half hour left; when today isn't shown, 9 AM on the first visible
- * day. Never in the past.
+ * day (which can be in the past, on a past week).
  */
 function keyboardCreateStart(
   visibleDays: Temporal.PlainDate[],
