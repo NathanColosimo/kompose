@@ -950,3 +950,79 @@ describe("This and following keeps what a later occurrence has", () => {
     });
   });
 });
+
+describe("edges a series write has to tell apart", () => {
+  test("an Entire series made all day is refused while an occurrence is moved", async () => {
+    // Google ties the moves to the 9:00 slots an all-day series hasn't
+    // got, the first meeting's too.
+    const movedFirst = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00", {
+      end: "2026-11-09T11:30:00-05:00",
+      start: "2026-11-09T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [movedFirst]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { date: "2026-11-10" },
+          start: { date: "2026-11-09" },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-09T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("an added meeting before the series' start isn't its first meeting", async () => {
+    // Mondays from Nov 9, plus added Nov 1 and Nov 5: This and following
+    // from Nov 5 can't start a series there (and mustn't change Nov 1).
+    const series = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261101T090000,20261105T090000",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(series, "2026-11-05T09:00:00-05:00"), {
+          summary: "Planning (new)",
+        })
+      )
+    ).toMatchObject({ data: { reason: "addedOccurrence" } });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("clearing a field the series has clears it for the series", async () => {
+    const noted = { ...weekly, description: "Agenda in the doc" };
+    const opened = occurrenceOf(noted, "2026-11-16T09:00:00-05:00");
+    const google = fakeGoogle(noted);
+    expect(
+      Exit.isSuccess(await run(edit("all", opened, { description: "" })))
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.description).toBe("");
+  });
+
+  test("a field cleared for the following meetings clears a later one's own too", async () => {
+    // Nov 30 had its own notes; the user clears the notes from Nov 16 on.
+    const noted = { ...weekly, description: "Agenda in the doc" };
+    const own = {
+      ...occurrenceOf(noted, "2026-11-30T09:00:00-05:00"),
+      description: "Bring the draft",
+    };
+    const google = fakeGoogle(noted, [own]);
+    const opened = occurrenceOf(noted, "2026-11-16T09:00:00-05:00");
+    expect(
+      Exit.isSuccess(await run(edit("following", opened, { description: "" })))
+    ).toBe(true);
+    const [created, cut] = google.writes();
+    expect(created?.body?.description).toBe("");
+    // Nothing of Nov 30's own is left to carry.
+    expect(cut?.url.pathname).toEndWith("/events/series");
+    expect(google.writes()).toHaveLength(2);
+  });
+});

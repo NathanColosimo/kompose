@@ -227,12 +227,7 @@ export function followingCutUnsure(params: {
     params.seriesZone
   );
   if (
-    !(
-      split &&
-      addedValues(recurrence, params.seriesZone).some((v) =>
-        sameValue(v, split)
-      )
-    )
+    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
   ) {
     return false;
   }
@@ -246,7 +241,8 @@ export function followingCutUnsure(params: {
 
 /**
  * Whether `slot` (an original start, as Google writes them) is one of the
- * series' added (RDATE) meetings.
+ * series' added (RDATE) meetings, a rule's meeting at the same slot too
+ * (whether it then counts as the rule's is the caller's to say).
  */
 export function addsSlot(
   recurrence: string[],
@@ -298,8 +294,9 @@ export function followingSplitBlocked(params: {
     return "severalRules";
   }
   const split = asValue(params.originalStart, params.seriesZone);
-  const added = addedValues(recurrence, params.seriesZone);
-  if (!(split && added.some((value) => sameValue(value, split)))) {
+  if (
+    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
+  ) {
     return null;
   }
   // An added meeting that's also a rule meeting (its day, the series'
@@ -376,6 +373,11 @@ export function seriesMeetsAt(params: {
   const slot = asValue(params.slot, seriesZone);
   if (!(first && slot)) {
     return null;
+  }
+  // Every meeting takes the start's form: a date-time slot isn't on an
+  // all-day series, nor a date on a timed one.
+  if (Boolean(first.instant) !== Boolean(slot.instant)) {
+    return false;
   }
   // An exclusion rule isn't read here: whether it drops `slot` can't be
   // told.

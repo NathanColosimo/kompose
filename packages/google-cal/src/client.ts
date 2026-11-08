@@ -179,7 +179,8 @@ function firstMoment(
 
 /**
  * Whether an edit through `occurrence` is to its series' first meeting:
- * the master itself, or the occurrence first in its place.
+ * the master itself, or the occurrence at its start (an added meeting
+ * before it isn't: the series doesn't start there).
  */
 function opensSeries(occurrence: Event, master: Event): boolean {
   if (!occurrence.recurringEventId) {
@@ -192,7 +193,7 @@ function opensSeries(occurrence: Event, master: Event): boolean {
   );
   const first = firstMoment(master.start, zone);
   return Boolean(
-    original && first && Temporal.Instant.compare(original, first) <= 0
+    original && first && Temporal.Instant.compare(original, first) === 0
   );
 }
 
