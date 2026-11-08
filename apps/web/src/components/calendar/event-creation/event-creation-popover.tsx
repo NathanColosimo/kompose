@@ -6,7 +6,7 @@ import {
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useAtomValue } from "jotai";
-import { useCallback, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
   TaskEditForm,
   type TaskFormValues,
+  useHeldSave,
 } from "../../task-form/task-edit-popover";
 import {
   type CloseSaveRequest,
@@ -159,23 +160,27 @@ function CreationChooser({
 
   // The popover stays open ("Saving…") until the create succeeds, so a
   // failed one keeps the draft. Escape and outside clicks wait too.
-  const [isSaving, startSaving] = useTransition();
+  const hold = useHeldSave(actions.closePopover);
+  const isSaving = hold.saving !== null;
   const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
 
   /** Why the last create failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
+  const { holdOpen } = hold;
   const holdForCreate = useCallback(
     (created: Promise<boolean>, failureMessage: string) => {
       setFailure(null);
-      startSaving(async () => {
-        if (await created) {
-          actions.closePopover();
-        } else {
-          setFailure(failureMessage);
-        }
-      });
+      holdOpen(
+        "save",
+        created.then((saved) => {
+          if (!saved) {
+            setFailure(failureMessage);
+          }
+          return saved;
+        })
+      );
     },
-    [actions]
+    [holdOpen]
   );
 
   const handleCancel = useCallback(() => {
@@ -294,7 +299,6 @@ function CreationChooser({
               </TabsList>
               <div className="ml-auto flex gap-2">
                 <Button
-                  disabled={isSaving}
                   onClick={handleCancel}
                   size="sm"
                   type="button"
@@ -303,7 +307,7 @@ function CreationChooser({
                   Cancel
                 </Button>
                 <Button
-                  disabled={isSaving || eventBlocked}
+                  disabled={eventBlocked}
                   onClick={handleSave}
                   size="sm"
                   type="button"
@@ -349,7 +353,7 @@ function CreationChooser({
             >
               <TaskEditForm
                 createInteropRef={taskInteropRef}
-                externalSaving={isSaving}
+                hold={hold}
                 initialValues={initialTaskValues}
                 mode="create"
                 onClose={handleCancel}

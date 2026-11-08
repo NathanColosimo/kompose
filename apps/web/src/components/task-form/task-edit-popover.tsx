@@ -122,11 +122,9 @@ export interface TaskFormValues {
 interface TaskEditPopoverProps {
   align?: "start" | "center" | "end";
   children: ReactElement;
-  initialValues?: Partial<TaskFormValues>;
-  mode?: "create" | "edit";
   side?: "top" | "right" | "bottom" | "left";
   surface: "calendar" | "sidebar";
-  task?: TaskSelectDecoded;
+  task: TaskSelectDecoded;
 }
 
 const EMPTY_TASK_FORM_VALUES: TaskFormValues = {
@@ -230,27 +228,20 @@ function getSharedFieldsFromTaskValues(
 export function TaskEditPopover({
   task,
   children,
-  initialValues,
-  mode: modeProp,
   surface,
   side = "right",
   align = "start",
 }: TaskEditPopoverProps) {
-  const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
   const isNarrow = useAtomValue(isNarrowViewportAtom);
   const [openRequest, setOpenRequest] = useAtom(commandBarTaskOpenRequestAtom);
-  const matchesOpenRequest = Boolean(
-    mode === "edit" &&
-      task &&
-      openRequest &&
-      openRequest.taskId === task.id &&
-      openRequest.target === surface
-  );
+  const matchesOpenRequest =
+    openRequest?.taskId === task.id && openRequest.target === surface;
 
   const handleCancel = useCallback(() => {
     setOpen(false);
   }, []);
+  const hold = useHeldSave(handleCancel);
   const contentRef = useRef<HTMLDivElement>(null);
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
@@ -272,11 +263,6 @@ export function TaskEditPopover({
     [matchesOpenRequest, openRequest, setOpenRequest]
   );
 
-  const savingRef = useRef(false);
-  const setSaving = useCallback((saving: boolean) => {
-    savingRef.current = saving;
-  }, []);
-
   return (
     <Popover
       onOpenChange={(nextOpen) => {
@@ -295,13 +281,13 @@ export function TaskEditPopover({
         // if it fails.
         onEscapeKeyDown={(e) => {
           e.preventDefault();
-          if (!savingRef.current) {
+          if (hold.saving === null) {
             handleCancel();
           }
         }}
         onInteractOutside={(e) => {
           e.preventDefault();
-          if (!savingRef.current) {
+          if (hold.saving === null) {
             handleCancel();
           }
         }}
@@ -312,11 +298,10 @@ export function TaskEditPopover({
         side={isNarrow ? "bottom" : side}
       >
         <TaskEditForm
-          initialValues={initialValues}
-          key={task?.id ?? "create-task"}
-          mode={mode}
+          hold={hold}
+          key={task.id}
+          mode="edit"
           onClose={handleCancel}
-          onSavingChange={setSaving}
           open={open}
           task={task}
         />
@@ -424,16 +409,12 @@ function canSaveFromKeyboard(params: {
   );
 }
 
-/** Whether the editor holds for a save: its own, or the caller's. */
-function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
-  return saving !== null || externalSaving;
-}
-
 /**
- * Holds the editor open on a save, for Mark done ("done") or Save ("save"):
- * it closes when the save succeeds and keeps the draft if not.
+ * Holds an editor open on a save, for Mark done ("done") or Save ("save"):
+ * it closes when the save succeeds and keeps the draft if not. Owned by the
+ * popover, whose Escape and outside clicks wait for it too.
  */
-function useHeldSave(onClose: () => void) {
+export function useHeldSave(onClose: () => void) {
   const [isPending, startTransition] = useTransition();
   const [kind, setKind] = useState<"done" | "save">("save");
   const holdOpen = useCallback(
@@ -449,6 +430,8 @@ function useHeldSave(onClose: () => void) {
   );
   return { holdOpen, saving: isPending ? kind : null };
 }
+
+type HeldSave = ReturnType<typeof useHeldSave>;
 
 /** What the repeat will do, or why it can't save (repeatNote). */
 function RepeatNote({
@@ -519,10 +502,9 @@ export function TaskEditForm({
   mode,
   submitRef,
   onClose,
-  onSavingChange,
+  hold,
   open,
   createInteropRef,
-  externalSaving = false,
 }: {
   task?: TaskSelectDecoded;
   initialValues?: Partial<TaskFormValues>;
@@ -530,12 +512,10 @@ export function TaskEditForm({
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
   submitRef?: React.Ref<() => boolean | Promise<boolean>>;
   onClose: () => void;
-  /** A save is running: the popover holds (no Escape or outside close). */
-  onSavingChange?: (saving: boolean) => void;
+  /** The popover's held save (see useHeldSave). */
+  hold: HeldSave;
   open: boolean;
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
-  /** The caller is saving this form's values (the create popover holds). */
-  externalSaving?: boolean;
 }) {
   const showActionButtons = !submitRef;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
@@ -546,13 +526,10 @@ export function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
-  const { holdOpen, saving } = useHeldSave(onClose);
+  const { holdOpen, saving } = hold;
   /** Why the last held save failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
-  const isSavingStatus = isHolding(saving, externalSaving);
-  useEffect(() => {
-    onSavingChange?.(isSavingStatus);
-  }, [isSavingStatus, onSavingChange]);
+  const isSavingStatus = saving !== null;
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -662,15 +639,15 @@ export function TaskEditForm({
       scope: UpdateScope,
       extra: Partial<TaskUpdateDecoded> = {},
       /**
-       * While the editor holds open on the save (Mark done): optimistic
+       * While the editor holds open on the save: optimistic
        * false, and a failure message that says the edits are still here.
        */
-      hold?: { failureMessage: string }
+      held?: { failureMessage: string }
     ): Promise<boolean> => {
       if (!task) {
         return Promise.resolve(false);
       }
-      if (hold) {
+      if (held) {
         setFailure(null);
       }
       const normalizedDuration =
@@ -680,11 +657,11 @@ export function TaskEditForm({
 
       return updateTask
         .mutateAsync({
-          failureMessage: hold?.failureMessage,
+          failureMessage: held?.failureMessage,
           id: task.id,
-          optimistic: !hold,
+          optimistic: !held,
           // The held editor says what failed, beside Save.
-          quiet: Boolean(hold),
+          quiet: Boolean(held),
           scope,
           task: {
             description: values.description ?? "",
@@ -709,7 +686,7 @@ export function TaskEditForm({
         .then(
           () => true,
           () => {
-            setFailure(hold?.failureMessage ?? null);
+            setFailure(held?.failureMessage ?? null);
             return false;
           }
         );
@@ -809,19 +786,9 @@ export function TaskEditForm({
             () => true,
             () => false
           );
-        if (!showActionButtons) {
-          // The caller holds, and shows a failure beside its own Save.
-          return created;
-        }
-        setFailure(null);
-        holdOpen(
-          "save",
-          created.then((saved) => {
-            setFailure(saved ? null : TASK_CREATE_FAILURE_MESSAGE);
-            return saved;
-          })
-        );
-        return false;
+        // Only the create popover creates: it holds, and shows a failure
+        // beside its own Save.
+        return created;
       }
 
       if (!task) {
@@ -860,7 +827,6 @@ export function TaskEditForm({
       isCreateMode,
       resolvedRecurrence,
       scopeDecisionFor,
-      showActionButtons,
       task,
     ]
   );
@@ -871,7 +837,7 @@ export function TaskEditForm({
   ]);
 
   // Mark done saves unsaved edits with it, so they're never dropped: in one
-  // save where it can (taskStatusSavePlan), through the scope dialog when
+  // save where it can, through the scope dialog when
   // the task repeats. With edits, the editor stays open until they've
   // saved, so a failed save keeps them.
   const handleToggleDone = useCallback(() => {

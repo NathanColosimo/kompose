@@ -238,6 +238,7 @@ export default function SettingsPageClient() {
               >
                 <Plus />
                 {googleLinkButtonLabel}
+                <span className="sr-only"> for Google Calendar</span>
               </Button>
             }
             description="Events from these accounts show on your calendar."
@@ -292,6 +293,7 @@ export default function SettingsPageClient() {
                 >
                   <Plus />
                   {whoopLinkButtonLabel}
+                  <span className="sr-only"> for WHOOP</span>
                 </Button>
               ) : null
             }
