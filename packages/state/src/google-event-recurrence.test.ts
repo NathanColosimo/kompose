@@ -1644,6 +1644,22 @@ describe("repeatCountingDay", () => {
     ).toBe("2026-11-09");
   });
 
+  test("an added (RDATE) meeting counts from the series' first day", () => {
+    // A Sunday weekly series with a Tuesday added: still weekly on Sunday.
+    expect(
+      repeatCountingDay({
+        edited: false,
+        event: {
+          originalStartTime: { dateTime: "2026-11-10T16:00:00-05:00" },
+          recurringEventId: "m1",
+        },
+        formDay: tuesday,
+        seriesStart: { dateTime: "2026-10-04T16:00:00-04:00" },
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-10-04");
+  });
+
   test("not an occurrence: the form's day", () => {
     expect(
       repeatCountingDay({

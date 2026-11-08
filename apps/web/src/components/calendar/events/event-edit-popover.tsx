@@ -2066,6 +2066,7 @@ function ReadOnlyEventDetails({
   onClose,
   reason,
   recurrence,
+  repeatDay,
   start,
   summary,
 }: {
@@ -2081,6 +2082,8 @@ function ReadOnlyEventDetails({
   reason: string | null | undefined;
   /** The series' RRULEs (the event's own, or its master's). */
   recurrence: string[];
+  /** The day the repeat's implicit days count from (repeatCountingDay). */
+  repeatDay: Temporal.PlainDate | null;
   start: Date;
   summary: string | undefined;
 }) {
@@ -2089,7 +2092,7 @@ function ReadOnlyEventDetails({
     eventType: event?.eventType,
     recurringEventId: event?.recurringEventId,
     rules: recurrence,
-    start: pickerDateToTemporal(start),
+    start: repeatDay ?? pickerDateToTemporal(start),
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -2823,6 +2826,13 @@ export function EventEditForm({
         onClose={onCancel}
         reason={readOnlyReason}
         recurrence={recurrenceSource}
+        repeatDay={repeatCountingDay({
+          edited: false,
+          event,
+          formDay: seriesDayOf(watchedValues),
+          seriesStart: masterQuery.data?.start,
+          timeZone: seriesTimeZone,
+        })}
         start={start}
         summary={watchedValues.summary}
       />
@@ -2907,6 +2917,7 @@ export function EventEditForm({
           edited: recurrenceEditedRef.current,
           event,
           formDay: seriesDayOf(watchedValues),
+          seriesStart: masterQuery.data?.start,
           timeZone: seriesTimeZone,
         })}
         seriesTimeZone={seriesTimeZone}

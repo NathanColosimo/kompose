@@ -2323,6 +2323,7 @@ export default function CalendarTab() {
           masterFailed={recurringMasterEvent.ruleFailed}
           masterLoading={recurringMasterEvent.ruleUnavailable}
           masterRecurrence={masterRecurrence}
+          masterStart={recurringMasterEvent.data?.start}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onRetryMaster={recurringMasterEvent.retry}

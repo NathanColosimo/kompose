@@ -228,6 +228,39 @@ function RecurrenceRow({
   );
 }
 
+/** The day an editor's repeat counts its implicit days from, in the series' zone. */
+function repeatDayOf(
+  values: Pick<
+    EventDraft,
+    "allDay" | "recurrenceEdited" | "startDate" | "startTime"
+  >,
+  where: {
+    appTimeZone: string;
+    event: GoogleEvent | undefined;
+    seriesStart:
+      | { date?: string | null; dateTime?: string | null }
+      | null
+      | undefined;
+    seriesTimeZone: string;
+  }
+): Temporal.PlainDate {
+  const formDay = dayInZone(
+    values.startDate,
+    values.allDay ? null : values.startTime,
+    where.appTimeZone,
+    where.seriesTimeZone
+  );
+  return (
+    repeatCountingDay({
+      edited: Boolean(values.recurrenceEdited),
+      event: where.event,
+      formDay,
+      seriesStart: where.seriesStart,
+      timeZone: where.seriesTimeZone,
+    }) ?? formDay
+  );
+}
+
 /**
  * The repeat row, or, when the series' rule didn't load, a retry: its
  * repeat can't be edited from a copy that may be old. A copy already shown
@@ -795,6 +828,8 @@ function ReadOnlyEventView({
   mapsUrl,
   meetingLink,
   reason,
+  recurrence,
+  repeatDay,
 }: {
   calendarColor: string | null | undefined;
   calendarLabel: string | undefined;
@@ -802,6 +837,10 @@ function ReadOnlyEventView({
   mapsUrl: string | null;
   meetingLink: MeetingLink | null;
   reason: string;
+  /** The series' rules: the form's, kept in step with its master. */
+  recurrence: string[];
+  /** The day the repeat's implicit days count from (repeatCountingDay). */
+  repeatDay: Temporal.PlainDate;
 }) {
   const location = draft.location.trim();
   const description = draft.description.trim();
@@ -809,8 +848,8 @@ function ReadOnlyEventView({
   const repeats = describeEventRecurrence({
     eventType: source?.eventType,
     recurringEventId: source?.recurringEventId,
-    rules: draft.recurrence,
-    start: draft.startDate,
+    rules: recurrence,
+    start: repeatDay,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -1382,6 +1421,8 @@ interface EventEditorSheetProps {
    * the editor opens.
    */
   masterRecurrence?: string[];
+  /** The series' own start (its master's), once loaded. */
+  masterStart?: { date?: string | null; dateTime?: string | null } | null;
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onRetryMaster?: () => void;
@@ -1401,6 +1442,7 @@ export function EventEditorSheet({
   masterLoading = false,
   onRetryMaster,
   masterRecurrence,
+  masterStart,
   onClose,
   overlay,
   onSubmit,
@@ -1518,6 +1560,12 @@ export function EventEditorSheet({
   // An existing series' days (its end day, its start's weekday) count in
   // its own zone; a new event's in the app's.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
+  const repeatDay = repeatDayOf(values, {
+    appTimeZone,
+    event: sourceEvent,
+    seriesStart: masterStart,
+    seriesTimeZone,
+  });
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1557,19 +1605,7 @@ export function EventEditorSheet({
       recurrence={shownRepeat.rules}
       rule={primaryRule}
       // The day its repeat's implicit days count from, in the series' zone.
-      startDate={
-        repeatCountingDay({
-          edited: Boolean(values.recurrenceEdited),
-          event: sourceEvent,
-          formDay: dayInZone(
-            values.startDate,
-            values.allDay ? null : values.startTime,
-            appTimeZone,
-            seriesTimeZone
-          ),
-          timeZone: seriesTimeZone,
-        }) ?? values.startDate
-      }
+      startDate={repeatDay}
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
       // It repeats, but how isn't known yet. (Offline, React Native's
@@ -1643,6 +1679,8 @@ export function EventEditorSheet({
           mapsUrl={mapsUrl}
           meetingLink={meetingLink}
           reason={readOnlyReason}
+          recurrence={shownRepeat.rules}
+          repeatDay={repeatDay}
         />
       </BottomSheet>
     );
@@ -1719,7 +1757,10 @@ export function EventEditorSheet({
         <RepeatSection
           editor={recurrenceEditor}
           failed={masterFailed}
-          hasRule={shownRepeat.rules.length > 0}
+          // A repeat the user turned off stays shown as off, too.
+          hasRule={
+            shownRepeat.rules.length > 0 || Boolean(values.recurrenceEdited)
+          }
           onRetry={onRetryMaster}
         />
 
