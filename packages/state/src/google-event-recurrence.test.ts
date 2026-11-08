@@ -321,6 +321,44 @@ describe("followStart", () => {
     ]);
   });
 
+  test("moves skips across month and year ends, and BYSETPOS ones", () => {
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    // Monthly Nov 30 -> Dec 1: the skipped Dec 30 is next period's Jan 1.
+    expect(
+      followed(
+        ["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20261230"],
+        "2026-11-30",
+        "2026-12-01"
+      )
+    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270101"]);
+    // Yearly Nov 9 -> Dec 9: the skipped Nov 9 2027 is Dec 9 2027.
+    expect(
+      followed(
+        ["RRULE:FREQ=YEARLY", "EXDATE;VALUE=DATE:20271109"],
+        "2026-11-09",
+        "2026-12-09"
+      )
+    ).toEqual(["RRULE:FREQ=YEARLY", "EXDATE;VALUE=DATE:20271209"]);
+    // The 2nd Tue written with BYSETPOS, moved to the 3rd Wed: Dec 8 is Dec 16.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2",
+          "EXDATE;VALUE=DATE:20261208",
+        ],
+        "2026-11-10",
+        "2026-11-18"
+      )
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=3WE", "EXDATE;VALUE=DATE:20261216"]);
+  });
+
   test("moves an end the start passed three months on", () => {
     expect(
       follow(

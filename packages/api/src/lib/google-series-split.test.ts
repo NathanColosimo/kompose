@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   carryCount,
+  carryCountExactly,
   splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
@@ -163,13 +164,13 @@ describe("splitting a series", () => {
   });
 
   test("ends a moved new part after its last day, at any time that day", () => {
-    // A rule not walked here (BYHOUR) with an added day, moved from 9:00 to
+    // A rule not walked here (several times a day) with an added day, moved from 9:00 to
     // 10:00 and a day later: the old rule's last day (Nov 5) becomes Nov 6,
     // through its last second.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5"], {
+      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
         masterRecurrence: [
-          "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
           "RDATE;TZID=America/New_York:20261120T090000",
         ],
         newStart: nyDaily(4, 10),
@@ -178,7 +179,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5, 20].map((day) => nyDaily(day)),
       })
-    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9;UNTIL=20261107T045959Z"]);
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261107T045959Z"]);
   });
 
   test("keeps an added day that's also the rule's last day", () => {
@@ -281,6 +282,39 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2"]);
   });
+  test("walks the first-Monday rule Sol found miscounted", () => {
+    // BYDAY=MO with the 1st to 7th, COUNT=3 from Jun 1 2026: Jun 1, Jul 6,
+    // Aug 3. Split at Jul 6: two left.
+    expect(
+      carryCountExactly(
+        ["RRULE:FREQ=MONTHLY;BYDAY=MO;BYMONTHDAY=1,2,3,4,5,6,7;COUNT=3"],
+        {
+          masterRecurrence: [
+            "RRULE:FREQ=MONTHLY;BYDAY=MO;BYMONTHDAY=1,2,3,4,5,6,7;COUNT=3",
+          ],
+          originalStart: "2026-07-06",
+          seriesStart: "2026-06-01",
+          seriesZone: "America/New_York",
+        }
+      )
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=MO;BYMONTHDAY=1,2,3,4,5,6,7;COUNT=2"]);
+  });
+
+  test("walks a single-hour rule with added days, as Sol's Mondays", () => {
+    // Mondays 9:00 Nov 2/9/16 COUNT=3 with added Nov 3 and Nov 16, split at
+    // Nov 9 onto Tuesdays: two left.
+    expect(
+      carryCountExactly(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=3"], {
+        masterRecurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;COUNT=3",
+          "RDATE;VALUE=DATE:20261103,20261116",
+        ],
+        originalStart: "2026-11-09T09:00:00-05:00",
+        seriesStart: "2026-11-02T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
+  });
 });
 
 describe("isRuleDay", () => {
@@ -312,28 +346,56 @@ describe("isRuleDay", () => {
         day("2027-11-25")
       )
     ).toBe(true);
-    // Combinations not modeled (Friday the 13th; a yearly or weekly day of
-    // the month without its month): can't tell.
+    // Every BY part narrows the set: Friday the 13th; a yearly day of the
+    // month in every month; a weekly rule kept to the 1st.
     expect(
       isRuleDay(
         "RRULE:FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
         start,
         day("2027-08-13")
       )
-    ).toBeNull();
-    expect(
-      isRuleDay("RRULE:FREQ=YEARLY;BYMONTHDAY=1", start, day("2027-02-01"))
-    ).toBeNull();
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;BYMONTHDAY=1", start, day("2027-01-08"))
-    ).toBeNull();
-    // Parts not read: can't tell.
+    ).toBe(true);
     expect(
       isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2",
+        "RRULE:FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
         start,
-        day("2026-11-09")
+        day("2026-12-13")
       )
+    ).toBe(false);
+    expect(
+      isRuleDay("RRULE:FREQ=YEARLY;BYMONTHDAY=1", start, day("2027-02-01"))
+    ).toBe(true);
+    expect(
+      isRuleDay("RRULE:FREQ=WEEKLY;BYMONTHDAY=1", start, day("2027-01-08"))
+    ).toBe(false);
+    // BYSETPOS: the 2nd Tuesday, and the last weekday.
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2",
+        start,
+        day("2026-12-08")
+      )
+    ).toBe(true);
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+        start,
+        day("2026-11-30")
+      )
+    ).toBe(true);
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+        start,
+        day("2026-11-27")
+      )
+    ).toBe(false);
+    // Parts not read: can't tell.
+    expect(
+      isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
+    ).toBeNull();
+    expect(
+      isRuleDay("RRULE:FREQ=DAILY;BYHOUR=9,15", start, day("2026-11-09"))
     ).toBeNull();
   });
 });
