@@ -17,6 +17,13 @@ describe("describeEventRecurrence", () => {
     expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,WE")).toBe(
       "Repeats weekly on Mon, Wed"
     );
+    // Days picked in any order read in week order, Monday first.
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR,TH")).toBe(
+      "Repeats weekly on Mon, Wed, Thu, Fri"
+    );
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=SU,MO")).toBe(
+      "Repeats weekly on Mon, Sun"
+    );
     expect(words("RRULE:FREQ=DAILY;INTERVAL=2")).toBe("Repeats every 2 days");
     expect(words("RRULE:FREQ=YEARLY")).toBe("Repeats yearly");
     expect(words("RRULE:FREQ=HOURLY")).toBe("Repeats");

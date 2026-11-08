@@ -12,6 +12,7 @@ import {
   parseGoogleEventRecurrenceRule,
   setPositionOf,
   weekdayCodeOf,
+  weekOrdered,
 } from "./google-event-recurrence";
 
 const DAY_NAMES: Record<string, string> = Object.fromEntries(
@@ -211,7 +212,7 @@ function dayWords(
   let words: DayWords = { text: null, used: [] };
   if (freq === "WEEKLY") {
     const startDay = start ? weekdayCodeOf(start) : undefined;
-    const days = (byDay.length > 0 || !startDay ? byDay : [startDay])
+    const days = weekOrdered(byDay.length > 0 || !startDay ? byDay : [startDay])
       .map((code) => DAY_NAMES[code])
       .filter(Boolean)
       .join(", ");

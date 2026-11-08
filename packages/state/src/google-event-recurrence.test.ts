@@ -75,6 +75,22 @@ describe("buildGoogleEventRecurrenceRule", () => {
     end: { count: 5, type: "count" } as const,
   });
 
+  test("writes the days in week order, Monday first", () => {
+    // Thursday added after Monday, Wednesday and Friday.
+    expect(
+      edit("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR", (pattern) => ({
+        ...pattern,
+        byDay: [...pattern.byDay, "TH"],
+      }))
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,TH,FR");
+    expect(
+      edit("RRULE:FREQ=WEEKLY;BYDAY=SU", (pattern) => ({
+        ...pattern,
+        byDay: [...pattern.byDay, "MO"],
+      }))
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=MO,SU");
+  });
+
   test("keeps the parts an edit doesn't set", () => {
     // "Ends after 5" on an every-2-weeks series stays every 2 weeks.
     for (const [rule, expected] of [

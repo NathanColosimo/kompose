@@ -242,7 +242,7 @@ export function buildGoogleEventRecurrenceRule(
     parts.push(`BYMONTHDAY=${monthDays.join(",")}`);
   }
   if (byDay.length > 0) {
-    parts.push(`BYDAY=${byDay.join(",")}`);
+    parts.push(`BYDAY=${weekOrdered(byDay).join(",")}`);
   }
 
   if (end.type === "until") {
@@ -256,6 +256,16 @@ export function buildGoogleEventRecurrenceRule(
 
 /** RRULE weekday codes by dayOfWeek (1 Monday to 7 Sunday). */
 const WEEKDAY_CODES = GOOGLE_EVENT_WEEKDAYS.map((weekday) => weekday.value);
+
+/**
+ * BYDAY days in week order, Monday first as the app's weeks are, however
+ * they were picked ("TH,MO" is "MO,TH"); a weekday of the month by its
+ * weekday ("1FR" after "3MO").
+ */
+export function weekOrdered(days: string[]): string[] {
+  const rank = (code: string) => WEEKDAY_CODES.indexOf(code.slice(-2));
+  return [...days].sort((a, b) => rank(a) - rank(b));
+}
 
 /** The BYDAY weekday `date` falls on: "TU". */
 export function weekdayCodeOf(date: { dayOfWeek: number }): string {
