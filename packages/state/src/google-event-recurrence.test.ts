@@ -16,6 +16,7 @@ import {
   repeatCountingDay,
   repeatEndsBeforeStart,
   repeatOffSeriesDay,
+  repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
@@ -1750,6 +1751,15 @@ describe("repeatOffSeriesDay", () => {
       });
     // Ten Sundays from Jan 5 2025 end in March 2025.
     expect(today(["RRULE:FREQ=WEEKLY;COUNT=10"])).toBe(true);
+    expect(
+      repeatSkipsOccurrence({
+        editedStart: later.start,
+        occurrence: later,
+        recurrence: ["RRULE:FREQ=WEEKLY;COUNT=10"],
+        seriesStart: old,
+        timeZone: zone,
+      })
+    ).toBe("end");
     expect(today(["RRULE:FREQ=WEEKLY;COUNT=200"])).toBe(false);
     expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20251231T235959Z"])).toBe(true);
     expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20270131T235959Z"])).toBe(false);

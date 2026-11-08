@@ -40,6 +40,9 @@ export const SCOPE_DIALOG_COPY = {
   /** A new repeat that, counted from the series' first meeting, skips this one. */
   repeatOffDay:
     "Counted from the series' first meeting, the new repeat would skip this occurrence, so it applies from here on.",
+  /** The same, when it's the new end (COUNT or UNTIL) that comes first. */
+  repeatEndOff:
+    "Counted from the series' first meeting, the new end comes before this occurrence, so it applies from here on.",
   /** The same, on an occurrence added on its own (no new series there). */
   repeatOffDayAdded:
     "This occurrence was added to the series on its own, and counted from the series' first meeting the new repeat would skip it. Change the repeat from one of the series' regular occurrences.",
@@ -97,13 +100,14 @@ export interface EventSaveChanges {
   calendarChanged: boolean;
   /** It moves an occurrence to another day. */
   dateMoved: boolean;
-  /**
-   * The new repeat, counted from the series' first meeting as an Entire
-   * series save would, skips this occurrence (`repeatOffSeriesDay`).
-   */
-  offSeriesDay?: boolean;
   /** The user changed the repeat. */
   patternChanged: boolean;
+  /**
+   * The new repeat, counted from the series' first meeting as an Entire
+   * series save would, skips this occurrence, and why: its day (an
+   * implicit day, an interval's phase) or its end (`repeatSkipsOccurrence`).
+   */
+  repeatSkips?: "day" | "end" | null;
   /** Loading the series' rule failed. */
   seriesRuleFailed?: boolean;
   /** The series' rule has loaded (an occurrence's lives on its master). */
@@ -246,7 +250,7 @@ function allEventsOff(changes: EventSaveChanges): boolean {
 
 /** A new repeat whose implicit day comes from this occurrence. */
 function repeatTakesOccurrenceDay(changes: EventSaveChanges): boolean {
-  return Boolean(changes.patternChanged && changes.offSeriesDay);
+  return Boolean(changes.patternChanged && changes.repeatSkips);
 }
 
 /** `preferred`, or the narrowest scope the save can use when it can't. */
@@ -315,9 +319,12 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
     return SCOPE_DIALOG_COPY.seriesLoading;
   }
   if (!changes.dateMoved) {
-    return allEventsOff(changes)
-      ? SCOPE_DIALOG_COPY.repeatOffDay
-      : SCOPE_DIALOG_COPY.saveEvent.description;
+    if (!allEventsOff(changes)) {
+      return SCOPE_DIALOG_COPY.saveEvent.description;
+    }
+    return changes.repeatSkips === "end"
+      ? SCOPE_DIALOG_COPY.repeatEndOff
+      : SCOPE_DIALOG_COPY.repeatOffDay;
   }
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)

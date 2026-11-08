@@ -36,7 +36,7 @@ import {
   repeatChanged,
   repeatCountingDay,
   repeatEndsBeforeStart,
-  repeatOffSeriesDay,
+  repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
@@ -203,7 +203,7 @@ interface EventFormValues {
 function saveChanges(
   pendingSave: Pick<
     PendingSave,
-    "calendarChanged" | "dateMoved" | "offSeriesDay" | "patternChanged"
+    "calendarChanged" | "dateMoved" | "patternChanged" | "repeatSkips"
   > | null,
   series: Pick<
     EventSaveChanges,
@@ -213,7 +213,7 @@ function saveChanges(
   return {
     calendarChanged: Boolean(pendingSave?.calendarChanged),
     dateMoved: pendingSave?.dateMoved ?? false,
-    offSeriesDay: pendingSave?.offSeriesDay ?? false,
+    repeatSkips: pendingSave?.repeatSkips ?? null,
     patternChanged: pendingSave?.patternChanged ?? false,
     ...series,
   };
@@ -239,8 +239,8 @@ export type CloseSaveRequest =
       patternChanged: boolean;
       /** An occurrence moved to another day. */
       dateMoved: boolean;
-      /** Its new repeat takes its day from here (`repeatOffSeriesDay`). */
-      offSeriesDay: boolean;
+      /** Why Entire series would skip it (`repeatSkipsOccurrence`). */
+      repeatSkips: "day" | "end" | null;
     }
   | {
       type: "create";
@@ -700,8 +700,8 @@ interface PendingSave {
   dateMoved: boolean;
   defaultScope: RecurrenceScope;
   hasDataEdits: boolean;
-  offSeriesDay: boolean;
   patternChanged: boolean;
+  repeatSkips: "day" | "end" | null;
   variables: UpdateGoogleEventInput;
 }
 
@@ -1046,7 +1046,7 @@ export function EventEditPopover({
           pendingSave: {
             calendarChanged: request.calendarChanged,
             dateMoved: request.dateMoved,
-            offSeriesDay: request.offSeriesDay,
+            repeatSkips: request.repeatSkips,
             defaultScope: request.calendarChanged
               ? "all"
               : request.defaultScope,
@@ -1383,15 +1383,15 @@ function buildEditPayload(
         })
       : false,
     isRecurring,
-    offSeriesDay: ctx.event
-      ? repeatOffSeriesDay({
+    repeatSkips: ctx.event
+      ? repeatSkipsOccurrence({
           editedStart: variables.event.start,
           occurrence: ctx.event,
           recurrence: values.recurrence,
           seriesStart: ctx.masterStart,
           timeZone: ctx.timeZone,
         })
-      : false,
+      : null,
     patternChanged,
     type: "save",
     variables,

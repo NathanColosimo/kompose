@@ -236,7 +236,7 @@ describe("a new repeat on an occurrence off its series' day", () => {
   const changes = {
     calendarChanged: false,
     dateMoved: false,
-    offSeriesDay: true,
+    repeatSkips: "day" as const,
     patternChanged: true,
     seriesRuleLoaded: true,
   };
@@ -260,7 +260,7 @@ test("a new repeat from an added occurrence that takes its day there says to pic
   const changes = {
     calendarChanged: false,
     dateMoved: false,
-    offSeriesDay: true,
+    repeatSkips: "day" as const,
     patternChanged: true,
     seriesRuleLoaded: true,
     splitBlocked: "addedOccurrence" as const,
@@ -279,7 +279,7 @@ test("a calendar move with a new repeat that takes this occurrence's day can't b
   const changes = {
     calendarChanged: true,
     dateMoved: false,
-    offSeriesDay: true,
+    repeatSkips: "day" as const,
     patternChanged: true,
     seriesRuleLoaded: true,
   };
@@ -292,8 +292,20 @@ test("a calendar move with a new repeat that takes this occurrence's day can't b
     SCOPE_DIALOG_COPY.moveEventRepeatDay
   );
   // With the repeat's day picked (not off its day), the move goes ahead.
-  expect(eventSaveDisabledScopes({ ...changes, offSeriesDay: false })).toEqual({
+  expect(eventSaveDisabledScopes({ ...changes, repeatSkips: null })).toEqual({
     following: true,
     this: true,
   });
+});
+
+test("a new end before this occurrence says so", () => {
+  expect(
+    eventSaveDescription({
+      calendarChanged: false,
+      dateMoved: false,
+      patternChanged: true,
+      repeatSkips: "end",
+      seriesRuleLoaded: true,
+    })
+  ).toBe(SCOPE_DIALOG_COPY.repeatEndOff);
 });

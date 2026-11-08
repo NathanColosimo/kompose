@@ -587,7 +587,11 @@ export function repeatCountingDay(params: {
  * count from it) aren't what Entire series would save, and it would drop
  * the very meeting being edited: so the change applies from here on.
  */
-export function repeatOffSeriesDay(params: {
+export function repeatOffSeriesDay(params: RepeatSkipParams): boolean {
+  return repeatSkipsOccurrence(params) !== null;
+}
+
+interface RepeatSkipParams {
   editedStart: { date?: string | null; dateTime?: string | null };
   occurrence: Pick<
     GoogleEvent,
@@ -598,25 +602,35 @@ export function repeatOffSeriesDay(params: {
   /** The series' own start (its master's), once loaded. */
   seriesStart?: { date?: string | null; dateTime?: string | null } | null;
   timeZone: string;
-}): boolean {
+}
+
+/**
+ * Why an Entire series save of a new repeat would skip this occurrence
+ * (`repeatOffSeriesDay`): "day", the rule counted from the series' first
+ * meeting doesn't meet on its day (an implicit day, an interval's phase);
+ * "end", its COUNT or UNTIL ends before it; null when it meets there.
+ */
+export function repeatSkipsOccurrence(
+  params: RepeatSkipParams
+): "day" | "end" | null {
   const { occurrence } = params;
   const anchor = params.seriesStart ?? occurrence.originalStartTime;
   const rule = getPrimaryRecurrenceRule(params.recurrence);
   if (!(occurrence.recurringEventId && anchor && rule)) {
-    return false;
+    return null;
   }
   const timeZone = eventTimeZone(occurrence, params.timeZone);
   const first = dayOfStart(anchor, timeZone);
   const day = dayOfStart(params.editedStart, timeZone);
   if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
-    return false;
+    return null;
   }
   // Its days, counted from the series' first meeting (unknown parts: as
   // shown, as before).
   if (isRuleDay(rule, first, day) === false) {
-    return true;
+    return "day";
   }
-  return seriesEndsBefore(rule, first, day, timeZone);
+  return seriesEndsBefore(rule, first, day, timeZone) ? "end" : null;
 }
 
 /** Whether a rule counted from `first` ends (COUNT or UNTIL) before `day`. */
@@ -632,14 +646,9 @@ function seriesEndsBefore(
     return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
   }
   if (end.type === "count") {
-    const days = countedRuleDays(rule, first, end.count);
-    const last = days?.at(-1);
-    return Boolean(
-      days &&
-        days.length >= end.count &&
-        last &&
-        Temporal.PlainDate.compare(last, day) < 0
-    );
+    // Null unless it found all `count` days.
+    const last = countedRuleDays(rule, first, end.count)?.at(-1);
+    return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
   }
   return false;
 }
