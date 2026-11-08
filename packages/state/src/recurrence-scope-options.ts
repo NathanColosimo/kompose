@@ -53,6 +53,9 @@ export const SCOPE_DIALOG_COPY = {
   seriesLoading: "Loading the series… This and following opens once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
+  /** A calendar move with a new repeat that takes this occurrence's day. */
+  moveEventRepeatDay:
+    "Moving to another calendar moves the whole series, but the new repeat takes its day from this occurrence. Pick the repeat's day, or move the calendar and change the repeat in two saves.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -213,7 +216,11 @@ export function eventSaveDisabledScopes(
   changes: EventSaveChanges
 ): Partial<Record<RecurrenceScope, boolean>> {
   if (changes.calendarChanged) {
-    return { following: true, this: true };
+    // Only the whole series moves calendars; a new repeat that takes its
+    // day from this occurrence can't go with it (the series keeps its own).
+    return repeatTakesOccurrenceDay(changes)
+      ? { all: true, following: true, this: true }
+      : { following: true, this: true };
   }
   // Whether a new series can start here is known once the series loads.
   // A new repeat on a new day can only go from here on, so it stays
@@ -235,9 +242,12 @@ export function eventSaveDisabledScopes(
  * own first day, so the repeat's days would differ from the editor's).
  */
 function allEventsOff(changes: EventSaveChanges): boolean {
-  return (
-    changes.dateMoved || Boolean(changes.patternChanged && changes.offSeriesDay)
-  );
+  return changes.dateMoved || repeatTakesOccurrenceDay(changes);
+}
+
+/** A new repeat whose implicit day comes from this occurrence. */
+function repeatTakesOccurrenceDay(changes: EventSaveChanges): boolean {
+  return Boolean(changes.patternChanged && changes.offSeriesDay);
 }
 
 /** `preferred`, or the narrowest scope the save can use when it can't. */
@@ -288,7 +298,9 @@ function splitBlockedDescription(
 /** The scope dialog's line for a save. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
-    return SCOPE_DIALOG_COPY.moveEvent;
+    return repeatTakesOccurrenceDay(changes)
+      ? SCOPE_DIALOG_COPY.moveEventRepeatDay
+      : SCOPE_DIALOG_COPY.moveEvent;
   }
   if (changes.splitBlocked) {
     return splitBlockedDescription(changes, changes.splitBlocked);

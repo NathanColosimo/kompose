@@ -274,3 +274,26 @@ test("a new repeat from an added occurrence that takes its day there says to pic
     SCOPE_DIALOG_COPY.repeatOffDayAdded
   );
 });
+
+test("a calendar move with a new repeat that takes this occurrence's day can't be saved", () => {
+  const changes = {
+    calendarChanged: true,
+    dateMoved: false,
+    offSeriesDay: true,
+    patternChanged: true,
+    seriesRuleLoaded: true,
+  };
+  expect(eventSaveDisabledScopes(changes)).toEqual({
+    all: true,
+    following: true,
+    this: true,
+  });
+  expect(eventSaveDescription(changes)).toBe(
+    SCOPE_DIALOG_COPY.moveEventRepeatDay
+  );
+  // With the repeat's day picked (not off its day), the move goes ahead.
+  expect(eventSaveDisabledScopes({ ...changes, offSeriesDay: false })).toEqual({
+    following: true,
+    this: true,
+  });
+});
