@@ -121,6 +121,38 @@ describe("where This and following can start", () => {
     expect(cut).toBe("RRULE:FREQ=DAILY;UNTIL=20270314T125959Z");
   });
 
+  test("an hourly rule across either clock change is refused, not guessed", () => {
+    // Every 2 hours four times from Oct 31 23:30 (fall back) or Mar 13
+    // 23:30 (spring forward), each with an added meeting at 5:00 the next
+    // morning: which wall hour the last lands on depends on how a calendar
+    // steps across the change, so a delete from the added meeting is off.
+    const cases: [string, string, string][] = [
+      [
+        "2026-10-31T23:30:00-04:00",
+        "20261101T050000",
+        "2026-11-01T05:00:00-05:00",
+      ],
+      [
+        "2027-03-13T23:30:00-05:00",
+        "20270314T050000",
+        "2027-03-14T05:00:00-04:00",
+      ],
+    ];
+    for (const [start, added, originalStart] of cases) {
+      expect(
+        followingCutUnsure({
+          masterRecurrence: [
+            "RRULE:FREQ=HOURLY;INTERVAL=2;COUNT=4",
+            `RDATE;TZID=America/New_York:${added}`,
+          ],
+          masterStart: { dateTime: start },
+          originalStart,
+          seriesZone: zone,
+        })
+      ).toBe(true);
+    }
+  });
+
   test("a cut always ends a rule that still runs past the split", () => {
     // Twice a day ten times (to Nov 13), and every 4 hours ten times:
     // cut at Nov 10 9:00, both end the second before, whatever the rule.
