@@ -206,9 +206,7 @@ function RecurrenceRow({
           size={14}
         />
       </Pressable>
-      {/* While the series' rule isn't usable (it's being fetched again),
-          the controls close: an edit then would keep the old rule. */}
-      {isExpanded && !disabled ? <RecurrenceEditorSection {...editor} /> : null}
+      {isExpanded ? <RecurrenceEditorSection {...editor} /> : null}
     </>
   );
 }
@@ -1358,6 +1356,14 @@ export function EventEditorSheet({
     setIsRecurrenceExpanded(false);
     setIsLocationSuggestionsOpen(false);
   }, [draft, reset]);
+
+  // While the series' rule isn't usable (fetched again), the repeat
+  // controls close: an edit then would keep the old rule.
+  React.useEffect(() => {
+    if (masterLoading) {
+      setIsRecurrenceExpanded(false);
+    }
+  }, [masterLoading]);
 
   // An occurrence shows its series' pattern, kept in step as the series
   // loads or is fetched again (a fresher rule after a save replaces the

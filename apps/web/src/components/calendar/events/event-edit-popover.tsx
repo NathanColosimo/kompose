@@ -1591,7 +1591,6 @@ function RepeatControl({
   allDay,
   city,
   disabled,
-  disabledReason,
   onRecurrenceChange,
   recurrenceRule,
   ruleLabel,
@@ -1602,8 +1601,6 @@ function RepeatControl({
   allDay: boolean;
   city: string | null;
   disabled: boolean;
-  /** Why it's off, for its tooltip (offline, waiting for the series). */
-  disabledReason?: string;
   onRecurrenceChange: (rule: string | null) => void;
   recurrenceRule: string | undefined;
   ruleLabel: string | null | undefined;
@@ -1616,6 +1613,11 @@ function RepeatControl({
   // open editor closes and its changes are dropped: one then would keep
   // the old rule.
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
   return (
     <Popover onOpenChange={setOpen} open={open && !disabled}>
       <PopoverTrigger asChild>
@@ -1628,7 +1630,7 @@ function RepeatControl({
           )}
           disabled={disabled}
           size={repeatLabel ? "sm" : "icon"}
-          title={(disabled && disabledReason) || (repeatLabel ?? "Repeat")}
+          title={repeatLabel ?? "Repeat"}
           variant={repeatLabel ? "secondary" : "outline"}
         >
           <Repeat className="size-4 shrink-0" />
@@ -1727,14 +1729,24 @@ function EventAllDayAndRecurrenceRow({
           All day
         </Button>
       )}
-      {recurrenceFailed ? (
+      {/* Offline: say why the repeat waits (failed or not, a retry would
+          only wait too); failed: offer a retry; else the chip. */}
+      {recurrenceWaitReason ? (
+        <span
+          className="min-w-0 shrink truncate text-muted-foreground text-xs"
+          role="status"
+        >
+          {recurrenceWaitReason}
+        </span>
+      ) : null}
+      {!recurrenceWaitReason && recurrenceFailed ? (
         <RepeatRetryButton onRetry={onRetryRecurrence} />
-      ) : (
+      ) : null}
+      {recurrenceWaitReason || recurrenceFailed ? null : (
         <RepeatControl
           allDay={allDay}
           city={city}
           disabled={readOnly || recurrenceLoading}
-          disabledReason={recurrenceWaitReason}
           onRecurrenceChange={onRecurrenceChange}
           recurrenceRule={recurrenceRule}
           ruleLabel={ruleLabel}
@@ -2818,9 +2830,7 @@ export function EventEditForm({
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
         recurrenceWaitReason={
-          masterQuery.rulePaused
-            ? "The repeat loads when you're back online"
-            : undefined
+          masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
         seriesStart={seriesDayOf(watchedValues)}
         seriesTimeZone={seriesTimeZone}
