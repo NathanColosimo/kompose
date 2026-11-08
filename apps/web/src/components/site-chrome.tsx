@@ -4,7 +4,10 @@ import Link from "next/link";
 export function SiteHeader() {
   return (
     <header data-desktop-drag-region>
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+      <div
+        className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6"
+        data-window-controls-inset
+      >
         <Link className="font-medium font-serif text-lg" href="/">
           Kompose
         </Link>
