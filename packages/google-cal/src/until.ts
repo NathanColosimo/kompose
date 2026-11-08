@@ -24,7 +24,6 @@ const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
 const BY_DAY_PART = /BYDAY=([^;]*)/;
 const WEEK_START_PART = /WKST=([A-Z]{2})/;
 const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
-const CLOCK_PART_ONCE = /[:;]BY(?:HOUR|MINUTE|SECOND)=/;
 
 /**
  * The time of day a rule meets, "9:0:0": its BYHOUR / BYMINUTE / BYSECOND,
@@ -65,6 +64,23 @@ function ruleMeetsAt(
       return values.includes(actual[index] ?? -1);
     }
     return !fallback || fallback[index] === actual[index];
+  });
+}
+
+/**
+ * `own`'s parts that `rule` sets (its BYHOUR, BYMINUTE, BYSECOND), the
+ * rest `start`'s: where a rule's meeting moves when the start does.
+ */
+function withRuleClock(
+  rule: string,
+  own: Temporal.PlainTime,
+  start: Temporal.PlainTime
+): Temporal.PlainTime {
+  const sets = new Set([...rule.matchAll(CLOCK_PART)].map((match) => match[1]));
+  return Temporal.PlainTime.from({
+    hour: sets.has("BYHOUR") ? own.hour : start.hour,
+    minute: sets.has("BYMINUTE") ? own.minute : start.minute,
+    second: sets.has("BYSECOND") ? own.second : start.second,
   });
 }
 
@@ -612,6 +628,39 @@ export function moveSkippedDays(params: {
       value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
       fromTime
     );
+  const wallTime = (value: RecurrenceValue) =>
+    value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime() ?? null;
+  // The series' other rules meet on their own: a skip one of them still
+  // needs stays, and a skip never lands on one of their meetings. (A rule
+  // that can't be read counts as meeting, so nothing moves.)
+  const otherRules = recurrence
+    .filter((line) => line.startsWith("RRULE:"))
+    .slice(1);
+  const othersMeet = (
+    day: Temporal.PlainDate,
+    time: Temporal.PlainTime | null,
+    start: Temporal.PlainDate,
+    base: Temporal.PlainTime | null
+  ) =>
+    otherRules.some(
+      (rule) =>
+        isRuleDay(rule, start, day) !== false &&
+        (!time || ruleMeetsAt(rule, time, base))
+    );
+  // Where a skip moves, at its time: a part of it the moved rule leaves
+  // out (it meets at the start's hour, say) follows the new start.
+  const movedSkip = (value: RecurrenceValue) => {
+    const time = wallTime(value);
+    if (!ownSkip(value) || othersMeet(value.day, time, from, fromTime)) {
+      return null;
+    }
+    const day = placeOf(value.day);
+    const movedTime =
+      time && toTime ? withRuleClock(oldRule, time, toTime) : time;
+    return day && !othersMeet(day, movedTime, to, toTime ?? null)
+      ? { day, time: movedTime }
+      : null;
+  };
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
       value &&
@@ -639,9 +688,7 @@ export function moveSkippedDays(params: {
     const read = list.values.map((value) =>
       readRecurrenceValue(value, list.zone, seriesZone)
     );
-    const moved = read.map((value) =>
-      value && ownSkip(value) ? placeOf(value.day) : null
-    );
+    const moved = read.map((value) => (value ? movedSkip(value) : null));
     const dropped = read.map((value) => isNewStart(value));
     if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
       return [line];
@@ -652,19 +699,14 @@ export function moveSkippedDays(params: {
       if (dropped[index]) {
         return [];
       }
-      const day = moved[index] ?? value?.day;
+      const day = moved[index]?.day ?? value?.day;
       if (!(value && day)) {
         return [list.values[index] ?? ""];
       }
-      if (!value.instant) {
+      const time = moved[index]?.time ?? wallTime(value);
+      if (!time) {
         return [compactDate(day)];
       }
-      // A moved skip keeps its time, but a rule with no time of its own
-      // meets at the start's, so its skip goes there with it.
-      const time =
-        moved[index] && toTime && !CLOCK_PART_ONCE.test(oldRule)
-          ? toTime
-          : value.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
       const clock = time.toString({ smallestUnit: "second" }).replace(/:/g, "");
       return [`${compactDate(day)}T${clock}`];
     });
