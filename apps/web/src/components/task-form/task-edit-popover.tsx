@@ -96,6 +96,11 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
@@ -491,7 +496,7 @@ function TaskDoneButton({
   isSaving,
   onClick,
 }: {
-  /** Another save (Save) is running. */
+  /** Save is running, or the repeat can't save. */
   disabled: boolean;
   isDone: boolean;
   /** Saving the editor's edits with it; the editor closes once saved. */
@@ -560,9 +565,8 @@ export function TaskEditForm({
     [task, tasksQuery.data]
   );
 
-  const handleDeleteClick = useCallback(() => {
-    setShowDeleteConfirm(true);
-  }, []);
+  /** The delete question came from Backspace, not from the trash icon. */
+  const deleteFromKeyRef = useRef(false);
 
   const confirmDelete = useCallback(
     (scope: DeleteScope) => {
@@ -587,7 +591,8 @@ export function TaskEditForm({
         return;
       }
       e.preventDefault();
-      handleDeleteClick();
+      deleteFromKeyRef.current = true;
+      setShowDeleteConfirm(true);
     },
     // Not behind a dialog over the editor, where it would delete the task
     // out from under the question being asked.
@@ -595,13 +600,7 @@ export function TaskEditForm({
       enabled:
         open && !isSavingStatus && !showTagScopeDialog && !showDeleteConfirm,
     },
-    [
-      handleDeleteClick,
-      isSavingStatus,
-      open,
-      showDeleteConfirm,
-      showTagScopeDialog,
-    ]
+    [isSavingStatus, open, showDeleteConfirm, showTagScopeDialog]
   );
 
   const form = useForm<TaskFormValues>({
@@ -627,23 +626,19 @@ export function TaskEditForm({
   });
 
   /**
-   * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
-   * failure is reported by the mutation.
+   * Saves the edits, plus `extra` fields, while the editor holds open.
+   * Resolves to whether it saved; a failure shows beside Save, and the cache
+   * waits for the server (no optimistic update) so it can't roll back over
+   * the draft.
    */
   const commitUpdate = useCallback(
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      extra: Partial<TaskUpdateDecoded> = {},
-      /**
-       * While the editor holds open on the save: optimistic
-       * false, and a failure message that says the edits are still here.
-       */
-      held?: { failureMessage: string }
+      failureMessage: string,
+      extra: Partial<TaskUpdateDecoded> = {}
     ): Promise<boolean> => {
-      if (held) {
-        setFailure(null);
-      }
+      setFailure(null);
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -651,11 +646,11 @@ export function TaskEditForm({
 
       return updateTask
         .mutateAsync({
-          failureMessage: held?.failureMessage,
+          failureMessage,
           id: task.id,
-          optimistic: !held,
-          // The held editor says what failed, beside Save.
-          quiet: Boolean(held),
+          optimistic: false,
+          // The editor says what failed, beside Save.
+          quiet: true,
           scope,
           task: {
             description: values.description ?? "",
@@ -680,7 +675,7 @@ export function TaskEditForm({
         .then(
           () => true,
           () => {
-            setFailure(held?.failureMessage ?? null);
+            setFailure(failureMessage);
             return false;
           }
         );
@@ -689,29 +684,19 @@ export function TaskEditForm({
   );
 
   /**
-   * Saves the scope dialog's edits, then marks this occurrence done when
-   * Mark done asked for it.
+   * Saves the edits and marks this occurrence done (or not) in one write:
+   * the status goes on this occurrence alone, which the server keeps when a
+   * "following" save also changes the series.
    */
   const commitWithStatus = useCallback(
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      status: TaskSelectDecoded["status"] | null
-    ): Promise<boolean> => {
-      if (!status) {
-        return commitUpdate(values, scope);
-      }
-      // One write: the status goes on this occurrence alone (the server
-      // keeps it when a "following" save also changes the series). The
-      // editor holds open until it saves, so the cache waits for the server:
-      // an early update could unmount the editor or roll back over the draft.
-      return commitUpdate(
-        values,
-        scope,
-        { status },
-        { failureMessage: markStatusFailureMessage(status) }
-      );
-    },
+      status: TaskSelectDecoded["status"]
+    ): Promise<boolean> =>
+      commitUpdate(values, scope, markStatusFailureMessage(status), {
+        status,
+      }),
     [commitUpdate]
   );
 
@@ -772,12 +757,7 @@ export function TaskEditForm({
       // failed save keeps the edits.
       holdOpen(
         "save",
-        commitUpdate(
-          values,
-          decision.scope,
-          {},
-          { failureMessage: SAVE_FAILURE_MESSAGE }
-        )
+        commitUpdate(values, decision.scope, SAVE_FAILURE_MESSAGE)
       );
     },
     [askScope, commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
@@ -858,25 +838,45 @@ export function TaskEditForm({
 
         <SaveFailure message={failure} />
         <Separator />
-        {/* Wraps when a done task's longer "Mark not done" doesn't fit. */}
+        {/* Wraps rather than clipping Save if the labels grow (larger text). */}
         <div className="flex flex-wrap items-center gap-2">
           <AlertDialog
             onOpenChange={setShowDeleteConfirm}
             open={showDeleteConfirm}
           >
-            <AlertDialogTrigger asChild>
-              <Button
-                className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                disabled={isSavingStatus}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Trash2 className="size-3.5" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
+            {/* An icon, so Delete, Mark done, Cancel and Save fit one row
+                in the 360px editor. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    aria-label="Delete task"
+                    className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    disabled={isSavingStatus}
+                    size="icon-sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
+            <AlertDialogContent
+              // Opened with Backspace, focus goes back to the editor it came
+              // from. (Radix would send it to the trash icon, whose tooltip
+              // would then take the next Escape.) Opened from the icon, it
+              // returns to the icon, as a dialog should.
+              onCloseAutoFocus={(e) => {
+                if (!deleteFromKeyRef.current) {
+                  return;
+                }
+                e.preventDefault();
+                deleteFromKeyRef.current = false;
+                hold.editorRef.current?.focus();
+              }}
+            >
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete task?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -937,6 +937,10 @@ export function TaskEditForm({
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             const editor = hold.editorRef.current;
+            // A save that already failed focused its message; keep it there.
+            if (editor?.contains(document.activeElement)) {
+              return;
+            }
             const before = focusBeforeScopeRef.current;
             if (before?.isConnected && editor?.contains(before)) {
               before.focus();
@@ -955,12 +959,7 @@ export function TaskEditForm({
             if (!status) {
               holdOpen(
                 "save",
-                commitUpdate(
-                  pendingUpdate,
-                  tagScope,
-                  {},
-                  { failureMessage: SAVE_FAILURE_MESSAGE }
-                )
+                commitUpdate(pendingUpdate, tagScope, SAVE_FAILURE_MESSAGE)
               );
               return;
             }
