@@ -9,6 +9,7 @@ import {
   monthlyWeekdayOf,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  seriesRecurrenceAfterMove,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
   untilRuleToDay,
@@ -210,6 +211,45 @@ describe("followStart", () => {
     ).toBe("RRULE:FREQ=MONTHLY;BYDAY=1MO");
   });
 
+  test("swaps a weekly series' start weekday for the new one", () => {
+    // Tue Nov 10 to Wed Nov 11.
+    expect(
+      follow("RRULE:FREQ=WEEKLY;BYDAY=TU", "2026-11-10", "2026-11-11")
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=WE");
+    expect(
+      follow("RRULE:FREQ=WEEKLY;BYDAY=TU,TH", "2026-11-10", "2026-11-11")
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=WE,TH");
+    expect(
+      follow("RRULE:FREQ=WEEKLY;BYDAY=TU,WE", "2026-11-10", "2026-11-11")
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=WE");
+  });
+
+  test("carries a yearly month and a BYSETPOS weekday", () => {
+    // The 4th Thu of Nov (Nov 26) to the 4th Thu of Dec (Dec 24).
+    expect(
+      follow(
+        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
+        "2026-11-26",
+        "2026-12-24"
+      )
+    ).toBe("RRULE:FREQ=YEARLY;BYMONTH=12;BYDAY=4TH");
+    expect(
+      follow(
+        "RRULE:FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=7",
+        "2026-11-07",
+        "2026-12-07"
+      )
+    ).toBe("RRULE:FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=7");
+    // "BYDAY=SA;BYSETPOS=1" (the 1st Sat) moved to the 2nd Sat.
+    expect(
+      follow(
+        "RRULE:FREQ=MONTHLY;BYDAY=SA;BYSETPOS=1",
+        "2026-11-07",
+        "2026-11-14"
+      )
+    ).toBe("RRULE:FREQ=MONTHLY;BYDAY=2SA");
+  });
+
   test("moves an end the start passed three months on", () => {
     expect(
       follow(
@@ -218,5 +258,28 @@ describe("followStart", () => {
         "2026-12-12"
       )
     ).toBe("RRULE:FREQ=WEEKLY;UNTIL=20270313T045959Z");
+  });
+});
+
+describe("seriesRecurrenceAfterMove", () => {
+  const after = (recurrence?: string[]) =>
+    seriesRecurrenceAfterMove({
+      editedStart: { dateTime: "2026-11-14T16:00:00-05:00" },
+      masterRecurrence: ["RRULE:FREQ=MONTHLY;BYDAY=1SA"],
+      occurrence: {
+        originalStartTime: { dateTime: "2026-11-07T16:00:00-05:00" },
+        recurringEventId: "series",
+        start: { dateTime: "2026-11-07T16:00:00-05:00" },
+      },
+      recurrence,
+      timeZone: "America/New_York",
+    });
+
+  test("carries the series' rule with a moved occurrence", () => {
+    expect(after()).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=2SA"]);
+  });
+
+  test("leaves a rule the save already sends alone", () => {
+    expect(after(["RRULE:FREQ=WEEKLY"])).toBeUndefined();
   });
 });

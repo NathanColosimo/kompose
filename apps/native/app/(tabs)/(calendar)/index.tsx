@@ -44,6 +44,7 @@ import {
 import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
+  seriesRecurrenceAfterMove,
 } from "@kompose/state/google-event-recurrence";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
@@ -1485,6 +1486,18 @@ export default function CalendarTab() {
           ? null
           : draft.calendar.calendarId;
       const eventPayload = buildEventPayload(draft);
+      // A moved date carries the series' rule along, for the series.
+      const recurrence =
+        scope === "this"
+          ? eventPayload.recurrence
+          : (eventPayload.recurrence ??
+            seriesRecurrenceAfterMove({
+              editedStart: eventPayload.start,
+              masterRecurrence,
+              occurrence: draft.sourceEvent,
+              recurrence: eventPayload.recurrence,
+              timeZone,
+            }));
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
@@ -1494,6 +1507,7 @@ export default function CalendarTab() {
         event: {
           ...draft.sourceEvent,
           ...eventPayload,
+          recurrence,
           end: {
             ...draft.sourceEvent.end,
             ...eventPayload.end,
@@ -1519,7 +1533,14 @@ export default function CalendarTab() {
 
       closeEventModal();
     },
-    [buildEventPayload, closeEventModal, moveEvent, updateEvent]
+    [
+      buildEventPayload,
+      closeEventModal,
+      masterRecurrence,
+      moveEvent,
+      timeZone,
+      updateEvent,
+    ]
   );
 
   const [isSavingEvent, setIsSavingEvent] = useState(false);

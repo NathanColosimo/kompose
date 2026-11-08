@@ -4,6 +4,7 @@ import {
   type Event as GoogleEvent,
   getGoogleEventEditBlockReason,
 } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
@@ -410,7 +411,7 @@ function MonthlyDayChoice({
         {monthlyDayOptions(pattern, rule, startDate).map((option) => (
           <Button
             accessibilityState={{ selected: option.selected }}
-            key={option.label}
+            key={`${option.byDay}|${option.monthDays}`}
             onPress={() => {
               if (!option.selected) {
                 onChange({ byDay: option.byDay, monthDays: option.monthDays });
@@ -451,7 +452,8 @@ function RecurrenceEndSection({
   updateRecurrence: (patch: RecurrencePatch) => void;
 }) {
   const { end } = parsedRecurrence;
-  const timeZone = Temporal.Now.timeZoneId();
+  // The zone the app shows and saves times in.
+  const timeZone = useAtomValue(timezoneAtom);
   const untilDay =
     end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
   return (
@@ -1075,6 +1077,7 @@ function EventDateTimeRow({
   startDatePickerValue: Date;
   startTimePickerValue: Date;
 }) {
+  const timeZone = useAtomValue(timezoneAtom);
   // Moving the start keeps the event's length (shared with web).
   const moveStart = (next: {
     date?: Temporal.PlainDate;
@@ -1088,7 +1091,7 @@ function EventDateTimeRow({
           allDay: before.allDay,
           from: before.startDate,
           recurrence: before.recurrence,
-          timeZone: Temporal.Now.timeZoneId(),
+          timeZone,
           to: moved.startDate,
         })
       : before.recurrence;

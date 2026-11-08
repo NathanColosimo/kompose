@@ -332,12 +332,65 @@ function followedWeekday(
   return code === monthlyWeekdayOf(from) ? monthlyWeekdayOf(to) : code;
 }
 
+const BY_SET_POS = /(?:^|;)BYSETPOS=(-?\d)(?:;|$)/;
+const BY_MONTH = /(?:^|;)BYMONTH=(\d{1,2})(?:;|$)/;
+
+/** The BYSETPOS a rule picks with, if it has one. */
+export function setPositionOf(rule: string | undefined): string | undefined {
+  return BY_SET_POS.exec(rule ?? "")?.[1];
+}
+
 /**
- * `recurrence` after the series' start moves from `from` to `to`: a day
- * or weekday of the month that was the start's follows it ("2nd Tue" to
- * "3rd Wed"; a last stays a last), and an end date the start moved past
- * moves three months after the new start. The same array when nothing
- * follows.
+ * The days a series repeats on once its start moves from `from` to `to`:
+ * a weekly series' start weekday swaps for the new one (Tuesdays become
+ * Wednesdays); a monthly or yearly weekday of the month that was the
+ * start's follows it ("2nd Tue" to "3rd Wed", "BYDAY=SA;BYSETPOS=1" too;
+ * a last stays a last), as does a day of the month that was the start's.
+ */
+function followedDays(
+  rule: string,
+  pattern: EventRecurrencePattern,
+  from: Temporal.PlainDate,
+  to: Temporal.PlainDate
+): Pick<EventRecurrencePattern, "byDay" | "monthDays"> {
+  const { byDay, freq, monthDays } = pattern;
+  if (freq === "WEEKLY") {
+    const fromCode = weekdayCodeOf(from);
+    const toCode = weekdayCodeOf(to);
+    return {
+      byDay: byDay.includes(fromCode)
+        ? [...new Set(byDay.map((day) => (day === fromCode ? toCode : day)))]
+        : byDay,
+      monthDays,
+    };
+  }
+  if (freq !== "MONTHLY" && freq !== "YEARLY") {
+    return { byDay, monthDays };
+  }
+  // "BYDAY=SA;BYSETPOS=1" is the 1st Sat, written another way.
+  const setPos = setPositionOf(rule);
+  const [onlyDay = ""] = byDay;
+  const weekday =
+    byDay.length === 1 && setPos && isPlainWeekday(onlyDay)
+      ? `${setPos}${onlyDay}`
+      : onlyDay;
+  const followed =
+    byDay.length === 1 && isWeekdayOfMonth(weekday)
+      ? followedWeekday(weekday, from, to)
+      : null;
+  return {
+    byDay: followed && followed !== weekday ? [followed] : byDay,
+    monthDays:
+      monthDays.join() === String(from.day) ? [String(to.day)] : monthDays,
+  };
+}
+
+/**
+ * `recurrence` after the series' start moves from `from` to `to`: the
+ * days that were the start's follow it (see followedDays), a yearly
+ * series' month does too when it was the start's, and an end date the
+ * start moved past moves three months after the new start. The same
+ * array when nothing follows.
  */
 export function followStart(params: {
   allDay: boolean;
@@ -352,19 +405,6 @@ export function followStart(params: {
     return recurrence;
   }
   const pattern = parseGoogleEventRecurrenceRule(rule);
-  const monthly = pattern.freq === "MONTHLY" || pattern.freq === "YEARLY";
-  const [onlyDay] = pattern.byDay;
-  const byDay =
-    monthly &&
-    pattern.byDay.length === 1 &&
-    onlyDay &&
-    isWeekdayOfMonth(onlyDay)
-      ? [followedWeekday(onlyDay, from, to)]
-      : pattern.byDay;
-  const monthDays =
-    monthly && pattern.monthDays.join() === String(from.day)
-      ? [String(to.day)]
-      : pattern.monthDays;
   const untilDay =
     pattern.end.type === "until"
       ? untilRuleToDay(pattern.end.date, timeZone)
@@ -376,13 +416,84 @@ export function followStart(params: {
           type: "until" as const,
         }
       : pattern.end;
-  const next = buildGoogleEventRecurrenceRule(
-    { ...pattern, byDay, end, monthDays },
+  const built = buildGoogleEventRecurrenceRule(
+    { ...pattern, ...followedDays(rule, pattern, from, to), end },
     rule
   );
+  const next =
+    pattern.freq === "YEARLY" && BY_MONTH.exec(rule)?.[1] === String(from.month)
+      ? built?.replace(BY_MONTH, (match) =>
+          match.replace(`=${from.month}`, `=${to.month}`)
+        )
+      : built;
   return next === rule
     ? recurrence
-    : setPrimaryRecurrenceRule(recurrence, next);
+    : setPrimaryRecurrenceRule(recurrence, next ?? null);
+}
+
+/** The local day a Google start falls on in `timeZone`. */
+function dayOfStart(
+  start: { date?: string | null; dateTime?: string | null },
+  timeZone: string
+): Temporal.PlainDate | null {
+  if (start.date) {
+    return Temporal.PlainDate.from(start.date);
+  }
+  if (!start.dateTime) {
+    return null;
+  }
+  try {
+    return Temporal.Instant.from(start.dateTime)
+      .toZonedDateTimeISO(timeZone)
+      .toPlainDate();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The series' rule to send when a save moves an occurrence's date and
+ * applies to its series ("following" or "all"; one occurrence never sends
+ * a rule): the rule follows the move (followStart), so "Book club, 1st
+ * Sat" moved to the 2nd Sat repeats on 2nd Sats. Undefined (the series
+ * keeps its rule) when the save sends its own rule or nothing follows.
+ */
+export function seriesRecurrenceAfterMove(params: {
+  /** The edited start. */
+  editedStart: { date?: string | null; dateTime?: string | null };
+  masterRecurrence: string[] | null | undefined;
+  occurrence: Pick<
+    GoogleEvent,
+    "originalStartTime" | "recurringEventId" | "start"
+  >;
+  /** The rule the save already sends, if any. */
+  recurrence: string[] | undefined;
+  timeZone: string;
+}): string[] | undefined {
+  const { editedStart, masterRecurrence, occurrence, timeZone } = params;
+  if (
+    params.recurrence !== undefined ||
+    !occurrence.recurringEventId ||
+    !masterRecurrence?.length
+  ) {
+    return;
+  }
+  const from = dayOfStart(
+    occurrence.originalStartTime ?? occurrence.start,
+    timeZone
+  );
+  const to = dayOfStart(editedStart, timeZone);
+  if (!(from && to)) {
+    return;
+  }
+  const followed = followStart({
+    allDay: Boolean(editedStart.date),
+    from,
+    recurrence: masterRecurrence,
+    timeZone,
+    to,
+  });
+  return followed === masterRecurrence ? undefined : followed;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

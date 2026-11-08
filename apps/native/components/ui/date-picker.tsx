@@ -510,12 +510,8 @@ export function DatePicker(props: DatePickerProps) {
   };
 
   const resetToToday = () => {
+    // The button is off when today is out of bounds.
     const today = new Date();
-    if (isDayDisabled(today)) {
-      // Today is out of bounds: show the nearest allowed month instead.
-      setCurrentDate(minimumDate ?? maximumDate ?? today);
-      return;
-    }
     setCurrentDate(today);
 
     if (mode === "range") {

@@ -25,6 +25,7 @@ import {
   getPrimaryRecurrenceRule,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  seriesRecurrenceAfterMove,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
   untilRuleToDay,
@@ -198,6 +199,11 @@ export type CloseSaveRequest =
       calendarChanged?: { destinationCalendarId: string };
       /** The repeat pattern changed: it can't apply to one occurrence. */
       patternChanged: boolean;
+      /**
+       * The series' rule after a moved occurrence's date (followStart),
+       * sent only when the save applies to the series.
+       */
+      seriesRecurrence?: string[];
     }
   | {
       type: "create";
@@ -479,7 +485,7 @@ function RepeatDays({
               <Button
                 aria-pressed={option.selected}
                 className="h-8 text-xs"
-                key={option.label}
+                key={`${option.byDay}|${option.monthDays}`}
                 onClick={() =>
                   emit({
                     ...pattern,
@@ -636,6 +642,7 @@ interface PendingSave {
   defaultScope: RecurrenceScope;
   hasDataEdits: boolean;
   patternChanged: boolean;
+  seriesRecurrence?: string[];
   variables: UpdateGoogleEventInput;
 }
 
@@ -796,13 +803,19 @@ export function EventEditPopover({
     async (
       edits: Pick<
         PendingSave,
-        "calendarChanged" | "hasDataEdits" | "variables"
+        "calendarChanged" | "hasDataEdits" | "seriesRecurrence" | "variables"
       >,
       scope: RecurrenceScope
     ) => {
       if (edits.hasDataEdits) {
+        // A moved date carries the series' rule along, for the series.
+        const recurrence =
+          scope === "this"
+            ? edits.variables.event.recurrence
+            : (edits.variables.event.recurrence ?? edits.seriesRecurrence);
         await updateEvent.mutateAsync({
           ...edits.variables,
+          event: { ...edits.variables.event, recurrence },
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
           // The editor says what failed, beside Save.
@@ -920,6 +933,7 @@ export function EventEditPopover({
             defaultScope: scope,
             hasDataEdits: request.hasDataEdits,
             patternChanged: request.patternChanged,
+            seriesRecurrence: request.seriesRecurrence,
             variables: request.variables,
           },
           scope,
@@ -1158,6 +1172,8 @@ function buildEditPayload(
     masterRecurrence: string[] | null | undefined;
     /** The user used the Repeat control. */
     recurrenceEdited: boolean;
+    /** The zone the editor shows days in. */
+    timeZone: string;
   }
 ): CloseSaveRequest {
   const calendarChanged = values.selectedCalendarId !== ctx.calendarId;
@@ -1221,6 +1237,15 @@ function buildEditPayload(
     hasDataEdits: ctx.hasEdits,
     isRecurring,
     patternChanged,
+    seriesRecurrence:
+      ctx.event &&
+      seriesRecurrenceAfterMove({
+        editedStart: variables.event.start,
+        masterRecurrence: ctx.masterRecurrence,
+        occurrence: ctx.event,
+        recurrence: variables.event.recurrence,
+        timeZone: ctx.timeZone,
+      }),
     type: "save",
     variables,
   };
@@ -2317,9 +2342,11 @@ export function EventEditForm({
         hasEdits: hasUserEditedRef.current,
         masterRecurrence: masterQuery.data?.recurrence,
         recurrenceEdited: recurrenceEditedRef.current,
+        timeZone,
       });
     },
     [
+      timeZone,
       accountId,
       calendarId,
       clampToStartIfNeeded,

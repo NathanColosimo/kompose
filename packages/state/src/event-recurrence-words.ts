@@ -10,6 +10,7 @@ import {
   isPlainWeekday,
   lastWeekdayOf,
   parseGoogleEventRecurrenceRule,
+  setPositionOf,
   weekdayCodeOf,
 } from "./google-event-recurrence";
 
@@ -42,7 +43,6 @@ const ORDINAL_WORDS: Record<string, string> = {
   "5": "5th",
 };
 const BY_MONTH_PATTERN = /BYMONTH=([\d,]+)(?:;|$)/;
-const BY_SET_POS_PATTERN = /BYSETPOS=(-?\d)(?:;|$)/;
 const POSITIVE_DAY = /^\d{1,2}$/;
 /** Day sets a BYSETPOS rule picks from, by their sorted BYDAY. */
 const DAY_SET_WORDS: Record<string, string> = {
@@ -86,7 +86,7 @@ function monthlyWeekdayLabel(
   rule: string | undefined,
   byDay: string[]
 ): string | null {
-  const setPos = BY_SET_POS_PATTERN.exec(rule ?? "")?.[1];
+  const setPos = setPositionOf(rule);
   if (!setPos) {
     const labels = byDay.map(ordinalDayLabel);
     return labels.length > 0 && labels.every(Boolean)
@@ -138,6 +138,7 @@ function monthlyDay(
   }
   if (pattern.monthDays.length > 0) {
     const label = monthDaysLabel(pattern.monthDays);
+    // BYSETPOS here isn't in the words, so it stays unused: "(custom)".
     return { text: label && `on ${label}`, used: ["BYMONTHDAY"] };
   }
   return { text: start ? `on day ${start.day}` : null, used: [] };
@@ -309,20 +310,49 @@ export function monthlyDayOptions(
         ]
       : []),
   ];
-  const isPicked = (choice: { byDay: string[]; monthDays: string[] }) =>
-    sameList(choice.byDay, pattern.byDay) &&
-    sameList(choice.monthDays, pattern.monthDays);
-  const options = choices.map((choice) => ({
-    ...choice,
-    selected: isPicked(choice),
-  }));
+  // The rule's own way of saying a choice counts as it ("BYMONTHDAY=7" is
+  // Day 7, "BYDAY=SA;BYSETPOS=1" the 1st Sat); picking it then keeps the
+  // rule's parts, so it changes nothing.
+  const setPos = setPositionOf(rule);
+  const sameAs = (choice: { byDay: string[]; monthDays: string[] }) => {
+    if (choice.byDay.length === 0) {
+      return (
+        pattern.byDay.length === 0 &&
+        (pattern.monthDays.length === 0 ||
+          sameList(pattern.monthDays, [String(start.day)]))
+      );
+    }
+    return (
+      pattern.monthDays.length === 0 &&
+      (sameList(choice.byDay, pattern.byDay) ||
+        (setPos !== undefined &&
+          sameList(
+            choice.byDay,
+            pattern.byDay.map((d) => `${setPos}${d}`)
+          )))
+    );
+  };
+  const options = choices.map((choice) =>
+    sameAs(choice)
+      ? {
+          byDay: pattern.byDay,
+          label: choice.label,
+          monthDays: pattern.monthDays,
+          selected: true,
+        }
+      : { ...choice, selected: false }
+  );
   if (options.some((option) => option.selected)) {
     return options;
   }
-  const own =
-    pattern.byDay.length > 0
-      ? monthlyWeekdayLabel(rule, pattern.byDay)
-      : monthDaysLabel(pattern.monthDays);
+  // BYSETPOS over days of the month ("the later of the 15th and 30th")
+  // isn't put in words.
+  let own: string | null = null;
+  if (pattern.byDay.length > 0) {
+    own = monthlyWeekdayLabel(rule, pattern.byDay);
+  } else if (setPos === undefined) {
+    own = monthDaysLabel(pattern.monthDays);
+  }
   return [
     {
       byDay: pattern.byDay,

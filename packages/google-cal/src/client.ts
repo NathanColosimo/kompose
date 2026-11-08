@@ -13,7 +13,9 @@ import {
   RecurrenceScope,
 } from "./schema";
 import {
+  daysBetweenStarts,
   sanitizeEventPayload,
+  shiftEventTime,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
 
@@ -597,10 +599,16 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const master = yield* getMasterRecurrence(calendarId, currentEvent);
 
-      // Preserve the master date, but apply edited times and duration.
+      // The series moves as many days as the edited occurrence did (moving
+      // this Tuesday's to Wednesday moves the series a day), and takes the
+      // edited times and duration.
+      const movedDays = daysBetweenStarts(
+        currentEvent.originalStartTime ?? currentEvent.start,
+        event.start
+      );
       const { start: mergedStart, end: mergedEnd } = mergeStartEnd(
-        master.start,
-        master.end,
+        shiftEventTime(master.start, movedDays),
+        shiftEventTime(master.end, movedDays),
         event.start,
         event.end
       );

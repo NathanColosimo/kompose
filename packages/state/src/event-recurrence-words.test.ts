@@ -123,6 +123,24 @@ describe("monthlyDayOptions", () => {
     ]);
   });
 
+  test("counts the start's own day, said another way, as that choice", () => {
+    // Apple and Outlook write these.
+    expect(options("RRULE:FREQ=MONTHLY;BYMONTHDAY=7", "2026-11-07")).toEqual([
+      "[Day 7]",
+      "The 1st Sat",
+    ]);
+    expect(
+      options("RRULE:FREQ=MONTHLY;BYDAY=SA;BYSETPOS=1", "2026-11-07")
+    ).toEqual(["Day 7", "[The 1st Sat]"]);
+    // Picking the selected one keeps the rule's parts.
+    const [day] = monthlyDayOptions(
+      parseGoogleEventRecurrenceRule("RRULE:FREQ=MONTHLY;BYMONTHDAY=7"),
+      "RRULE:FREQ=MONTHLY;BYMONTHDAY=7",
+      Temporal.PlainDate.from("2026-11-07")
+    );
+    expect(day?.monthDays).toEqual(["7"]);
+  });
+
   test("keeps a rule set another way first, selected", () => {
     expect(options("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1", "2026-11-30")).toEqual([
       "[The last day]",
@@ -138,5 +156,9 @@ describe("monthlyDayOptions", () => {
     expect(options("RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15", "2026-11-07")).toEqual(
       ["[Days 1, 15]", "Day 7", "The 1st Sat"]
     );
+    // The later of the 15th and the 30th isn't "Days 15, 30".
+    expect(
+      options("RRULE:FREQ=MONTHLY;BYMONTHDAY=15,30;BYSETPOS=-1", "2026-11-07")
+    ).toEqual(["[Custom days]", "Day 7", "The 1st Sat"]);
   });
 });
