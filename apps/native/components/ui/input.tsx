@@ -6,6 +6,7 @@ import {
   type TextInputInstance,
   type TextInputProps,
   type TextStyle,
+  useWindowDimensions,
   View,
   type ViewStyle,
 } from "react-native";
@@ -58,6 +59,7 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
     ref
   ) => {
     const [isFocused, setIsFocused] = useState(false);
+    const { fontScale } = useWindowDimensions();
 
     const cardColor = useColor("card");
     const textColor = useColor("text");
@@ -108,7 +110,9 @@ export const Input = forwardRef<TextInputInstance, InputProps>(
       flex: 1,
       fontFamily: Fonts.sans,
       fontSize: FONT_SIZE,
-      lineHeight: isTextarea ? (compact ? 18 : 20) : undefined,
+      // The font scales with the user's text size; its line height must
+      // too, or larger text is clipped.
+      lineHeight: isTextarea ? (compact ? 18 : 20) * fontScale : undefined,
       color: disabled ? muted : error ? danger : textColor,
       paddingVertical: 0,
       textAlignVertical: isTextarea ? "top" : "center",

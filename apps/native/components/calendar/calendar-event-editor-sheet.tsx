@@ -24,6 +24,7 @@ import {
   followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
+  occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
@@ -62,7 +63,13 @@ import {
   type UseFormSetValue,
   useForm,
 } from "react-hook-form";
-import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
+import {
+  Linking,
+  Pressable,
+  Switch as RNSwitch,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type {
   CalendarOption,
@@ -84,6 +91,7 @@ import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColor } from "@/hooks/use-color";
 import { localeTimeFormat } from "@/lib/time-format";
+import { cn } from "@/lib/utils";
 
 const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
@@ -217,22 +225,6 @@ function RecurrenceRow({
       {isExpanded ? <RecurrenceEditorSection {...editor} /> : null}
     </>
   );
-}
-
-/**
- * The pattern the repeat row shows. While it can't be used, that's still
- * the series' last known one (a cached copy the form hasn't taken), dimmed:
- * for display only, as the form and a save keep their own.
- */
-function recurrenceShown(
-  disabled: boolean,
-  recurrence: string[],
-  masterRecurrence: string[] | undefined
-): string[] {
-  if (disabled && recurrence.length === 0) {
-    return masterRecurrence ?? [];
-  }
-  return recurrence;
 }
 
 /**
@@ -961,9 +953,20 @@ function EventAllDayAndMeetingRow({
   onAddMeeting: () => void;
 }) {
   const switchActiveColor = "#7DD87D";
+  // At large text sizes, half the row is too narrow for "Add Meet": stack.
+  const stacked = useWindowDimensions().fontScale >= 1.3;
   return (
-    <View className="mb-2.5 flex-row items-center gap-2">
-      <View className="flex-1 flex-row items-center justify-between rounded-full border border-border px-3 py-2.5">
+    <View
+      className={
+        stacked ? "mb-2.5 gap-2" : "mb-2.5 flex-row items-center gap-2"
+      }
+    >
+      <View
+        className={cn(
+          "flex-row items-center justify-between rounded-full border border-border px-3 py-2.5",
+          stacked ? null : "flex-1"
+        )}
+      >
         <Text className="font-medium text-foreground text-sm">All day</Text>
         <RNSwitch
           onValueChange={onToggleAllDay}
@@ -972,7 +975,7 @@ function EventAllDayAndMeetingRow({
           value={allDay}
         />
       </View>
-      <View className="flex-1 items-end">
+      <View className={stacked ? "items-start" : "flex-1 items-end"}>
         <EventMeetingButton
           isConferencePending={isConferencePending}
           meetingLink={meetingLink}
@@ -1454,11 +1457,12 @@ export function EventEditorSheet({
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
   const recurrenceDisabled = masterLoading;
-  const shownRecurrence = recurrenceShown(
-    recurrenceDisabled,
+  const shownRepeat = occurrenceRepeatShown({
+    edited: Boolean(values.recurrenceEdited),
     recurrence,
-    masterRecurrence
-  );
+    seriesRecurrence: masterRecurrence,
+    unusable: recurrenceDisabled,
+  });
 
   const primaryRule = getPrimaryRecurrenceRule(recurrence);
   const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
@@ -1549,7 +1553,7 @@ export function EventEditorSheet({
       isExpanded={isRecurrenceExpanded}
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
-      recurrence={shownRecurrence}
+      recurrence={shownRepeat.rules}
       rule={primaryRule}
       // The start's day in the series' zone: its repeat's days count there.
       startDate={dayInZone(
@@ -1562,7 +1566,7 @@ export function EventEditorSheet({
       updateRecurrence={updateRecurrence}
       // It repeats, but how isn't known yet. (Offline, React Native's
       // queries fail rather than pause, and the row offers a retry.)
-      waitingLabel={masterLoading ? "Loading repeat…" : null}
+      waitingLabel={shownRepeat.loading ? "Loading repeat…" : null}
       zoneCity={
         seriesTimeZone === appTimeZone ? null : timeZoneCity(seriesTimeZone)
       }
@@ -1707,7 +1711,7 @@ export function EventEditorSheet({
         <RepeatSection
           editor={recurrenceEditor}
           failed={masterFailed}
-          hasRule={shownRecurrence.length > 0}
+          hasRule={shownRepeat.rules.length > 0}
           onRetry={onRetryMaster}
         />
 

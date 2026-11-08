@@ -10,6 +10,7 @@ import {
   lastWeekdayOf,
   monthlyWeekdayOf,
   occurrenceDayMoved,
+  occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesCountingDays,
@@ -1527,5 +1528,53 @@ describe("seriesRecurrenceForSave", () => {
 
   test("leaves a rule the save already sends alone", () => {
     expect(after(["RRULE:FREQ=WEEKLY"])).toBeUndefined();
+  });
+});
+
+describe("occurrenceRepeatShown", () => {
+  const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=SU"];
+
+  test("a usable rule shows the form's", () => {
+    expect(
+      occurrenceRepeatShown({
+        edited: false,
+        recurrence: weekly,
+        seriesRecurrence: ["RRULE:FREQ=DAILY"],
+        unusable: false,
+      })
+    ).toEqual({ loading: false, rules: weekly });
+  });
+
+  test("a reopened editor shows the series' cached rule while it can't be used", () => {
+    expect(
+      occurrenceRepeatShown({
+        edited: false,
+        recurrence: [],
+        seriesRecurrence: weekly,
+        unusable: true,
+      })
+    ).toEqual({ loading: true, rules: weekly });
+  });
+
+  test("with nothing cached it's loading, not 'doesn't repeat'", () => {
+    expect(
+      occurrenceRepeatShown({
+        edited: false,
+        recurrence: [],
+        seriesRecurrence: undefined,
+        unusable: true,
+      })
+    ).toEqual({ loading: true, rules: [] });
+  });
+
+  test("a repeat the user turned off stays off while the series refreshes", () => {
+    expect(
+      occurrenceRepeatShown({
+        edited: true,
+        recurrence: [],
+        seriesRecurrence: weekly,
+        unusable: true,
+      })
+    ).toEqual({ loading: false, rules: [] });
   });
 });

@@ -734,3 +734,34 @@ export function getDefaultRecurrenceScopeForEvent(params: {
   }
   return "this";
 }
+
+/**
+ * What an occurrence's repeat row shows. While the series' rule can't be
+ * used (loading, refreshing, or its refresh failed), the row still shows
+ * the series' last known rule, a cached copy the form hasn't taken, for
+ * display only (the form and a save keep their own). A repeat the user
+ * changed shows as they set it, "doesn't repeat" included.
+ */
+export function occurrenceRepeatShown(params: {
+  /** The user changed the repeat in this editor. */
+  edited: boolean;
+  /** The form's recurrence. */
+  recurrence: string[];
+  /** The series' cached recurrence, if any. */
+  seriesRecurrence: string[] | undefined;
+  /** The series' rule can't be used yet. */
+  unusable: boolean;
+}): {
+  /** It repeats, but how isn't known yet: no rule to show. */
+  loading: boolean;
+  rules: string[];
+} {
+  if (!params.unusable || params.edited) {
+    return { loading: false, rules: params.recurrence };
+  }
+  const rules =
+    params.recurrence.length > 0
+      ? params.recurrence
+      : (params.seriesRecurrence ?? []);
+  return { loading: true, rules };
+}
