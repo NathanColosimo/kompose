@@ -1100,9 +1100,19 @@ function NativeLinkListEditor({
           <Pressable
             accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
             accessibilityRole="button"
-            hitSlop={14}
             onPress={() => onRemoveLink(index)}
-            style={{ paddingTop: 2 }}
+            // 44pt to touch around the 16pt icon, laid out as before (16pt,
+            // 2pt down) by the negative margins; hitSlop would be clipped
+            // at the card's edge.
+            style={{
+              alignItems: "center",
+              height: 44,
+              justifyContent: "center",
+              marginBottom: -14,
+              marginHorizontal: -14,
+              marginTop: -12,
+              width: 44,
+            }}
           >
             <Icon as={XCircle} className="text-muted-foreground" size={16} />
           </Pressable>
