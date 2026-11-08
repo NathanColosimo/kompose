@@ -1,5 +1,5 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { keepsTimes } from "@kompose/google-cal/series-edits";
+import { changedFields, keepsTimes } from "@kompose/google-cal/series-edits";
 import { dayOfStart } from "@kompose/google-cal/until";
 import type { Temporal } from "temporal-polyfill";
 import {
@@ -21,11 +21,6 @@ export interface EditedFields {
   summary: string;
 }
 
-type Occurrence = Pick<
-  GoogleEvent,
-  "colorId" | "conferenceData" | "description" | "location" | "summary"
->;
-
 /**
  * An edit made through one occurrence, saved for its series (This and
  * following, or Entire series): only the fields the user changed,
@@ -40,33 +35,22 @@ type Occurrence = Pick<
  */
 export function seriesEditFields(params: {
   edited: EditedFields;
-  occurrence: Occurrence;
+  occurrence: GoogleEvent;
 }): Omit<EditedFields, "summary"> & { summary?: string } {
   const { edited, occurrence } = params;
-  const conferenceChanged =
-    JSON.stringify(edited.conferenceData ?? null) !==
-    JSON.stringify(occurrence.conferenceData ?? null);
-  return {
-    colorId: changedText(edited.colorId, occurrence.colorId),
-    conferenceData: conferenceChanged ? edited.conferenceData : undefined,
-    description: changedText(edited.description, occurrence.description),
-    end: edited.end,
-    location: changedText(edited.location, occurrence.location),
-    start: edited.start,
-    summary: changedText(edited.summary, occurrence.summary),
-  };
-}
-
-/**
- * `now` when it differs from what the editor opened with (trimmed), and
- * "" when it was cleared.
- */
-function changedText(
-  now: string | undefined,
-  opened: string | null | undefined
-): string | undefined {
-  const text = now?.trim() ?? "";
-  return text === (opened?.trim() ?? "") ? undefined : text;
+  // As the server reads them (`changedFields`): an empty field is "", so
+  // one the user cleared still differs from the occurrence's.
+  const changes = changedFields(
+    {
+      colorId: edited.colorId ?? "",
+      conferenceData: edited.conferenceData,
+      description: edited.description?.trim() ?? "",
+      location: edited.location?.trim() ?? "",
+      summary: edited.summary.trim(),
+    },
+    occurrence
+  );
+  return { ...changes, end: edited.end, start: edited.start };
 }
 
 /**

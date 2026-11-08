@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { refusalMessage } from "@kompose/google-cal/series-edits";
+import { ORPCError } from "@orpc/client";
 import { Temporal } from "temporal-polyfill";
 import {
   chosenScope,
@@ -7,8 +9,11 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  refuseSave,
   SCOPE_DIALOG_COPY,
   seriesCutUnsure,
+  seriesMeetsSeveralTimesADay,
+  seriesRefusalOf,
   seriesSplitBlock,
 } from "./recurrence-scope-options";
 
@@ -227,26 +232,26 @@ test("turns This and following off where a new series can't start", () => {
   const blocked = { ...none, splitBlocked: "addedOccurrence" as const };
   expect(off(blocked)).toEqual(["following"]);
   expect(eventSaveDescription(blocked)).toBe(
-    "This occurrence was added to the series on its own, so This and following isn't available."
+    "This and following isn't available for an occurrence added to the series on its own."
   );
   expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
   // A moved day keeps its own sentence, with the reason after it.
   expect(eventSaveDescription({ ...blocked, dateMoved: true })).toBe(
-    "This occurrence is now on another day than its series, so your changes apply to it, or from it on. This occurrence was added to the series on its own, so This and following isn't available."
+    "This occurrence is now on another day than its series, so your changes apply to it, or from it on. This and following isn't available for an occurrence added to the series on its own."
   );
   // A new repeat can then only go to the entire series.
   expect(eventSaveDescription({ ...blocked, patternChanged: true })).toBe(
-    "This occurrence was added to the series on its own, so This and following isn't available. A new repeat applies to the entire series."
+    "This and following isn't available for an occurrence added to the series on its own. A new repeat applies to the entire series."
   );
   // A new day and a new repeat at once: no scope fits, and it says so,
   // with the reason that applies.
   const stuck = { ...blocked, dateMoved: true, patternChanged: true };
   expect(off(stuck)).toEqual(["all", "following", "this"]);
   expect(eventSaveDescription(stuck)).toBe(
-    "This occurrence was added to the series on its own, so This and following isn't available. Change the times and the repeat in two saves."
+    "This and following isn't available for an occurrence added to the series on its own. Change the times and the repeat in two saves."
   );
   expect(eventSaveDescription({ ...stuck, splitBlocked: "severalRules" })).toBe(
-    "This series repeats by more than one rule, so This and following isn't available. Change the times and the repeat in two saves."
+    "This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
   );
 });
 
@@ -378,7 +383,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
     this: true,
   });
   expect(eventSaveDescription(changes)).toBe(
-    "This occurrence was added to the series on its own, so This and following isn't available. Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting."
+    "This and following isn't available for an occurrence added to the series on its own. Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting."
   );
   expect(
     eventSaveDescription({
@@ -387,7 +392,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
       splitBlocked: "severalRules",
     })
   ).toBe(
-    "This series repeats by more than one rule, so This and following isn't available. Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting."
+    "This and following isn't available for a series with more than one rule. Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting."
   );
 });
 
@@ -462,7 +467,7 @@ describe("a save that would undo a meeting's own changes", () => {
     const blocked = { ...changes, splitBlocked: "addedOccurrence" as const };
     expect(off(blocked)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(blocked)).toBe(
-      "This occurrence was added to the series on its own, so This and following isn't available. The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
+      "This and following isn't available for an occurrence added to the series on its own. The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
     );
   });
 
@@ -510,12 +515,12 @@ describe("a new time for a series of several rules", () => {
     const occurrence = { ...changes, splitBlocked: "severalRules" as const };
     expect(off(occurrence)).toEqual(["all", "following"]);
     expect(eventSaveDescription(occurrence)).toBe(
-      "This series repeats by more than one rule, so This and following isn't available. A new time applies to this occurrence only."
+      "This and following isn't available for a series with more than one rule. A new time applies to this occurrence only."
     );
     // Opened from the series itself (no occurrence to split at).
     expect(off(changes)).toEqual(["all"]);
     expect(eventSaveDescription(changes)).toBe(
-      "This series repeats by more than one rule, so a new time can't apply to the entire series."
+      "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time."
     );
   });
 
@@ -527,7 +532,7 @@ describe("a new time for a series of several rules", () => {
     };
     expect(off(both)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(both)).toBe(
-      "This series repeats by more than one rule, so This and following isn't available. Change the times and the repeat in two saves."
+      "This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
     );
   });
 
@@ -567,4 +572,166 @@ describe("a new time for a series of several rules", () => {
       "Couldn't load the series, so the new time applies to this occurrence only. Try again later for the rest."
     );
   });
+});
+
+describe("the server's refusal of a series write", () => {
+  const refused = (data: unknown) =>
+    new ORPCError("BAD_REQUEST", { data, message: "Refused." });
+
+  test("is read from the error's typed data, by its reason", () => {
+    expect(seriesRefusalOf(refused({ reason: "addedBeforeStart" }))).toEqual({
+      reason: "addedBeforeStart",
+    });
+    expect(
+      seriesRefusalOf(
+        refused({
+          originalStarts: ["2026-12-07T09:00:00-05:00", "2026-12-08"],
+          reason: "dropsChangedOccurrences",
+        })
+      )
+    ).toEqual({
+      originalStarts: ["2026-12-07T09:00:00-05:00", "2026-12-08"],
+      reason: "dropsChangedOccurrences",
+    });
+  });
+
+  test("isn't any other failure", () => {
+    expect(seriesRefusalOf(refused({ reason: "somethingNew" }))).toBeNull();
+    expect(
+      seriesRefusalOf(refused({ reason: "dropsChangedOccurrences" }))
+    ).toBeNull();
+    expect(seriesRefusalOf(refused(undefined))).toBeNull();
+    expect(
+      seriesRefusalOf(
+        new ORPCError("INTERNAL_SERVER_ERROR", {
+          data: { reason: "countUnknown" },
+        })
+      )
+    ).toBeNull();
+    expect(seriesRefusalOf(new Error("offline"))).toBeNull();
+  });
+
+  test("turns the refused scope off and leads with why, in the server's words", () => {
+    const refusal = { reason: "severalTimesADay" } as const;
+    const changes = { ...none, refused: refuseSave(null, "all", refusal) };
+    expect(off(changes)).toEqual(["all"]);
+    expect(eventSaveDescription(changes)).toBe(
+      `${refusalMessage(refusal)} ${SCOPE_DIALOG_COPY.saveEvent.description}`
+    );
+  });
+
+  test("a refused delete keeps This and following off, saying why", () => {
+    const refusal = { reason: "deleteFromAddedOccurrence" } as const;
+    expect(
+      eventDeleteScopeState({
+        cutUnsure: false,
+        refused: refuseSave(null, "following", refusal),
+        seriesRuleLoaded: true,
+      })
+    ).toEqual({
+      description: `${refusalMessage(refusal)} Delete:`,
+      disabled: { following: true },
+    });
+  });
+
+  test("keeps every scope refused for the save off, led by the latest reason", () => {
+    const drops = {
+      originalStarts: ["2026-12-07T09:00:00-05:00"],
+      reason: "dropsChangedOccurrences",
+    } as const;
+    const first = refuseSave(null, "all", drops);
+    const both = refuseSave(first, "following", { reason: "countUnknown" });
+    const changes = { ...none, refused: both };
+    expect(off(changes)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(changes)).toStartWith(
+      refusalMessage({ reason: "countUnknown" })
+    );
+  });
+});
+
+describe("This and following, turned off before the server would refuse it", () => {
+  const zone = "America/New_York";
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+  const occurrence = (dateTime: string) => ({
+    originalStartTime: at(dateTime),
+    recurringEventId: "series",
+    start: at(dateTime),
+  });
+
+  test("from the series' first meeting, with meetings added before it", () => {
+    const master = {
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261102T090000",
+      ],
+      start: at("2026-11-09T09:00:00-05:00"),
+    };
+    expect(
+      seriesSplitBlock(occurrence("2026-11-09T09:00:00-05:00"), master, zone)
+    ).toBe("addedBeforeStart");
+    // From the first meeting This and following is the whole series: a
+    // second rule doesn't block it there.
+    expect(
+      seriesSplitBlock(
+        occurrence("2026-11-09T09:00:00-05:00"),
+        {
+          ...master,
+          recurrence: [
+            "RRULE:FREQ=WEEKLY;BYDAY=MO",
+            "RRULE:FREQ=WEEKLY;BYDAY=WE",
+          ],
+        },
+        zone
+      )
+    ).toBeNull();
+    expect(
+      eventSaveDescription({ ...none, splitBlocked: "addedBeforeStart" })
+    ).toBe(refusalMessage({ reason: "addedBeforeStart" }));
+  });
+
+  test("where the series' COUNT left can't be worked out", () => {
+    // Five times by a rule the app can't walk (BYWEEKNO), with an added
+    // day: Google's own list can't tell the added meeting apart either.
+    const master = {
+      recurrence: [
+        "RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48;BYDAY=MO;COUNT=5",
+        "RDATE;TZID=America/New_York:20261111T090000",
+      ],
+      start: at("2026-11-09T09:00:00-05:00"),
+    };
+    const later = occurrence("2026-11-16T09:00:00-05:00");
+    expect(seriesSplitBlock(later, master, zone)).toBe("countUnknown");
+    // A new COUNT isn't carried: nothing to work out.
+    expect(
+      seriesSplitBlock(later, master, zone, [
+        "RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48;BYDAY=MO;COUNT=2",
+      ])
+    ).toBeNull();
+    // Without an added day the server counts from Google's own list.
+    expect(
+      seriesSplitBlock(
+        later,
+        { ...master, recurrence: [master.recurrence[0] ?? ""] },
+        zone
+      )
+    ).toBeNull();
+  });
+});
+
+test("a series meets several times a day by two rules, or one at its own hour", () => {
+  const start = {
+    dateTime: "2026-11-09T09:00:00-05:00",
+    timeZone: "America/New_York",
+  };
+  const several = (recurrence: string[]) =>
+    seriesMeetsSeveralTimesADay({ recurrence, start }, "America/New_York");
+  expect(several(["RRULE:FREQ=WEEKLY;BYDAY=MO"])).toBe(false);
+  expect(several(["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9"])).toBe(false);
+  expect(several(["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15"])).toBe(true);
+  expect(
+    several([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
+    ])
+  ).toBe(true);
 });

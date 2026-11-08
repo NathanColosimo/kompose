@@ -8,6 +8,7 @@ describe("seriesEditFields", () => {
   // Nov 17 11:00-12:00 and renamed.
   const rescheduled = {
     colorId: "5",
+    id: "series_20261116",
     description: "Agenda",
     end: { dateTime: "2026-11-17T12:00:00-05:00", timeZone: zone },
     location: "Room 1",

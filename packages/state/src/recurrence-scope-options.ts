@@ -3,15 +3,26 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
+  addsBeforeStart,
+  carryCount,
+  countOf,
   followingCutUnsure,
   followingSplitBlocked,
   type SplitBlock,
+  splitAddedDays,
 } from "@kompose/google-cal/recurrence-utils";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import type { Temporal } from "temporal-polyfill";
+import {
+  refusalMessage,
+  type SeriesRefusal,
+  sameTime,
+} from "@kompose/google-cal/series-edits";
+import { meetsSeveralTimesADay } from "@kompose/google-cal/until";
+import { ORPCError } from "@orpc/client";
+import { Temporal } from "temporal-polyfill";
 import { eventTimeZone, timeZoneCity } from "./google-event-recurrence";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
@@ -90,23 +101,25 @@ export const SCOPE_DIALOG_COPY = {
     "Moving to another calendar moves the whole series. Loading the series… Entire series opens once it's in.",
   moveEventFailedTime:
     "Moving to another calendar moves the whole series. Couldn't load the series, so the move and the new time can't be saved together. Try again later.",
-  /** A calendar move with a new time for a series of several rules. */
+  /** A calendar move with a new time for a series meeting several times a day. */
   moveEventSeveralRulesTime:
-    "Moving to another calendar moves the whole series, but a new time can't apply to a series that repeats by more than one rule. Move the calendar and change the time in two saves.",
-  /** A new time for a series of several rules: Google would mix them up. */
-  severalRulesTime:
-    "This series repeats by more than one rule, so a new time can't apply to the entire series.",
+    "Moving to another calendar moves the whole series, but its meetings keep times of their own, so a new time can't go with it. Move the calendar and change the time in two saves.",
+  /** A new time for a series meeting several times a day (the server's words). */
+  severalRulesTime: refusalMessage({ reason: "severalTimesADay" }),
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
   },
-  /** Why This and following is off for an occurrence. */
+  /**
+   * Why This and following is off for an occurrence, in the words the
+   * server refuses it with.
+   */
   splitBlocked: {
-    addedOccurrence:
-      "This occurrence was added to the series on its own, so This and following isn't available.",
-    severalRules:
-      "This series repeats by more than one rule, so This and following isn't available.",
-  } satisfies Record<SplitBlock, string>,
+    addedBeforeStart: refusalMessage({ reason: "addedBeforeStart" }),
+    addedOccurrence: refusalMessage({ reason: "addedOccurrence" }),
+    countUnknown: refusalMessage({ reason: "countUnknown" }),
+    severalRules: refusalMessage({ reason: "severalRules" }),
+  } satisfies Record<FollowingBlock, string>,
   /**
    * After `splitBlocked`, for what else the save changes: with This and
    * following off, a new repeat can only go to the entire series, and not
@@ -168,6 +181,11 @@ export interface EventSaveChanges {
   /** The user changed the repeat. */
   patternChanged: boolean;
   /**
+   * The scopes the server refused for this save, and why the latest was
+   * (`refuseSave`): they stay off, and the dialog leads with its reason.
+   */
+  refused?: SaveRefusals | null;
+  /**
    * The new repeat, counted from the series' first meeting as an Entire
    * series save would, no longer has this occurrence's original slot (so
    * Google would cancel it, a moved one too), and why: its day (an
@@ -188,18 +206,109 @@ export interface EventSaveChanges {
    * are counted there, so the dialog says so.
    */
   seriesTimeZone?: string;
-  /** The series repeats by more than one rule (`hasSeveralRules`). */
+  /**
+   * The series meets more than once a day, so its time can't change as a
+   * whole (`seriesMeetsSeveralTimesADay`; `hasSeveralRules` sees only
+   * several rules).
+   */
   severalRules?: boolean;
   /** Why a new series can't start at this occurrence (`seriesSplitBlock`). */
-  splitBlocked?: SplitBlock | null;
+  splitBlocked?: FollowingBlock | null;
+}
+
+/**
+ * Why This and following can't start a new series at an occurrence, each
+ * a reason the server refuses it for (`seriesSplitBlock`).
+ */
+export type FollowingBlock = SplitBlock | "addedBeforeStart" | "countUnknown";
+
+/** The scopes the server refused for one pending save, and the latest why. */
+export interface SaveRefusals {
+  /** The latest refusal, in the server's words (`refusalMessage`). */
+  message: string;
+  scopes: Partial<Record<RecurrenceScope, true>>;
+}
+
+/** `refused` with `scope` refused too, for `refusal`. */
+export function refuseSave(
+  refused: SaveRefusals | null | undefined,
+  scope: RecurrenceScope,
+  refusal: SeriesRefusal
+): SaveRefusals {
+  return {
+    message: refusalMessage(refusal),
+    scopes: { ...refused?.scopes, [scope]: true },
+  };
+}
+
+/** Every reason a series write is refused for, to tell one from data. */
+const REFUSAL_REASONS: Record<SeriesRefusal["reason"], true> = {
+  addedBeforeStart: true,
+  addedOccurrence: true,
+  countUnknown: true,
+  deleteFromAddedOccurrence: true,
+  dropsChangedOccurrences: true,
+  endsBeforeStart: true,
+  severalRules: true,
+  severalTimesADay: true,
+};
+
+/**
+ * The server's refusal of a series write, from a failed save or delete:
+ * a BAD_REQUEST whose typed data says why (a `SeriesRefusal`). Null for
+ * any other failure, which a retry may get past.
+ */
+export function seriesRefusalOf(error: unknown): SeriesRefusal | null {
+  if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
+    return null;
+  }
+  const data: unknown = error.data;
+  if (!(typeof data === "object" && data !== null && "reason" in data)) {
+    return null;
+  }
+  const { reason } = data;
+  if (!(typeof reason === "string" && Object.hasOwn(REFUSAL_REASONS, reason))) {
+    return null;
+  }
+  if (reason !== "dropsChangedOccurrences") {
+    // Checked against every reason just above.
+    return { reason } as SeriesRefusal;
+  }
+  const starts = "originalStarts" in data ? data.originalStarts : null;
+  return Array.isArray(starts) &&
+    starts.every((start) => typeof start === "string")
+    ? { originalStarts: starts, reason }
+    : null;
 }
 
 /**
  * The recurring delete dialog's state: This and following is off until the
  * series loads (and if it failed), or where the cut is unsure; with the
- * line that says why.
+ * line that says why. Scopes the server refused for this delete stay off,
+ * led by its reason.
  */
 export function eventDeleteScopeState(params: {
+  cutUnsure: boolean;
+  /** The scopes the server refused for this delete (`refuseSave`). */
+  refused?: SaveRefusals | null;
+  seriesRuleFailed?: boolean;
+  seriesRuleLoaded: boolean;
+}): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  const own = deleteScopesOff(params);
+  const { refused } = params;
+  return refused
+    ? {
+        description: `${refused.message} ${own.description}`,
+        disabled: { ...own.disabled, ...refused.scopes },
+      }
+    : own;
+}
+
+/** What the delete's own state rules out (`eventDeleteScopeState`). */
+function deleteScopesOff(params: {
   cutUnsure: boolean;
   seriesRuleFailed?: boolean;
   seriesRuleLoaded: boolean;
@@ -242,9 +351,12 @@ export function seriesCutUnsure(
 }
 
 /**
- * Why "This and following" can't start a new series at `occurrence`: an
- * added (RDATE) meeting, or a series with several rules. Null when it
- * can, or before the series' master loads.
+ * Why "This and following" can't start a new series at `occurrence`, as
+ * the server refuses it. From the series' first meeting it's the whole
+ * series, refused only when meetings were added before that one. From
+ * any other: an added (RDATE) meeting, a series with several rules, or a
+ * COUNT whose meetings left can't be worked out. Null when it can, or
+ * before the series' master loads.
  */
 export function seriesSplitBlock(
   occurrence:
@@ -252,10 +364,88 @@ export function seriesSplitBlock(
     | null
     | undefined,
   master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
-  appTimeZone: string
-): SplitBlock | null {
+  appTimeZone: string,
+  /** The repeat the save sends; undefined keeps the series'. */
+  recurrence?: string[]
+): FollowingBlock | null {
   const split = splitAt(occurrence, master, appTimeZone);
-  return split ? followingSplitBlocked(split) : null;
+  if (!(split && master)) {
+    return null;
+  }
+  const masterRecurrence = master.recurrence ?? [];
+  const opensSeries = sameTime(
+    split.originalStart.length === 10
+      ? { date: split.originalStart }
+      : { dateTime: split.originalStart },
+    master.start,
+    split.seriesZone
+  );
+  if (opensSeries) {
+    return addsBeforeStart(masterRecurrence, master.start, split.seriesZone)
+      ? "addedBeforeStart"
+      : null;
+  }
+  return (
+    followingSplitBlocked(split) ??
+    (countLeftUnknown({ ...split, masterRecurrence, recurrence })
+      ? "countUnknown"
+      : null)
+  );
+}
+
+/**
+ * Whether a split can't carry on the series' COUNT, as the server reads
+ * it: the save keeps the COUNT, and `carryCount` can't work out what's
+ * left. Given no Google listing, that's null only where no listing would
+ * settle it (a rule it can't walk, in a series with added days).
+ */
+function countLeftUnknown(params: {
+  masterRecurrence: string[];
+  masterStart: { date?: string | null; dateTime?: string | null };
+  originalStart: string;
+  recurrence: string[] | undefined;
+  seriesZone: string;
+}): boolean {
+  const { masterRecurrence, originalStart, seriesZone } = params;
+  const count = countOf(masterRecurrence);
+  // The new part's rule, its added days from the split on.
+  const rule = splitAddedDays(
+    params.recurrence ?? masterRecurrence,
+    originalStart,
+    seriesZone,
+    "from"
+  );
+  if (count === undefined || countOf(rule) !== count) {
+    return false;
+  }
+  return (
+    carryCount(rule, {
+      masterRecurrence,
+      originalStart,
+      seriesStart:
+        params.masterStart.dateTime ?? params.masterStart.date ?? originalStart,
+      seriesZone,
+      starts: [],
+    }) === null
+  );
+}
+
+/**
+ * Whether a series meets more than once a day, as the server reads it
+ * when refusing a new time for the entire series: two rules at different
+ * times, or one at a time other than the series' start's.
+ */
+export function seriesMeetsSeveralTimesADay(
+  master: Pick<GoogleEvent, "recurrence" | "start">,
+  appTimeZone: string
+): boolean {
+  const zone = master.start.timeZone ?? appTimeZone;
+  const start = master.start.dateTime
+    ? Temporal.Instant.from(master.start.dateTime)
+        .toZonedDateTimeISO(zone)
+        .toPlainTime()
+    : null;
+  return meetsSeveralTimesADay(master.recurrence ?? [], start);
 }
 
 /**
@@ -295,6 +485,13 @@ function splitAt(
  * can't start.
  */
 export function eventSaveDisabledScopes(
+  changes: EventSaveChanges
+): Partial<Record<RecurrenceScope, boolean>> {
+  return { ...scopesOff(changes), ...changes.refused?.scopes };
+}
+
+/** The scopes the save's own changes rule out (`eventSaveDisabledScopes`). */
+function scopesOff(
   changes: EventSaveChanges
 ): Partial<Record<RecurrenceScope, boolean>> {
   const allOff = entireSeriesOff(changes) !== null;
@@ -488,7 +685,7 @@ function seriesPendingDescription(changes: EventSaveChanges): string {
 /** The scope dialog's line where This and following can't start a series. */
 function splitBlockedDescription(
   changes: EventSaveChanges,
-  block: SplitBlock
+  block: FollowingBlock
 ): string {
   const why = SCOPE_DIALOG_COPY.splitBlocked[block];
   const then = SCOPE_DIALOG_COPY.splitBlockedThen;
@@ -520,6 +717,12 @@ function splitBlockedDescription(
 
 /** The scope dialog's line for a save: why each scope that's off is. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
+  const line = whyScopesOff(changes);
+  return changes.refused ? `${changes.refused.message} ${line}` : line;
+}
+
+/** Why the save's own changes rule out what they do (`eventSaveDescription`). */
+function whyScopesOff(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
     return calendarMoveDescription(changes);
   }
