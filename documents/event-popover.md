@@ -47,7 +47,9 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 - Picking a frequency (`pickRecurrenceFrequency`): the same one changes nothing. A new one starts at every 1, drops the old frequency's day parts, and keeps only plain weekdays for Weekly ("2TU" isn't valid weekly).
 - Monthly offers the start's day of the month ("Day 27"), its weekday of the month ("The 4th Fri"), and in its last week the last one ("The last Fri"). A rule set another way ("The last weekday", "Day 15") comes first, selected, so opening the editor never changes it. A weekday of the month replaces BYMONTHDAY; BYSETPOS goes with the BYDAY it picks from.
 - "On date" ends after that day's occurrence: UNTIL is the date for an all-day series and the day's last second, in the app's time zone, for a timed one. It starts three months after the series' start; earlier dates can't be picked.
-- Moving a series' start (not one occurrence's: that's a reschedule) carries the start's day or weekday of the month with it, and moves an end date it passed (`followStart`).
+- Moving a series' start carries its days with it (`followStart`): a weekly series' start weekday, the start's day or weekday of the month ("2nd Tue" to "3rd Wed"; a last stays a last; `BYDAY=SA;BYSETPOS=1` too), a yearly series' month; an end date the start passed moves three months on.
+  - Editing the series itself (or a new one), it applies as the start moves.
+  - Moving an occurrence, it applies at save time, and only for "This and following" or "Entire series" (`seriesRecurrenceAfterMove`); "Only this occurrence" is a reschedule and the series keeps its rule. For "Entire series" the server moves the whole series as many days as the occurrence moved (`updateEventAll`).
 - The rule shows in words ("Repeats every 2 months on the 2nd Tue"); parts the words don't cover add "(custom)", so nothing is hidden.
 - When `EventEditForm` is used inside `EventCreationPopover`, `onCancel` is not passed, so the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
 
