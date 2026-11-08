@@ -1,10 +1,22 @@
 "use client";
 
+import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
+import { SaveFailure } from "@/components/ui/held-fieldset";
 import {
   Popover,
   PopoverContent,
@@ -46,13 +58,19 @@ function buildInitialSharedFields(start: Date, end: Date) {
 
 /** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
-  const { state, actions, popoverTimes } = useEventCreation();
+  const { state, actions, eventUnavailableReason, popoverTimes } =
+    useEventCreation();
   const { createEvent } = useGoogleEventMutations();
+  // The type the user last picked; the chooser reopens on it.
   const [mode, setMode] = useState<CreationMode>("event");
+  // Set when the chooser opens with no calendar to write to: it shows Task
+  // this time, without changing the user's pick.
+  const [forcedTask, setForcedTask] = useState(false);
+  const shownMode: CreationMode = forcedTask ? "task" : mode;
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
-  const taskSubmitRef = useRef<(() => boolean) | null>(null);
+  const taskSubmitRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
 
@@ -94,12 +112,14 @@ export function EventCreationPopover() {
     if (nextMode !== "event" && nextMode !== "task") {
       return;
     }
-    if (nextMode === mode) {
+    if (nextMode === shownMode) {
       return;
     }
+    // A failed create's message belongs to the other form.
+    setFailure(null);
 
     const currentInterop =
-      mode === "event" ? eventInteropRef.current : taskInteropRef.current;
+      shownMode === "event" ? eventInteropRef.current : taskInteropRef.current;
     const nextInterop =
       nextMode === "event" ? eventInteropRef.current : taskInteropRef.current;
     const sharedFields = currentInterop?.getSharedFields();
@@ -108,31 +128,101 @@ export function EventCreationPopover() {
       nextInterop?.applySharedFields(sharedFields);
     }
 
+    setForcedTask(false);
     setMode(nextMode);
   };
 
+  // The popover stays open ("Saving…") until the create succeeds, so a
+  // failed one keeps the draft. Escape and outside clicks wait too.
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  // Each time it opens: on Task when there's no calendar to write to (the
+  // Event tab says why), else on the user's pick. Before paint, so the
+  // Event tab never flashes.
+  const blockedRef = useRef(false);
+  useLayoutEffect(() => {
+    blockedRef.current = eventUnavailableReason !== null;
+  }, [eventUnavailableReason]);
+  // Only on opening: a calendar that loads later doesn't switch tabs.
+  useLayoutEffect(() => {
+    if (state.showPopover) {
+      setForcedTask(blockedRef.current);
+    }
+  }, [state.showPopover]);
+  const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
+
+  /** Why the last create failed, shown beside Save until the next one. */
+  const [failure, setFailure] = useState<string | null>(null);
+  // A failure belongs to its draft: a new one starts clean.
+  useEffect(() => {
+    if (!state.showPopover) {
+      setFailure(null);
+    }
+  }, [state.showPopover]);
+  const holdForCreate = useCallback(
+    (created: Promise<boolean>, failureMessage: string) => {
+      savingRef.current = true;
+      setIsSaving(true);
+      setFailure(null);
+      created.then((saved) => {
+        savingRef.current = false;
+        setIsSaving(false);
+        if (saved) {
+          actions.closePopover();
+        } else {
+          setFailure(failureMessage);
+        }
+      });
+    },
+    [actions]
+  );
+
   const handleCancel = useCallback(() => {
-    actions.closePopover();
+    if (!savingRef.current) {
+      actions.closePopover();
+    }
   }, [actions]);
 
   const handleSave = useCallback(() => {
-    if (mode === "task") {
-      const shouldClose = taskSubmitRef.current?.() ?? true;
-      if (!shouldClose) {
-        return;
+    // Cmd+Enter too: the blocked Event tab has nothing to save, and closing
+    // would drop the draft.
+    if (savingRef.current || eventBlocked) {
+      return;
+    }
+    if (shownMode === "task") {
+      const result = taskSubmitRef.current?.() ?? true;
+      if (result === true) {
+        actions.closePopover();
+      } else if (result !== false) {
+        holdForCreate(result, TASK_CREATE_FAILURE_MESSAGE);
       }
-      actions.closePopover();
       return;
     }
 
     const request = eventCloseSaveRequestRef.current?.() ?? { type: "none" };
-
-    actions.closePopover();
-
-    if (request.type === "create") {
-      createEvent.mutate(request.payload);
+    if (request.type === "invalid") {
+      // The form says why ("Ends before it starts.").
+      return;
     }
-  }, [actions, createEvent, mode]);
+    if (request.type !== "create") {
+      actions.closePopover();
+      return;
+    }
+    holdForCreate(
+      createEvent
+        .mutateAsync({
+          ...request.payload,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+          // Shown beside Save; a toast could land on the popover.
+          quiet: true,
+        })
+        .then(
+          () => true,
+          () => false
+        ),
+      EVENT_CREATE_FAILURE_MESSAGE
+    );
+  }, [actions, createEvent, eventBlocked, holdForCreate, shownMode]);
 
   useHotkeys(
     "mod+enter",
@@ -144,9 +234,7 @@ export function EventCreationPopover() {
     [handleSave, state.showPopover]
   );
 
-  if (
-    !(state.showPopover && popoverTimes && state.accountId && state.calendarId)
-  ) {
+  if (!(state.showPopover && popoverTimes)) {
     return null;
   }
 
@@ -166,7 +254,10 @@ export function EventCreationPopover() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[420px] p-4"
+        // Fits the space Radix measured, scrolling a long draft rather than
+        // running off screen, as the edit popover does.
+        className="max-h-(--radix-popover-content-available-height) w-[420px] overflow-y-auto p-4"
+        collisionPadding={8}
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           handleCancel();
@@ -175,64 +266,100 @@ export function EventCreationPopover() {
           e.preventDefault();
           handleCancel();
         }}
+        // Typing goes to the title, the first thing to fill in.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          const content = e.currentTarget as HTMLElement;
+          requestAnimationFrame(() => {
+            content
+              .querySelector<HTMLInputElement>(
+                '[role="tabpanel"][data-state="active"] input'
+              )
+              ?.focus();
+          });
+        }}
         side="right"
       >
-        <Tabs className="gap-3" onValueChange={handleModeChange} value={mode}>
-          <div className="flex items-center gap-2">
-            <TabsList className="grid grid-cols-2">
-              <TabsTrigger value="event">Event</TabsTrigger>
-              <TabsTrigger value="task">Task</TabsTrigger>
-            </TabsList>
-            <div className="ml-auto flex gap-2">
-              <Button
-                onClick={handleCancel}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleSave} size="sm" type="button">
-                Save
-              </Button>
+        {/* Read-only while the create runs: a change typed then wouldn't
+            be saved. */}
+        <fieldset className="min-w-0" disabled={isSaving}>
+          <Tabs
+            className="gap-3"
+            onValueChange={handleModeChange}
+            value={shownMode}
+          >
+            <div className="flex items-center gap-2">
+              <TabsList className="grid grid-cols-2">
+                <TabsTrigger value="event">Event</TabsTrigger>
+                <TabsTrigger value="task">Task</TabsTrigger>
+              </TabsList>
+              <div className="ml-auto flex gap-2">
+                <Button
+                  disabled={isSaving}
+                  onClick={handleCancel}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={isSaving || eventBlocked}
+                  onClick={handleSave}
+                  size="sm"
+                  type="button"
+                >
+                  {isSaving ? "Saving…" : "Save"}
+                </Button>
+              </div>
             </div>
-          </div>
+            {/* Beside Save, where the click was: the form can be long. */}
+            <SaveFailure className="text-right" message={failure} />
 
-          {/* Keep both forms mounted so tab switches can transfer values in-place. */}
-          <TabsContent
-            className="mt-0 data-[state=inactive]:hidden"
-            forceMount
-            value="event"
-          >
-            <EventEditForm
-              accountId={state.accountId}
-              calendarId={state.calendarId}
-              closeSaveRequestRef={eventCloseSaveRequestRef}
-              createInteropRef={eventInteropRef}
-              end={endDate}
-              mode="create"
-              onDelete={() => undefined}
-              onSave={handleSave}
-              open={state.showPopover}
-              start={startDate}
-            />
-          </TabsContent>
+            {/* Keep both forms mounted so tab switches can transfer values in-place. */}
+            <TabsContent
+              className="mt-0 data-[state=inactive]:hidden"
+              forceMount
+              value="event"
+            >
+              {state.accountId && state.calendarId ? (
+                <EventEditForm
+                  accountId={state.accountId}
+                  calendarId={state.calendarId}
+                  closeSaveRequestRef={eventCloseSaveRequestRef}
+                  createInteropRef={eventInteropRef}
+                  end={endDate}
+                  isSaving={isSaving}
+                  mode="create"
+                  onDelete={() => undefined}
+                  onSave={handleSave}
+                  open={state.showPopover}
+                  start={startDate}
+                />
+              ) : (
+                <p className="py-6 text-center text-muted-foreground text-sm">
+                  {eventUnavailableReason}
+                </p>
+              )}
+            </TabsContent>
 
-          <TabsContent
-            className="mt-0 data-[state=inactive]:hidden"
-            forceMount
-            value="task"
-          >
-            <TaskEditForm
-              createInteropRef={taskInteropRef}
-              initialValues={initialTaskValues}
-              mode="create"
-              onClose={handleCancel}
-              open={state.showPopover}
-              submitRef={taskSubmitRef}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent
+              className="mt-0 data-[state=inactive]:hidden"
+              forceMount
+              value="task"
+            >
+              <TaskEditForm
+                createInteropRef={taskInteropRef}
+                externalSaving={isSaving}
+                initialValues={initialTaskValues}
+                mode="create"
+                onClose={handleCancel}
+                open={state.showPopover}
+                submitRef={taskSubmitRef}
+              />
+            </TabsContent>
+          </Tabs>
+        </fieldset>
       </PopoverContent>
     </Popover>
   );

@@ -24,7 +24,9 @@ import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
+  isNarrowViewportAtom,
   SIDEBAR_LEFT_WIDTH,
+  sidebarLeftNarrowOpenAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
@@ -101,6 +103,17 @@ export default function DashboardLayout({
     viewportWidth,
   ]);
 
+  // Below the md breakpoint the task panel would leave the calendar about
+  // one cramped day, so it folds each time the window narrows. The saved
+  // choice is untouched; see sidebarLeftOpenAtom.
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
+  const setNarrowOpen = useSetAtom(sidebarLeftNarrowOpenAtom);
+  useEffect(() => {
+    if (isNarrow) {
+      setNarrowOpen(false);
+    }
+  }, [isNarrow, setNarrowOpen]);
+
   // When dock mode becomes available again, close overlay-only right sidebar.
   useEffect(() => {
     if (!responsiveLayout.canDockRightSidebar) {
@@ -166,7 +179,7 @@ export default function DashboardLayout({
           <CommandBar />
           <TaskParserPreload />
           <SidebarLeft />
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset className="min-w-0">{children}</SidebarInset>
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>

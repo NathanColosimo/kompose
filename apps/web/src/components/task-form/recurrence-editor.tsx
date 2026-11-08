@@ -285,6 +285,12 @@ function RecurrenceForm({
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-auto p-0">
                   <Calendar
+                    // The repeat can't end before the task starts.
+                    disabled={
+                      referenceDate
+                        ? { before: temporalToPickerDate(referenceDate) }
+                        : undefined
+                    }
                     mode="single"
                     onSelect={(date) =>
                       dispatch({

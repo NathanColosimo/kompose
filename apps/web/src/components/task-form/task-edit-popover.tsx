@@ -6,9 +6,14 @@ import type {
   LinkMeta,
   TaskRecurrence,
   TaskSelectDecoded,
+  TaskUpdateDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
+import {
+  SAVE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -17,18 +22,28 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
-import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import {
+  SCOPE_DIALOG_COPY,
+  TASK_UPDATE_SCOPE_OPTIONS,
+} from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  markStatusFailureMessage,
+  repeatBlocksSave,
+  repeatNote,
+  resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
+  Check,
   Link2,
   Loader2,
   Trash2,
+  Undo2,
   X,
   XCircle,
 } from "lucide-react";
@@ -36,12 +51,18 @@ import Image from "next/image";
 import {
   type ReactElement,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  type UseFormSetValue,
+  useForm,
+  useWatch,
+} from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
@@ -60,6 +81,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { DurationPicker } from "@/components/ui/duration-picker";
+import { HeldFieldset, SaveFailure } from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -243,6 +265,11 @@ export function TaskEditPopover({
     [matchesOpenRequest, openRequest, setOpenRequest]
   );
 
+  const savingRef = useRef(false);
+  const setSaving = useCallback((saving: boolean) => {
+    savingRef.current = saving;
+  }, []);
+
   return (
     <Popover
       onOpenChange={(nextOpen) => {
@@ -255,14 +282,21 @@ export function TaskEditPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align={align}
-        className="w-[360px] space-y-3 p-4"
+        className="max-h-(--radix-popover-content-available-height) w-[360px] space-y-3 overflow-y-auto p-4"
+        collisionPadding={8}
+        // While Mark done saves, the editor holds: closing would drop the
+        // edits if the save fails.
         onEscapeKeyDown={(e) => {
           e.preventDefault();
-          handleCancel();
+          if (!savingRef.current) {
+            handleCancel();
+          }
         }}
         onInteractOutside={(e) => {
           e.preventDefault();
-          handleCancel();
+          if (!savingRef.current) {
+            handleCancel();
+          }
         }}
         onOpenAutoFocus={handleOpenAutoFocus}
         side={side}
@@ -272,11 +306,179 @@ export function TaskEditPopover({
           key={task?.id ?? "create-task"}
           mode={mode}
           onClose={handleCancel}
+          onSavingChange={setSaving}
           open={open}
           task={task}
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A move or resize while the editor is open updates its times, keeping any
+ * other unsaved edits, so Save can't write the old times back.
+ */
+function useSyncedSchedule(
+  task: TaskSelectDecoded | undefined,
+  setValue: UseFormSetValue<TaskFormValues>
+) {
+  const scheduleKey = task
+    ? `${task.startDate}|${task.startTime}|${task.durationMinutes}`
+    : "";
+  const lastScheduleKeyRef = useRef(scheduleKey);
+  useEffect(() => {
+    if (!task || scheduleKey === lastScheduleKeyRef.current) {
+      return;
+    }
+    lastScheduleKeyRef.current = scheduleKey;
+    setValue("startDate", task.startDate ?? null);
+    setValue("startTime", task.startTime ?? null);
+    setValue("durationMinutes", task.durationMinutes);
+  }, [scheduleKey, setValue, task]);
+}
+
+/**
+ * Cancel and Save. While a save runs, leaving would drop the edits if it
+ * fails, so both wait until it's done.
+ */
+function TaskEditorCloseActions({
+  onCancel,
+  onSave,
+  saveBlocked,
+  saving,
+}: {
+  onCancel: () => void;
+  onSave: () => void;
+  /** The form can't be saved as is; the form says why. */
+  saveBlocked: boolean;
+  saving: "done" | "save" | null;
+}) {
+  return (
+    <div className="ml-auto flex gap-2">
+      <Button
+        disabled={saving !== null}
+        onClick={onCancel}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        Cancel
+      </Button>
+      <Button
+        disabled={saving !== null || saveBlocked}
+        onClick={onSave}
+        size="sm"
+        type="button"
+      >
+        {saving === "save" ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A series occurrence moved to the inbox (no date): nothing follows it,
+ * and a repeat change takes it out of its series.
+ */
+function isUndatedMember(task: TaskSelectDecoded | undefined): boolean {
+  return Boolean(task?.seriesMasterId && !task.startDate);
+}
+
+/** A dated series occurrence, which "this and following" can start from. */
+function hasFollowing(task: TaskSelectDecoded | undefined): boolean {
+  return Boolean(task?.seriesMasterId && task.startDate);
+}
+
+/** Mark done waits while Save runs, or while the repeat can't save. */
+function isDoneBlocked(saving: "done" | "save" | null, repeatBlocked: boolean) {
+  return saving === "save" || repeatBlocked;
+}
+
+/**
+ * Cmd+Enter saves the open editor, but not while it saves, and not behind
+ * a dialog over it (the scope or delete question), where it would re-ask
+ * and drop the choice made in it.
+ */
+function canSaveFromKeyboard(params: {
+  dialogOpen: boolean;
+  open: boolean;
+  saving: boolean;
+  showActionButtons: boolean;
+}): boolean {
+  return (
+    params.open &&
+    params.showActionButtons &&
+    !params.saving &&
+    !params.dialogOpen
+  );
+}
+
+/** Whether the editor holds for a save: its own, or the caller's. */
+function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
+  return saving !== null || externalSaving;
+}
+
+/** What the repeat will do, or why it can't save (repeatNote). */
+function RepeatNote({
+  note,
+}: {
+  note: { blocking: boolean; text: string } | null;
+}) {
+  if (!note) {
+    return null;
+  }
+  return (
+    <p
+      className={cn(
+        "text-xs",
+        note.blocking ? "text-destructive" : "text-muted-foreground"
+      )}
+    >
+      {note.text}
+    </p>
+  );
+}
+
+/** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
+function TaskDoneButton({
+  disabled,
+  isDone,
+  isSaving,
+  onClick,
+}: {
+  /** Another save (Save) is running. */
+  disabled: boolean;
+  isDone: boolean;
+  /** Saving the editor's edits with it; the editor closes once saved. */
+  isSaving: boolean;
+  onClick: () => void;
+}) {
+  if (isSaving) {
+    return (
+      <Button
+        className="gap-1.5"
+        disabled
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        Saving…
+      </Button>
+    );
+  }
+  return (
+    <Button
+      className="gap-1.5"
+      disabled={disabled}
+      onClick={onClick}
+      size="sm"
+      type="button"
+      variant="outline"
+    >
+      {isDone ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
+      {isDone ? "Mark not done" : "Mark done"}
+    </Button>
   );
 }
 
@@ -286,17 +488,23 @@ export function TaskEditForm({
   mode,
   submitRef,
   onClose,
+  onSavingChange,
   open,
   createInteropRef,
+  externalSaving = false,
 }: {
   task?: TaskSelectDecoded;
   initialValues?: Partial<TaskFormValues>;
   mode: "create" | "edit";
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
-  submitRef?: React.Ref<() => boolean>;
+  submitRef?: React.Ref<() => boolean | Promise<boolean>>;
   onClose: () => void;
+  /** A save is running: the popover holds (no Escape or outside close). */
+  onSavingChange?: (saving: boolean) => void;
   open: boolean;
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
+  /** The caller is saving this form's values (the create popover holds). */
+  externalSaving?: boolean;
 }) {
   const showActionButtons = !submitRef;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
@@ -305,6 +513,20 @@ export function TaskEditForm({
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
+  /** Mark done waiting on the scope dialog for the edits saved with it. */
+  const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
+  /** Mark done is saving the edits; the editor stays open until it has. */
+  /**
+   * What the editor is holding open for: Mark done ("done") or Save
+   * ("save"). It closes when the save succeeds and keeps the draft if not.
+   */
+  const [saving, setSaving] = useState<"done" | "save" | null>(null);
+  /** Why the last held save failed, shown beside Save until the next one. */
+  const [failure, setFailure] = useState<string | null>(null);
+  const isSavingStatus = isHolding(saving, externalSaving);
+  useEffect(() => {
+    onSavingChange?.(isSavingStatus);
+  }, [isSavingStatus, onSavingChange]);
   const isCreateMode = mode === "create";
 
   const isRecurring =
@@ -313,14 +535,8 @@ export function TaskEditForm({
     if (!task) {
       return initialCreateValues?.recurrence ?? null;
     }
-    if (task.recurrence || !task.seriesMasterId) {
-      return task.recurrence ?? null;
-    }
-
-    const masterTask = (tasksQuery.data ?? []).find(
-      (candidate) => candidate.id === task.seriesMasterId
-    );
-    return masterTask?.recurrence ?? null;
+    // Shared with iOS, so both compare edits against the same pattern.
+    return resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []);
   }, [initialCreateValues?.recurrence, task, tasksQuery.data]);
 
   const handleDeleteClick = useCallback(() => {
@@ -355,8 +571,24 @@ export function TaskEditForm({
       e.preventDefault();
       handleDeleteClick();
     },
-    { enabled: open && !isCreateMode },
-    [handleDeleteClick, isCreateMode, open]
+    // Not behind a dialog over the editor, where it would delete the task
+    // out from under the question being asked.
+    {
+      enabled:
+        open &&
+        !isCreateMode &&
+        !isSavingStatus &&
+        !showTagScopeDialog &&
+        !showDeleteConfirm,
+    },
+    [
+      handleDeleteClick,
+      isCreateMode,
+      isSavingStatus,
+      open,
+      showDeleteConfirm,
+      showTagScopeDialog,
+    ]
   );
 
   const resolvedInitialValues = useMemo<TaskFormValues>(
@@ -369,86 +601,223 @@ export function TaskEditForm({
     [initialCreateValues, resolvedRecurrence, task]
   );
 
-  const { control, setValue, handleSubmit, getValues } =
-    useForm<TaskFormValues>({
-      defaultValues: resolvedInitialValues,
-    });
+  const {
+    control,
+    setValue,
+    handleSubmit,
+    getValues,
+    formState: { isDirty },
+  } = useForm<TaskFormValues>({
+    defaultValues: resolvedInitialValues,
+  });
+
+  useSyncedSchedule(task, setValue);
 
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const recurrence = useWatch({ control, name: "recurrence" });
+  // The note under Repeat says why; Save and Mark done wait for a fix.
+  const repeatBlocked = repeatBlocksSave({
+    next: recurrence,
+    previous: resolvedRecurrence,
+    startDate,
+  });
 
+  /**
+   * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
+   * failure is reported by the mutation.
+   */
   const commitUpdate = useCallback(
-    (values: TaskFormValues, scope: UpdateScope) => {
+    (
+      values: TaskFormValues,
+      scope: UpdateScope,
+      extra: Partial<TaskUpdateDecoded> = {},
+      /**
+       * While the editor holds open on the save (Mark done): optimistic
+       * false, and a failure message that says the edits are still here.
+       */
+      hold?: { failureMessage: string }
+    ): Promise<boolean> => {
       if (!task) {
-        return;
+        return Promise.resolve(false);
+      }
+      if (hold) {
+        setFailure(null);
       }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
           : (task.durationMinutes ?? 30);
 
-      updateTask.mutate({
-        id: task.id,
-        scope,
-        task: {
-          description: values.description ?? "",
-          dueDate: values.dueDate,
-          durationMinutes: normalizedDuration,
-          links: values.links,
-          recurrence: values.recurrence,
-          startDate: values.startDate,
-          startTime: values.startTime,
-          tagIds: values.tagIds,
-          title: values.title.trim(),
-        },
-      });
+      return updateTask
+        .mutateAsync({
+          failureMessage: hold?.failureMessage,
+          id: task.id,
+          optimistic: !hold,
+          // The held editor says what failed, beside Save.
+          quiet: Boolean(hold),
+          scope,
+          task: {
+            description: values.description ?? "",
+            dueDate: values.dueDate,
+            durationMinutes: normalizedDuration,
+            links: values.links,
+            // Sent only when it changed: an explicit null ends the repeat,
+            // so an untouched occurrence must not send one.
+            recurrence: taskRecurrenceEquals(
+              resolvedRecurrence,
+              values.recurrence
+            )
+              ? undefined
+              : values.recurrence,
+            startDate: values.startDate,
+            startTime: values.startTime,
+            tagIds: values.tagIds,
+            title: values.title.trim(),
+            ...extra,
+          },
+        })
+        .then(
+          () => true,
+          () => {
+            setFailure(hold?.failureMessage ?? null);
+            return false;
+          }
+        );
     },
-    [task, updateTask]
+    [resolvedRecurrence, task, updateTask]
   );
 
+  /**
+   * Saves the scope dialog's edits, then marks this occurrence done when
+   * Mark done asked for it.
+   */
+  const commitWithStatus = useCallback(
+    (
+      values: TaskFormValues,
+      scope: UpdateScope,
+      status: TaskSelectDecoded["status"] | null
+    ): Promise<boolean> => {
+      if (!(status && task)) {
+        return commitUpdate(values, scope);
+      }
+      // One write: the status goes on this occurrence alone (the server
+      // keeps it when a "following" save also changes the series). The
+      // editor holds open until it saves, so the cache waits for the server:
+      // an early update could unmount the editor or roll back over the draft.
+      return commitUpdate(
+        values,
+        scope,
+        { status },
+        { failureMessage: markStatusFailureMessage(status) }
+      );
+    },
+    [commitUpdate, task]
+  );
+
+  /** Whether saving `values` needs the scope dialog, or which scope it uses. */
+  const scopeDecisionFor = useCallback(
+    (values: TaskFormValues) =>
+      task
+        ? getTaskUpdateScopeDecision({
+            hasCoreFieldChanges: haveTaskCoreFieldsChanged({
+              next: {
+                description: values.description,
+                dueDate: values.dueDate,
+                durationMinutes: values.durationMinutes,
+                startDate: values.startDate,
+                startTime: values.startTime,
+                title: values.title,
+              },
+              previous: {
+                description: task.description,
+                dueDate: task.dueDate,
+                durationMinutes: task.durationMinutes,
+                startDate: task.startDate,
+                startTime: task.startTime,
+                title: task.title,
+              },
+            }),
+            hasFollowing: hasFollowing(task),
+            isRecurring,
+            nextRecurrence: values.recurrence,
+            nextTagIds: values.tagIds,
+            previousRecurrence: resolvedRecurrence,
+            previousTagIds: task.tags.map((tag) => tag.id),
+          })
+        : null,
+    [isRecurring, resolvedRecurrence, task]
+  );
+
+  const holdForSave = useCallback(
+    (save: Promise<boolean>) => {
+      setSaving("save");
+      save.then((saved) => {
+        setSaving(null);
+        if (saved) {
+          onClose();
+        }
+      });
+    },
+    [onClose]
+  );
+
+  /**
+   * True when the editor can close now, false when it stays (a dialog, or a
+   * save it holds for), or the create to wait for when the caller holds.
+   */
   const submit = useCallback(
-    (values: TaskFormValues) => {
+    (values: TaskFormValues): boolean | Promise<boolean> => {
+      // The note under Repeat says why ("The repeat ends Nov 10, before...").
+      if (
+        repeatBlocksSave({
+          next: values.recurrence,
+          previous: resolvedRecurrence,
+          startDate: values.startDate,
+        })
+      ) {
+        return false;
+      }
       if (isCreateMode) {
         const payload = buildTaskCreatePayload(values);
         if (!payload) {
           return true;
         }
-        createTask.mutate(payload);
-        return true;
+        const created = createTask
+          .mutateAsync({
+            ...payload,
+            failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+            quiet: true,
+          })
+          .then(
+            () => true,
+            () => false
+          );
+        if (!showActionButtons) {
+          // The caller holds, and shows a failure beside its own Save.
+          return created;
+        }
+        setFailure(null);
+        holdForSave(
+          created.then((saved) => {
+            setFailure(saved ? null : TASK_CREATE_FAILURE_MESSAGE);
+            return saved;
+          })
+        );
+        return false;
       }
 
       if (!task) {
         return true;
       }
 
-      const decision = getTaskUpdateScopeDecision({
-        hasCoreFieldChanges: haveTaskCoreFieldsChanged({
-          next: {
-            description: values.description,
-            dueDate: values.dueDate,
-            durationMinutes: values.durationMinutes,
-            startDate: values.startDate,
-            startTime: values.startTime,
-            title: values.title,
-          },
-          previous: {
-            description: task.description,
-            dueDate: task.dueDate,
-            durationMinutes: task.durationMinutes,
-            startDate: task.startDate,
-            startTime: task.startTime,
-            title: task.title,
-          },
-        }),
-        isRecurring,
-        nextRecurrence: values.recurrence,
-        nextTagIds: values.tagIds,
-        previousRecurrence: resolvedRecurrence,
-        previousTagIds: task.tags.map((tag) => tag.id),
-      });
+      const decision = scopeDecisionFor(values);
+      if (!decision) {
+        return true;
+      }
 
       if (decision.action === "prompt") {
         pendingUpdateRef.current = values;
@@ -457,15 +826,30 @@ export function TaskEditForm({
         return false;
       }
 
-      commitUpdate(values, decision.scope);
-      return true;
+      if (!showActionButtons) {
+        commitUpdate(values, decision.scope);
+        return true;
+      }
+      // The editor holds open ("Saving…") until the save succeeds, so a
+      // failed save keeps the edits.
+      holdForSave(
+        commitUpdate(
+          values,
+          decision.scope,
+          {},
+          { failureMessage: SAVE_FAILURE_MESSAGE }
+        )
+      );
+      return false;
     },
     [
       commitUpdate,
       createTask,
+      holdForSave,
       isCreateMode,
-      isRecurring,
       resolvedRecurrence,
+      scopeDecisionFor,
+      showActionButtons,
       task,
     ]
   );
@@ -475,9 +859,48 @@ export function TaskEditForm({
     submit,
   ]);
 
+  // Mark done saves unsaved edits with it, so they're never dropped: in one
+  // save where it can (taskStatusSavePlan), through the scope dialog when
+  // the task repeats. With edits, the editor stays open until they've
+  // saved, so a failed save keeps them.
+  const handleToggleDone = useCallback(() => {
+    if (!task) {
+      return;
+    }
+    const status = task.status === "done" ? "todo" : "done";
+    const values = getValues();
+    const decision = isDirty ? scopeDecisionFor(values) : null;
+    if (!decision) {
+      updateTask.mutate({ id: task.id, scope: "this", task: { status } });
+      onClose();
+      return;
+    }
+    if (decision.action === "prompt") {
+      pendingUpdateRef.current = values;
+      pendingStatusRef.current = status;
+      setTagScope(decision.defaultScope);
+      setShowTagScopeDialog(true);
+      return;
+    }
+    setSaving("done");
+    commitWithStatus(values, decision.scope, status).then((saved) => {
+      setSaving(null);
+      if (saved) {
+        onClose();
+      }
+    });
+  }, [
+    commitWithStatus,
+    getValues,
+    isDirty,
+    onClose,
+    scopeDecisionFor,
+    task,
+    updateTask,
+  ]);
+
   const handleSaveClick = useCallback(() => {
-    const result = submit(getValues());
-    if (result) {
+    if (submit(getValues()) === true) {
       onClose();
     }
   }, [getValues, onClose, submit]);
@@ -488,8 +911,23 @@ export function TaskEditForm({
       e.preventDefault();
       handleSaveClick();
     },
-    { enabled: open && showActionButtons, enableOnFormTags: true },
-    [handleSaveClick, open, showActionButtons]
+    {
+      enabled: canSaveFromKeyboard({
+        dialogOpen: showTagScopeDialog || showDeleteConfirm,
+        open,
+        saving: isSavingStatus,
+        showActionButtons,
+      }),
+      enableOnFormTags: true,
+    },
+    [
+      handleSaveClick,
+      isSavingStatus,
+      open,
+      showActionButtons,
+      showDeleteConfirm,
+      showTagScopeDialog,
+    ]
   );
 
   const applySharedFields = useCallback(
@@ -534,344 +972,395 @@ export function TaskEditForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      <Input
-        onChange={(e) =>
-          setValue("title", e.target.value, { shouldDirty: true })
-        }
-        placeholder="Task title"
-        value={watchedValues.title}
-      />
+      {/* While a save runs, the fields are read-only too: a change typed
+          then would be dropped when the editor closes. (A block, not
+          display: contents, so the form's spacing still reaches the fields.) */}
+      <HeldFieldset className="min-w-0 space-y-3" saving={isSavingStatus}>
+        <Input
+          onChange={(e) =>
+            setValue("title", e.target.value, { shouldDirty: true })
+          }
+          placeholder="Task title"
+          value={watchedValues.title}
+        />
 
-      <Textarea
-        onChange={(e) =>
-          setValue("description", e.target.value, { shouldDirty: true })
-        }
-        placeholder="Add details..."
-        value={watchedValues.description}
-      />
+        <Textarea
+          onChange={(e) =>
+            setValue("description", e.target.value, { shouldDirty: true })
+          }
+          placeholder="Add details..."
+          value={watchedValues.description}
+        />
 
-      <Separator />
+        <Separator />
 
-      {/* Row 1: Start date, time, duration (calendar scheduling) */}
-      <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
-        <Controller
-          control={control}
-          name="startDate"
-          render={({ field }) => (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
-                    !field.value && "text-muted-foreground"
+        {/* Row 1: Start date, time, duration (calendar scheduling) */}
+        <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
+          <Controller
+            control={control}
+            name="startDate"
+            render={({ field }) => (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className={cn(
+                      "justify-start gap-2 text-left font-medium text-xs",
+                      !field.value && "text-muted-foreground"
+                    )}
+                    variant="outline"
+                  >
+                    <CalendarClock className="size-4 shrink-0" />
+                    <span className="truncate">
+                      {field.value
+                        ? `Start: ${formatPlainDate(field.value, {
+                            day: "numeric",
+                            month: "short",
+                          })}`
+                        : "Schedule"}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) =>
+                      field.onChange(date ? pickerDateToTemporal(date) : null)
+                    }
+                    selected={
+                      field.value
+                        ? temporalToPickerDate(field.value)
+                        : undefined
+                    }
+                  />
+                  {field.value && (
+                    <div className="border-t p-2">
+                      <Button
+                        className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                        onClick={() => {
+                          field.onChange(null);
+                          setValue("startTime", null, { shouldDirty: true });
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X className="size-4" />
+                        Clear date
+                      </Button>
+                    </div>
                   )}
-                  variant="outline"
-                >
-                  <CalendarClock className="size-4 shrink-0" />
-                  <span className="truncate">
+                </PopoverContent>
+              </Popover>
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="startTime"
+            render={({ field }) => {
+              const value = field.value
+                ? `${String(field.value.hour).padStart(2, "0")}:${String(
+                    field.value.minute
+                  ).padStart(2, "0")}`
+                : "";
+
+              return (
+                <TimePicker
+                  onChange={(nextValue) => {
+                    const [hours, minutes] = nextValue.split(":").map(Number);
+                    field.onChange(
+                      Temporal.PlainTime.from({ hour: hours, minute: minutes })
+                    );
+                  }}
+                  placeholder="Time"
+                  value={value}
+                />
+              );
+            }}
+          />
+
+          <Controller
+            control={control}
+            name="durationMinutes"
+            render={({ field }) => (
+              <DurationPicker
+                onChange={(minutes) => field.onChange(minutes)}
+                value={field.value}
+              />
+            )}
+          />
+        </div>
+
+        {/* Row 2: Due date and Recurrence */}
+        <div className="grid grid-cols-2 gap-2">
+          <Controller
+            control={control}
+            name="dueDate"
+            render={({ field }) => (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    className={cn(
+                      "justify-start gap-2 text-left font-medium text-xs",
+                      !field.value && "text-muted-foreground"
+                    )}
+                    variant="outline"
+                  >
+                    <CalendarCheck className="size-4 shrink-0" />
                     {field.value
-                      ? `Start: ${formatPlainDate(field.value, {
+                      ? `Due: ${formatPlainDate(field.value, {
                           day: "numeric",
                           month: "short",
                         })}`
-                      : "Schedule"}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  onSelect={(date) =>
-                    field.onChange(date ? pickerDateToTemporal(date) : null)
-                  }
-                  selected={
-                    field.value ? temporalToPickerDate(field.value) : undefined
-                  }
-                />
-                {field.value && (
-                  <div className="border-t p-2">
-                    <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
-                      onClick={() => {
-                        field.onChange(null);
-                        setValue("startTime", null, { shouldDirty: true });
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <X className="size-4" />
-                      Clear date
-                    </Button>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
-          )}
+                      : "Due date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) =>
+                      field.onChange(date ? pickerDateToTemporal(date) : null)
+                    }
+                    selected={
+                      field.value === undefined || field.value === null
+                        ? undefined
+                        : temporalToPickerDate(field.value)
+                    }
+                  />
+                  {field.value && (
+                    <div className="border-t p-2">
+                      <Button
+                        className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                        onClick={() => field.onChange(null)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X className="size-4" />
+                        Clear date
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="recurrence"
+            render={({ field }) => (
+              <RecurrenceEditor
+                onChange={field.onChange}
+                referenceDate={startDate}
+                value={field.value}
+              />
+            )}
+          />
+        </div>
+        <RepeatNote
+          note={repeatNote({
+            isRecurring,
+            next: recurrence,
+            previous: resolvedRecurrence,
+            startDate,
+            undatedMember: isUndatedMember(task),
+          })}
         />
 
-        <Controller
-          control={control}
-          name="startTime"
-          render={({ field }) => {
-            const value = field.value
-              ? `${String(field.value.hour).padStart(2, "0")}:${String(
-                  field.value.minute
-                ).padStart(2, "0")}`
-              : "";
+        <Separator />
 
-            return (
-              <TimePicker
-                onChange={(nextValue) => {
-                  const [hours, minutes] = nextValue.split(":").map(Number);
-                  field.onChange(
-                    Temporal.PlainTime.from({ hour: hours, minute: minutes })
-                  );
-                }}
-                placeholder="Time"
-                value={value}
-              />
+        <LinkListEditor
+          isParsing={parseLink.isPending}
+          links={links}
+          onAddLink={(url) => {
+            // Insert an unknown placeholder immediately so the link
+            // is persisted even if the user saves before parse completes.
+            const placeholder: LinkMeta = {
+              fetchedAt: new Date().toISOString(),
+              provider: "unknown",
+              url,
+            };
+            const currentLinks =
+              (getValues("links") as unknown as LinkMeta[]) ?? [];
+            const isFirstLink = currentLinks.length === 0;
+            setValue("links", dedupeLinks([...currentLinks, placeholder]), {
+              shouldDirty: true,
+            });
+
+            parseLink.mutate(url, {
+              onSuccess: (meta) => {
+                const latest =
+                  (getValues("links") as unknown as LinkMeta[]) ?? [];
+                setValue(
+                  "links",
+                  dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
+                  { shouldDirty: true }
+                );
+
+                if (isFirstLink) {
+                  if (meta.title && !getValues("title")?.trim()) {
+                    setValue("title", meta.title, { shouldDirty: true });
+                  }
+                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                    setValue(
+                      "durationMinutes",
+                      Math.ceil(meta.durationSeconds / 60),
+                      { shouldDirty: true }
+                    );
+                  }
+                }
+              },
+            });
+          }}
+          onRemoveLink={(index) => {
+            setValue(
+              "links",
+              links.filter((_, i) => i !== index),
+              { shouldDirty: true }
             );
           }}
         />
 
         <Controller
           control={control}
-          name="durationMinutes"
+          name="tagIds"
           render={({ field }) => (
-            <DurationPicker
-              onChange={(minutes) => field.onChange(minutes)}
-              value={field.value}
-            />
+            <TagPicker onChange={field.onChange} value={field.value ?? []} />
           )}
         />
-      </div>
 
-      {/* Row 2: Due date and Recurrence */}
-      <div className="grid grid-cols-2 gap-2">
-        <Controller
-          control={control}
-          name="dueDate"
-          render={({ field }) => (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
-                    !field.value && "text-muted-foreground"
-                  )}
-                  variant="outline"
+        <SaveFailure message={failure} />
+        {showActionButtons ? (
+          <>
+            <Separator />
+            <div className="flex items-center gap-2">
+              {isCreateMode ? null : (
+                <AlertDialog
+                  onOpenChange={setShowDeleteConfirm}
+                  open={showDeleteConfirm}
                 >
-                  <CalendarCheck className="size-4 shrink-0" />
-                  {field.value
-                    ? `Due: ${formatPlainDate(field.value, {
-                        day: "numeric",
-                        month: "short",
-                      })}`
-                    : "Due date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  onSelect={(date) =>
-                    field.onChange(date ? pickerDateToTemporal(date) : null)
-                  }
-                  selected={
-                    field.value === undefined || field.value === null
-                      ? undefined
-                      : temporalToPickerDate(field.value)
-                  }
-                />
-                {field.value && (
-                  <div className="border-t p-2">
+                  <AlertDialogTrigger asChild>
                     <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
-                      onClick={() => field.onChange(null)}
+                      className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      disabled={isSavingStatus}
                       size="sm"
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                     >
-                      <X className="size-4" />
-                      Clear date
+                      <Trash2 className="size-3.5" />
+                      Delete
                     </Button>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="recurrence"
-          render={({ field }) => (
-            <RecurrenceEditor
-              onChange={field.onChange}
-              referenceDate={startDate}
-              value={field.value}
-            />
-          )}
-        />
-      </div>
-
-      <Separator />
-
-      <LinkListEditor
-        isParsing={parseLink.isPending}
-        links={links}
-        onAddLink={(url) => {
-          // Insert an unknown placeholder immediately so the link
-          // is persisted even if the user saves before parse completes.
-          const placeholder: LinkMeta = {
-            fetchedAt: new Date().toISOString(),
-            provider: "unknown",
-            url,
-          };
-          const currentLinks =
-            (getValues("links") as unknown as LinkMeta[]) ?? [];
-          const isFirstLink = currentLinks.length === 0;
-          setValue("links", dedupeLinks([...currentLinks, placeholder]), {
-            shouldDirty: true,
-          });
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              const latest =
-                (getValues("links") as unknown as LinkMeta[]) ?? [];
-              setValue(
-                "links",
-                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
-                { shouldDirty: true }
-              );
-
-              if (isFirstLink) {
-                if (meta.title && !getValues("title")?.trim()) {
-                  setValue("title", meta.title, { shouldDirty: true });
-                }
-                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                  setValue(
-                    "durationMinutes",
-                    Math.ceil(meta.durationSeconds / 60),
-                    { shouldDirty: true }
-                  );
-                }
-              }
-            },
-          });
-        }}
-        onRemoveLink={(index) => {
-          setValue(
-            "links",
-            links.filter((_, i) => i !== index),
-            { shouldDirty: true }
-          );
-        }}
-      />
-
-      <Controller
-        control={control}
-        name="tagIds"
-        render={({ field }) => (
-          <TagPicker onChange={field.onChange} value={field.value ?? []} />
-        )}
-      />
-
-      {showActionButtons ? (
-        <>
-          <Separator />
-          <div className="flex items-center gap-2">
-            {isCreateMode ? null : (
-              <AlertDialog
-                onOpenChange={setShowDeleteConfirm}
-                open={showDeleteConfirm}
-              >
-                <AlertDialogTrigger asChild>
-                  <Button
-                    className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Trash2 className="size-3.5" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete task?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {isRecurring
-                        ? "This is a recurring task. Choose what to delete."
-                        : "This action cannot be undone."}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter
-                    className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
-                  >
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    {isRecurring ? (
-                      <>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete task?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {hasFollowing(task)
+                          ? SCOPE_DIALOG_COPY.deleteTask.description
+                          : SCOPE_DIALOG_COPY.deleteTaskAlone.description}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter
+                      className={
+                        hasFollowing(task) ? "flex-col gap-2 sm:flex-col" : ""
+                      }
+                    >
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      {hasFollowing(task) ? (
+                        <>
+                          <AlertDialogAction
+                            onClick={() => confirmDelete("this")}
+                          >
+                            Only this occurrence
+                          </AlertDialogAction>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => confirmDelete("following")}
+                          >
+                            This and following
+                          </AlertDialogAction>
+                        </>
+                      ) : (
                         <AlertDialogAction
                           onClick={() => confirmDelete("this")}
                         >
-                          Only this occurrence
+                          Delete
                         </AlertDialogAction>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => confirmDelete("following")}
-                        >
-                          This and following
-                        </AlertDialogAction>
-                      </>
-                    ) : (
-                      <AlertDialogAction onClick={() => confirmDelete("this")}>
-                        Delete
-                      </AlertDialogAction>
-                    )}
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-            <div className="ml-auto flex gap-2">
-              <Button onClick={onClose} size="sm" type="button" variant="ghost">
-                Cancel
-              </Button>
-              <Button onClick={handleSaveClick} size="sm" type="button">
-                Save
-              </Button>
+                      )}
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {isCreateMode || !task ? null : (
+                <TaskDoneButton
+                  disabled={isDoneBlocked(saving, repeatBlocked)}
+                  isDone={task.status === "done"}
+                  isSaving={saving === "done"}
+                  onClick={handleToggleDone}
+                />
+              )}
+              <TaskEditorCloseActions
+                onCancel={onClose}
+                onSave={handleSaveClick}
+                saveBlocked={repeatBlocked}
+                saving={saving}
+              />
             </div>
-          </div>
-        </>
-      ) : null}
+          </>
+        ) : null}
 
-      {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
-      {isCreateMode ? null : (
-        <RecurrenceScopeDialog
-          confirmLabel="Apply"
-          description="This is a recurring task. Choose how broadly to apply the change."
-          onConfirm={() => {
-            const pendingUpdate = pendingUpdateRef.current;
-            if (!pendingUpdate) {
-              return;
-            }
-            commitUpdate(pendingUpdate, tagScope);
-            pendingUpdateRef.current = null;
-            onClose();
-          }}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) {
+        {/* Recurrence scope dialog for recurring task updates (rendered outside action row) */}
+        {isCreateMode ? null : (
+          <RecurrenceScopeDialog
+            confirmLabel="Apply"
+            description={SCOPE_DIALOG_COPY.saveTask.description}
+            onConfirm={() => {
+              const pendingUpdate = pendingUpdateRef.current;
+              if (!pendingUpdate) {
+                return;
+              }
+              const status = pendingStatusRef.current;
               pendingUpdateRef.current = null;
-            }
-            setShowTagScopeDialog(nextOpen);
-          }}
-          onValueChange={(value) => setTagScope(value as UpdateScope)}
-          open={showTagScopeDialog}
-          options={TASK_UPDATE_SCOPE_OPTIONS}
-          title="Apply task update"
-          value={tagScope}
-        />
-      )}
+              pendingStatusRef.current = null;
+              if (!status) {
+                holdForSave(
+                  commitUpdate(
+                    pendingUpdate,
+                    tagScope,
+                    {},
+                    { failureMessage: SAVE_FAILURE_MESSAGE }
+                  )
+                );
+                return;
+              }
+              // With Mark done, the editor stays open ("Saving…") until the
+              // save succeeds, so a failed save keeps the edits.
+              setSaving("done");
+              commitWithStatus(pendingUpdate, tagScope, status).then(
+                (saved) => {
+                  setSaving(null);
+                  if (saved) {
+                    onClose();
+                  }
+                }
+              );
+            }}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                pendingUpdateRef.current = null;
+                pendingStatusRef.current = null;
+              }
+              setShowTagScopeDialog(nextOpen);
+            }}
+            onValueChange={(value) => setTagScope(value as UpdateScope)}
+            open={showTagScopeDialog}
+            options={TASK_UPDATE_SCOPE_OPTIONS}
+            title={SCOPE_DIALOG_COPY.saveTask.title}
+            value={tagScope}
+          />
+        )}
+      </HeldFieldset>
     </form>
   );
 }
