@@ -1996,6 +1996,9 @@ export default function CalendarTab() {
               </Pressable>
             </View>
           ),
+          // The tab already names the screen, and a phone's bar has no
+          // room for a title beside the view and paging controls.
+          headerTitle: "",
           title: "Calendar",
         }}
       />
