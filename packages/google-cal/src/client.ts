@@ -33,6 +33,7 @@ import {
   placeInNewSeries,
   refusalMessage,
   type SeriesRefusal,
+  sameLength,
   sameTime,
 } from "./series-edits";
 import { seriesTimesForEdit } from "./series-times";
@@ -626,6 +627,55 @@ function timesOnOwnDay(
 }
 
 /**
+ * Why an Entire series write would cost occurrences changed on their own
+ * (`changed`) what's theirs, as Google applies it; null when it wouldn't.
+ * Google ties such an occurrence to its original slot: it cancels them
+ * all when the series' start moves (its time, its day or both), and each
+ * one whose slot the new rule no longer has. When only the length
+ * changes, it keeps them but gives each the series' new length, so one
+ * with a length of its own would lose it (the opened occurrence takes
+ * the edit's length, so it's not counted).
+ */
+function seriesChangeRefusal(params: {
+  changed: { occurrence: Event; originalStart: string }[];
+  master: Event;
+  opened: Event;
+  recurrence: string[];
+  times: { end: Event["end"]; start: Event["start"] };
+}): SeriesRefusal | null {
+  const { changed, master, opened, recurrence, times } = params;
+  const zone = seriesZoneOf(master);
+  const movesStart = !sameTime(times.start, master.start, zone);
+  const lost = changed
+    .filter(
+      ({ originalStart }) =>
+        movesStart ||
+        seriesMeetsAt({
+          recurrence,
+          seriesZone: repeatZone(master, times.start),
+          slot: originalStart,
+          start: times.start,
+        }) !== true
+    )
+    .map(({ originalStart }) => originalStart);
+  if (lost.length > 0) {
+    return { originalStarts: lost, reason: "dropsChangedOccurrences" };
+  }
+  if (sameLength(times, master, zone)) {
+    return null;
+  }
+  const resized = changed
+    .filter(
+      ({ occurrence }) =>
+        occurrence.id !== opened.id && !sameLength(occurrence, master, zone)
+    )
+    .map(({ originalStart }) => originalStart);
+  return resized.length > 0
+    ? { originalStarts: resized, reason: "resizesChangedOccurrences" }
+    : null;
+}
+
+/**
  * Whether `start` moves the time of day of a series that meets several
  * times a day. It has a rule per time, so its start's time can't move
  * without moving one of them onto another's, or off its own.
@@ -1008,7 +1058,10 @@ const SeriesRefusalSchema = Schema.Union([
   }),
   Schema.Struct({
     originalStarts: Schema.Array(Schema.String),
-    reason: Schema.Literal("dropsChangedOccurrences"),
+    reason: Schema.Literals([
+      "dropsChangedOccurrences",
+      "resizesChangedOccurrences",
+    ]),
   }),
 ]);
 
@@ -1747,36 +1800,32 @@ export function makeGoogleCalendarService(
       const movesSlots =
         !sameTime(times.start, master.start, zone) ||
         JSON.stringify(recurrence) !== JSON.stringify(master.recurrence ?? []);
-      if (movesSlots) {
-        // Google ties an occurrence changed on its own to its original
-        // slot: one deleted stays deleted only as a skip at the series'
-        // new slots, and one moved or edited would be dropped (refused).
+      const resizes = !sameLength(times, master, zone);
+      if (movesSlots || resizes) {
         const { cancelled, changed } = yield* exceptionsOf(
           calendarId,
           master,
           null
         );
-        recurrence = lineUpRule({
-          cancelled,
+        if (movesSlots) {
+          // One deleted on its own stays deleted only as a skip at the
+          // series' new slots.
+          recurrence = lineUpRule({
+            cancelled,
+            master,
+            rule,
+            start: times.start,
+          });
+        }
+        const refusal = seriesChangeRefusal({
+          changed,
           master,
-          rule,
-          start: times.start,
+          opened: currentEvent,
+          recurrence,
+          times,
         });
-        const lost = changed
-          .map(({ originalStart }) => originalStart)
-          .filter(
-            (slot) =>
-              seriesMeetsAt({
-                recurrence,
-                seriesZone: repeatZone(master, times.start),
-                slot,
-                start: times.start,
-              }) !== true
-          );
-        if (lost.length > 0) {
-          return yield* Effect.fail(
-            refused({ originalStarts: lost, reason: "dropsChangedOccurrences" })
-          );
+        if (refusal) {
+          return yield* Effect.fail(refused(refusal));
         }
       }
 
