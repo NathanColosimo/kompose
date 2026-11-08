@@ -234,7 +234,6 @@ describe("followStart", () => {
   });
 
   test("moves skipped days with the pattern, so none comes back", () => {
-    const zone = "America/New_York";
     const followed = (recurrence: string[], from: string, to: string) =>
       followStart({
         allDay: false,
@@ -285,7 +284,6 @@ describe("followStart", () => {
   });
 
   test("never moves a skip onto a real meeting", () => {
-    const zone = "America/New_York";
     const followed = (recurrence: string[], from: string, to: string) =>
       followStart({
         allDay: true,
