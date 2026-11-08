@@ -325,16 +325,26 @@ export function makeGoogleCalendarService(
   // --- Calendar Methods ---
 
   const listCalendars = Effect.fn("GoogleCalendar.listCalendars")(function* () {
-    const response = yield* Effect.tryPromise({
-      try: () => client.users.me.calendarList.list(),
-      catch: (cause) => new GoogleApiError({ cause }),
-    });
+    const items: unknown[] = [];
+    let pageToken: string | undefined;
+    do {
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          client.users.me.calendarList.list({ maxResults: 250, pageToken }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+      items.push(...(response.items ?? []));
+      pageToken = response.nextPageToken ?? undefined;
+    } while (pageToken);
 
-    if (!response.items) {
-      return [];
+    const parsed = z.array(CalendarSchema).safeParse(items);
+    if (!parsed.success) {
+      return yield* Effect.fail(
+        new GoogleCalendarZodError({ cause: parsed.error })
+      );
     }
 
-    return z.array(CalendarSchema).parse(response.items);
+    return parsed.data;
   });
 
   const listCalendarIds = Effect.fn("GoogleCalendar.listCalendarIds")(
