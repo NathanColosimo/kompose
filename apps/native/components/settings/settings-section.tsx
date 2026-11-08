@@ -78,8 +78,17 @@ export function SettingsRow({
           style={{ borderRadius: 16, height: 32, width: 32 }}
         />
       ) : (
-        <View className="size-8 items-center justify-center rounded-full bg-muted">
-          <Text className="font-sans-medium text-muted-foreground text-xs">
+        // Decorative (the name is beside it), and a fixed 32pt circle: the
+        // initials stay at their size, and VoiceOver skips them.
+        <View
+          accessibilityElementsHidden
+          className="size-8 items-center justify-center rounded-full bg-muted"
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Text
+            className="font-sans-medium text-muted-foreground text-xs"
+            maxFontSizeMultiplier={1}
+          >
             {initials(name) || "?"}
           </Text>
         </View>

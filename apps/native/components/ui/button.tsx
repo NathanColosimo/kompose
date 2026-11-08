@@ -307,7 +307,6 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
     const childTextClass = LABEL_COLORS[variant].childClass;
     const buttonStyle = getButtonStyle();
     const finalTextStyle = getButtonTextStyle();
-    const contentColor = labelColor;
     const iconSize = getIconSize();
     const styleWithoutFlex = getStyleWithoutFlex();
 
@@ -326,7 +325,7 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
         <Animated.View style={[animatedStyle, buttonStyle, styleWithoutFlex]}>
           {loading ? (
             <ButtonSpinner
-              color={contentColor}
+              color={labelColor}
               size={size}
               variant={loadingVariant}
             />
@@ -334,14 +333,14 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
-              {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+              {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
               <Text style={[finalTextStyle, textStyle]}>{children}</Text>
             </View>
           ) : (
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
-              {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+              {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
               <TextClassContext.Provider value={childTextClass}>
                 {children}
               </TextClassContext.Provider>
@@ -361,13 +360,13 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       >
         {loading ? (
           <ButtonSpinner
-            color={contentColor}
+            color={labelColor}
             size={size}
             variant={loadingVariant}
           />
         ) : typeof children === "string" ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {icon && <Icon as={icon} color={contentColor} size={iconSize} />}
+            {icon && <Icon as={icon} color={labelColor} size={iconSize} />}
             <Text style={[finalTextStyle, textStyle]}>{children}</Text>
           </View>
         ) : (

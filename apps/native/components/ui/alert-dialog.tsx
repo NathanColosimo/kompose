@@ -25,7 +25,11 @@ import { useColor } from "@/hooks/use-color";
 
 export type AlertDialogProps = {
   isVisible: boolean;
-  onClose: () => void;
+  /**
+   * After the dialog fades out from its own Cancel, backdrop tap or
+   * confirm. Omit it when the caller hides the dialog by `isVisible`.
+   */
+  onClose?: () => void;
   title?: string;
   description?: string;
   children?: React.ReactNode;
@@ -102,7 +106,7 @@ export function AlertDialog({
   const animateClose = () => {
     "worklet";
     backdropOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-      if (finished) {
+      if (finished && onClose) {
         runOnJS(onClose)();
       }
     });

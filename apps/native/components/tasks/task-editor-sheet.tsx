@@ -366,7 +366,7 @@ function TaskRecurrenceEditor({
               <Input
                 accessibilityLabel="Day of month"
                 containerStyle={{ width: 78 }}
-                inputStyle={{ fontSize: 13 }}
+                inputStyle={{ fontSize: 17 }}
                 keyboardType="number-pad"
                 onChangeText={(value) => {
                   const nextMonthDay = Number.parseInt(value, 10) || 1;
@@ -512,7 +512,6 @@ function TaskEditorHeaderActions({
       {onDelete ? (
         <Button
           accessibilityLabel="Delete task"
-          accessibilityRole="button"
           disabled={isSaving}
           onPress={onDelete}
           size="icon"
@@ -531,7 +530,6 @@ function TaskEditorHeaderActions({
       ) : (
         <Button
           accessibilityLabel="Save task"
-          accessibilityRole="button"
           disabled={!canSave}
           onPress={onSave}
           size="icon"
@@ -1017,6 +1015,21 @@ export function TaskEditorSheet({
   );
 }
 
+/**
+ * An http(s) address the URL parser accepts too: the pattern alone lets
+ * through "https://host:abc", whose hostname the title fallback reads.
+ */
+function isWebUrl(text: string): boolean {
+  if (!URL_REGEX.test(text)) {
+    return false;
+  }
+  try {
+    return new URL(text).hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function NativeLinkListEditor({
   links,
   linkInput,
@@ -1037,7 +1050,7 @@ function NativeLinkListEditor({
     if (!trimmed) {
       return;
     }
-    if (!URL_REGEX.test(trimmed)) {
+    if (!isWebUrl(trimmed)) {
       return;
     }
     if (links.some((l) => l.url === trimmed)) {
