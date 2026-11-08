@@ -85,6 +85,7 @@ import {
   dayOf,
   editedStartOf,
   keptSeriesStart,
+  savedSeriesRecurrence,
 } from "@/components/calendar/series-edit";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -276,13 +277,10 @@ function seriesRepeatOf(
   );
   // Changed: differs from the series' (a change set back reads as the
   // series' again), the same test as the save's recurrenceToSend.
-  const source = event?.recurrence?.length
-    ? event.recurrence
-    : (where.seriesRecurrence ?? []);
   const changed = repeatChanged({
     edited: Boolean(values.recurrenceEdited),
     recurrence: values.recurrence,
-    source,
+    source: savedSeriesRecurrence(event, where.seriesRecurrence),
   });
   const moved = Boolean(
     occurrence &&
@@ -396,7 +394,12 @@ function RecurrenceEditorSection({
           task editor. */}
       <View className="flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
-          const active = parsedRecurrence.freq === frequency.value;
+          // A rule the chips can't show (hourly) reads as "none" when
+          // parsed, but None isn't picked: tapping it clears the rule.
+          const active =
+            frequency.value === "none"
+              ? !rule
+              : parsedRecurrence.freq === frequency.value;
           return (
             <Button
               key={frequency.value}
@@ -897,11 +900,10 @@ function endsAfterStart(draft: EventDraft): boolean {
 }
 
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
-function describeWhen(draft: EventDraft): string {
+function describeWhen(draft: EventDraft, timeZone: string): string {
   if (draft.allDay || !(draft.startTime && draft.endTime)) {
     return formatAllDayWhen(draft.startDate, draft.endDate);
   }
-  const timeZone = Temporal.Now.timeZoneId();
   return formatEventWhen(
     draft.startDate.toZonedDateTime({ plainTime: draft.startTime, timeZone }),
     draft.endDate.toZonedDateTime({ plainTime: draft.endTime, timeZone })
@@ -922,6 +924,7 @@ function ReadOnlyEventView({
   reason,
   recurrence,
   repeatDay,
+  timeZone,
 }: {
   calendarColor: string | null | undefined;
   calendarLabel: string | undefined;
@@ -933,6 +936,8 @@ function ReadOnlyEventView({
   recurrence: string[];
   /** The day the repeat's implicit days count from (repeatCountingDay). */
   repeatDay: Temporal.PlainDate;
+  /** The zone the app shows times in, which the draft's are in. */
+  timeZone: string;
 }) {
   const location = draft.location.trim();
   const description = draft.description.trim();
@@ -957,7 +962,7 @@ function ReadOnlyEventView({
           {draft.summary || "(No title)"}
         </Text>
         <Text className="text-muted-foreground text-sm">
-          {describeWhen(draft)}
+          {describeWhen(draft, timeZone)}
         </Text>
         {repeats ? (
           <Text className="text-muted-foreground text-sm">{repeats}</Text>
@@ -1783,6 +1788,7 @@ export function EventEditorSheet({
           reason={readOnlyReason}
           recurrence={shownRepeat.rules}
           repeatDay={repeatDay}
+          timeZone={appTimeZone}
         />
       </BottomSheet>
     );

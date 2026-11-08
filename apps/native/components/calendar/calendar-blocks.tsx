@@ -8,7 +8,7 @@ import {
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
 import { type ReactNode, useRef } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, useWindowDimensions, View } from "react-native";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -16,12 +16,40 @@ import { mixColor } from "@/lib/color-mix";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { THEME } from "@/lib/theme";
 
+/**
+ * The calendar's grid text (blocks, day headers, the time gutter) grows
+ * with the system text size up to this, and its fixed rows grow with it:
+ * a block's height is its time, and the gutter and columns have fixed
+ * widths, so the text can't grow without limit.
+ */
+export const MAX_CALENDAR_TEXT_SCALE = 1.5;
+
+/** How much the grid's text has grown with the system text size (capped). */
+export function useCalendarTextScale(): number {
+  return Math.min(useWindowDimensions().fontScale, MAX_CALENDAR_TEXT_SCALE);
+}
+
 /** Blocks shorter than this show only their title. */
 const TITLE_ONLY_MINUTES = 45;
 /** Blocks at least this long also list their details. */
 const DETAILS_MINUTES = 60;
 /** Blocks at least this long let the title wrap to two lines. */
 const TWO_LINE_TITLE_MINUTES = 90;
+/**
+ * Points around a block's text: the gap below it, its ring, border and
+ * vertical padding.
+ */
+const BLOCK_CHROME_PT = 13;
+
+/**
+ * The block length that holds `linesPt` of text (at the default size) once
+ * the text has grown by `scale`, never less than `atDefault`: at 60pt an
+ * hour, minutes are points.
+ */
+function minutesFor(atDefault: number, linesPt: number, scale: number) {
+  return Math.max(atDefault, linesPt * scale + BLOCK_CHROME_PT);
+}
+
 /** Blocks shorter than this center one line with no vertical padding. */
 const COMPACT_MINUTES = 30;
 
@@ -164,14 +192,22 @@ const SLIVER_BLOCK_PT = 44;
  * an hour, less 6pt: the 1pt gap below it, its ring, border, and 1pt top
  * padding), up to three.
  */
-function titleLines(minutes: number, narrow: boolean, sliver: boolean): number {
+function titleLines(
+  minutes: number,
+  narrow: boolean,
+  sliver: boolean,
+  scale: number
+): number {
   if (sliver) {
     return 1;
   }
   if (narrow) {
-    return Math.min(3, Math.max(1, Math.floor((minutes - 6) / 12)));
+    return Math.min(3, Math.max(1, Math.floor((minutes - 6) / (12 * scale))));
   }
-  return minutes >= TWO_LINE_TITLE_MINUTES ? 2 : 1;
+  // Two title lines, the time and a detail line.
+  return minutes >= minutesFor(TWO_LINE_TITLE_MINUTES, 28 + 13 + 15, scale)
+    ? 2
+    : 1;
 }
 
 /** A block's title: one line in a short block, as many as fit when narrow. */
@@ -179,6 +215,7 @@ function BlockTitle({
   minutes,
   narrow,
   oneLine,
+  scale,
   sliver,
   struck,
   tight,
@@ -187,6 +224,7 @@ function BlockTitle({
   minutes: number;
   narrow: boolean;
   oneLine: boolean;
+  scale: number;
   sliver: boolean;
   struck: boolean;
   tight: boolean;
@@ -199,7 +237,8 @@ function BlockTitle({
   return (
     <Text
       className={`font-sans-medium text-[11px] ${leading} ${oneLine ? "max-w-full" : "shrink"} ${color}`}
-      numberOfLines={titleLines(minutes, narrow, sliver)}
+      maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+      numberOfLines={titleLines(minutes, narrow, sliver, scale)}
     >
       {/* Narrow blocks break long words at a soft hyphen ("Road-map")
           rather than cutting them to an ellipsis. */}
@@ -214,12 +253,14 @@ function BlockTimeRow({
   clockTime,
   end,
   meta,
+  scale,
   start,
 }: {
   children: ReactNode;
   clockTime: boolean;
   end: Temporal.ZonedDateTime;
   meta: string;
+  scale: number;
   start: Temporal.ZonedDateTime;
 }) {
   // An overnight range keeps AM/PM (and dates when it needs them).
@@ -228,9 +269,13 @@ function BlockTimeRow({
       ? formatClockRange(start, end)
       : formatTimeRange(start, end);
   return (
-    <View className="h-[13px] flex-row flex-wrap items-center gap-x-1 overflow-hidden">
+    <View
+      className="flex-row flex-wrap items-center gap-x-1 overflow-hidden"
+      style={{ height: 13 * scale }}
+    >
       <Text
         className={`max-w-full text-[10px] leading-[13px] ${meta}`}
+        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
         numberOfLines={1}
       >
         {text}
@@ -256,16 +301,24 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
+  const scale = useCalendarTextScale();
   // Short blocks keep one line, unless narrow: then the title takes the
   // lines (titleLines) and the time is left out.
-  const isShort = minutes < TITLE_ONLY_MINUTES && !narrow;
+  // The title and time line, then a detail line (13pt and a 2pt gap).
+  const showsTime = minutes >= minutesFor(TITLE_ONLY_MINUTES, 14 + 13, scale);
+  const showsDetails =
+    minutes >= minutesFor(DETAILS_MINUTES, 14 + 13 + 15, scale);
+  const isShort = !(showsTime || narrow);
   // Until details get their own lines, keep short values in view.
   const shorts = details.flatMap(({ icon, label, short }) =>
     short
       ? [
           <View className="flex-row items-center gap-0.5" key={label}>
             <Icon as={icon} className={meta} size={10} />
-            <Text className={`text-[10px] leading-[13px] ${meta}`}>
+            <Text
+              className={`text-[10px] leading-[13px] ${meta}`}
+              maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+            >
               {short}
             </Text>
           </View>,
@@ -277,19 +330,24 @@ function BlockText({
       {/* Short blocks keep one line: the time and strain wrap onto a hidden
           second line when they don't fit beside the whole title. */}
       <View
-        className={`flex-row items-center gap-x-1 ${isShort ? `${tight ? "h-[12px]" : "h-[14px]"} flex-wrap overflow-hidden` : ""}`}
+        className={`flex-row items-center gap-x-1 ${isShort ? "flex-wrap overflow-hidden" : ""}`}
+        style={isShort ? { height: (tight ? 12 : 14) * scale } : undefined}
       >
         <BlockTitle
           minutes={minutes}
           narrow={narrow}
           oneLine={isShort}
+          scale={scale}
           sliver={sliver}
           struck={struck}
           tight={tight}
           title={title}
         />
         {isShort ? (
-          <Text className={`text-[10px] leading-[13px] ${meta}`}>
+          <Text
+            className={`text-[10px] leading-[13px] ${meta}`}
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
             {start.toLocaleString(undefined, {
               hour: "numeric",
               minute: "2-digit",
@@ -298,17 +356,24 @@ function BlockText({
         ) : null}
         {isShort ? shorts : null}
       </View>
-      {minutes >= TITLE_ONLY_MINUTES && !narrow ? (
-        <BlockTimeRow clockTime={clockTime} end={end} meta={meta} start={start}>
-          {minutes < DETAILS_MINUTES ? shorts : null}
+      {showsTime && !narrow ? (
+        <BlockTimeRow
+          clockTime={clockTime}
+          end={end}
+          meta={meta}
+          scale={scale}
+          start={start}
+        >
+          {showsDetails ? null : shorts}
         </BlockTimeRow>
       ) : null}
-      {minutes >= DETAILS_MINUTES && !narrow
+      {showsDetails && !narrow
         ? details.map(({ icon, label }) => (
             <View className="mt-0.5 flex-row items-center gap-1" key={label}>
               <Icon as={icon} className={meta} size={10} />
               <Text
                 className={`flex-1 text-[10px] leading-[13px] ${meta}`}
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                 numberOfLines={1}
               >
                 {label}
@@ -558,16 +623,19 @@ export function AllDayBlock({
   title: string;
 }) {
   const surface = useEventSurface(color);
+  const scale = useCalendarTextScale();
   return (
     <Pressable
       accessibilityLabel={`${title}, all day`}
       accessibilityRole="button"
-      className="h-5 active:opacity-80"
+      className="active:opacity-80"
       onPress={onPress}
+      style={{ height: 20 * scale }}
     >
       <Surface compact surface={surface}>
         <Text
           className="font-sans-medium text-[10px] text-foreground leading-[13px]"
+          maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           numberOfLines={1}
         >
           {title}

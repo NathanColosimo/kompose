@@ -107,7 +107,9 @@ import {
   type BlockDetail,
   EventBlock,
   eventDetails,
+  MAX_CALENDAR_TEXT_SCALE,
   TaskBlock,
+  useCalendarTextScale,
 } from "@/components/calendar/calendar-blocks";
 import type {
   CalendarOption,
@@ -118,7 +120,10 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
-import { seriesEditFields } from "@/components/calendar/series-edit";
+import {
+  savedSeriesRecurrence,
+  seriesEditFields,
+} from "@/components/calendar/series-edit";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
@@ -482,19 +487,26 @@ function dayHeaderLabel(
 
 /** Recovery and strain under a day's date. */
 function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
+  const scale = useCalendarTextScale();
   if (!(summary && hasWhoopStats(summary))) {
     // Keep every header the same height.
-    return <View className="h-3.5" />;
+    return <View style={{ height: 14 * scale }} />;
   }
   // The day header reads these out; see dayHeaderLabel.
   return (
-    <View className="h-3.5 flex-row items-center gap-2">
+    <View
+      className="flex-row items-center gap-2"
+      style={{ height: 14 * scale }}
+    >
       {summary.recoveryScore === null ? null : (
         <View className="flex-row items-center gap-1">
           <View
             className={`size-1.5 rounded-full ${recoveryColor(summary.recoveryScore)}`}
           />
-          <Text className="text-[10px] text-muted-foreground">
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
             {summary.recoveryScore}%
           </Text>
         </View>
@@ -502,7 +514,10 @@ function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
       {summary.strainScore === null ? null : (
         <View className="flex-row items-center gap-0.5">
           <Icon as={Activity} className="text-muted-foreground" size={10} />
-          <Text className="text-[10px] text-muted-foreground">
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
             {summary.strainScore.toFixed(1)}
           </Text>
         </View>
@@ -609,7 +624,10 @@ function AllDayCellItems({
           hitSlop={6}
           onPress={onMore}
         >
-          <Text className="text-[10px] text-muted-foreground">
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
             +{items.length - MAX_ALL_DAY_CHIPS} more
           </Text>
         </Pressable>
@@ -694,19 +712,6 @@ function WorkoutSheet({
 }
 
 /**
- * The saved event's series pattern: its own rules, or its master's. Not the
- * draft's, which may add a repeat to a one-off event that isn't a series yet.
- */
-function savedSeriesRecurrence(
-  draft: EditEventDraft,
-  masterRecurrence: string[]
-): string[] {
-  return draft.sourceEvent.recurrence?.length
-    ? draft.sourceEvent.recurrence
-    : masterRecurrence;
-}
-
-/**
  * The repeat in the start's form: an all-day series' UNTIL and skipped
  * days are dates, a timed one's date-times.
  */
@@ -740,7 +745,7 @@ function recurrenceToSend(
   const changed = repeatChanged({
     edited: Boolean(draft.recurrenceEdited),
     recurrence: draft.recurrence,
-    source: savedSeriesRecurrence(draft, masterRecurrence),
+    source: savedSeriesRecurrence(draft.sourceEvent, masterRecurrence),
   });
   return changed ? draft.recurrence : undefined;
 }
@@ -846,7 +851,9 @@ function EventSaveScopeDialog({
   /** The scope the save suggests, shown once it's available. */
   preferred: RecurrenceScope;
 }) {
-  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
+  const { description, disabled } = changes
+    ? saveScopes(changes)
+    : { description: SCOPE_DIALOG_COPY.saveEvent.description, disabled: {} };
   // Worked out each time: a preferred scope off for a moment (the series
   // loading) comes back once it's on, unless the user chose another.
   const scope = chosenScope(pick, preferred, disabled);
@@ -856,11 +863,7 @@ function EventSaveScopeDialog({
       // The chosen scope can turn off once the series loads.
       confirmDisabled={Boolean(disabled[scope])}
       confirmText="Apply"
-      description={
-        changes
-          ? eventSaveDescription(changes)
-          : SCOPE_DIALOG_COPY.saveEvent.description
-      }
+      description={description}
       isVisible={isVisible}
       onCancel={onCancel}
       // Cancel and a backdrop tap already run onCancel.
@@ -885,6 +888,34 @@ function EventSaveScopeDialog({
 }
 
 /**
+ * The save dialog's scopes and line. A save for the series is measured
+ * against the series (series-edit.ts: what the user left alone stays the
+ * series'), so Entire series waits for the series to load, as This and
+ * following does.
+ */
+function saveScopes(changes: EventSaveChanges): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  const disabled = eventSaveDisabledScopes(changes);
+  if (changes.seriesRuleLoaded) {
+    return { description: eventSaveDescription(changes), disabled };
+  }
+  let description = SERIES_LOADING_COPY;
+  if (changes.seriesRuleFailed) {
+    description = changes.dateMoved
+      ? SCOPE_DIALOG_COPY.seriesFailed
+      : SERIES_FAILED_COPY;
+  }
+  return { description, disabled: { ...disabled, all: true } };
+}
+
+const SERIES_LOADING_COPY =
+  "Loading the series… This and following and Entire series open once it's in.";
+const SERIES_FAILED_COPY =
+  "Couldn't load the series, so only this occurrence can change. Try again later.";
+
+/**
  * The recurring delete's This and following: off until the series loads,
  * or where the cut is unsure.
  */
@@ -906,6 +937,7 @@ function noop() {
 
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
+  const textScale = useCalendarTextScale();
   const queryClient = useQueryClient();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
@@ -1703,7 +1735,7 @@ export default function CalendarTab() {
       }
 
       const masterSeriesRecurrence = savedSeriesRecurrence(
-        draft,
+        draft.sourceEvent,
         masterRecurrence
       );
       const recurring =
@@ -1771,7 +1803,7 @@ export default function CalendarTab() {
   const requestDeleteEvent = useCallback(
     (draft: EditEventDraft) => {
       const recurringMasterRecurrence = savedSeriesRecurrence(
-        draft,
+        draft.sourceEvent,
         masterRecurrence
       );
       const recurring =
@@ -1982,6 +2014,7 @@ export default function CalendarTab() {
               <Text
                 adjustsFontSizeToFit
                 className="text-[11px] text-muted-foreground"
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                 numberOfLines={1}
               >
                 {gutterMonths}
@@ -2022,14 +2055,21 @@ export default function CalendarTab() {
                     <View className="flex-row items-center gap-1.5">
                       <Text
                         className={`text-sm ${isTodayHighlight ? "font-sans-medium text-foreground" : "text-muted-foreground"}`}
+                        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                       >
                         {weekday}
                       </Text>
                       <View
-                        className={`h-6 min-w-6 items-center justify-center rounded-full px-1 ${isTodayHighlight ? "bg-primary" : ""}`}
+                        className={`items-center justify-center rounded-full px-1 ${isTodayHighlight ? "bg-primary" : ""}`}
+                        // The circle grows with its number.
+                        style={{
+                          height: 24 * textScale,
+                          minWidth: 24 * textScale,
+                        }}
                       >
                         <Text
                           className={`font-sans-medium text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                          maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                         >
                           {dayNumber}
                         </Text>
@@ -2048,7 +2088,14 @@ export default function CalendarTab() {
               className="items-end border-border border-r pt-1.5 pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
             >
-              <Text className="text-[10px] text-muted-foreground">All day</Text>
+              <Text
+                adjustsFontSizeToFit
+                className="text-[10px] text-muted-foreground"
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                numberOfLines={1}
+              >
+                All day
+              </Text>
             </View>
             <View className="flex-1 flex-row">
               {visibleDays.map((day) => {
@@ -2104,7 +2151,10 @@ export default function CalendarTab() {
                   >
                     {hour === 0 ? null : (
                       <Text
+                        adjustsFontSizeToFit
                         className="text-right text-[10px] text-muted-foreground"
+                        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                        numberOfLines={1}
                         style={{
                           transform: [
                             { translateY: -TIME_GUTTER_LABEL_OFFSET_PX },
