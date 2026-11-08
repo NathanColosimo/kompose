@@ -297,9 +297,10 @@ function addedValues(
  * Whether "This and following" can't start a new series at the
  * occurrence whose original start is `originalStart`: a new series repeats
  * from its start, so it must be one of the rule's own meetings. A series
- * with several rules (only imported calendars write them) can't keep each
- * rule's days and phase from one start, nor can an added (RDATE) meeting
- * that isn't a rule meeting too. Null when the split is fine.
+ * with several rules (only imported calendars write them; an exclusion
+ * rule, EXRULE, counts) can't keep each rule's days and phase from one
+ * start, nor can an added (RDATE) meeting that isn't a rule meeting too.
+ * Null when the split is fine.
  */
 export function followingSplitBlocked(params: {
   masterRecurrence: string[] | null | undefined;
@@ -309,7 +310,8 @@ export function followingSplitBlocked(params: {
 }): SplitBlock | null {
   const recurrence = params.masterRecurrence ?? [];
   const rules = recurrence.filter(isRule);
-  if (rules.length > 1) {
+  const exclusions = recurrence.filter((line) => line.startsWith("EXRULE"));
+  if (rules.length + exclusions.length > 1) {
     return "severalRules";
   }
   const split = asValue(params.originalStart, params.seriesZone);

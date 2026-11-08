@@ -1499,3 +1499,26 @@ describe("Entire series through an all-day occurrence keeps that occurrence's da
     });
   });
 });
+
+describe("a series This and following can't keep", () => {
+  test("one with an exclusion rule is refused before writing", async () => {
+    // Daily, skipping every other Sunday from Nov 9: a new series from
+    // Nov 16 would skip other Sundays.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=DAILY",
+        "EXRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+          summary: "Planning (new)",
+        })
+      )
+    ).toMatchObject({ data: { reason: "severalRules" } });
+    expect(google.writes()).toEqual([]);
+  });
+});
