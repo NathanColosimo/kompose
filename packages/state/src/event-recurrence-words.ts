@@ -264,9 +264,9 @@ export function describeEventRecurrence(params: {
       : `Repeats ${words[0]}`;
   const { complete, text } = dayWords(rule, pattern, params.start);
   const said = text ? `${base} ${text}` : base;
-  const otherRules =
+  const severalRules =
     (params.rules ?? []).filter((line) => line.startsWith("RRULE:")).length > 1;
-  return complete && !otherRules ? said : `${said} (custom)`;
+  return complete && !severalRules ? said : `${said} (custom)`;
 }
 
 /** One monthly "On" choice: its label and the BYDAY / BYMONTHDAY it sets. */

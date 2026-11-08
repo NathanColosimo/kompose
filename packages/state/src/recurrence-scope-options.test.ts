@@ -74,7 +74,7 @@ test("says why whenever a scope is off", () => {
   }
 });
 
-test("leaves no scope only for a save that needs two", () => {
+test("leaves no scope only for a save that needs two, or one waiting on the series", () => {
   const noneLeft = (changes: Partial<EventSaveChanges>) =>
     off(changes).length === RECURRENCE_SCOPE_OPTIONS.length;
   // A calendar move with a new day, or a new repeat that skips this one.
@@ -316,7 +316,7 @@ test("returns to the preferred scope once it's available", () => {
   expect(chosenScope(null, "following", loading)).toBe("this");
   expect(chosenScope(null, "following", loaded)).toBe("following");
   expect(chosenScope("this", "following", loaded)).toBe("this");
-  // A pick that turns off falls back to the nearest available.
+  // A pick that turns off falls back to the narrowest available.
   expect(chosenScope("following", "following", loading)).toBe("this");
 });
 
@@ -387,6 +387,9 @@ test("a calendar move with a new repeat that takes this occurrence's day can't b
   });
   expect(eventSaveDescription(changes)).toBe(
     SCOPE_DIALOG_COPY.moveEventRepeatDay
+  );
+  expect(eventSaveDescription({ ...changes, repeatSkips: "end" })).toBe(
+    SCOPE_DIALOG_COPY.moveEventRepeatEnd
   );
   // With the repeat's day picked (not off its day), the move goes ahead.
   expect(eventSaveDisabledScopes({ ...changes, repeatSkips: null })).toEqual({

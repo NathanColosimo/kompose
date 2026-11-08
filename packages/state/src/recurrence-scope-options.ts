@@ -66,9 +66,12 @@ export const SCOPE_DIALOG_COPY = {
   /** A calendar move with a new day for this occurrence. */
   moveEventDay:
     "Moving to another calendar moves the whole series, but a new day applies only to this occurrence, or from it on. Move the calendar and change the day in two saves.",
-  /** A calendar move with a new repeat that takes this occurrence's day. */
+  /** A calendar move with a new repeat that would skip this occurrence. */
   moveEventRepeatDay:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
+  /** The same, when it's the new end that comes first. */
+  moveEventRepeatEnd:
+    "Moving to another calendar moves the whole series, but counted from its first meeting the new end comes before this occurrence. Move the calendar and change the repeat in two saves.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -327,7 +330,9 @@ function newDayLine(changes: EventSaveChanges): string {
 /** The scope dialog's line for a calendar move. */
 function calendarMoveDescription(changes: EventSaveChanges): string {
   if (changes.patternChanged && changes.repeatSkips) {
-    return SCOPE_DIALOG_COPY.moveEventRepeatDay;
+    return changes.repeatSkips === "day"
+      ? SCOPE_DIALOG_COPY.moveEventRepeatDay
+      : SCOPE_DIALOG_COPY.moveEventRepeatEnd;
   }
   if (changes.dateMoved) {
     return SCOPE_DIALOG_COPY.moveEventDay;
