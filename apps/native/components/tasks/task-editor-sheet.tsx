@@ -269,9 +269,12 @@ function TaskRecurrenceEditor({
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-3">
       <Text className="font-semibold text-foreground text-sm">Repeat</Text>
-      <Text className="mt-0.5 text-muted-foreground text-xs">
-        {recurrenceSummary}
-      </Text>
+      {/* The pattern in words; with no repeat, "None" below says it. */}
+      {hasRecurrence ? (
+        <Text className="mt-0.5 text-muted-foreground text-xs">
+          {recurrenceSummary}
+        </Text>
+      ) : null}
 
       <View className="mt-2 flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {

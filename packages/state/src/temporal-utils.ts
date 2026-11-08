@@ -231,6 +231,22 @@ export function nearestSlotMinutes(minutes: number, step = 15): number {
 }
 
 /**
+ * "Today" or "Tomorrow" in the locale's words. Hermes (the iOS and Android
+ * JS engine) has no Intl.RelativeTimeFormat, so it falls back to English
+ * there rather than crashing the list.
+ */
+function relativeDayWord(daysAway: 0 | 1, locale?: string): string {
+  if (typeof Intl.RelativeTimeFormat !== "function") {
+    return daysAway === 0 ? "Today" : "Tomorrow";
+  }
+  const word = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    daysAway,
+    "day"
+  );
+  return `${word.charAt(0).toLocaleUpperCase(locale)}${word.slice(1)}`;
+}
+
+/**
  * When a scheduled task starts, for a list: "Today" or "Tomorrow", the
  * weekday within the coming week ("Sat 10:00 AM"), else the date ("Nov 21,
  * 10:00 AM"), so tasks a week apart never read the same.
@@ -249,9 +265,7 @@ export function formatScheduledAt(
     minute: "2-digit",
   });
   if (daysAway === 0 || daysAway === 1) {
-    const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-    const word = relative.format(daysAway, "day");
-    return `${word.charAt(0).toLocaleUpperCase(locale)}${word.slice(1)} ${clock}`;
+    return `${relativeDayWord(daysAway, locale)} ${clock}`;
   }
   if (daysAway > 1 && daysAway < 7) {
     return `${date.toLocaleString(locale, { weekday: "short" })} ${clock}`;

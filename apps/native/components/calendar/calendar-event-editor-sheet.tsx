@@ -145,6 +145,40 @@ function buildRecurrenceRuleFromCurrent(
   return buildGoogleEventRecurrenceRule(freq, byDay, end);
 }
 
+/**
+ * The repeat editor when open; otherwise how the event repeats, so a series
+ * reads as one without opening it (tap to edit).
+ */
+function RecurrenceRow({
+  isExpanded,
+  onExpand,
+  recurrence,
+  ...editor
+}: React.ComponentProps<typeof RecurrenceEditorSection> & {
+  isExpanded: boolean;
+  onExpand: () => void;
+  recurrence: string[];
+}) {
+  if (isExpanded) {
+    return <RecurrenceEditorSection {...editor} />;
+  }
+  const repeats = describeEventRecurrence({ rules: recurrence });
+  if (!repeats) {
+    return null;
+  }
+  return (
+    <Pressable
+      accessibilityHint="Edits the repeat"
+      accessibilityRole="button"
+      className="-mt-1 mb-2.5 self-start"
+      hitSlop={8}
+      onPress={onExpand}
+    >
+      <Text className="text-muted-foreground text-xs">{repeats}</Text>
+    </Pressable>
+  );
+}
+
 function RecurrenceEditorSection({
   parsedRecurrence,
   updateRecurrence,
@@ -1141,14 +1175,16 @@ export function EventEditorSheet({
     [applyPrimaryRecurrenceRule, getValues]
   );
 
-  const recurrenceEditor =
-    canEditRecurrence && isRecurrenceExpanded ? (
-      <RecurrenceEditorSection
-        applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
-        parsedRecurrence={parsedRecurrence}
-        updateRecurrence={updateRecurrence}
-      />
-    ) : null;
+  const recurrenceEditor = canEditRecurrence ? (
+    <RecurrenceRow
+      applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
+      isExpanded={isRecurrenceExpanded}
+      onExpand={() => setIsRecurrenceExpanded(true)}
+      parsedRecurrence={parsedRecurrence}
+      recurrence={recurrence}
+      updateRecurrence={updateRecurrence}
+    />
+  ) : null;
 
   const calendarPickerOptions = React.useMemo(
     () =>

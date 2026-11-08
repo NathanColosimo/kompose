@@ -177,6 +177,21 @@ describe("formatScheduledAt", () => {
     );
   });
 
+  test("works without Intl.RelativeTimeFormat, as on Hermes", () => {
+    const { RelativeTimeFormat } = Intl;
+    Reflect.deleteProperty(Intl, "RelativeTimeFormat");
+    try {
+      expect(formatScheduledAt(at("2026-11-09T10:00"), today, "en-US")).toBe(
+        "Today 10:00 AM"
+      );
+      expect(formatScheduledAt(at("2026-11-10T09:30"), today, "en-US")).toBe(
+        "Tomorrow 9:30 AM"
+      );
+    } finally {
+      Object.assign(Intl, { RelativeTimeFormat });
+    }
+  });
+
   test("says the weekday within the coming week, else the date", () => {
     expect(formatScheduledAt(at("2026-11-14T10:00"), today, "en-US")).toBe(
       "Sat 10:00 AM"
