@@ -96,6 +96,11 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   formatPlainDate,
   pickerDateToTemporal,
   temporalToPickerDate,
@@ -839,24 +844,31 @@ export function TaskEditForm({
 
         <SaveFailure message={failure} />
         <Separator />
-        {/* Wraps when a done task's longer "Mark not done" doesn't fit. */}
+        {/* Wraps rather than clipping Save if the labels grow (larger text). */}
         <div className="flex flex-wrap items-center gap-2">
           <AlertDialog
             onOpenChange={setShowDeleteConfirm}
             open={showDeleteConfirm}
           >
-            <AlertDialogTrigger asChild>
-              <Button
-                className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                disabled={isSavingStatus}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Trash2 className="size-3.5" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
+            {/* An icon, so Delete, Mark done, Cancel and Save fit one row
+                in the 360px editor. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    aria-label="Delete task"
+                    className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    disabled={isSavingStatus}
+                    size="icon-sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete task?</AlertDialogTitle>
