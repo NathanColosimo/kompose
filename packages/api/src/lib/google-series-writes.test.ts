@@ -2462,9 +2462,13 @@ describe("a COUNT carried from Google's list", () => {
       ...series,
       start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
     };
-    const meetings = Array.from({ length: 98 }, (_, i) =>
-      occurrenceOf(listed, `${2028 + i}-11-09T09:00:00Z`)
-    );
+    // A skipped meeting is listed as cancelled.
+    const meetings = Array.from({ length: 98 }, (_, i) => {
+      const meeting = occurrenceOf(listed, `${2028 + i}-11-09T09:00:00Z`);
+      return recurrence.includes(`EXDATE:${2028 + i}1109T090000Z`)
+        ? { ...meeting, status: "cancelled" }
+        : meeting;
+    });
     const google = fakeGoogle(series, [], (request) =>
       request.url.pathname.endsWith("/events/series/instances") &&
       !request.url.searchParams.get("originalStart")
@@ -2486,6 +2490,17 @@ describe("a COUNT carried from Google's list", () => {
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
       "EXDATE:20271109T090000Z",
+    ]);
+  });
+
+  test("counts a skip Google lists as one of its meetings", async () => {
+    // Nov 9, 2029 deleted, and listed by Google as cancelled: split at
+    // 2030, two are used, so 96 are left.
+    const { google, rename } = yearly(["EXDATE:20291109T090000Z"]);
+    expect(Exit.isSuccess(await run(rename(2030)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=96",
+      "EXDATE:20291109T090000Z",
     ]);
   });
 

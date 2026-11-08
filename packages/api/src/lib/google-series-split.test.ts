@@ -753,8 +753,8 @@ describe("isRuleDay", () => {
     expect(
       isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
     ).toBeNull();
-    // Several times a day still meet on the rule's days, unless BYSETPOS
-    // picks among those times.
+    // A list of times still meets on the rule's days: Google ignores the
+    // list and meets once a day.
     expect(
       isRuleDay(
         "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
