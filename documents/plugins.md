@@ -146,7 +146,7 @@ One route, `/api/webhooks/[pluginId]/[[...path]]`:
 ## Place search and meeting links
 
 - `places`: `search(query)` and optional `details(placeId)`. Google Places is its own plugin using Kompose's server key, so it works without a connected Google account. The location field on web and native uses whichever `places` plugin is enabled.
-- `meeting-links`: plugins contribute URL rules (host to provider, label, icon). Today's Meet/Zoom/Teams/Webex rules in `packages/state/src/meeting.ts` move into a built-in plugin.
+- `meeting-links`: plugins contribute URL rules (host to provider, label, icon). Today's Meet/Zoom/Teams/Webex rules stay a table in `packages/state/src/meeting.ts` until a plugin like Zoom brings its own.
 - `conferencing`: "calendar-native" (the calendar attaches the meeting, e.g. Google Meet via `conferenceData`) or "standalone" (a plugin like Zoom returns a URL that core writes into the event). The editor's "Add meeting" menu lists what the event's calendar supports.
 
 ## Settings
@@ -156,7 +156,7 @@ A generic connections list on web and native replaces the hardcoded Google and W
 ## Build order
 
 1. Core: plugin list, manifest types, capability services and errors, standard tables and migrations, `connection` + `plugin_settings` (with the migration for existing accounts), token encryption and the shared refresh hook, `plugin-data` realtime event, webhook route, Settings connections list, and the `StatChip` / activity / event renderers on web and native.
-2. `link-resolver` and `meeting-links` (existing parsers and rules moved over).
+2. `link-resolver` (existing parsers moved over) and the `meeting-links` rule table.
 3. `google-places` and `conferencing`.
 4. WHOOP: plugin, webhooks, `day_metric` / `day_stat` / `activity`, native support.
 5. Google Calendar: plugin, mirror replacing the Redis cache, provider-first edits, editor as an escape hatch.

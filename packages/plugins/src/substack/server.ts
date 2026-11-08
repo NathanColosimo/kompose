@@ -98,7 +98,8 @@ function extractHomePostId(url: string): string | null {
 function extractQueryPostId(url: string): string | null {
   try {
     const parsed = new URL(url);
-    return parsed.searchParams.get("post_id");
+    // An empty `post_id=` falls through to the ID in the path.
+    return parsed.searchParams.get("post_id") || null;
   } catch {
     return null;
   }
