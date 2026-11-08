@@ -83,8 +83,6 @@ export const SCOPE_DIALOG_COPY = {
   seriesLoading: "Loading the series… This and following opens once it's in.",
   /** The same, where the server refused This and following. */
   seriesLoadingAll: "Loading the series… Entire series opens once it's in.",
-  /** The same, where the server refused what loading would open. */
-  seriesLoadingRefused: "Loading the series…",
   /**
    * Shown while a new repeat waits for the series' rule: whether, counted
    * from its first meeting, it skips this one isn't known yet.
@@ -741,9 +739,7 @@ function noScopeStepFor(changes: EventSaveChanges): string | null {
   if (changes.calendarChanged) {
     return null;
   }
-  const pending =
-    !followingRuleKnown(changes) ||
-    entireSeriesOff(changes)?.reason === "seriesPending";
+  const pending = !followingRuleKnown(changes);
   const opens = loadingOpens(changes);
   if (pending && (opens.all || opens.following)) {
     return null;
@@ -1062,7 +1058,8 @@ function calendarMoveDescription(changes: EventSaveChanges): string {
  * The scope dialog's line while the series' rule loads, or failed to, and
  * what loading would open (`loadingOpens`). Where it can open nothing the
  * server didn't refuse, the line says what's left now instead: the
- * occurrence alone, or, for a new repeat, nothing (`noScopeStep`).
+ * occurrence alone for a new day, no scope for a new repeat
+ * (`noScopeStep`), else nothing of its own (the plain prompt follows).
  */
 function seriesPendingDescription(changes: EventSaveChanges): string {
   const copy = SCOPE_DIALOG_COPY;
@@ -1093,10 +1090,10 @@ function seriesPendingDescription(changes: EventSaveChanges): string {
 /** "Loading the series…", and what opens once it's in (`loadingOpens`). */
 function loadingLine(opens: { all: boolean; following: boolean }): string {
   const copy = SCOPE_DIALOG_COPY;
-  if (opens.following) {
-    return opens.all ? copy.seriesLoadingTime : copy.seriesLoading;
+  if (!opens.following) {
+    return copy.seriesLoadingAll;
   }
-  return opens.all ? copy.seriesLoadingAll : copy.seriesLoadingRefused;
+  return opens.all ? copy.seriesLoadingTime : copy.seriesLoading;
 }
 
 /**
