@@ -342,10 +342,39 @@ export function carryCountExactly(
   if (!(positions && split)) {
     return null;
   }
+  // A position whose time doesn't exist that day (a 2:30 AM meeting on the
+  // spring-forward night) is up to Google: count from its list instead.
+  const clock = seriesStartValue?.instant
+    ?.toZonedDateTimeISO(seriesZone)
+    .toPlainTime();
+  if (clock && positions.some((day) => !existsAt(day, clock, seriesZone))) {
+    return null;
+  }
   const left = positions.filter(
     (day) => Temporal.PlainDate.compare(day, split.day) >= 0
   ).length;
   return withRemainingCount(recurrence, positions.length - left);
+}
+
+/** Whether `time` exists on `day` in `zone` (not in a DST gap). */
+function existsAt(
+  day: Temporal.PlainDate,
+  time: Temporal.PlainTime,
+  zone: string
+): boolean {
+  try {
+    return (
+      Temporal.PlainTime.compare(
+        day
+          .toPlainDateTime(time)
+          .toZonedDateTime(zone, { disambiguation: "reject" })
+          .toPlainTime(),
+        time
+      ) === 0
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** The rule with its COUNT swapped for `until`. */

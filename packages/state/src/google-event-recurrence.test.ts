@@ -378,6 +378,42 @@ describe("followStart", () => {
     ).toEqual(["RRULE:FREQ=DAILY;INTERVAL=2", "EXDATE;VALUE=DATE:20261114"]);
   });
 
+  test("moves interval and yearly skips to the new rule's matching day", () => {
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    // Every 2 weeks on Monday, moved Nov 9 -> Wed Nov 18 (+9 days): the
+    // skipped Nov 23 is Dec 2.
+    expect(
+      followed(
+        ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO", "EXDATE;VALUE=DATE:20261123"],
+        "2026-11-09",
+        "2026-11-18"
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE",
+      "EXDATE;VALUE=DATE:20261202",
+    ]);
+    // Yearly on the 9th of every month, moved Jan 9 -> Feb 10: each skip
+    // moves as the meetings did, the k-th after the old start to the k-th
+    // after the new (Jun 9, the 5th, is Jul 10).
+    expect(
+      followed(
+        ["RRULE:FREQ=YEARLY;BYMONTHDAY=9", "EXDATE;VALUE=DATE:20270609"],
+        "2027-01-09",
+        "2027-02-10"
+      )
+    ).toEqual([
+      "RRULE:FREQ=YEARLY;BYMONTHDAY=10",
+      "EXDATE;VALUE=DATE:20270710",
+    ]);
+  });
+
   test("moves skips across month and year ends, and BYSETPOS ones", () => {
     const followed = (recurrence: string[], from: string, to: string) =>
       followStart({

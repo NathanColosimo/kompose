@@ -288,17 +288,45 @@ export function matchRecurrenceToStart(
   return changed ? next : recurrence;
 }
 
-/** The first day of `month` (any day in it) the new rule has. */
-function firstRuleDayIn(
-  newRule: string,
-  to: Temporal.PlainDate,
-  month: Temporal.PlainDate
+/** The longest a pattern is walked to place a skip: fifty years. */
+const MAX_WALK_DAYS = 366 * 50;
+
+/** How many of `rule`'s days (from `start`) come before `day`; null if `day` isn't one. */
+function positionOf(
+  rule: string,
+  start: Temporal.PlainDate,
+  day: Temporal.PlainDate
+): number | null {
+  let position = 0;
+  for (
+    let current = start;
+    Temporal.PlainDate.compare(current, day) <= 0;
+    current = current.add({ days: 1 })
+  ) {
+    if (isRuleDay(rule, start, current) === true) {
+      if (Temporal.PlainDate.compare(current, day) === 0) {
+        return position;
+      }
+      position += 1;
+    }
+  }
+  return null;
+}
+
+/** `rule`'s day at `position` (0 is `start` itself), walking from `start`. */
+function dayAtPosition(
+  rule: string,
+  start: Temporal.PlainDate,
+  position: number
 ): Temporal.PlainDate | null {
-  const first = month.with({ day: 1 });
-  for (let offset = 0; offset < first.daysInMonth; offset += 1) {
-    const candidate = first.add({ days: offset });
-    if (isRuleDay(newRule, to, candidate) === true) {
-      return candidate;
+  let seen = 0;
+  for (let offset = 0; offset < MAX_WALK_DAYS; offset += 1) {
+    const day = start.add({ days: offset });
+    if (isRuleDay(rule, start, day) === true) {
+      if (seen === position) {
+        return day;
+      }
+      seen += 1;
     }
   }
   return null;
@@ -320,35 +348,31 @@ function shiftWithinPeriod(
 }
 
 /**
- * Where a skipped occurrence of the old pattern sits in the new one: moved
- * as the pattern did, within one period (daily or weekly, by its
- * INTERVAL); the new rule's day in the period as many periods after the
- * new start as the skip was after the old one (monthly, yearly).
+ * Where a skipped occurrence of the old pattern sits in the new one. Every
+ * occurrence moves as the moved one did: by the move's shift within one
+ * period for a daily or weekly rule (by its INTERVAL), and position for
+ * position for a monthly or yearly one (the k-th meeting after the old
+ * start is the k-th after the new). Null when the place isn't one of the
+ * new rule's days, or a rule can't be read: the skip then stays.
  */
 function placeInNewPattern(
   freq: string,
+  oldRule: string,
   newRule: string,
   from: Temporal.PlainDate,
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
-  const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
+  let place: Temporal.PlainDate | null = null;
   if (freq === "DAILY" || freq === "WEEKLY") {
+    const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
     const period = freq === "WEEKLY" ? 7 * interval : interval;
-    return day.add({ days: shiftWithinPeriod(from, to, period) });
+    place = day.add({ days: shiftWithinPeriod(from, to, period) });
+  } else {
+    const position = positionOf(oldRule, from, day);
+    place = position === null ? null : dayAtPosition(newRule, to, position);
   }
-  if (freq === "MONTHLY") {
-    const months = (day.year - from.year) * 12 + day.month - from.month;
-    return firstRuleDayIn(newRule, to, to.with({ day: 1 }).add({ months }));
-  }
-  if (freq === "YEARLY") {
-    return firstRuleDayIn(
-      newRule,
-      to,
-      to.with({ day: 1 }).add({ years: day.year - from.year })
-    );
-  }
-  return null;
+  return place && isRuleDay(newRule, to, place) === true ? place : null;
 }
 
 /**
@@ -383,7 +407,7 @@ export function moveSkippedDays(params: {
     ) {
       return null;
     }
-    const place = placeInNewPattern(freq, newRule, from, to, day);
+    const place = placeInNewPattern(freq, oldRule, newRule, from, to, day);
     // A place before the new start matches nothing, and the new start is
     // the meeting just moved there: either way the skip stays.
     return place && Temporal.PlainDate.compare(place, to) > 0 ? place : null;

@@ -315,6 +315,17 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
   });
+  test("leaves a count across a DST gap to Google's list", () => {
+    // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
+    expect(
+      carryCountExactly(["RRULE:FREQ=DAILY;COUNT=3"], {
+        masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=3"],
+        originalStart: "2026-03-09T02:30:00-04:00",
+        seriesStart: "2026-03-07T02:30:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toBeNull();
+  });
 });
 
 describe("isRuleDay", () => {
