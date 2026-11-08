@@ -28,6 +28,7 @@ import {
   pickRecurrenceFrequency,
   repeatChanged,
   repeatCountingDay,
+  repeatEndsBeforeStart,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
@@ -246,7 +247,11 @@ function repeatDayOf(
       | undefined;
     seriesTimeZone: string;
   }
-): { counting: Temporal.PlainDate; formDay: Temporal.PlainDate } {
+): {
+  changed: boolean;
+  counting: Temporal.PlainDate;
+  formDay: Temporal.PlainDate;
+} {
   const formDay = dayInZone(
     values.startDate,
     values.allDay ? null : values.startTime,
@@ -271,7 +276,7 @@ function repeatDayOf(
       seriesStart: where.seriesStart,
       timeZone: where.seriesTimeZone,
     }) ?? formDay;
-  return { counting, formDay };
+  return { changed, counting, formDay };
 }
 
 /**
@@ -809,6 +814,26 @@ function HeldWhileSaving({
     >
       {children}
     </View>
+  );
+}
+
+/** Why the sheet can't be saved: an end before the start, of it or its repeat. */
+function EndsBeforeStartNote({
+  endsEarly,
+  repeatEndsEarly,
+}: {
+  endsEarly: boolean;
+  repeatEndsEarly: boolean;
+}) {
+  if (!(endsEarly || repeatEndsEarly)) {
+    return null;
+  }
+  return (
+    <Text className="-mt-1 mb-2.5 text-destructive text-xs">
+      {endsEarly
+        ? "Ends before it starts."
+        : "The repeat ends before this starts. Pick a later end."}
+    </Text>
   );
 }
 
@@ -1516,7 +1541,6 @@ export function EventEditorSheet({
 
   const isCreateMode = draft.mode === "create";
   const readOnlyReason = readOnlyReasonFor(draft, calendarOptions);
-  const canSubmit = summary.trim().length > 0 && endsAfterStart(values);
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
 
@@ -1584,13 +1608,26 @@ export function EventEditorSheet({
   // An existing series' days (its end day, its start's weekday) count in
   // its own zone; a new event's in the app's.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
-  const { counting: repeatDay, formDay } = repeatDayOf(values, {
+  const {
+    changed: repeatIsChanged,
+    counting: repeatDay,
+    formDay,
+  } = repeatDayOf(values, {
     appTimeZone,
     event: sourceEvent,
     seriesRecurrence: masterRecurrence,
     seriesStart: masterStart,
     seriesTimeZone,
   });
+  // Its end picked, then the start moved past it: say so, and don't save.
+  const repeatEndsEarly = repeatEndsBeforeStart({
+    recurrence: values.recurrence,
+    sent: repeatIsChanged,
+    startDay: formDay,
+    timeZone: seriesTimeZone,
+  });
+  const canSubmit =
+    summary.trim().length > 0 && endsAfterStart(values) && !repeatEndsEarly;
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1774,11 +1811,10 @@ export function EventEditorSheet({
           timeZone={seriesTimeZone}
         />
         {/* Save stays off until the end comes after the start; say why. */}
-        {endsAfterStart(values) ? null : (
-          <Text className="-mt-1 mb-2.5 text-destructive text-xs">
-            Ends before it starts.
-          </Text>
-        )}
+        <EndsBeforeStartNote
+          endsEarly={!endsAfterStart(values)}
+          repeatEndsEarly={repeatEndsEarly}
+        />
 
         <RepeatSection
           editor={recurrenceEditor}

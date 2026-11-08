@@ -361,4 +361,48 @@ describe("the server refuses a split that can't start a series", () => {
       requests
     );
   });
+
+  test("when the new series' repeat ends before its first meeting", async () => {
+    const weekly = {
+      ...master,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+    } as Event;
+    const occurrence = {
+      ...weekly,
+      id: "series_20261116T140000Z",
+      originalStartTime: {
+        dateTime: "2026-11-16T09:00:00-05:00",
+        timeZone: zone,
+      },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+      end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+    } as Event;
+    const requests = stubGoogle((url) =>
+      url.includes(occurrence.id) ? occurrence : weekly
+    );
+    const service = makeGoogleCalendarService("token");
+    // Ends on the 16th, then moved to the 23rd: the new series would end
+    // before it starts.
+    const exit = await Effect.runPromiseExit(
+      service.updateEvent(
+        "primary",
+        occurrence.id,
+        {
+          ...occurrence,
+          end: { dateTime: "2026-11-23T09:30:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261117T045959Z"],
+          start: { dateTime: "2026-11-23T09:00:00-05:00", timeZone: zone },
+        },
+        "following",
+        occurrence
+      )
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
+      "The repeat ends before this occurrence"
+    );
+    expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
+  });
 });

@@ -910,3 +910,26 @@ export function repeatChanged(params: {
     JSON.stringify(params.recurrence ?? []) !== JSON.stringify(params.source)
   );
 }
+
+/**
+ * Whether a repeat the save sends ends (UNTIL) before the event's own
+ * start day: possible once its end was picked and the start then moved
+ * past it. Saved, the new series would end before it starts.
+ */
+export function repeatEndsBeforeStart(params: {
+  /** The save sends this repeat (a new event's, or a changed one). */
+  sent: boolean;
+  recurrence: string[] | undefined;
+  /** The start's day, in the series' zone. */
+  startDay: Temporal.PlainDate | null;
+  timeZone: string;
+}): boolean {
+  const rule = getPrimaryRecurrenceRule(params.recurrence);
+  if (!(params.sent && rule && params.startDay)) {
+    return false;
+  }
+  const { end } = parseGoogleEventRecurrenceRule(rule);
+  const last =
+    end.type === "until" ? untilRuleToDay(end.date, params.timeZone) : null;
+  return Boolean(last && Temporal.PlainDate.compare(last, params.startDay) < 0);
+}

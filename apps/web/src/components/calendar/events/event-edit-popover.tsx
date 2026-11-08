@@ -35,6 +35,7 @@ import {
   pickRecurrenceFrequency,
   repeatChanged,
   repeatCountingDay,
+  repeatEndsBeforeStart,
   repeatOffSeriesDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -2261,10 +2262,30 @@ function endsBeforeStart(values: Partial<EventFormValues>): boolean {
   );
 }
 
-function EndsBeforeStartNote({ values }: { values: Partial<EventFormValues> }) {
-  return endsBeforeStart(values) ? (
-    <p className="text-destructive text-xs">Ends before it starts.</p>
+/** Why the form can't be saved: an end before the start, of it or its repeat. */
+function EndsBeforeStartNote({
+  repeatEndsEarly,
+  values,
+}: {
+  repeatEndsEarly: boolean;
+  values: Partial<EventFormValues>;
+}) {
+  if (endsBeforeStart(values)) {
+    return <p className="text-destructive text-xs">Ends before it starts.</p>;
+  }
+  return repeatEndsEarly ? (
+    <p className="text-destructive text-xs">
+      The repeat ends before this starts. Pick a later end.
+    </p>
   ) : null;
+}
+
+/** The form can't be saved as is: it, or its repeat, ends before it starts. */
+function saveBlocked(
+  values: Partial<EventFormValues>,
+  repeatEndsEarly: boolean
+): boolean {
+  return endsBeforeStart(values) || repeatEndsEarly;
 }
 
 function EventFormActionRow({
@@ -2746,6 +2767,21 @@ export function EventEditForm({
     }
   }, [canCreateMeeting, isCreateMode, onSave, readOnly]);
 
+  // The repeat differs from the series' (what a save sends).
+  const repeatIsChanged = repeatChanged({
+    edited: recurrenceEditedRef.current,
+    recurrence: watchedValues.recurrence,
+    source: recurrenceSource,
+  });
+  // Its end picked, then the start moved past it: say so, and don't save.
+  const repeatEndsEarly = repeatEndsBeforeStart({
+    recurrence: watchedValues.recurrence,
+    // A new event's repeat is "changed" from none too.
+    sent: repeatIsChanged,
+    startDay: seriesDayOf(watchedValues),
+    timeZone: seriesTimeZone,
+  });
+
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
       if (readOnly) {
@@ -2753,7 +2789,7 @@ export function EventEditForm({
       }
       // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
       // comes through here, so none can write an end before the start.
-      if (endsBeforeStart(values)) {
+      if (saveBlocked(values, repeatEndsEarly)) {
         return { type: "invalid" };
       }
       const resolvedConference =
@@ -2792,6 +2828,7 @@ export function EventEditForm({
       masterQuery.data,
       pendingConference,
       readOnly,
+      repeatEndsEarly,
     ]
   );
 
@@ -2953,11 +2990,7 @@ export function EventEditForm({
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
         seriesStart={repeatCountingDay({
-          changed: repeatChanged({
-            edited: recurrenceEditedRef.current,
-            recurrence: watchedValues.recurrence,
-            source: recurrenceSource,
-          }),
+          changed: repeatIsChanged,
           event,
           formDay: seriesDayOf(watchedValues),
           seriesStart: masterQuery.data?.start,
@@ -3075,7 +3108,10 @@ export function EventEditForm({
           />
         </div>
       )}
-      <EndsBeforeStartNote values={watchedValues} />
+      <EndsBeforeStartNote
+        repeatEndsEarly={repeatEndsEarly}
+        values={watchedValues}
+      />
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
@@ -3106,7 +3142,7 @@ export function EventEditForm({
           onDelete={onDelete}
           onSave={onSave}
           readOnly={readOnly}
-          saveDisabled={endsBeforeStart(watchedValues)}
+          saveDisabled={saveBlocked(watchedValues, repeatEndsEarly)}
           saving={isSaving}
         />
       ) : null}

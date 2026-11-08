@@ -24,7 +24,7 @@ import {
   type RecurrenceScope,
 } from "./schema";
 import { seriesTimesForEdit } from "./series-times";
-import { matchRecurrenceToStart } from "./until";
+import { matchRecurrenceToStart, untilMoment } from "./until";
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -111,6 +111,56 @@ function splitBlockedError(
       ? "This and following isn't available for a series with more than one rule."
       : "This and following isn't available for an occurrence added to the series on its own.";
   return new GoogleApiError({ cause: new Error(refusal), refusal });
+}
+
+const RULE_UNTIL = /[:;]UNTIL=([^;]+)/;
+
+/** A start's moment: its date-time, or the start of its date in `zone`. */
+function firstMoment(
+  start: { date?: string; dateTime?: string },
+  zone: string
+): Temporal.Instant | null {
+  if (start.dateTime) {
+    return Temporal.Instant.from(start.dateTime);
+  }
+  return start.date
+    ? Temporal.PlainDate.from(start.date)
+        .toZonedDateTime({ timeZone: zone })
+        .toInstant()
+    : null;
+}
+
+/**
+ * Refuses a new series whose rule ends (UNTIL) before its own first
+ * meeting: Google would keep only that meeting, and the old series would
+ * already be cut. Null when it's fine (no UNTIL, or one at or after it).
+ */
+function endsBeforeStartError(
+  recurrence: string[] | undefined,
+  start: { date?: string; dateTime?: string },
+  zone: string
+): GoogleApiError | null {
+  const until = recurrence
+    ?.find((line) => line.startsWith("RRULE:"))
+    ?.match(RULE_UNTIL)?.[1];
+  const last = until ? untilMoment(until, zone) : null;
+  const first = firstMoment(start, zone);
+  if (!(last && first && Temporal.Instant.compare(last, first) < 0)) {
+    return null;
+  }
+  const refusal =
+    "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
+  return new GoogleApiError({ cause: new Error(refusal), refusal });
+}
+
+/** Fails with `endsBeforeStartError`'s refusal, if there is one. */
+function refuseEndsBeforeStart(
+  recurrence: string[] | undefined,
+  start: { date?: string; dateTime?: string },
+  zone: string
+): Effect.Effect<void, GoogleApiError> {
+  const refusal = endsBeforeStartError(recurrence, start, zone);
+  return refusal ? Effect.fail(refusal) : Effect.void;
 }
 
 /**
@@ -955,6 +1005,12 @@ export function makeGoogleCalendarService(
         master,
         event.start,
         startIso
+      );
+      // Checked before the old series is cut: nothing is written then.
+      yield* refuseEndsBeforeStart(
+        recurrence,
+        event.start,
+        seriesZoneOf(master)
       );
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(

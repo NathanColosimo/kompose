@@ -14,6 +14,7 @@ import {
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatCountingDay,
+  repeatEndsBeforeStart,
   repeatOffSeriesDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -1754,6 +1755,12 @@ describe("repeatOffSeriesDay", () => {
     expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20270131T235959Z"])).toBe(false);
   });
 
+  test("yearly with only its month picked still takes its day from the first meeting", () => {
+    // BYMONTH=11 from Nov 1 meets Nov 1 each year: not Nov 15.
+    expect(off(["RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=11"])).toBe(true);
+    expect(off(["RRULE:FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=15"])).toBe(false);
+  });
+
   test("daily, or no repeat, never", () => {
     expect(off(["RRULE:FREQ=DAILY"])).toBe(false);
     expect(off([])).toBe(false);
@@ -1785,5 +1792,41 @@ describe("untilDefaultDay", () => {
     expect(
       untilDefaultDay(Temporal.PlainDate.from("2024-01-07"), zone).toString()
     ).toBe(Temporal.Now.plainDateISO(zone).add({ months: 3 }).toString());
+  });
+});
+
+describe("repeatEndsBeforeStart", () => {
+  const zone = "America/New_York";
+  const rule = ["RRULE:FREQ=WEEKLY;UNTIL=20261117T045959Z"];
+  const on = (iso: string) => Temporal.PlainDate.from(iso);
+
+  test("an end picked, then the start moved past it", () => {
+    expect(
+      repeatEndsBeforeStart({
+        recurrence: rule,
+        sent: true,
+        startDay: on("2026-11-23"),
+        timeZone: zone,
+      })
+    ).toBe(true);
+  });
+
+  test("its own day, or a repeat the save doesn't send, is fine", () => {
+    expect(
+      repeatEndsBeforeStart({
+        recurrence: rule,
+        sent: true,
+        startDay: on("2026-11-16"),
+        timeZone: zone,
+      })
+    ).toBe(false);
+    expect(
+      repeatEndsBeforeStart({
+        recurrence: rule,
+        sent: false,
+        startDay: on("2026-11-23"),
+        timeZone: zone,
+      })
+    ).toBe(false);
   });
 });
