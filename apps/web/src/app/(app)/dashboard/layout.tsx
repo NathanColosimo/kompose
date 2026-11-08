@@ -114,16 +114,18 @@ export default function DashboardLayout({
   // behind it is clipped and inert, so it neither widens the page nor takes
   // Tab, and keeps its place for when the list closes.
   const showsTaskList = isNarrow && narrowOpen;
-  // The calendar (or page) takes over from that list whenever it's asked
-  // for: on navigating, and on a request to create an event or open a task
-  // on the calendar, since their popovers anchor in it. Those requests come
-  // from the command bar, the "c" key and the desktop app.
+  // The calendar or page takes over from that list whenever it's asked for:
+  // on leaving the calendar (Settings shows), and on a request to create an
+  // event or open a task on the calendar, since their popovers anchor in it.
+  // Those requests come from the command bar, the "c" key and the desktop
+  // app. Arriving at the calendar keeps the list, which a request for an
+  // Inbox task may just have opened.
   const pathname = usePathname();
   const createEventRequestedAt = useAtomValue(createEventRequestedAtom);
   const calendarTaskRequested =
     useAtomValue(commandBarTaskOpenRequestAtom)?.target === "calendar";
   useEffect(() => {
-    if (pathname) {
+    if (pathname !== "/dashboard") {
       setNarrowOpen(false);
     }
   }, [pathname, setNarrowOpen]);

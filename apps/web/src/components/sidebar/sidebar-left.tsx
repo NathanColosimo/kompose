@@ -12,6 +12,7 @@ import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { useAtom, useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
 import { CalendarClock, CalendarDays, Inbox } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { type ComponentProps, useEffect, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
@@ -332,6 +333,8 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const today = useAtomValue(todayPlainDateAtom);
   const { open, setOpen } = useSidebar();
   const isNarrow = useAtomValue(isNarrowViewportAtom);
+  const pathname = usePathname();
+  const { push } = useRouter();
   const { tagsQuery } = useTags();
   const dateTitle = useMemo(
     () => formatDateSidebarTitle(currentDate, today),
@@ -546,12 +549,17 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                 }
               />
               {/* In a narrow window the list fills the view; this is the
-                  visible way back (the rail's active icon does the same). */}
+                  visible way to the calendar, from any page. */}
               {isNarrow ? (
                 <Button
                   aria-label="Show calendar"
                   className="size-8 text-muted-foreground"
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false);
+                    if (pathname !== "/dashboard") {
+                      push("/dashboard");
+                    }
+                  }}
                   size="icon"
                   variant="ghost"
                 >
