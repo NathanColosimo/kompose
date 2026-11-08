@@ -100,9 +100,6 @@ export function useGoogleEventMutations() {
       }
     },
     onSettled: (_data, _error, variables) => {
-      if (!variables) {
-        return;
-      }
       invalidateGoogleEventQueries(queryClient, [
         { accountId: variables.accountId, calendarId: variables.calendarId },
       ]);
@@ -189,9 +186,6 @@ export function useGoogleEventMutations() {
       );
     },
     onSettled: (_data, _error, variables) => {
-      if (!variables) {
-        return;
-      }
       invalidateGoogleEventQueries(queryClient, [
         { accountId: variables.accountId, calendarId: variables.calendarId },
       ]);
@@ -263,11 +257,8 @@ export function deleteGoogleEventMutationOptions(
     onSettled: (
       _data: unknown,
       _error: Error | null,
-      variables: (DeleteEventInput & HeldSave) | undefined
+      variables: DeleteEventInput & HeldSave
     ) => {
-      if (!variables) {
-        return;
-      }
       invalidateGoogleEventQueries(queryClient, [
         { accountId: variables.accountId, calendarId: variables.calendarId },
       ]);

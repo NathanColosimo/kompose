@@ -868,17 +868,15 @@ describe("the server's refusal of a series write", () => {
     );
   });
 
-  test("keeps the server's words, less its advice", () => {
-    // Until #125 gives the reason alone, these must stay its leading words.
+  test("keeps the server's words whole where they give no advice", () => {
     const reasons = [
-      drops,
-      { ...drops, reason: "resizesChangedOccurrences" },
-      { reason: "addedBeforeStart" },
-      { reason: "endsBeforeStart" },
-      { reason: "severalTimesADay" },
+      { reason: "addedOccurrence" },
+      { reason: "countUnknown" },
+      { reason: "deleteFromAddedOccurrence" },
+      { reason: "severalRules" },
     ] as const;
     for (const refusal of reasons) {
-      expect(refusalMessage(refusal)).toStartWith(refusalReason(refusal));
+      expect(refusalReason(refusal)).toBe(refusalMessage(refusal));
     }
   });
 

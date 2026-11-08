@@ -18,6 +18,7 @@ async function failedDelete(held: {
 }) {
   const told: Error[] = [];
   const sent: unknown[] = [];
+  const whileSent: unknown[] = [];
   const queryClient = new QueryClient();
   const queryKey = [
     ...getGoogleEventsByCalendarQueryKey({
@@ -33,6 +34,7 @@ async function failedDelete(held: {
       events: {
         delete: (input: unknown) => {
           sent.push(input);
+          whileSent.push(queryClient.getQueryData(queryKey));
           return Promise.reject(new Error("refused"));
         },
       },
@@ -47,7 +49,7 @@ async function failedDelete(held: {
     })
   );
   await observer.mutate({ ...removal, ...held }).catch(() => undefined);
-  return { cached: queryClient.getQueryData(queryKey), sent, told };
+  return { cached: queryClient.getQueryData(queryKey), sent, told, whileSent };
 }
 
 test("a failed delete the dialog reports itself shows no toast", async () => {
@@ -63,8 +65,9 @@ test("a failed delete otherwise says what failed, in the dialog's words", async 
   expect(told[0]?.cause).toEqual(new Error("refused"));
 });
 
-test("the server gets the delete alone, and the event comes back", async () => {
-  const { cached, sent } = await failedDelete({ quiet: true });
+test("the event leaves the list at once, and comes back on failure", async () => {
+  const { cached, sent, whileSent } = await failedDelete({ quiet: true });
   expect(sent).toEqual([removal]);
+  expect(whileSent).toEqual([[{ id: "other" }]]);
   expect(cached).toEqual([{ id: "event" }, { id: "other" }]);
 });

@@ -26,7 +26,7 @@ import {
   startInstant,
 } from "@kompose/google-cal/until";
 import { ORPCError } from "@orpc/client";
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import {
   type EntireSeriesCost,
   seriesTimeZone,
@@ -311,38 +311,15 @@ export function refuseSave(
 }
 
 /**
- * Why the server refused a series write, without its advice on where to
- * save instead (`refusalMessage` names scopes the dialog may have off):
- * the dialog says that from the scopes left.
+ * Why the server refused a series write: the first sentence of its words
+ * (`refusalMessage`), which give the reason first, then any advice on
+ * where to save instead. That advice can name scopes the dialog has off,
+ * so the dialog says where the save can go from the scopes left.
  */
 export function refusalReason(refusal: SeriesRefusal): string {
-  switch (refusal.reason) {
-    case "addedBeforeStart":
-      return "This and following isn't available from this series' first meeting, since meetings were added before it.";
-    case "severalTimesADay":
-      return "This series' meetings keep times of their own, so its time can't be changed for the entire series.";
-    case "dropsChangedOccurrences":
-      return `This would undo changes made to single occurrences (${refusalDays(refusal)}), so it wasn't saved.`;
-    case "resizesChangedOccurrences":
-      return `This would also change the length of single occurrences given a length of their own (${refusalDays(refusal)}), so it wasn't saved.`;
-    case "endsBeforeStart":
-      return "The repeat ends before this occurrence, so it can't start a new series here.";
-    // The server's words give no advice.
-    case "addedOccurrence":
-    case "countUnknown":
-    case "deleteFromAddedOccurrence":
-    case "severalRules":
-      return refusalMessage(refusal);
-    default:
-      return refusal satisfies never;
-  }
-}
-
-/** "Dec 7, Dec 8": the occurrences a refusal names, by their original days. */
-function refusalDays(refusal: ListRefusal): string {
-  return refusal.originalStarts
-    .map((start) => shortDay(Temporal.PlainDate.from(start.slice(0, 10))))
-    .join(", ");
+  const message = refusalMessage(refusal);
+  const end = message.indexOf(". ");
+  return end === -1 ? message : message.slice(0, end + 1);
 }
 
 /** A refusal that names the occurrences it's for. */

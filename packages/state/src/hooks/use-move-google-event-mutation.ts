@@ -86,10 +86,6 @@ export function moveGoogleEventMutationOptions(
       _error: Error | null,
       variables: MoveEventInput & HeldSave
     ) => {
-      if (!variables) {
-        return;
-      }
-
       invalidateGoogleEventQueries(queryClient, [
         { accountId: variables.accountId, calendarId: variables.calendarId },
         {
