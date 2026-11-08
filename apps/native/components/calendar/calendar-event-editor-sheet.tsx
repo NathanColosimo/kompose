@@ -1576,7 +1576,7 @@ export function EventEditorSheet({
   // The repeat a save would send, and the days it counts from
   // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
   const seriesEdit = seriesRepeatForEdit({
-    edited: draftTimes(values, appTimeZone, seriesTimeZone),
+    edited: draftTimes(values, appTimeZone, seriesTimeZone, sourceEvent),
     event: sourceEvent,
     recurrence: values.recurrence,
     recurrenceEdited: Boolean(values.recurrenceEdited),

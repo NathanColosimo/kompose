@@ -870,6 +870,15 @@ function EventDeleteDialogs({
 }
 
 /**
+ * The scopes the server refused for one pending save, and its latest
+ * reason: they stay off, so a second refusal can't bring the first back.
+ */
+interface Refusals {
+  message: string;
+  scopes: Partial<Record<RecurrenceScope, true>>;
+}
+
+/**
  * Scope for saving a recurring event. It opens over the editor (iOS presents
  * it from the sheet's modal): Cancel goes back to the editor with the edits,
  * and Apply holds "Saving…" until the save ends.
@@ -883,6 +892,7 @@ function EventSaveScopeDialog({
   pending,
   pick,
   preferred,
+  refusals,
 }: {
   /** What the save changes, for the scopes it can use. */
   changes: EventSaveChanges | null;
@@ -895,12 +905,19 @@ function EventSaveScopeDialog({
   pick: RecurrenceScope | null;
   /** The scope the save suggests, shown once it's available. */
   preferred: RecurrenceScope;
+  /** The scopes the server refused for this save, and its latest reason. */
+  refusals: Refusals | null;
 }) {
-  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
-  // Why each scope that's off is.
-  const description = changes
+  // The shared rules, plus the scopes the server refused for this save.
+  const disabled = {
+    ...(changes ? eventSaveDisabledScopes(changes) : {}),
+    ...refusals?.scopes,
+  };
+  // Why each scope that's off is, led by the server's latest reason.
+  const rules = changes
     ? eventSaveDescription(changes)
     : SCOPE_DIALOG_COPY.saveEvent.description;
+  const description = refusals ? `${refusals.message} ${rules}` : rules;
   // Worked out each time: a preferred scope off for a moment (the series
   // loading) comes back once it's on, unless the user chose another.
   const scope = chosenScope(pick, preferred, disabled);
@@ -1222,13 +1239,16 @@ export default function CalendarTab() {
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
-  // The moved meeting a refused save named (the server's own check), shown
-  // by the scope dialog until the dialog closes.
+  // What the server refused for the pending save (its scopes and reason,
+  // and the moved meeting an Entire series refusal named), shown by the
+  // scope dialog until it closes.
+  const [saveRefusals, setSaveRefusals] = useState<Refusals | null>(null);
   const [refusedMovedDay, setRefusedMovedDay] =
     useState<Temporal.PlainDate | null>(null);
 
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
+    setSaveRefusals(null);
     setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
     setPendingEventDeleteDraft(null);
@@ -1579,7 +1599,8 @@ export default function CalendarTab() {
       const { end: endPayload, start: startPayload } = draftTimes(
         currentDraft,
         timeZone,
-        zone
+        zone,
+        currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined
       );
 
       return {
@@ -1662,14 +1683,11 @@ export default function CalendarTab() {
           recurrenceScope: scope,
         })
         .catch((error: Error) => {
-          // A refusal in the server's words (a refusal for a dropped meeting
-          // names its day); anything else as a failed save.
-          notifyError?.(
-            heldSaveError(
-              error,
-              seriesRefusalOf(error) ? undefined : SAVE_FAILURE_MESSAGE
-            )
-          );
+          // A refusal is shown where the save was asked for (the scope
+          // dialog, or the editor); anything else as a failed save.
+          if (!seriesRefusalOf(error)) {
+            notifyError?.(heldSaveError(error, SAVE_FAILURE_MESSAGE));
+          }
           throw error;
         });
 
@@ -1814,6 +1832,7 @@ export default function CalendarTab() {
         // The scope dialog opens over the editor, which stays open; it
         // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
+        setSaveRefusals(null);
         setRefusedMovedDay(null);
         setEventSavePreferred(
           suggested === "this" && changes.patternChanged
@@ -1825,7 +1844,14 @@ export default function CalendarTab() {
         return;
       }
 
-      await commitEventUpdate(draft, "this");
+      // A new repeat on a one-off event can be refused too (it would end
+      // before it starts): the server's words, over the editor.
+      await commitEventUpdate(draft, "this").catch((error: unknown) => {
+        if (seriesRefusalOf(error)) {
+          notifyError?.(error as Error);
+        }
+        throw error;
+      });
     },
     [
       buildEventPayload,
@@ -1834,6 +1860,7 @@ export default function CalendarTab() {
       createEvent,
       eventSaveChanges,
       masterRecurrence,
+      notifyError,
     ]
   );
 
@@ -1876,39 +1903,33 @@ export default function CalendarTab() {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
       } catch (error) {
-        // An Entire series save refused for a moved meeting it would drop
-        // keeps the dialog, which turns that scope off and says why;
-        // anything else returns to the editor with the edits.
-        const original = droppedOriginalStart(error);
-        const day = original
-          ? movedMeetingDay(original, pendingEventSaveDraft)
-          : null;
-        const turnsOff =
-          scope === "all" &&
-          day !== null &&
-          Boolean(
-            eventSaveDisabledScopes({
-              ...eventSaveChanges(pendingEventSaveDraft),
-              droppedMovedDay: day,
-            }).all
-          );
-        if (turnsOff) {
-          setRefusedMovedDay(day);
+        // A refused scope (a retry won't help) stays off for this save, and
+        // the dialog leads with the server's reason; an Entire series
+        // refusal for a moved meeting also names it by the day the calendar
+        // shows. Any other failure returns to the editor with the edits.
+        if (seriesRefusalOf(error)) {
+          const message = (error as Error).message;
+          setSaveRefusals((refused) => ({
+            message,
+            scopes: { ...refused?.scopes, [scope]: true },
+          }));
+          const original = droppedOriginalStart(error);
+          if (scope === "all" && original) {
+            setRefusedMovedDay(
+              movedMeetingDay(original, pendingEventSaveDraft)
+            );
+          }
         } else {
           setEventDialog(null);
           setPendingEventSaveDraft(null);
+          setSaveRefusals(null);
           setRefusedMovedDay(null);
         }
       } finally {
         setIsSavingEvent(false);
       }
     },
-    [
-      commitEventUpdate,
-      eventSaveChanges,
-      movedMeetingDay,
-      pendingEventSaveDraft,
-    ]
+    [commitEventUpdate, movedMeetingDay, pendingEventSaveDraft]
   );
 
   const requestDeleteEvent = useCallback(
@@ -2042,6 +2063,7 @@ export default function CalendarTab() {
 
   function dismissEventSaveDialog() {
     setEventDialog(null);
+    setSaveRefusals(null);
     setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
   }
@@ -2553,6 +2575,7 @@ export default function CalendarTab() {
                 pending={isSavingEvent}
                 pick={eventSavePick}
                 preferred={eventSavePreferred}
+                refusals={saveRefusals}
               />
             </>
           }
