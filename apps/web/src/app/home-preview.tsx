@@ -190,7 +190,7 @@ export function HomePreview() {
                   ) : null}
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate font-medium">{block.title}</span>
-                    {block.meta && block.end - block.start >= 1 ? (
+                    {block.meta ? (
                       <span className="truncate text-[10px] text-foreground/65">
                         {block.meta}
                       </span>

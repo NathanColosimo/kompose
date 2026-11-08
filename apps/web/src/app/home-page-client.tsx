@@ -53,12 +53,6 @@ export default function HomePageClient() {
 function HomePageContent() {
   return (
     <>
-      {/* Provide a drag handle on desktop (Electron) without affecting web behavior. */}
-      <div
-        aria-hidden
-        className="fixed inset-x-0 top-0 z-50 h-8 select-none"
-        data-desktop-drag-region
-      />
       <SiteHeader />
       <main>
         <section className="mx-auto grid max-w-6xl items-center gap-14 px-6 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:pt-24">

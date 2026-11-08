@@ -105,16 +105,12 @@ export default function LoginPageClient() {
 
   return (
     <main className="flex min-h-svh flex-col bg-background text-foreground">
-      {/* Keep the login screen draggable in the desktop window. */}
-      <div
-        aria-hidden
-        className="fixed inset-x-0 top-0 z-50 h-8 select-none"
-        data-desktop-drag-region
-      />
-      <header className="mx-auto flex h-16 w-full max-w-6xl items-center px-6">
-        <Link className="font-medium font-serif text-lg" href="/">
-          Kompose
-        </Link>
+      <header data-desktop-drag-region>
+        <div className="mx-auto flex h-16 max-w-6xl items-center px-6">
+          <Link className="font-medium font-serif text-lg" href="/">
+            Kompose
+          </Link>
+        </div>
       </header>
       <section className="flex flex-1 items-center justify-center px-6 pb-[20svh]">
         <div className="flex w-full max-w-sm flex-col gap-6">
