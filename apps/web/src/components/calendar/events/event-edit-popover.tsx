@@ -99,7 +99,10 @@ import {
 } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
-import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
+import {
+  RecurrenceScopeDialog,
+  type ScopeDialogSubject,
+} from "@/components/recurrence-scope-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1113,6 +1116,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-selected-scope", value })
         }
         open={scopeDialogOpen}
+        subject={savedSubject(pendingSave, event, timeZone)}
         title={SCOPE_DIALOG_COPY.saveEvent.title}
         value={selectedScope}
       />
@@ -1800,6 +1804,39 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
 }
 
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
+/**
+ * What a recurring save moves, as the scope dialog's line ("Retro → Mon,
+ * Nov 9 · 4:00 – 4:45 PM"), when it changes the occurrence's times; the
+ * same line a drop on the grid shows.
+ */
+function savedSubject(
+  pendingSave: PendingSave | null,
+  event: GoogleEvent | undefined,
+  timeZone: string
+): ScopeDialogSubject | undefined {
+  const edited = pendingSave?.variables.event;
+  if (!(edited && event)) {
+    return;
+  }
+  const at = (time: GoogleEvent["start"] | undefined) =>
+    time?.dateTime ? Date.parse(time.dateTime) : time?.date;
+  if (
+    at(edited.start) === at(event.start) &&
+    at(edited.end) === at(event.end)
+  ) {
+    return;
+  }
+  const start = new Date(
+    edited.start?.dateTime ?? `${edited.start?.date}T00:00`
+  );
+  const end = new Date(edited.end?.dateTime ?? `${edited.end?.date}T00:00`);
+  return {
+    moved: pendingSave.dateMoved,
+    name: edited.summary || "(No title)",
+    when: describeEventWhen(edited, start, end, timeZone),
+  };
+}
+
 function describeEventWhen(
   event: GoogleEvent | undefined,
   start: Date,

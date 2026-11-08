@@ -450,6 +450,58 @@ describe("followStart", () => {
     ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270530"]);
   });
 
+  test("moves monthly and yearly skips next to their time, either way", () => {
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      })[1];
+    const cases: [string, string, string, string, string][] = [
+      // A day later across a month's end: May 31 -> Jun 1.
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-01-31",
+        "2027-02-01",
+        "20270531",
+        "20270601",
+      ],
+      // Every 2 months, moved back a month: Mar 15 -> Feb 15.
+      [
+        "RRULE:FREQ=MONTHLY;INTERVAL=2",
+        "2027-01-15",
+        "2026-12-15",
+        "20270315",
+        "20270215",
+      ],
+      // Last Fri -> 1st Mon (Jan 29 -> Feb 1): May 28 -> Jun 7.
+      [
+        "RRULE:FREQ=MONTHLY;BYDAY=-1FR",
+        "2027-01-29",
+        "2027-02-01",
+        "20270528",
+        "20270607",
+      ],
+      // Yearly moved earlier: Dec 9 -> Nov 9 keeps 2027's skip, in Nov.
+      ["RRULE:FREQ=YEARLY", "2026-12-09", "2026-11-09", "20271209", "20271109"],
+      // Mar 1 -> Feb 28: the 2028 skip is Feb 28 2028.
+      [
+        "RRULE:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1",
+        "2027-03-01",
+        "2027-02-28",
+        "20280301",
+        "20280228",
+      ],
+    ];
+    for (const [rule, from, to, skipped, moved] of cases) {
+      expect(followed([rule, `EXDATE;VALUE=DATE:${skipped}`], from, to)).toBe(
+        `EXDATE;VALUE=DATE:${moved}`
+      );
+    }
+  });
+
   test("keeps skips off real meetings and the picked day", () => {
     const followed = (recurrence: string[], from: string, to: string) =>
       followStart({
@@ -487,15 +539,15 @@ describe("followStart", () => {
         timeZone: zone,
         to: day(to),
       });
-    // Monthly Nov 30 -> Dec 1: the skipped Dec 30 was December's meeting,
-    // and December's is now Dec 1, the day picked: nothing new is skipped.
+    // Monthly Nov 30 -> Dec 1 (+1 day): the skipped Dec 30 is Jan 1, the
+    // meeting next to that time.
     expect(
       followed(
         ["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20261230"],
         "2026-11-30",
         "2026-12-01"
       )
-    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20261230"]);
+    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270101"]);
     // Yearly Nov 9 -> Dec 9: the skipped Nov 9 2027 is Dec 9 2027.
     expect(
       followed(

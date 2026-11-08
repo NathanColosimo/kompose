@@ -288,26 +288,6 @@ export function matchRecurrenceToStart(
   return changed ? next : recurrence;
 }
 
-/** The first of the new rule's days in `month`'s month, from `from` on. */
-function firstRuleDayIn(
-  newRule: string,
-  to: Temporal.PlainDate,
-  month: Temporal.PlainDate,
-  from = month.with({ day: 1 })
-): Temporal.PlainDate | null {
-  const first = month.with({ day: 1 });
-  for (let offset = 0; offset < first.daysInMonth; offset += 1) {
-    const candidate = first.add({ days: offset });
-    if (
-      Temporal.PlainDate.compare(candidate, from) >= 0 &&
-      isRuleDay(newRule, to, candidate) === true
-    ) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 /**
  * The move's shift within one repeat period (`period` days), in its
  * direction: Fri -> Mon is +3 days, Mon -> the next week's Wed +2, and
@@ -323,14 +303,62 @@ function shiftWithinPeriod(
   return days >= 0 || forward === 0 ? forward : forward - period;
 }
 
+/** Days in a month and a year, near enough to place a skip within one. */
+const MONTH_DAYS = 30;
+const YEAR_DAYS = 365;
+
 /**
- * Where a skipped occurrence of the old pattern sits in the new one: in
- * its own period, moved as the pattern did. Daily and weekly: by the
- * move's shift within one period (INTERVAL days, or weeks). Monthly: the
- * new rule's day in the skip's month (shifted by the move within INTERVAL
- * months). Yearly: the new rule's day in the skip's month, or else later
- * that year. A skip usually marks when the person is away, so it stays in
- * its own time. Null when the place isn't one of the new rule's days.
+ * How far apart a rule's meetings fall, in days: INTERVAL days, weeks,
+ * months or years (a yearly rule in several months meets about monthly).
+ */
+function periodDays(freq: string, rule: string): number {
+  const interval = Number(/INTERVAL=(\d+)/.exec(rule)?.[1] ?? 1) || 1;
+  const months = /BYMONTH=([^;]*)/.exec(rule)?.[1]?.split(",") ?? [];
+  switch (freq) {
+    case "DAILY":
+      return interval;
+    case "WEEKLY":
+      return 7 * interval;
+    case "MONTHLY":
+      return MONTH_DAYS * interval;
+    default:
+      return months.length === 1 ||
+        (months.length === 0 && !/BYMONTHDAY=/.test(rule))
+        ? YEAR_DAYS * interval
+        : MONTH_DAYS;
+  }
+}
+
+/**
+ * The new rule's day nearest `target`, within half a period, the side
+ * the move went first on a tie; null when none is that close.
+ */
+function nearestRuleDay(
+  newRule: string,
+  to: Temporal.PlainDate,
+  target: Temporal.PlainDate,
+  period: number,
+  forward: boolean
+): Temporal.PlainDate | null {
+  for (let distance = 0; distance <= period / 2; distance += 1) {
+    const sides = forward ? [distance, -distance] : [-distance, distance];
+    for (const offset of sides) {
+      const day = target.add({ days: offset });
+      if (isRuleDay(newRule, to, day) === true) {
+        return day;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a skipped occurrence of the old pattern sits in the new one: moved
+ * as the pattern did, by the move's signed shift within one period (Fri
+ * -> Mon is +3; Jan 31 -> Feb 1 is +1; a month's move plus 5 days is +5),
+ * on the new rule's day nearest that. A skip marks when the person is
+ * away, so it stays next to that time. Null when the new rule has no day
+ * within half a period: the skip then stays.
  */
 function placeInNewPattern(
   freq: string,
@@ -339,24 +367,13 @@ function placeInNewPattern(
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
-  const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
-  let place: Temporal.PlainDate | null = null;
+  const period = periodDays(freq, newRule);
+  const shift = shiftWithinPeriod(from, to, period);
+  const target = day.add({ days: shift });
   if (freq === "DAILY" || freq === "WEEKLY") {
-    const period = freq === "WEEKLY" ? 7 * interval : interval;
-    place = day.add({ days: shiftWithinPeriod(from, to, period) });
-  } else if (freq === "MONTHLY") {
-    const moved = (to.year - from.year) * 12 + to.month - from.month;
-    const shift = ((moved % interval) + interval) % interval;
-    place = firstRuleDayIn(newRule, to, day.add({ months: shift }));
-  } else if (freq === "YEARLY") {
-    const shift = (((to.year - from.year) % interval) + interval) % interval;
-    const year = day.add({ years: shift });
-    place = firstRuleDayIn(newRule, to, year);
-    for (let month = 1; !place && year.month + month <= 12; month += 1) {
-      place = firstRuleDayIn(newRule, to, year.add({ months: month }));
-    }
+    return isRuleDay(newRule, to, target) === true ? target : null;
   }
-  return place && isRuleDay(newRule, to, place) === true ? place : null;
+  return nearestRuleDay(newRule, to, target, period, shift >= 0);
 }
 
 /**
@@ -401,9 +418,15 @@ export function moveSkippedDays(params: {
       ? place
       : null;
   };
-  // The new start is the day the person picked: never left skipped.
-  const isNewStart = (day: Temporal.PlainDate | undefined) =>
-    Boolean(day && Temporal.PlainDate.compare(day, to) === 0);
+  // The new start is the day the person picked: never left skipped (in a
+  // rule with several times a day, a skipped other time that day stays).
+  const severalADay = SEVERAL_A_DAY.test(newRule);
+  const isNewStart = (value: RecurrenceValue | null) =>
+    Boolean(
+      value &&
+        Temporal.PlainDate.compare(value.day, to) === 0 &&
+        !(severalADay && value.instant)
+    );
   let changed = false;
   const next = recurrence.flatMap((line) => {
     const list = line.startsWith("EXDATE") ? parseDateList(line, seriesZone) : null;
@@ -414,7 +437,7 @@ export function moveSkippedDays(params: {
       readRecurrenceValue(value, list.zone, seriesZone)
     );
     const moved = read.map((value) => (value ? placeOf(value.day) : null));
-    const dropped = read.map((value) => isNewStart(value?.day));
+    const dropped = read.map((value) => isNewStart(value));
     if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
       return [line];
     }
