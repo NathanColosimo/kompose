@@ -223,24 +223,31 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=2"]);
   });
 
-  test("carries a rule that never meets alongside one that does", () => {
-    // Feb 30 never comes, so the first rule has no meetings to count; the
-    // daily one, split at its second, has four left.
-    const rules = [
+  test("leaves a count it can't walk to its end to Google's list", () => {
+    // Feb 30 never comes, so the first rule's three meetings aren't found
+    // within the walk; and a yearly rule from 1950 a hundred times runs
+    // past fifty years. Neither is guessed from a partial walk.
+    const never = [
       "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
       "RRULE:FREQ=DAILY;COUNT=5",
     ];
     expect(
-      carryCountExactly(rules, {
-        masterRecurrence: rules,
+      carryCountExactly(never, {
+        masterRecurrence: never,
         originalStart: "2027-03-12T09:00:00-05:00",
         seriesStart: "2027-03-11T09:00:00-05:00",
         seriesZone: "America/New_York",
       })
-    ).toEqual([
-      "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
-      "RRULE:FREQ=DAILY;COUNT=4",
-    ]);
+    ).toBeNull();
+    const yearly = ["RRULE:FREQ=YEARLY;COUNT=100"];
+    expect(
+      carryCountExactly(yearly, {
+        masterRecurrence: yearly,
+        originalStart: "2026-11-09T09:00:00Z",
+        seriesStart: "1950-11-09T09:00:00Z",
+        seriesZone: "UTC",
+      })
+    ).toBeNull();
   });
 
   test("can't carry a COUNT it can't walk past added days", () => {
@@ -746,8 +753,8 @@ describe("isRuleDay", () => {
     expect(
       isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
     ).toBeNull();
-    // Several times a day still meet on the rule's days, unless BYSETPOS
-    // picks among those times.
+    // A list of times still meets on the rule's days: Google ignores the
+    // list and meets once a day.
     expect(
       isRuleDay(
         "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",

@@ -2237,3 +2237,288 @@ describe("a deleted added meeting through a save that adds its weekday", () => {
     }
   );
 });
+
+describe("Entire series start and length changes, as Google applies them", () => {
+  // Google cancels every exception when the series' start moves (its time,
+  // its day or both), and gives every exception the series' new length when
+  // only the end moves.
+  const renamed = (original: string): Event => ({
+    ...occurrenceOf(weekly, original),
+    summary: "Planning (renamed)",
+  });
+
+  test("moving the start's day is refused while any occurrence has changes of its own", async () => {
+    // The first meeting moved a week earlier, same weekday and time: the
+    // rule still meets Nov 23, but Google cancels its exception.
+    const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
+    const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
+    expect(
+      await refusalOf(
+        edit("all", first, {
+          end: { dateTime: "2026-11-02T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-02T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("moving the start's time is refused for a renamed occurrence too", async () => {
+    const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a new length is refused while an occurrence has a length of its own", async () => {
+    // Nov 23 runs to 10:00 on its own; the series' 30 minutes become 45.
+    const longer = occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+      end: "2026-11-23T10:00:00-05:00",
+      start: "2026-11-23T09:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [longer]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+        })
+      )
+    ).toEqual({
+      code: "BAD_REQUEST",
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "resizesChangedOccurrences",
+      },
+      message:
+        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a new length is saved when changed occurrences keep the series' length", async () => {
+    // Nov 23 moved to 14:00, still 30 minutes: Google keeps it and gives it
+    // the new length, as the user asked for every meeting.
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T14:30:00-05:00",
+        start: "2026-11-23T14:00:00-05:00",
+      }),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", weekly, {
+            end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+    expect(google.writes()[0]?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("a new length set through an occurrence of its own length is saved on it", async () => {
+    // Nov 16 runs to 10:00 on its own; from it the user makes the series
+    // two hours long. Its length is the one being set.
+    const opened = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-16T10:00:00-05:00",
+      start: "2026-11-16T09:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [opened]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", opened, {
+            end: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [series, own] = google.writes();
+    expect(series?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T11:00:00-05:00", timeZone: zone },
+    });
+    expect(own?.body).toMatchObject({
+      end: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("an exception Google cancelled with its series' fields gone is passed over", async () => {
+    // Left by an earlier start move: its own id and start, status cancelled,
+    // no originalStartTime or recurringEventId.
+    const orphan = {
+      end: { dateTime: "2026-11-23T14:30:00-05:00", timeZone: zone },
+      id: "series_20261123T140000Z",
+      start: { dateTime: "2026-11-23T14:00:00-05:00", timeZone: zone },
+      status: "cancelled",
+    } as Event;
+    const google = fakeGoogle(weekly, [orphan]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO",
+    ]);
+  });
+});
+
+describe("follow-up checks on the start and length rules", () => {
+  test("a length-only change in a series with an exclusion rule still saves", async () => {
+    // Daily but weekends, Nov 23 renamed (the series' length): its slot
+    // isn't moved, so nothing of its own is at stake.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=SA,SU"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        summary: "Planning (renamed)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
+  test("a COUNT past fifty years is carried from Google's list, not a partial walk", async () => {
+    // Yearly a hundred times from 1950: split in 2026, 24 are left.
+    const series: Event = {
+      end: { dateTime: "1950-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=100"],
+      start: { dateTime: "1950-11-09T09:00:00Z", timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    const years = Array.from({ length: 100 }, (_, i) => 1950 + i);
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: years.map((year) =>
+              occurrenceOf(series, `${year}-11-09T09:00:00Z`)
+            ),
+          }
+        : undefined
+    );
+    const opened = occurrenceOf(series, "2026-11-09T09:00:00Z");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Anniversary (new)" }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=24",
+    ]);
+  });
+});
+
+describe("a COUNT carried from Google's list", () => {
+  // Yearly on Nov 9 at 9:00 UTC from 2028, 98 times: too long to walk, so
+  // what's left is counted from Google's list of its meetings.
+  const yearly = (recurrence: string[], startTime = "2028-11-09T09:00:00Z") => {
+    const series: Event = {
+      end: { dateTime: "2028-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=98", ...recurrence],
+      start: { dateTime: startTime, timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    // Google lists its meetings with their offsets.
+    const listed: Event = {
+      ...series,
+      start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
+    };
+    // A skipped meeting is listed as cancelled.
+    const meetings = Array.from({ length: 98 }, (_, i) => {
+      const meeting = occurrenceOf(listed, `${2028 + i}-11-09T09:00:00Z`);
+      return recurrence.includes(`EXDATE:${2028 + i}1109T090000Z`)
+        ? { ...meeting, status: "cancelled" }
+        : meeting;
+    });
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? { items: meetings }
+        : undefined
+    );
+    const rename = (year: number) =>
+      edit("following", occurrenceOf(listed, `${year}-11-09T09:00:00Z`), {
+        summary: "Anniversary (new)",
+      });
+    return { google, rename };
+  };
+
+  test("doesn't count a skip from before the series began", async () => {
+    // Left by an earlier split: still carrying the old series' Nov 9,
+    // 2027 skip. Split at 2029, one is used (2028), so 97 are left.
+    const { google, rename } = yearly(["EXDATE:20271109T090000Z"]);
+    expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+      "EXDATE:20271109T090000Z",
+    ]);
+  });
+
+  test("counts a skip Google lists as one of its meetings", async () => {
+    // Nov 9, 2029 deleted, and listed by Google as cancelled: split at
+    // 2030, two are used, so 96 are left.
+    const { google, rename } = yearly(["EXDATE:20291109T090000Z"]);
+    expect(Exit.isSuccess(await run(rename(2030)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=96",
+      "EXDATE:20291109T090000Z",
+    ]);
+  });
+
+  test("refuses when a skip can't be told to be one of its meetings", async () => {
+    // Dec 1, 2029 isn't a meeting, but the rule can't be walked to show
+    // it: counting it would end the new series a meeting early.
+    const { google, rename } = yearly(["EXDATE:20291201T090000Z"]);
+    expect(await refusalOf(rename(2030))).toMatchObject({
+      data: { reason: "countUnknown" },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("reads a series start Google wrote without an offset", async () => {
+    const { google, rename } = yearly([], "2028-11-09T09:00:00");
+    expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+    ]);
+  });
+});
