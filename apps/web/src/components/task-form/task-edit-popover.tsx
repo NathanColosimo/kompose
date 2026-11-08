@@ -444,7 +444,6 @@ export function TaskEditForm({
           },
         }),
         isRecurring,
-        isSeriesMaster: task.seriesMasterId === task.id,
         nextRecurrence: values.recurrence,
         nextTagIds: values.tagIds,
         previousRecurrence: resolvedRecurrence,

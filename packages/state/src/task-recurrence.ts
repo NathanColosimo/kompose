@@ -1,5 +1,6 @@
 import type {
   TaskRecurrence,
+  TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
@@ -342,7 +343,11 @@ export type TaskUpdateScopeDecision =
 
 export function getTaskUpdateScopeDecision(params: {
   isRecurring: boolean;
-  isSeriesMaster: boolean;
+  /**
+   * The task has a date, so later occurrences follow it. An occurrence
+   * moved to the inbox has none: its edits apply to it alone, no question.
+   */
+  hasFollowing?: boolean;
   hasCoreFieldChanges: boolean;
   previousRecurrence: TaskRecurrence | null | undefined;
   nextRecurrence: TaskRecurrence | null | undefined;
@@ -368,12 +373,144 @@ export function getTaskUpdateScopeDecision(params: {
     return { action: "apply", scope: "this" };
   }
 
-  if (params.isSeriesMaster) {
-    return { action: "prompt", defaultScope: "this" };
+  // A new pattern (or "Repeat: None") can only apply from this occurrence on:
+  // one occurrence can't repeat differently from its series. So there's no
+  // choice to offer.
+  if (recurrenceChanged) {
+    return { action: "apply", scope: "following" };
   }
 
-  return {
-    action: "prompt",
-    defaultScope: recurrenceChanged ? "following" : "this",
-  };
+  if (params.hasFollowing === false) {
+    return { action: "apply", scope: "this" };
+  }
+
+  return { action: "prompt", defaultScope: "this" };
+}
+
+/**
+ * The error for a Mark done (or not done) that failed while the editor held
+ * open on it: what failed, and that the edits are still in the editor.
+ */
+export function markStatusFailureMessage(
+  status: TaskSelectDecoded["status"]
+): string {
+  return status === "done"
+    ? "Couldn't mark the task done. Your changes are still here."
+    : "Couldn't reopen the task. Your changes are still here.";
+}
+
+const SPACES = / /g;
+
+/**
+ * The blocking note, naming both dates so it says what to fix: "The repeat
+ * ends Nov 13, before the task starts on Nov 14."
+ */
+function repeatEndsBeforeStartText(
+  until: string,
+  startDate: Temporal.PlainDate
+): string {
+  // A non-breaking space keeps "Nov 14" together when the note wraps.
+  const day = (date: Temporal.PlainDate) =>
+    date
+      .toLocaleString(undefined, { day: "numeric", month: "short" })
+      .replace(SPACES, "\u00A0");
+  return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
+}
+
+/** A repeat whose end comes before the task's start has no occurrences. */
+export function repeatEndsBeforeStart(
+  recurrence: TaskRecurrence | null | undefined,
+  startDate: Temporal.PlainDate | null | undefined
+): boolean {
+  return Boolean(
+    recurrence?.until && startDate && recurrence.until < startDate.toString()
+  );
+}
+
+/**
+ * Whether the editor's repeat stops it saving: only a pattern the edit sets
+ * (a new task's, or a changed one) that ends before the start. An unchanged
+ * series pattern isn't sent, so moving its last occurrence past the end
+ * ("Daily until Nov 14", Nov 14 moved to Nov 16) still saves.
+ */
+export function repeatBlocksSave(params: {
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+}): boolean {
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return false;
+  }
+  // A repeat counts from the start date, so it needs one.
+  if (params.next && !params.startDate) {
+    return true;
+  }
+  return repeatEndsBeforeStart(params.next, params.startDate);
+}
+
+const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
+
+/**
+ * What the editor says under Repeat: why it can't save ("ends before the
+ * task starts", blocking), else what a change to a recurring task's
+ * pattern will do (it applies from this occurrence on, with no scope
+ * question). Null when there's nothing to say.
+ */
+export function repeatNote(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+  /**
+   * An occurrence moved to the inbox (no date): a repeat change takes it
+   * out of its series, or makes it a series of its own.
+   */
+  undatedMember?: boolean;
+}): { blocking: boolean; text: string } | null {
+  if (repeatBlocksSave(params)) {
+    return {
+      blocking: true,
+      text:
+        params.next?.until && params.startDate
+          ? repeatEndsBeforeStartText(params.next.until, params.startDate)
+          : PICK_START_TO_REPEAT,
+    };
+  }
+  const text = params.undatedMember
+    ? undatedRepeatNote(params)
+    : repeatChangeNote(params);
+  return text ? { blocking: false, text } : null;
+}
+
+function undatedRepeatNote(params: {
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+}): string | null {
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return null;
+  }
+  return params.next
+    ? "Makes this task a series of its own."
+    : "Takes this task out of its series.";
+}
+
+/**
+ * What a repeat change on a recurring task will do, shown before Save: it
+ * applies from the edited occurrence on, with no scope question. Null when
+ * the task doesn't repeat or the pattern is unchanged.
+ */
+export function repeatChangeNote(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+}): string | null {
+  if (
+    !params.isRecurring ||
+    taskRecurrenceEquals(params.previous, params.next ?? null)
+  ) {
+    return null;
+  }
+  return params.next
+    ? "Applies to this and later occurrences."
+    : "Stops repeating here. Later ones you haven't edited are removed.";
 }

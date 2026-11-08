@@ -24,6 +24,8 @@ import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
+import { type HeldSave, reportHeldSaveFailure } from "../held-save";
+import { mergeSavedTasks } from "../task-cache";
 
 interface UseTasksOptions {
   refetchOnMount?: boolean | "always";
@@ -43,18 +45,22 @@ export function useTasks(options: UseTasksOptions = {}) {
   });
 
   const createTask = useMutation({
-    mutationFn: async (task: ClientTaskInsertDecoded) => {
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      quiet: _quiet,
+      ...task
+    }: ClientTaskInsertDecoded & HeldSave) => {
       const encoded = clientTaskInsertCodec.encode(task);
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onMutate: async (task: ClientTaskInsertDecoded) => {
+    onMutate: async (task: ClientTaskInsertDecoded & HeldSave) => {
       if (task.recurrence) {
         return { optimisticId: undefined, previousTasks: undefined };
       }
@@ -122,6 +128,12 @@ export function useTasks(options: UseTasksOptions = {}) {
       scope,
     }: {
       id: string;
+      /** Shown instead of the generic error when the save fails. */
+      failureMessage?: string;
+      /** The editor shows the failure itself; no toast. */
+      quiet?: boolean;
+      /** False to wait for the server instead of updating the cache first. */
+      optimistic?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
@@ -133,25 +145,39 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
     onMutate: async ({
       id,
+      optimistic: isOptimistic = true,
       task,
       scope,
     }: {
       id: string;
+      failureMessage?: string;
+      optimistic?: boolean;
+      quiet?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {
-      // Only optimistic update for scope="this" (single task)
-      if (scope !== "this") {
+      // An editor that holds open until its save ends (Mark done with edits)
+      // skips this: an early update could unmount it (the task leaves its
+      // list) or roll its fields back over the draft on failure.
+      if (!isOptimistic) {
         return { previousTasks: undefined };
       }
+      // Optimistic for scope "this" (one task). A "following" save that sets
+      // a status applies it to this task alone (the server keeps it), so
+      // that status shows at once too; the rest waits for the server.
+      if (scope !== "this" && task.status === undefined) {
+        return { previousTasks: undefined };
+      }
+      const optimistic: TaskUpdateDecoded =
+        scope === "this" ? task : { status: task.status };
 
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
@@ -164,13 +190,15 @@ export function useTasks(options: UseTasksOptions = {}) {
           }
 
           const nextTags =
-            task.tagIds === undefined
+            optimistic.tagIds === undefined
               ? t.tags
-              : tags.filter((tag) => (task.tagIds ?? []).includes(tag.id));
+              : tags.filter((tag) =>
+                  (optimistic.tagIds ?? []).includes(tag.id)
+                );
 
           return {
             ...t,
-            ...task,
+            ...optimistic,
             createdAt: t.createdAt,
             tags: nextTags,
             updatedAt: Temporal.Now.instant(),
@@ -179,6 +207,29 @@ export function useTasks(options: UseTasksOptions = {}) {
       );
 
       return { previousTasks };
+    },
+    // Without the early update, write the saved tasks in as soon as the
+    // server answers, so the editor that waited closes onto them (the
+    // refetch below can take a while on a cold start).
+    onSuccess: (
+      saved,
+      { id, optimistic: isOptimistic = true, scope, task }
+    ) => {
+      if (isOptimistic) {
+        return;
+      }
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
+        old
+          ? mergeSavedTasks(old, saved, {
+              id,
+              scope,
+              // The server splits the series at the moved date only for a
+              // pattern change; otherwise it keeps the rows before it.
+              startDate:
+                task.recurrence === undefined ? undefined : task.startDate,
+            })
+          : old
+      );
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });

@@ -7,8 +7,7 @@ import {
   timezoneAtom,
   todayPlainDateAtom,
 } from "../atoms/current-date";
-import { isOverdueTask } from "../task-search-routing";
-import { isNonRecurring } from "./use-task-sections";
+import { isListedAlone, isOverdueTask } from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
 const isTagged = (task: TaskSelectDecoded, tagId: string): boolean =>
@@ -78,7 +77,7 @@ export function useTagTaskSections(tagId: string | null) {
     }
 
     const taggedTasks = tasks.filter(
-      (task) => isNonRecurring(task) && isTagged(task, tagId)
+      (task) => isListedAlone(task) && isTagged(task, tagId)
     );
 
     const overdue = taggedTasks

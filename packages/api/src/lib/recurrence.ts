@@ -17,7 +17,10 @@ const DEFAULT_MAX_OCCURRENCES = 52; // ~1 year of weekly occurrences
 
 /**
  * Generate dates on or after startDate, stopping at the count (or safety cap)
- * or the inclusive until date, whichever comes first.
+ * or the inclusive until date, whichever comes first. The start date is
+ * always the first, and counts toward the count, even when the pattern
+ * wouldn't land on it (a Thursday start for "weekly on Monday"), as with
+ * RFC 5545's DTSTART and Google: the task the user placed there stays.
  */
 export function generateOccurrences(
   recurrence: TaskRecurrence,
@@ -74,7 +77,22 @@ export function generateOccurrences(
       throw new Error("Unsupported recurrence frequency");
   }
 
-  return occurrences;
+  return withStartFirst(occurrences, startDate, limit, untilDate);
+}
+
+function withStartFirst(
+  occurrences: Temporal.PlainDate[],
+  startDate: Temporal.PlainDate,
+  limit: number,
+  untilDate: Temporal.PlainDate | null
+): Temporal.PlainDate[] {
+  if (occurrences[0]?.equals(startDate)) {
+    return occurrences;
+  }
+  if (untilDate && Temporal.PlainDate.compare(startDate, untilDate) > 0) {
+    return occurrences;
+  }
+  return [startDate, ...occurrences].slice(0, limit);
 }
 
 function shouldStop(
