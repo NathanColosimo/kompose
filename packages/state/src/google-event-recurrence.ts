@@ -4,6 +4,7 @@ import type {
 } from "@kompose/google-cal/schema";
 import {
   matchRecurrenceToStart,
+  moveSkippedDays,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
@@ -392,9 +393,20 @@ export function followStart(params: {
           match.replace(`=${from.month}`, `=${to.month}`)
         )
       : built;
-  return next === rule
-    ? recurrence
-    : setPrimaryRecurrenceRule(recurrence, next ?? null);
+  if (!next) {
+    return setPrimaryRecurrenceRule(recurrence, null);
+  }
+  // Skipped days move with the pattern (also one that follows its start
+  // without naming it, like a plain weekly rule), so none comes back.
+  return moveSkippedDays({
+    from,
+    newRule: next,
+    oldRule: rule,
+    recurrence:
+      next === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, next),
+    seriesZone: timeZone,
+    to,
+  });
 }
 
 /** The local day a Google start falls on in `timeZone`. */

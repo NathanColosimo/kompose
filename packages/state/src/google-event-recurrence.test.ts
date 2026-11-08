@@ -233,6 +233,57 @@ describe("followStart", () => {
     ).toBe("RRULE:FREQ=MONTHLY;BYDAY=2SA");
   });
 
+  test("moves skipped days with the pattern, so none comes back", () => {
+    const zone = "America/New_York";
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: false,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    // Mondays to Tuesdays: the skipped Monday Nov 16 is Tuesday Nov 17.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+        "2026-11-09",
+        "2026-11-10"
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE;TZID=America/New_York:20261117T090000",
+    ]);
+    // A plain weekly rule follows its start without naming it.
+    expect(
+      followed(
+        ["RRULE:FREQ=WEEKLY", "EXDATE;VALUE=DATE:20261116"],
+        "2026-11-09",
+        "2026-11-10"
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY", "EXDATE;VALUE=DATE:20261117"]);
+    // A skipped day that wasn't a Monday wasn't the pattern's: it stays.
+    const friday = ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261120"];
+    expect(followed(friday, "2026-11-09", "2026-11-10")).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE;VALUE=DATE:20261120",
+    ]);
+    // A daily series still meets on Nov 16: that skip is a date, and stays.
+    const daily = ["RRULE:FREQ=DAILY", "EXDATE;VALUE=DATE:20261116"];
+    expect(followed(daily, "2026-11-09", "2026-11-10")).toBe(daily);
+    // The 2nd Tue to the 3rd Wed: the skipped Dec 8 is Dec 16.
+    expect(
+      followed(
+        ["RRULE:FREQ=MONTHLY;BYDAY=2TU", "EXDATE;VALUE=DATE:20261208"],
+        "2026-11-10",
+        "2026-11-18"
+      )
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=3WE", "EXDATE;VALUE=DATE:20261216"]);
+  });
+
   test("moves an end the start passed three months on", () => {
     expect(
       follow(

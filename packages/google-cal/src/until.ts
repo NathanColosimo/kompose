@@ -5,6 +5,7 @@
  * a timed one). Shared by the server and both apps.
  */
 import { Temporal } from "temporal-polyfill";
+import { isRuleDay } from "./rule-days";
 
 const UNTIL_DATE = /^(\d{4})(\d{2})(\d{2})$/;
 const UNTIL_DATE_TIME =
@@ -283,6 +284,88 @@ export function matchRecurrenceToStart(
       : matchDateList(line, start, timeZone, severalADay);
     changed ||= matched !== line;
     return matched;
+  });
+  return changed ? next : recurrence;
+}
+
+/**
+ * EXDATE days moved with a series whose pattern followed its start from
+ * `from` to `to` (Mondays became Tuesdays, the 2nd Tue the 3rd Wed): a
+ * skipped occurrence of the old pattern on or after `from` that the new
+ * rule no longer produces moves to its place in the new pattern (the same shift for a daily or
+ * weekly rule; the new rule's day in that month for a monthly or yearly
+ * one), at its own time, so it stays skipped. One the new rule still
+ * produces is a skipped date, and stays. The same array when none moves.
+ */
+export function moveSkippedDays(params: {
+  from: Temporal.PlainDate;
+  newRule: string;
+  /** The rule before the move: only its own days move. */
+  oldRule: string;
+  recurrence: string[];
+  seriesZone: string;
+  to: Temporal.PlainDate;
+}): string[] {
+  const { from, newRule, oldRule, recurrence, seriesZone, to } = params;
+  const shift = from.until(to).days;
+  const freq = /FREQ=([A-Z]+)/.exec(newRule)?.[1] ?? "";
+  const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
+    if (Temporal.PlainDate.compare(day, from) < 0) {
+      return null;
+    }
+    // Only a skipped occurrence of the old pattern that the new one no
+    // longer has moves; any other skipped day is a date, and stays.
+    if (
+      isRuleDay(oldRule, from, day) !== true ||
+      isRuleDay(newRule, to, day) !== false
+    ) {
+      return null;
+    }
+    if (freq === "DAILY" || freq === "WEEKLY") {
+      return day.add({ days: shift });
+    }
+    const first = day.with({ day: 1 });
+    for (let offset = 0; offset < first.daysInMonth; offset += 1) {
+      const candidate = first.add({ days: offset });
+      if (isRuleDay(newRule, to, candidate) === true) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+  let changed = false;
+  const next = recurrence.map((line) => {
+    const list = line.startsWith("EXDATE") ? parseDateList(line, seriesZone) : null;
+    if (!list) {
+      return line;
+    }
+    const read = list.values.map((value) =>
+      readRecurrenceValue(value, list.zone, seriesZone)
+    );
+    const moved = read.map((value) => (value ? placeOf(value.day) : null));
+    if (moved.every((day) => day === null)) {
+      return line;
+    }
+    changed = true;
+    const timed = read.some((value) => value?.instant);
+    const values = read.map((value, index) => {
+      const day = moved[index] ?? value?.day;
+      if (!(value && day)) {
+        return list.values[index] ?? "";
+      }
+      if (!value.instant) {
+        return compactDate(day);
+      }
+      const clock = value.instant
+        .toZonedDateTimeISO(seriesZone)
+        .toPlainTime()
+        .toString({ smallestUnit: "second" })
+        .replace(/:/g, "");
+      return `${compactDate(day)}T${clock}`;
+    });
+    return timed
+      ? `${list.name};TZID=${seriesZone}:${values.join(",")}`
+      : `${list.name};VALUE=DATE:${values.join(",")}`;
   });
   return changed ? next : recurrence;
 }
