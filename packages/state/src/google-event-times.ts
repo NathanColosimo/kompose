@@ -1,13 +1,18 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import { startInstant } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 
 /** A Google event's start or end, as it sends them. */
 export type EventTime = GoogleEvent["start"];
 
-/** A start or end as Google writes it: a date (all day) or a date-time. */
+/**
+ * A start or end as Google writes it: a date (all day) or a date-time,
+ * with the zone it's in.
+ */
 export interface StartTime {
   date?: string | null;
   dateTime?: string | null;
+  timeZone?: string | null;
 }
 
 const NO_TIME: EventTime = {};
@@ -27,13 +32,15 @@ export function withEditedTime(
 }
 
 /**
- * Whether two Google starts (or ends) are the same: the same date, or the
- * same moment however its offset is written. False when either is missing
- * or doesn't parse.
+ * Whether two Google starts (or ends) are the same, as the server's
+ * `sameTime` reads them: one date, or one moment (a date-time without an
+ * offset read in its own zone, else `timeZone`). False when either is
+ * missing or doesn't parse.
  */
 export function sameEventTime(
   a: StartTime | undefined,
-  b: StartTime | undefined
+  b: StartTime | undefined,
+  timeZone: string
 ): boolean {
   if (!(a && b)) {
     return false;
@@ -41,16 +48,22 @@ export function sameEventTime(
   if (a.date || b.date) {
     return a.date === b.date;
   }
-  try {
-    return Boolean(
-      a.dateTime &&
-        b.dateTime &&
-        Temporal.Instant.compare(
-          Temporal.Instant.from(a.dateTime),
-          Temporal.Instant.from(b.dateTime)
-        ) === 0
-    );
-  } catch {
-    return false;
-  }
+  const from = startInstant(a, timeZone);
+  const to = startInstant(b, timeZone);
+  return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
+}
+
+/**
+ * Whether an edit keeps an occurrence's start and end, as the server's
+ * `keepsTimes` reads it: then a save for the series keeps its slot.
+ */
+export function keepsEventTimes(
+  edited: { end: StartTime; start: StartTime },
+  occurrence: { end: StartTime; start: StartTime },
+  timeZone: string
+): boolean {
+  return (
+    sameEventTime(edited.start, occurrence.start, timeZone) &&
+    sameEventTime(edited.end, occurrence.end, timeZone)
+  );
 }

@@ -9,8 +9,8 @@ import {
 } from "./google-event-recurrence";
 import {
   type EventTime,
+  keepsEventTimes,
   type StartTime,
-  sameEventTime,
 } from "./google-event-times";
 
 /** The fields an editor sends for an event, as it builds them from its form. */
@@ -140,10 +140,7 @@ export function seriesRepeatForEdit(params: {
         })
       : undefined;
   // The server keeps the series' slot for an edit that keeps both times.
-  const timesKept =
-    occurrence &&
-    sameEventTime(edited.start, occurrence.start) &&
-    sameEventTime(edited.end, occurrence.end);
+  const timesKept = occurrence && keepsEventTimes(edited, occurrence, timeZone);
   const startDay = dayOfStart(
     (timesKept && occurrence.originalStartTime) || editedStart,
     timeZone

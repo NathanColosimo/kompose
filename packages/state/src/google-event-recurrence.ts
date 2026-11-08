@@ -637,7 +637,7 @@ export function movedMeetingDropped(params: {
       event.recurringEventId === occurrence.recurringEventId &&
       event.id !== occurrence.id &&
       slot &&
-      !sameEventTime(event.start, slot);
+      !sameEventTime(event.start, slot, timeZone);
     if (!moved) {
       return [];
     }
@@ -750,29 +750,9 @@ function ruleDrops(params: {
     last = untilRuleToDay(end.date, params.timeZone);
   } else if (end.type === "count") {
     // Null unless it found all `count` days.
-    last = countedRuleDays(
-      withoutClockParts(rule),
-      first,
-      end.count,
-      params.atSeriesTime
-    )?.at(-1);
+    last = countedRuleDays(rule, first, end.count, params.atSeriesTime)?.at(-1);
   }
   return last && Temporal.PlainDate.compare(last, day) < 0 ? "end" : null;
-}
-
-const CLOCK_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
-
-/**
- * `rule` without its BYHOUR, BYMINUTE and BYSECOND. Google meets once a
- * rule day, at the series' start time, and ignores a list of times there
- * (FREQ=DAILY;BYHOUR=9,15;COUNT=8 is eight 9:00 meetings, checked against
- * its API), so they don't change which days a COUNT reaches.
- */
-function withoutClockParts(rule: string): string {
-  return rule
-    .split(";")
-    .filter((part) => !CLOCK_PART.test(part))
-    .join(";");
 }
 
 /**
@@ -853,7 +833,7 @@ export function seriesRecurrenceForSave(params: {
   // An edit that leaves the occurrence's start as it was changes nothing
   // about the series' days, times or form: renaming one rescheduled before
   // mustn't retarget the series to its slot.
-  if (sameEventTime(editedStart, occurrence.start)) {
+  if (sameEventTime(editedStart, occurrence.start, timeZone)) {
     return;
   }
   const allDay = Boolean(editedStart.date);
