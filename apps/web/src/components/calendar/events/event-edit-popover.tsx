@@ -1569,7 +1569,14 @@ function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
  * can't be edited from a copy that may be old, so say so and offer to load
  * it again.
  */
-function RepeatRetryButton({ onRetry }: { onRetry?: () => void }) {
+function RepeatRetryButton({
+  besideRule,
+  onRetry,
+}: {
+  /** A known (older) rule is shown beside it, so the icon is already there. */
+  besideRule: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <Button
       aria-label="The series' repeat didn't load. Retry"
@@ -1580,8 +1587,8 @@ function RepeatRetryButton({ onRetry }: { onRetry?: () => void }) {
       title="The series' repeat didn't load. Retry"
       variant="outline"
     >
-      <Repeat className="size-4 shrink-0" />
-      <span className="truncate">Retry repeat</span>
+      {besideRule ? null : <Repeat className="size-4 shrink-0" />}
+      <span className="truncate">{besideRule ? "Retry" : "Retry repeat"}</span>
     </Button>
   );
 }
@@ -1598,7 +1605,6 @@ function RepeatControl({
   seriesStart,
   seriesTimeZone,
   showsZone,
-  waitReason,
 }: {
   allDay: boolean;
   city: string | null;
@@ -1614,8 +1620,6 @@ function RepeatControl({
   seriesStart: Temporal.PlainDate | null;
   seriesTimeZone: string;
   showsZone: boolean;
-  /** Why a known rule waits to be refreshed (offline), for its tooltip. */
-  waitReason?: string;
 }) {
   const waiting = loading && !ruleLabel;
   const ruleText = waiting ? "Loading repeat…" : ruleLabel;
@@ -1643,11 +1647,7 @@ function RepeatControl({
           )}
           disabled={disabled}
           size={repeatLabel ? "sm" : "icon"}
-          title={
-            waitReason && repeatLabel
-              ? `${repeatLabel} · ${waitReason}`
-              : (repeatLabel ?? "Repeat")
-          }
+          title={repeatLabel ?? "Repeat"}
           variant={repeatLabel ? "secondary" : "outline"}
         >
           <Repeat className="size-4 shrink-0" />
@@ -1725,6 +1725,12 @@ function EventAllDayAndRecurrenceRow({
   const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
   const waitShown = Boolean(recurrenceWaitReason) && !ruleLabel;
   const retryShown = !recurrenceWaitReason && recurrenceFailed;
+  // Filled after mount: a live region that mounts already filled often
+  // isn't announced (an editor opened offline).
+  const [announcedWait, setAnnouncedWait] = useState("");
+  useEffect(() => {
+    setAnnouncedWait(recurrenceWaitReason ?? "");
+  }, [recurrenceWaitReason]);
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1749,34 +1755,9 @@ function EventAllDayAndRecurrenceRow({
           All day
         </Button>
       )}
-      {/* Offline: why the repeat waits, in a live region that stays
-          mounted so it's announced when it fills. It stands in for the
-          chip when no rule is known (a retry would only wait too); a known
-          rule stays, dimmed. Failed: offer a retry. Else the chip. */}
-      <span
-        className={
-          waitShown
-            ? "flex h-8 min-w-0 shrink items-center gap-1.5 px-1 text-muted-foreground text-xs"
-            : "sr-only"
-        }
-        role="status"
-        title={waitShown ? recurrenceWaitReason : undefined}
-      >
-        {waitShown ? (
-          <>
-            <Repeat aria-hidden className="size-4 shrink-0" />
-            <span aria-hidden className="truncate">
-              Offline
-            </span>
-          </>
-        ) : null}
-        {/* The full reason, for screen readers (the short word is visual). */}
-        <span className={waitShown ? "sr-only" : undefined}>
-          {recurrenceWaitReason ?? ""}
-        </span>
-      </span>
-      {retryShown ? <RepeatRetryButton onRetry={onRetryRecurrence} /> : null}
-      {waitShown || retryShown ? null : (
+      {/* A known rule stays, dimmed, while it can't be used; with none
+          known, the wait or the retry stands in for the chip. */}
+      {waitShown || (retryShown && !ruleLabel) ? null : (
         <RepeatControl
           allDay={allDay}
           city={city}
@@ -1788,9 +1769,35 @@ function EventAllDayAndRecurrenceRow({
           seriesStart={seriesStart}
           seriesTimeZone={seriesTimeZone}
           showsZone={showsZone}
-          waitReason={recurrenceWaitReason}
         />
       )}
+      {/* Offline: why the repeat waits ("Offline", the full reason for
+          screen readers), in a live region that stays mounted and fills
+          after it mounts, so it's announced. A retry would only wait too. */}
+      <span
+        className={
+          recurrenceWaitReason
+            ? "flex h-8 min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-xs"
+            : "sr-only"
+        }
+        role="status"
+      >
+        {recurrenceWaitReason ? (
+          <>
+            {waitShown ? (
+              <Repeat aria-hidden className="size-4 shrink-0" />
+            ) : null}
+            <span aria-hidden>Offline</span>
+          </>
+        ) : null}
+        <span className="sr-only">{announcedWait}</span>
+      </span>
+      {retryShown ? (
+        <RepeatRetryButton
+          besideRule={Boolean(ruleLabel)}
+          onRetry={onRetryRecurrence}
+        />
+      ) : null}
       <Select
         disabled={readOnly}
         onValueChange={onCalendarChange}

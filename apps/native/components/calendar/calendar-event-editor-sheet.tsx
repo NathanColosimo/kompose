@@ -219,6 +219,42 @@ function RecurrenceRow({
   );
 }
 
+/**
+ * The repeat row, or, when the series' rule didn't load, a retry: its
+ * repeat can't be edited from a copy that may be old. A copy already shown
+ * stays, dimmed, above the retry.
+ */
+function RepeatSection({
+  editor,
+  failed,
+  hasRule,
+  onRetry,
+}: {
+  editor: React.ReactNode;
+  failed: boolean;
+  hasRule: boolean;
+  onRetry?: () => void;
+}) {
+  if (!failed) {
+    return editor;
+  }
+  return (
+    <>
+      {hasRule ? editor : null}
+      <Button
+        accessibilityHint="Loads the series' repeat again"
+        className="mb-2.5"
+        onPress={onRetry}
+        variant="outline"
+      >
+        {hasRule
+          ? "Repeat didn't refresh · Try again"
+          : "Repeat didn't load · Try again"}
+      </Button>
+    </>
+  );
+}
+
 const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 function RecurrenceEditorSection({
@@ -1647,20 +1683,12 @@ export function EventEditorSheet({
           </Text>
         )}
 
-        {masterFailed ? (
-          // The series' rule didn't load: its repeat can't be edited from
-          // a copy that may be old. Say so, and offer to load it again.
-          <Button
-            accessibilityHint="Loads the series' repeat again"
-            className="mb-2.5"
-            onPress={onRetryMaster}
-            variant="outline"
-          >
-            Repeat didn't load · Try again
-          </Button>
-        ) : (
-          recurrenceEditor
-        )}
+        <RepeatSection
+          editor={recurrenceEditor}
+          failed={masterFailed}
+          hasRule={recurrence.length > 0}
+          onRetry={onRetryMaster}
+        />
 
         <EventAllDayAndMeetingRow
           allDay={allDay}
