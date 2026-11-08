@@ -169,6 +169,9 @@ interface BlockTextProps {
  */
 const TIGHT_MINUTES = 20;
 
+/** Points of a covered strip taken by the block's ring and border. */
+const TIGHT_FRAME_PT = 2;
+
 /** Whether a block's visible strip needs the tight title line. */
 function isTight(textMinutes: number, minutes: number) {
   return textMinutes < minutes && textMinutes < TIGHT_MINUTES;
@@ -237,7 +240,7 @@ function BlockTitle({
   return (
     <Text
       className={`font-sans-medium text-[11px] ${leading} ${oneLine ? "max-w-full" : "shrink"} ${color}`}
-      maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+      maxFontSizeMultiplier={scale}
       numberOfLines={titleLines(minutes, narrow, sliver, scale)}
     >
       {/* Narrow blocks break long words at a soft hyphen ("Road-map")
@@ -275,7 +278,7 @@ function BlockTimeRow({
     >
       <Text
         className={`max-w-full text-[10px] leading-[13px] ${meta}`}
-        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+        maxFontSizeMultiplier={scale}
         numberOfLines={1}
       >
         {text}
@@ -301,7 +304,13 @@ function BlockText({
   // Secondary text at AA contrast on every Google color in both themes.
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
-  const scale = useCalendarTextScale();
+  const calendarScale = useCalendarTextScale();
+  // A thin strip left above a later block holds one 12pt line in the
+  // points showing (minutes are points), less its ring and border: its
+  // text grows only that far, so the block on top never covers it.
+  const scale = tight
+    ? Math.min(calendarScale, Math.max(1, (minutes - TIGHT_FRAME_PT) / 12))
+    : calendarScale;
   // Short blocks keep one line, unless narrow: then the title takes the
   // lines (titleLines) and the time is left out.
   // The title and time line, then a detail line (13pt and a 2pt gap).
@@ -317,7 +326,7 @@ function BlockText({
             <Icon as={icon} className={meta} size={10} />
             <Text
               className={`text-[10px] leading-[13px] ${meta}`}
-              maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+              maxFontSizeMultiplier={scale}
             >
               {short}
             </Text>
@@ -346,7 +355,7 @@ function BlockText({
         {isShort ? (
           <Text
             className={`text-[10px] leading-[13px] ${meta}`}
-            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+            maxFontSizeMultiplier={scale}
           >
             {start.toLocaleString(undefined, {
               hour: "numeric",
@@ -373,7 +382,7 @@ function BlockText({
               <Icon as={icon} className={meta} size={10} />
               <Text
                 className={`flex-1 text-[10px] leading-[13px] ${meta}`}
-                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                maxFontSizeMultiplier={scale}
                 numberOfLines={1}
               >
                 {label}
