@@ -270,13 +270,18 @@
 :root {
   --window-controls-width: 76px;
 }
-/* A site header's centered max-w-6xl (72rem) row starts clear of them: its
-   own 1.5rem padding, or more once the window is too narrow for the row's
-   centering margin to cover them. */
+/* A site header's centered max-w-6xl row starts clear of them: its own
+   1.5rem padding, or more once the window is too narrow for the row's
+   centering margin to cover them. A padding's 100% is the header's width,
+   which leaves out a classic scrollbar. */
 [data-desktop-runtime="electron"] [data-window-controls-inset] {
   padding-left: max(
     1.5rem,
-    calc(var(--window-controls-width) + 0.5rem - max(0px, (100vw - 72rem) / 2))
+    calc(
+      var(--window-controls-width) +
+      0.5rem -
+      max(0px, (100% - var(--container-6xl)) / 2)
+    )
   );
 }
 
