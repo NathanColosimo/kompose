@@ -60,7 +60,7 @@ test("says why whenever a scope is off", () => {
   const all = combinations({
     calendarChanged: flags,
     dateMoved: flags,
-    droppedMovedDay: [null, Temporal.PlainDate.from("2026-12-07")],
+    droppedChangedDay: [null, Temporal.PlainDate.from("2026-12-07")],
     patternChanged: flags,
     repeatSkips: [null, "day", "end"],
     retimed: flags,
@@ -96,7 +96,7 @@ test("leaves no scope only for a save that needs two, or one waiting on the seri
   expect(
     noneLeft({
       calendarChanged: true,
-      droppedMovedDay: Temporal.PlainDate.from("2026-12-07"),
+      droppedChangedDay: Temporal.PlainDate.from("2026-12-07"),
       patternChanged: true,
     })
   ).toBe(true);
@@ -429,17 +429,22 @@ test("a new end before this occurrence says so", () => {
   ).toBe(SCOPE_DIALOG_COPY.repeatEndOff);
 });
 
-describe("a new repeat that would drop a moved meeting", () => {
-  const changes = {
-    ...none,
-    droppedMovedDay: Temporal.PlainDate.from("2026-12-07"),
-    patternChanged: true,
-  };
+describe("a save that would undo a meeting's own changes", () => {
+  const dec7 = Temporal.PlainDate.from("2026-12-07");
+  const changes = { ...none, droppedChangedDay: dec7, patternChanged: true };
 
   test("turns Entire series off and names the meeting", () => {
     expect(off(changes)).toEqual(["all", "this"]);
     expect(eventSaveDescription(changes)).toBe(
-      "The new repeat would drop your moved Dec 7 meeting, so it can't apply to the entire series."
+      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
+    );
+  });
+
+  test("a new time does it too", () => {
+    const retimed = { ...none, droppedChangedDay: dec7, retimed: true };
+    expect(off(retimed)).toEqual(["all"]);
+    expect(eventSaveDescription(retimed)).toBe(
+      "The new time would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
     );
   });
 
@@ -447,7 +452,7 @@ describe("a new repeat that would drop a moved meeting", () => {
     const blocked = { ...changes, splitBlocked: "addedOccurrence" as const };
     expect(off(blocked)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(blocked)).toBe(
-      "This occurrence was added to the series on its own, so This and following isn't available. The new repeat would drop your moved Dec 7 meeting, so it can't apply to the entire series."
+      "This occurrence was added to the series on its own, so This and following isn't available. The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
     );
   });
 
@@ -455,7 +460,7 @@ describe("a new repeat that would drop a moved meeting", () => {
     const move = { ...changes, calendarChanged: true };
     expect(off(move)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(move)).toBe(
-      "Moving to another calendar moves the whole series, but the new repeat would drop your moved Dec 7 meeting. Move the calendar and change the repeat in two saves."
+      "Moving to another calendar moves the whole series, but the new repeat would undo your changes to the Dec 7 meeting. Move the calendar and change the repeat in two saves."
     );
   });
 
@@ -465,8 +470,26 @@ describe("a new repeat that would drop a moved meeting", () => {
     );
   });
 
-  test("doesn't matter without a new repeat", () => {
+  test("a series of several rules says why a new time can't go first", () => {
+    const several = {
+      ...none,
+      droppedChangedDay: dec7,
+      retimed: true,
+      severalRules: true,
+    };
+    expect(eventSaveDescription(several)).toBe(
+      SCOPE_DIALOG_COPY.severalRulesTime
+    );
+  });
+
+  test("doesn't matter without a new repeat or time", () => {
     expect(off({ ...changes, patternChanged: false })).toEqual([]);
+  });
+
+  test("still reads the field it replaces, droppedMovedDay", () => {
+    expect(
+      off({ ...none, droppedMovedDay: dec7, patternChanged: true })
+    ).toEqual(["all", "this"]);
   });
 });
 

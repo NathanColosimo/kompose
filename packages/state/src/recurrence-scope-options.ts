@@ -154,9 +154,15 @@ export interface EventSaveChanges {
    */
   dateMoved: boolean;
   /**
-   * The day of a moved (rescheduled) meeting of the series that the new
-   * repeat would cancel for Entire series, as the calendar shows it
-   * (`movedMeetingDropped`, or the meeting a refused save names).
+   * The day of a meeting of the series changed on its own (moved,
+   * renamed...) whose changes an Entire series save with a new repeat or
+   * time would undo, as the calendar shows it (`changedMeetingDropped`,
+   * or the meeting a refused save names).
+   */
+  droppedChangedDay?: Temporal.PlainDate | null;
+  /**
+   * Replaced by `droppedChangedDay`, and read where that's unset, until
+   * the app layers set it (`movedMeetingDropped`, moved meetings only).
    */
   droppedMovedDay?: Temporal.PlainDate | null;
   /** The user changed the repeat. */
@@ -321,7 +327,7 @@ function followingRuleKnown(changes: EventSaveChanges): boolean {
 
 /** Why Entire series is off (`entireSeriesOff`). */
 type EntireSeriesOff =
-  | { reason: "movedMeeting"; day: Temporal.PlainDate }
+  | { reason: "changedMeeting"; day: Temporal.PlainDate }
   | {
       reason:
         | "newDay"
@@ -336,28 +342,31 @@ type EntireSeriesOff =
  * first day (Google's editor offers the same), so it can't take a day
  * moved through one occurrence ("newDay"). A new repeat can't skip this
  * occurrence's own slot, counted from that first day ("repeatDay",
- * "repeatEnd"), nor cancel a meeting the user moved ("movedMeeting"):
- * Google keeps one only while the rule still has its original slot. A new
- * time can't apply to a series of several rules ("severalRulesTime"):
- * Google would mix them up. Before the series loads, a new repeat or time
- * waits for it ("seriesPending").
+ * "repeatEnd"). A new time can't apply to a series of several rules
+ * ("severalRulesTime"): Google would mix them up. Neither a new repeat nor
+ * a new time can undo a meeting's own changes ("changedMeeting"): Google
+ * keeps them only while the series still has the meeting's original
+ * slot, so the server refuses the save. Before the series loads, a new
+ * repeat or time waits for it ("seriesPending").
  */
 function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
-  const { droppedMovedDay, patternChanged, repeatSkips } = changes;
+  const { patternChanged, repeatSkips, retimed } = changes;
+  const droppedChangedDay =
+    changes.droppedChangedDay ?? changes.droppedMovedDay;
   if (changes.dateMoved) {
     return { reason: "newDay" };
   }
-  if ((patternChanged || changes.retimed) && !changes.seriesRuleLoaded) {
+  if ((patternChanged || retimed) && !changes.seriesRuleLoaded) {
     return { reason: "seriesPending" };
   }
   if (patternChanged && repeatSkips) {
     return { reason: repeatSkips === "day" ? "repeatDay" : "repeatEnd" };
   }
-  if (patternChanged && droppedMovedDay) {
-    return { day: droppedMovedDay, reason: "movedMeeting" };
+  if (retimed && changes.severalRules) {
+    return { reason: "severalRulesTime" };
   }
-  return changes.retimed && changes.severalRules
-    ? { reason: "severalRulesTime" }
+  return (patternChanged || retimed) && droppedChangedDay
+    ? { day: droppedChangedDay, reason: "changedMeeting" }
     : null;
 }
 
@@ -409,9 +418,17 @@ function shortDay(day: Temporal.PlainDate): string {
   return day.toLocaleString("en-US", { day: "numeric", month: "short" });
 }
 
-/** Why Entire series is off for a new repeat that drops a moved meeting. */
-function movedMeetingLine(day: Temporal.PlainDate): string {
-  return `The new repeat would drop your moved ${shortDay(day)} meeting, so it can't apply to the entire series.`;
+/** Why Entire series is off for a save that would undo a meeting's own changes. */
+function changedMeetingLine(
+  changes: EventSaveChanges,
+  day: Temporal.PlainDate
+): string {
+  return `The new ${repeatOrTime(changes)} would undo your changes to the ${shortDay(day)} meeting, so it can't apply to the entire series.`;
+}
+
+/** What the save changes for the series: "repeat", else "time". */
+function repeatOrTime(changes: EventSaveChanges): string {
+  return changes.patternChanged ? "repeat" : "time";
 }
 
 /** The scope dialog's line for a calendar move. */
@@ -427,8 +444,10 @@ function calendarMoveDescription(changes: EventSaveChanges): string {
       return copy.moveEventRepeatDay;
     case "repeatEnd":
       return copy.moveEventRepeatEnd;
-    case "movedMeeting":
-      return `Moving to another calendar moves the whole series, but the new repeat would drop your moved ${shortDay(off.day)} meeting. Move the calendar and change the repeat in two saves.`;
+    case "changedMeeting": {
+      const what = repeatOrTime(changes);
+      return `Moving to another calendar moves the whole series, but the new ${what} would undo your changes to the ${shortDay(off.day)} meeting. Move the calendar and change the ${what} in two saves.`;
+    }
     case "severalRulesTime":
       return copy.moveEventSeveralRulesTime;
     case "seriesPending":
@@ -483,8 +502,8 @@ function splitBlockedDescription(
       return `${why} ${then.repeatOffDay}`;
     case "repeatEnd":
       return `${why} ${then.repeatEndOff}`;
-    case "movedMeeting":
-      return `${why} ${movedMeetingLine(off.day)}`;
+    case "changedMeeting":
+      return `${why} ${changedMeetingLine(changes, off.day)}`;
     case "severalRulesTime":
       return patternChanged
         ? `${why} ${then.timesAndRepeat}`
@@ -519,8 +538,8 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
       return SCOPE_DIALOG_COPY.repeatOffDay;
     case "repeatEnd":
       return SCOPE_DIALOG_COPY.repeatEndOff;
-    case "movedMeeting":
-      return movedMeetingLine(off.day);
+    case "changedMeeting":
+      return changedMeetingLine(changes, off.day);
     case "severalRulesTime":
       return SCOPE_DIALOG_COPY.severalRulesTime;
     case "seriesPending":

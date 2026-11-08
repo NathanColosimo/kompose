@@ -3,6 +3,7 @@ import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 import {
   buildGoogleEventRecurrenceRule,
+  changedMeetingDropped,
   dayInZone,
   type EventRecurrencePattern,
   followStart,
@@ -1828,6 +1829,137 @@ describe("repeatSkipsOccurrence", () => {
         timeZone: zone,
       })
     ).toBe(false);
+  });
+});
+
+describe("changedMeetingDropped", () => {
+  const zone = "America/New_York";
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+  // "Standup", daily from Tue Dec 1 2026 at 9:00-9:30.
+  const master = {
+    end: at("2026-12-01T09:30:00-05:00"),
+    id: "series",
+    recurrence: ["RRULE:FREQ=DAILY"],
+    start: at("2026-12-01T09:00:00-05:00"),
+    summary: "Standup",
+  };
+  /** An occurrence at `original`, now at `start` (9:00-9:30 by default). */
+  const meeting = (
+    original: string,
+    changes: { start?: string; end?: string; summary?: string } = {}
+  ) => ({
+    end: at(changes.end ?? original.replace("T09:00", "T09:30")),
+    id: `series_${original.slice(0, 10)}`,
+    originalStartTime: at(original),
+    recurringEventId: "series",
+    start: at(changes.start ?? original),
+    summary: changes.summary ?? "Standup",
+  });
+  const opened = meeting("2026-12-03T09:00:00-05:00");
+  const renamed = meeting("2026-12-07T09:00:00-05:00", { summary: "Demo" });
+  const moved = meeting("2026-12-08T09:00:00-05:00", {
+    end: "2026-12-08T14:30:00-05:00",
+    start: "2026-12-08T14:00:00-05:00",
+  });
+  const untouched = meeting("2026-12-09T09:00:00-05:00");
+  const keepTimes = { end: opened.end, start: opened.start };
+  const dropped = (params: {
+    edited?: { end: { dateTime: string }; start: { dateTime: string } };
+    loaded?: ReturnType<typeof meeting>[];
+    occurrence?: ReturnType<typeof meeting>;
+    recurrence?: string[];
+  }) =>
+    changedMeetingDropped({
+      edited: params.edited ?? keepTimes,
+      loaded: params.loaded ?? [opened, renamed, moved, untouched],
+      master,
+      occurrence: params.occurrence ?? opened,
+      recurrence: params.recurrence,
+      timeZone: zone,
+    })?.toString();
+
+  test("a new repeat drops a meeting renamed on its own, not only a moved one", () => {
+    // Weekly on Thursdays: Dec 7 (Mon) and Dec 8 (Tue) are gone, and Google
+    // would drop their own changes; the earliest is named.
+    expect(dropped({ recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"] })).toBe(
+      "2026-12-07"
+    );
+    expect(
+      dropped({
+        loaded: [opened, moved, untouched],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
+      })
+    ).toBe("2026-12-08");
+  });
+
+  test("a repeat that still has their slots drops nothing", () => {
+    expect(
+      dropped({ recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,TH"] })
+    ).toBeUndefined();
+  });
+
+  test("a new time drops every changed meeting's slot", () => {
+    // 9:00 to 10:00 for the series: its slots move, and the renamed Dec 7
+    // 9:00 meeting has none left.
+    expect(
+      dropped({
+        edited: {
+          end: at("2026-12-03T10:30:00-05:00"),
+          start: at("2026-12-03T10:00:00-05:00"),
+        },
+      })
+    ).toBe("2026-12-07");
+  });
+
+  test("an edit that moves no slot drops nothing", () => {
+    // Times kept and the repeat unchanged (a new title, say).
+    expect(dropped({})).toBeUndefined();
+    expect(dropped({ recurrence: master.recurrence })).toBeUndefined();
+  });
+
+  test("meetings just as the series has them aren't counted", () => {
+    expect(
+      dropped({
+        loaded: [opened, untouched],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
+      })
+    ).toBeUndefined();
+  });
+
+  test("the opened meeting counts too, when it changed on its own", () => {
+    const openedRenamed = meeting("2026-12-03T09:00:00-05:00", {
+      summary: "Planning",
+    });
+    expect(
+      dropped({
+        edited: {
+          end: at("2026-12-03T10:30:00-05:00"),
+          start: at("2026-12-03T10:00:00-05:00"),
+        },
+        loaded: [openedRenamed],
+        occurrence: openedRenamed,
+      })
+    ).toBe("2026-12-03");
+  });
+
+  test("names a moved meeting's day as the calendar shows it", () => {
+    const toWednesday = meeting("2026-12-08T09:00:00-05:00", {
+      end: "2026-12-09T09:30:00-05:00",
+      start: "2026-12-09T09:00:00-05:00",
+    });
+    expect(
+      dropped({
+        loaded: [toWednesday],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
+      })
+    ).toBe("2026-12-09");
+  });
+
+  test("another series' meetings aren't this one's", () => {
+    const other = { ...renamed, recurringEventId: "other" };
+    expect(
+      dropped({ loaded: [other], recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"] })
+    ).toBeUndefined();
   });
 });
 

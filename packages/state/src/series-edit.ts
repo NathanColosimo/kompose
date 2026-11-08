@@ -1,4 +1,5 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import { keepsTimes } from "@kompose/google-cal/series-edits";
 import { dayOfStart } from "@kompose/google-cal/until";
 import type { Temporal } from "temporal-polyfill";
 import {
@@ -7,11 +8,7 @@ import {
   repeatCountingDay,
   seriesRecurrenceForSave,
 } from "./google-event-recurrence";
-import {
-  type EventTime,
-  keepsEventTimes,
-  type StartTime,
-} from "./google-event-times";
+import type { EventTime, StartTime } from "./google-event-times";
 
 /** The fields an editor sends for an event, as it builds them from its form. */
 export interface EditedFields {
@@ -150,7 +147,7 @@ export function seriesRepeatForEdit(params: {
       : undefined;
   // The server keeps the series' slot for an edit that keeps both times;
   // otherwise a save for the series starts at the edited start.
-  const timesKept = occurrence && keepsEventTimes(edited, occurrence, timeZone);
+  const timesKept = occurrence && keepsTimes(edited, occurrence, timeZone);
   const startDay = dayOfStart(
     (timesKept && occurrence.originalStartTime) || editedStart,
     timeZone
