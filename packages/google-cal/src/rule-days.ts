@@ -2,13 +2,12 @@
  * Whether a day is one of a recurrence rule's own occurrences (RFC 5545):
  * FREQ DAILY, WEEKLY, MONTHLY or YEARLY with INTERVAL, BYDAY (weekdays,
  * and weekdays of the month for monthly or yearly-by-month rules),
- * BYMONTHDAY, BYMONTH, BYSETPOS (monthly or weekly), WKST, and a single
- * BYHOUR / BYMINUTE / BYSECOND (one time a day; several, for which days
- * a rule meets on, when it has no BYSETPOS). Each BY part narrows the
- * set ("Monday, the 1st to the 7th" is the first Monday). Anything else
- * (BYYEARDAY, BYWEEKNO, several times a day, sub-daily frequencies, a
- * yearly weekday without a month) isn't read: the answer is then null,
- * "can't tell".
+ * BYMONTHDAY, BYMONTH, BYSETPOS (monthly or weekly), WKST, and BYHOUR /
+ * BYMINUTE / BYSECOND, which don't change the days (Google meets a rule
+ * once a day and ignores a list of times). Each BY part narrows the set
+ * ("Monday, the 1st to the 7th" is the first Monday). Anything else
+ * (BYYEARDAY, BYWEEKNO, sub-daily frequencies, a yearly weekday without a
+ * month) isn't read: the answer is then null, "can't tell".
  */
 import { Temporal } from "temporal-polyfill";
 
@@ -27,8 +26,6 @@ const READ_PARTS = new Set([
   "BYMINUTE",
   "BYSECOND",
 ]);
-/** Parts that set the time: read only with one value (one time a day). */
-const CLOCK_PARTS = ["BYHOUR", "BYMINUTE", "BYSECOND"];
 const ORDINAL_DAY = /^([+-]?\d{1,2})?([A-Z]{2})$/;
 
 interface WeekdayEntry {
@@ -46,7 +43,7 @@ interface Rule {
   weekStart: number;
 }
 
-function readRule(rule: string, severalTimes = false): Rule | null {
+function readRule(rule: string): Rule | null {
   const parts = new Map(
     rule
       .replace("RRULE:", "")
@@ -59,14 +56,6 @@ function readRule(rule: string, severalTimes = false): Rule | null {
   }
   const list = (key: string) =>
     (parts.get(key) ?? "").split(",").filter(Boolean);
-  // Several times a day don't change which days a rule meets on, unless
-  // BYSETPOS picks among them; they do change what COUNT counts.
-  if (
-    CLOCK_PARTS.some((key) => list(key).length > 1) &&
-    !(severalTimes && list("BYSETPOS").length === 0)
-  ) {
-    return null;
-  }
   const freq = parts.get("FREQ") ?? "";
   if (!["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(freq)) {
     return null;
@@ -250,7 +239,7 @@ export function isRuleDay(
   start: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): boolean | null {
-  const read = readRule(rule, true);
+  const read = readRule(rule);
   return read ? matches(read, start, day) : null;
 }
 
