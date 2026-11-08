@@ -5,7 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { canWriteCalendar } from "@kompose/google-cal/schema";
-import { dayOfStart, matchRecurrenceToStart } from "@kompose/google-cal/until";
+import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -58,7 +58,6 @@ import {
 } from "@kompose/state/google-event-recurrence";
 import {
   keepsEventTimes,
-  sameEventTime,
   withEditedTime,
 } from "@kompose/state/google-event-times";
 import {
@@ -738,25 +737,6 @@ function seriesRefusalOf(
 }
 
 /**
- * The original start of the first moved or edited meeting a refused save
- * would have dropped; null for any other failure.
- */
-function droppedOriginalStart(error: unknown): string | null {
-  const refusal = seriesRefusalOf(error);
-  const first =
-    refusal?.reason === "dropsChangedOccurrences" &&
-    Array.isArray(refusal.originalStarts)
-      ? refusal.originalStarts[0]
-      : null;
-  return typeof first === "string" ? first : null;
-}
-
-/** A Google original start as the refusal sends it: a date, or a date-time. */
-function startOf(original: string): { date?: string; dateTime?: string } {
-  return original.includes("T") ? { dateTime: original } : { date: original };
-}
-
-/**
  * The repeat in the start's form: an all-day series' UNTIL and skipped
  * days are dates, a timed one's date-times.
  */
@@ -1239,17 +1219,13 @@ export default function CalendarTab() {
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
-  // What the server refused for the pending save (its scopes and reason,
-  // and the moved meeting an Entire series refusal named), shown by the
-  // scope dialog until it closes.
+  // What the server refused for the pending save (its scopes and latest
+  // reason), shown by the scope dialog until it closes.
   const [saveRefusals, setSaveRefusals] = useState<Refusals | null>(null);
-  const [refusedMovedDay, setRefusedMovedDay] =
-    useState<Temporal.PlainDate | null>(null);
 
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
     setSaveRefusals(null);
-    setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
     setPendingEventDeleteDraft(null);
     setEventDraft(draft);
@@ -1740,15 +1716,13 @@ export default function CalendarTab() {
         calendarChanged:
           draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
         dateMoved,
-        droppedMovedDay:
-          refusedMovedDay ??
-          movedMeetingDropped({
-            loaded,
-            occurrence,
-            recurrence,
-            seriesStart,
-            timeZone,
-          }),
+        droppedMovedDay: movedMeetingDropped({
+          loaded,
+          occurrence,
+          recurrence,
+          seriesStart,
+          timeZone,
+        }),
         patternChanged: recurrence !== undefined,
         repeatSkips: repeatSkipsOccurrence({
           occurrence,
@@ -1786,7 +1760,6 @@ export default function CalendarTab() {
       recurringMasterEvent.data,
       recurringMasterEvent.ruleFailed,
       recurringMasterEvent.ruleReady,
-      refusedMovedDay,
       timeZone,
     ]
   );
@@ -1833,7 +1806,6 @@ export default function CalendarTab() {
         // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
         setSaveRefusals(null);
-        setRefusedMovedDay(null);
         setEventSavePreferred(
           suggested === "this" && changes.patternChanged
             ? "following"
@@ -1864,34 +1836,6 @@ export default function CalendarTab() {
     ]
   );
 
-  /**
-   * The day a refused save's moved meeting is on now, as the calendar shows
-   * it (its loaded occurrence, from this calendar), else its original day
-   * in the series' zone.
-   */
-  const movedMeetingDay = useCallback(
-    (original: string, draft: EditEventDraft): Temporal.PlainDate | null => {
-      const occurrence = draft.sourceEvent;
-      const seriesZone = eventTimeZone(occurrence, timeZone);
-      const moved = googleEvents.find(
-        (item) =>
-          item.accountId === draft.sourceCalendar.accountId &&
-          item.calendarId === draft.sourceCalendar.calendarId &&
-          item.event.recurringEventId === occurrence.recurringEventId &&
-          item.event.originalStartTime &&
-          sameEventTime(
-            item.event.originalStartTime,
-            startOf(original),
-            seriesZone
-          )
-      );
-      return moved
-        ? dayOfStart(moved.event.start, timeZone)
-        : dayOfStart(startOf(original), seriesZone);
-    },
-    [googleEvents, timeZone]
-  );
-
   const confirmScopedEventSave = useCallback(
     async (scope: RecurrenceScope) => {
       if (!pendingEventSaveDraft) {
@@ -1904,32 +1848,25 @@ export default function CalendarTab() {
         await commitEventUpdate(pendingEventSaveDraft, scope);
       } catch (error) {
         // A refused scope (a retry won't help) stays off for this save, and
-        // the dialog leads with the server's reason; an Entire series
-        // refusal for a moved meeting also names it by the day the calendar
-        // shows. Any other failure returns to the editor with the edits.
+        // the dialog leads with the server's reason, which names any meeting
+        // it would have undone, as on web. Any other failure returns to the
+        // editor with the edits.
         if (seriesRefusalOf(error)) {
           const message = (error as Error).message;
           setSaveRefusals((refused) => ({
             message,
             scopes: { ...refused?.scopes, [scope]: true },
           }));
-          const original = droppedOriginalStart(error);
-          if (scope === "all" && original) {
-            setRefusedMovedDay(
-              movedMeetingDay(original, pendingEventSaveDraft)
-            );
-          }
         } else {
           setEventDialog(null);
           setPendingEventSaveDraft(null);
           setSaveRefusals(null);
-          setRefusedMovedDay(null);
         }
       } finally {
         setIsSavingEvent(false);
       }
     },
-    [commitEventUpdate, movedMeetingDay, pendingEventSaveDraft]
+    [commitEventUpdate, pendingEventSaveDraft]
   );
 
   const requestDeleteEvent = useCallback(
@@ -2064,7 +2001,6 @@ export default function CalendarTab() {
   function dismissEventSaveDialog() {
     setEventDialog(null);
     setSaveRefusals(null);
-    setRefusedMovedDay(null);
     setPendingEventSaveDraft(null);
   }
 

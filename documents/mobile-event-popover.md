@@ -75,17 +75,17 @@ Create:
   - `durationMinutes` (currently 30 minutes)
 
 Edit (non-recurring):
-- Saves directly via `updateEvent`.
+- Saves directly via `updateEvent`. A save the server refuses (a new repeat that would end before it starts, say) shows the server's words over the editor, which keeps the edits.
 - If calendar changed, then runs `moveEvent` with scope `this`.
 
 Edit (recurring):
-- Save opens the scope dialog over the editor, which stays open: Cancel goes back to it with the edits; Apply holds "Saving…" until the save ends, and a failure leaves the editor with the edits.
+- Save opens the scope dialog over the editor, which stays open: Cancel goes back to it with the edits; Apply holds "Saving…" until the save ends. A refusal keeps the dialog (below); any other failure returns to the editor with the edits.
   - Only this occurrence
   - This and following
   - Entire series
 - A scope that can't apply is off, and the dialog's line says why (a moved day, the series still loading, a repeat that would skip this occurrence; see [event-popover.md](./event-popover.md)). If the calendar changes, only `all` is enabled and the entire series moves.
 - A save for the series (`following`/`all`) sends only its times, its repeat, and the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
-- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server refuses a series save (a typed refusal: a retry won't help), the dialog stays open, leads with the server's reason, and keeps that scope off for this save, as on web (`saveScopeDialog`), so two refusals in a row can't bring the first back. An Entire series refusal for a moved meeting also names that meeting by the day the calendar shows it on (or its original day when it isn't loaded). Any other failure returns to the editor with the edits.
+- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server refuses a series save (a typed refusal: a retry won't help), the dialog stays open, leads with the server's reason, and keeps that scope off for this save, as on web (`saveScopeDialog`), so two refusals in a row can't bring the first back. The server's reason names any meeting it would have undone. Any other failure returns to the editor with the edits.
 
 Delete:
 - Non-recurring: simple confirm dialog.

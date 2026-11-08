@@ -47,9 +47,7 @@ export function draftTimes(
       ? Temporal.Instant.from(own.dateTime).toZonedDateTimeISO(appTimeZone)
       : null;
     const instant =
-      shown &&
-      shown.toPlainDate().equals(date) &&
-      shown.toPlainTime().equals(time)
+      shown?.toPlainDate().equals(date) && shown.toPlainTime().equals(time)
         ? shown.toInstant()
         : date
             .toZonedDateTime({ plainTime: time, timeZone: appTimeZone })

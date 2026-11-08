@@ -810,18 +810,20 @@ function EndsBeforeStartNote({
 }
 
 /**
- * Whether the draft doesn't end before it starts (an all-day event may be
- * one day; a timed one may be zero-length, as Google allows).
+ * Whether the times the save sends (`draftTimes`) don't end before they
+ * start: an all-day event may be one day (its end is exclusive), a timed
+ * one zero-length, as Google allows. Read from the same instants as the
+ * save, so the hour a DST change repeats can't make them disagree.
  */
-function endsAfterStart(draft: EventDraft): boolean {
-  if (draft.allDay || !(draft.startTime && draft.endTime)) {
-    return Temporal.PlainDate.compare(draft.endDate, draft.startDate) >= 0;
+function endsAfterStart({
+  end,
+  start,
+}: ReturnType<typeof draftTimes>): boolean {
+  if (start.date && end.date) {
+    return Temporal.PlainDate.compare(end.date, start.date) > 0;
   }
   return (
-    Temporal.PlainDateTime.compare(
-      draft.endDate.toPlainDateTime(draft.endTime),
-      draft.startDate.toPlainDateTime(draft.startTime)
-    ) >= 0
+    Temporal.Instant.compare(end.dateTime ?? "", start.dateTime ?? "") >= 0
   );
 }
 
@@ -1575,8 +1577,16 @@ export function EventEditorSheet({
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
   // The repeat a save would send, and the days it counts from
   // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
+  // The times a save sends, as instants (the event's own while untouched).
+  const sentTimes = draftTimes(
+    values,
+    appTimeZone,
+    seriesTimeZone,
+    sourceEvent
+  );
+  const endsInOrder = endsAfterStart(sentTimes);
   const seriesEdit = seriesRepeatForEdit({
-    edited: draftTimes(values, appTimeZone, seriesTimeZone, sourceEvent),
+    edited: sentTimes,
     event: sourceEvent,
     recurrence: values.recurrence,
     recurrenceEdited: Boolean(values.recurrenceEdited),
@@ -1604,8 +1614,7 @@ export function EventEditorSheet({
     startDay: formDay,
     timeZone: seriesTimeZone,
   });
-  const canSubmit =
-    summary.trim().length > 0 && endsAfterStart(values) && !repeatEndsOn;
+  const canSubmit = summary.trim().length > 0 && endsInOrder && !repeatEndsOn;
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1788,7 +1797,7 @@ export function EventEditorSheet({
         />
         {/* Save stays off until the end comes after the start; say why. */}
         <EndsBeforeStartNote
-          endsEarly={!endsAfterStart(values)}
+          endsEarly={!endsInOrder}
           repeatEndsOn={repeatEndsOn}
         />
 
