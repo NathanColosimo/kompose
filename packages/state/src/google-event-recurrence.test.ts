@@ -1529,27 +1529,12 @@ describe("repeatCountingDay", () => {
       timeZone: zone,
     },
     recurringEventId: "m1",
-    start: { dateTime: "2026-11-08T16:00:00-05:00", timeZone: zone },
   };
   const tuesday = Temporal.PlainDate.from("2026-11-10");
 
-  test("a day moved in this edit counts from the new day, repeat changed or not", () => {
-    // Sunday's meeting, moved to Tuesday: a save for the series carries
-    // its rule along, so "weekly" is on Tuesdays from here.
+  test("counts from the series' first day", () => {
     expect(
       repeatCountingDay({
-        changed: false,
-        event: sunday,
-        formDay: tuesday,
-        timeZone: zone,
-      })?.toString()
-    ).toBe("2026-11-10");
-  });
-
-  test("an unchanged repeat, the day left alone, counts from the series' day", () => {
-    expect(
-      repeatCountingDay({
-        changed: false,
         event: sunday,
         formDay: Temporal.PlainDate.from("2026-11-08"),
         seriesStart: { dateTime: "2026-10-04T16:00:00-04:00" },
@@ -1558,44 +1543,12 @@ describe("repeatCountingDay", () => {
     ).toBe("2026-10-04");
   });
 
-  test("a changed repeat on a day moved in this edit counts from the new day", () => {
-    // The only save left starts a new series on Tuesday.
-    expect(
-      repeatCountingDay({
-        changed: true,
-        event: sunday,
-        formDay: tuesday,
-        timeZone: zone,
-      })?.toString()
-    ).toBe("2026-11-10");
-  });
-
-  test("a changed repeat on one moved before counts from its own place", () => {
-    // Sunday's meeting was moved to Tuesday earlier; this edit only
-    // changes the repeat. The new series starts at its place in the
-    // series, Sunday, not at the day it was moved to.
-    const movedBefore = {
-      ...sunday,
-      start: { dateTime: "2026-11-10T11:00:00-05:00", timeZone: zone },
-    };
-    expect(
-      repeatCountingDay({
-        changed: true,
-        event: movedBefore,
-        formDay: tuesday,
-        timeZone: zone,
-      })?.toString()
-    ).toBe("2026-11-08");
-  });
-
   test("an all-day occurrence's day is its date", () => {
     expect(
       repeatCountingDay({
-        changed: false,
         event: {
           originalStartTime: { date: "2026-11-30" },
           recurringEventId: "m1",
-          start: { date: "2026-11-30" },
         },
         formDay: Temporal.PlainDate.from("2026-11-30"),
         timeZone: zone,
@@ -1607,11 +1560,9 @@ describe("repeatCountingDay", () => {
     // 20:00 Sunday in New York is Monday in Tokyo.
     expect(
       repeatCountingDay({
-        changed: false,
         event: {
           originalStartTime: { dateTime: "2026-11-08T20:00:00-05:00" },
           recurringEventId: "m1",
-          start: { dateTime: "2026-11-08T20:00:00-05:00" },
         },
         formDay: null,
         timeZone: "Asia/Tokyo",
@@ -1623,11 +1574,9 @@ describe("repeatCountingDay", () => {
     // A Sunday weekly series with a Tuesday added: still weekly on Sunday.
     expect(
       repeatCountingDay({
-        changed: false,
         event: {
           originalStartTime: { dateTime: "2026-11-10T16:00:00-05:00" },
           recurringEventId: "m1",
-          start: { dateTime: "2026-11-10T16:00:00-05:00" },
         },
         formDay: tuesday,
         seriesStart: { dateTime: "2026-10-04T16:00:00-04:00" },
@@ -1639,7 +1588,6 @@ describe("repeatCountingDay", () => {
   test("not an occurrence: the form's day", () => {
     expect(
       repeatCountingDay({
-        changed: false,
         event: null,
         formDay: tuesday,
         timeZone: zone,

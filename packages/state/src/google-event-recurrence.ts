@@ -520,51 +520,35 @@ export function otherTimeZone(
 }
 
 /**
- * The day a repeat counts its implicit days from ("weekly" on which
- * weekday, "monthly" on which date), in the series' zone. A day this edit
- * moves an occurrence to is where a save for the series starts again (its
- * rule follows the day, `seriesRecurrenceForSave`), so it counts from
- * there. Otherwise an occurrence's unchanged repeat is the series', so it
- * counts from the series' first day (its DTSTART, which anchors the
- * rule's implicit days; an added RDATE meeting needn't share them), or,
- * before the series loads, the occurrence's place in the series (where
- * the rule puts it). A repeat the user changed counts from where the new
- * series starts: the occurrence's place in the series, even if it was
- * moved before (that move is its own, not the new series'). Any other
- * event's counts from the form's start.
+ * The day a series' own repeat counts its implicit days from ("weekly" on
+ * which weekday, "monthly" on which date), in the series' zone, for an
+ * occurrence whose save keeps the series' rule and slot: the series' first
+ * day (its DTSTART, which anchors the rule's implicit days; an added RDATE
+ * meeting needn't share them), or, before the series loads, the
+ * occurrence's place in the series (where the rule puts it). Any other
+ * event's counts from the form's day. A new repeat, day or time starts the
+ * series again elsewhere: `seriesRepeatForEdit` says where.
  */
 export function repeatCountingDay(params: {
-  /**
-   * The repeat now differs from the series' (what a save would send), not
-   * merely touched: a change set back reads as the series' again.
-   */
-  changed: boolean;
   event:
-    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
     | null
     | undefined;
-  /** The form's start day (not the kept series slot), in the series' zone. */
+  /** The form's start day, in the series' zone. */
   formDay: Temporal.PlainDate | null;
   /** The series' own start (its master's), once loaded. */
   seriesStart?: StartTime | null;
   timeZone: string;
 }): Temporal.PlainDate | null {
-  const { changed, event, formDay, timeZone } = params;
+  const { event, formDay, timeZone } = params;
   if (!event?.recurringEventId) {
     return formDay;
   }
-  const now = dayOfStart(event.start, timeZone);
-  if (formDay && now && Temporal.PlainDate.compare(formDay, now) !== 0) {
-    return formDay;
-  }
-  const placed = event.originalStartTime
-    ? dayOfStart(event.originalStartTime, timeZone)
-    : null;
-  if (changed) {
-    return placed ?? formDay;
-  }
   const first = params.seriesStart
     ? dayOfStart(params.seriesStart, timeZone)
+    : null;
+  const placed = event.originalStartTime
+    ? dayOfStart(event.originalStartTime, timeZone)
     : null;
   return first ?? placed ?? formDay;
 }

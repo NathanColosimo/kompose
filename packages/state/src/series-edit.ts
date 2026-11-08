@@ -80,6 +80,8 @@ function changedText(
  * save. `startDay` is where a save for the series starts: the occurrence's
  * place in the series (a rescheduled one's original day) while the edit
  * keeps its times, as the server reads it, else the edited start's day.
+ * The repeat's implicit days count from there, unless the save keeps the
+ * series' own rule and slot: then from the series' first day.
  */
 export function seriesRepeatForEdit(params: {
   /** The edited start and end, as the save sends them. */
@@ -108,7 +110,7 @@ export function seriesRepeatForEdit(params: {
 }): {
   /** The repeat differs from the series' (what a save would send). */
   changed: boolean;
-  /** The day the repeat's implicit days count from (`repeatCountingDay`). */
+  /** The day the repeat's implicit days count from. */
   countingDay: Temporal.PlainDate | null;
   /** The repeat to show. */
   recurrence: string[];
@@ -139,23 +141,24 @@ export function seriesRepeatForEdit(params: {
           timeZone,
         })
       : undefined;
-  // The server keeps the series' slot for an edit that keeps both times.
+  // The server keeps the series' slot for an edit that keeps both times;
+  // otherwise a save for the series starts at the edited start.
   const timesKept = occurrence && keepsEventTimes(edited, occurrence, timeZone);
   const startDay = dayOfStart(
     (timesKept && occurrence.originalStartTime) || editedStart,
     timeZone
   );
-  // A new repeat, or a moved day, starts the series again there.
+  // The series' own rule and slot: its days count from its first day.
+  // A new repeat, day or time starts it again at `startDay`.
   const countingDay =
-    changed || moved
-      ? startDay
-      : repeatCountingDay({
-          changed,
+    timesKept && !changed
+      ? repeatCountingDay({
           event,
-          formDay: dayOfStart(editedStart, timeZone),
+          formDay: startDay,
           seriesStart: params.seriesStart,
           timeZone,
-        });
+        })
+      : startDay;
   return {
     changed,
     countingDay,

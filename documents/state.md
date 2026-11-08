@@ -11,7 +11,7 @@
 
 ## `packages/state` contents
 
-- `collision-utils.ts`: Shared collision detection for calendar events (web + native). Calculates column positions, column spans, and z-index for overlapping items. Uses a 30-min side-by-side threshold, max 3 columns, and threshold-aware span expansion so events use full width when adjacent columns are stackable.
+- `collision-utils.ts`: Shared layout for overlapping calendar items (web + native). Items that start within 30 minutes of a group's first one sit side by side in it; a later one stacks on top, indented one level, so a long block keeps its width and its title shows. Nothing is covered before 15 minutes of it shows.
 - `atoms/command-bar.ts`: Command bar open state and focused task id atoms.
 - `atoms/auth.ts`: Auth convenience atoms, including synchronous
   `lastUsedLoginMethodAtom` sourced from the configured auth client.
