@@ -50,6 +50,7 @@ import {
 import Image from "next/image";
 import {
   type ReactElement,
+  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -362,7 +363,7 @@ function TaskEditorCloseActions({
         size="sm"
         type="button"
       >
-        <SaveButtonLabel saving={saving === "save"} />
+        <SavingLabel saving={saving === "save"}>Save</SavingLabel>
       </Button>
     </div>
   );
@@ -456,14 +457,25 @@ function RepeatNote({
 }
 
 /**
- * "Save", or "Saving…" while it saves. Both labels share one cell, so the
- * button keeps the width of "Saving…" and nothing beside it shifts.
+ * A button's label, or "Saving…" while its save runs. Both share one cell,
+ * so the button keeps the wider one's width and nothing beside it shifts.
  */
-export function SaveButtonLabel({ saving }: { saving: boolean }) {
+export function SavingLabel({
+  children,
+  saving,
+}: {
+  children: ReactNode;
+  saving: boolean;
+}) {
   return (
     <span className="grid justify-items-center">
-      <span className={cn("col-start-1 row-start-1", saving && "invisible")}>
-        Save
+      <span
+        className={cn(
+          "col-start-1 row-start-1 flex items-center gap-1.5",
+          saving && "invisible"
+        )}
+      >
+        {children}
       </span>
       <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
         Saving…
@@ -486,30 +498,22 @@ function TaskDoneButton({
   isSaving: boolean;
   onClick: () => void;
 }) {
-  if (isSaving) {
-    return (
-      <Button
-        className="gap-1.5"
-        disabled
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        Saving…
-      </Button>
-    );
-  }
   return (
     <Button
-      className="gap-1.5"
-      disabled={disabled}
+      disabled={disabled || isSaving}
       onClick={onClick}
       size="sm"
       type="button"
       variant="outline"
     >
-      {isDone ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-      {isDone ? "Mark not done" : "Mark done"}
+      <SavingLabel saving={isSaving}>
+        {isDone ? (
+          <Undo2 className="size-3.5" />
+        ) : (
+          <Check className="size-3.5" />
+        )}
+        {isDone ? "Mark not done" : "Mark done"}
+      </SavingLabel>
     </Button>
   );
 }
@@ -854,7 +858,8 @@ export function TaskEditForm({
 
         <SaveFailure message={failure} />
         <Separator />
-        <div className="flex items-center gap-2">
+        {/* Wraps when a done task's longer "Mark not done" doesn't fit. */}
+        <div className="flex flex-wrap items-center gap-2">
           <AlertDialog
             onOpenChange={setShowDeleteConfirm}
             open={showDeleteConfirm}
@@ -923,21 +928,17 @@ export function TaskEditForm({
         <RecurrenceScopeDialog
           confirmLabel="Apply"
           description={SCOPE_DIALOG_COPY.saveTask.description}
-          // The dialog has no trigger to return focus to, and a save
-          // remounts the field it came from, so focus would fall to the
-          // page, where the calendar's keys could navigate away. On Cancel
-          // it goes back where the user was; during a save (or after it
-          // failed), to the editor; once the editor has closed, it stays
-          // where that put it.
+          // The dialog has no trigger to return focus to, so it would fall
+          // to the page, where the calendar's keys could navigate away. On
+          // Cancel it goes back where the user was. Apply starts a held
+          // save, which remounts the fields and this dialog with them
+          // (HeldFieldset), so that field is gone and focus goes to the
+          // editor. Once the editor has closed, it stays where that put it.
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             const editor = hold.editorRef.current;
             const before = focusBeforeScopeRef.current;
-            if (
-              saving === null &&
-              before?.isConnected &&
-              editor?.contains(before)
-            ) {
+            if (before?.isConnected && editor?.contains(before)) {
               before.focus();
               return;
             }

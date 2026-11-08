@@ -23,7 +23,7 @@ import {
 } from "@/lib/temporal-utils";
 import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
-  SaveButtonLabel,
+  SavingLabel,
   TaskCreateForm,
   type TaskFormValues,
   useHeldSave,
@@ -316,7 +316,7 @@ function CreationChooser({
                   size="sm"
                   type="button"
                 >
-                  <SaveButtonLabel saving={isSaving} />
+                  <SavingLabel saving={isSaving}>Save</SavingLabel>
                 </Button>
               </div>
             </div>
