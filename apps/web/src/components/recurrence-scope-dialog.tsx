@@ -2,6 +2,7 @@
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
+import { XIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,6 +107,9 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
             }
           }
         }}
+        // Its own close button, which shows it does nothing while a
+        // confirm runs, as Cancel does.
+        showCloseButton={false}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -137,8 +141,15 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           ) : null}
         </DialogHeader>
 
+        {/* Read-only while a confirm runs, so the choice shown is the one
+            being sent. Not disabled, which would drop focus. */}
         <RadioGroup
+          aria-readonly={pending || undefined}
+          className={cn(pending && "opacity-60")}
           onValueChange={(next) => {
+            if (pendingRef.current) {
+              return;
+            }
             // The radio group gives a string; pass on the option it names.
             const picked = options.find((opt) => opt.value === next);
             if (picked) {
@@ -207,6 +218,17 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
             </SavingLabel>
           </Button>
         </DialogFooter>
+        <Button
+          aria-disabled={pending || undefined}
+          className="absolute top-2 right-2 aria-disabled:opacity-50"
+          onClick={() => requestOpenChange(false)}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <XIcon />
+          <span className="sr-only">Close</span>
+        </Button>
       </DialogContent>
     </Dialog>
   );
