@@ -8,7 +8,7 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
 | ------ | ----------- |
 | Search tasks | Search open tasks by title or description. Select one to go to it and open its editor. |
 | Create task | Quick task creation from free text, read by an on-device model |
-| Create event | Opens the calendar's create popover at the next half hour, like the **c** key (shown as its shortcut). In the in-page bar only: the desktop popup is a separate window from the calendar. |
+| Create event | Opens the calendar's create popover, like the **c** key (shown as its shortcut); see [hotkeys.md](./hotkeys.md) for where it starts. In the in-page bar only: the desktop popup is a separate window from the calendar. |
 
 Picking Search tasks or Create task with the mouse keeps typing in the
 search field, so the page's shortcuts (such as **c**) don't take the keys.
@@ -23,18 +23,16 @@ search field, so the page's shortcuts (such as **c**) don't take the keys.
   Tomorrow, Yesterday, a date), or Inbox.
 - Selecting a task:
   - Resolves a single destination before opening anything
-    (`resolveTaskSearchDestination`):
+    (`resolveTaskSearchDestination`). Every open task has one:
     - Calendar for tasks with both `startDate` and `startTime`
-    - Inbox for open tasks without `startDate`, including a series
-      occurrence moved there
+    - Inbox for tasks without `startDate`, including a series occurrence
+      moved there
     - Today for tasks with a start date but no start time, navigating to that date
-    - Today for other tasks matching its overdue, unplanned, or done sections
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
-  - The editor scrolls its task into view before it opens, so a task outside
-    the calendar's visible hours or below the list's fold still gets an
-    editor on screen.
-  - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
+  - The editor scrolls its task into view as it opens and follows it, so a
+    task outside the calendar's visible hours or scrolled out of the list
+    still gets an editor on screen.
 
 ### Narrow windows
 

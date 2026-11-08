@@ -5,7 +5,8 @@ and the task side of the calendar's create popover.
 
 ## Pieces
 
-Everything lives in `apps/web/src/components/task-form/task-edit-popover.tsx`.
+These live in `apps/web/src/components/task-form/task-edit-popover.tsx`;
+`HeldFieldset` and `SaveFailure` are in `components/ui/held-fieldset.tsx`.
 
 - **`TaskEditPopover`**: wraps a trigger (a sidebar row or a calendar block)
   and edits that task. It always has a task; creating goes through the create
@@ -35,7 +36,8 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
    disabled.
 4. A note under Repeat when there's something to say: what a repeat change
    will do, or why it can't save ("The repeat ends Nov 10, before…"). While it
-   blocks, Save and Mark done are disabled.
+   blocks, the editor's Save and Mark done are disabled; the create popover's
+   Save does nothing.
 5. **Links**: a card per link, and an input that takes a pasted or typed URL.
    The first link's metadata fills an empty title and the duration.
 6. **Tags**.
@@ -48,14 +50,17 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 - **Held saves.** Save, and Mark done when there are unsaved edits, keep the
   editor open with "Saving…" until the server confirms; then it closes. While
   a save holds, the fields are read-only, any open picker closes (the fields
-  remount, see `HeldFieldset`), and Escape and outside clicks wait. These
-  saves aren't optimistic, so a failure can't roll the cache back over the
-  draft.
+  remount, see `HeldFieldset`), and Escape and outside clicks do nothing.
+  These saves aren't optimistic, so a failure can't roll the cache back over
+  the draft.
 - **Failures** keep the draft and show the reason beside Save
   (`SaveFailure`), which takes focus. The next save clears it.
 - **Mark done with no other edits** saves at once and closes.
 - **Save and Mark done keep their width** while they show "Saving…"
   (`SavingLabel`).
+- **Moving or resizing the task** on the calendar while its editor is open
+  updates the editor's date, time and duration and keeps the other unsaved
+  edits, so Save can't write the old times back.
 - **Create** (create popover, Task tab) holds the same way: the popover stays
   open with "Saving…", keeps the draft on failure, and shows the reason beside
   its own Save.
@@ -66,10 +71,13 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
   and following** when the edit could apply beyond it. The question and its
   default come from `getTaskUpdateScopeDecision` in
   `packages/state/src/task-recurrence.ts`, shared with iOS.
+- **A repeat change** applies from this occurrence on, with no question; the
+  note under Repeat says so.
 - **Moving an occurrence to the inbox** (clearing its date) asks nothing: it
   changes that occurrence alone, as the server does.
-- **Mark done** with unsaved edits on a series asks the same question, then
-  saves the edits and the status in one write; the status applies to this
+- **Mark done** with unsaved edits on a series follows the same rules (the
+  question, or a repeat change applying from this occurrence on), then saves
+  the edits and the status in one write; the status applies to this
   occurrence only.
 - **Delete** on a dated occurrence offers this occurrence or this and
   following; otherwise it asks to confirm.
@@ -87,8 +95,10 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
   its message.
 - When the delete question closes, focus returns to the editor if Backspace
   opened it, or to the trash icon if the icon did.
-- Opened from command-bar search or the desktop app, the editor first
-  scrolls its task into view. See [command-bar.md](./command-bar.md).
+- Opened from command-bar search or the desktop app, the editor scrolls its
+  task into view as it opens, and follows it. See
+  [command-bar.md](./command-bar.md).
+- The app-wide shortcuts are in [hotkeys.md](./hotkeys.md).
 
 ## Phone widths
 
@@ -99,7 +109,7 @@ Below 768px:
 - The task panel folds to its icon rail, so the calendar gets the width. A
   rail icon opens the list full width, with a "Show calendar" button beside
   +. The calendar behind it is clipped and inert. The list folds again on
-  leaving the calendar, and when the command bar, the **c** key or the
-  desktop app creates an event or opens a task on the calendar. The fold
+  leaving the calendar, when the command bar or the **c** key creates an
+  event, and when search or the desktop app opens a task on the calendar. The fold
   doesn't change the panel choice saved for wide windows
   (`apps/web/src/state/sidebar.ts`).
