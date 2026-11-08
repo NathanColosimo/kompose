@@ -2444,3 +2444,40 @@ describe("follow-up checks on the start and length rules", () => {
     ]);
   });
 });
+
+describe("a COUNT carried from Google's list after an earlier split", () => {
+  test("doesn't count a skip from before the series began", async () => {
+    // Left by an earlier split: yearly from Nov 9, 2028, 98 times, still
+    // carrying the old series' Nov 9, 2027 skip. Split at 2029, one is
+    // used (2028), so 97 are left.
+    const series: Event = {
+      end: { dateTime: "2028-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=98", "EXDATE:20271109T090000Z"],
+      start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    const years = Array.from({ length: 98 }, (_, i) => 2028 + i);
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: years.map((year) =>
+              occurrenceOf(series, `${year}-11-09T09:00:00Z`)
+            ),
+          }
+        : undefined
+    );
+    const opened = occurrenceOf(series, "2029-11-09T09:00:00Z");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Anniversary (new)" }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+      "EXDATE:20271109T090000Z",
+    ]);
+  });
+});

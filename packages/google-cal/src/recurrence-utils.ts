@@ -509,9 +509,7 @@ function ruleEndsBefore(
       time,
       timeZone: seriesZone,
     });
-    return meetings && meetings.size === count
-      ? Math.max(...meetings) < split.epochMilliseconds
-      : null;
+    return meetings ? Math.max(...meetings) < split.epochMilliseconds : null;
   }
   const last = countedRuleDays(rule, first.day, count)?.at(-1);
   if (!last) {
@@ -555,11 +553,15 @@ export function carryCount(
   if (exact) {
     return exact;
   }
-  const { masterRecurrence, originalStart, seriesZone, starts } = params;
+  const { masterRecurrence, originalStart, seriesStart, seriesZone, starts } =
+    params;
   if (hasAddedDays(masterRecurrence)) {
     return null;
   }
+  // A position of this series: from its start (a skip an earlier split
+  // left before it isn't one) and before the split.
   const before = (value: RecurrenceValue) =>
+    !beforeSplit(value, seriesStart, seriesZone) &&
     beforeSplit(value, originalStart, seriesZone);
   const skipped = masterRecurrence.flatMap((line) => {
     const list = parseDateList(line, seriesZone);
