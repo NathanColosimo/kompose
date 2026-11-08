@@ -178,12 +178,17 @@ function RecurrenceRow({
   );
 }
 
+const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 function RecurrenceEditorSection({
   parsedRecurrence,
+  startDate,
   updateRecurrence,
   applyPrimaryRecurrenceRule,
 }: {
   parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
+  /** Weekly starts on the event's own weekday, so the series doesn't move. */
+  startDate: Temporal.PlainDate;
   updateRecurrence: (patch: {
     freq?: EventRecurrenceFrequency;
     byDay?: string[];
@@ -210,7 +215,7 @@ function RecurrenceEditorSection({
                   byDay =
                     parsedRecurrence.byDay.length > 0
                       ? parsedRecurrence.byDay
-                      : ["MO"];
+                      : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
                 }
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
@@ -1185,6 +1190,7 @@ export function EventEditorSheet({
       onExpand={() => setIsRecurrenceExpanded(true)}
       parsedRecurrence={parsedRecurrence}
       recurrence={recurrence}
+      startDate={values.startDate}
       updateRecurrence={updateRecurrence}
     />
   );
