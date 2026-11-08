@@ -3,6 +3,7 @@ import {
   buildGoogleEventRecurrenceRule,
   describeEventRecurrence,
   getPrimaryRecurrenceRule,
+  parseGoogleEventRecurrenceRule,
   setPrimaryRecurrenceRule,
 } from "./google-event-recurrence";
 
@@ -96,5 +97,25 @@ describe("buildGoogleEventRecurrenceRule", () => {
         "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15"
       )
     ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=3;BYDAY=MO");
+  });
+
+  test("keeps a yearly schedule when only its end changes", () => {
+    for (const [rule, expected] of [
+      ["RRULE:FREQ=YEARLY;INTERVAL=2", "RRULE:FREQ=YEARLY;INTERVAL=2;COUNT=5"],
+      [
+        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
+        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=5",
+      ],
+    ] as const) {
+      const { byDay, freq } = parseGoogleEventRecurrenceRule(rule);
+      expect(
+        buildGoogleEventRecurrenceRule(
+          freq,
+          byDay,
+          { count: 5, type: "count" },
+          rule
+        )
+      ).toBe(expected);
+    }
   });
 });

@@ -827,6 +827,8 @@ export function EventEditPopover({
     }
   }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
 
+  const dialogOver =
+    scopeDialogOpen || deleteDialogOpen || simpleDeleteConfirmOpen;
   useHotkeys(
     "mod+enter",
     (e) => {
@@ -835,23 +837,8 @@ export function EventEditPopover({
     },
     // Not behind a dialog over the editor (the scope or delete question):
     // there Cmd+Enter would re-ask and drop the choice made in it.
-    {
-      enabled:
-        open &&
-        !readOnly &&
-        !scopeDialogOpen &&
-        !deleteDialogOpen &&
-        !simpleDeleteConfirmOpen,
-      enableOnFormTags: true,
-    },
-    [
-      deleteDialogOpen,
-      handleSave,
-      open,
-      readOnly,
-      scopeDialogOpen,
-      simpleDeleteConfirmOpen,
-    ]
+    { enabled: open && !readOnly && !dialogOver, enableOnFormTags: true },
+    [dialogOver, handleSave, open, readOnly]
   );
 
   return (
@@ -893,6 +880,7 @@ export function EventEditPopover({
             accountId={accountId}
             calendarId={calendarId}
             closeSaveRequestRef={buildCloseSaveRequestRef}
+            dialogOver={dialogOver}
             end={end}
             event={event}
             isSaving={isSaving}
@@ -1813,6 +1801,7 @@ export function EventEditForm({
   onCancel,
   onDelete,
   open,
+  dialogOver = false,
   readOnly = false,
   readOnlyReason,
   headerContent,
@@ -1835,6 +1824,8 @@ export function EventEditForm({
   onCancel?: () => void;
   onDelete: () => void;
   open: boolean;
+  /** A dialog is open over the editor, which then takes no shortcuts. */
+  dialogOver?: boolean;
   readOnly?: boolean;
   readOnlyReason?: string | null;
   headerContent?: ReactNode;
@@ -1854,8 +1845,9 @@ export function EventEditForm({
       e.preventDefault();
       onDelete();
     },
-    { enabled: open && !isCreateMode && !readOnly },
-    [onDelete, open, isCreateMode, readOnly]
+    // Not behind a dialog over the editor (the scope or delete question).
+    { enabled: open && !isCreateMode && !readOnly && !dialogOver },
+    [dialogOver, onDelete, open, isCreateMode, readOnly]
   );
   // Closing the popover alone discards edits; the wrapper owns saves and dialogs.
   const hasUserEditedRef = useRef(false);

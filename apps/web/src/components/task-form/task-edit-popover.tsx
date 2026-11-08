@@ -571,8 +571,24 @@ export function TaskEditForm({
       e.preventDefault();
       handleDeleteClick();
     },
-    { enabled: open && !isCreateMode && !isSavingStatus },
-    [handleDeleteClick, isCreateMode, isSavingStatus, open]
+    // Not behind a dialog over the editor, where it would delete the task
+    // out from under the question being asked.
+    {
+      enabled:
+        open &&
+        !isCreateMode &&
+        !isSavingStatus &&
+        !showTagScopeDialog &&
+        !showDeleteConfirm,
+    },
+    [
+      handleDeleteClick,
+      isCreateMode,
+      isSavingStatus,
+      open,
+      showDeleteConfirm,
+      showTagScopeDialog,
+    ]
   );
 
   const resolvedInitialValues = useMemo<TaskFormValues>(
