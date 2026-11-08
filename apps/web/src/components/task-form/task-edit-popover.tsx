@@ -35,7 +35,7 @@ import {
   resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import {
   CalendarCheck,
   CalendarClock,
@@ -97,6 +97,7 @@ import {
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { isNarrowViewportAtom } from "@/state/sidebar";
 import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
@@ -236,6 +237,7 @@ export function TaskEditPopover({
 }: TaskEditPopoverProps) {
   const mode = modeProp ?? (task ? "edit" : "create");
   const [open, setOpen] = useState(false);
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
   const [openRequest, setOpenRequest] = useAtom(commandBarTaskOpenRequestAtom);
   const matchesOpenRequest = Boolean(
     mode === "edit" &&
@@ -282,7 +284,7 @@ export function TaskEditPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align={align}
-        className="max-h-(--radix-popover-content-available-height) w-[360px] space-y-3 overflow-y-auto p-4"
+        className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-3 overflow-y-auto p-4"
         collisionPadding={8}
         // While Mark done saves, the editor holds: closing would drop the
         // edits if the save fails.
@@ -299,7 +301,9 @@ export function TaskEditPopover({
           }
         }}
         onOpenAutoFocus={handleOpenAutoFocus}
-        side={side}
+        // A phone has no room beside the task, and Radix only slides a side
+        // placement up or down, so the editor opens below it instead.
+        side={isNarrow ? "bottom" : side}
       >
         <TaskEditForm
           initialValues={initialValues}

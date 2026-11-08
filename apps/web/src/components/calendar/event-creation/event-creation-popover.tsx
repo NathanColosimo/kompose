@@ -5,6 +5,7 @@ import {
   TASK_CREATE_FAILURE_MESSAGE,
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
+import { useAtomValue } from "jotai";
 import {
   useCallback,
   useEffect,
@@ -27,6 +28,7 @@ import {
   pickerDateToTemporal,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
+import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
   TaskEditForm,
   type TaskFormValues,
@@ -61,6 +63,7 @@ export function EventCreationPopover() {
   const { state, actions, eventUnavailableReason, popoverTimes } =
     useEventCreation();
   const { createEvent } = useGoogleEventMutations();
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
   // The type the user last picked; the chooser reopens on it.
   const [mode, setMode] = useState<CreationMode>("event");
   // Set when the chooser opens with no calendar to write to: it shows Task
@@ -256,7 +259,7 @@ export function EventCreationPopover() {
         align="start"
         // Fits the space Radix measured, scrolling a long draft rather than
         // running off screen, as the edit popover does.
-        className="max-h-(--radix-popover-content-available-height) w-[420px] overflow-y-auto p-4"
+        className="max-h-(--radix-popover-content-available-height) w-[420px] max-w-[calc(100vw-16px)] overflow-y-auto p-4"
         collisionPadding={8}
         onEscapeKeyDown={(e) => {
           e.preventDefault();
@@ -278,7 +281,9 @@ export function EventCreationPopover() {
               ?.focus();
           });
         }}
-        side="right"
+        // A phone has no room beside the slot, and Radix only slides a side
+        // placement up or down, so the chooser opens below it instead.
+        side={isNarrow ? "bottom" : "right"}
       >
         {/* Read-only while the create runs: a change typed then wouldn't
             be saved. */}
