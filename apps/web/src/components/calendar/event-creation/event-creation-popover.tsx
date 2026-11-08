@@ -23,7 +23,7 @@ import {
 } from "@/lib/temporal-utils";
 import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
-  TaskEditForm,
+  TaskCreateForm,
   type TaskFormValues,
   useHeldSave,
 } from "../../task-form/task-edit-popover";
@@ -351,13 +351,9 @@ function CreationChooser({
               forceMount
               value="task"
             >
-              <TaskEditForm
+              <TaskCreateForm
                 createInteropRef={taskInteropRef}
-                hold={hold}
                 initialValues={initialTaskValues}
-                mode="create"
-                onClose={handleCancel}
-                open
                 submitRef={taskSubmitRef}
               />
             </TabsContent>
