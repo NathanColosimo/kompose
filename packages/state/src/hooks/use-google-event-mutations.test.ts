@@ -3,6 +3,7 @@ import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import type { StateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
 import {
+  createGoogleEventMutationOptions,
   deleteGoogleEventMutationOptions,
   updateGoogleEventMutationOptions,
 } from "./use-google-event-mutations";
@@ -38,6 +39,8 @@ async function failedDelete(held: {
         delete: (input: unknown) => {
           sent.push(input);
           whileSent.push(queryClient.getQueryData(queryKey));
+          // The realtime sync brings another event meanwhile.
+          queryClient.setQueryData(queryKey, [{ id: "other" }, { id: "new" }]);
           return Promise.reject(new Error("refused"));
         },
       },
@@ -72,7 +75,8 @@ test("the event leaves the list at once, and comes back on failure", async () =>
   const { cached, sent, whileSent } = await failedDelete({ quiet: true });
   expect(sent).toEqual([removal]);
   expect(whileSent).toEqual([[{ id: "other" }]]);
-  expect(cached).toEqual([{ id: "event" }, { id: "other" }]);
+  // Only the deleted event comes back: what the refetch brought stays.
+  expect(cached).toEqual([{ id: "other" }, { id: "new" }, { id: "event" }]);
 });
 
 /**
@@ -152,6 +156,106 @@ test("a held update of one occurrence shows the server's copy once it's in", asy
   );
   expect(cached).toEqual([
     { id: "event", summary: "Planning (saved)" },
+    { id: "new" },
+  ]);
+});
+
+test("a failed optimistic update puts back only that event", async () => {
+  const queryClient = new QueryClient();
+  const queryKey = [
+    ...getGoogleEventsByCalendarQueryKey({
+      accountId: "acct",
+      calendarId: "work",
+    }),
+    "2026-11",
+  ];
+  const event = {
+    end: { dateTime: "2026-11-09T09:30:00-05:00" },
+    id: "event",
+    start: { dateTime: "2026-11-09T09:00:00-05:00" },
+    summary: "Standup",
+  };
+  queryClient.setQueryData(queryKey, [event]);
+  const whileSent: unknown[] = [];
+  const orpc = {
+    googleCal: {
+      events: {
+        update: () => {
+          whileSent.push(queryClient.getQueryData(queryKey));
+          queryClient.setQueryData(queryKey, [
+            ...(queryClient.getQueryData<unknown[]>(queryKey) ?? []),
+            { id: "new" },
+          ]);
+          return Promise.reject(new Error("refused"));
+        },
+      },
+    },
+  } as unknown as StateConfig["orpc"];
+  const observer = new MutationObserver(
+    queryClient,
+    updateGoogleEventMutationOptions(queryClient, {
+      notifyError: () => undefined,
+      orpc,
+    })
+  );
+  await observer
+    .mutate({
+      accountId: "acct",
+      calendarId: "work",
+      event: { ...event, summary: "Planning" },
+      eventId: "event",
+    })
+    .catch(() => undefined);
+  expect(whileSent).toEqual([[{ ...event, summary: "Planning" }]]);
+  expect(queryClient.getQueryData(queryKey)).toEqual([event, { id: "new" }]);
+});
+
+test("a failed create takes back only the event it added", async () => {
+  const queryClient = new QueryClient();
+  const queryKey = [
+    ...getGoogleEventsByCalendarQueryKey({
+      accountId: "acct",
+      calendarId: "work",
+    }),
+    "2026-11",
+  ];
+  queryClient.setQueryData(queryKey, [{ id: "other" }]);
+  const whileSent: unknown[] = [];
+  const orpc = {
+    googleCal: {
+      events: {
+        create: () => {
+          whileSent.push(queryClient.getQueryData<unknown[]>(queryKey)?.length);
+          queryClient.setQueryData(queryKey, [
+            ...(queryClient.getQueryData<unknown[]>(queryKey) ?? []),
+            { id: "new" },
+          ]);
+          return Promise.reject(new Error("refused"));
+        },
+      },
+    },
+  } as unknown as StateConfig["orpc"];
+  const observer = new MutationObserver(
+    queryClient,
+    createGoogleEventMutationOptions(queryClient, {
+      notifyError: () => undefined,
+      orpc,
+    })
+  );
+  await observer
+    .mutate({
+      accountId: "acct",
+      calendarId: "work",
+      event: {
+        end: { dateTime: "2026-11-09T09:30:00-05:00" },
+        start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        summary: "Lunch",
+      },
+    } as never)
+    .catch(() => undefined);
+  expect(whileSent).toEqual([2]);
+  expect(queryClient.getQueryData(queryKey)).toEqual([
+    { id: "other" },
     { id: "new" },
   ]);
 });
