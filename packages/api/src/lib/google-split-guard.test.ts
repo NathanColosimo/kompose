@@ -79,6 +79,22 @@ describe("where This and following can start", () => {
     expect(unsure("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10")).toBe(true);
   });
 
+  test("a rule's count skips a time the clocks skip", () => {
+    // Daily 2:30 three times from Fri Mar 12 2027: Sun Mar 14 has no 2:30,
+    // so the meetings are Mar 12, 13 and 15. Deleting from an added Mar 14
+    // 9:00 cuts the rule, so Mar 15 goes too.
+    const [cut] = truncateRecurrenceForFollowing(
+      [
+        "RRULE:FREQ=DAILY;COUNT=3",
+        "RDATE;TZID=America/New_York:20270314T090000",
+      ],
+      "2027-03-14T09:00:00-04:00",
+      zone,
+      "2027-03-12T02:30:00-05:00"
+    );
+    expect(cut).toBe("RRULE:FREQ=DAILY;UNTIL=20270314T125959Z");
+  });
+
   test("a cut always ends a rule that still runs past the split", () => {
     // Twice a day ten times (to Nov 13), and every 4 hours ten times:
     // cut at Nov 10 9:00, both end the second before, whatever the rule.

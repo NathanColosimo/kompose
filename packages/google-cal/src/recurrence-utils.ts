@@ -416,7 +416,9 @@ function ruleEndsBefore(
   }
   const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const times = clock ? ruleTimesOf(rule, clock) : null;
-  if (clock && times && times.length > 1) {
+  // A timed rule is counted meeting by meeting, so a time the clocks
+  // skip that day isn't one (RFC 5545; see until.ts `existsOn`).
+  if (clock && times && times.length > 0) {
     const meetings = countedRuleMeetings({
       base: clock,
       count,
