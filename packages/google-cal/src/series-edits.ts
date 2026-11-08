@@ -25,7 +25,15 @@ export type SeriesRefusal =
   | {
       readonly reason: "dropsChangedOccurrences" | "resizesChangedOccurrences";
       readonly originalStarts: readonly string[];
+      /**
+       * Set when the save is one only a series takes (a new repeat, or a
+       * move to another calendar), so it can't go to one occurrence.
+       */
+      readonly seriesOnly?: true;
     };
+
+/** A refusal that names the occurrences it's for. */
+type NamingRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
 
 /** "Mar 31": an original start's day, as the refusal names it. */
 function dayName(originalStart: string): string {
@@ -41,16 +49,19 @@ function namedDays(originalStarts: readonly string[]): string {
 }
 
 /**
- * Where the save can go instead, from the editor it was made in: to this
- * occurrence alone, or This and following from after the last one named.
+ * Where the save can go instead, from the editor it was made in: This and
+ * following from after the last occurrence named, or to this occurrence
+ * alone when one can take it.
  */
-function elsewhere(originalStarts: readonly string[]): string {
-  const last = originalStarts
+function elsewhere(refusal: NamingRefusal): string {
+  const last = refusal.originalStarts
     .map((start) => start.slice(0, 10))
     .sort()
     .at(-1);
-  const after = last ? ` from an occurrence after ${dayName(last)}` : "";
-  return `Save it for this occurrence only, or with This and following${after}.`;
+  const following = `This and following${last ? ` from an occurrence after ${dayName(last)}` : ""}`;
+  return refusal.seriesOnly
+    ? `Save it with ${following}.`
+    : `Save it for this occurrence only, or with ${following}.`;
 }
 
 /** The refusal in words for the user. */
@@ -71,9 +82,9 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "severalTimesADay":
       return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
-      return `This would undo changes made to single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
+      return `This would undo changes made to single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal)}`;
     case "resizesChangedOccurrences":
-      return `This would also change the length of single occurrences given a length of their own (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
+      return `This would also change the length of single occurrences given a length of their own (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal)}`;
     default:
       return refusal satisfies never;
   }
@@ -154,6 +165,48 @@ export function changedFields(
         edited[field] !== undefined && !same(field, edited[field], from[field])
     ).map((field) => [field, edited[field]])
   );
+}
+
+/** A rule's parts that say which days it meets on. */
+const DAY_PARTS = new Set([
+  "BYDAY",
+  "BYMONTH",
+  "BYMONTHDAY",
+  "BYWEEKNO",
+  "BYYEARDAY",
+]);
+
+/**
+ * Whether a save gives its series a new repeat: the rules it sends
+ * (`saved`; left out, the series' own) aren't the series' (`own`). A save
+ * that moves the series to a new day sends its rules rebuilt for that day,
+ * so then the days they meet on aren't compared: only how often they
+ * repeat, and when they end.
+ */
+export function newRepeat(params: {
+  dayMoved: boolean;
+  own: readonly string[];
+  saved: readonly string[] | undefined;
+}): boolean {
+  const { dayMoved, own, saved } = params;
+  if (!saved) {
+    return false;
+  }
+  const rules = (recurrence: readonly string[]) =>
+    recurrence
+      .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
+      .map((line) => {
+        const [name, parts = ""] = line.split(":");
+        const kept = parts
+          .split(";")
+          .filter(
+            (part) => !(dayMoved && DAY_PARTS.has(part.split("=")[0] ?? ""))
+          )
+          .sort();
+        return `${name}:${kept.join(";")}`;
+      })
+      .sort();
+  return canonical(rules(saved)) !== canonical(rules(own));
 }
 
 /** Whether two Google times are the same moment (or the same date). */

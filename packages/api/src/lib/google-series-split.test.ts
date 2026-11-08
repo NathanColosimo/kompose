@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   carryCount,
   carryCountExactly,
+  hasAddedDays,
   splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
@@ -777,5 +778,16 @@ describe("isRuleDay", () => {
         day("2026-12-07")
       )
     ).toBe(true);
+  });
+});
+
+describe("hasAddedDays", () => {
+  test("tells a series with added days", () => {
+    expect(
+      hasAddedDays(["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261103"])
+    ).toBe(true);
+    expect(
+      hasAddedDays(["RRULE:FREQ=WEEKLY", "EXDATE;VALUE=DATE:20261103"])
+    ).toBe(false);
   });
 });

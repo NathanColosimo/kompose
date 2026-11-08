@@ -29,6 +29,7 @@ import {
 import {
   changedFields,
   keepsTimes,
+  newRepeat,
   ownChanges,
   placeInNewSeries,
   refusalMessage,
@@ -36,9 +37,15 @@ import {
   sameLength,
   sameTime,
 } from "./series-edits";
-import { seriesTimesForEdit } from "./series-times";
+import {
+  seriesSlotAt,
+  seriesTimesForEdit,
+  seriesZoneOf,
+  slotOf,
+} from "./series-times";
 import {
   DATE_ONLY,
+  dayOfStart,
   googleDateTime,
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
@@ -60,46 +67,6 @@ interface GoogleWatchChannelResult {
   channelId: string;
   expiration?: string;
   resourceId: string;
-}
-
-/**
- * A series' start and end moved to one of its occurrences' original slot
- * (`originalStart`), keeping the series' length and zone.
- */
-function seriesSlotAt(
-  master: Event,
-  originalStart: string
-): { end: Event["end"]; start: Event["start"] } {
-  if (master.start.date && master.end.date) {
-    const days = Math.max(
-      1,
-      Temporal.PlainDate.from(master.start.date).until(master.end.date).days
-    );
-    const day = Temporal.PlainDate.from(originalStart.slice(0, 10));
-    return {
-      end: { date: day.add({ days }).toString() },
-      start: { date: day.toString() },
-    };
-  }
-  const zone = seriesZoneOf(master);
-  const from = startInstant(master.start, zone);
-  const to = startInstant(master.end, zone);
-  const length = from && to ? from.until(to) : new Temporal.Duration();
-  const start = Temporal.Instant.from(originalStart);
-  const written = (moment: Temporal.Instant) =>
-    googleDateTime(moment.toZonedDateTimeISO(zone));
-  return {
-    end: {
-      dateTime: written(start.add(length)),
-      timeZone: master.end.timeZone ?? master.start.timeZone,
-    },
-    start: { dateTime: written(start), timeZone: master.start.timeZone },
-  };
-}
-
-/** The zone a series' days are counted in. */
-function seriesZoneOf(master: { start: { timeZone?: string } }): string {
-  return master.start.timeZone ?? "UTC";
 }
 
 /** Whether `recurrence` repeats at all: a rule, or an added day. */
@@ -402,6 +369,46 @@ function lineUpRule(params: {
   );
 }
 
+/**
+ * A refusal naming the occurrences (by original start) a save would cost,
+ * marked when the save is one only a series takes.
+ */
+function naming(
+  reason: "dropsChangedOccurrences" | "resizesChangedOccurrences",
+  originalStarts: readonly string[],
+  seriesOnly: boolean
+): SeriesRefusal {
+  return seriesOnly
+    ? { originalStarts, reason, seriesOnly: true }
+    : { originalStarts, reason };
+}
+
+/**
+ * Whether a save gives `master` a new repeat, which one occurrence can't
+ * take: the rules it sends (`saved`) aren't the series' own, read with the
+ * series' days moved when the save moves its first meeting (`from`, the
+ * series' start or a split's slot) to `start` on another day.
+ */
+function givesNewRepeat(params: {
+  from: Event["start"];
+  master: Event;
+  saved: string[] | undefined;
+  start: Event["start"];
+}): boolean {
+  const zone = seriesZoneOf(params.master);
+  const day = dayOfStart(params.start, zone);
+  return newRepeat({
+    dayMoved: !(day && dayOfStart(params.from, zone)?.equals(day)),
+    own: params.master.recurrence ?? [],
+    saved: params.saved,
+  });
+}
+
+/** A slot as a start: a date, or a date-time. */
+function asStart(slot: string): Event["start"] {
+  return DATE_ONLY.test(slot) ? { date: slot } : { dateTime: slot };
+}
+
 /** A refusal, as the service fails with it. */
 function refused(refusal: SeriesRefusal): GoogleApiError {
   return new GoogleApiError({
@@ -551,22 +558,6 @@ function inSeriesZone<
   return { ...time, dateTime, timeZone: series.timeZone };
 }
 
-/**
- * A start as a series' slot: a date, or a date-time with the series'
- * offset (one Google wrote without an offset read in its own zone). Null
- * when it has neither.
- */
-function slotOf(
-  start: { date?: string; dateTime?: string; timeZone?: string },
-  zone: string
-): string | null {
-  if (start.date) {
-    return start.date;
-  }
-  const moment = startInstant(start, zone);
-  return moment ? googleDateTime(moment.toZonedDateTimeISO(zone)) : null;
-}
-
 /** An occurrence's original start: the slot it holds in its series. */
 function originalStartOf(occurrence: Event, zone: string): string | null {
   return slotOf(occurrence.originalStartTime ?? occurrence.start, zone);
@@ -643,10 +634,18 @@ function seriesChangeRefusal(params: {
   movesSlots: boolean;
   opened: Event;
   recurrence: string[];
+  /** The rules the save sends; left out, the series' own. */
+  saved: string[] | undefined;
   times: { end: Event["end"]; start: Event["start"] };
 }): SeriesRefusal | null {
   const { changed, master, movesSlots, opened, recurrence, times } = params;
   const zone = seriesZoneOf(master);
+  const seriesOnly = givesNewRepeat({
+    from: master.start,
+    master,
+    saved: params.saved,
+    start: times.start,
+  });
   const movesStart = !sameTime(times.start, master.start, zone);
   const lost = changed
     .filter(
@@ -662,7 +661,7 @@ function seriesChangeRefusal(params: {
     )
     .map(({ originalStart }) => originalStart);
   if (lost.length > 0) {
-    return { originalStarts: lost, reason: "dropsChangedOccurrences" };
+    return naming("dropsChangedOccurrences", lost, seriesOnly);
   }
   if (sameLength(times, master, zone)) {
     return null;
@@ -674,7 +673,7 @@ function seriesChangeRefusal(params: {
     )
     .map(({ originalStart }) => originalStart);
   return resized.length > 0
-    ? { originalStarts: resized, reason: "resizesChangedOccurrences" }
+    ? naming("resizesChangedOccurrences", resized, seriesOnly)
     : null;
 }
 
@@ -692,10 +691,7 @@ function movesSeveralADay(master: Event, start: Event["start"]): boolean {
 
 /** A slot's moment (a date's start, in `zone`); null if it doesn't parse. */
 function slotMoment(slot: string, zone: string): Temporal.Instant | null {
-  return firstMoment(
-    DATE_ONLY.test(slot) ? { date: slot } : { dateTime: slot },
-    zone
-  );
+  return firstMoment(asStart(slot), zone);
 }
 
 /**
@@ -847,6 +843,8 @@ function placeCarried(params: {
     originalStart: string;
   }[];
   recurrence: string[];
+  /** Whether the save is one only a series takes (`SeriesRefusal`). */
+  seriesOnly: boolean;
   start: Event["start"];
   zone: string;
 }): CarriedOccurrence[] | SeriesRefusal {
@@ -877,7 +875,7 @@ function placeCarried(params: {
     carried.push({ at, changes });
   }
   return lost.size > 0
-    ? { originalStarts: [...lost], reason: "dropsChangedOccurrences" }
+    ? naming("dropsChangedOccurrences", [...lost], params.seriesOnly)
     : carried;
 }
 
@@ -1065,6 +1063,7 @@ const SeriesRefusalSchema = Schema.Union([
       "dropsChangedOccurrences",
       "resizesChangedOccurrences",
     ]),
+    seriesOnly: Schema.optional(Schema.Literal(true)),
   }),
 ]);
 
@@ -1826,6 +1825,7 @@ export function makeGoogleCalendarService(
           movesSlots,
           opened: currentEvent,
           recurrence,
+          saved: edited.recurrence,
           times,
         });
         if (refusal) {
@@ -1991,6 +1991,12 @@ export function makeGoogleCalendarService(
           start: times.start,
         }),
         recurrence,
+        seriesOnly: givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: edited.recurrence,
+          start: times.start,
+        }),
         start: times.start,
         zone: repeatZone(master, times.start),
       });
@@ -2287,6 +2293,8 @@ export function makeGoogleCalendarService(
           })),
         ],
         recurrence,
+        // One occurrence can't move to another calendar.
+        seriesOnly: true,
         start: slot.start,
         zone,
       });
