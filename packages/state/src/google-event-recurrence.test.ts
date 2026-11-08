@@ -503,6 +503,30 @@ describe("followStart", () => {
         "20270709",
         "20270609",
       ],
+      // Opus's: a month and a day across February, back again, and the
+      // 1st -> the 31st (30 days): Jun 1 -> Jun 2, Jun 2 -> Jun 1, May 1
+      // -> May 31.
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-02-01",
+        "2027-03-02",
+        "20270601",
+        "20270602",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-02",
+        "2027-02-01",
+        "20270602",
+        "20270601",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-01",
+        "2027-03-31",
+        "20270501",
+        "20270531",
+      ],
       // Yearly moved earlier: Dec 9 -> Nov 9 keeps 2027's skip, in Nov.
       ["RRULE:FREQ=YEARLY", "2026-12-09", "2026-11-09", "20271209", "20271109"],
       // Mar 1 -> Feb 28: the 2028 skip is Feb 28 2028.
@@ -547,6 +571,24 @@ describe("followStart", () => {
         "2026-11-16"
       )
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
+    // Twice a day (9:00, 15:00) moved onto a day with both skipped: the
+    // start's own 9:00 meets; the skipped 15:00 stays skipped.
+    expect(
+      followStart({
+        allDay: false,
+        from: day("2026-11-09"),
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
+          "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
+        ],
+        timeZone: "America/New_York",
+        to: day("2026-11-16"),
+        toTime: Temporal.PlainTime.from("09:00"),
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYHOUR=9,15;BYDAY=MO",
+      "EXDATE;TZID=America/New_York:20261116T150000",
+    ]);
   });
 
   test("moves skips across month and year ends, and BYSETPOS ones", () => {

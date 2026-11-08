@@ -298,9 +298,40 @@ function shiftWithinPeriod(
   to: Temporal.PlainDate,
   period: number
 ): number {
-  const days = from.until(to).days;
-  const forward = ((days % period) + period) % period;
-  return days >= 0 || forward === 0 ? forward : forward - period;
+  return withinPeriod(from.until(to).days, period);
+}
+
+/** `n` steps (days, months, years) within one period of `period`, signed. */
+function withinPeriod(n: number, period: number): number {
+  const forward = ((n % period) + period) % period;
+  return n >= 0 || forward === 0 ? forward : forward - period;
+}
+
+/**
+ * Where a monthly or yearly skip sits once the move is applied in calendar
+ * terms: the move's months (years for a rule in one month a year) within
+ * INTERVAL, then its leftover days, so "a month and a day" is that across
+ * February too, and the 1st -> the 31st is 30 days.
+ */
+function calendarTarget(
+  freq: string,
+  rule: string,
+  from: Temporal.PlainDate,
+  to: Temporal.PlainDate,
+  day: Temporal.PlainDate
+): Temporal.PlainDate {
+  const interval = Number(/INTERVAL=(\d+)/.exec(rule)?.[1] ?? 1) || 1;
+  const byYear = freq === "YEARLY" && periodDays(freq, rule) >= YEAR_DAYS;
+  const move = from.until(to, { largestUnit: byYear ? "years" : "months" });
+  // A yearly rule in several months meets about monthly: a month apart.
+  const step = freq === "MONTHLY" ? interval : 1;
+  return byYear
+    ? day.add({
+        days: move.days,
+        months: move.months,
+        years: withinPeriod(move.years, interval),
+      })
+    : day.add({ days: move.days, months: withinPeriod(move.months, step) });
 }
 
 /** Days in a month and a year, near enough to place a skip within one. */
@@ -374,9 +405,9 @@ function keepsWeekday(
 /**
  * Where a skipped occurrence of the old pattern sits in the new one: moved
  * as the pattern did, by the move's signed shift within one period (Fri
- * -> Mon is +3; Jan 31 -> Feb 1 is +1; a month's move plus 5 days is +5;
- * a weekly rule that kept its days moves only by the weeks),
- * on the new rule's day nearest that. A skip marks when the person is
+ * -> Mon is +3 days; a weekly rule that kept its days moves only by the
+ * weeks; Jan 31 -> Feb 1 is a day, Feb 1 -> Mar 2 a day, a month's move
+ * plus 5 days is 5 days), on the new rule's day nearest that. A skip marks when the person is
  * away, so it stays next to that time. Null when the new rule has no day
  * within half a period: the skip then stays.
  */
@@ -388,17 +419,23 @@ function placeInNewPattern(
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
   const period = periodDays(freq, newRule);
-  const shift =
-    freq === "WEEKLY" && keepsWeekday(newRule, to, day)
-      ? // The days stayed (Mon/Tue kept when the start moved onto Tue):
-        // only the weeks moved, so the skip keeps its weekday.
-        shiftWithinPeriod(weekStart(from, newRule), weekStart(to, newRule), period)
-      : shiftWithinPeriod(from, to, period);
-  const target = day.add({ days: shift });
   if (freq === "DAILY" || freq === "WEEKLY") {
+    const shift =
+      freq === "WEEKLY" && keepsWeekday(newRule, to, day)
+        ? // The days stayed (Mon/Tue kept when the start moved onto Tue):
+          // only the weeks moved, so the skip keeps its weekday.
+          shiftWithinPeriod(weekStart(from, newRule), weekStart(to, newRule), period)
+        : shiftWithinPeriod(from, to, period);
+    const target = day.add({ days: shift });
     return isRuleDay(newRule, to, target) === true ? target : null;
   }
-  return nearestRuleDay(newRule, to, target, period, shift >= 0);
+  return nearestRuleDay(
+    newRule,
+    to,
+    calendarTarget(freq, newRule, from, to, day),
+    period,
+    Temporal.PlainDate.compare(to, from) >= 0
+  );
 }
 
 /**
@@ -418,8 +455,11 @@ export function moveSkippedDays(params: {
   recurrence: string[];
   seriesZone: string;
   to: Temporal.PlainDate;
+  /** The new start's time in the series' zone; null for an all-day one. */
+  toTime?: Temporal.PlainTime | null;
 }): string[] {
-  const { from, newRule, oldRule, recurrence, seriesZone, to } = params;
+  const { from, newRule, oldRule, recurrence, seriesZone, to, toTime } =
+    params;
   const freq = /FREQ=([A-Z]+)/.exec(newRule)?.[1] ?? "";
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (Temporal.PlainDate.compare(day, from) < 0) {
@@ -444,13 +484,24 @@ export function moveSkippedDays(params: {
       : null;
   };
   // The new start is the day the person picked: never left skipped (in a
-  // rule with several times a day, a skipped other time that day stays).
+  // rule with several times a day, only the start's own time is: a
+  // skipped other time that day stays).
   const severalADay = SEVERAL_A_DAY.test(newRule);
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
       value &&
         Temporal.PlainDate.compare(value.day, to) === 0 &&
-        !(severalADay && value.instant)
+        !(
+          severalADay &&
+          value.instant &&
+          !(
+            toTime &&
+            Temporal.PlainTime.compare(
+              value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
+              toTime
+            ) === 0
+          )
+        )
     );
   let changed = false;
   const next = recurrence.flatMap((line) => {

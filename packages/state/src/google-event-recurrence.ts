@@ -369,8 +369,10 @@ export function followStart(params: {
   recurrence: string[];
   timeZone: string;
   to: Temporal.PlainDate;
+  /** The new start's time in `timeZone`; null for an all-day one. */
+  toTime?: Temporal.PlainTime | null;
 }): string[] {
-  const { allDay, from, recurrence, timeZone, to } = params;
+  const { allDay, from, recurrence, timeZone, to, toTime } = params;
   const rule = getPrimaryRecurrenceRule(recurrence);
   if (!rule || Temporal.PlainDate.compare(from, to) === 0) {
     return recurrence;
@@ -410,6 +412,7 @@ export function followStart(params: {
       next === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, next),
     seriesZone: timeZone,
     to,
+    toTime,
   });
 }
 
@@ -428,6 +431,22 @@ function dayOfStart(
     return Temporal.Instant.from(start.dateTime)
       .toZonedDateTimeISO(timeZone)
       .toPlainDate();
+  } catch {
+    return null;
+  }
+}
+
+/** The wall time a timed Google start is at in `timeZone`. */
+function timeOfStart(
+  start: { dateTime?: string | null },
+  timeZone: string
+): Temporal.PlainTime | null {
+  try {
+    return start.dateTime
+      ? Temporal.Instant.from(start.dateTime)
+          .toZonedDateTimeISO(timeZone)
+          .toPlainTime()
+      : null;
   } catch {
     return null;
   }
@@ -465,6 +484,22 @@ export function dayInZone(
     .toZonedDateTime({ plainTime: time, timeZone: fromZone })
     .withTimeZone(toZone)
     .toPlainDate();
+}
+
+/** The wall time a start shown in `fromZone` is at in the series' zone. */
+export function timeInZone(
+  date: Temporal.PlainDate,
+  time: Temporal.PlainTime | null,
+  fromZone: string,
+  toZone: string
+): Temporal.PlainTime | null {
+  if (!time || fromZone === toZone) {
+    return time;
+  }
+  return date
+    .toZonedDateTime({ plainTime: time, timeZone: fromZone })
+    .withTimeZone(toZone)
+    .toPlainTime();
 }
 
 /** "Tokyo" for "Asia/Tokyo"; null for a zone that isn't a place ("UTC"). */
@@ -590,6 +625,7 @@ export function seriesRecurrenceForSave(params: {
           recurrence: masterRecurrence,
           timeZone,
           to,
+          toTime: timeOfStart(editedStart, timeZone),
         })
       : masterRecurrence;
   const matched = matchRecurrenceToStart(followed, editedStart, timeZone);

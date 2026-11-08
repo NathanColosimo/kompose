@@ -27,6 +27,7 @@ import {
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
+  timeInZone,
   timeZoneCity,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
@@ -1117,6 +1118,14 @@ function EventDateTimeRow({
           recurrence: before.recurrence,
           timeZone,
           to: seriesDay(moved.startDate, moved.startTime),
+          toTime: before.allDay
+            ? null
+            : timeInZone(
+                moved.startDate,
+                moved.startTime,
+                appTimeZone,
+                timeZone
+              ),
         })
       : before.recurrence;
     if (recurrence !== before.recurrence) {

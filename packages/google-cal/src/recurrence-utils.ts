@@ -382,7 +382,11 @@ export function carryCountExactly(
       return [line];
     }
     const remaining = count - before;
-    // The first rule carries the part; another with none left is done.
+    // The first rule carries the part (at least its start); another with
+    // none left is done. Kept at one, a spent first rule still makes the
+    // new start an occurrence, as RFC 5545 has DTSTART; with several
+    // counted rules on different days (which Google itself never writes)
+    // that start may take a position the others would count.
     if (remaining <= 0 && index > 0) {
       return [];
     }

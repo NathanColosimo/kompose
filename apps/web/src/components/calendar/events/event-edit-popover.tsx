@@ -36,6 +36,7 @@ import {
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
+  timeInZone,
   timeZoneCity,
   weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
@@ -1803,7 +1804,6 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   };
 }
 
-/** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
 /**
  * What a recurring save moves, as the scope dialog's line ("Retro → Mon,
  * Nov 9 · 4:00 – 4:45 PM"), when it changes the occurrence's times; the
@@ -1837,6 +1837,7 @@ function savedSubject(
   };
 }
 
+/** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
 function describeEventWhen(
   event: GoogleEvent | undefined,
   start: Date,
@@ -2384,6 +2385,17 @@ export function EventEditForm({
         )
       : null;
 
+  /** The start's wall time in the series' zone; null all day. */
+  const seriesTimeOf = (values: EventFormValues) =>
+    values.startDate && !values.allDay && values.startTime
+      ? timeInZone(
+          pickerDateToTemporal(values.startDate),
+          Temporal.PlainTime.from(values.startTime),
+          timeZone,
+          seriesTimeZone
+        )
+      : null;
+
   /**
    * A series' repeat follows its start ("2nd Tue" to "3rd Wed", an end the
    * start passed moves on). Not for one occurrence: moving it is a
@@ -2402,6 +2414,7 @@ export function EventEditForm({
       recurrence: values.recurrence,
       timeZone: seriesTimeZone,
       to,
+      toTime: seriesTimeOf(values),
     });
     if (recurrence !== values.recurrence) {
       recurrenceEditedRef.current = true;
