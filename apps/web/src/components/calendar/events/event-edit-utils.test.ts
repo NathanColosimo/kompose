@@ -2,7 +2,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { seriesSave } from "./event-edit-utils";
+import { ORPCError } from "@orpc/client";
+import { refusedDropDay, seriesSave } from "./event-edit-utils";
 
 const zone = "America/New_York";
 const at = (dateTime: string) => ({ dateTime, timeZone: zone });
@@ -49,5 +50,37 @@ describe("seriesSave", () => {
     expect(sent.attendees).toBeUndefined();
     expect(sent.extendedProperties).toBeUndefined();
     expect("recurrence" in sent).toBe(false);
+  });
+});
+
+describe("refusedDropDay", () => {
+  const refused = (data: unknown) =>
+    new ORPCError("BAD_REQUEST", { data, message: "refused" });
+
+  test("names the first moved meeting a refused series save would undo", () => {
+    const error = refused({
+      originalStarts: [
+        "2026-12-07T10:00:00-05:00",
+        "2026-12-14T10:00:00-05:00",
+      ],
+      reason: "dropsChangedOccurrences",
+    });
+    expect(refusedDropDay(error, zone)?.toString()).toBe("2026-12-07");
+    // An all-day series' original starts are dates.
+    const allDay = refused({
+      originalStarts: ["2026-12-07"],
+      reason: "dropsChangedOccurrences",
+    });
+    expect(refusedDropDay(allDay, zone)?.toString()).toBe("2026-12-07");
+  });
+
+  test("is null for any other failure", () => {
+    expect(
+      refusedDropDay(refused({ reason: "severalRules" }), zone)
+    ).toBeNull();
+    expect(refusedDropDay(new Error("offline"), zone)).toBeNull();
+    expect(
+      refusedDropDay(new ORPCError("INTERNAL_SERVER_ERROR"), zone)
+    ).toBeNull();
   });
 });

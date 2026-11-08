@@ -171,7 +171,13 @@ import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
-import { buildTemporalPayload, seriesSave, WEEKDAYS } from "./event-edit-utils";
+import {
+  buildTemporalPayload,
+  refusedDropDay,
+  seriesRefusal,
+  seriesSave,
+  WEEKDAYS,
+} from "./event-edit-utils";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -788,6 +794,18 @@ function focusedElement(): HTMLElement | null {
     : null;
 }
 
+/**
+ * What a held save says when it fails: that the edits saved but the move
+ * didn't, the server's reason for refusing a series write (a retry won't
+ * help), or `fallback`.
+ */
+function heldFailure(error: unknown, fallback: string): string {
+  if (error instanceof SavedNotMovedError) {
+    return error.message;
+  }
+  return seriesRefusal(error)?.message ?? fallback;
+}
+
 /** The edits saved, but the move to another calendar that followed didn't. */
 class SavedNotMovedError extends Error {
   constructor(cause: unknown) {
@@ -910,10 +928,7 @@ export function EventEditPopover({
       };
       save.then(
         () => settle(null),
-        (error: unknown) =>
-          settle(
-            error instanceof SavedNotMovedError ? error.message : failureMessage
-          )
+        (error: unknown) => settle(heldFailure(error, failureMessage))
       );
     },
     [setOpen]
@@ -1003,10 +1018,28 @@ export function EventEditPopover({
     if (!pendingSave) {
       return;
     }
+    const save = saveEdits(pendingSave, saveScope).catch((error: unknown) => {
+      // Entire series would have undone a meeting moved on its own: ask
+      // again, with Entire series off and that meeting named.
+      const droppedMovedDay = refusedDropDay(
+        error,
+        eventTimeZone(event, timeZone)
+      );
+      if (droppedMovedDay) {
+        dispatchDialog({
+          pendingSave: {
+            ...pendingSave,
+            facts: { ...pendingSave.facts, droppedMovedDay },
+          },
+          type: "open-scope-dialog",
+        });
+      }
+      throw error;
+    });
     // The save stays pending until the next one replaces it, so the
     // dialog's words don't change as it fades.
-    holdForSave(saveEdits(pendingSave, saveScope), SAVE_FAILURE_MESSAGE);
-  }, [holdForSave, pendingSave, saveEdits, saveScope]);
+    holdForSave(save, SAVE_FAILURE_MESSAGE);
+  }, [event, holdForSave, pendingSave, saveEdits, saveScope, timeZone]);
 
   const handleDelete = useCallback(() => {
     if (savingRef.current) {
