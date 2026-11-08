@@ -20,11 +20,12 @@ search field, so the page's shortcuts (such as **c**) don't take the keys.
   Tomorrow, Yesterday, a date), or Inbox.
 - Selecting a task:
   - Resolves a single destination before opening anything
-    (`resolveTaskSearchDestination`). Every open task has one:
+    (`deriveTaskPresentation`). Every searchable task has one:
     - Calendar for tasks with both `startDate` and `startTime`
-    - Inbox for tasks without `startDate`, including a series occurrence
-      moved there
-    - Today for tasks with a start date but no start time, navigating to that date
+    - Inbox for non-recurring tasks without `startDate`
+    - Today for other overdue tasks, explicitly navigating to today's date
+    - Today for remaining tasks with a start date but no start time, navigating to that date
+    - Today for completed untimed tasks updated today, explicitly navigating to today (search currently excludes completed tasks)
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
   - The editor scrolls its task into view as it opens and follows it, so a

@@ -33,7 +33,10 @@
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations. Editors close immediately; failed writes roll back and use the app's error toast.
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
-- `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
+- `task-presentation.ts`: Pure `deriveTaskPresentation(task, ctx)` shared by date sections, tag sections, and search. Returns independent Inbox membership, a section for the target date, and a navigation destination. The context supplies today, now, timezone, and an optional target date (defaults to today).
+- `task-search-routing.ts`: Creates and serializes command-bar open requests from the derived destination, including the date for sidebar navigation.
+- `hooks/use-task-sections.ts`: Shared Inbox and date sections, partitioned in one pass using `deriveTaskPresentation`. Uses reactive today/now atoms for correct overdue detection across midnight boundaries.
+- `hooks/use-tag-task-sections.ts`: Partitions non-recurring tagged tasks in one pass into Overdue/Todo/Done. Evaluates presentation for real today and computes each overdue sort timestamp once, before sorting.
 - `google-event-editability.ts`: Calendar access-role checks for the UI, combined with Google event editability. Readers get read-only event details and cannot be selected as write destinations.
 - `google-event-times.ts`: The `EventTime` type and `withEditedTime`, which gives an event's start or end the edited time without the date form it no longer has.
 - `google-event-recurrence.ts`: The repeat editor model: parse and build rules, preserve parts the editor cannot show, select days and frequencies, and hydrate the occurrence repeat display. Moving an event does not rewrite its rule.
@@ -46,3 +49,15 @@
 - `types.ts`: Shared auth client types.
 
 Event repeat parsing, serialization and descriptions use `rrule-temporal` 2.2.8 (MIT), with the existing `temporal-polyfill` passed to it. The editors keep Google date-only UNTIL values and preserve rule options they do not edit. Date and time labels use Temporal `toLocaleString` and `Intl.DateTimeFormat`.
+
+## Task presentation rules
+
+- Inbox contains unfinished, non-recurring tasks without a start date, including legacy rows with an orphaned start time. Inbox membership is independent of date sections: a past-due Inbox task also appears in today's Overdue section.
+- Overdue contains unfinished tasks with a due date before today or a scheduled end (`startDate` + `startTime` + duration, in the user's timezone) strictly before now. A due date of today is not overdue. Overdue takes precedence over Planned/Unplanned only in the date view for real today.
+- Planned contains unfinished tasks with both a start date matching the selected date and a start time. Historical and future date views retain date-specific Planned/Unplanned sections and have no Overdue section.
+- Unplanned contains unfinished tasks with a matching start date and no start time. Today also carries forward older non-recurring untimed tasks unless overdue. Recurring masters and occurrences do not carry forward; their untimed instances stay on their own date unless overdue. A task starting today and due today belongs in Unplanned.
+- Done contains completed tasks whose `updatedAt` falls on the selected local date. Tag Done includes all completed tasks, regardless of update date. Tag Todo includes every unfinished non-overdue task in that tag, regardless of its scheduled date; tags exclude both recurring masters and occurrences.
+- Search destinations are independent of the currently selected date. Calendar takes precedence for tasks with both scheduling fields, followed by Inbox. Other overdue tasks open today's sidebar with an explicit date, before considering their historical or future start date. Remaining unfinished dated untimed tasks open their own date. Completed untimed tasks updated today open today's sidebar; other completed untimed tasks remain unmapped (search currently excludes completed and recurring tasks).
+- Both section hooks retain their existing ordering. Inbox sorts by newest update. Date sections retain query order. Tags sort Overdue by the earliest due-date midnight or scheduled start, Todo by due date then start date (nulls last) then newest update, and Done by newest update.
+
+`bun test` in `packages/state` covers the 64 combinations of start date (null/past/today/future), start time (null/set), due date (null/past/today/future), and completion status, each across past/today/future selected dates. It checks derived membership, both section selectors, search destinations, and whether sidebar navigation mounts the result. Additional cases cover recurrence, overdue boundaries, DST, local completion dates, ordering, and serialized desktop navigation.

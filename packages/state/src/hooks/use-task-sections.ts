@@ -8,48 +8,45 @@ import {
   todayPlainDateAtom,
 } from "../atoms/current-date";
 import {
-  isDoneOnDate,
-  isInboxTask,
-  isOverdueTask,
-  isUnplannedTodayTask,
-} from "../task-search-routing";
+  deriveTaskPresentation,
+  type TaskPresentationContext,
+} from "../task-presentation";
 import { useTasks } from "./use-tasks";
 
-/** Recurring masters also carry seriesMasterId, so this excludes the whole series. */
-export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
-  task.seriesMasterId === null;
+interface TaskSections {
+  doneTasks: TaskSelectDecoded[];
+  inboxTasks: TaskSelectDecoded[];
+  overdueTasks: TaskSelectDecoded[];
+  plannedTasks: TaskSelectDecoded[];
+  unplannedTasks: TaskSelectDecoded[];
+}
 
-/** Planned: scheduled on the target calendar date. Today excludes overdue tasks. */
-const isPlanned = (
-  task: TaskSelectDecoded,
-  targetDate: Temporal.PlainDate,
-  today: Temporal.PlainDate,
-  nowZdt: Temporal.ZonedDateTime,
-  timeZone: string
-): boolean => {
-  if (
-    task.status === "done" ||
-    task.startDate === null ||
-    task.startTime === null ||
-    Temporal.PlainDate.compare(task.startDate, targetDate) !== 0
-  ) {
-    return false;
+export function getTaskSections(
+  tasks: readonly TaskSelectDecoded[],
+  context: TaskPresentationContext
+): TaskSections {
+  const sections: TaskSections = {
+    doneTasks: [],
+    inboxTasks: [],
+    overdueTasks: [],
+    plannedTasks: [],
+    unplannedTasks: [],
+  };
+
+  for (const task of tasks) {
+    const { inbox, section } = deriveTaskPresentation(task, context);
+    if (inbox) {
+      sections.inboxTasks.push(task);
+    }
+    if (section !== null) {
+      sections[`${section}Tasks`].push(task);
+    }
   }
-
-  return (
-    Temporal.PlainDate.compare(targetDate, today) !== 0 ||
-    !isOverdueTask(task, today, nowZdt, timeZone)
+  sections.inboxTasks.sort((a, b) =>
+    Temporal.Instant.compare(b.updatedAt, a.updatedAt)
   );
-};
-
-const isUnplannedOnDate = (
-  task: TaskSelectDecoded,
-  targetDate: Temporal.PlainDate
-): boolean =>
-  task.status !== "done" &&
-  task.startDate !== null &&
-  task.startTime === null &&
-  Temporal.PlainDate.compare(task.startDate, targetDate) === 0;
+  return sections;
+}
 
 interface UseTaskSectionsOptions {
   targetDate?: Temporal.PlainDate;
@@ -66,47 +63,16 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
   const nowZdt = useAtomValue(nowZonedDateTimeAtom);
 
   const { inboxTasks, overdueTasks, plannedTasks, unplannedTasks, doneTasks } =
-    useMemo(() => {
-      const tasks = tasksQuery.data ?? [];
-      if (tasks.length === 0) {
-        return {
-          doneTasks: [],
-          inboxTasks: [],
-          overdueTasks: [],
-          plannedTasks: [],
-          unplannedTasks: [],
-        };
-      }
-
-      // Inbox: uncompleted, non-recurring, no startDate. This also catches
-      // legacy rows with an orphaned startTime but no startDate.
-      const inbox = tasks
-        .filter(isInboxTask)
-        .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));
-
-      // Date view sections. Overdue is only meaningful for real today.
-      const isTargetToday = Temporal.PlainDate.compare(targetDate, today) === 0;
-      const overdue = isTargetToday
-        ? tasks.filter((task) => isOverdueTask(task, today, nowZdt, timeZone))
-        : [];
-      const planned = tasks.filter((task) =>
-        isPlanned(task, targetDate, today, nowZdt, timeZone)
-      );
-      const unplanned = isTargetToday
-        ? tasks.filter((task) => isUnplannedTodayTask(task, today))
-        : tasks.filter((task) => isUnplannedOnDate(task, targetDate));
-      const done = tasks.filter((task) =>
-        isDoneOnDate(task, targetDate, timeZone)
-      );
-
-      return {
-        doneTasks: done,
-        inboxTasks: inbox,
-        overdueTasks: overdue,
-        plannedTasks: planned,
-        unplannedTasks: unplanned,
-      };
-    }, [tasksQuery.data, timeZone, targetDate, today, nowZdt]);
+    useMemo(
+      () =>
+        getTaskSections(tasksQuery.data ?? [], {
+          now: nowZdt,
+          targetDate,
+          timeZone,
+          today,
+        }),
+      [tasksQuery.data, timeZone, targetDate, today, nowZdt]
+    );
 
   return {
     createTask,
