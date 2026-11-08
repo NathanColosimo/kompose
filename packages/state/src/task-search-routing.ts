@@ -36,7 +36,7 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
 }
 
 /**
- * Whether a task is listed on its own (inbox, search, tag views): one that
+ * Whether a task is listed on its own, outside the calendar: one that
  * doesn't repeat, or a series occurrence moved to the inbox alone. A
  * series' dated occurrences show on the calendar instead.
  */
