@@ -10,6 +10,8 @@ import { isRuleDay } from "@kompose/google-cal/rule-days";
 import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 
+const COUNT_VALUE = /COUNT=(\d+)/;
+
 describe("splitting a series", () => {
   test("ends an all-day series the day before, as a date", () => {
     expect(
@@ -359,9 +361,9 @@ describe("splitting a series", () => {
   test("counts each rule's positions at its own time", () => {
     // Daily 9:00 and 15:00 rules, COUNT=5 each, from Nov 9 at 9:00; split
     // Nov 11 at 15:00: the 9:00 rule used Nov 9, 10, 11 (two left), the
-    // 15:00 one Nov 9 (the series' start), Nov 10 (three left). RFC 5545
-    // counts the new start (15:00) as each rule's first: the 9:00 rule,
-    // whose meeting it isn't, keeps one more (COUNT=3).
+    // 15:00 one Nov 9 (the series' start), Nov 10 (three left). The new
+    // start (15:00) counts only for a rule at its time, as the series'
+    // start does, so neither keeps more.
     const rules = [
       "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
@@ -374,7 +376,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=3",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=2",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3",
     ]);
     // Split at 15:00 on the first day: only the 9:00 rule's first is gone.
@@ -386,7 +388,7 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
     ]);
   });
@@ -394,8 +396,9 @@ describe("splitting a series", () => {
   test("counts the series' start only for a rule at its time", () => {
     // Mondays at 9:00 (the series' start, Mon Nov 9) and Tuesdays at 15:00:
     // the Tuesday rule's days are Nov 10, 17, 24, never the Monday start.
-    // Split Tue Nov 17 at 15:00: two Mondays and one Tuesday used; the
-    // new start isn't a Monday meeting, so the Mondays keep one more.
+    // Split Tue Nov 17 at 15:00: two Mondays and one Tuesday used. The
+    // Mondays rule has no time of its own, so it meets at the new start's
+    // 15:00, and that start, not a Monday, counts as one more of its own.
     const rules = [
       "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
       "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=3",
@@ -492,8 +495,8 @@ describe("splitting a series", () => {
       )
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=5"]);
     // Morning and afternoon as two rules: Nov 9 15:00 is the afternoon
-    // rule's own meeting (five left, as is), not the morning one's (four
-    // left, one more for the new start).
+    // rule's own meeting (five left), and the morning rule doesn't meet at
+    // 15:00 (four left): nothing added.
     const twoRules = [
       "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
@@ -506,9 +509,63 @@ describe("splitting a series", () => {
         seriesZone: "America/New_York",
       })
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
     ]);
+  });
+
+  test("splits two counted rules into exactly the series' meetings", () => {
+    // A daily rule at `hour`, from `start`: its meetings at that hour from
+    // the start on, the first `count` (a start at its hour is its first,
+    // as the series' start counts only for a rule at its time).
+    const zone = "America/New_York";
+    const dailyAt = (hour: number, start: string, count: number) => {
+      const from = Temporal.Instant.from(start);
+      const day = from.toZonedDateTimeISO(zone).toPlainDate();
+      const meetings: string[] = [];
+      for (let offset = 0; meetings.length < count; offset += 1) {
+        const at = day
+          .add({ days: offset })
+          .toZonedDateTime({ plainTime: { hour }, timeZone: zone })
+          .toInstant();
+        if (Temporal.Instant.compare(at, from) >= 0) {
+          meetings.push(at.toString());
+        }
+      }
+      return meetings;
+    };
+    const countOf = (line: string | undefined) =>
+      Number(COUNT_VALUE.exec(line ?? "")?.[1]);
+    const rules = [
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+    ];
+    const seriesStart = "2026-11-09T09:00:00-05:00";
+    const original = [
+      ...dailyAt(9, seriesStart, 5),
+      ...dailyAt(15, seriesStart, 5),
+    ].sort();
+    for (const split of [
+      "2026-11-09T15:00:00-05:00",
+      "2026-11-11T09:00:00-05:00",
+      "2026-11-11T15:00:00-05:00",
+    ]) {
+      const carried = carryCountExactly(rules, {
+        masterRecurrence: rules,
+        originalStart: split,
+        seriesStart,
+        seriesZone: zone,
+      });
+      const splitAt = Temporal.Instant.from(split);
+      const before = original.filter(
+        (at) => Temporal.Instant.compare(Temporal.Instant.from(at), splitAt) < 0
+      );
+      const after = [
+        ...dailyAt(9, split, countOf(carried?.[0])),
+        ...dailyAt(15, split, countOf(carried?.[1])),
+      ];
+      expect([...before, ...after].sort()).toEqual(original);
+    }
   });
 
   test("leaves a count across a DST gap to Google's list", () => {

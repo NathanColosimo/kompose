@@ -356,9 +356,14 @@ export function carryCountExactly(
   const seriesClock = seriesStartValue.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
-  // Positions each rule used before the split, and whether the split is
-  // that rule's own meeting.
-  const used: ({ before: number; own: boolean } | null)[] = [];
+  // Positions each rule used before the split, and whether the new part's
+  // start counts as one more of its own: the split isn't one of its
+  // meetings, but it meets at the split's time (as the series' start
+  // counts only for a rule at its time).
+  const used: ({ before: number; startCounts: boolean } | null)[] = [];
+  const splitClock = split.instant
+    ?.toZonedDateTimeISO(seriesZone)
+    .toPlainTime();
   for (const rule of masterRules) {
     const count = Number(COUNT_REGEX.exec(rule)?.[1]);
     if (!Number.isFinite(count)) {
@@ -399,9 +404,13 @@ export function carryCountExactly(
             splitInstant
           )
         : Temporal.PlainDate.compare(day, split.day);
+    const own = positions.some((day, i) => vsSplit(day, i) === 0);
+    const atSplitTime =
+      !splitClock ||
+      Temporal.PlainTime.compare(ruleClock(rule, splitClock), splitClock) === 0;
     used.push({
       before: positions.filter((day, i) => vsSplit(day, i) < 0).length,
-      own: positions.some((day, i) => vsSplit(day, i) === 0),
+      startCounts: !own && atSplitTime,
     });
   }
   if (used.every((n) => n === null)) {
@@ -423,9 +432,9 @@ export function carryCountExactly(
     if (left <= 0 && index > 0) {
       return [];
     }
-    // RFC 5545 counts DTSTART as each rule's first: split at a meeting
-    // that isn't this rule's own, the new part's start is one more.
-    const remaining = left + (rule.own ? 0 : 1);
+    // The new part's start, counted first for a rule at its time (as the
+    // series' start is), is one more when it isn't the rule's own meeting.
+    const remaining = left + (rule.startCounts ? 1 : 0);
     // The first rule carries the part (at least its start); another with
     // none left is done. Kept at one, a spent first rule still makes the
     // new start an occurrence, as RFC 5545 has DTSTART; with several
