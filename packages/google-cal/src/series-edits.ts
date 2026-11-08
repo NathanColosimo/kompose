@@ -86,11 +86,15 @@ const SERIES_FIELDS = (
 type Attendee = NonNullable<Event["attendees"]>[number];
 
 /**
- * A field's value as compared across a series: attendees without their
- * answers, which each one gives per occurrence (a decline to one meeting
- * is that attendee's, not a change made to the occurrence).
+ * A field's value as compared across a series: empty ("" or []) is none,
+ * as a form writes an empty field; attendees without their answers, which
+ * each one gives per occurrence (a decline to one meeting is that
+ * attendee's, not a change made to the occurrence).
  */
 function comparable(field: keyof CreateEvent, value: unknown): unknown {
+  if (value === "" || (Array.isArray(value) && value.length === 0)) {
+    return null;
+  }
   if (field !== "attendees" || !Array.isArray(value)) {
     return value ?? null;
   }

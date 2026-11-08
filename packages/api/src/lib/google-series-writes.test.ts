@@ -888,3 +888,65 @@ describe("a series save sends only what the user changed", () => {
     });
   });
 });
+
+describe("This and following keeps what a later occurrence has", () => {
+  test("an empty field the form sends doesn't clear a later occurrence's own", async () => {
+    // A form writes an empty description as "". Nov 30 has notes of its
+    // own; renaming from Nov 16 keeps them there.
+    const own = {
+      ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+      description: "Bring the draft",
+    };
+    const google = fakeGoogle(weekly, [own]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            description: "",
+            location: "",
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body?.summary).toBe("Planning (new)");
+    expect(carried?.body).toMatchObject({ description: "Bring the draft" });
+    expect(google.writes()).toHaveLength(3);
+  });
+
+  test("a moved added meeting stays on its own slot, not the rule's", async () => {
+    // Mondays 9:00 plus an added Nov 30 15:00, moved to 16:00 on its own.
+    // Renamed from Nov 16, the move stays on the 15:00 meeting; Nov 30's
+    // 9:00 meeting is left alone.
+    const series = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261130T150000",
+      ],
+    };
+    const moved = occurrenceOf(series, "2026-11-30T15:00:00-05:00", {
+      end: "2026-11-30T16:30:00-05:00",
+      start: "2026-11-30T16:00:00-05:00",
+    });
+    const google = fakeGoogle(series, [moved]);
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body?.recurrence).toEqual(series.recurrence);
+    const lookup = google.requests.find((request) =>
+      request.url.pathname.endsWith(`/events/${created?.body?.id}/instances`)
+    );
+    expect(lookup?.url.searchParams.get("originalStart")).toBe(
+      "2026-11-30T15:00:00-05:00"
+    );
+    expect(carried?.body).toMatchObject({
+      start: { dateTime: "2026-11-30T16:00:00-05:00", timeZone: zone },
+    });
+  });
+});
