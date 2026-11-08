@@ -466,7 +466,7 @@ describe("an Entire series save that would cost a meeting its own changes", () =
   test("turns Entire series off and names the meeting", () => {
     expect(off(changes)).toEqual(["all", "this"]);
     expect(eventSaveDescription(changes)).toBe(
-      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
+      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. A new repeat applies from this occurrence on."
     );
   });
 
@@ -661,6 +661,19 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(off(several)).toEqual(["all"]);
   });
 
+  test("with a new repeat, says it goes from this occurrence on", () => {
+    // A later occurrence: This and following is the one scope left.
+    const repeat = { ...none, patternChanged: true, retimed: true };
+    const newStart = {
+      ...repeat,
+      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
+    };
+    expect(off(newStart)).toEqual(["all", "this"]);
+    expect(eventSaveDescription(newStart)).toBe(
+      "Changing the time for the entire series would reset your changed Dec 7 meeting. A new repeat applies from this occurrence on."
+    );
+  });
+
   test("still reads the field it replaces, droppedMovedDay", () => {
     expect(
       off({ ...none, droppedMovedDay: dec7, patternChanged: true })
@@ -682,6 +695,15 @@ describe("a new time for a series of several rules", () => {
     expect(off(changes)).toEqual(["all"]);
     expect(eventSaveDescription(changes)).toBe(
       "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time."
+    );
+  });
+
+  test("with a new repeat and This and following open, goes from here on", () => {
+    // One rule at another hour than the start's: no split block.
+    const both = { ...changes, movesSeveralADay: true, patternChanged: true };
+    expect(off(both)).toEqual(["all", "this"]);
+    expect(eventSaveDescription(both)).toBe(
+      "This series' meetings keep times of their own, so a new time can't apply to the entire series. A new repeat applies from this occurrence on."
     );
   });
 

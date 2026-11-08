@@ -56,6 +56,8 @@ export const SCOPE_DIALOG_COPY = {
     description: "This can't be undone.",
     title: "Delete task?",
   },
+  /** A new repeat where Entire series is off: only This and following takes it. */
+  repeatFromHere: "A new repeat applies from this occurrence on.",
   /** A new repeat: one occurrence can't repeat differently from its series. */
   repeatChange:
     "A new repeat applies from this occurrence on, or to the entire series.",
@@ -116,8 +118,8 @@ export const SCOPE_DIALOG_COPY = {
   /** A new time for a series meeting several times a day (the server's words). */
   severalRulesTime: refusalMessage({ reason: "severalTimesADay" }),
   /**
-   * The same where a new repeat leaves no scope ("one at a time" can't
-   * take the repeat), before what to do (`noScopeStep`).
+   * The same with a new repeat, which one occurrence can't take, so "one
+   * at a time" can't work: before where the repeat can go.
    */
   severalRulesTimeReason:
     "This series' meetings keep times of their own, so a new time can't apply to the entire series.",
@@ -944,6 +946,20 @@ function splitBlockedDescription(
   }
 }
 
+/**
+ * `line` (why Entire series is off), then, with a new repeat, where it can
+ * go: from this occurrence on, or, from the first meeting, nowhere
+ * (`withNoScopeStep`).
+ */
+function withRepeatScope(changes: EventSaveChanges, line: string): string {
+  if (!changes.patternChanged) {
+    return line;
+  }
+  return firstMeetingRefused(changes)
+    ? withNoScopeStep(changes, line)
+    : `${line} ${SCOPE_DIALOG_COPY.repeatFromHere}`;
+}
+
 /** `line`, then what to do with no scope left, where there's a step. */
 function withNoScopeStep(changes: EventSaveChanges, line: string): string {
   const step = noScopeStep(changes);
@@ -984,18 +1000,20 @@ function whyScopesOff(changes: EventSaveChanges): string {
       return SCOPE_DIALOG_COPY.repeatOffDay;
     case "repeatEnd":
       return SCOPE_DIALOG_COPY.repeatEndOff;
-    // From the first meeting with a new repeat, no scope is left.
+    // With a new repeat, Only this is off too: from the first meeting no
+    // scope is left, elsewhere the repeat goes from this occurrence on.
     case "changedMeeting":
-      return changes.patternChanged && firstMeetingRefused(changes)
-        ? withNoScopeStep(changes, changedMeetingLine(off.cost))
-        : changedMeetingLine(off.cost);
+      return withRepeatScope(changes, changedMeetingLine(off.cost));
     case "severalRulesTime":
-      return changes.patternChanged && firstMeetingRefused(changes)
+      if (!changes.patternChanged) {
+        return SCOPE_DIALOG_COPY.severalRulesTime;
+      }
+      return firstMeetingRefused(changes)
         ? withNoScopeStep(
             changes,
             SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason
           )
-        : SCOPE_DIALOG_COPY.severalRulesTime;
+        : `${SCOPE_DIALOG_COPY.severalRulesTimeReason} ${SCOPE_DIALOG_COPY.repeatFromHere}`;
     case "seriesPending":
       return seriesPendingDescription(changes);
     default:
