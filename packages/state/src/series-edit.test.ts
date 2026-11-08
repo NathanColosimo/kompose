@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { seriesEditFields, seriesRepeatForEdit } from "./series-edit";
+import {
+  savedSeriesRecurrence,
+  seriesEditFields,
+  seriesRepeatForEdit,
+} from "./series-edit";
 
 const zone = "America/New_York";
 
@@ -270,5 +274,25 @@ describe("seriesRepeatForEdit", () => {
     });
     expect(fresh.recurrence).toEqual(["RRULE:FREQ=WEEKLY"]);
     expect(fresh.countingDay?.toString()).toBe("2026-11-18");
+  });
+});
+
+describe("savedSeriesRecurrence", () => {
+  const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=MO"];
+
+  test("is the series' own rules, from its master for an occurrence", () => {
+    // An occurrence carries no rules of its own: its master has them.
+    expect(savedSeriesRecurrence({ recurrence: undefined }, weekly)).toEqual(
+      weekly
+    );
+    // The series itself has its own.
+    const daily = ["RRULE:FREQ=DAILY"];
+    expect(savedSeriesRecurrence({ recurrence: daily }, weekly)).toEqual(daily);
+  });
+
+  test("is none for a one-off event, whatever its draft adds", () => {
+    // Not the draft's: a repeat added to a one-off event isn't a series yet.
+    expect(savedSeriesRecurrence({ recurrence: [] }, undefined)).toEqual([]);
+    expect(savedSeriesRecurrence({}, null)).toEqual([]);
   });
 });

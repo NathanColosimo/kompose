@@ -288,12 +288,17 @@ interface EventRange {
 /**
  * An event's range after its start moves: it keeps its length, so a 2-hour
  * meeting moved to 3 PM ends at 5 PM, onto the next day when that crosses
- * midnight. An all-day event keeps its day span. With no length to keep
- * (no end, or an end before the start), it gets 30 minutes.
+ * midnight. An all-day event keeps its day span. Given the zone its times
+ * are in, the length is real time, so a meeting over a clock change keeps
+ * its hours (a 0:30-2:30 meeting on the night the clocks go back is three
+ * hours); without one, it's the clock's. A zero-length event stays zero;
+ * with no length to keep (no end, or an end before the start), it gets 30
+ * minutes.
  */
 export function moveEventStart(
   range: EventRange,
-  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime }
+  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime },
+  timeZone?: string
 ): EventRange {
   const startDate = next.date ?? range.startDate;
   const startTime = next.time ?? range.startTime;
@@ -304,21 +309,50 @@ export function moveEventStart(
     );
     return { ...range, endDate: startDate.add({ days }), startDate };
   }
-  const oldStart = range.startDate.toPlainDateTime(
-    range.startTime ?? startTime
-  );
-  const length = range.endTime
-    ? oldStart.until(range.endDate.toPlainDateTime(range.endTime), {
-        largestUnit: "minutes",
-      }).minutes
-    : 0;
-  const end = startDate
-    .toPlainDateTime(startTime)
-    .add({ minutes: length > 0 ? length : 30 });
+  const oldTime = range.startTime ?? startTime;
+  const end = timeZone
+    ? keptLength(
+        (date, time) => date.toZonedDateTime({ plainTime: time, timeZone }),
+        range,
+        oldTime,
+        { date: startDate, time: startTime }
+      )
+    : keptLength((date, time) => date.toPlainDateTime(time), range, oldTime, {
+        date: startDate,
+        time: startTime,
+      });
   return {
     endDate: end.toPlainDate(),
     endTime: end.toPlainTime(),
     startDate,
     startTime,
   };
+}
+
+/** A moment a range's ends can be read as: on the clock, or in a zone. */
+interface RangeMoment<T> {
+  add(duration: Temporal.Duration | Temporal.DurationLike): T;
+  toPlainDate(): Temporal.PlainDate;
+  toPlainTime(): Temporal.PlainTime;
+  until(other: T, options: { largestUnit: "hours" }): Temporal.Duration;
+}
+
+/**
+ * The end of `range` moved to start at `next`, read through `at`: its
+ * length kept, zero included, or 30 minutes with none to keep.
+ */
+function keptLength<T extends RangeMoment<T>>(
+  at: (date: Temporal.PlainDate, time: Temporal.PlainTime) => T,
+  range: EventRange,
+  startTime: Temporal.PlainTime,
+  next: { date: Temporal.PlainDate; time: Temporal.PlainTime }
+): T {
+  const length = range.endTime
+    ? at(range.startDate, startTime).until(at(range.endDate, range.endTime), {
+        largestUnit: "hours",
+      })
+    : null;
+  return at(next.date, next.time).add(
+    length && length.sign >= 0 ? length : { minutes: 30 }
+  );
 }

@@ -262,4 +262,36 @@ describe("moveEventStart", () => {
       "2026-11-12 09:00:00 → 2026-11-12 09:30:00"
     );
   });
+
+  test("keeps a zero-length event at zero", () => {
+    const reminder = { ...meeting, endTime: t("14:00") };
+    expect(text(moveEventStart(reminder, { time: t("09:00") }))).toBe(
+      "2026-11-12 09:00:00 → 2026-11-12 09:00:00"
+    );
+  });
+
+  test("in a zone, keeps the real length across a clock change", () => {
+    // Nov 1 2026, New York: 1:00-2:00 happens twice. 0:30 to 2:30 on the
+    // clock is three hours, which a move to Nov 2 keeps.
+    const overTheChange = {
+      endDate: d("2026-11-01"),
+      endTime: t("02:30"),
+      startDate: d("2026-11-01"),
+      startTime: t("00:30"),
+    };
+    expect(
+      text(moveEventStart(overTheChange, { date: d("2026-11-02") }, zone))
+    ).toBe("2026-11-02 00:30:00 → 2026-11-02 03:30:00");
+    // Moved onto the change, a two-hour meeting ends at 1:00 the second time.
+    const twoHours = {
+      ...meeting,
+      endDate: d("2026-10-31"),
+      endTime: t("02:00"),
+      startDate: d("2026-10-31"),
+      startTime: t("00:00"),
+    };
+    expect(
+      text(moveEventStart(twoHours, { date: d("2026-11-01") }, zone))
+    ).toBe("2026-11-01 00:00:00 → 2026-11-01 01:00:00");
+  });
 });
