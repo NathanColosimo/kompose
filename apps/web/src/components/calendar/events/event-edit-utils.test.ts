@@ -232,6 +232,9 @@ describe("seriesEdit", () => {
     expect(sent.end).toEqual({ date: "2026-11-10" });
   });
 
+  // Only before the series loads, which "Entire series" doesn't wait for
+  // yet (tracked with #127): then the occurrence's own all-day form goes to
+  // the series. Once it waits, this case can't be saved for the series.
   test("with the series not loaded, a length in the other form sends the edited times", () => {
     const allDay: GoogleEvent = {
       ...slot,

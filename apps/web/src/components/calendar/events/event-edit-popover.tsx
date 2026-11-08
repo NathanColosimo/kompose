@@ -228,10 +228,10 @@ function saveChanges(
 }
 
 /**
- * The scopes a pending save can't use, and the dialog's line saying why:
- * the shared rules, plus a color set back to the calendar's, which only
- * one occurrence can take for now (a series save can't clear its color
- * until the server accepts a clear; tracked with #125).
+ * The scopes a pending save can't use, and the dialog's line: the shared
+ * rules, and a note when the color went back to the calendar's. A series
+ * save can't clear its color until the server accepts a clear (tracked
+ * with #125), so the series keeps its own; one occurrence can go back.
  */
 function saveScopeState(
   pendingSave: PendingSave | null,
@@ -241,14 +241,12 @@ function saveScopeState(
   disabled: Partial<Record<RecurrenceScope, boolean>>;
 } {
   const changes = saveChanges(pendingSave, series);
-  const disabled = eventSaveDisabledScopes(changes);
-  if (!pendingSave?.colorReset) {
-    return { description: eventSaveDescription(changes), disabled };
-  }
+  const description = eventSaveDescription(changes);
   return {
-    description:
-      "Going back to the calendar's color applies to this occurrence only. For the series, pick a color instead.",
-    disabled: { ...disabled, all: true, following: true },
+    description: pendingSave?.colorReset
+      ? `${description} The series keeps its own color for now: going back to the calendar's color works on one occurrence only.`
+      : description,
+    disabled: eventSaveDisabledScopes(changes),
   };
 }
 
@@ -730,7 +728,6 @@ const RECURRENCE_ENDS = [
   { label: "After", value: "count" },
 ] as const;
 
-/** A recurring event's save, waiting on the scope dialog. */
 /** A recurring event's save, waiting for its scope. */
 type PendingSave = Omit<
   Extract<CloseSaveRequest, { type: "save" }>,
@@ -891,6 +888,7 @@ export function EventEditPopover({
   // save keeps the edits. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   // A failure belongs to the save it came from: reopening starts clean.
@@ -902,6 +900,10 @@ export function EventEditPopover({
   const holdForSave = useCallback(
     (save: Promise<unknown>, failureMessage: string) => {
       savingRef.current = true;
+      // The fields remount read-only (HeldFieldset), which would drop focus
+      // to the page, where the calendar's keys could navigate away from the
+      // save; the editor itself holds it instead.
+      contentRef.current?.focus();
       setIsSaving(true);
       setSaveFailure(null);
       const settle = (failure: string | null) => {
@@ -996,10 +998,11 @@ export function EventEditPopover({
   );
 
   // The scope the save dialog shows and saves with, worked out each time.
+  const scopeState = saveScopeState(pendingSave, seriesStatus);
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
-    saveScopeState(pendingSave, seriesStatus).disabled
+    scopeState.disabled
   );
   const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
@@ -1171,6 +1174,7 @@ export function EventEditPopover({
               }
             }
           }}
+          ref={contentRef}
           side={side}
         >
           <EventEditForm
@@ -1197,8 +1201,16 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={saveScopeState(pendingSave, seriesStatus).description}
-        disabledScopes={saveScopeState(pendingSave, seriesStatus).disabled}
+        description={scopeState.description}
+        disabledScopes={scopeState.disabled}
+        // Closing on a save, focus goes back to the editor (its Save button
+        // remounted read-only); on Cancel, back to that button.
+        onCloseAutoFocus={(e) => {
+          if (savingRef.current) {
+            e.preventDefault();
+            contentRef.current?.focus();
+          }
+        }}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -1349,6 +1361,7 @@ function scopeFacts(
   editedStart: GoogleEvent["start"],
   ctx: {
     event: GoogleEvent | undefined;
+    masterColorId?: string | null;
     masterStart?: GoogleEvent["start"];
     timeZone: string;
   }
@@ -1358,7 +1371,10 @@ function scopeFacts(
     return { colorReset: false, dateMoved: false, repeatSkips: null };
   }
   return {
-    colorReset: Boolean(event.colorId) && !values.colorId,
+    // Set back to the calendar's, from a color the series has too (one
+    // with none already gets the calendar's).
+    colorReset:
+      Boolean(event.colorId) && !values.colorId && ctx.masterColorId !== null,
     dateMoved: occurrenceDayMoved({
       editedStart,
       occurrence: event,
@@ -1389,6 +1405,8 @@ function buildEditPayload(
     calendarTimeZone?: string;
     event: GoogleEvent | undefined;
     hasEdits: boolean;
+    /** The series' color: null when it has none, undefined until loaded. */
+    masterColorId?: string | null;
     masterRecurrence: string[] | null | undefined;
     /** The series' own start, when the event is one of its occurrences. */
     masterStart?: GoogleEvent["start"];
@@ -2889,6 +2907,10 @@ export function EventEditForm({
         conferenceData: resolvedConference ?? event?.conferenceData,
         event,
         hasEdits: hasUserEditedRef.current,
+        // Unknown (undefined) until the series loads; null when it has none.
+        masterColorId: masterQuery.data
+          ? (masterQuery.data.colorId ?? null)
+          : undefined,
         masterRecurrence: masterQuery.data?.recurrence,
         masterStart: masterQuery.data?.start,
         recurrenceEdited: recurrenceEditedRef.current,
