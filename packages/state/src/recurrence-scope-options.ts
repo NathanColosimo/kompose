@@ -4,7 +4,7 @@ import type {
 } from "@kompose/api/routers/task/contract";
 import {
   addsBeforeStart,
-  carryCount,
+  carryCountExactly,
   countOf,
   followingCutUnsure,
   followingSplitBlocked,
@@ -205,7 +205,8 @@ export interface EventSaveChanges {
    */
   repeatSkips?: "day" | "end" | null;
   /**
-   * An Entire series save would move the series' start time
+   * An Entire series save would move the series' start: its time, its
+   * day (through its first meeting) or its all-day form
    * (`entireSeriesStartMoves`; a new length alone doesn't).
    */
   retimed?: boolean;
@@ -446,8 +447,9 @@ export function opensSeries(
 /**
  * Whether a split can't carry on the series' COUNT, as the server reads
  * it: the save keeps the COUNT, and `carryCount` can't work out what's
- * left. Given no Google listing, that's null only where no listing would
- * settle it (a rule it can't walk, in a series with added days).
+ * left whatever Google lists. That's a rule it can't walk
+ * (`carryCountExactly`) in a series with added days. A skip Google
+ * doesn't list also stops it, but only the server reads that list.
  */
 function countLeftUnknown(params: {
   masterRecurrence: string[];
@@ -468,15 +470,17 @@ function countLeftUnknown(params: {
   if (count === undefined || countOf(rule) !== count) {
     return false;
   }
+  const exact = carryCountExactly(rule, {
+    masterRecurrence,
+    originalStart,
+    seriesStart:
+      params.masterStart.dateTime ?? params.masterStart.date ?? originalStart,
+    seriesZone,
+  });
+  // Past the walk, it counts from Google's list, where an added day
+  // can't be told apart from a rule day.
   return (
-    carryCount(rule, {
-      masterRecurrence,
-      originalStart,
-      seriesStart:
-        params.masterStart.dateTime ?? params.masterStart.date ?? originalStart,
-      seriesZone,
-      starts: [],
-    }) === null
+    exact === null && masterRecurrence.some((line) => line.startsWith("RDATE"))
   );
 }
 
@@ -564,11 +568,31 @@ function scopesOff(
 /**
  * Whether This and following from the series' first meeting is refused
  * as Entire series is: the server saves it as the whole series. A new day
- * isn't one of those reasons (through its first meeting the series moves).
+ * there moves the series' start, so it's refused only where that start
+ * resets a meeting changed on its own (`changedMeetingCost`).
  */
 function firstMeetingRefused(changes: EventSaveChanges): boolean {
   const off = entireSeriesOff(changes);
-  return Boolean(changes.opensSeries && off && off.reason !== "newDay");
+  if (!(changes.opensSeries && off)) {
+    return false;
+  }
+  return off.reason !== "newDay" || changedMeetingCost(changes) !== null;
+}
+
+/**
+ * What an Entire series save would cost a meeting changed on its own
+ * (`entireSeriesCost`, or the deprecated `droppedMovedDay` under a new
+ * repeat), or null.
+ */
+function changedMeetingCost(
+  changes: EventSaveChanges
+): EntireSeriesCost | null {
+  return (
+    changes.entireSeriesCost ??
+    (changes.patternChanged && changes.droppedMovedDay
+      ? { day: changes.droppedMovedDay, reason: "lostSlot" }
+      : null)
+  );
 }
 
 /**
@@ -609,11 +633,6 @@ type EntireSeriesOff =
  */
 function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
   const { patternChanged, repeatSkips, retimed } = changes;
-  const cost =
-    changes.entireSeriesCost ??
-    (patternChanged && changes.droppedMovedDay
-      ? { day: changes.droppedMovedDay, reason: "lostSlot" as const }
-      : null);
   if (changes.dateMoved) {
     return { reason: "newDay" };
   }
@@ -626,6 +645,7 @@ function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
   if (retimed && changes.severalRules) {
     return { reason: "severalRulesTime" };
   }
+  const cost = changedMeetingCost(changes);
   return cost ? { cost, reason: "changedMeeting" } : null;
 }
 
@@ -659,6 +679,8 @@ export function chosenScope(
  * (moved in this edit, or before and given new times now), counted in the
  * series' zone, named when it isn't the app's. That can't move the whole
  * series, and a new repeat (never one occurrence's) only goes from here.
+ * From the series' first meeting, "from here" is the series' new start,
+ * so a meeting changed on its own can rule it out too.
  */
 function newDayLine(changes: EventSaveChanges): string {
   const city = changes.seriesTimeZone
@@ -667,6 +689,15 @@ function newDayLine(changes: EventSaveChanges): string {
   const where = city
     ? `In ${city} time, this occurrence is now on another day than its series`
     : "This occurrence is now on another day than its series";
+  const cost = firstMeetingRefused(changes)
+    ? changedMeetingCost(changes)
+    : null;
+  if (cost) {
+    const alone = changes.patternChanged
+      ? `${where}, and a new repeat can't apply to it alone.`
+      : `${where}, so your changes apply to it alone.`;
+    return `${alone} ${changedMeetingLine(cost)}`;
+  }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`
     : `${where}, so your changes apply to it, or from it on.`;

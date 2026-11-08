@@ -542,6 +542,18 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(off({ ...none, dateMoved: true, opensSeries: true })).toEqual([
       "all",
     ]);
+    // Unless a meeting has changes of its own, which the new start resets.
+    const newDay = { ...first, dateMoved: true };
+    expect(off(newDay)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(newDay)).toBe(
+      "This occurrence is now on another day than its series, so your changes apply to it alone. Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+    );
+    // With a new repeat too, which one occurrence can't take: nothing is on.
+    const newDayRepeat = { ...newDay, patternChanged: true };
+    expect(off(newDayRepeat)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(newDayRepeat)).toBe(
+      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+    );
   });
 
   test("still reads the field it replaces, droppedMovedDay", () => {
@@ -773,6 +785,21 @@ describe("This and following, turned off before the server would refuse it", () 
       seriesSplitBlock(
         later,
         { ...master, recurrence: [master.recurrence[0] ?? ""] },
+        zone
+      )
+    ).toBeNull();
+    // Nor with a skip before the split: whether it was a meeting is in
+    // Google's list, which only the server reads.
+    expect(
+      seriesSplitBlock(
+        later,
+        {
+          ...master,
+          recurrence: [
+            master.recurrence[0] ?? "",
+            "EXDATE;TZID=America/New_York:20261109T090000",
+          ],
+        },
         zone
       )
     ).toBeNull();
