@@ -30,6 +30,11 @@ export interface DateRange {
 }
 
 interface BaseDatePickerProps {
+  /**
+   * What the field is, for VoiceOver ("Start time"); it's read with the
+   * value ("Start time, 10:00 AM"), since a filled field has no placeholder.
+   */
+  accessibilityLabel?: string;
   label?: string;
   error?: string;
   placeholder?: string;
@@ -100,6 +105,7 @@ const isDateRange = (
 
 export function DatePicker(props: DatePickerProps) {
   const {
+    accessibilityLabel,
     label,
     error,
     placeholder = "Select date",
@@ -1127,6 +1133,12 @@ export function DatePicker(props: DatePickerProps) {
   return (
     <>
       <TouchableOpacity
+        accessibilityLabel={
+          accessibilityLabel
+            ? `${accessibilityLabel}, ${resolvedDisplayValue}`
+            : undefined
+        }
+        accessibilityRole="button"
         disabled={disabled}
         onPress={handleOpenPicker}
         style={[triggerStyle, disabled && { opacity: 0.5 }, style]}

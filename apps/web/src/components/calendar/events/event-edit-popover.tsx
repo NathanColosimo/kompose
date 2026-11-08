@@ -174,6 +174,19 @@ function buildRecurrenceEnd(values: RecurrenceEditorValues): RecurrenceEnd {
   return { type: "none" };
 }
 
+/**
+ * Scopes a pending save can't use: a calendar move applies to the whole
+ * series, and one occurrence can't repeat differently from its series.
+ */
+function saveDisabledScopes(
+  pendingSave: { calendarChanged?: unknown; patternChanged: boolean } | null
+): Partial<Record<RecurrenceScope, boolean>> | undefined {
+  if (pendingSave?.calendarChanged) {
+    return { following: true, this: true };
+  }
+  return pendingSave?.patternChanged ? { this: true } : undefined;
+}
+
 export type CloseSaveRequest =
   | { type: "none" }
   | {
@@ -188,6 +201,8 @@ export type CloseSaveRequest =
       /** Whether event data (non-calendar fields) were actually edited. */
       hasDataEdits: boolean;
       calendarChanged?: { destinationCalendarId: string };
+      /** The repeat pattern changed: it can't apply to one occurrence. */
+      patternChanged: boolean;
     }
   | {
       type: "create";
@@ -506,6 +521,7 @@ interface EventEditDialogState {
     defaultScope: RecurrenceScope;
     hasDataEdits: boolean;
     calendarChanged?: { destinationCalendarId: string };
+    patternChanged: boolean;
   } | null;
   scopeDialogOpen: boolean;
   selectedScope: RecurrenceScope;
@@ -723,6 +739,7 @@ export function EventEditPopover({
             calendarChanged: request.calendarChanged,
             defaultScope: scope,
             hasDataEdits: request.hasDataEdits,
+            patternChanged: request.patternChanged,
             variables: request.variables,
           },
           scope,
@@ -830,11 +847,7 @@ export function EventEditPopover({
             ? "Moving to a different calendar applies to all events in the series."
             : "Choose how broadly to apply your changes."
         }
-        disabledScopes={
-          pendingSave?.calendarChanged
-            ? { following: true, this: true }
-            : undefined
-        }
+        disabledScopes={saveDisabledScopes(pendingSave)}
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
@@ -977,9 +990,17 @@ function buildEditPayload(
       ctx.event?.recurrence?.length ||
       ctx.masterRecurrence?.length
   );
-  const defaultScope: RecurrenceScope = ctx.event?.recurringEventId
-    ? "this"
-    : "all";
+  // The repeat is sent only when it changed: an empty list then means
+  // "Repeat: None", and leaving it out keeps the series' pattern (also while
+  // the master's pattern is still loading).
+  const sourceRecurrence = ctx.event?.recurrence?.length
+    ? ctx.event.recurrence
+    : (ctx.masterRecurrence ?? []);
+  const patternChanged =
+    JSON.stringify(values.recurrence ?? []) !==
+    JSON.stringify(sourceRecurrence);
+  const defaultScope: RecurrenceScope =
+    ctx.event?.recurringEventId && !patternChanged ? "this" : "all";
 
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
@@ -995,7 +1016,7 @@ function buildEditPayload(
       },
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      recurrence: values.recurrence ?? ctx.event?.recurrence,
+      recurrence: patternChanged ? (values.recurrence ?? []) : undefined,
       start: {
         ...ctx.event?.start,
         ...temporalPayload.startPayload,
@@ -1012,6 +1033,7 @@ function buildEditPayload(
     defaultScope,
     hasDataEdits: ctx.hasEdits,
     isRecurring,
+    patternChanged,
     type: "save",
     variables,
   };

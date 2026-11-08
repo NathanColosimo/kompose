@@ -605,7 +605,8 @@ export function makeGoogleCalendarService(
         event.end
       );
 
-      const recurrence = event.recurrence?.length ? event.recurrence : master.recurrence;
+      // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").
+      const recurrence = event.recurrence === undefined ? master.recurrence : event.recurrence;
       const payload = sanitizeEventPayload({
         ...master,
         ...event,
@@ -674,7 +675,8 @@ export function makeGoogleCalendarService(
       }
 
       const originalRecurrence = [...master.recurrence];
-      const recurrence = event.recurrence?.length ? event.recurrence : master.recurrence;
+      // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").
+      const recurrence = event.recurrence === undefined ? master.recurrence : event.recurrence;
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,

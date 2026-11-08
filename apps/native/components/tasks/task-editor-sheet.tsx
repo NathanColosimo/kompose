@@ -696,6 +696,7 @@ export function TaskEditorSheet({
           >
             <View className="min-w-0 flex-1">
               <DatePicker
+                accessibilityLabel="Start date"
                 displayValue={
                   draft.startDate
                     ? formatPlainDateShort(draft.startDate)
@@ -725,6 +726,7 @@ export function TaskEditorSheet({
             </View>
             <View style={{ minWidth: 78 }}>
               <DatePicker
+                accessibilityLabel="Start time"
                 disabled={!draft.startDate}
                 displayValue={formatPlainTime(draft.startTime)}
                 mode="time"
@@ -754,6 +756,7 @@ export function TaskEditorSheet({
           <View className="flex-row items-center gap-1.5">
             <View style={{ width: 88 }}>
               <DatePicker
+                accessibilityLabel="Due date"
                 displayValue={
                   draft.dueDate
                     ? `Due ${formatPlainDateShort(draft.dueDate)}`
@@ -782,6 +785,8 @@ export function TaskEditorSheet({
             </View>
 
             <Button
+              accessibilityLabel="Repeat"
+              accessibilityState={{ expanded: isRecurrenceExpanded }}
               onPress={() => setIsRecurrenceExpanded((current) => !current)}
               size="icon"
               style={{ borderRadius: 999, height: 38, width: 34 }}

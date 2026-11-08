@@ -814,6 +814,7 @@ function EventDateTimeRow({
       <View className="flex-row items-center gap-1.5">
         <View className="min-w-0 flex-1">
           <DatePicker
+            accessibilityLabel="Start date"
             displayValue={formatPlainDateCompact(startDate)}
             mode="date"
             onChange={(date) => {
@@ -833,6 +834,7 @@ function EventDateTimeRow({
         {allDay ? null : (
           <View className="min-w-0 flex-1">
             <DatePicker
+              accessibilityLabel="Start time"
               mode="time"
               onChange={(date) => {
                 if (!date) {
@@ -854,6 +856,7 @@ function EventDateTimeRow({
       <View className="flex-row items-center gap-1.5">
         <View className="min-w-0 flex-1">
           <DatePicker
+            accessibilityLabel="End date"
             displayValue={formatPlainDateCompact(endDate)}
             mode="date"
             onChange={(date) => {
@@ -875,6 +878,7 @@ function EventDateTimeRow({
         {allDay ? null : (
           <View className="min-w-0 flex-1">
             <DatePicker
+              accessibilityLabel="End time"
               mode="time"
               onChange={(date) => {
                 if (!date) {
@@ -896,6 +900,9 @@ function EventDateTimeRow({
         )}
         {canEditRecurrence ? (
           <Button
+            accessibilityLabel="Repeat"
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isRecurrenceExpanded }}
             onPress={onToggleRecurrence}
             size="icon"
             style={{ height: 38, width: 38 }}

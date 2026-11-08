@@ -10,6 +10,7 @@ import {
   haveTaskTagIdsChanged,
   markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
+  SAVE_FAILURE_MESSAGE,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
@@ -197,7 +198,6 @@ export function useTaskEditorFlow() {
       decision: getTaskUpdateScopeDecision({
         hasCoreFieldChanges,
         isRecurring: task.seriesMasterId !== null,
-        isSeriesMaster: task.seriesMasterId === task.id,
         nextRecurrence: nextDraft.recurrence,
         nextTagIds: nextDraft.tagIds,
         previousRecurrence: task.recurrence,
@@ -258,8 +258,7 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    commitUpdate(draft, decision.scope);
-    close();
+    holdForSave(draft, decision.scope);
   }
 
   function requestDelete() {
@@ -276,6 +275,30 @@ export function useTaskEditorFlow() {
 
     deleteTask.mutate({ id: editingTask.id, scope: "this" });
     close();
+  }
+
+  /**
+   * Saves an edited task, holding the editor ("Saving…") until the save
+   * succeeds, so a failure keeps the draft (and closes any scope dialog).
+   */
+  function holdForSave(nextDraft: TaskDraft, scope: UpdateScope) {
+    Keyboard.dismiss();
+    setIsSavingStatus(true);
+    const session = sessionRef.current;
+    commitUpdate(nextDraft, scope, undefined, {
+      failureMessage: SAVE_FAILURE_MESSAGE,
+    }).then((saved) => {
+      if (sessionRef.current !== session) {
+        return;
+      }
+      setIsSavingStatus(false);
+      if (saved) {
+        close();
+        return;
+      }
+      setPendingSaveDraft(null);
+      setScopeDialog(null);
+    });
   }
 
   /**
@@ -296,8 +319,9 @@ export function useTaskEditorFlow() {
       return;
     }
     if (!pendingStatus) {
-      commitUpdate(pendingSaveDraft, saveScope);
-      close();
+      // The dialog holds "Saving…" until the save ends; a failure leaves
+      // the editor underneath with the edits.
+      holdForSave(pendingSaveDraft, saveScope);
       return;
     }
     // With Mark done the dialog stays up, its Apply reading "Saving…",

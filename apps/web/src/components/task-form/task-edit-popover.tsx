@@ -24,6 +24,7 @@ import {
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
+  SAVE_FAILURE_MESSAGE,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
@@ -328,12 +329,51 @@ function useSyncedSchedule(
   }, [scheduleKey, setValue, task]);
 }
 
+/**
+ * Cancel and Save. While a save runs, leaving would drop the edits if it
+ * fails, so both wait until it's done.
+ */
+function TaskEditorCloseActions({
+  onCancel,
+  onSave,
+  saving,
+}: {
+  onCancel: () => void;
+  onSave: () => void;
+  saving: "done" | "save" | null;
+}) {
+  return (
+    <div className="ml-auto flex gap-2">
+      <Button
+        disabled={saving !== null}
+        onClick={onCancel}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        Cancel
+      </Button>
+      <Button
+        disabled={saving !== null}
+        onClick={onSave}
+        size="sm"
+        type="button"
+      >
+        {saving === "save" ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
+  disabled,
   isDone,
   isSaving,
   onClick,
 }: {
+  /** Another save (Save) is running. */
+  disabled: boolean;
   isDone: boolean;
   /** Saving the editor's edits with it; the editor closes once saved. */
   isSaving: boolean;
@@ -355,6 +395,7 @@ function TaskDoneButton({
   return (
     <Button
       className="gap-1.5"
+      disabled={disabled}
       onClick={onClick}
       size="sm"
       type="button"
@@ -397,7 +438,12 @@ export function TaskEditForm({
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
   /** Mark done is saving the edits; the editor stays open until it has. */
-  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  /**
+   * What the editor is holding open for: Mark done ("done") or Save
+   * ("save"). It closes when the save succeeds and keeps the draft if not.
+   */
+  const [saving, setSaving] = useState<"done" | "save" | null>(null);
+  const isSavingStatus = saving !== null;
   useEffect(() => {
     onSavingChange?.(isSavingStatus);
   }, [isSavingStatus, onSavingChange]);
@@ -585,7 +631,6 @@ export function TaskEditForm({
               },
             }),
             isRecurring,
-            isSeriesMaster: task.seriesMasterId === task.id,
             nextRecurrence: values.recurrence,
             nextTagIds: values.tagIds,
             previousRecurrence: resolvedRecurrence,
@@ -593,6 +638,19 @@ export function TaskEditForm({
           })
         : null,
     [isRecurring, resolvedRecurrence, task]
+  );
+
+  const holdForSave = useCallback(
+    (save: Promise<boolean>) => {
+      setSaving("save");
+      save.then((saved) => {
+        setSaving(null);
+        if (saved) {
+          onClose();
+        }
+      });
+    },
+    [onClose]
   );
 
   const submit = useCallback(
@@ -622,10 +680,31 @@ export function TaskEditForm({
         return false;
       }
 
-      commitUpdate(values, decision.scope);
-      return true;
+      if (!showActionButtons) {
+        commitUpdate(values, decision.scope);
+        return true;
+      }
+      // The editor holds open ("Saving…") until the save succeeds, so a
+      // failed save keeps the edits.
+      holdForSave(
+        commitUpdate(
+          values,
+          decision.scope,
+          {},
+          { failureMessage: SAVE_FAILURE_MESSAGE }
+        )
+      );
+      return false;
     },
-    [commitUpdate, createTask, isCreateMode, scopeDecisionFor, task]
+    [
+      commitUpdate,
+      createTask,
+      holdForSave,
+      isCreateMode,
+      scopeDecisionFor,
+      showActionButtons,
+      task,
+    ]
   );
 
   useImperativeHandle(submitRef, () => () => submit(getValues()), [
@@ -656,9 +735,9 @@ export function TaskEditForm({
       setShowTagScopeDialog(true);
       return;
     }
-    setIsSavingStatus(true);
+    setSaving("done");
     commitWithStatus(values, decision.scope, status).then((saved) => {
-      setIsSavingStatus(false);
+      setSaving(null);
       if (saved) {
         onClose();
       }
@@ -1046,32 +1125,17 @@ export function TaskEditForm({
               )}
               {isCreateMode || !task ? null : (
                 <TaskDoneButton
+                  disabled={saving === "save"}
                   isDone={task.status === "done"}
-                  isSaving={isSavingStatus}
+                  isSaving={saving === "done"}
                   onClick={handleToggleDone}
                 />
               )}
-              <div className="ml-auto flex gap-2">
-                {/* While Mark done saves, leaving would drop the edits if the
-                  save fails, so the editor holds until it's done. */}
-                <Button
-                  disabled={isSavingStatus}
-                  onClick={onClose}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  disabled={isSavingStatus}
-                  onClick={handleSaveClick}
-                  size="sm"
-                  type="button"
-                >
-                  Save
-                </Button>
-              </div>
+              <TaskEditorCloseActions
+                onCancel={onClose}
+                onSave={handleSaveClick}
+                saving={saving}
+              />
             </div>
           </>
         ) : null}
@@ -1090,16 +1154,22 @@ export function TaskEditForm({
               pendingUpdateRef.current = null;
               pendingStatusRef.current = null;
               if (!status) {
-                commitUpdate(pendingUpdate, tagScope);
-                onClose();
+                holdForSave(
+                  commitUpdate(
+                    pendingUpdate,
+                    tagScope,
+                    {},
+                    { failureMessage: SAVE_FAILURE_MESSAGE }
+                  )
+                );
                 return;
               }
               // With Mark done, the editor stays open ("Saving…") until the
               // save succeeds, so a failed save keeps the edits.
-              setIsSavingStatus(true);
+              setSaving("done");
               commitWithStatus(pendingUpdate, tagScope, status).then(
                 (saved) => {
-                  setIsSavingStatus(false);
+                  setSaving(null);
                   if (saved) {
                     onClose();
                   }

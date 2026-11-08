@@ -1052,9 +1052,20 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const dbInput = stripSystemManagedTaskFields(unsafeDbInput);
       const hasDbUpdates = Object.keys(dbInput).length > 0;
       const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
-      const recurrenceChanged =
-        scope === "following" &&
+      const changesPattern =
+        task.seriesMasterId !== null &&
         (yield* changesSeriesRecurrence(userId, task, dbInput));
+      // One occurrence can't repeat differently from its series: a new
+      // pattern (or "Repeat: None") applies from this occurrence on.
+      if (changesPattern && scope === "this") {
+        return yield* Effect.fail(
+          new InvalidTaskError({
+            message:
+              'Changing how a task repeats applies to this and following occurrences: use scope "following".',
+          })
+        );
+      }
+      const recurrenceChanged = changesPattern && scope === "following";
 
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.

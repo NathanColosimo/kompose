@@ -666,6 +666,26 @@ function WorkoutSheet({
 }
 
 /**
+ * The repeat to send with an event save: only when it changed, so an empty
+ * list means "Repeat: None" and leaving it out keeps the series' pattern
+ * (also while the master's pattern is still loading).
+ */
+function recurrenceToSend(
+  draft: EventDraft,
+  masterRecurrence: string[]
+): string[] | undefined {
+  if (draft.mode === "create") {
+    return draft.recurrence.length > 0 ? draft.recurrence : undefined;
+  }
+  const source = draft.sourceEvent.recurrence?.length
+    ? draft.sourceEvent.recurrence
+    : masterRecurrence;
+  return JSON.stringify(draft.recurrence) === JSON.stringify(source)
+    ? undefined
+    : draft.recurrence;
+}
+
+/**
  * Delete confirmations for an event, over its editor: Cancel goes back to the
  * editor with its edits, and Delete holds "Deleting…" until it's done.
  */
@@ -729,6 +749,7 @@ function EventDeleteDialogs({
  */
 function EventSaveScopeDialog({
   draft,
+  patternChanged,
   isVisible,
   onCancel,
   onConfirm,
@@ -737,6 +758,8 @@ function EventSaveScopeDialog({
   scope,
 }: {
   draft: EditEventDraft | null;
+  /** The repeat pattern changed, so "Only this occurrence" can't apply. */
+  patternChanged: boolean;
   isVisible: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -771,8 +794,9 @@ function EventSaveScopeDialog({
           onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
           options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
             disabled:
-              isMoving &&
-              (option.value === "this" || option.value === "following"),
+              (isMoving &&
+                (option.value === "this" || option.value === "following")) ||
+              (patternChanged && option.value === "this"),
             label: option.label,
             value: option.value,
           }))}
@@ -1431,15 +1455,12 @@ export default function CalendarTab() {
         description: currentDraft.description.trim() || undefined,
         end: endPayload,
         location: currentDraft.location.trim() || undefined,
-        recurrence:
-          currentDraft.recurrence.length > 0
-            ? currentDraft.recurrence
-            : undefined,
+        recurrence: recurrenceToSend(currentDraft, masterRecurrence),
         start: startPayload,
         summary: currentDraft.summary.trim(),
       };
     },
-    [timeZone]
+    [masterRecurrence, timeZone]
   );
 
   const commitEventUpdate = useCallback(
@@ -1514,12 +1535,18 @@ export default function CalendarTab() {
         // so force scope to "all" when a calendar move is pending.
         const hasCalendarChange =
           draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
-        const defaultScope = hasCalendarChange
+        const suggested = hasCalendarChange
           ? "all"
           : getDefaultRecurrenceScopeForEvent({
               event: draft.sourceEvent,
               masterRecurrence: masterSeriesRecurrence,
             });
+        // One occurrence can't repeat differently from its series.
+        const defaultScope =
+          suggested === "this" &&
+          recurrenceToSend(draft, masterRecurrence) !== undefined
+            ? "following"
+            : suggested;
         // The scope dialog opens over the editor, which stays open.
         setPendingEventSaveDraft(draft);
         setEventSaveScope(defaultScope);
@@ -2160,6 +2187,11 @@ export default function CalendarTab() {
                   confirmScopedEventSave().catch(() => null);
                 }}
                 onScopeChange={setEventSaveScope}
+                patternChanged={
+                  pendingEventSaveDraft !== null &&
+                  recurrenceToSend(pendingEventSaveDraft, masterRecurrence) !==
+                    undefined
+                }
                 pending={isSavingEvent}
                 scope={eventSaveScope}
               />
