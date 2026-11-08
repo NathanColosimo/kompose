@@ -536,12 +536,17 @@ export function timeZoneCity(timeZone: string): string | null {
   return area === "Etc" || !city ? null : city.replace(/_/g, " ");
 }
 
-/** The event's own zone when it isn't `appZone`, for saying so. */
+/**
+ * The zone the event's days count in when it isn't `appZone`, for saying
+ * so: its own, or an occurrence's series' (`seriesTimeZone`, from
+ * `seriesStart` once the series loads).
+ */
 export function otherTimeZone(
-  event: Pick<GoogleEvent, "start"> | undefined,
-  appZone: string
+  event: Pick<GoogleEvent, "originalStartTime" | "start"> | undefined,
+  appZone: string,
+  seriesStart?: StartTime | null
 ): string | undefined {
-  const zone = event?.start?.timeZone;
+  const zone = event && seriesTimeZone(event, seriesStart, appZone);
   return zone && zone !== appZone ? zone : undefined;
 }
 

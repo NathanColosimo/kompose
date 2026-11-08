@@ -69,7 +69,8 @@ export function seriesEditFields(params: {
  * place in the series (a rescheduled one's original day) while the edit
  * keeps its times, as the server reads it, else the edited start's day.
  * The repeat's implicit days count from there, unless the save keeps the
- * series' own rule and slot: then from the series' first day.
+ * series' own rule and the meeting's day (new times on that day keep the
+ * series' first day too): then from the series' first day.
  */
 export function seriesRepeatForEdit(params: {
   /** The edited start and end, as the save sends them. */
@@ -150,17 +151,18 @@ export function seriesRepeatForEdit(params: {
     (timesKept && occurrence.originalStartTime) || editedStart,
     timeZone
   );
-  // The series' own rule and slot: its days count from its first day.
-  // A new repeat, day or time starts it again at `startDay`.
+  // The series' own rule on the meeting's own day: its days count from its
+  // first day, which Entire series keeps for new times there too. A new
+  // repeat or day starts it again at `startDay`.
   const countingDay =
-    timesKept && !changed
-      ? repeatCountingDay({
+    changed || moved
+      ? startDay
+      : repeatCountingDay({
           event,
           formDay: startDay,
           seriesStart: params.seriesStart,
           timeZone,
-        })
-      : startDay;
+        });
   return {
     changed,
     countingDay,

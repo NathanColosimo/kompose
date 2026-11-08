@@ -153,6 +153,49 @@ describe("seriesRepeatForEdit", () => {
     expect(moved.startDay?.toString()).toBe("2026-11-11");
   });
 
+  test("new times on its own day keep counting from the series' first day", () => {
+    // Mondays from Nov 2, plus an added Wednesday Nov 11 meeting. Entire
+    // series keeps its first day for new times on the meeting's own day,
+    // so the repeat stays "weekly on Mon".
+    const weekly = [
+      "RRULE:FREQ=WEEKLY",
+      "RDATE;TZID=America/New_York:20261111T100000",
+    ];
+    const added = {
+      end: { dateTime: "2026-11-11T10:30:00-05:00", timeZone: zone },
+      originalStartTime: {
+        dateTime: "2026-11-11T10:00:00-05:00",
+        timeZone: zone,
+      },
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-11T10:00:00-05:00", timeZone: zone },
+    };
+    const edit = (start: string, end: string) =>
+      repeat({
+        edited: {
+          end: { dateTime: end, timeZone: zone },
+          start: { dateTime: start, timeZone: zone },
+        },
+        event: added,
+        recurrence: weekly,
+        seriesRecurrence: weekly,
+      });
+    // A new end only.
+    const longer = edit(
+      "2026-11-11T10:00:00-05:00",
+      "2026-11-11T11:00:00-05:00"
+    );
+    expect(longer.countingDay?.toString()).toBe("2026-11-02");
+    expect(longer.recurrence).toEqual(weekly);
+    // A new time, the same day.
+    const later = edit(
+      "2026-11-11T14:00:00-05:00",
+      "2026-11-11T14:30:00-05:00"
+    );
+    expect(later.countingDay?.toString()).toBe("2026-11-02");
+    expect(later.startDay?.toString()).toBe("2026-11-11");
+  });
+
   test("left where it is, the series' own rule from its first day", () => {
     const kept = repeat({});
     expect(kept.recurrence).toEqual(seriesRecurrence);

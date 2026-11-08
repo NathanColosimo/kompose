@@ -14,6 +14,7 @@ import {
   movedMeetingDropped,
   occurrenceDayMoved,
   occurrenceRepeatShown,
+  otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatCountingDay,
@@ -21,6 +22,7 @@ import {
   repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
+  seriesTimeZone,
   setPrimaryRecurrenceRule,
   untilDefaultDay,
 } from "./google-event-recurrence";
@@ -1584,6 +1586,63 @@ describe("a series in another zone than its rescheduled occurrence", () => {
         timeZone: "America/New_York",
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+  });
+
+  test("before the series loads, reads its zone from the original slot", () => {
+    const fromSlot = {
+      ...occurrence,
+      originalStartTime: {
+        dateTime: "2026-11-10T09:00:00+09:00",
+        timeZone: "Asia/Tokyo",
+      },
+    };
+    // Tue Nov 10 8:00 in New York is still Tuesday in Tokyo: not moved.
+    expect(
+      occurrenceDayMoved({
+        editedEnd: {
+          dateTime: "2026-11-10T08:30:00-05:00",
+          timeZone: "America/New_York",
+        },
+        editedStart: {
+          dateTime: "2026-11-10T08:00:00-05:00",
+          timeZone: "America/New_York",
+        },
+        occurrence: fromSlot,
+        timeZone: "America/New_York",
+      })
+    ).toBe(false);
+    // The series' zone, named where the app's differs.
+    expect(otherTimeZone(fromSlot, "America/New_York")).toBe("Asia/Tokyo");
+    expect(otherTimeZone(occurrence, "America/New_York", masterStart)).toBe(
+      "Asia/Tokyo"
+    );
+    expect(otherTimeZone(fromSlot, "Asia/Tokyo")).toBeUndefined();
+  });
+
+  test("reads the series' zone from its master, its original slot, then the meeting", () => {
+    const newYork = "America/New_York";
+    expect(seriesTimeZone(occurrence, masterStart, "UTC")).toBe("Asia/Tokyo");
+    expect(
+      seriesTimeZone(
+        {
+          ...occurrence,
+          originalStartTime: {
+            ...occurrence.originalStartTime,
+            timeZone: "Europe/Paris",
+          },
+        },
+        null,
+        "UTC"
+      )
+    ).toBe("Europe/Paris");
+    expect(seriesTimeZone(occurrence, null, "UTC")).toBe(newYork);
+    expect(
+      seriesTimeZone(
+        { start: { dateTime: occurrence.start.dateTime } },
+        null,
+        "UTC"
+      )
+    ).toBe("UTC");
   });
 
   test("keeps a slot the new repeat still has, on the series' day", () => {
