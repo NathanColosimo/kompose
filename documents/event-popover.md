@@ -36,7 +36,11 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 ### Save / Cancel behavior
 - Explicit **Save** / **Cancel** buttons at the bottom of the form (edit mode).
 - **Save**: builds a close-save request from the form, then processes mutations (update, move, create).
-- **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving.
+  - The editor stays open ("Saving…", fields read-only) until the save succeeds. A failure keeps it open with the edits and a toast ("Couldn't save your changes. They're still here.").
+  - A recurring event asks for the scope in a dialog over the editor. Cancel goes back to the editor with the edits; Save there holds the editor the same way.
+  - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
+  - The repeat is sent only when the user changed it with the Repeat control. An occurrence's pattern lives on its master, which can load after the editor opens.
+- **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs).
 - When `EventEditForm` is used inside `EventCreationPopover`, `onCancel` is not passed, so the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
 
 ### Create Mode

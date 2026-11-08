@@ -3,6 +3,10 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import {
+  SAVE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   getTaskUpdateScopeDecision,
@@ -10,7 +14,6 @@ import {
   haveTaskTagIdsChanged,
   markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
-  SAVE_FAILURE_MESSAGE,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
@@ -207,27 +210,34 @@ export function useTaskEditorFlow() {
     };
   }
 
-  function create(nextDraft: TaskDraft) {
+  /** Resolves true once the task is created. */
+  function create(nextDraft: TaskDraft): Promise<boolean> {
     let title = nextDraft.title.trim();
     if (!title && nextDraft.links.length > 0) {
       const first = nextDraft.links[0];
       title = first.title ?? new URL(first.url).hostname;
     }
 
-    createTask.mutate({
-      description: trimmedDescription(nextDraft),
-      dueDate: nextDraft.dueDate,
-      durationMinutes: nextDraft.durationMinutes,
-      isException: false,
-      links: nextDraft.links,
-      recurrence: nextDraft.recurrence,
-      seriesMasterId: null,
-      startDate: nextDraft.startDate,
-      startTime: nextDraft.startTime,
-      status: "todo",
-      tagIds: nextDraft.tagIds,
-      title,
-    });
+    return createTask
+      .mutateAsync({
+        description: trimmedDescription(nextDraft),
+        dueDate: nextDraft.dueDate,
+        durationMinutes: nextDraft.durationMinutes,
+        isException: false,
+        links: nextDraft.links,
+        recurrence: nextDraft.recurrence,
+        seriesMasterId: null,
+        startDate: nextDraft.startDate,
+        startTime: nextDraft.startTime,
+        status: "todo",
+        tagIds: nextDraft.tagIds,
+        title,
+        failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+      })
+      .then(
+        () => true,
+        () => false
+      );
   }
 
   function save() {
@@ -242,8 +252,7 @@ export function useTaskEditorFlow() {
     }
 
     if (!editingTask) {
-      create(draft);
-      close();
+      holdUntil(create(draft));
       return;
     }
 
@@ -281,24 +290,34 @@ export function useTaskEditorFlow() {
    * Saves an edited task, holding the editor ("Saving…") until the save
    * succeeds, so a failure keeps the draft (and closes any scope dialog).
    */
-  function holdForSave(nextDraft: TaskDraft, scope: UpdateScope) {
+  /**
+   * The editor stays open ("Saving…") until `saved` resolves true, so a
+   * failed save or create keeps the draft.
+   */
+  function holdUntil(saved: Promise<boolean>) {
     Keyboard.dismiss();
     setIsSavingStatus(true);
     const session = sessionRef.current;
-    commitUpdate(nextDraft, scope, undefined, {
-      failureMessage: SAVE_FAILURE_MESSAGE,
-    }).then((saved) => {
+    saved.then((ok) => {
       if (sessionRef.current !== session) {
         return;
       }
       setIsSavingStatus(false);
-      if (saved) {
+      if (ok) {
         close();
         return;
       }
       setPendingSaveDraft(null);
       setScopeDialog(null);
     });
+  }
+
+  function holdForSave(nextDraft: TaskDraft, scope: UpdateScope) {
+    holdUntil(
+      commitUpdate(nextDraft, scope, undefined, {
+        failureMessage: SAVE_FAILURE_MESSAGE,
+      })
+    );
   }
 
   /**

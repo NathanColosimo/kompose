@@ -41,6 +41,10 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
+import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  SAVE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
@@ -1457,6 +1461,7 @@ export default function CalendarTab() {
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
+        failureMessage: SAVE_FAILURE_MESSAGE,
         event: {
           ...draft.sourceEvent,
           ...eventPayload,
@@ -1499,6 +1504,7 @@ export default function CalendarTab() {
         await createEvent.mutateAsync({
           accountId: draft.calendar.accountId,
           calendarId: draft.calendar.calendarId,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
           event: buildEventPayload(draft),
         });
         closeEventModal();

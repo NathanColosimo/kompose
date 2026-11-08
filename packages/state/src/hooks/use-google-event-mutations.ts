@@ -10,6 +10,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import { type HeldSave, heldSaveError } from "../held-save";
 
 /**
  * Extended update input that includes the full Event for client-side sanitization.
@@ -27,8 +28,10 @@ export function useGoogleEventMutations() {
   const { orpc, notifyError } = useStateConfig();
 
   const createEvent = useMutation({
-    mutationFn: async (variables: CreateEventInput) =>
-      orpc.googleCal.events.create(variables),
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      ...variables
+    }: CreateEventInput & HeldSave) => orpc.googleCal.events.create(variables),
     onMutate: async (variables) => {
       if (variables.event.recurrence?.length) {
         return { previousQueries: undefined, optimisticId: undefined };
@@ -80,8 +83,8 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, { failureMessage }, context) => {
+      notifyError?.(heldSaveError(err, failureMessage));
       if (context?.previousQueries) {
         for (const [qk, data] of context.previousQueries) {
           queryClient.setQueryData(qk, data);
@@ -102,7 +105,7 @@ export function useGoogleEventMutations() {
   });
 
   const updateEvent = useMutation({
-    mutationFn: async (variables: UpdateGoogleEventInput) =>
+    mutationFn: async (variables: UpdateGoogleEventInput & HeldSave) =>
       orpc.googleCal.events.update({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -140,8 +143,8 @@ export function useGoogleEventMutations() {
 
       return { previousQueries };
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, { failureMessage }, context) => {
+      notifyError?.(heldSaveError(err, failureMessage));
 
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {

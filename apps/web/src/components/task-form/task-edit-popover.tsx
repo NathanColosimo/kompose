@@ -10,6 +10,10 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
+import {
+  SAVE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -25,7 +29,6 @@ import {
   markStatusFailureMessage,
   repeatChangeNote,
   resolveTaskRecurrenceForEditor,
-  SAVE_FAILURE_MESSAGE,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
@@ -427,7 +430,7 @@ export function TaskEditForm({
   initialValues?: Partial<TaskFormValues>;
   mode: "create" | "edit";
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
-  submitRef?: React.Ref<() => boolean>;
+  submitRef?: React.Ref<() => boolean | Promise<boolean>>;
   onClose: () => void;
   /** Mark done is saving: the popover holds (no Escape or outside close). */
   onSavingChange?: (saving: boolean) => void;
@@ -660,15 +663,31 @@ export function TaskEditForm({
     [onClose]
   );
 
+  /**
+   * True when the editor can close now, false when it stays (a dialog, or a
+   * save it holds for), or the create to wait for when the caller holds.
+   */
   const submit = useCallback(
-    (values: TaskFormValues) => {
+    (values: TaskFormValues): boolean | Promise<boolean> => {
       if (isCreateMode) {
         const payload = buildTaskCreatePayload(values);
         if (!payload) {
           return true;
         }
-        createTask.mutate(payload);
-        return true;
+        const created = createTask
+          .mutateAsync({
+            ...payload,
+            failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+          })
+          .then(
+            () => true,
+            () => false
+          );
+        if (!showActionButtons) {
+          return created;
+        }
+        holdForSave(created);
+        return false;
       }
 
       if (!task) {
@@ -760,8 +779,7 @@ export function TaskEditForm({
   ]);
 
   const handleSaveClick = useCallback(() => {
-    const result = submit(getValues());
-    if (result) {
+    if (submit(getValues()) === true) {
       onClose();
     }
   }, [getValues, onClose, submit]);

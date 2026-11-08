@@ -19,6 +19,10 @@ import {
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  SAVE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
+import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
@@ -191,6 +195,8 @@ function saveDisabledScopes(
 
 export type CloseSaveRequest =
   | { type: "none" }
+  /** The form can't be saved as is (it ends before it starts): stay open. */
+  | { type: "invalid" }
   | {
       type: "save";
       /**
@@ -515,16 +521,19 @@ function RecurrenceEditor({
   );
 }
 
+/** A recurring event's save, waiting on the scope dialog. */
+interface PendingSave {
+  calendarChanged?: { destinationCalendarId: string };
+  defaultScope: RecurrenceScope;
+  hasDataEdits: boolean;
+  patternChanged: boolean;
+  variables: UpdateGoogleEventInput;
+}
+
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
   deleteScope: RecurrenceScope;
-  pendingSave: {
-    variables: UpdateGoogleEventInput;
-    defaultScope: RecurrenceScope;
-    hasDataEdits: boolean;
-    calendarChanged?: { destinationCalendarId: string };
-    patternChanged: boolean;
-  } | null;
+  pendingSave: PendingSave | null;
   scopeDialogOpen: boolean;
   selectedScope: RecurrenceScope;
   simpleDeleteConfirmOpen: boolean;
@@ -639,39 +648,68 @@ export function EventEditPopover({
     null
   );
 
-  const commitPendingSave = useCallback(async () => {
+  // The editor stays open ("Saving…") until a save succeeds, so a failed
+  // save keeps the edits. Escape and outside clicks wait too.
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const holdForSave = useCallback(
+    (save: Promise<unknown>) => {
+      savingRef.current = true;
+      setIsSaving(true);
+      const settle = (saved: boolean) => {
+        savingRef.current = false;
+        setIsSaving(false);
+        if (saved) {
+          setOpen(false);
+        }
+      };
+      save.then(
+        () => settle(true),
+        () => settle(false)
+      );
+    },
+    [setOpen]
+  );
+
+  /** Write the edits, then the calendar move, both with `scope`. */
+  const saveEdits = useCallback(
+    async (
+      edits: Pick<
+        PendingSave,
+        "calendarChanged" | "hasDataEdits" | "variables"
+      >,
+      scope: RecurrenceScope
+    ) => {
+      if (edits.hasDataEdits) {
+        await updateEvent.mutateAsync({
+          ...edits.variables,
+          failureMessage: SAVE_FAILURE_MESSAGE,
+          recurrenceScope: scope,
+        });
+      }
+      if (edits.calendarChanged && event) {
+        await moveEvent.mutateAsync({
+          accountId,
+          calendarId,
+          destinationCalendarId: edits.calendarChanged.destinationCalendarId,
+          eventId: event.id,
+          scope,
+        });
+      }
+    },
+    [accountId, calendarId, event, moveEvent, updateEvent]
+  );
+
+  const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
       return;
     }
-    const { variables, hasDataEdits, calendarChanged } = pendingSave;
-    if (hasDataEdits) {
-      await updateEvent.mutateAsync({
-        ...variables,
-        recurrenceScope: selectedScope,
-      });
-    }
-    if (calendarChanged && event) {
-      await moveEvent.mutateAsync({
-        accountId,
-        calendarId,
-        destinationCalendarId: calendarChanged.destinationCalendarId,
-        eventId: event.id,
-        scope: selectedScope,
-      });
-    }
     dispatchDialog({ type: "clear-pending-save" });
-  }, [
-    accountId,
-    calendarId,
-    event,
-    moveEvent,
-    pendingSave,
-    selectedScope,
-    updateEvent,
-  ]);
+    holdForSave(saveEdits(pendingSave, selectedScope));
+  }, [holdForSave, pendingSave, saveEdits, selectedScope]);
 
   const handleDelete = useCallback(() => {
-    if (readOnly) {
+    if (readOnly || savingRef.current) {
       return;
     }
     if (!event) {
@@ -712,27 +750,42 @@ export function EventEditPopover({
   }, [accountId, calendarId, deleteEvent, deleteScope, event]);
 
   const handleCancel = useCallback(() => {
-    setOpen(false);
+    if (!savingRef.current) {
+      setOpen(false);
+    }
   }, [setOpen]);
 
   const handleSave = useCallback(() => {
+    if (savingRef.current) {
+      return;
+    }
     if (readOnly) {
       setOpen(false);
       return;
     }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
-    setOpen(false);
-
+    if (request.type === "invalid") {
+      // The form says why ("Ends before it starts.").
+      return;
+    }
     if (request.type === "none") {
+      setOpen(false);
       return;
     }
 
     if (request.type === "create") {
-      createEvent.mutate(request.payload);
+      holdForSave(
+        createEvent.mutateAsync({
+          ...request.payload,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+        })
+      );
       return;
     }
 
     if (request.type === "save") {
+      // A recurring event asks for the scope over the editor, which stays
+      // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
         const forceAll = Boolean(request.calendarChanged);
         const scope = forceAll ? "all" : request.defaultScope;
@@ -750,36 +803,9 @@ export function EventEditPopover({
         return;
       }
 
-      const saveAndMove = async () => {
-        if (request.hasDataEdits) {
-          await updateEvent.mutateAsync({
-            ...request.variables,
-            recurrenceScope: "this",
-          });
-        }
-        if (request.calendarChanged && event) {
-          await moveEvent.mutateAsync({
-            accountId,
-            calendarId,
-            destinationCalendarId:
-              request.calendarChanged.destinationCalendarId,
-            eventId: event.id,
-            scope: "this",
-          });
-        }
-      };
-      saveAndMove().catch(() => null);
+      holdForSave(saveEdits(request, "this"));
     }
-  }, [
-    accountId,
-    calendarId,
-    createEvent,
-    event,
-    moveEvent,
-    readOnly,
-    setOpen,
-    updateEvent,
-  ]);
+  }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
 
   useHotkeys(
     "mod+enter",
@@ -812,9 +838,12 @@ export function EventEditPopover({
             e.preventDefault();
             handleCancel();
           }}
+          // Clicks in the scope dialog over the editor land outside it.
           onInteractOutside={(e) => {
             e.preventDefault();
-            handleCancel();
+            if (!scopeDialogOpen) {
+              handleCancel();
+            }
           }}
           onOpenAutoFocus={(e) => {
             if (mode === "edit") {
@@ -829,6 +858,7 @@ export function EventEditPopover({
             closeSaveRequestRef={buildCloseSaveRequestRef}
             end={end}
             event={event}
+            isSaving={isSaving}
             key={event?.id ?? "create-event"}
             mode={mode}
             onCancel={handleCancel}
@@ -842,7 +872,7 @@ export function EventEditPopover({
         </PopoverContent>
       </Popover>
 
-      {/* Post-close recurrence scope prompt (covers both save and move for recurring events). */}
+      {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
         description={
           pendingSave?.calendarChanged
@@ -1677,6 +1707,7 @@ function EventFormActionRow({
   isCreateMode,
   readOnly = false,
   saveDisabled = false,
+  saving = false,
   onDelete,
   onCancel,
   onSave,
@@ -1684,6 +1715,8 @@ function EventFormActionRow({
   isCreateMode: boolean;
   readOnly?: boolean;
   saveDisabled?: boolean;
+  /** Saving: the row waits, and Save says so. */
+  saving?: boolean;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1715,7 +1748,7 @@ function EventFormActionRow({
               size="sm"
               type="button"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </Button>
           )}
         </div>
@@ -1732,6 +1765,7 @@ export function EventEditForm({
   end,
   mode,
   closeSaveRequestRef,
+  isSaving = false,
   onSave,
   onCancel,
   onDelete,
@@ -1748,6 +1782,8 @@ export function EventEditForm({
   end: Date;
   mode: "create" | "edit";
   closeSaveRequestRef: React.Ref<() => CloseSaveRequest>;
+  /** A save is running: the fields are read-only and Save says "Saving…". */
+  isSaving?: boolean;
   /** Trigger the save flow (builds close-save request and processes it). */
   onSave: () => void;
   /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
@@ -2082,6 +2118,11 @@ export function EventEditForm({
       if (readOnly) {
         return { type: "none" };
       }
+      // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
+      // comes through here, so none can write an end before the start.
+      if (endsBeforeStart(values)) {
+        return { type: "invalid" };
+      }
       const resolvedConference =
         pendingConferenceRef.current ?? pendingConference;
       if (isCreateMode) {
@@ -2196,7 +2237,8 @@ export function EventEditForm({
   }
 
   return (
-    <div className="space-y-3">
+    // Read-only while a save runs: a change typed then wouldn't be saved.
+    <fieldset className="min-w-0 space-y-3" disabled={isSaving}>
       {headerContent ? <div>{headerContent}</div> : null}
       {readOnly && readOnlyReason ? (
         <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
@@ -2406,8 +2448,9 @@ export function EventEditForm({
           onSave={onSave}
           readOnly={readOnly}
           saveDisabled={endsBeforeStart(watchedValues)}
+          saving={isSaving}
         />
       ) : null}
-    </div>
+    </fieldset>
   );
 }

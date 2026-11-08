@@ -24,6 +24,7 @@ import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
+import { type HeldSave, heldSaveError } from "../held-save";
 import { mergeSavedTasks } from "../task-cache";
 
 interface UseTasksOptions {
@@ -44,18 +45,21 @@ export function useTasks(options: UseTasksOptions = {}) {
   });
 
   const createTask = useMutation({
-    mutationFn: async (task: ClientTaskInsertDecoded) => {
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      ...task
+    }: ClientTaskInsertDecoded & HeldSave) => {
       const encoded = clientTaskInsertCodec.encode(task);
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, { failureMessage }, context) => {
+      notifyError?.(heldSaveError(err, failureMessage));
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onMutate: async (task: ClientTaskInsertDecoded) => {
+    onMutate: async (task: ClientTaskInsertDecoded & HeldSave) => {
       if (task.recurrence) {
         return { optimisticId: undefined, previousTasks: undefined };
       }
@@ -139,11 +143,7 @@ export function useTasks(options: UseTasksOptions = {}) {
       return results.map((t) => taskSelectCodec.parse(t));
     },
     onError: (err, { failureMessage }, context) => {
-      // A friendly message for a held save, with the server's error kept as
-      // its cause for logs and debugging.
-      notifyError?.(
-        failureMessage ? new Error(failureMessage, { cause: err }) : err
-      );
+      notifyError?.(heldSaveError(err, failureMessage));
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
