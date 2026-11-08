@@ -1027,6 +1027,7 @@ function EventAllDayAndMeetingRow({
       >
         <Text className="font-medium text-foreground text-sm">All day</Text>
         <RNSwitch
+          accessibilityLabel="All day"
           onValueChange={onToggleAllDay}
           thumbColor={allDay ? "#ffffff" : "#f4f3f4"}
           trackColor={{ false: mutedColor, true: switchActiveColor }}
