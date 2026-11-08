@@ -176,7 +176,10 @@ export function keptSeriesStart(
   }
   return original.date
     ? { date: original.date }
-    : { dateTime: original.dateTime, timeZone: edited.timeZone };
+    : {
+        dateTime: original.dateTime,
+        timeZone: edited.timeZone ?? original.timeZone,
+      };
 }
 
 /** The day a Google start falls on in `timeZone`. */
@@ -191,7 +194,10 @@ export function startDay(start: EventTime, timeZone: string) {
 /**
  * The start and end a series edit sends: the user's when they changed the
  * start; otherwise the occurrence's place in the series, with the length
- * they set if they changed the end, else the series'.
+ * they set if they changed the end, else the series'. A length counts only
+ * in the kept start's form (days, or exact time): an occurrence made all
+ * day, or timed, on its own can't lend the series its length. With no
+ * length in that form, the edited times go as they are.
  */
 function seriesEditTimes(
   edited: GoogleEvent,
@@ -199,11 +205,21 @@ function seriesEditTimes(
   series: Pick<GoogleEvent, "end" | "start"> | undefined
 ): Pick<GoogleEvent, "end" | "start"> {
   const start = keptSeriesStart(edited.start, occurrence);
-  const length = sameTime(edited.end, occurrence.end)
-    ? ((series && lengthOf(series.start, series.end)) ??
-      lengthOf(occurrence.start, occurrence.end))
-    : lengthOf(edited.start, edited.end);
-  if (!(start && length)) {
+  if (!start) {
+    return { end: edited.end, start: edited.start };
+  }
+  const allDay = Boolean(start.date);
+  const lengthInForm = (from: EventTime, to: EventTime) =>
+    Boolean(from.date) === allDay && Boolean(to.date) === allDay
+      ? lengthOf(from, to)
+      : null;
+  const length =
+    (sameTime(edited.end, occurrence.end)
+      ? null
+      : lengthInForm(edited.start, edited.end)) ??
+    (series ? lengthInForm(series.start, series.end) : null) ??
+    lengthInForm(occurrence.start, occurrence.end);
+  if (!length) {
     return { end: edited.end, start: edited.start };
   }
   const end = start.date
@@ -212,12 +228,12 @@ function seriesEditTimes(
         dateTime: Temporal.Instant.from(start.dateTime ?? "")
           .add(length)
           .toString(),
-        timeZone: edited.end.timeZone,
+        timeZone: start.timeZone,
       };
   return { end, start };
 }
 
-/** A text field as the editor seeded it, or null when the user changed it. */
+/** The trimmed value when the user changed the field, else null. */
 function changedText(
   value: string | undefined,
   seed: string | undefined

@@ -193,4 +193,56 @@ describe("seriesEdit", () => {
     });
     expect(Object.keys(sent).sort()).toEqual(["end", "id", "start"]);
   });
+
+  test("an all-day occurrence of a timed series keeps the series' time", () => {
+    // Made all day on its own; the user lengthens it to two days.
+    const allDay: GoogleEvent = {
+      ...slot,
+      end: { date: "2026-11-10" },
+      start: { date: "2026-11-09" },
+    };
+    const sent = seriesEdit({
+      edited: { ...allDay, end: { date: "2026-11-11" } },
+      occurrence: allDay,
+      series: master,
+    });
+    expect(instant(sent.start)).toBe(instant(at("2026-11-09T10:00:00-05:00")));
+    expect(instant(sent.end)).toBe(instant(at("2026-11-09T10:30:00-05:00")));
+  });
+
+  test("a timed occurrence of an all-day series keeps the series' day", () => {
+    const allDaySeries: GoogleEvent = {
+      ...master,
+      end: { date: "2026-11-03" },
+      start: { date: "2026-11-02" },
+    };
+    // Made timed on its own; the user moves only its end.
+    const timed: GoogleEvent = {
+      ...slot,
+      end: at("2026-11-09T11:00:00-05:00"),
+      originalStartTime: { date: "2026-11-09" },
+      start: at("2026-11-09T10:00:00-05:00"),
+    };
+    const sent = seriesEdit({
+      edited: { ...timed, end: at("2026-11-09T11:30:00-05:00") },
+      occurrence: timed,
+      series: allDaySeries,
+    });
+    expect(sent.start).toEqual({ date: "2026-11-09" });
+    expect(sent.end).toEqual({ date: "2026-11-10" });
+  });
+
+  test("with the series not loaded, a length in the other form sends the edited times", () => {
+    const allDay: GoogleEvent = {
+      ...slot,
+      end: { date: "2026-11-10" },
+      start: { date: "2026-11-09" },
+    };
+    const sent = seriesEdit({
+      edited: { ...allDay, summary: "Renamed" },
+      occurrence: allDay,
+    });
+    expect(sent.start).toEqual({ date: "2026-11-09" });
+    expect(sent.end).toEqual({ date: "2026-11-10" });
+  });
 });

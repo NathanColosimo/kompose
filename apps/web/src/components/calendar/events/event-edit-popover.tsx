@@ -227,6 +227,31 @@ function saveChanges(
   };
 }
 
+/**
+ * The scopes a pending save can't use, and the dialog's line saying why:
+ * the shared rules, plus a color set back to the calendar's, which only
+ * one occurrence can take for now (a series save can't clear its color
+ * until the server accepts a clear; tracked with #125).
+ */
+function saveScopeState(
+  pendingSave: PendingSave | null,
+  series: Parameters<typeof saveChanges>[1]
+): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  const changes = saveChanges(pendingSave, series);
+  const disabled = eventSaveDisabledScopes(changes);
+  if (!pendingSave?.colorReset) {
+    return { description: eventSaveDescription(changes), disabled };
+  }
+  return {
+    description:
+      "Going back to the calendar's color applies to this occurrence only. For the series, pick a color instead.",
+    disabled: { ...disabled, all: true, following: true },
+  };
+}
+
 export type CloseSaveRequest =
   | { type: "none" }
   /** The form can't be saved as is (it ends before it starts): stay open. */
@@ -249,6 +274,8 @@ export type CloseSaveRequest =
       dateMoved: boolean;
       /** Why Entire series would skip it (`repeatSkipsOccurrence`). */
       repeatSkips: "day" | "end" | null;
+      /** The color went back to the calendar's (`colorId` cleared). */
+      colorReset: boolean;
     }
   | {
       type: "create";
@@ -704,15 +731,11 @@ const RECURRENCE_ENDS = [
 ] as const;
 
 /** A recurring event's save, waiting on the scope dialog. */
-interface PendingSave {
-  calendarChanged?: { destinationCalendarId: string };
-  dateMoved: boolean;
-  defaultScope: RecurrenceScope;
-  hasDataEdits: boolean;
-  patternChanged: boolean;
-  repeatSkips: "day" | "end" | null;
-  variables: UpdateGoogleEventInput;
-}
+/** A recurring event's save, waiting for its scope. */
+type PendingSave = Omit<
+  Extract<CloseSaveRequest, { type: "save" }>,
+  "isRecurring" | "type"
+>;
 
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
@@ -976,7 +999,7 @@ export function EventEditPopover({
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
-    eventSaveDisabledScopes(saveChanges(pendingSave, seriesStatus))
+    saveScopeState(pendingSave, seriesStatus).disabled
   );
   const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
@@ -1076,6 +1099,7 @@ export function EventEditPopover({
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
+            colorReset: request.colorReset,
             dateMoved: request.dateMoved,
             repeatSkips: request.repeatSkips,
             defaultScope: request.calendarChanged
@@ -1173,12 +1197,8 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={eventSaveDescription(
-          saveChanges(pendingSave, seriesStatus)
-        )}
-        disabledScopes={eventSaveDisabledScopes(
-          saveChanges(pendingSave, seriesStatus)
-        )}
+        description={saveScopeState(pendingSave, seriesStatus).description}
+        disabledScopes={saveScopeState(pendingSave, seriesStatus).disabled}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -1323,6 +1343,39 @@ function editedPattern(
   };
 }
 
+/** What the scope dialog needs to know about an edit to an existing event. */
+function scopeFacts(
+  values: EventFormValues,
+  editedStart: GoogleEvent["start"],
+  ctx: {
+    event: GoogleEvent | undefined;
+    masterStart?: GoogleEvent["start"];
+    timeZone: string;
+  }
+): Pick<PendingSave, "colorReset" | "dateMoved" | "repeatSkips"> {
+  const { event } = ctx;
+  if (!event) {
+    return { colorReset: false, dateMoved: false, repeatSkips: null };
+  }
+  return {
+    colorReset: Boolean(event.colorId) && !values.colorId,
+    dateMoved: occurrenceDayMoved({
+      editedStart,
+      occurrence: event,
+      timeZone: ctx.timeZone,
+    }),
+    repeatSkips: repeatSkipsOccurrence({
+      // The start a series save sends (seriesEdit): a rescheduled
+      // occurrence left where it is saves from its place in the series.
+      editedStart: keptSeriesStart(editedStart, event) ?? editedStart,
+      occurrence: event,
+      recurrence: values.recurrence,
+      seriesStart: ctx.masterStart,
+      timeZone: ctx.timeZone,
+    }),
+  };
+}
+
 function buildEditPayload(
   values: EventFormValues,
   ctx: {
@@ -1413,27 +1466,8 @@ function buildEditPayload(
       : undefined,
     defaultScope,
     hasDataEdits: ctx.hasEdits,
-    dateMoved: ctx.event
-      ? occurrenceDayMoved({
-          editedStart: variables.event.start,
-          occurrence: ctx.event,
-          timeZone: ctx.timeZone,
-        })
-      : false,
+    ...scopeFacts(values, variables.event.start, ctx),
     isRecurring,
-    repeatSkips: ctx.event
-      ? repeatSkipsOccurrence({
-          // The start a series save sends (seriesEdit): a rescheduled
-          // occurrence left where it is saves from its place in the series.
-          editedStart:
-            keptSeriesStart(variables.event.start, ctx.event) ??
-            variables.event.start,
-          occurrence: ctx.event,
-          recurrence: values.recurrence,
-          seriesStart: ctx.masterStart,
-          timeZone: ctx.timeZone,
-        })
-      : null,
     patternChanged,
     type: "save",
     variables,
