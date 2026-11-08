@@ -25,7 +25,6 @@ import {
   hasSeveralRules,
   occurrenceDayMoved,
   otherTimeZone,
-  seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import { keepsEventTimes } from "@kompose/state/google-event-times";
 import {
@@ -77,7 +76,7 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
-import { seriesSave } from "./events/event-edit-utils";
+import { eventForScope } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -805,27 +804,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       return;
     }
     const { occurrence, update } = pendingGoogleUpdate;
-    // For the series, a moved day carries its rule along.
-    const recurrence =
-      googleScope === "this"
-        ? undefined
-        : seriesRecurrenceForSave({
-            editedEnd: update.event.end,
-            editedStart: update.event.start,
-            masterRecurrence: pendingMaster.data?.recurrence,
-            masterStart: pendingMaster.data?.start,
-            occurrence,
-            recurrence: undefined,
-            timeZone,
-          });
     updateGoogleEventMutation.mutate({
       ...update,
       // For the series, only the new time (and a rule following a moved
       // day): an occurrence renamed or rescheduled on its own keeps that.
-      event:
-        googleScope === "this"
-          ? update.event
-          : seriesSave({ ...update.event, recurrence }, occurrence),
+      event: eventForScope({
+        edited: update.event,
+        master: pendingMaster.data ?? undefined,
+        occurrence,
+        scope: googleScope,
+        timeZone,
+      }),
       recurrenceScope: googleScope,
     });
   }, [
