@@ -45,6 +45,20 @@ describe("seriesEditFields", () => {
     });
   });
 
+  test("an occurrence's own stray spaces aren't a change", () => {
+    const spaced = {
+      ...rescheduled,
+      description: "Agenda\n",
+      summary: "Moved standup ",
+    };
+    const fields = seriesEditFields({
+      edited: { ...untouched, description: "Agenda", summary: "Moved standup" },
+      occurrence: spaced,
+    });
+    expect(fields.summary).toBeUndefined();
+    expect(fields.description).toBeUndefined();
+  });
+
   test("sends what the user changed, a cleared field included", () => {
     const fields = seriesEditFields({
       edited: {

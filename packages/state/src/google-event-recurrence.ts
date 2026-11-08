@@ -707,19 +707,23 @@ export function entireSeriesCost(params: {
 
 /**
  * Whether an Entire series save made through `occurrence` moves the
- * series' start (its time, or its day through its first meeting), as the
- * server reads it: a new length alone doesn't. For `EventSaveChanges`'
- * `retimed`.
+ * series' start (its time, its day through its first meeting, or its
+ * all-day form), as the server reads it: a new length alone doesn't.
+ * Before the series loads (`master` null), any new time might. For
+ * `EventSaveChanges`' `retimed`.
  */
 export function entireSeriesStartMoves(params: {
   edited: { end: EventTime; start: EventTime };
-  master: GoogleEvent;
+  master: GoogleEvent | null;
   occurrence: Pick<GoogleEvent, "end" | "originalStartTime" | "start">;
   timeZone: string;
 }): boolean {
   const { edited, master, occurrence } = params;
   const zone =
-    master.start.timeZone ?? eventTimeZone(occurrence, params.timeZone);
+    master?.start.timeZone ?? eventTimeZone(occurrence, params.timeZone);
+  if (!master) {
+    return !keepsTimes(edited, occurrence, zone);
+  }
   const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
   return !sameTime(start, master.start, zone);
 }
@@ -798,8 +802,9 @@ function slotAt(
 }
 
 /**
- * Replaced by `changedMeetingDropped`, which counts every change the
- * server keeps and new times too; kept until the app layers switch.
+ * Replaced by `entireSeriesCost` (an `EntireSeriesCost`: every change
+ * the server keeps, under a new repeat, start or length); kept until the
+ * app layers switch.
  *
  * The series' first moved (rescheduled) meeting, among those `loaded`,
  * that a new repeat saved for the entire series would cancel: Google keeps

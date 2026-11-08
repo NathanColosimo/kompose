@@ -110,6 +110,9 @@ export const SCOPE_DIALOG_COPY = {
     "Moving to another calendar moves the whole series, but its meetings keep times of their own, so a new time can't go with it. Move the calendar and change the time in two saves.",
   /** A new time for a series meeting several times a day (the server's words). */
   severalRulesTime: refusalMessage({ reason: "severalTimesADay" }),
+  /** After why Entire series is off, from the series' first meeting. */
+  firstMeetingFollowing:
+    "From its first meeting, This and following is the entire series too.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -181,6 +184,12 @@ export interface EventSaveChanges {
    * which the server refuses (`entireSeriesCost`).
    */
   entireSeriesCost?: EntireSeriesCost | null;
+  /**
+   * The occurrence is its series' first meeting (`opensSeries`): This and
+   * following from there is the whole series, which the server refuses
+   * for the same reasons as Entire series.
+   */
+  opensSeries?: boolean;
   /** The user changed the repeat. */
   patternChanged: boolean;
   /**
@@ -244,18 +253,37 @@ export function refuseSave(
   };
 }
 
-/** Every reason a series write is refused for, to tell one from data. */
-const REFUSAL_REASONS: Record<SeriesRefusal["reason"], true> = {
+/** A refusal that names the occurrences it's for. */
+type ListRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
+
+/**
+ * Every reason a series write is refused for, to tell one from data, by
+ * whether it names occurrences: a new reason of either kind fails to
+ * compile until it's listed.
+ */
+const PLAIN_REASONS: Record<
+  Exclude<SeriesRefusal, ListRefusal>["reason"],
+  true
+> = {
   addedBeforeStart: true,
   addedOccurrence: true,
   countUnknown: true,
   deleteFromAddedOccurrence: true,
-  dropsChangedOccurrences: true,
   endsBeforeStart: true,
-  resizesChangedOccurrences: true,
   severalRules: true,
   severalTimesADay: true,
 };
+const LIST_REASONS: Record<ListRefusal["reason"], true> = {
+  dropsChangedOccurrences: true,
+  resizesChangedOccurrences: true,
+};
+
+const isPlainReason = (
+  reason: string
+): reason is Exclude<SeriesRefusal, ListRefusal>["reason"] =>
+  Object.hasOwn(PLAIN_REASONS, reason);
+const isListReason = (reason: string): reason is ListRefusal["reason"] =>
+  Object.hasOwn(LIST_REASONS, reason);
 
 /**
  * The server's refusal of a series write, from a failed save or delete:
@@ -271,20 +299,15 @@ export function seriesRefusalOf(error: unknown): SeriesRefusal | null {
     return null;
   }
   const { reason } = data;
-  if (!(typeof reason === "string" && Object.hasOwn(REFUSAL_REASONS, reason))) {
+  if (typeof reason !== "string") {
     return null;
   }
-  if (
-    !(
-      reason === "dropsChangedOccurrences" ||
-      reason === "resizesChangedOccurrences"
-    )
-  ) {
-    // Checked against every reason just above.
-    return { reason } as SeriesRefusal;
+  if (isPlainReason(reason)) {
+    return { reason };
   }
   const starts = "originalStarts" in data ? data.originalStarts : null;
-  return Array.isArray(starts) &&
+  return isListReason(reason) &&
+    Array.isArray(starts) &&
     starts.every((start) => typeof start === "string")
     ? { originalStarts: starts, reason }
     : null;
@@ -382,14 +405,7 @@ export function seriesSplitBlock(
     return null;
   }
   const masterRecurrence = master.recurrence ?? [];
-  const opensSeries = sameTime(
-    split.originalStart.length === 10
-      ? { date: split.originalStart }
-      : { dateTime: split.originalStart },
-    master.start,
-    split.seriesZone
-  );
-  if (opensSeries) {
+  if (opensSeries(occurrence, master, appTimeZone)) {
     return addsBeforeStart(masterRecurrence, master.start, split.seriesZone)
       ? "addedBeforeStart"
       : null;
@@ -399,6 +415,31 @@ export function seriesSplitBlock(
     (countLeftUnknown({ ...split, masterRecurrence, recurrence })
       ? "countUnknown"
       : null)
+  );
+}
+
+/**
+ * Whether `occurrence` is its series' first meeting (at the series' own
+ * start), as the server reads it: This and following from there saves
+ * the whole series, and Entire series moves its start with it. False for
+ * an event that isn't an occurrence, or before the series' master loads.
+ */
+export function opensSeries(
+  occurrence:
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
+    | null
+    | undefined,
+  master: Pick<GoogleEvent, "start"> | null | undefined,
+  appTimeZone: string
+): boolean {
+  if (!(occurrence?.recurringEventId && master)) {
+    return false;
+  }
+  const zone = master.start.timeZone ?? eventTimeZone(occurrence, appTimeZone);
+  return sameTime(
+    occurrence.originalStartTime ?? occurrence.start,
+    master.start,
+    zone
   );
 }
 
@@ -509,13 +550,25 @@ function scopesOff(
       ? { all: true, following: true, this: true }
       : { following: true, this: true };
   }
+  const followingOn =
+    followingRuleKnown(changes) &&
+    !changes.splitBlocked &&
+    !firstMeetingRefused(changes);
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(allOff ? { all: true } : {}),
-    ...(followingRuleKnown(changes) && !changes.splitBlocked
-      ? {}
-      : { following: true }),
+    ...(followingOn ? {} : { following: true }),
   };
+}
+
+/**
+ * Whether This and following from the series' first meeting is refused
+ * as Entire series is: the server saves it as the whole series. A new day
+ * isn't one of those reasons (through its first meeting the series moves).
+ */
+function firstMeetingRefused(changes: EventSaveChanges): boolean {
+  const off = entireSeriesOff(changes);
+  return Boolean(changes.opensSeries && off && off.reason !== "newDay");
 }
 
 /**
@@ -739,7 +792,12 @@ function splitBlockedDescription(
 
 /** The scope dialog's line for a save: why each scope that's off is. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
-  const line = whyScopesOff(changes);
+  const own = whyScopesOff(changes);
+  const line =
+    !(changes.calendarChanged || changes.splitBlocked) &&
+    firstMeetingRefused(changes)
+      ? `${own} ${SCOPE_DIALOG_COPY.firstMeetingFollowing}`
+      : own;
   return changes.refused ? `${changes.refused.message} ${line}` : line;
 }
 

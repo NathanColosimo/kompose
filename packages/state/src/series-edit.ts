@@ -39,7 +39,8 @@ export function seriesEditFields(params: {
 }): Omit<EditedFields, "summary"> & { summary?: string } {
   const { edited, occurrence } = params;
   // As the server reads them (`changedFields`): an empty field is "", so
-  // one the user cleared still differs from the occurrence's.
+  // one the user cleared still differs from the occurrence's; text is
+  // compared trimmed on both sides, so stray spaces aren't a change.
   const changes = changedFields(
     {
       colorId: edited.colorId ?? "",
@@ -48,7 +49,12 @@ export function seriesEditFields(params: {
       location: edited.location?.trim() ?? "",
       summary: edited.summary.trim(),
     },
-    occurrence
+    {
+      ...occurrence,
+      description: occurrence.description?.trim(),
+      location: occurrence.location?.trim(),
+      summary: occurrence.summary?.trim(),
+    }
   );
   return { ...changes, end: edited.end, start: edited.start };
 }

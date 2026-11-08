@@ -1870,7 +1870,7 @@ describe("entireSeriesCost", () => {
     return cost ? `${cost.reason} ${cost.day}` : undefined;
   };
   const dropped = (params: {
-    edited?: { end: { dateTime: string }; start: { dateTime: string } };
+    edited?: Parameters<typeof entireSeriesCost>[0]["edited"];
     loaded?: ReturnType<typeof meeting>[];
     occurrence?: ReturnType<typeof meeting>;
     recurrence?: string[];
@@ -1917,6 +1917,17 @@ describe("entireSeriesCost", () => {
     ).toBe("newStart 2026-12-07");
   });
 
+  test("making the series all day is a new start too", () => {
+    expect(
+      dropped({
+        edited: {
+          end: { date: "2026-12-04" },
+          start: { date: "2026-12-03" },
+        },
+      })
+    ).toBe("newStart 2026-12-07");
+  });
+
   test("a new start resets them even where the rule still meets", () => {
     // Daily from Tue Dec 1; its first meeting moved to Wed Dec 2 at 9:00.
     // The series still meets on Dec 7 at 9:00, but Google cancels every
@@ -1954,6 +1965,20 @@ describe("entireSeriesCost", () => {
         end: at("2026-12-03T10:30:00-05:00"),
         start: at("2026-12-03T10:00:00-05:00"),
       })
+    ).toBe(true); // Before the series loads, any new time might move it.
+    const unloaded = (edited: {
+      end: { dateTime: string };
+      start: { dateTime: string };
+    }) =>
+      entireSeriesStartMoves({
+        edited,
+        master: null,
+        occurrence: opened,
+        timeZone: zone,
+      });
+    expect(unloaded(keepTimes)).toBe(false);
+    expect(
+      unloaded({ end: at("2026-12-03T10:00:00-05:00"), start: opened.start })
     ).toBe(true);
   });
 

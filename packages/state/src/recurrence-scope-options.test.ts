@@ -65,6 +65,7 @@ test("says why whenever a scope is off", () => {
   const all = combinations({
     calendarChanged: flags,
     dateMoved: flags,
+    opensSeries: flags,
     entireSeriesCost: [
       null,
       ...(["lostSlot", "newStart", "ownLength"] as const).map((reason) => ({
@@ -474,7 +475,6 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     const longer = {
       ...none,
       entireSeriesCost: { day: dec7, reason: "ownLength" } as const,
-      retimed: true,
     };
     expect(off(longer)).toEqual(["all"]);
     expect(eventSaveDescription(longer)).toBe(
@@ -514,6 +514,34 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(eventSaveDescription(several)).toBe(
       SCOPE_DIALOG_COPY.severalRulesTime
     );
+  });
+
+  test("from the series' first meeting, This and following is it too", () => {
+    // The server saves This and following from there as the whole series,
+    // and refuses it for the same reasons.
+    const first = {
+      ...none,
+      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
+      opensSeries: true,
+      retimed: true,
+    };
+    expect(off(first)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(first)).toBe(
+      "Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+    );
+    // A series meeting several times a day, given a new time there.
+    const several = {
+      ...none,
+      opensSeries: true,
+      retimed: true,
+      severalRules: true,
+    };
+    expect(off(several)).toEqual(["all", "following"]);
+    // A new day for the first meeting moves the whole series: only Entire
+    // series' own rule keeps it off.
+    expect(off({ ...none, dateMoved: true, opensSeries: true })).toEqual([
+      "all",
+    ]);
   });
 
   test("still reads the field it replaces, droppedMovedDay", () => {
