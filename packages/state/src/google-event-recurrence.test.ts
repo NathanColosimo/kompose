@@ -202,9 +202,18 @@ describe("followStart", () => {
     expect(
       follow("RRULE:FREQ=WEEKLY;BYDAY=TU,TH", "2026-11-10", "2026-11-11")
     ).toBe("RRULE:FREQ=WEEKLY;BYDAY=WE,TH");
+    // Several days keep their set when the new start is one of them: a
+    // weekday standup moved to Tuesday still meets on Mondays.
     expect(
       follow("RRULE:FREQ=WEEKLY;BYDAY=TU,WE", "2026-11-10", "2026-11-11")
-    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=WE");
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=TU,WE");
+    expect(
+      follow(
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+        "2026-11-09",
+        "2026-11-10"
+      )
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR");
   });
 
   test("carries a yearly month and a BYSETPOS weekday", () => {
@@ -399,9 +408,8 @@ describe("followStart", () => {
       "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE",
       "EXDATE;VALUE=DATE:20261202",
     ]);
-    // Yearly on the 9th of every month, moved Jan 9 -> Feb 10: each skip
-    // moves as the meetings did, the k-th after the old start to the k-th
-    // after the new (Jun 9, the 5th, is Jul 10).
+    // Yearly on the 9th of every month, moved Jan 9 -> Feb 10: a skip
+    // stays in its own month (Jun 9 is Jun 10), as the person is away then.
     expect(
       followed(
         ["RRULE:FREQ=YEARLY;BYMONTHDAY=9", "EXDATE;VALUE=DATE:20270609"],
@@ -410,8 +418,36 @@ describe("followStart", () => {
       )
     ).toEqual([
       "RRULE:FREQ=YEARLY;BYMONTHDAY=10",
-      "EXDATE;VALUE=DATE:20270710",
+      "EXDATE;VALUE=DATE:20270610",
     ]);
+  });
+
+  test("keeps skips off real meetings and the picked day", () => {
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    // The 2nd Tue moved Jan 12 -> Feb 17 (the 3rd Wed): the skipped Jun 8
+    // is June's 3rd Wed (Jun 16), not July's.
+    expect(
+      followed(
+        ["RRULE:FREQ=MONTHLY;BYDAY=2TU", "EXDATE;VALUE=DATE:20270608"],
+        "2027-01-12",
+        "2027-02-17"
+      )
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=3WE", "EXDATE;VALUE=DATE:20270616"]);
+    // The start moved onto a skipped day: that day was picked, so it meets.
+    expect(
+      followed(
+        ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261116"],
+        "2026-11-09",
+        "2026-11-16"
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
   });
 
   test("moves skips across month and year ends, and BYSETPOS ones", () => {
@@ -423,14 +459,15 @@ describe("followStart", () => {
         timeZone: zone,
         to: day(to),
       });
-    // Monthly Nov 30 -> Dec 1: the skipped Dec 30 is next period's Jan 1.
+    // Monthly Nov 30 -> Dec 1: the skipped Dec 30 was December's meeting,
+    // and December's is now Dec 1, the day picked: nothing new is skipped.
     expect(
       followed(
         ["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20261230"],
         "2026-11-30",
         "2026-12-01"
       )
-    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20270101"]);
+    ).toEqual(["RRULE:FREQ=MONTHLY", "EXDATE;VALUE=DATE:20261230"]);
     // Yearly Nov 9 -> Dec 9: the skipped Nov 9 2027 is Dec 9 2027.
     expect(
       followed(

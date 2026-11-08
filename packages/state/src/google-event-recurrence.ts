@@ -324,9 +324,13 @@ function followedDays(
   if (freq === "WEEKLY") {
     const fromCode = weekdayCodeOf(from);
     const toCode = weekdayCodeOf(to);
+    // Several days keep their set when the new start is already one of
+    // them (a weekday standup moved to Tuesday still meets Mondays); the
+    // start's day swaps for the new one only when that's a new day.
+    const follows = byDay.includes(fromCode) && !byDay.includes(toCode);
     return {
-      byDay: byDay.includes(fromCode)
-        ? [...new Set(byDay.map((day) => (day === fromCode ? toCode : day)))]
+      byDay: follows
+        ? byDay.map((day) => (day === fromCode ? toCode : day))
         : byDay,
       monthDays,
     };

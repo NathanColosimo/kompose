@@ -288,45 +288,21 @@ export function matchRecurrenceToStart(
   return changed ? next : recurrence;
 }
 
-/** The longest a pattern is walked to place a skip: fifty years. */
-const MAX_WALK_DAYS = 366 * 50;
-
-/** How many of `rule`'s days (from `start`) come before `day`; null if `day` isn't one. */
-function positionOf(
-  rule: string,
-  start: Temporal.PlainDate,
-  day: Temporal.PlainDate
-): number | null {
-  let position = 0;
-  for (
-    let current = start;
-    Temporal.PlainDate.compare(current, day) <= 0;
-    current = current.add({ days: 1 })
-  ) {
-    if (isRuleDay(rule, start, current) === true) {
-      if (Temporal.PlainDate.compare(current, day) === 0) {
-        return position;
-      }
-      position += 1;
-    }
-  }
-  return null;
-}
-
-/** `rule`'s day at `position` (0 is `start` itself), walking from `start`. */
-function dayAtPosition(
-  rule: string,
-  start: Temporal.PlainDate,
-  position: number
+/** The first of the new rule's days in `month`'s month, from `from` on. */
+function firstRuleDayIn(
+  newRule: string,
+  to: Temporal.PlainDate,
+  month: Temporal.PlainDate,
+  from = month.with({ day: 1 })
 ): Temporal.PlainDate | null {
-  let seen = 0;
-  for (let offset = 0; offset < MAX_WALK_DAYS; offset += 1) {
-    const day = start.add({ days: offset });
-    if (isRuleDay(rule, start, day) === true) {
-      if (seen === position) {
-        return day;
-      }
-      seen += 1;
+  const first = month.with({ day: 1 });
+  for (let offset = 0; offset < first.daysInMonth; offset += 1) {
+    const candidate = first.add({ days: offset });
+    if (
+      Temporal.PlainDate.compare(candidate, from) >= 0 &&
+      isRuleDay(newRule, to, candidate) === true
+    ) {
+      return candidate;
     }
   }
   return null;
@@ -348,29 +324,37 @@ function shiftWithinPeriod(
 }
 
 /**
- * Where a skipped occurrence of the old pattern sits in the new one. Every
- * occurrence moves as the moved one did: by the move's shift within one
- * period for a daily or weekly rule (by its INTERVAL), and position for
- * position for a monthly or yearly one (the k-th meeting after the old
- * start is the k-th after the new). Null when the place isn't one of the
- * new rule's days, or a rule can't be read: the skip then stays.
+ * Where a skipped occurrence of the old pattern sits in the new one: in
+ * its own period, moved as the pattern did. Daily and weekly: by the
+ * move's shift within one period (INTERVAL days, or weeks). Monthly: the
+ * new rule's day in the skip's month (shifted by the move within INTERVAL
+ * months). Yearly: the new rule's day in the skip's month, or else later
+ * that year. A skip usually marks when the person is away, so it stays in
+ * its own time. Null when the place isn't one of the new rule's days.
  */
 function placeInNewPattern(
   freq: string,
-  oldRule: string,
   newRule: string,
   from: Temporal.PlainDate,
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
+  const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
   let place: Temporal.PlainDate | null = null;
   if (freq === "DAILY" || freq === "WEEKLY") {
-    const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
     const period = freq === "WEEKLY" ? 7 * interval : interval;
     place = day.add({ days: shiftWithinPeriod(from, to, period) });
-  } else {
-    const position = positionOf(oldRule, from, day);
-    place = position === null ? null : dayAtPosition(newRule, to, position);
+  } else if (freq === "MONTHLY") {
+    const moved = (to.year - from.year) * 12 + to.month - from.month;
+    const shift = ((moved % interval) + interval) % interval;
+    place = firstRuleDayIn(newRule, to, day.add({ months: shift }));
+  } else if (freq === "YEARLY") {
+    const shift = (((to.year - from.year) % interval) + interval) % interval;
+    const year = day.add({ years: shift });
+    place = firstRuleDayIn(newRule, to, year);
+    for (let month = 1; !place && year.month + month <= 12; month += 1) {
+      place = firstRuleDayIn(newRule, to, year.add({ months: month }));
+    }
   }
   return place && isRuleDay(newRule, to, place) === true ? place : null;
 }
@@ -407,44 +391,61 @@ export function moveSkippedDays(params: {
     ) {
       return null;
     }
-    const place = placeInNewPattern(freq, oldRule, newRule, from, to, day);
-    // A place before the new start matches nothing, and the new start is
-    // the meeting just moved there: either way the skip stays.
-    return place && Temporal.PlainDate.compare(place, to) > 0 ? place : null;
+    const place = placeInNewPattern(freq, newRule, from, to, day);
+    // A place before the new start matches nothing, the new start is the
+    // meeting just moved there, and a day the old pattern met on was a
+    // real meeting: the skip never lands on any of them.
+    return place &&
+      Temporal.PlainDate.compare(place, to) > 0 &&
+      isRuleDay(oldRule, from, place) !== true
+      ? place
+      : null;
   };
+  // The new start is the day the person picked: never left skipped.
+  const isNewStart = (day: Temporal.PlainDate | undefined) =>
+    Boolean(day && Temporal.PlainDate.compare(day, to) === 0);
   let changed = false;
-  const next = recurrence.map((line) => {
+  const next = recurrence.flatMap((line) => {
     const list = line.startsWith("EXDATE") ? parseDateList(line, seriesZone) : null;
     if (!list) {
-      return line;
+      return [line];
     }
     const read = list.values.map((value) =>
       readRecurrenceValue(value, list.zone, seriesZone)
     );
     const moved = read.map((value) => (value ? placeOf(value.day) : null));
-    if (moved.every((day) => day === null)) {
-      return line;
+    const dropped = read.map((value) => isNewStart(value?.day));
+    if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
+      return [line];
     }
     changed = true;
     const timed = read.some((value) => value?.instant);
-    const values = read.map((value, index) => {
+    const values = read.flatMap((value, index) => {
+      if (dropped[index]) {
+        return [];
+      }
       const day = moved[index] ?? value?.day;
       if (!(value && day)) {
-        return list.values[index] ?? "";
+        return [list.values[index] ?? ""];
       }
       if (!value.instant) {
-        return compactDate(day);
+        return [compactDate(day)];
       }
       const clock = value.instant
         .toZonedDateTimeISO(seriesZone)
         .toPlainTime()
         .toString({ smallestUnit: "second" })
         .replace(/:/g, "");
-      return `${compactDate(day)}T${clock}`;
+      return [`${compactDate(day)}T${clock}`];
     });
-    return timed
-      ? `${list.name};TZID=${seriesZone}:${values.join(",")}`
-      : `${list.name};VALUE=DATE:${values.join(",")}`;
+    if (values.length === 0) {
+      return [];
+    }
+    return [
+      timed
+        ? `${list.name};TZID=${seriesZone}:${values.join(",")}`
+        : `${list.name};VALUE=DATE:${values.join(",")}`,
+    ];
   });
   return changed ? next : recurrence;
 }

@@ -356,25 +356,18 @@ export function carryCountExactly(
   return withRemainingCount(recurrence, positions.length - left);
 }
 
-/** Whether `time` exists on `day` in `zone` (not in a DST gap). */
+/**
+ * Whether `time` exists on `day` in `zone`: not in a spring-forward gap,
+ * where it would come out as a later time (a repeated fall-back hour
+ * exists, once or twice, and is fine).
+ */
 function existsAt(
   day: Temporal.PlainDate,
   time: Temporal.PlainTime,
   zone: string
 ): boolean {
-  try {
-    return (
-      Temporal.PlainTime.compare(
-        day
-          .toPlainDateTime(time)
-          .toZonedDateTime(zone, { disambiguation: "reject" })
-          .toPlainTime(),
-        time
-      ) === 0
-    );
-  } catch {
-    return false;
-  }
+  const zoned = day.toZonedDateTime({ plainTime: time, timeZone: zone });
+  return Temporal.PlainTime.compare(zoned.toPlainTime(), time) === 0;
 }
 
 /** The rule with its COUNT swapped for `until`. */
