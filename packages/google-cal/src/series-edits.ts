@@ -167,11 +167,12 @@ export function changedFields(
   );
 }
 
-/** A rule's parts that say which days it meets on. */
+/** A rule's parts that say which days it meets on (BYSETPOS picks among them). */
 const DAY_PARTS = new Set([
   "BYDAY",
   "BYMONTH",
   "BYMONTHDAY",
+  "BYSETPOS",
   "BYWEEKNO",
   "BYYEARDAY",
 ]);
@@ -180,8 +181,8 @@ const DAY_PARTS = new Set([
  * Whether a save gives its series a new repeat: the rules it sends
  * (`saved`; left out, the series' own) aren't the series' (`own`). A save
  * that moves the series to a new day sends its rules rebuilt for that day,
- * so then the days they meet on aren't compared: only how often they
- * repeat, and when they end.
+ * so then the parts that pick its days aren't compared (`DAY_PARTS`):
+ * only how often they repeat, and when they end.
  */
 export function newRepeat(params: {
   dayMoved: boolean;

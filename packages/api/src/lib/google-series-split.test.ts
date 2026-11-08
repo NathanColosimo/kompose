@@ -9,6 +9,7 @@ import {
   withRemainingCount,
 } from "@kompose/google-cal/recurrence-utils";
 import { isRuleDay } from "@kompose/google-cal/rule-days";
+import { newRepeat } from "@kompose/google-cal/series-edits";
 import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 
@@ -789,5 +790,34 @@ describe("hasAddedDays", () => {
     expect(
       hasAddedDays(["RRULE:FREQ=WEEKLY", "EXDATE;VALUE=DATE:20261103"])
     ).toBe(false);
+  });
+});
+
+describe("newRepeat", () => {
+  test("a new day's rule rebuilt for it isn't a new repeat", () => {
+    // Monthly on the first Saturday, moved to the second Sunday: the
+    // editor rebuilds which day it picks, in any form.
+    const own = ["RRULE:FREQ=MONTHLY;BYDAY=SA;BYSETPOS=1"];
+    for (const rule of [
+      "RRULE:FREQ=MONTHLY;BYDAY=2SU",
+      "RRULE:FREQ=MONTHLY;BYDAY=SU;BYSETPOS=2",
+    ]) {
+      expect(newRepeat({ dayMoved: true, own, saved: [rule] })).toBe(false);
+    }
+    // Every other month is a new repeat, and so is a new day kept.
+    expect(
+      newRepeat({
+        dayMoved: true,
+        own,
+        saved: ["RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=2SU"],
+      })
+    ).toBe(true);
+    expect(
+      newRepeat({
+        dayMoved: false,
+        own,
+        saved: ["RRULE:FREQ=MONTHLY;BYDAY=2SU"],
+      })
+    ).toBe(true);
   });
 });
