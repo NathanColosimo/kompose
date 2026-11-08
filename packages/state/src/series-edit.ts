@@ -1,4 +1,5 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import { changedFields, keepsTimes } from "@kompose/google-cal/series-edits";
 import { dayOfStart } from "@kompose/google-cal/until";
 import type { Temporal } from "temporal-polyfill";
 import {
@@ -6,12 +7,9 @@ import {
   repeatChanged,
   repeatCountingDay,
   seriesRecurrenceForSave,
+  seriesTimeZone,
 } from "./google-event-recurrence";
-import {
-  type EventTime,
-  keepsEventTimes,
-  type StartTime,
-} from "./google-event-times";
+import type { EventTime, StartTime } from "./google-event-times";
 
 /** The fields an editor sends for an event, as it builds them from its form. */
 export interface EditedFields {
@@ -23,11 +21,6 @@ export interface EditedFields {
   start: EventTime;
   summary: string;
 }
-
-type Occurrence = Pick<
-  GoogleEvent,
-  "colorId" | "conferenceData" | "description" | "location" | "summary"
->;
 
 /**
  * An edit made through one occurrence, saved for its series (This and
@@ -43,33 +36,28 @@ type Occurrence = Pick<
  */
 export function seriesEditFields(params: {
   edited: EditedFields;
-  occurrence: Occurrence;
+  occurrence: GoogleEvent;
 }): Omit<EditedFields, "summary"> & { summary?: string } {
   const { edited, occurrence } = params;
-  const conferenceChanged =
-    JSON.stringify(edited.conferenceData ?? null) !==
-    JSON.stringify(occurrence.conferenceData ?? null);
-  return {
-    colorId: changedText(edited.colorId, occurrence.colorId),
-    conferenceData: conferenceChanged ? edited.conferenceData : undefined,
-    description: changedText(edited.description, occurrence.description),
-    end: edited.end,
-    location: changedText(edited.location, occurrence.location),
-    start: edited.start,
-    summary: changedText(edited.summary, occurrence.summary),
-  };
-}
-
-/**
- * `now` when it differs from what the editor opened with (trimmed), and
- * "" when it was cleared.
- */
-function changedText(
-  now: string | undefined,
-  opened: string | null | undefined
-): string | undefined {
-  const text = now?.trim() ?? "";
-  return text === (opened?.trim() ?? "") ? undefined : text;
+  // As the server reads them (`changedFields`): an empty field is "", so
+  // one the user cleared still differs from the occurrence's; text is
+  // compared trimmed on both sides, so stray spaces aren't a change.
+  const changes = changedFields(
+    {
+      colorId: edited.colorId ?? "",
+      conferenceData: edited.conferenceData,
+      description: edited.description?.trim() ?? "",
+      location: edited.location?.trim() ?? "",
+      summary: edited.summary.trim(),
+    },
+    {
+      ...occurrence,
+      description: occurrence.description?.trim(),
+      location: occurrence.location?.trim(),
+      summary: occurrence.summary?.trim(),
+    }
+  );
+  return { ...changes, end: edited.end, start: edited.start };
 }
 
 /**
@@ -81,7 +69,8 @@ function changedText(
  * place in the series (a rescheduled one's original day) while the edit
  * keeps its times, as the server reads it, else the edited start's day.
  * The repeat's implicit days count from there, unless the save keeps the
- * series' own rule and slot: then from the series' first day.
+ * series' own rule and the meeting's day (new times on that day keep the
+ * series' first day too): then from the series' first day.
  */
 export function seriesRepeatForEdit(params: {
   /** The edited start and end, as the save sends them. */
@@ -105,7 +94,10 @@ export function seriesRepeatForEdit(params: {
   seriesRecurrence: string[] | undefined;
   /** The series' own start (its master's), once loaded. */
   seriesStart: StartTime | null | undefined;
-  /** The series' zone (`eventTimeZone`), where its days count. */
+  /**
+   * The event's zone (`eventTimeZone`). An occurrence's days count in its
+   * series' (`seriesTimeZone`), which this reads first.
+   */
   timeZone: string;
 }): {
   /** The repeat differs from the series' (what a save would send). */
@@ -117,9 +109,12 @@ export function seriesRepeatForEdit(params: {
   /** The day a save for the series starts on. */
   startDay: Temporal.PlainDate | null;
 } {
-  const { edited, event, timeZone } = params;
+  const { edited, event } = params;
   const editedStart = edited.start;
   const occurrence = event?.recurringEventId ? event : null;
+  const timeZone = occurrence
+    ? seriesTimeZone(occurrence, params.seriesStart, params.timeZone)
+    : params.timeZone;
   const changed = repeatChanged({
     edited: params.recurrenceEdited,
     recurrence: params.recurrence,
@@ -133,6 +128,7 @@ export function seriesRepeatForEdit(params: {
         editedEnd: edited.end,
         editedStart,
         occurrence,
+        seriesStart: params.seriesStart,
         timeZone,
       })
   );
@@ -150,22 +146,23 @@ export function seriesRepeatForEdit(params: {
       : undefined;
   // The server keeps the series' slot for an edit that keeps both times;
   // otherwise a save for the series starts at the edited start.
-  const timesKept = occurrence && keepsEventTimes(edited, occurrence, timeZone);
+  const timesKept = occurrence && keepsTimes(edited, occurrence, timeZone);
   const startDay = dayOfStart(
     (timesKept && occurrence.originalStartTime) || editedStart,
     timeZone
   );
-  // The series' own rule and slot: its days count from its first day.
-  // A new repeat, day or time starts it again at `startDay`.
+  // The series' own rule on the meeting's own day: its days count from its
+  // first day, which Entire series keeps for new times there too. A new
+  // repeat or day starts it again at `startDay`.
   const countingDay =
-    timesKept && !changed
-      ? repeatCountingDay({
+    changed || moved
+      ? startDay
+      : repeatCountingDay({
           event,
           formDay: startDay,
           seriesStart: params.seriesStart,
           timeZone,
-        })
-      : startDay;
+        });
   return {
     changed,
     countingDay,

@@ -7,7 +7,7 @@
  */
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
-import { DATE_ONLY, startInstant } from "./until";
+import { DATE_ONLY, googleDateTime, startInstant } from "./until";
 
 /**
  * Why Kompose won't make a series write. Each is refused before anything
@@ -18,11 +18,12 @@ export type SeriesRefusal =
   | { readonly reason: "severalRules" }
   | { readonly reason: "addedOccurrence" }
   | { readonly reason: "deleteFromAddedOccurrence" }
+  | { readonly reason: "addedBeforeStart" }
   | { readonly reason: "endsBeforeStart" }
   | { readonly reason: "countUnknown" }
   | { readonly reason: "severalTimesADay" }
   | {
-      readonly reason: "dropsChangedOccurrences";
+      readonly reason: "dropsChangedOccurrences" | "resizesChangedOccurrences";
       readonly originalStarts: readonly string[];
     };
 
@@ -34,6 +35,24 @@ function dayName(originalStart: string): string {
   );
 }
 
+/** "Nov 23, Nov 30": the occurrences a refusal names. */
+function namedDays(originalStarts: readonly string[]): string {
+  return originalStarts.map(dayName).join(", ");
+}
+
+/**
+ * Where the save can go instead, from the editor it was made in: to this
+ * occurrence alone, or This and following from after the last one named.
+ */
+function elsewhere(originalStarts: readonly string[]): string {
+  const last = originalStarts
+    .map((start) => start.slice(0, 10))
+    .sort()
+    .at(-1);
+  const after = last ? ` from an occurrence after ${dayName(last)}` : "";
+  return `Save it for this occurrence only, or with This and following${after}.`;
+}
+
 /** The refusal in words for the user. */
 export function refusalMessage(refusal: SeriesRefusal): string {
   switch (refusal.reason) {
@@ -41,6 +60,8 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This and following isn't available for a series with more than one rule.";
     case "addedOccurrence":
       return "This and following isn't available for an occurrence added to the series on its own.";
+    case "addedBeforeStart":
+      return "This and following isn't available from this series' first meeting, since meetings were added before it. Use Entire series, or change them one at a time.";
     case "deleteFromAddedOccurrence":
       return "Deleting this and following isn't available from an occurrence added to this series.";
     case "endsBeforeStart":
@@ -48,11 +69,11 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "countUnknown":
       return "This and following isn't available for this series: how many times it has left to repeat can't be worked out.";
     case "severalTimesADay":
-      return "This series meets more than once a day, so its time can't be changed for the entire series. Change one occurrence at a time.";
-    case "dropsChangedOccurrences": {
-      const days = refusal.originalStarts.map(dayName).join(", ");
-      return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.`;
-    }
+      return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
+    case "dropsChangedOccurrences":
+      return `This would undo changes made to single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
+    case "resizesChangedOccurrences":
+      return `This would also change the length of single occurrences given a length of their own (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal.originalStarts)}`;
     default:
       return refusal satisfies never;
   }
@@ -103,8 +124,19 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
   );
 }
 
+/** JSON with each object's keys sorted, so key order never differs. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : 1))
+        )
+      : inner
+  );
+}
+
 const same = (field: keyof CreateEvent, a: unknown, b: unknown) =>
-  JSON.stringify(comparable(field, a)) === JSON.stringify(comparable(field, b));
+  canonical(comparable(field, a)) === canonical(comparable(field, b));
 
 /**
  * The fields the user changed in a save made from `from`, the occurrence
@@ -136,6 +168,27 @@ export function sameTime(
   const from = startInstant(a, zone);
   const to = startInstant(b, zone);
   return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
+}
+
+/** Whether two events last as long: as many days, or as much time. */
+export function sameLength(
+  a: Pick<Event, "end" | "start">,
+  b: Pick<Event, "end" | "start">,
+  zone: string
+): boolean {
+  if (a.start.date || b.start.date) {
+    const days = (time: Pick<Event, "end" | "start">) =>
+      time.start.date && time.end.date
+        ? Temporal.PlainDate.from(time.start.date).until(time.end.date).days
+        : null;
+    return days(a) !== null && days(a) === days(b);
+  }
+  const length = (time: Pick<Event, "end" | "start">) => {
+    const from = startInstant(time.start, zone);
+    const to = startInstant(time.end, zone);
+    return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
+  };
+  return length(a) !== null && length(a) === length(b);
 }
 
 /** Whether `edited` keeps `occurrence`'s start and end. */
@@ -206,13 +259,14 @@ export function placeInNewSeries(params: {
     .toZonedDateTimeISO(zone)
     .toPlainDate()
     .until(to.toZonedDateTimeISO(zone).toPlainDate());
-  return original
-    .toZonedDateTimeISO(zone)
-    .toPlainDate()
-    .add(days)
-    .toZonedDateTime({
-      plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
-      timeZone: zone,
-    })
-    .toString({ smallestUnit: "second", timeZoneName: "never" });
+  return googleDateTime(
+    original
+      .toZonedDateTimeISO(zone)
+      .toPlainDate()
+      .add(days)
+      .toZonedDateTime({
+        plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
+        timeZone: zone,
+      })
+  );
 }
