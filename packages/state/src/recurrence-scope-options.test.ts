@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { refusalMessage } from "@kompose/google-cal/series-edits";
 import { ORPCError } from "@orpc/client";
 import { Temporal } from "temporal-polyfill";
 import {
@@ -846,6 +847,44 @@ describe("the server's refusal of a series write", () => {
     expect(refusalReason({ reason: "severalTimesADay" })).toBe(
       "This series' meetings keep times of their own, so its time can't be changed for the entire series."
     );
+  });
+
+  test("keeps the server's words, less its advice", () => {
+    // Until #125 gives the reason alone, these must stay its leading words.
+    const reasons = [
+      drops,
+      { ...drops, reason: "resizesChangedOccurrences" },
+      { reason: "addedBeforeStart" },
+      { reason: "severalTimesADay" },
+    ] as const;
+    for (const refusal of reasons) {
+      expect(refusalMessage(refusal)).toStartWith(refusalReason(refusal));
+    }
+  });
+
+  test("from the first meeting, a refusal for one scope is for both", () => {
+    // The server saves This and following there as the entire series.
+    const first = { ...none, opensSeries: true };
+    const all = { ...first, refused: refuseSave(null, "all", drops) };
+    expect(off(all)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(all)).toBe(
+      `${refusalReason(drops)} From its first meeting, This and following is the entire series too. Apply your changes to:`
+    );
+    const following = {
+      ...first,
+      refused: refuseSave(null, "following", drops),
+    };
+    expect(off(following)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(following)).toBe(
+      `${refusalReason(drops)} From its first meeting, This and following is the entire series too. Apply your changes to:`
+    );
+    // Not meetings added before the first one: only This and following.
+    expect(
+      off({
+        ...first,
+        refused: refuseSave(null, "following", { reason: "addedBeforeStart" }),
+      })
+    ).toEqual(["following"]);
   });
 
   test("says where the save can still go, from the scopes left", () => {

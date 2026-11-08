@@ -855,7 +855,26 @@ function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
   if (cost) {
     return { cost, reason: "changedMeeting" };
   }
-  return changes.refused?.scopes.all ? { reason: "refused" } : null;
+  return changes.refused?.scopes.all || refusedAsWholeSeries(changes)
+    ? { reason: "refused" }
+    : null;
+}
+
+/**
+ * Whether the server refused This and following from the series' first
+ * meeting as it would Entire series: it saves it there as the whole
+ * series (`updateEventAll`), so its reasons hold for both, but for
+ * meetings added before that first one, which only This and following
+ * can't take.
+ */
+function refusedAsWholeSeries(changes: EventSaveChanges): boolean {
+  return Boolean(
+    changes.opensSeries &&
+      changes.refused?.refusals.some(
+        ({ refusal, scope }) =>
+          scope === "following" && refusal.reason !== "addedBeforeStart"
+      )
+  );
 }
 
 /**
@@ -1059,7 +1078,7 @@ function splitBlockedDescription(
         return off satisfies never;
     }
   })();
-  return line || SCOPE_DIALOG_COPY.saveEvent.description;
+  return line;
 }
 
 /**
@@ -1072,7 +1091,7 @@ function withRepeatScope(
   line: string | null
 ): string {
   if (!changes.patternChanged) {
-    return line ?? SCOPE_DIALOG_COPY.saveEvent.description;
+    return line ?? "";
   }
   return sentences(
     line,
@@ -1105,16 +1124,20 @@ function severalRulesTimeLine(changes: EventSaveChanges): string {
 /**
  * The scope dialog's line for a save: the server's reasons for scopes it
  * refused, why each scope the save itself rules out is off, and, where no
- * scope is left, what to do (`noScopeStepFor`).
+ * scope is left, what to do (`noScopeStepFor`). Where the save rules out
+ * nothing of its own past the server's refusal, it ends with the plain
+ * prompt.
  */
 export function eventSaveDescription(changes: EventSaveChanges): string {
+  const own = whyScopesOff(changes);
+  const step = noScopeStepFor(changes);
   return sentences(
     changes.refused?.message,
-    whyScopesOff(changes),
+    own,
     !(changes.calendarChanged || changes.splitBlocked) &&
       firstMeetingRefused(changes) &&
       SCOPE_DIALOG_COPY.firstMeetingFollowing,
-    noScopeStepFor(changes)
+    step ?? (own ? null : SCOPE_DIALOG_COPY.saveEvent.description)
   );
 }
 
