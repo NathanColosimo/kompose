@@ -197,13 +197,18 @@ interface StartTime {
   dateTime?: string | null;
 }
 
-/** The start's wall-clock time in `timeZone` ("09:00"), for a timed one. */
-/** The day a timed start falls on in `timeZone`; null if it doesn't parse. */
-function dayOfStart(
+/**
+ * The local day a Google start falls on in `timeZone` (an all-day one's
+ * date); null when it has neither or doesn't parse.
+ */
+export function dayOfStart(
   start: StartTime,
   timeZone: string
 ): Temporal.PlainDate | null {
   try {
+    if (start.date) {
+      return Temporal.PlainDate.from(start.date);
+    }
     return start.dateTime
       ? Temporal.Instant.from(start.dateTime)
           .toZonedDateTimeISO(timeZone)
@@ -214,6 +219,7 @@ function dayOfStart(
   }
 }
 
+/** The start's wall-clock time in `timeZone` ("09:00"), for a timed one. */
 function wallClock(start: StartTime, timeZone: string): Temporal.PlainTime {
   try {
     return start.dateTime
@@ -499,10 +505,18 @@ export function matchRecurrenceToStart(
           if (owners.length === 0) {
             return [time];
           }
+          // Another rule's meeting at `at`: any rule but an owner that
+          // moves there itself (a fixed owner that meets at `at` counts).
           const meetsThen = (at: Temporal.PlainTime) =>
             rules.some(
               (rule) =>
-                !owners.includes(rule) &&
+                !(
+                  owners.includes(rule) &&
+                  Temporal.PlainTime.compare(
+                    withRuleClock(rule, time, newTime),
+                    at
+                  ) === 0
+                ) &&
                 isRuleDay(rule, startDay, day) !== false &&
                 !endedBefore(rule, startDay, day, timeZone) &&
                 ruleMeetsAt(rule, at, newTime)

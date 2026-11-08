@@ -3,6 +3,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
+  dayOfStart,
   matchRecurrenceToStart,
   moveSkippedDays,
   untilRuleForDay,
@@ -422,26 +423,6 @@ export function followStart(params: {
     to,
     toTime,
   });
-}
-
-/** The local day a Google start falls on in `timeZone`. */
-function dayOfStart(
-  start: { date?: string | null; dateTime?: string | null },
-  timeZone: string
-): Temporal.PlainDate | null {
-  if (start.date) {
-    return Temporal.PlainDate.from(start.date);
-  }
-  if (!start.dateTime) {
-    return null;
-  }
-  try {
-    return Temporal.Instant.from(start.dateTime)
-      .toZonedDateTimeISO(timeZone)
-      .toPlainDate();
-  } catch {
-    return null;
-  }
 }
 
 /** The wall time a timed Google start is at in `timeZone`. */
