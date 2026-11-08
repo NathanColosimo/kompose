@@ -25,12 +25,19 @@ const BY_DAY_PART = /BYDAY=([^;]*)/;
 const WEEK_START_PART = /WKST=([A-Z]{2})/;
 const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
 
-/** A rule's own time of day, as it writes it ("BYHOUR=9;BYMINUTE=30"). */
-function clockParts(line: string): string {
-  return [...line.matchAll(CLOCK_PART)]
-    .map((match) => `${match[1]}=${match[2]}`)
-    .sort()
-    .join(";");
+/**
+ * The time of day a rule meets, "9:0:0": its BYHOUR / BYMINUTE / BYSECOND,
+ * a part it leaves out the series' start's (`base`), or "*" when that
+ * isn't known.
+ */
+function ruleTime(line: string, base: Temporal.PlainTime | null): string {
+  const parts = new Map(
+    [...line.matchAll(CLOCK_PART)].map((match) => [match[1], Number(match[2])])
+  );
+  const fallback = base ? [base.hour, base.minute, base.second] : [];
+  return ["BYHOUR", "BYMINUTE", "BYSECOND"]
+    .map((name, index) => parts.get(name) ?? fallback[index] ?? "*")
+    .join(":");
 }
 
 /**
@@ -38,12 +45,18 @@ function clockParts(line: string): string {
  * (BYHOUR=9,15) or a sub-daily frequency, or rules at different times
  * (one at 9:00, another at 15:00). Its times are then its own: they
  * aren't lined up with the start, and a skipped time stays that time.
+ * With the series' start time (`base`), a part a rule leaves out is that
+ * time's ("BYHOUR=9" and "BYHOUR=9;BYMINUTE=0" are one time for a 9:00
+ * series); without it, rules written differently count as different.
  */
-export function meetsSeveralTimesADay(recurrence: string[]): boolean {
+export function meetsSeveralTimesADay(
+  recurrence: string[],
+  base: Temporal.PlainTime | null = null
+): boolean {
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   return (
     rules.some((line) => SEVERAL_A_DAY.test(line)) ||
-    new Set(rules.map(clockParts)).size > 1
+    new Set(rules.map((line) => ruleTime(line, base))).size > 1
   );
 }
 
@@ -306,15 +319,20 @@ function matchUntil(line: string, allDay: boolean, timeZone: string): string {
  * EXDATE/RDATE values are dates for an all-day series and date-times for a
  * timed one (that day's last second for UNTIL; a skipped occurrence at the
  * series' start time on its day in `timeZone`, the series' zone, so it
- * stays skipped). The same array when it already is.
+ * stays skipped). The same array when it already is. `seriesStart`, the
+ * series' start before the edit, tells which rules share its time.
  */
 export function matchRecurrenceToStart(
   recurrence: string[],
   start: StartTime,
-  timeZone: string
+  timeZone: string,
+  seriesStart?: StartTime
 ): string[] {
   const allDay = Boolean(start.date);
-  const severalADay = meetsSeveralTimesADay(recurrence);
+  const severalADay = meetsSeveralTimesADay(
+    recurrence,
+    seriesStart?.dateTime ? wallClock(seriesStart, timeZone) : null
+  );
   let changed = false;
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")

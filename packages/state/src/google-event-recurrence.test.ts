@@ -731,6 +731,35 @@ describe("seriesRecurrenceForSave", () => {
       timeZone: "America/New_York",
     });
 
+  test("keeps a rule the editor can't write when the day moves", () => {
+    // Every 4 hours: moving its start (in the editor, or an occurrence
+    // "This and following") keeps the rule, rather than ending the series.
+    const hourly = ["RRULE:FREQ=HOURLY;INTERVAL=4;COUNT=10"];
+    expect(
+      followStart({
+        allDay: false,
+        from: Temporal.PlainDate.from("2026-11-09"),
+        recurrence: hourly,
+        timeZone: "America/New_York",
+        to: Temporal.PlainDate.from("2026-11-10"),
+      })
+    ).toBe(hourly);
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        masterRecurrence: hourly,
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+      // Nothing to send: the series keeps its rule.
+    ).toBeUndefined();
+  });
+
   test("carries the series' rule with a moved occurrence", () => {
     expect(after()).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=2SA"]);
   });

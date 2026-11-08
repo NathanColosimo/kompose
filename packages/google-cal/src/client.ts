@@ -92,10 +92,13 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
  */
 function ruleForStart(
   rule: string[] | undefined,
-  master: { start: { timeZone?: string } },
+  master: { start: { date?: string; dateTime?: string; timeZone?: string } },
   start: { date?: string; dateTime?: string }
 ): string[] | undefined {
-  return rule && matchRecurrenceToStart(rule, start, seriesZoneOf(master));
+  return (
+    rule &&
+    matchRecurrenceToStart(rule, start, seriesZoneOf(master), master.start)
+  );
 }
 
 /** `time` labelled with the series' zone when it has one (same moment). */

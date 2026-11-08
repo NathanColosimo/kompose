@@ -399,8 +399,9 @@ export function followStart(params: {
           match.replace(`=${from.month}`, `=${to.month}`)
         )
       : built;
+  // A rule the editor can't write (hourly, say) is kept as it is.
   if (!next) {
-    return setPrimaryRecurrenceRule(recurrence, null);
+    return recurrence;
   }
   // Skipped days move with the pattern (also one that follows its start
   // without naming it, like a plain weekly rule), so none comes back.

@@ -167,6 +167,27 @@ describe("skipped occurrences on the series' days", () => {
     ).toBe(rules);
   });
 
+  test("reads a rule's left-out time parts as the series' start's", () => {
+    // Mondays BYHOUR=9 and Fridays BYHOUR=9;BYMINUTE=0 both meet at 9:00
+    // for a 9:00 series: moved to 10:00, both rules and the skip move.
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+          "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0",
+          "EXDATE;TZID=America/New_York:20261113T090000",
+        ],
+        { dateTime: "2026-11-02T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-02T09:00:00-05:00" }
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+      "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=10;BYMINUTE=0",
+      "EXDATE;TZID=America/New_York:20261113T100000",
+    ]);
+  });
+
   test("moves a single BYHOUR with the series, and its skipped time", () => {
     // The rule's 9:00 is the series' time: moving it to 10:00 moves both.
     expect(
