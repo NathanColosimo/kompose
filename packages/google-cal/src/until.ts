@@ -352,10 +352,30 @@ function nearestRuleDay(
   return null;
 }
 
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+/** The first day of `day`'s week, by the rule's WKST (Monday by default). */
+function weekStart(day: Temporal.PlainDate, rule: string): Temporal.PlainDate {
+  const first = WEEKDAY_CODES.indexOf(/WKST=([A-Z]{2})/.exec(rule)?.[1] ?? "MO") + 1 || 1;
+  return day.subtract({ days: (day.dayOfWeek - first + 7) % 7 });
+}
+
+/** Whether a weekly rule (starting `to`) still meets on `day`'s weekday. */
+function keepsWeekday(
+  rule: string,
+  to: Temporal.PlainDate,
+  day: Temporal.PlainDate
+): boolean {
+  const days = /BYDAY=([^;]*)/.exec(rule)?.[1]?.split(",") ?? [];
+  const code = WEEKDAY_CODES[day.dayOfWeek - 1] ?? "";
+  return days.length > 0 ? days.includes(code) : to.dayOfWeek === day.dayOfWeek;
+}
+
 /**
  * Where a skipped occurrence of the old pattern sits in the new one: moved
  * as the pattern did, by the move's signed shift within one period (Fri
- * -> Mon is +3; Jan 31 -> Feb 1 is +1; a month's move plus 5 days is +5),
+ * -> Mon is +3; Jan 31 -> Feb 1 is +1; a month's move plus 5 days is +5;
+ * a weekly rule that kept its days moves only by the weeks),
  * on the new rule's day nearest that. A skip marks when the person is
  * away, so it stays next to that time. Null when the new rule has no day
  * within half a period: the skip then stays.
@@ -368,7 +388,12 @@ function placeInNewPattern(
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
   const period = periodDays(freq, newRule);
-  const shift = shiftWithinPeriod(from, to, period);
+  const shift =
+    freq === "WEEKLY" && keepsWeekday(newRule, to, day)
+      ? // The days stayed (Mon/Tue kept when the start moved onto Tue):
+        // only the weeks moved, so the skip keeps its weekday.
+        shiftWithinPeriod(weekStart(from, newRule), weekStart(to, newRule), period)
+      : shiftWithinPeriod(from, to, period);
   const target = day.add({ days: shift });
   if (freq === "DAILY" || freq === "WEEKLY") {
     return isRuleDay(newRule, to, target) === true ? target : null;

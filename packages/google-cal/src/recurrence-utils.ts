@@ -315,11 +315,12 @@ export function carryCount(
 }
 
 /**
- * The following part's rule with exactly the rule positions left: a rule
- * that can be read is walked from the series' start, its first COUNT days
- * are its positions (skipped ones included, added ones not), and the new
- * part runs the ones from the split on. Null when the rule can't be read;
- * `carryCount` then works from Google's list.
+ * The following part's rules with exactly the positions each has left:
+ * every rule is walked from the series' start, its first COUNT days are
+ * its positions (skipped ones included, added ones not), and the new part
+ * runs the ones from the split on. Each rule counts its own, so a second
+ * rule with all its positions before the split is dropped. Null when a
+ * counted rule can't be read; `carryCount` then works from Google's list.
  */
 export function carryCountExactly(
   recurrence: string[],
@@ -331,29 +332,62 @@ export function carryCountExactly(
   }
 ): string[] | null {
   const { masterRecurrence, originalStart, seriesStart, seriesZone } = params;
-  const rule = masterRecurrence.find((line) => line.startsWith("RRULE:"));
-  const count = countOf(masterRecurrence);
+  const isRule = (line: string) => line.startsWith("RRULE:");
+  const masterRules = masterRecurrence.filter(isRule);
   const seriesStartValue = asValue(seriesStart, seriesZone);
   const split = asValue(originalStart, seriesZone);
-  const positions =
-    rule && count !== undefined && seriesStartValue
-      ? countedRuleDays(rule, seriesStartValue.day, count)
-      : null;
-  if (!(positions && split)) {
+  if (
+    !(seriesStartValue && split) ||
+    masterRules.length !== recurrence.filter(isRule).length
+  ) {
     return null;
   }
   // A position whose time doesn't exist that day (a 2:30 AM meeting on the
   // spring-forward night) is up to Google: count from its list instead.
-  const clock = seriesStartValue?.instant
+  const clock = seriesStartValue.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
-  if (clock && positions.some((day) => !existsAt(day, clock, seriesZone))) {
+  // Positions each rule used before the split.
+  const used: (number | null)[] = [];
+  for (const rule of masterRules) {
+    const count = Number(COUNT_REGEX.exec(rule)?.[1]);
+    if (!Number.isFinite(count)) {
+      used.push(null);
+      continue;
+    }
+    const positions = countedRuleDays(rule, seriesStartValue.day, count);
+    if (
+      !positions ||
+      (clock && positions.some((day) => !existsAt(day, clock, seriesZone)))
+    ) {
+      return null;
+    }
+    used.push(
+      positions.filter((day) => Temporal.PlainDate.compare(day, split.day) < 0)
+        .length
+    );
+  }
+  if (used.every((n) => n === null)) {
     return null;
   }
-  const left = positions.filter(
-    (day) => Temporal.PlainDate.compare(day, split.day) >= 0
-  ).length;
-  return withRemainingCount(recurrence, positions.length - left);
+  let index = -1;
+  return recurrence.flatMap((line) => {
+    if (!isRule(line)) {
+      return [line];
+    }
+    index += 1;
+    const before = used[index];
+    const count = Number(COUNT_REGEX.exec(line)?.[1]);
+    if (before === null || before === undefined || !Number.isFinite(count)) {
+      return [line];
+    }
+    const remaining = count - before;
+    // The first rule carries the part; another with none left is done.
+    if (remaining <= 0 && index > 0) {
+      return [];
+    }
+    return [line.replace(COUNT_PART, `$1COUNT=${Math.max(1, remaining)}`)];
+  });
 }
 
 /**

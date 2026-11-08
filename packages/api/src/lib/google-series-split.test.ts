@@ -315,6 +315,46 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
   });
+  test("counts each counted rule on its own", () => {
+    // Daily COUNT=10 and Mondays COUNT=5 from Mon Nov 9, split at Nov 16:
+    // three days left (16-18) and four Mondays (Nov 16 to Dec 7).
+    const rules = [
+      "RRULE:FREQ=DAILY;COUNT=10",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+    ];
+    const split = (originalStart: string) =>
+      carryCountExactly(rules, {
+        masterRecurrence: rules,
+        originalStart,
+        seriesStart: "2026-11-09",
+        seriesZone: "America/New_York",
+      });
+    expect(split("2026-11-16")).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=3",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+    ]);
+    // Split at Dec 7 (the daily rule's own count is spent): the second
+    // rule has one Monday left; split past its last, it's dropped.
+    expect(split("2026-12-07")).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=1",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1",
+    ]);
+    expect(
+      carryCountExactly(
+        ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10", "RRULE:FREQ=DAILY;COUNT=3"],
+        {
+          masterRecurrence: [
+            "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10",
+            "RRULE:FREQ=DAILY;COUNT=3",
+          ],
+          originalStart: "2026-11-16",
+          seriesStart: "2026-11-09",
+          seriesZone: "America/New_York",
+        }
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=9"]);
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(

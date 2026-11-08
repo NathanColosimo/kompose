@@ -386,6 +386,16 @@ describe("followStart", () => {
         "20261122",
         "20261123",
       ],
+      // Every 2 weeks Mon/Tue, the start moved onto the next Tue (both
+      // days kept, the weeks shifted one): the skipped Mon Nov 16 is Mon
+      // Nov 23, not a Tuesday.
+      [
+        "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU",
+        "2026-11-02",
+        "2026-11-10",
+        "20261116",
+        "20261123",
+      ],
     ];
     for (const [rule, from, to, skipped, moved] of cases) {
       const next = followed([rule, `EXDATE;VALUE=DATE:${skipped}`], from, to);
@@ -483,6 +493,15 @@ describe("followStart", () => {
         "2027-02-01",
         "20270528",
         "20270607",
+      ],
+      // Sol's: Nov 9 -> Oct 9 yearly; every 2 months Mar 9 -> Feb 9.
+      ["RRULE:FREQ=YEARLY", "2026-11-09", "2026-10-09", "20271109", "20271009"],
+      [
+        "RRULE:FREQ=MONTHLY;INTERVAL=2",
+        "2027-03-09",
+        "2027-02-09",
+        "20270709",
+        "20270609",
       ],
       // Yearly moved earlier: Dec 9 -> Nov 9 keeps 2027's skip, in Nov.
       ["RRULE:FREQ=YEARLY", "2026-12-09", "2026-11-09", "20271209", "20271109"],
