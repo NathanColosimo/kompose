@@ -80,8 +80,14 @@ export function useRecurringEventMaster(params: {
      * load failed): its repeat can't be edited from it.
      */
     ruleUnavailable: enabled && !seriesRuleReady(query),
-    /** The series' rule couldn't be loaded (it's unavailable, and failed). */
-    ruleFailed: enabled && !seriesRuleReady(query) && query.isError,
+    /**
+     * The series' rule couldn't be loaded: unavailable, failed, and no
+     * fetch running (a retry in flight shows as loading again).
+     */
+    ruleFailed:
+      enabled && !seriesRuleReady(query) && query.isError && !query.isFetching,
+    /** Its fetch waits for the network: it loads once back online. */
+    rulePaused: enabled && query.isPaused,
     /** Load the series again (after it failed). */
     retry: () => {
       query.refetch().catch(() => undefined);

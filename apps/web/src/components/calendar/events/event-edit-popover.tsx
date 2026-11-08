@@ -1572,14 +1572,16 @@ function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
 function RepeatRetryButton({ onRetry }: { onRetry?: () => void }) {
   return (
     <Button
-      className="h-8 gap-1.5 px-2 text-xs"
+      aria-label="The series' repeat didn't load. Retry"
+      // Gives way first, like the repeat chip: the calendar beside it stays.
+      className="h-8 min-w-0 shrink gap-1.5 px-2 text-xs"
       onClick={onRetry}
       size="sm"
-      title="The series' repeat didn't load. Try again."
+      title="The series' repeat didn't load. Retry"
       variant="outline"
     >
       <Repeat className="size-4 shrink-0" />
-      Repeat didn't load · Retry
+      <span className="truncate">Retry repeat</span>
     </Button>
   );
 }
@@ -1589,6 +1591,7 @@ function RepeatControl({
   allDay,
   city,
   disabled,
+  disabledReason,
   onRecurrenceChange,
   recurrenceRule,
   ruleLabel,
@@ -1599,6 +1602,8 @@ function RepeatControl({
   allDay: boolean;
   city: string | null;
   disabled: boolean;
+  /** Why it's off, for its tooltip (offline, waiting for the series). */
+  disabledReason?: string;
   onRecurrenceChange: (rule: string | null) => void;
   recurrenceRule: string | undefined;
   ruleLabel: string | null | undefined;
@@ -1619,7 +1624,7 @@ function RepeatControl({
           )}
           disabled={disabled}
           size={repeatLabel ? "sm" : "icon"}
-          title={repeatLabel ?? "Repeat"}
+          title={(disabled && disabledReason) || (repeatLabel ?? "Repeat")}
           variant={repeatLabel ? "secondary" : "outline"}
         >
           <Repeat className="size-4 shrink-0" />
@@ -1645,6 +1650,7 @@ function EventAllDayAndRecurrenceRow({
   onToggleAllDay,
   recurrenceLoading,
   recurrenceFailed = false,
+  recurrenceWaitReason,
   onRetryRecurrence,
   readOnly = false,
   recurrenceRule,
@@ -1662,6 +1668,8 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading: boolean;
   /** Loading the occurrence's pattern failed: offer to try again. */
   recurrenceFailed?: boolean;
+  /** Why the repeat waits (offline), for its tooltip. */
+  recurrenceWaitReason?: string;
   onRetryRecurrence?: () => void;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
@@ -1718,6 +1726,7 @@ function EventAllDayAndRecurrenceRow({
           allDay={allDay}
           city={city}
           disabled={readOnly || recurrenceLoading}
+          disabledReason={recurrenceWaitReason}
           onRecurrenceChange={onRecurrenceChange}
           recurrenceRule={recurrenceRule}
           ruleLabel={ruleLabel}
@@ -2800,6 +2809,11 @@ export function EventEditForm({
         recurrenceFailed={masterQuery.ruleFailed}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
+        recurrenceWaitReason={
+          masterQuery.rulePaused
+            ? "The repeat loads when you're back online"
+            : undefined
+        }
         seriesStart={seriesDayOf(watchedValues)}
         seriesTimeZone={seriesTimeZone}
         showsZone={seriesTimeZone !== timeZone}
