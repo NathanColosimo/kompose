@@ -561,7 +561,14 @@ export function countedRuleMeetings(params: {
   const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
   const first = base ? at(from, base) : null;
-  const meetings = new Set<number>();
+  // The series' first start is its first meeting, a rule day or not (RFC
+  // 5545 counts DTSTART; Google does too).
+  const meetings = new Set<number>(
+    first !== null && base && existsOn(from, base, timeZone) ? [first] : []
+  );
+  if (meetings.size === count) {
+    return meetings;
+  }
   for (let offset = 0; offset < MAX_COUNT_DAYS; offset += 1) {
     const day = from.add({ days: offset });
     const onRuleDay = isRuleDay(rule, from, day);

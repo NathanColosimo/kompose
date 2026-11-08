@@ -38,6 +38,22 @@ describe("where This and following can start", () => {
     }
   });
 
+  test("counts a series' first start even off the rule's days", () => {
+    // Mondays three times, but starting Wed Nov 4: the meetings are Nov 4,
+    // 9 and 16, so an added Nov 23 is past the end, not a rule meeting.
+    expect(
+      followingSplitBlocked({
+        masterRecurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+          "RDATE;TZID=America/New_York:20261123T090000",
+        ],
+        masterStart: { dateTime: "2026-11-04T09:00:00-05:00" },
+        originalStart: "2026-11-23T09:00:00-05:00",
+        seriesZone: zone,
+      })
+    ).toBe("addedOccurrence");
+  });
+
   test("not at an added meeting after the rule's end that same day", () => {
     // Daily 9:00 until Nov 13 at 8:00 (13:00Z): an added Nov 13 9:00 is
     // after the rule's end, by the minute.
@@ -77,6 +93,16 @@ describe("where This and following can start", () => {
     // On the hour and half hour: its end isn't worked out, so a delete
     // from the added meeting is refused rather than guessed.
     expect(unsure("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10")).toBe(true);
+    // Every hour from Oct 31, across the Nov 1 clock change: can't tell
+    // which hour it ends, so unsure too.
+    expect(
+      followingCutUnsure({
+        masterRecurrence: ["RRULE:FREQ=HOURLY;COUNT=400", added],
+        masterStart: { dateTime: "2026-10-31T09:00:00-04:00" },
+        originalStart: "2026-11-10T09:00:00-05:00",
+        seriesZone: zone,
+      })
+    ).toBe(true);
   });
 
   test("a rule's count skips a time the clocks skip", () => {
@@ -245,13 +271,15 @@ describe("the server refuses a split that can't start a series", () => {
       url.includes(added.id) ? added : unsureMaster
     );
     const service = makeGoogleCalendarService("token");
-    const exit = await Effect.runPromiseExit(
-      service.deleteEvent("primary", added.id, "following")
+    const error = await Effect.runPromise(
+      Effect.flip(service.deleteEvent("primary", added.id, "following"))
     );
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
-      "Delete this and following isn't available"
-    );
+    // A refusal the user can read, not "Try again".
+    expect("publicError" in error && error.publicError).toEqual({
+      code: "BAD_REQUEST",
+      message:
+        "Deleting this and following isn't available from an occurrence added to this series.",
+    });
     expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
   });
 

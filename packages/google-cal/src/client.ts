@@ -106,13 +106,11 @@ function splitBlockedError(
   if (!blocked) {
     return null;
   }
-  return new GoogleApiError({
-    cause: new Error(
-      blocked === "severalRules"
-        ? "This and following isn't available for a series with more than one rule"
-        : "This and following isn't available for an occurrence added to the series on its own"
-    ),
-  });
+  const refusal =
+    blocked === "severalRules"
+      ? "This and following isn't available for a series with more than one rule."
+      : "This and following isn't available for an occurrence added to the series on its own.";
+  return new GoogleApiError({ cause: new Error(refusal), refusal });
 }
 
 /**
@@ -324,14 +322,21 @@ export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
   {
     cause: Schema.Unknown,
     message: Schema.optional(Schema.String),
+    /**
+     * A request Kompose won't make (a scope a series can't take), in
+     * words for the user: it won't work on a retry either.
+     */
+    refusal: Schema.optional(Schema.String),
   }
 ) {
   /** What the API sends the client; `cause` stays on the server. */
   get publicError() {
-    return {
-      code: "BAD_GATEWAY",
-      message: "Google Calendar request failed. Try again.",
-    } as const;
+    return this.refusal
+      ? ({ code: "BAD_REQUEST", message: this.refusal } as const)
+      : ({
+          code: "BAD_GATEWAY",
+          message: "Google Calendar request failed. Try again.",
+        } as const);
   }
 }
 
@@ -1178,12 +1183,10 @@ export function makeGoogleCalendarService(
           seriesZone: seriesZoneOf(master),
         })
       ) {
+        const refusal =
+          "Deleting this and following isn't available from an occurrence added to this series.";
         return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error(
-              "Delete this and following isn't available from an occurrence added to this series"
-            ),
-          })
+          new GoogleApiError({ cause: new Error(refusal), refusal })
         );
       }
 

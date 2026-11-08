@@ -65,6 +65,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   SCOPE_DIALOG_COPY,
+  seriesCutUnsure,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import {
@@ -802,6 +803,11 @@ export function EventEditPopover({
     seriesTimeZone: otherTimeZone(event, timeZone),
     splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
+  const deleteFollowingOff = seriesCutUnsure(
+    event,
+    seriesMaster.data,
+    timeZone
+  );
 
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
@@ -1132,7 +1138,12 @@ export function EventEditPopover({
       {/* Delete scope dialog for recurring events */}
       <RecurrenceScopeDialog
         confirmLabel="Delete"
-        description={SCOPE_DIALOG_COPY.deleteEvent.description}
+        description={
+          deleteFollowingOff
+            ? SCOPE_DIALOG_COPY.deleteFollowingOff
+            : SCOPE_DIALOG_COPY.deleteEvent.description
+        }
+        disabledScopes={deleteFollowingOff ? { following: true } : undefined}
         onCancel={() =>
           dispatchDialog({ type: "set-delete-dialog-open", value: false })
         }

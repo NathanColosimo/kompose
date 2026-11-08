@@ -5,6 +5,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  seriesCutUnsure,
   seriesSplitBlock,
 } from "./recurrence-scope-options";
 
@@ -159,4 +160,34 @@ test("keeps This and following off until the series loads", () => {
     "following",
     "this",
   ]);
+});
+
+test("turns deleting This and following off where the cut is unsure", () => {
+  const zone = "America/New_York";
+  const occurrence = {
+    originalStartTime: {
+      dateTime: "2026-11-10T09:00:00-05:00",
+      timeZone: zone,
+    },
+    recurringEventId: "series",
+    start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+  };
+  const master = (rule: string) => ({
+    recurrence: [rule, "RDATE;TZID=America/New_York:20261110T090000"],
+    start: { dateTime: "2026-11-02T09:00:00-05:00", timeZone: zone },
+  });
+  // On the hour and half hour, ten times: where it ends can't be told.
+  expect(
+    seriesCutUnsure(
+      occurrence,
+      master("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10"),
+      zone
+    )
+  ).toBe(true);
+  // A daily rule's end is known: the delete can cut it there.
+  expect(
+    seriesCutUnsure(occurrence, master("RRULE:FREQ=DAILY;COUNT=3"), zone)
+  ).toBe(false);
+  // Before the series loads, nothing is turned off.
+  expect(seriesCutUnsure(occurrence, null, zone)).toBe(false);
 });

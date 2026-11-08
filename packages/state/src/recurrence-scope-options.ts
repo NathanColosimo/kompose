@@ -3,6 +3,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
+  followingCutUnsure,
   followingSplitBlocked,
   type SplitBlock,
 } from "@kompose/google-cal/recurrence-utils";
@@ -57,6 +58,9 @@ export const SCOPE_DIALOG_COPY = {
     severalRules:
       "This series repeats by more than one rule, so This and following isn't available.",
   } satisfies Record<SplitBlock, string>,
+  /** Why deleting This and following is off for an occurrence. */
+  deleteFollowingOff:
+    "This occurrence was added to the series on its own, so This and following can't be deleted from it.",
   /** An added occurrence moved to a new day with a new repeat: no scope fits. */
   splitBlockedAll:
     "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other.",
@@ -97,6 +101,33 @@ export interface EventSaveChanges {
   seriesTimeZone?: string;
   /** Why a new series can't start at this occurrence (`seriesSplitBlock`). */
   splitBlocked?: SplitBlock | null;
+}
+
+/**
+ * Whether deleting "This and following" from `occurrence` is off: it's an
+ * added meeting, and where its series' rule ends can't be told, so the
+ * cut could reach past it (the server refuses it too). False before the
+ * series' master loads.
+ */
+export function seriesCutUnsure(
+  occurrence:
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
+    | null
+    | undefined,
+  master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
+  appTimeZone: string
+): boolean {
+  const original = occurrence?.originalStartTime;
+  const originalStart = original?.dateTime ?? original?.date;
+  if (!(occurrence?.recurringEventId && master && originalStart)) {
+    return false;
+  }
+  return followingCutUnsure({
+    masterRecurrence: master.recurrence,
+    masterStart: master.start,
+    originalStart,
+    seriesZone: eventTimeZone(occurrence, appTimeZone),
+  });
 }
 
 /**

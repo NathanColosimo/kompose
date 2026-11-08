@@ -68,6 +68,7 @@ import {
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
+  seriesCutUnsure,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import {
@@ -749,6 +750,7 @@ function recurrenceToSend(
  */
 function EventDeleteDialogs({
   dialog,
+  followingOff,
   onCancel,
   onConfirm,
   onScopeChange,
@@ -756,18 +758,31 @@ function EventDeleteDialogs({
   scope,
 }: {
   dialog: EventDialog;
+  /** Deleting This and following isn't available (`seriesCutUnsure`). */
+  followingOff: boolean;
   onCancel: () => void;
   onConfirm: (scope: RecurrenceScope) => void;
   onScopeChange: (scope: RecurrenceScope) => void;
   pending: boolean;
   scope: RecurrenceScope;
 }) {
+  const off = followingOff && scope === "following";
+  useEffect(() => {
+    if (dialog === "delete" && off) {
+      onScopeChange("this");
+    }
+  }, [dialog, off, onScopeChange]);
   return (
     <>
       <AlertDialog
         closeOnConfirm={false}
+        confirmDisabled={off}
         confirmText="Delete"
-        description={SCOPE_DIALOG_COPY.deleteEvent.description}
+        description={
+          followingOff
+            ? SCOPE_DIALOG_COPY.deleteFollowingOff
+            : SCOPE_DIALOG_COPY.deleteEvent.description
+        }
         isVisible={dialog === "delete"}
         onCancel={onCancel}
         onClose={noop}
@@ -779,7 +794,11 @@ function EventDeleteDialogs({
         <View className="mt-2">
           <RadioGroup
             onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
-            options={RECURRENCE_SCOPE_OPTIONS}
+            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+              disabled: followingOff && option.value === "following",
+              label: option.label,
+              value: option.value,
+            }))}
             value={scope}
           />
         </View>
@@ -2290,6 +2309,11 @@ export default function CalendarTab() {
             <>
               <EventDeleteDialogs
                 dialog={eventDialog}
+                followingOff={seriesCutUnsure(
+                  editingEventDraft?.sourceEvent,
+                  recurringMasterEvent.data,
+                  timeZone
+                )}
                 onCancel={dismissEventDeleteDialog}
                 onConfirm={(scope) => {
                   confirmEventDelete(scope).catch(() => null);

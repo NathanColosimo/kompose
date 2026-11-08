@@ -380,6 +380,33 @@ export function followingSplitBlocked(params: {
 }
 
 /**
+ * Whether a plain hourly (minutely, secondly) rule ends before `split`:
+ * its last meeting is INTERVAL x (COUNT - 1) steps on from the first. Null
+ * with BY parts, or across a clock change (calendars step by wall time or
+ * by elapsed time; it can't be told which).
+ */
+function subDailyEndsBefore(
+  rule: string,
+  step: "hours" | "minutes" | "seconds",
+  first: RecurrenceValue,
+  count: number,
+  split: Temporal.Instant,
+  seriesZone: string
+): boolean | null {
+  if (!first.instant || BY_PART.test(rule)) {
+    return null;
+  }
+  const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
+  const last = first.instant.add({ [step]: interval * (count - 1) });
+  const offset = (at: Temporal.Instant) =>
+    at.toZonedDateTimeISO(seriesZone).offsetNanoseconds;
+  if (offset(first.instant) !== offset(last)) {
+    return null;
+  }
+  return Temporal.Instant.compare(last, split) < 0;
+}
+
+/**
  * Whether `rule` ends before `split` (a moment): its UNTIL's moment is
  * earlier, or its last COUNT meeting is (counted from the series' `first`
  * start, each time of a rule meeting several times a day). Null when that
@@ -403,16 +430,9 @@ function ruleEndsBefore(
   if (!first) {
     return null;
   }
-  // A plain hourly (minutely, secondly) rule: its last meeting is its
-  // INTERVAL times COUNT - 1 on from the first.
   const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
   if (step) {
-    if (!first.instant || BY_PART.test(rule)) {
-      return null;
-    }
-    const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
-    const last = first.instant.add({ [step]: interval * (count - 1) });
-    return Temporal.Instant.compare(last, split) < 0;
+    return subDailyEndsBefore(rule, step, first, count, split, seriesZone);
   }
   const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const times = clock ? ruleTimesOf(rule, clock) : null;
