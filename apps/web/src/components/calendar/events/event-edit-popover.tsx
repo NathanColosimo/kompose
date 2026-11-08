@@ -73,7 +73,6 @@ import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
   Check,
-  Globe,
   Lock,
   MapPin,
   Palette,
@@ -1514,26 +1513,23 @@ function repeatRuleLabel(
 }
 
 /**
- * The Repeat button's words. A series in another zone gets a globe after
- * them (the button's title and label say "· Tokyo"), small enough that
- * the days stay readable.
+ * The Repeat button's words: the rule, then the zone a series in another
+ * one repeats in ("Mon, Wed · Tokyo"). The zone gives way first when the
+ * button is narrow; the title and label keep both whole.
  */
 function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
-  // Weekly on given days shows just the days beside the repeat icon
-  // ("Mon, Wed"), so a narrow button keeps the part that matters; the
-  // title and label keep the whole rule.
+  // Weekly on given days shows just the days beside the repeat icon.
   return (
     <>
-      <span className="truncate">
+      <span className="min-w-0 truncate">
         {rule
           .replace(WEEKLY_ON, "")
           .replace(FIRST_LETTER, (c) => c.toUpperCase())}
       </span>
       {city ? (
-        <Globe
-          aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground"
-        />
+        <span className="min-w-0 shrink-[4] truncate text-muted-foreground">
+          · {city}
+        </span>
       ) : null}
     </>
   );

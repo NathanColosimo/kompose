@@ -81,6 +81,28 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
+  test("counts a skipped day Google also lists only once", () => {
+    // The same series, with Google listing the skipped Nov 2 as cancelled.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "EXDATE;VALUE=DATE:20261102",
+        ],
+        newStart: "2026-11-03",
+        originalStart: "2026-11-03",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-11-01",
+          "2026-11-02",
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-05",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
   test("with added days, ends where the old rule did", () => {
     // Daily COUNT=5 from Nov 1 plus an RDATE on Nov 2 (a rule day too) and
     // Nov 20: the rule's last day is Nov 5, whatever the duplicates.

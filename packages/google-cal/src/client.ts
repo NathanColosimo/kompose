@@ -1056,7 +1056,8 @@ export function makeGoogleCalendarService(
           master.recurrence,
           undefined,
           originalStartIso,
-          originalStartIso
+          // The new series starts where the occurrence is now.
+          instance.start.dateTime ?? instance.start.date ?? originalStartIso
         );
 
         // 1) Cut off the original series up to the edited occurrence.

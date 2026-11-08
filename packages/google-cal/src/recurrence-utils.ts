@@ -214,8 +214,12 @@ export function carryCount(
   }
   const before = (value: RecurrenceValue) =>
     beforeSplit(value, originalStart, seriesZone);
-  const used =
-    listed.filter(before).length + listedValues("EXDATE").filter(before).length;
+  // Each position once: a skipped day Google also lists (as a cancelled
+  // occurrence) isn't counted twice.
+  const used = [...listed.filter(before), ...listedValues("EXDATE").filter(before)]
+    .filter((value, index, all) =>
+      all.findIndex((other) => sameValue(other, value)) === index
+    ).length;
   return withRemainingCount(recurrence, used);
 }
 
