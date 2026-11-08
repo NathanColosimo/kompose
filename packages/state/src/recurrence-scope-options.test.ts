@@ -52,10 +52,13 @@ test("always leaves a scope to save with", () => {
 });
 
 test("says why the scopes are what they are", () => {
-  expect(
-    eventSaveDescription({ calendarChanged: false, dateMoved: true })
-  ).toBe("A new day applies to this occurrence, or from it on.");
-  expect(eventSaveDescription({ calendarChanged: true, dateMoved: true })).toBe(
-    "Moving to another calendar moves the whole series."
+  expect(eventSaveDescription({ ...none, dateMoved: true })).toBe(
+    "A new day applies to this occurrence, or from it on."
   );
+  expect(
+    eventSaveDescription({ ...none, dateMoved: true, seriesRuleLoaded: false })
+  ).toBe("Loading the series… This and following opens once it's in.");
+  expect(
+    eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
+  ).toBe("Moving to another calendar moves the whole series.");
 });

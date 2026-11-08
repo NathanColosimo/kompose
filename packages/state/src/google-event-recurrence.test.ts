@@ -342,6 +342,29 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
+  test("counts days in the series' own zone", () => {
+    // A Tuesday 9:00 Tokyo meeting moved to Wednesday 9:00, seen from New York.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: {
+          dateTime: "2026-11-11T00:00:00.000Z",
+          timeZone: "Asia/Tokyo",
+        },
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
+          recurringEventId: "series",
+          start: {
+            dateTime: "2026-11-10T09:00:00+09:00",
+            timeZone: "Asia/Tokyo",
+          },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+  });
+
   test("leaves a rule the save already sends alone", () => {
     expect(after(["RRULE:FREQ=WEEKLY"])).toBeUndefined();
   });

@@ -462,19 +462,35 @@ function dayOfStart(
   }
 }
 
+/**
+ * The zone a series' days are counted in: its own (a Tokyo 9:00 meeting is
+ * on Tokyo's Tuesday, wherever it's viewed from), else `fallback`.
+ */
+function seriesZone(
+  occurrence: Pick<GoogleEvent, "start">,
+  fallback: string
+): string {
+  return occurrence.start?.timeZone ?? fallback;
+}
+
 /** Whether a save moves an occurrence to another day (not just its time). */
 export function occurrenceDayMoved(params: {
-  editedStart: { date?: string | null; dateTime?: string | null };
+  editedStart: {
+    date?: string | null;
+    dateTime?: string | null;
+    timeZone?: string | null;
+  };
   occurrence: Pick<
     GoogleEvent,
     "originalStartTime" | "recurringEventId" | "start"
   >;
   timeZone: string;
 }): boolean {
-  const { editedStart, occurrence, timeZone } = params;
+  const { editedStart, occurrence } = params;
   if (!occurrence.recurringEventId) {
     return false;
   }
+  const timeZone = seriesZone(occurrence, params.timeZone);
   // Against where it is now: one rescheduled before, then only renamed,
   // hasn't moved in this edit.
   const from = dayOfStart(occurrence.start, timeZone);
@@ -526,7 +542,11 @@ export function matchUntilToStart(
  */
 export function seriesRecurrenceForSave(params: {
   /** The edited start. */
-  editedStart: { date?: string | null; dateTime?: string | null };
+  editedStart: {
+    date?: string | null;
+    dateTime?: string | null;
+    timeZone?: string | null;
+  };
   masterRecurrence: string[] | null | undefined;
   occurrence: Pick<
     GoogleEvent,
@@ -536,7 +556,8 @@ export function seriesRecurrenceForSave(params: {
   recurrence: string[] | undefined;
   timeZone: string;
 }): string[] | undefined {
-  const { editedStart, masterRecurrence, occurrence, timeZone } = params;
+  const { editedStart, masterRecurrence, occurrence } = params;
+  const timeZone = seriesZone(occurrence, params.timeZone);
   if (
     params.recurrence !== undefined ||
     !occurrence.recurringEventId ||

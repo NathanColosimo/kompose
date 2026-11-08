@@ -28,6 +28,8 @@ export const SCOPE_DIALOG_COPY = {
   },
   /** Shown instead of the description when an occurrence's day moves. */
   moveDate: "A new day applies to this occurrence, or from it on.",
+  /** Shown while a moved day waits for the series' rule. */
+  seriesLoading: "Loading the series… This and following opens once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
   saveEvent: {
@@ -104,13 +106,14 @@ export function allowedEventSaveScope(
 }
 
 /** The scope dialog's line for a save. */
-export function eventSaveDescription(
-  changes: Pick<EventSaveChanges, "calendarChanged" | "dateMoved">
-): string {
+export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
     return SCOPE_DIALOG_COPY.moveEvent;
   }
-  return changes.dateMoved
+  if (!changes.dateMoved) {
+    return SCOPE_DIALOG_COPY.saveEvent.description;
+  }
+  return changes.seriesRuleLoaded || changes.patternChanged
     ? SCOPE_DIALOG_COPY.moveDate
-    : SCOPE_DIALOG_COPY.saveEvent.description;
+    : SCOPE_DIALOG_COPY.seriesLoading;
 }

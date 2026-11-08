@@ -177,13 +177,23 @@ interface EventFormValues {
   summary: string;
 }
 
-/** What a pending save changes, for the scopes the dialog offers. */
-function saveChanges(pendingSave: PendingSave | null): EventSaveChanges {
+/**
+ * What a pending save changes, for the scopes the dialog offers. Whether
+ * the series' rule is in is read live, so an open dialog updates when it
+ * loads.
+ */
+function saveChanges(
+  pendingSave: Pick<
+    PendingSave,
+    "calendarChanged" | "dateMoved" | "patternChanged"
+  > | null,
+  seriesRuleLoaded: boolean
+): EventSaveChanges {
   return {
     calendarChanged: Boolean(pendingSave?.calendarChanged),
     dateMoved: pendingSave?.dateMoved ?? false,
     patternChanged: pendingSave?.patternChanged ?? false,
-    seriesRuleLoaded: pendingSave?.seriesRuleLoaded ?? true,
+    seriesRuleLoaded,
   };
 }
 
@@ -207,13 +217,6 @@ export type CloseSaveRequest =
       patternChanged: boolean;
       /** An occurrence moved to another day. */
       dateMoved: boolean;
-      /** The series' rule is loaded, so it can follow a moved day. */
-      seriesRuleLoaded: boolean;
-      /**
-       * The series' rule after a moved occurrence's date (followStart),
-       * sent only when the save applies to the series.
-       */
-      seriesRecurrence?: string[];
     }
   | {
       type: "create";
@@ -653,8 +656,6 @@ interface PendingSave {
   defaultScope: RecurrenceScope;
   hasDataEdits: boolean;
   patternChanged: boolean;
-  seriesRecurrence?: string[];
-  seriesRuleLoaded: boolean;
   variables: UpdateGoogleEventInput;
 }
 
@@ -758,6 +759,18 @@ export function EventEditPopover({
 
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
+  // The series' rule (an occurrence's lives on its master; shared with the
+  // form's query): a moved day follows it for the series.
+  const seriesMaster = useRecurringEventMaster({
+    accountId,
+    calendarId,
+    enabled: open,
+    event: event ?? null,
+  });
+  const seriesRuleLoaded = Boolean(
+    event?.recurrence?.length || seriesMaster.data
+  );
+  const timeZone = useAtomValue(timezoneAtom);
 
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
@@ -815,16 +828,24 @@ export function EventEditPopover({
     async (
       edits: Pick<
         PendingSave,
-        "calendarChanged" | "hasDataEdits" | "seriesRecurrence" | "variables"
+        "calendarChanged" | "hasDataEdits" | "variables"
       >,
       scope: RecurrenceScope
     ) => {
       if (edits.hasDataEdits) {
         // A moved date carries the series' rule along, for the series.
+        const { recurrence: sent, start: editedStart } = edits.variables.event;
         const recurrence =
-          scope === "this"
-            ? edits.variables.event.recurrence
-            : (edits.variables.event.recurrence ?? edits.seriesRecurrence);
+          scope === "this" || !event
+            ? sent
+            : (sent ??
+              seriesRecurrenceForSave({
+                editedStart,
+                masterRecurrence: seriesMaster.data?.recurrence,
+                occurrence: event,
+                recurrence: sent,
+                timeZone,
+              }));
         await updateEvent.mutateAsync({
           ...edits.variables,
           event: { ...edits.variables.event, recurrence },
@@ -845,7 +866,15 @@ export function EventEditPopover({
         });
       }
     },
-    [accountId, calendarId, event, moveEvent, updateEvent]
+    [
+      accountId,
+      calendarId,
+      event,
+      moveEvent,
+      seriesMaster.data?.recurrence,
+      timeZone,
+      updateEvent,
+    ]
   );
 
   const commitPendingSave = useCallback(() => {
@@ -943,7 +972,7 @@ export function EventEditPopover({
             calendarChanged: Boolean(request.calendarChanged),
             dateMoved: request.dateMoved,
             patternChanged: request.patternChanged,
-            seriesRuleLoaded: request.seriesRuleLoaded,
+            seriesRuleLoaded,
           })
         );
         dispatchDialog({
@@ -953,8 +982,6 @@ export function EventEditPopover({
             defaultScope: scope,
             hasDataEdits: request.hasDataEdits,
             patternChanged: request.patternChanged,
-            seriesRuleLoaded: request.seriesRuleLoaded,
-            seriesRecurrence: request.seriesRecurrence,
             variables: request.variables,
           },
           scope,
@@ -965,7 +992,14 @@ export function EventEditPopover({
 
       holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
     }
-  }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
+  }, [
+    createEvent,
+    holdForSave,
+    readOnly,
+    saveEdits,
+    seriesRuleLoaded,
+    setOpen,
+  ]);
 
   const dialogOver =
     scopeDialogOpen || deleteDialogOpen || simpleDeleteConfirmOpen;
@@ -1040,8 +1074,12 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={eventSaveDescription(saveChanges(pendingSave))}
-        disabledScopes={eventSaveDisabledScopes(saveChanges(pendingSave))}
+        description={eventSaveDescription(
+          saveChanges(pendingSave, seriesRuleLoaded)
+        )}
+        disabledScopes={eventSaveDisabledScopes(
+          saveChanges(pendingSave, seriesRuleLoaded)
+        )}
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
@@ -1267,18 +1305,6 @@ function buildEditPayload(
       : false,
     isRecurring,
     patternChanged,
-    seriesRuleLoaded: Boolean(
-      ctx.event?.recurrence?.length || ctx.masterRecurrence
-    ),
-    seriesRecurrence:
-      ctx.event &&
-      seriesRecurrenceForSave({
-        editedStart: variables.event.start,
-        masterRecurrence: ctx.masterRecurrence,
-        occurrence: ctx.event,
-        recurrence: variables.event.recurrence,
-        timeZone: ctx.timeZone,
-      }),
     type: "save",
     variables,
   };

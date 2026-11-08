@@ -133,4 +133,18 @@ describe("seriesTimesForEdit", () => {
       start: { dateTime: "2026-10-06T10:00:00-04:00", timeZone: zone },
     });
   });
+
+  test("lengthens an all-day series with no zone anywhere", () => {
+    // A one-day occurrence made two days long.
+    expect(
+      seriesTimesForEdit({
+        editedEnd: { date: "2026-11-12" },
+        editedStart: { date: "2026-11-10" },
+        masterEnd: { date: "2026-10-07" },
+        masterStart: { date: "2026-10-06" },
+        occurrenceEnd: { date: "2026-11-11" },
+        occurrenceStart: { date: "2026-11-10" },
+      })
+    ).toEqual({ end: { date: "2026-10-08" }, start: { date: "2026-10-06" } });
+  });
 });
