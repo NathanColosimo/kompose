@@ -1819,8 +1819,8 @@ describe("repeatEndsBeforeStart", () => {
         sent: true,
         startDay: on("2026-11-23"),
         timeZone: zone,
-      })
-    ).toBe(true);
+      })?.toString()
+    ).toBe("2026-11-16");
   });
 
   test("its own day, or a repeat the save doesn't send, is fine", () => {
@@ -1831,7 +1831,7 @@ describe("repeatEndsBeforeStart", () => {
         startDay: on("2026-11-16"),
         timeZone: zone,
       })
-    ).toBe(false);
+    ).toBe(null);
     expect(
       repeatEndsBeforeStart({
         recurrence: rule,
@@ -1839,6 +1839,6 @@ describe("repeatEndsBeforeStart", () => {
         startDay: on("2026-11-23"),
         timeZone: zone,
       })
-    ).toBe(false);
+    ).toBe(null);
   });
 });

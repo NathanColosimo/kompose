@@ -592,9 +592,9 @@ interface RepeatSkipParams {
  * Why a new repeat, saved for the entire series, would skip this
  * occurrence (null when it wouldn't): an Entire series save keeps the
  * series' first meeting (its DTSTART; before the series loads, where the
- * series puts this occurrence) and counts the rule from there, so a day left implicit
- * (weekly with no days picked, monthly on "Day N", yearly) comes from that
- * first meeting, an interval counts its weeks or months from it, and a
+ * series puts this occurrence) and counts the rule from there, so a day
+ * left implicit (weekly with no days picked, monthly on "Day N", yearly)
+ * comes from that first meeting, an interval counts its weeks or months from it, and a
  * COUNT or UNTIL can end the series before today. When the rule counted
  * that way doesn't meet on the occurrence's day, the editor's words (which
  * count from it) aren't what Entire series would save, and it would drop
@@ -913,9 +913,10 @@ export function repeatChanged(params: {
 }
 
 /**
- * Whether a repeat the save sends ends (UNTIL) before the event's own
- * start day: possible once its end was picked and the start then moved
- * past it. Saved, the new series would end before it starts.
+ * The end day (UNTIL) of a repeat the save sends when it's before the
+ * event's own start day, else null: possible once its end was picked and
+ * the start then moved past it. Saved, the new series would end before it
+ * starts.
  */
 export function repeatEndsBeforeStart(params: {
   /** The save sends this repeat (a new event's, or a changed one). */
@@ -924,13 +925,15 @@ export function repeatEndsBeforeStart(params: {
   /** The start's day, in the series' zone. */
   startDay: Temporal.PlainDate | null;
   timeZone: string;
-}): boolean {
+}): Temporal.PlainDate | null {
   const rule = getPrimaryRecurrenceRule(params.recurrence);
   if (!(params.sent && rule && params.startDay)) {
-    return false;
+    return null;
   }
   const { end } = parseGoogleEventRecurrenceRule(rule);
   const last =
     end.type === "until" ? untilRuleToDay(end.date, params.timeZone) : null;
-  return Boolean(last && Temporal.PlainDate.compare(last, params.startDay) < 0);
+  return last && Temporal.PlainDate.compare(last, params.startDay) < 0
+    ? last
+    : null;
 }

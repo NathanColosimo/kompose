@@ -820,19 +820,21 @@ function HeldWhileSaving({
 /** Why the sheet can't be saved: an end before the start, of it or its repeat. */
 function EndsBeforeStartNote({
   endsEarly,
-  repeatEndsEarly,
+  repeatEndsOn,
 }: {
   endsEarly: boolean;
-  repeatEndsEarly: boolean;
+  /** The repeat's end day, when it's before the start. */
+  repeatEndsOn: Temporal.PlainDate | null;
 }) {
-  if (!(endsEarly || repeatEndsEarly)) {
+  if (!(endsEarly || repeatEndsOn)) {
     return null;
   }
+  // The end is named: it's inside the Repeat row, out of sight.
   return (
     <Text className="-mt-1 mb-2.5 text-destructive text-xs">
-      {endsEarly
-        ? "Ends before it starts."
-        : "The repeat ends before this starts. Pick a later end."}
+      {repeatEndsOn && !endsEarly
+        ? `The repeat ends ${formatPlainDateLong(repeatEndsOn)}, before this starts. Pick a later end.`
+        : "Ends before it starts."}
     </Text>
   );
 }
@@ -1620,14 +1622,14 @@ export function EventEditorSheet({
     seriesTimeZone,
   });
   // Its end picked, then the start moved past it: say so, and don't save.
-  const repeatEndsEarly = repeatEndsBeforeStart({
+  const repeatEndsOn = repeatEndsBeforeStart({
     recurrence: values.recurrence,
     sent: repeatIsChanged,
     startDay: formDay,
     timeZone: seriesTimeZone,
   });
   const canSubmit =
-    summary.trim().length > 0 && endsAfterStart(values) && !repeatEndsEarly;
+    summary.trim().length > 0 && endsAfterStart(values) && !repeatEndsOn;
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1813,7 +1815,7 @@ export function EventEditorSheet({
         {/* Save stays off until the end comes after the start; say why. */}
         <EndsBeforeStartNote
           endsEarly={!endsAfterStart(values)}
-          repeatEndsEarly={repeatEndsEarly}
+          repeatEndsOn={repeatEndsOn}
         />
 
         <RepeatSection

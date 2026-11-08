@@ -2264,18 +2264,26 @@ function endsBeforeStart(values: Partial<EventFormValues>): boolean {
 
 /** Why the form can't be saved: an end before the start, of it or its repeat. */
 function EndsBeforeStartNote({
-  repeatEndsEarly,
+  repeatEndsOn,
   values,
 }: {
-  repeatEndsEarly: boolean;
+  /** The repeat's end day, when it's before the start. */
+  repeatEndsOn: Temporal.PlainDate | null;
   values: Partial<EventFormValues>;
 }) {
   if (endsBeforeStart(values)) {
     return <p className="text-destructive text-xs">Ends before it starts.</p>;
   }
-  return repeatEndsEarly ? (
+  // Named: the end is inside the Repeat popover, out of sight.
+  return repeatEndsOn ? (
     <p className="text-destructive text-xs">
-      The repeat ends before this starts. Pick a later end.
+      The repeat ends{" "}
+      {formatPlainDate(repeatEndsOn, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })}
+      , before this starts. Pick a later end.
     </p>
   ) : null;
 }
@@ -2283,9 +2291,9 @@ function EndsBeforeStartNote({
 /** The form can't be saved as is: it, or its repeat, ends before it starts. */
 function saveBlocked(
   values: Partial<EventFormValues>,
-  repeatEndsEarly: boolean
+  repeatEndsOn: Temporal.PlainDate | null
 ): boolean {
-  return endsBeforeStart(values) || repeatEndsEarly;
+  return endsBeforeStart(values) || repeatEndsOn !== null;
 }
 
 function EventFormActionRow({
@@ -2774,7 +2782,7 @@ export function EventEditForm({
     source: recurrenceSource,
   });
   // Its end picked, then the start moved past it: say so, and don't save.
-  const repeatEndsEarly = repeatEndsBeforeStart({
+  const repeatEndsOn = repeatEndsBeforeStart({
     recurrence: watchedValues.recurrence,
     // A new event's repeat is "changed" from none too.
     sent: repeatIsChanged,
@@ -2789,7 +2797,7 @@ export function EventEditForm({
       }
       // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
       // comes through here, so none can write an end before the start.
-      if (saveBlocked(values, repeatEndsEarly)) {
+      if (saveBlocked(values, repeatEndsOn)) {
         return { type: "invalid" };
       }
       const resolvedConference =
@@ -2828,7 +2836,7 @@ export function EventEditForm({
       masterQuery.data,
       pendingConference,
       readOnly,
-      repeatEndsEarly,
+      repeatEndsOn,
     ]
   );
 
@@ -3108,10 +3116,7 @@ export function EventEditForm({
           />
         </div>
       )}
-      <EndsBeforeStartNote
-        repeatEndsEarly={repeatEndsEarly}
-        values={watchedValues}
-      />
+      <EndsBeforeStartNote repeatEndsOn={repeatEndsOn} values={watchedValues} />
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
@@ -3142,7 +3147,7 @@ export function EventEditForm({
           onDelete={onDelete}
           onSave={onSave}
           readOnly={readOnly}
-          saveDisabled={saveBlocked(watchedValues, repeatEndsEarly)}
+          saveDisabled={saveBlocked(watchedValues, repeatEndsOn)}
           saving={isSaving}
         />
       ) : null}
