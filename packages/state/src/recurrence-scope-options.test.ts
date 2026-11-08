@@ -61,54 +61,77 @@ function combinations<T extends Record<string, readonly unknown[]>>(
   ) as { [K in keyof T]: T[K][number] }[];
 }
 
-test("says why whenever a scope is off", () => {
-  const plain = SCOPE_DIALOG_COPY.saveEvent.description;
-  const flags = [false, true] as const;
-  const all = combinations({
-    calendarChanged: flags,
-    dateMoved: flags,
-    opensSeries: flags,
-    entireSeriesCost: [
-      null,
-      ...(["lostSlot", "newStart", "ownLength"] as const).map((reason) => ({
-        day: Temporal.PlainDate.from("2026-12-07"),
-        reason,
-      })),
-    ],
-    patternChanged: flags,
-    repeatSkips: [null, "day", "end"],
-    retimed: flags,
-    seriesRuleFailed: flags,
-    seriesRuleLoaded: flags,
-    severalRules: flags,
-    movesSeveralADay: [undefined, false, true],
-    followingCost: [
-      null,
-      { day: Temporal.PlainDate.from("2026-12-09"), reason: "lostSlot" },
-    ],
-    splitBlocked: [null, "addedOccurrence", "severalRules"],
-    refused: [
-      null,
-      refuseSave(null, "all", {
-        originalStarts: ["2026-12-07T09:00:00-05:00"],
-        reason: "dropsChangedOccurrences",
-      }),
-      refuseSave(null, "following", { reason: "countUnknown" }),
-    ],
-  } as const);
-  for (const changes of all) {
-    const disabled = eventSaveDisabledScopes(changes);
-    const line = eventSaveDescription(changes);
-    expect(line === plain).toBe(Object.keys(disabled).length === 0);
-    // The plain prompt only ends a line, and never one with no scope left.
-    if (line.includes(plain)) {
-      expect(line.endsWith(plain)).toBe(true);
-      expect(Boolean(disabled.all && disabled.following && disabled.this)).toBe(
-        false
-      );
-    }
+/**
+ * Every combination of the save's own inputs, once with each of these
+ * refusals and This and following costs, as its own test (the whole
+ * matrix is too slow for one). A failed load is only one that hasn't
+ * loaded.
+ */
+const refusalCases = [
+  ["no refusal", null],
+  [
+    "Entire series refused",
+    refuseSave(null, "all", {
+      originalStarts: ["2026-12-07T09:00:00-05:00"],
+      reason: "dropsChangedOccurrences",
+    }),
+  ],
+  [
+    "This and following refused",
+    refuseSave(null, "following", { reason: "countUnknown" }),
+  ],
+] as const;
+const followingCases = [
+  ["", null],
+  [
+    ", a later meeting at stake",
+    { day: Temporal.PlainDate.from("2026-12-09"), reason: "lostSlot" },
+  ],
+] as const;
+for (const [refusedLabel, refused] of refusalCases) {
+  for (const [followingLabel, followingCost] of followingCases) {
+    test(`says why whenever a scope is off (${refusedLabel}${followingLabel})`, () => {
+      const plain = SCOPE_DIALOG_COPY.saveEvent.description;
+      const flags = [false, true] as const;
+      const all = combinations({
+        calendarChanged: flags,
+        dateMoved: flags,
+        opensSeries: flags,
+        entireSeriesCost: [
+          null,
+          ...(["lostSlot", "newStart", "ownLength"] as const).map((reason) => ({
+            day: Temporal.PlainDate.from("2026-12-07"),
+            reason,
+          })),
+        ],
+        patternChanged: flags,
+        repeatSkips: [null, "day", "end"],
+        retimed: flags,
+        series: [
+          { seriesRuleFailed: false, seriesRuleLoaded: true },
+          { seriesRuleFailed: false, seriesRuleLoaded: false },
+          { seriesRuleFailed: true, seriesRuleLoaded: false },
+        ],
+        severalRules: flags,
+        movesSeveralADay: [undefined, false, true],
+        splitBlocked: [null, "addedOccurrence", "severalRules"],
+      } as const);
+      for (const { series, ...rest } of all) {
+        const changes = { ...rest, ...series, followingCost, refused };
+        const disabled = eventSaveDisabledScopes(changes);
+        const line = eventSaveDescription(changes);
+        expect(line === plain).toBe(Object.keys(disabled).length === 0);
+        // The plain prompt only ends a line, never one with no scope left.
+        if (line.includes(plain)) {
+          expect(line.endsWith(plain)).toBe(true);
+          expect(
+            Boolean(disabled.all && disabled.following && disabled.this)
+          ).toBe(false);
+        }
+      }
+    });
   }
-});
+}
 
 test("leaves no scope only for a save that needs two, or one waiting on the series", () => {
   const noneLeft = (changes: Partial<EventSaveChanges>) =>
@@ -1166,14 +1189,31 @@ describe("the server's refusal of a series write", () => {
     });
     expect(record.disabled).toEqual(typed.disabled);
     expect(record.disabled).toEqual({ all: true, following: true, this: true });
-    // A later refusal keeps an app's own record's reason.
+    // Still after a refusal of its own is added to that record.
     expect(
-      refuseSave(
-        { message: "Own reason.", scopes: { all: true } },
-        "following",
-        unknown
-      ).message
-    ).toBe(`${refusalReason(unknown)} Own reason.`);
+      eventSaveScopeState({
+        ...first,
+        refused: refuseSave(
+          { message: refusalReason(drops), scopes: { following: true } },
+          "this",
+          { reason: "severalRules" }
+        ),
+      }).disabled.all
+    ).toBe(true);
+    // Later refusals keep an app's own record's reason, through more
+    // than one.
+    const ownRecord = {
+      message: "Own reason.",
+      scopes: { all: true as const },
+    };
+    expect(refuseSave(ownRecord, "following", unknown).message).toBe(
+      `${refusalReason(unknown)} Own reason.`
+    );
+    const added = { reason: "addedBeforeStart" } as const;
+    expect(
+      refuseSave(refuseSave(ownRecord, "following", unknown), "this", added)
+        .message
+    ).toBe(`${refusalReason(added)} ${refusalReason(unknown)} Own reason.`);
   });
 
   test("says when the refusals leave no scope at all", () => {

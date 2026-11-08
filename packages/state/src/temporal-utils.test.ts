@@ -244,6 +244,38 @@ describe("moveEventStart", () => {
     );
   });
 
+  test("a start the clocks skip comes out as the time it lands on", () => {
+    // Mar 8 2026, New York: 2:00-3:00 doesn't happen. A 2:30-3:30 meeting
+    // moved there starts at 3:30, and says so.
+    const skipped = {
+      endDate: d("2026-03-07"),
+      endTime: t("03:30"),
+      startDate: d("2026-03-07"),
+      startTime: t("02:30"),
+    };
+    const moved = moveEventStart(skipped, { date: d("2026-03-08") }, zone);
+    expect(text(moved)).toBe("2026-03-08 03:30:00 → 2026-03-08 04:30:00");
+    expect(moved.start?.toPlainTime().toString()).toBe("03:30:00");
+  });
+
+  test("an all-day move leaves no moments behind", () => {
+    const trip = {
+      end: Temporal.ZonedDateTime.from(
+        "2026-11-12T10:00:00-05:00[America/New_York]"
+      ),
+      endDate: d("2026-11-14"),
+      endTime: null,
+      start: Temporal.ZonedDateTime.from(
+        "2026-11-12T09:00:00-05:00[America/New_York]"
+      ),
+      startDate: d("2026-11-12"),
+      startTime: null,
+    };
+    const moved = moveEventStart(trip, { date: d("2026-11-20") }, zone);
+    expect(moved.start).toBeUndefined();
+    expect(moved.end).toBeUndefined();
+  });
+
   test("keeps an all-day event's span", () => {
     const trip = {
       endDate: d("2026-11-14"),
@@ -318,6 +350,22 @@ describe("moveEventStart", () => {
     expect(
       hours(moveEventStart(repeated, { date: d("2026-11-02") }, zone))
     ).toBe(1);
+    // Moved to its own day, a start in the repeated hour's second half
+    // stays there.
+    const second = Temporal.ZonedDateTime.from(
+      "2026-11-01T01:30:00-05:00[America/New_York]"
+    );
+    const late = {
+      end: second.add({ hours: 1 }),
+      endDate: d("2026-11-01"),
+      endTime: t("02:30"),
+      start: second,
+      startDate: d("2026-11-01"),
+      startTime: t("01:30"),
+    };
+    const kept = moveEventStart(late, { date: d("2026-11-01") }, zone);
+    expect(kept.start?.offset).toBe("-05:00");
+    expect(text(kept)).toBe("2026-11-01 01:30:00 → 2026-11-01 02:30:00");
     // Ends edited since (the clock fields no longer match): the clock's.
     const edited = { ...moved, endTime: t("03:00") };
     expect(text(moveEventStart(edited, { time: t("00:00") }, zone))).toBe(

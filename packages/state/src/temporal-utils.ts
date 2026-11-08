@@ -317,7 +317,13 @@ export function moveEventStart(
       0,
       range.startDate.until(range.endDate, { largestUnit: "days" }).days
     );
-    return { ...range, endDate: startDate.add({ days }), startDate };
+    // An all-day range has no moments to carry.
+    return {
+      endDate: startDate.add({ days }),
+      endTime: range.endTime,
+      startDate,
+      startTime: range.startTime,
+    };
   }
   const oldTime = range.startTime ?? startTime;
   if (!timeZone) {
@@ -337,7 +343,16 @@ export function moveEventStart(
   const zoned = (date: Temporal.PlainDate, time: Temporal.PlainTime) =>
     date.toZonedDateTime({ plainTime: time, timeZone });
   const moments = momentsOf(range, timeZone);
-  const start = zoned(startDate, startTime);
+  // A start left where it was keeps its moment (in a repeated hour, its
+  // half); a new one is read in the zone, a time the clocks skip landing
+  // after the gap.
+  const start =
+    moments &&
+    startDate.equals(range.startDate) &&
+    range.startTime &&
+    startTime.equals(range.startTime)
+      ? moments.start
+      : zoned(startDate, startTime);
   const end = moments
     ? start.add(withLength(moments.start.until(moments.end, LENGTH)))
     : keptLength(zoned, range, oldTime, { date: startDate, time: startTime });
@@ -346,8 +361,8 @@ export function moveEventStart(
     endDate: end.toPlainDate(),
     endTime: end.toPlainTime(),
     start,
-    startDate,
-    startTime,
+    startDate: start.toPlainDate(),
+    startTime: start.toPlainTime(),
   };
 }
 

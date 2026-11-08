@@ -314,13 +314,14 @@ export function refuseSave(
   scope: RecurrenceScope,
   refusal: SeriesRefusal
 ): SaveRefusals {
-  const refusals = [{ refusal, scope }, ...(refused?.refusals ?? [])];
-  const reasons = refusals.map((each) => refusalReason(each.refusal));
-  // An app's own record has only its message to keep.
-  const earlier = refused && !refused.refusals ? [refused.message] : [];
+  const reason = refusalReason(refusal);
   return {
-    message: [...new Set([...reasons, ...earlier])].join(" "),
-    refusals,
+    // The new reason first, then every earlier one (an app's own record's
+    // too, which has no refusals list to rebuild it from), each once.
+    message: refused?.message.includes(reason)
+      ? refused.message
+      : sentences(reason, refused?.message),
+    refusals: [{ refusal, scope }, ...(refused?.refusals ?? [])],
     scopes: { ...refused?.scopes, [scope]: true },
   };
 }
@@ -861,13 +862,14 @@ function refusedAsWholeSeries(changes: EventSaveChanges): boolean {
   if (!(changes.opensSeries && refused?.scopes.following)) {
     return false;
   }
-  // Without the refusals, only the scopes: added meetings before the
-  // first one are known up front (`splitBlocked`), else it's the series'.
-  return refused.refusals
-    ? refused.refusals.some(
-        ({ refusal, scope }) =>
-          scope === "following" && refusal.reason !== "addedBeforeStart"
-      )
+  // Without its refusal (an app's own record), only the scope: added
+  // meetings before the first one are known up front (`splitBlocked`),
+  // else it's the series'.
+  const following = (refused.refusals ?? []).filter(
+    ({ scope }) => scope === "following"
+  );
+  return following.length > 0
+    ? following.some(({ refusal }) => refusal.reason !== "addedBeforeStart")
     : changes.splitBlocked !== "addedBeforeStart";
 }
 
