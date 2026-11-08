@@ -39,7 +39,7 @@ export const SCOPE_DIALOG_COPY = {
   moveDate: "A new day applies to this occurrence, or from it on.",
   /** A new repeat on an occurrence moved off its series' day. */
   repeatOffDay:
-    "This occurrence is on another day than its series, so a new repeat starts from it.",
+    "A new repeat counts from this occurrence, so it applies from here on. To change the whole series, edit its first occurrence.",
   /** Shown when the series' rule couldn't load. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",

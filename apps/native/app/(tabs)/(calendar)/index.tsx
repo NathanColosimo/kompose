@@ -1644,6 +1644,7 @@ export default function CalendarTab() {
       offSeriesDay: occurrenceOffSeriesDay({
         editedStart: buildEventPayload(draft).start,
         occurrence: draft.sourceEvent,
+        seriesStart: recurringMasterEvent.data?.start,
         timeZone,
       }),
       patternChanged: recurrenceToSend(draft, masterRecurrence) !== undefined,

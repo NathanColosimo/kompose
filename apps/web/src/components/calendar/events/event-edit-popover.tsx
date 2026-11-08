@@ -1375,6 +1375,7 @@ function buildEditPayload(
       ? occurrenceOffSeriesDay({
           editedStart: variables.event.start,
           occurrence: ctx.event,
+          seriesStart: ctx.masterStart,
           timeZone: ctx.timeZone,
         })
       : false,

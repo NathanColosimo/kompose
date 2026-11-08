@@ -1715,6 +1715,41 @@ describe("occurrenceOffSeriesDay", () => {
     ).toBe(false);
   });
 
+  test("a later occurrence of a loaded series is off its first day", () => {
+    // Nov 15 of a weekly series from Nov 1: "monthly" from here is the
+    // 15th, but the whole series would count from the 1st.
+    const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
+    const later = {
+      originalStartTime: { dateTime: "2026-11-15T16:00:00-05:00" },
+      recurringEventId: "m1",
+      start: { dateTime: "2026-11-15T16:00:00-05:00" },
+    };
+    expect(
+      occurrenceOffSeriesDay({
+        editedStart: later.start,
+        occurrence: later,
+        seriesStart,
+        timeZone: zone,
+      })
+    ).toBe(true);
+  });
+
+  test("the series' first occurrence isn't", () => {
+    const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
+    expect(
+      occurrenceOffSeriesDay({
+        editedStart: seriesStart,
+        occurrence: {
+          originalStartTime: seriesStart,
+          recurringEventId: "m1",
+          start: seriesStart,
+        },
+        seriesStart,
+        timeZone: zone,
+      })
+    ).toBe(false);
+  });
+
   test("not an occurrence: never", () => {
     expect(
       occurrenceOffSeriesDay({
