@@ -49,7 +49,7 @@ function getParagraphLines(block: string) {
 export default function PrivacyPage() {
   return (
     <LegalShell
-      summary={"This page contains the current Kompose privacy policy."}
+      summary="What Kompose collects, why, who it is shared with, and the choices you have."
       title={"Privacy Policy"}
       updatedAt={updatedAt}
     >

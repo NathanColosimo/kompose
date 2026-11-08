@@ -39,7 +39,8 @@
   --muted-foreground: hsl(40 6.8182% 34.5098%);
   --accent: hsl(52 23.0769% 87.2549%);
   --accent-foreground: hsl(0 0% 18.0392%);
-  --destructive: hsl(0 72.2222% 50.5882%);
+  /* Dark enough for AA as small text on the paper background (5.1:1). */
+  --destructive: hsl(0 72% 42%);
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(41.7391 20.3540% 77.8431%);
   --input: hsl(41.7391 20.3540% 77.8431%);
@@ -59,6 +60,7 @@
   --sidebar-ring: hsl(0 0% 18.0392%);
   --whoop-sleep: hsl(245 40% 62%);
   --whoop-sleep-foreground: hsl(245 45% 50%);
+  --whoop-workout: hsl(178 45% 38%);
   --font-sans: "Sentient", serif;
   --font-serif: "Sentient", serif;
   --font-mono: "JetBrains Mono", monospace;
@@ -121,6 +123,7 @@
   --sidebar-ring: hsl(52.9412 15.5963% 78.6275%);
   --whoop-sleep: hsl(245 40% 65%);
   --whoop-sleep-foreground: hsl(245 40% 72%);
+  --whoop-workout: hsl(176 45% 50%);
   --font-sans: "Sentient", serif;
   --font-serif: "Sentient", serif;
   --font-mono: "JetBrains Mono", monospace;
@@ -221,6 +224,33 @@
   body {
     letter-spacing: var(--tracking-normal);
     @apply bg-background text-foreground;
+  }
+}
+
+/*
+ * A timed block on the calendar: a tint of its color (--event), with the
+ * full color as a bar on the left. Text stays in the page foreground so
+ * every calendar color reads the same.
+ */
+@utility event-surface {
+  color: var(--foreground);
+  background-color: color-mix(in oklab, var(--event) 40%, var(--background));
+  border: 1px solid color-mix(in oklab, var(--event) 55%, var(--background));
+  box-shadow: inset 3px 0 0
+    color-mix(in oklab, var(--event) 80%, var(--foreground));
+
+  &:where(.dark, .dark *) {
+    background-color: color-mix(in oklab, var(--event) 24%, var(--background));
+    border-color: color-mix(in oklab, var(--event) 32%, var(--background));
+    box-shadow: inset 3px 0 0 var(--event);
+  }
+}
+
+/* The landing preview's dragged task, lifting in from the inbox once. */
+@keyframes preview-drop {
+  from {
+    opacity: 0;
+    translate: -48px -12px;
   }
 }
 
