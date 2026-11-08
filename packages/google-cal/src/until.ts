@@ -586,7 +586,8 @@ function existsOn(
 /**
  * A COUNT rule's meetings as moments, at its `time` on each of its days,
  * counted in order from the series' first day `from` (from its start
- * time `base` that day), up to `count`; null when its days can't be read.
+ * time `base` that day), all `count` of them; null when its days can't be
+ * read or they don't all fall within the walk.
  */
 export function countedRuleMeetings(params: {
   base: Temporal.PlainTime | null;
@@ -630,7 +631,8 @@ export function countedRuleMeetings(params: {
       }
     }
   }
-  return meetings;
+  // Not all of them within the walk: can't be told.
+  return null;
 }
 
 /**

@@ -639,23 +639,26 @@ function timesOnOwnDay(
 function seriesChangeRefusal(params: {
   changed: { occurrence: Event; originalStart: string }[];
   master: Event;
+  /** Whether the start or the rule changes (else only the length). */
+  movesSlots: boolean;
   opened: Event;
   recurrence: string[];
   times: { end: Event["end"]; start: Event["start"] };
 }): SeriesRefusal | null {
-  const { changed, master, opened, recurrence, times } = params;
+  const { changed, master, movesSlots, opened, recurrence, times } = params;
   const zone = seriesZoneOf(master);
   const movesStart = !sameTime(times.start, master.start, zone);
   const lost = changed
     .filter(
       ({ originalStart }) =>
         movesStart ||
-        seriesMeetsAt({
-          recurrence,
-          seriesZone: repeatZone(master, times.start),
-          slot: originalStart,
-          start: times.start,
-        }) !== true
+        (movesSlots &&
+          seriesMeetsAt({
+            recurrence,
+            seriesZone: repeatZone(master, times.start),
+            slot: originalStart,
+            start: times.start,
+          }) !== true)
     )
     .map(({ originalStart }) => originalStart);
   if (lost.length > 0) {
@@ -1820,6 +1823,7 @@ export function makeGoogleCalendarService(
         const refusal = seriesChangeRefusal({
           changed,
           master,
+          movesSlots,
           opened: currentEvent,
           recurrence,
           times,

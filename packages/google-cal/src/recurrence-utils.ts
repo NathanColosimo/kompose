@@ -714,9 +714,6 @@ function skipsAClockGap(params: {
   seriesZone: string;
 }): boolean {
   const { clock, from, meetings, rule, seriesZone } = params;
-  if (meetings.size === 0) {
-    return false;
-  }
   const start = from.toZonedDateTimeISO(seriesZone).toPlainDate();
   const last = Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
     .toZonedDateTimeISO(seriesZone)
