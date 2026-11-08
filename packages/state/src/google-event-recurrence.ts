@@ -8,6 +8,7 @@ import {
   dayOfStart,
   matchRecurrenceToStart,
   moveSkippedDays,
+  ruleClock,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
@@ -642,28 +643,6 @@ export function movedMeetingDropped(params: {
 }
 
 /**
- * The time of day a rule line meets, as Google reads it: its own single
- * BYHOUR and BYMINUTE, the rest from the series' start time (a list is
- * ignored: the series' time). Null for an all-day series.
- */
-function ruleLineTime(
-  rule: string,
-  seriesTime: Temporal.PlainTime | null
-): Temporal.PlainTime | null {
-  if (!seriesTime) {
-    return null;
-  }
-  const single = (name: string) => {
-    const value = new RegExp(`(?:^|;)${name}=(\\d+)(?:;|$)`).exec(rule)?.[1];
-    return value === undefined ? undefined : Number(value);
-  };
-  return seriesTime.with({
-    hour: single("BYHOUR") ?? seriesTime.hour,
-    minute: single("BYMINUTE") ?? seriesTime.minute,
-  });
-}
-
-/**
  * Why `recurrence` no longer has `slot`, an occurrence's original start,
  * as the server reads it (`seriesMeetsAt`: the series' first meeting, an
  * added RDATE one, or a rule's, skipped ones aside): "end" when a rule at
@@ -696,13 +675,13 @@ function slotDropped(params: {
   const seriesTime = timeOfStart(seriesStart, timeZone);
   const slotTime = timeOfStart(slot, timeZone);
   // Only a rule at the slot's time could have had it.
-  const slotRules = recurrence.filter(isRule).filter((rule) => {
-    const ruleTime = ruleLineTime(rule, seriesTime);
-    return (
-      !(ruleTime && slotTime) ||
-      Temporal.PlainTime.compare(ruleTime, slotTime) === 0
+  const slotRules = recurrence
+    .filter(isRule)
+    .filter(
+      (rule) =>
+        !(seriesTime && slotTime) ||
+        Temporal.PlainTime.compare(ruleClock(rule, seriesTime), slotTime) === 0
     );
-  });
   const onItsDay = Boolean(
     first &&
       day &&

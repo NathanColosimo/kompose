@@ -1765,6 +1765,19 @@ describe("repeatSkipsOccurrence", () => {
     ).toBe("day");
   });
 
+  test("a rule's own seconds are its time too", () => {
+    // From Sun Nov 1 16:00:00, a rule at 16:00:30 no longer has the 16:00
+    // slot: by its time, not an end.
+    expect(
+      repeatSkipsOccurrence({
+        occurrence: later,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYSECOND=30"],
+        seriesStart,
+        timeZone: zone,
+      })
+    ).toBe("day");
+  });
+
   test("an added meeting the series still lists keeps its slot", () => {
     // Mondays from Nov 2 at 9:00, with Tue Nov 10 added on its own; the
     // repeat becomes Mondays and Fridays, the added date kept.

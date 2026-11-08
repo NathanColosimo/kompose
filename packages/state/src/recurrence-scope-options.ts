@@ -75,7 +75,7 @@ export const SCOPE_DIALOG_COPY = {
   moveEvent: "Moving to another calendar moves the whole series.",
   /** A calendar move while the occurrence is on another day (`dateMoved`). */
   moveEventDay:
-    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the day in two saves.",
+    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the times in two saves.",
   /** A calendar move with a new repeat that would skip this occurrence. */
   moveEventRepeatDay:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
@@ -110,17 +110,17 @@ export const SCOPE_DIALOG_COPY = {
   /**
    * After `splitBlocked`, for what else the save changes: with This and
    * following off, a new repeat can only go to the entire series, and not
-   * together with a new day, nor where it would skip this occurrence.
+   * with times the series can't take (another day, or a series of several
+   * rules), nor where it would skip this occurrence.
    */
   splitBlockedThen: {
-    dayAndRepeat: "Change the day and the repeat in two saves.",
     repeat: "A new repeat applies to the entire series.",
     repeatOffDay:
       "Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting.",
     repeatEndOff:
       "Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting.",
     severalRulesTime: "A new time applies to this occurrence only.",
-    timeAndRepeat: "Change the time and the repeat in two saves.",
+    timesAndRepeat: "Change the times and the repeat in two saves.",
   },
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
@@ -477,7 +477,7 @@ function splitBlockedDescription(
       return patternChanged ? `${why} ${then.repeat}` : why;
     case "newDay":
       return patternChanged
-        ? `${why} ${then.dayAndRepeat}`
+        ? `${why} ${then.timesAndRepeat}`
         : `${newDayLine(changes)} ${why}`;
     case "repeatDay":
       return `${why} ${then.repeatOffDay}`;
@@ -487,7 +487,7 @@ function splitBlockedDescription(
       return `${why} ${movedMeetingLine(off.day)}`;
     case "severalRulesTime":
       return patternChanged
-        ? `${why} ${then.timeAndRepeat}`
+        ? `${why} ${then.timesAndRepeat}`
         : `${why} ${then.severalRulesTime}`;
     case "seriesPending":
       return seriesPendingDescription(changes);

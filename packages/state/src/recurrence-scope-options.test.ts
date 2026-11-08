@@ -172,7 +172,7 @@ test("says why the scopes are what they are", () => {
   expect(
     eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
   ).toBe(
-    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the day in two saves."
+    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the times in two saves."
   );
   expect(
     eventSaveDescription({
@@ -243,10 +243,10 @@ test("turns This and following off where a new series can't start", () => {
   const stuck = { ...blocked, dateMoved: true, patternChanged: true };
   expect(off(stuck)).toEqual(["all", "following", "this"]);
   expect(eventSaveDescription(stuck)).toBe(
-    "This occurrence was added to the series on its own, so This and following isn't available. Change the day and the repeat in two saves."
+    "This occurrence was added to the series on its own, so This and following isn't available. Change the times and the repeat in two saves."
   );
   expect(eventSaveDescription({ ...stuck, splitBlocked: "severalRules" })).toBe(
-    "This series repeats by more than one rule, so This and following isn't available. Change the day and the repeat in two saves."
+    "This series repeats by more than one rule, so This and following isn't available. Change the times and the repeat in two saves."
   );
 });
 
@@ -494,7 +494,7 @@ describe("a new time for a series of several rules", () => {
     };
     expect(off(both)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(both)).toBe(
-      "This series repeats by more than one rule, so This and following isn't available. Change the time and the repeat in two saves."
+      "This series repeats by more than one rule, so This and following isn't available. Change the times and the repeat in two saves."
     );
   });
 
