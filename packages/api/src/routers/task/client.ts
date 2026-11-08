@@ -141,6 +141,49 @@ const dbDelete = (userId: string, taskId: string) =>
       .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)));
   });
 
+/**
+ * Delete a series master on its own. The master holds the series' pattern
+ * (a done occurrence can be one after a pattern change), so the next
+ * remaining occurrence takes over its role and pattern, one fewer in its
+ * count, and the rest of the series keeps a master to read it from.
+ */
+const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
+  userId: string,
+  master: TaskSelect
+) {
+  const db = yield* Database;
+  const [heir] = yield* db
+    .select()
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        ne(taskTable.id, master.id)
+      )
+    )
+    .orderBy(asc(taskTable.startDate))
+    .limit(1);
+  if (heir) {
+    yield* db
+      .update(taskTable)
+      .set({ seriesMasterId: heir.id })
+      .where(
+        and(
+          eq(taskTable.userId, userId),
+          eq(taskTable.seriesMasterId, master.id)
+        )
+      );
+    const pattern = master.recurrence;
+    yield* dbUpdate(userId, heir.id, {
+      recurrence: pattern?.count
+        ? { ...pattern, count: Math.max(1, pattern.count - 1) }
+        : pattern,
+    });
+  }
+  yield* dbDelete(userId, master.id);
+});
+
 const dbDeleteBySeriesFrom = (
   userId: string,
   seriesMasterId: string,
@@ -708,8 +751,9 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
  * of doubling them.
  *
  * The edited occurrence stays too when it is an exception or the edit sets
- * its status (Mark done with a pattern change): it takes the edits, without
- * the pattern, so a moved or finished occurrence is never lost or doubled.
+ * its status (Mark done with a pattern change): it takes the edits and
+ * becomes the new series' master, carrying the pattern, so a moved or
+ * finished occurrence is never lost or doubled.
  */
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
@@ -803,7 +847,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  // Every changed row goes back, once, latest write first (so clients see
+  // Every changed row goes back, once, latest write wins (so clients see
   // the moved exceptions in their new series), but only the edited
   // occurrence and the new rows take the edit's tags: the other kept
   // exceptions keep their own.
@@ -1164,6 +1208,13 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
 
       // Task already deleted or doesn't exist
       if (!task) {
+        return;
+      }
+
+      // A series master deleted alone hands its role to the next one.
+      if (scope === "this" && task.seriesMasterId === task.id) {
+        const db = yield* Database;
+        yield* db.transaction(() => deleteMasterAlone(userId, task));
         return;
       }
 

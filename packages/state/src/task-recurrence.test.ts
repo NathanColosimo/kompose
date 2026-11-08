@@ -35,7 +35,7 @@ describe("repeatBlocksSave", () => {
       })
     ).toEqual({
       blocking: true,
-      text: "The repeat ends before the task starts.",
+      text: "The repeat ends Nov 14, before the task starts on Nov 16.",
     });
   });
 });

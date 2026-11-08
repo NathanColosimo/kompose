@@ -223,7 +223,10 @@ export function useTasks(options: UseTasksOptions = {}) {
           ? mergeSavedTasks(old, saved, {
               id,
               scope,
-              startDate: task.startDate,
+              // The server splits the series at the moved date only for a
+              // pattern change; otherwise it keeps the rows before it.
+              startDate:
+                task.recurrence === undefined ? undefined : task.startDate,
             })
           : old
       );

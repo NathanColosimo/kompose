@@ -98,7 +98,8 @@ export function buildOccurrenceRowsFromTask(params: {
 
 /**
  * Whether a "this and following" pattern change keeps the edited occurrence
- * (and gives it the edits, without the pattern) instead of replacing it: it
+ * (it takes the edits, and becomes the new series' master with the pattern)
+ * instead of replacing it: it
  * is an exception already, or the edit sets its status (Mark done).
  */
 export function keepsEditedOccurrence(

@@ -391,8 +391,18 @@ export function markStatusFailureMessage(
 }
 
 /** A repeat whose end comes before the task's start has no occurrences. */
-export const REPEAT_ENDS_BEFORE_START =
-  "The repeat ends before the task starts.";
+/**
+ * The blocking note, naming both dates so it says what to fix: "The repeat
+ * ends Nov 13, before the task starts on Nov 14."
+ */
+function repeatEndsBeforeStartText(
+  until: string,
+  startDate: Temporal.PlainDate
+): string {
+  const day = (date: Temporal.PlainDate) =>
+    date.toLocaleString(undefined, { day: "numeric", month: "short" });
+  return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
+}
 
 export function repeatEndsBeforeStart(
   recurrence: TaskRecurrence | null | undefined,
@@ -432,8 +442,11 @@ export function repeatNote(params: {
   previous: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null | undefined;
 }): { blocking: boolean; text: string } | null {
-  if (repeatBlocksSave(params)) {
-    return { blocking: true, text: REPEAT_ENDS_BEFORE_START };
+  if (repeatBlocksSave(params) && params.next?.until && params.startDate) {
+    return {
+      blocking: true,
+      text: repeatEndsBeforeStartText(params.next.until, params.startDate),
+    };
   }
   const text = repeatChangeNote(params);
   return text ? { blocking: false, text } : null;
