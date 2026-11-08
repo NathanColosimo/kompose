@@ -973,6 +973,29 @@ describe("seriesRecurrenceForSave", () => {
     ).toBe(false);
   });
 
+  test("keeps a retimed skip off another rule's real meeting", () => {
+    // Mondays at the start's time plus Mondays fixed at 9:00 and 10:00,
+    // Nov 16 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the
+    // series: the 9:00 skip stays, and the fixed 10:00 meeting isn't hidden.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { dateTime: "2026-11-09T10:00:00-05:00" },
+        masterRecurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,10;BYMINUTE=0",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toBeUndefined();
+  });
+
   test("carries the series' rule with a moved occurrence", () => {
     expect(after()).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=2SA"]);
   });
