@@ -951,9 +951,10 @@ function slotDropped(params: {
 }
 
 /**
- * The day an "Ends on" date defaults from and can't be before: the
- * occurrence's own day (not the series' first, which can be years back),
- * or today when that's later, in the series' zone.
+ * The day an "Ends on" date defaults to: three months
+ * (`defaultUntilDay`) after the occurrence's own day (not the series'
+ * first, which can be years back), or after today when that's later, in
+ * the series' zone.
  */
 export function untilDefaultDay(
   from: Temporal.PlainDate,
