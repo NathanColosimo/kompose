@@ -82,10 +82,26 @@ test("says why whenever a scope is off", () => {
     severalRules: flags,
     movesSeveralADay: [undefined, false, true],
     splitBlocked: [null, "addedOccurrence", "severalRules"],
+    refused: [
+      null,
+      refuseSave(null, "all", {
+        originalStarts: ["2026-12-07T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      }),
+      refuseSave(null, "following", { reason: "countUnknown" }),
+    ],
   } as const);
   for (const changes of all) {
-    const anyOff = Object.keys(eventSaveDisabledScopes(changes)).length > 0;
-    expect(eventSaveDescription(changes) === plain).toBe(!anyOff);
+    const disabled = eventSaveDisabledScopes(changes);
+    const line = eventSaveDescription(changes);
+    expect(line === plain).toBe(Object.keys(disabled).length === 0);
+    // The plain prompt only ends a line, and never one with no scope left.
+    if (line.includes(plain)) {
+      expect(line.endsWith(plain)).toBe(true);
+      expect(Boolean(disabled.all && disabled.following && disabled.this)).toBe(
+        false
+      );
+    }
   }
 });
 
@@ -408,7 +424,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
     this: true,
   });
   expect(eventSaveDescription(changes)).toBe(
-    "This and following isn't available for an occurrence added to the series on its own. Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting."
+    "This and following isn't available for an occurrence added to the series on its own. Counted from the series' first meeting, the new repeat would skip this occurrence. Change the repeat from that first meeting."
   );
   expect(
     eventSaveDescription({
@@ -417,7 +433,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
       splitBlocked: "severalRules",
     })
   ).toBe(
-    "This and following isn't available for a series with more than one rule. Counted from the series' first meeting, the new end comes before this occurrence, so change the repeat from that first meeting."
+    "This and following isn't available for a series with more than one rule. Counted from the series' first meeting, the new end comes before this occurrence. Change the repeat from that first meeting."
   );
 });
 
@@ -532,7 +548,7 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     // From the first meeting, This and following is off too: the
     // server's words.
     expect(eventSaveDescription({ ...several, opensSeries: true })).toBe(
-      `${SCOPE_DIALOG_COPY.severalRulesTime} From its first meeting, This and following is the entire series too.`
+      "This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too."
     );
   });
 
@@ -633,7 +649,7 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     const newTime = { ...twice, movesSeveralADay: true };
     expect(off(newTime)).toEqual(["all", "following"]);
     expect(eventSaveDescription(newTime)).toBe(
-      `This occurrence is now on another day than its series, so your changes apply to it alone. ${SCOPE_DIALOG_COPY.severalRulesTime} From its first meeting, This and following is the entire series too.`
+      "This occurrence is now on another day than its series, so your changes apply to it alone. This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too."
     );
     // With a new repeat too, nothing is on: the times and the repeat take
     // two saves.
@@ -844,6 +860,9 @@ describe("the server's refusal of a series write", () => {
     expect(refusalReason({ reason: "addedBeforeStart" })).toBe(
       "This and following isn't available from this series' first meeting, since meetings were added before it."
     );
+    expect(refusalReason({ reason: "endsBeforeStart" })).toBe(
+      "The repeat ends before this occurrence, so it can't start a new series here."
+    );
     expect(refusalReason({ reason: "severalTimesADay" })).toBe(
       "This series' meetings keep times of their own, so its time can't be changed for the entire series."
     );
@@ -855,6 +874,7 @@ describe("the server's refusal of a series write", () => {
       drops,
       { ...drops, reason: "resizesChangedOccurrences" },
       { reason: "addedBeforeStart" },
+      { reason: "endsBeforeStart" },
       { reason: "severalTimesADay" },
     ] as const;
     for (const refusal of reasons) {
@@ -923,8 +943,29 @@ describe("the server's refusal of a series write", () => {
         repeatSkips: "day",
       })
     ).toBe(
-      `${unknown} Counted from the series' first meeting, the new repeat would skip this occurrence, so change the repeat from that first meeting.`
+      `${unknown} Counted from the series' first meeting, the new repeat would skip this occurrence. Change the repeat from that first meeting.`
     );
+    // Refused for undoing meetings: changing the repeat from the first
+    // meeting would undo them too, so keep them.
+    const named = refuseSave(null, "following", drops);
+    for (const repeatSkips of ["day", "end"] as const) {
+      expect(
+        eventSaveDescription({
+          ...none,
+          patternChanged: true,
+          refused: named,
+          repeatSkips,
+        })
+      ).toEndWith(SCOPE_DIALOG_COPY.keepRefusedMeetings);
+    }
+    // The same block found again after the refusal is said once.
+    expect(
+      eventSaveDescription({
+        ...none,
+        refused: following,
+        splitBlocked: "countUnknown",
+      })
+    ).toBe(`${unknown} ${SCOPE_DIALOG_COPY.saveEvent.description}`);
     // A blocked split and a refused Entire series: Only this, said plainly.
     expect(
       eventSaveDescription({
@@ -961,6 +1002,50 @@ describe("the server's refusal of a series write", () => {
       description: `${refusalReason(refusal)} Delete:`,
       disabled: { following: true },
     });
+  });
+
+  test("while the series loads, promises only the scopes the server didn't refuse", () => {
+    const loading = { ...none, seriesRuleLoaded: false };
+    const following = refuseSave(null, "following", { reason: "countUnknown" });
+    const unknown = refusalReason({ reason: "countUnknown" });
+    const all = refuseSave(null, "all", drops);
+    expect(eventSaveDescription({ ...loading, refused: following })).toBe(
+      `${unknown} Loading the series…`
+    );
+    expect(
+      eventSaveDescription({ ...loading, refused: following, retimed: true })
+    ).toBe(`${unknown} Loading the series… Entire series opens once it's in.`);
+    expect(
+      eventSaveDescription({ ...loading, refused: all, retimed: true })
+    ).toBe(`${refusalReason(drops)} ${SCOPE_DIALOG_COPY.seriesLoading}`);
+    // A new repeat neither scope will take.
+    expect(
+      eventSaveDescription({
+        ...loading,
+        patternChanged: true,
+        refused: refuseSave(all, "following", { reason: "countUnknown" }),
+      })
+    ).toBe(`${unknown} ${refusalReason(drops)} Loading the series…`);
+    // A calendar move, which only Entire series takes.
+    expect(
+      eventSaveDescription({
+        ...loading,
+        calendarChanged: true,
+        refused: all,
+        retimed: true,
+      })
+    ).toBe(
+      `${refusalReason(drops)} Moving to another calendar moves the whole series, so move it in a save of its own first.`
+    );
+    // A delete.
+    const refusal = { reason: "deleteFromAddedOccurrence" } as const;
+    expect(
+      eventDeleteScopeState({
+        cutUnsure: false,
+        refused: refuseSave(null, "following", refusal),
+        seriesRuleLoaded: false,
+      }).description
+    ).toBe(`${refusalReason(refusal)} Delete:`);
   });
 
   test("keeps every scope refused for the save off, with each reason, latest first", () => {

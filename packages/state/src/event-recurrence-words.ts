@@ -352,11 +352,15 @@ export function monthlyDayOptions(
   if (options.some((option) => option.selected)) {
     return options;
   }
-  // BYSETPOS over days of the month ("the later of the 15th and 30th")
-  // isn't put in words.
+  // BYSETPOS over days of the month ("the later of the 15th and 30th"),
+  // or weekdays limited to some days of the month ("the 1st Mon, if on
+  // the 1st to 3rd"), isn't put in words.
   let own: string | null = null;
   if (pattern.byDay.length > 0) {
-    own = monthlyWeekdayLabel(rule, pattern.byDay);
+    own =
+      pattern.monthDays.length === 0
+        ? monthlyWeekdayLabel(rule, pattern.byDay)
+        : null;
   } else if (setPos === undefined) {
     own = monthDaysLabel(pattern.monthDays);
   }
