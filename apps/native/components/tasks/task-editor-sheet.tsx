@@ -1082,7 +1082,15 @@ function NativeLinkListEditor({
           key={meta.url}
         >
           {meta.thumbnailUrl ? (
-            <Pressable onPress={() => Linking.openURL(meta.url)}>
+            <Pressable
+              // The title beside it opens the same link, so VoiceOver reads
+              // that one only. 40pt; the slop (inside the card's padding)
+              // makes the target 44pt.
+              accessibilityElementsHidden
+              hitSlop={2}
+              importantForAccessibility="no-hide-descendants"
+              onPress={() => Linking.openURL(meta.url)}
+            >
               <Image
                 source={{ uri: meta.thumbnailUrl }}
                 style={{ borderRadius: 4, height: 40, width: 40 }}
@@ -1090,6 +1098,8 @@ function NativeLinkListEditor({
             </Pressable>
           ) : null}
           <Pressable
+            accessibilityHint="Opens the link"
+            accessibilityRole="link"
             className="min-w-0 flex-1"
             onPress={() => Linking.openURL(meta.url)}
           >
