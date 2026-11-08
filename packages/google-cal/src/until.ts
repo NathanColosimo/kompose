@@ -931,22 +931,19 @@ export function moveSkippedDays(params: {
         Temporal.PlainDate.compare(target.day, to) === 0 &&
         Temporal.PlainTime.compare(target.time, toTime) === 0
     );
-  const isNewStart = (value: RecurrenceValue | null) =>
-    Boolean(
-      value &&
-        Temporal.PlainDate.compare(value.day, to) === 0 &&
-        !(
-          severalADay &&
-          value.instant &&
-          !(
-            toTime &&
-            Temporal.PlainTime.compare(
-              value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
-              toTime
-            ) === 0
-          )
-        )
+  const isNewStart = (value: RecurrenceValue | null) => {
+    if (!value || Temporal.PlainDate.compare(value.day, to) !== 0) {
+      return false;
+    }
+    const time = wallTime(value);
+    // A skip at another time that day is its own: in a series several
+    // times a day, or an added meeting's (cancelled, it stays cancelled).
+    return (
+      !time ||
+      Boolean(toTime && Temporal.PlainTime.compare(time, toTime) === 0) ||
+      !(severalADay || isAdded(value.day, time))
     );
+  };
   let changed = false;
   const next = recurrence.flatMap((line) => {
     const list = line.startsWith("EXDATE")

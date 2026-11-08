@@ -987,6 +987,27 @@ describe("seriesRecurrenceForSave", () => {
     ).toBe(false);
   });
 
+  test("keeps a cancelled added meeting on the day the start moves to", () => {
+    // Mondays 9:00 with an added, then cancelled, Tue Nov 10 15:00; the
+    // series moved onto Tue Nov 10 9:00: that 15:00 stays cancelled.
+    const saved = seriesRecurrenceForSave({
+      editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+      masterRecurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261110T150000",
+        "EXDATE;TZID=America/New_York:20261110T150000",
+      ],
+      occurrence: {
+        originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+        recurringEventId: "series",
+        start: { dateTime: "2026-11-09T09:00:00-05:00" },
+      },
+      recurrence: undefined,
+      timeZone: "America/New_York",
+    });
+    expect(saved?.at(-1)).toBe("EXDATE;TZID=America/New_York:20261110T150000");
+  });
+
   test("keeps a retimed skip off another rule's real meeting", () => {
     // Mondays at the start's time plus Mondays fixed at 9:00 and 10:00,
     // Nov 16 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the
