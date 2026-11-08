@@ -65,6 +65,15 @@ describe("buildGoogleEventRecurrenceRule", () => {
         "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
         "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=5",
       ],
+      // The later of the 15th and the 30th: BYSETPOS stays with its days.
+      [
+        "RRULE:FREQ=MONTHLY;BYMONTHDAY=15,30;BYSETPOS=-1",
+        "RRULE:FREQ=MONTHLY;BYSETPOS=-1;BYMONTHDAY=15,30;COUNT=5",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+        "RRULE:FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR;COUNT=5",
+      ],
     ] as const) {
       expect(edit(rule, endAfter5)).toBe(expected);
     }

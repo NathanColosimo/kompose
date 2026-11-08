@@ -148,15 +148,20 @@ const FREQUENCY_PARTS = new Set([
 /**
  * The parts of `baseRule` an edit keeps: everything the editors don't set
  * (WKST, BYMONTH...); parts tied to the frequency go when it changes, and
- * BYSETPOS goes with the BYDAY it picks from.
+ * BYSETPOS, which picks among the days BYDAY / BYMONTHDAY name, goes when
+ * those change (an end-only edit keeps it).
  */
 function keptRuleParts(
   baseRule: string | undefined,
-  { byDay, freq }: EventRecurrencePattern
+  { byDay, freq, monthDays }: EventRecurrencePattern
 ): string[] {
   if (!baseRule?.startsWith("RRULE:")) {
     return [];
   }
+  const base = parseGoogleEventRecurrenceRule(baseRule);
+  const sameDays =
+    byDay.join() === base.byDay.join() &&
+    monthDays.join() === base.monthDays.join();
   const parts = baseRule.replace("RRULE:", "").split(";");
   const baseFreq = parts
     .find((part) => part.startsWith("FREQ="))
@@ -166,10 +171,7 @@ function keptRuleParts(
     if (!part || EDITED_PARTS.has(key)) {
       return false;
     }
-    if (
-      key === "BYSETPOS" &&
-      (byDay.length === 0 || byDay.some(isWeekdayOfMonth))
-    ) {
+    if (key === "BYSETPOS" && !sameDays) {
       return false;
     }
     return baseFreq === freq || !FREQUENCY_PARTS.has(key);

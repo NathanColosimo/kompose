@@ -238,6 +238,11 @@ export function DatePicker(props: DatePickerProps) {
     },
     [minimumDate, maximumDate]
   );
+  /** Whether `date`'s day is outside the bounds, whatever its time. */
+  const isDayDisabled = (date: Date) =>
+    isDateDisabled(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    );
 
   const isDateInRange = useCallback(
     (date: Date) => {
@@ -497,7 +502,8 @@ export function DatePicker(props: DatePickerProps) {
   const handleConfirm = () => {
     if (mode === "range") {
       (onChange as (value: DateRange | undefined) => void)?.(tempRange);
-    } else {
+    } else if (!isDayDisabled(currentDate)) {
+      // A day outside the bounds is never handed back, whatever the path.
       (onChange as (value: Date | undefined) => void)?.(currentDate);
     }
     close();
@@ -505,6 +511,11 @@ export function DatePicker(props: DatePickerProps) {
 
   const resetToToday = () => {
     const today = new Date();
+    if (isDayDisabled(today)) {
+      // Today is out of bounds: show the nearest allowed month instead.
+      setCurrentDate(minimumDate ?? maximumDate ?? today);
+      return;
+    }
     setCurrentDate(today);
 
     if (mode === "range") {
@@ -1237,7 +1248,11 @@ export function DatePicker(props: DatePickerProps) {
                 gap: 8,
               }}
             >
-              <Button onPress={resetToToday} variant="outline">
+              <Button
+                disabled={isDayDisabled(new Date())}
+                onPress={resetToToday}
+                variant="outline"
+              >
                 Today
               </Button>
 
