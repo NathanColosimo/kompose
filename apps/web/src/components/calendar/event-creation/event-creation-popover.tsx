@@ -51,7 +51,8 @@ function buildInitialSharedFields(start: Date, end: Date) {
 
 /** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
-  const { state, actions, popoverTimes } = useEventCreation();
+  const { state, actions, eventUnavailableReason, popoverTimes } =
+    useEventCreation();
   const { createEvent } = useGoogleEventMutations();
   const [mode, setMode] = useState<CreationMode>("event");
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
@@ -122,6 +123,15 @@ export function EventCreationPopover() {
   // failed one keeps the draft. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  // With no calendar to write to, the chooser opens on Task; the Event tab
+  // says why there's no event.
+  useEffect(() => {
+    if (state.showPopover && eventUnavailableReason) {
+      setMode("task");
+    }
+  }, [state.showPopover, eventUnavailableReason]);
+  const eventBlocked = mode === "event" && eventUnavailableReason !== null;
+
   /** Why the last create failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
   // A failure belongs to its draft: a new one starts clean.
@@ -203,9 +213,7 @@ export function EventCreationPopover() {
     [handleSave, state.showPopover]
   );
 
-  if (
-    !(state.showPopover && popoverTimes && state.accountId && state.calendarId)
-  ) {
+  if (!(state.showPopover && popoverTimes)) {
     return null;
   }
 
@@ -259,7 +267,7 @@ export function EventCreationPopover() {
                   Cancel
                 </Button>
                 <Button
-                  disabled={isSaving}
+                  disabled={isSaving || eventBlocked}
                   onClick={handleSave}
                   size="sm"
                   type="button"
@@ -277,19 +285,25 @@ export function EventCreationPopover() {
               forceMount
               value="event"
             >
-              <EventEditForm
-                accountId={state.accountId}
-                calendarId={state.calendarId}
-                closeSaveRequestRef={eventCloseSaveRequestRef}
-                createInteropRef={eventInteropRef}
-                end={endDate}
-                isSaving={isSaving}
-                mode="create"
-                onDelete={() => undefined}
-                onSave={handleSave}
-                open={state.showPopover}
-                start={startDate}
-              />
+              {state.accountId && state.calendarId ? (
+                <EventEditForm
+                  accountId={state.accountId}
+                  calendarId={state.calendarId}
+                  closeSaveRequestRef={eventCloseSaveRequestRef}
+                  createInteropRef={eventInteropRef}
+                  end={endDate}
+                  isSaving={isSaving}
+                  mode="create"
+                  onDelete={() => undefined}
+                  onSave={handleSave}
+                  open={state.showPopover}
+                  start={startDate}
+                />
+              ) : (
+                <p className="py-6 text-center text-muted-foreground text-sm">
+                  {eventUnavailableReason}
+                </p>
+              )}
             </TabsContent>
 
             <TabsContent

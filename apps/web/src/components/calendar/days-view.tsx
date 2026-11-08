@@ -436,10 +436,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       return;
     }
     setCreateEventRequested(null);
-    // createAt explains in a toast when there's no calendar to create in.
-    if (result === "unavailable") {
-      return;
-    }
     grid.scrollTop = Math.max(
       0,
       (start.hour + start.minute / 60) * PIXELS_PER_HOUR - grid.clientHeight / 3

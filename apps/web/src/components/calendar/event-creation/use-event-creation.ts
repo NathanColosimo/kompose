@@ -17,7 +17,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
 import { Temporal } from "temporal-polyfill";
 import { isSameDay } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
@@ -25,7 +24,7 @@ import { MINUTES_STEP } from "../dnd/helpers";
 
 export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
-type CreateAtResult = "created" | "unavailable" | "waiting";
+type CreateAtResult = "created" | "waiting";
 
 interface EventCreationState {
   accountId: string | null;
@@ -44,8 +43,8 @@ interface EventCreationActions {
   closePopover: () => void;
   /**
    * Open the new-event popover for a 30-minute range at `start`. "waiting"
-   * while the calendars load; "unavailable" (with a toast saying why) when
-   * there's no calendar to create it in.
+   * while the calendars load. With no calendar to write to it still opens,
+   * for a task; its Event tab says why (eventUnavailableReason).
    */
   createAt: (start: Temporal.ZonedDateTime) => CreateAtResult;
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
@@ -58,6 +57,8 @@ interface EventCreationActions {
 
 interface EventCreationContextValue {
   actions: EventCreationActions;
+  /** Why the chooser can't make an event (no writable calendar shown). */
+  eventUnavailableReason: string | null;
   /** Computed start/end for popover (with minimum duration applied) */
   popoverTimes: {
     start: Temporal.ZonedDateTime;
@@ -97,18 +98,6 @@ export function useEventCreationState(): EventCreationContextValue {
   const allCalendars = useAtomValue(googleCalendarsDataAtom);
   const googleAccounts = useAtomValue(googleAccountsDataAtom);
   const isLoadingCalendars = useAtomValue(googleCalendarsLoadingAtom);
-  // Says why there's nowhere to create an event, rather than nothing happening.
-  const explainNoCalendar = useCallback(() => {
-    if (isLoadingCalendars) {
-      toast("Your calendars are still loading.");
-    } else if (googleAccounts.length === 0) {
-      toast("Connect a Google calendar in Settings to create events.");
-    } else {
-      toast(
-        "Show a calendar you can edit from the Calendars menu to create events."
-      );
-    }
-  }, [googleAccounts.length, isLoadingCalendars]);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
@@ -222,18 +211,16 @@ export function useEventCreationState(): EventCreationContextValue {
   // so the drag continues while the cursor crosses existing events.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
-      if (!defaultCalendar) {
-        explainNoCalendar();
-        return;
-      }
+      // Without a calendar to write to, the chooser still opens for a task;
+      // its Event tab says why there's no event.
       documentListenerCleanupRef.current?.();
 
       startDateTimeRef.current = dateTime;
 
       setState((prev) => ({
         ...prev,
-        accountId: defaultCalendar.accountId,
-        calendarId: defaultCalendar.calendarId,
+        accountId: defaultCalendar?.accountId ?? null,
+        calendarId: defaultCalendar?.calendarId ?? null,
         endDateTime: dateTime.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
@@ -303,24 +290,20 @@ export function useEventCreationState(): EventCreationContextValue {
         documentListenerCleanupRef.current = null;
       };
     },
-    [defaultCalendar, explainNoCalendar, onSlotDragMove, onSlotMouseUp]
+    [defaultCalendar, onSlotDragMove, onSlotMouseUp]
   );
 
   const createAt = useCallback(
     (start: Temporal.ZonedDateTime): CreateAtResult => {
-      if (!defaultCalendar) {
-        if (isLoadingCalendars) {
-          return "waiting";
-        }
-        explainNoCalendar();
-        return "unavailable";
+      if (!defaultCalendar && isLoadingCalendars) {
+        return "waiting";
       }
       documentListenerCleanupRef.current?.();
       startDateTimeRef.current = start;
       setState((prev) => ({
         ...prev,
-        accountId: defaultCalendar.accountId,
-        calendarId: defaultCalendar.calendarId,
+        accountId: defaultCalendar?.accountId ?? null,
+        calendarId: defaultCalendar?.calendarId ?? null,
         endDateTime: start.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
         hoverDateTime: null,
         isCreating: false,
@@ -329,7 +312,7 @@ export function useEventCreationState(): EventCreationContextValue {
       }));
       return "created";
     },
-    [defaultCalendar, explainNoCalendar, isLoadingCalendars]
+    [defaultCalendar, isLoadingCalendars]
   );
 
   const cancelCreation = useCallback(() => {
@@ -386,12 +369,22 @@ export function useEventCreationState(): EventCreationContextValue {
     return { end, start };
   }, [state.startDateTime, state.endDateTime]);
 
+  // Why the chooser can't make an event (it can still make a task).
+  let eventUnavailableReason: string | null = null;
+  if (!defaultCalendar) {
+    eventUnavailableReason =
+      googleAccounts.length === 0
+        ? "Connect a Google calendar in Settings to create events."
+        : "Show a calendar you can edit from the Calendars menu to create events.";
+  }
+
   return useMemo(
     () => ({
       actions,
+      eventUnavailableReason,
       popoverTimes,
       state,
     }),
-    [state, actions, popoverTimes]
+    [state, actions, eventUnavailableReason, popoverTimes]
   );
 }
