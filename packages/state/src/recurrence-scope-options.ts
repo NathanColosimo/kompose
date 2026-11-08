@@ -164,19 +164,8 @@ export function seriesCutUnsure(
   master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
   appTimeZone: string
 ): boolean {
-  const original = occurrence?.originalStartTime;
-  const originalStart = original?.dateTime ?? original?.date;
-  if (!(occurrence?.recurringEventId && master && originalStart)) {
-    return false;
-  }
-  return followingCutUnsure({
-    masterRecurrence: master.recurrence,
-    masterStart: master.start,
-    originalStart,
-    // The series' own zone first, as the server reads it.
-    seriesZone:
-      master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone),
-  });
+  const split = splitAt(occurrence, master, appTimeZone);
+  return split ? followingCutUnsure(split) : false;
 }
 
 /**
@@ -192,19 +181,36 @@ export function seriesSplitBlock(
   master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
   appTimeZone: string
 ): SplitBlock | null {
+  const split = splitAt(occurrence, master, appTimeZone);
+  return split ? followingSplitBlocked(split) : null;
+}
+
+/**
+ * Where "This and following" would split `occurrence`'s series, as the
+ * server reads it; null for an event that isn't an occurrence, or before
+ * its series' master loads.
+ */
+function splitAt(
+  occurrence:
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
+    | null
+    | undefined,
+  master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
+  appTimeZone: string
+): Parameters<typeof followingSplitBlocked>[0] | null {
   const original = occurrence?.originalStartTime;
   const originalStart = original?.dateTime ?? original?.date;
   if (!(occurrence?.recurringEventId && master && originalStart)) {
     return null;
   }
-  return followingSplitBlocked({
+  return {
     masterRecurrence: master.recurrence,
     masterStart: master.start,
     originalStart,
     // The series' own zone first, as the server reads it.
     seriesZone:
       master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone),
-  });
+  };
 }
 
 /**
@@ -225,18 +231,26 @@ export function eventSaveDisabledScopes(
       ? { all: true, following: true, this: true }
       : { following: true, this: true };
   }
-  // Whether a new series can start here is known once the series loads.
-  // A new repeat on a new day can only go from here on, so it stays
-  // offered (the server still refuses it where a series can't start).
-  const ruleKnown =
-    changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved);
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(allEventsOff(changes) ? { all: true } : {}),
-    // Until the series loads, it isn't known whether a new series can
-    // start here (or where the rule follows a new day to).
-    ...(ruleKnown && !changes.splitBlocked ? {} : { following: true }),
+    ...(followingRuleKnown(changes) && !changes.splitBlocked
+      ? {}
+      : { following: true }),
   };
+}
+
+/**
+ * Whether This and following knows the rule it would save: once the series
+ * loads (until then, whether a new series can start here, or where its rule
+ * follows a new day to, isn't known), or for a new repeat on a new day,
+ * which brings its own rule (the server still refuses it where a series
+ * can't start).
+ */
+function followingRuleKnown(changes: EventSaveChanges): boolean {
+  return (
+    changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved)
+  );
 }
 
 /**
@@ -308,9 +322,7 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.splitBlocked) {
     return splitBlockedDescription(changes, changes.splitBlocked);
   }
-  if (
-    !(changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved))
-  ) {
+  if (!followingRuleKnown(changes)) {
     if (changes.seriesRuleFailed) {
       return changes.dateMoved
         ? SCOPE_DIALOG_COPY.seriesFailed
