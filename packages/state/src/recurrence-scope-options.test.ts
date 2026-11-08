@@ -718,8 +718,9 @@ describe("an Entire series save that would cost a meeting its own changes", () =
       entireSeriesCost: { day: dec9, reason: "lostSlot" } as const,
     };
     expect(off(both)).toEqual(["all", "following", "this"]);
+    // Both for one meeting: said once.
     expect(eventSaveDescription(both)).toBe(
-      "This and following would undo your changes to the Dec 9 meeting. The new repeat would undo your changes to the Dec 9 meeting, so it can't apply to the entire series. One occurrence can't take a new repeat either. Pick a repeat that keeps the Dec 9 meeting."
+      "This and following and Entire series would undo your changes to the Dec 9 meeting. One occurrence can't take a new repeat either. Pick a repeat that keeps the Dec 9 meeting."
     );
     // From the first meeting, This and following is Entire series: its
     // own cost decides.
@@ -1152,6 +1153,27 @@ describe("the server's refusal of a series write", () => {
       refused: { message: refusalReason(unknown), scopes: { following: true } },
     });
     expect(own).toEqual(state);
+    // From the first meeting, a refused This and following is Entire
+    // series too, from an app's own record as from refuseSave's.
+    const first = { ...none, opensSeries: true, patternChanged: true };
+    const typed = eventSaveScopeState({
+      ...first,
+      refused: refuseSave(null, "following", drops),
+    });
+    const record = eventSaveScopeState({
+      ...first,
+      refused: { message: refusalReason(drops), scopes: { following: true } },
+    });
+    expect(record.disabled).toEqual(typed.disabled);
+    expect(record.disabled).toEqual({ all: true, following: true, this: true });
+    // A later refusal keeps an app's own record's reason.
+    expect(
+      refuseSave(
+        { message: "Own reason.", scopes: { all: true } },
+        "following",
+        unknown
+      ).message
+    ).toBe(`${refusalReason(unknown)} Own reason.`);
   });
 
   test("says when the refusals leave no scope at all", () => {

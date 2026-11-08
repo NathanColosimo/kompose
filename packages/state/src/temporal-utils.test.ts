@@ -282,16 +282,46 @@ describe("moveEventStart", () => {
     expect(
       text(moveEventStart(overTheChange, { date: d("2026-11-02") }, zone))
     ).toBe("2026-11-02 00:30:00 → 2026-11-02 03:30:00");
-    // Moved onto the change, a two-hour meeting ends at 1:00 the second time.
+  });
+
+  test("in a zone, keeps which of the repeated hour's two halves an end is in", () => {
+    // Moved onto Nov 1 0:00, a two-hour meeting ends at 1:00 the second
+    // time (EST). The clock can't tell that 1:00 from the first; the
+    // range's moments can, through a second move too.
+    const hours = (r: ReturnType<typeof moveEventStart>) =>
+      r.start && r.end ? r.start.until(r.end).total("hours") : undefined;
     const twoHours = {
-      ...meeting,
       endDate: d("2026-10-31"),
       endTime: t("02:00"),
       startDate: d("2026-10-31"),
       startTime: t("00:00"),
     };
+    const moved = moveEventStart(twoHours, { date: d("2026-11-01") }, zone);
+    expect(text(moved)).toBe("2026-11-01 00:00:00 → 2026-11-01 01:00:00");
+    expect(moved.end?.offset).toBe("-05:00");
+    expect(hours(moved)).toBe(2);
+    const again = moveEventStart(moved, { time: t("00:30") }, zone);
+    expect(text(again)).toBe("2026-11-01 00:30:00 → 2026-11-01 01:30:00");
+    expect(hours(again)).toBe(2);
+    // A one-hour meeting from 1:30 EDT to 1:30 EST stays one hour.
+    const first = Temporal.ZonedDateTime.from(
+      "2026-11-01T01:30:00-04:00[America/New_York]"
+    );
+    const repeated = {
+      end: first.add({ hours: 1 }),
+      endDate: d("2026-11-01"),
+      endTime: t("01:30"),
+      start: first,
+      startDate: d("2026-11-01"),
+      startTime: t("01:30"),
+    };
     expect(
-      text(moveEventStart(twoHours, { date: d("2026-11-01") }, zone))
-    ).toBe("2026-11-01 00:00:00 → 2026-11-01 01:00:00");
+      hours(moveEventStart(repeated, { date: d("2026-11-02") }, zone))
+    ).toBe(1);
+    // Ends edited since (the clock fields no longer match): the clock's.
+    const edited = { ...moved, endTime: t("03:00") };
+    expect(text(moveEventStart(edited, { time: t("00:00") }, zone))).toBe(
+      "2026-11-01 00:00:00 → 2026-11-01 03:00:00"
+    );
   });
 });

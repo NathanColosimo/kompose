@@ -298,9 +298,11 @@ export interface SaveRefusals {
    */
   message: string;
   /**
-   * Each refusal, latest first, with the scope it was for (`refuseSave`
+   * Each refusal, latest first, with the scope it was for. `refuseSave`
    * keeps them; an app's own record of a message and scopes can leave
-   * them out, losing only the steps that name the meetings refused).
+   * them out: its scopes still count (from the series' first meeting, a
+   * refused This and following is taken as the whole series'), but the
+   * steps that name the meetings refused can't be given.
    */
   refusals?: readonly { refusal: SeriesRefusal; scope: RecurrenceScope }[];
   scopes: Partial<Record<RecurrenceScope, true>>;
@@ -314,8 +316,10 @@ export function refuseSave(
 ): SaveRefusals {
   const refusals = [{ refusal, scope }, ...(refused?.refusals ?? [])];
   const reasons = refusals.map((each) => refusalReason(each.refusal));
+  // An app's own record has only its message to keep.
+  const earlier = refused && !refused.refusals ? [refused.message] : [];
   return {
-    message: [...new Set(reasons)].join(" "),
+    message: [...new Set([...reasons, ...earlier])].join(" "),
     refusals,
     scopes: { ...refused?.scopes, [scope]: true },
   };
@@ -853,13 +857,18 @@ function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
  * can't take.
  */
 function refusedAsWholeSeries(changes: EventSaveChanges): boolean {
-  return Boolean(
-    changes.opensSeries &&
-      changes.refused?.refusals?.some(
+  const { refused } = changes;
+  if (!(changes.opensSeries && refused?.scopes.following)) {
+    return false;
+  }
+  // Without the refusals, only the scopes: added meetings before the
+  // first one are known up front (`splitBlocked`), else it's the series'.
+  return refused.refusals
+    ? refused.refusals.some(
         ({ refusal, scope }) =>
           scope === "following" && refusal.reason !== "addedBeforeStart"
       )
-  );
+    : changes.splitBlocked !== "addedBeforeStart";
 }
 
 /**
@@ -1100,8 +1109,8 @@ function splitBlockedDescription(
       return sentences(why, then.repeatEndOff);
     case "changedMeeting":
       return sentences(
-        why,
-        changedMeetingLine(off.cost),
+        bothCostOne(changes, off.cost) ??
+          sentences(why, changedMeetingLine(off.cost)),
         patternChanged && SCOPE_DIALOG_COPY.repeatNotAlone
       );
     case "refused":
@@ -1213,6 +1222,20 @@ function followingOffWhy(changes: EventSaveChanges): string | null {
   const cost = laterMeetingCost(changes);
   return cost
     ? `This and following would undo your changes to the ${shortDay(cost.day)} meeting.`
+    : null;
+}
+
+/**
+ * Where This and following and Entire series would both cost the same
+ * meeting, and no split block comes first, the one line for both.
+ */
+function bothCostOne(
+  changes: EventSaveChanges,
+  cost: EntireSeriesCost
+): string | null {
+  const later = changes.splitBlocked ? null : laterMeetingCost(changes);
+  return later?.day.equals(cost.day)
+    ? `This and following and Entire series would undo your changes to the ${shortDay(cost.day)} meeting.`
     : null;
 }
 

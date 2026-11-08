@@ -21,6 +21,7 @@ import {
 } from "@kompose/google-cal/series-edits";
 import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
 import {
+  DATE_ONLY,
   dayOfStart,
   googleDateTime,
   matchRecurrenceToStart,
@@ -774,9 +775,8 @@ export function followingCost(params: {
   }
   // The new series' start: the opened occurrence's slot while the save
   // keeps its times, else the edit's.
-  const start = keepsTimes(edited, occurrence, zone)
-    ? slotAt(master, original).start
-    : edited.start;
+  const keptTimes = keepsTimes(edited, occurrence, zone);
+  const start = keptTimes ? slotAt(master, original).start : edited.start;
   const recurrence = newSeriesRule({
     master,
     recurrence: params.recurrence,
@@ -784,15 +784,34 @@ export function followingCost(params: {
     start,
     zone,
   });
+  const forSeries = changedFields(edited, occurrence);
   const later = laterOwnChanges({
-    forSeries: changedFields(edited, occurrence),
+    forSeries,
     loaded: params.loaded,
     master,
     occurrence,
     splitMoment,
     zone,
   });
-  const lost = unplaced({ later, master, recurrence, splitAt, start, zone });
+  // The opened occurrence holds the new start's slot when it keeps changes
+  // of its own there (its times only when the save left them).
+  const openedOwn = ownFieldsOf(occurrence, master, forSeries, zone).filter(
+    (field) => keptTimes || !(field === "start" || field === "end")
+  );
+  const startSlot = seriesSlotOf(start, zone);
+  const held =
+    openedOwn.length > 0 && startSlot
+      ? { event: occurrence, slot: startSlot }
+      : null;
+  const lost = unplaced({
+    held,
+    later,
+    master,
+    recurrence,
+    splitAt,
+    start,
+    zone,
+  });
   const slotDay = (event: GoogleEvent) =>
     (event.originalStartTime &&
       dayOfStart(event.originalStartTime, zone)?.toString()) ??
@@ -810,6 +829,8 @@ export function followingCost(params: {
  * slot (two that land on one both lose theirs).
  */
 function unplaced(params: {
+  /** The opened occurrence at the new start's slot, when it holds it. */
+  held: { event: GoogleEvent; slot: string } | null;
   later: { event: GoogleEvent; slot: string }[];
   master: GoogleEvent;
   recurrence: string[];
@@ -819,6 +840,10 @@ function unplaced(params: {
 }): { event: GoogleEvent; reason: EntireSeriesCost["reason"] }[] {
   const { later, master, recurrence, splitAt, start, zone } = params;
   const placed = new Map<number, GoogleEvent>();
+  const heldAt = params.held && slotInstant(params.held.slot, zone);
+  if (params.held && heldAt) {
+    placed.set(heldAt.epochMilliseconds, params.held.event);
+  }
   const lost: { event: GoogleEvent; reason: EntireSeriesCost["reason"] }[] = [];
   for (const { event, slot } of later) {
     const at = addsSlot(master.recurrence ?? [], slot, zone)
@@ -875,16 +900,29 @@ function laterOwnChanges(params: {
     ) {
       return [];
     }
-    const own = Object.keys(
-      ownChanges(
-        event,
-        master,
-        slotAt(master, event.originalStartTime ?? event.start),
-        zone
-      )
-    ).filter((field) => !(field in params.forSeries));
-    return own.length > 0 ? [{ event, slot }] : [];
+    return ownFieldsOf(event, master, params.forSeries, zone).length > 0
+      ? [{ event, slot }]
+      : [];
   });
+}
+
+/**
+ * The fields `event` has of its own at its slot (`ownChanges`) that the
+ * save doesn't set for the series (`forSeries`), as the server's
+ * changesOwnTo reads them.
+ */
+function ownFieldsOf(
+  event: GoogleEvent,
+  master: GoogleEvent,
+  forSeries: Partial<CreateEvent>,
+  zone: string
+): string[] {
+  const original = event.originalStartTime;
+  return original
+    ? Object.keys(
+        ownChanges(event, master, slotAt(master, original), zone)
+      ).filter((field) => !(field in forSeries))
+    : [];
 }
 
 /**
@@ -934,8 +972,6 @@ function newSeriesRule(params: {
     days
   );
 }
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** `slot` when it has `start`'s form (a date, or a date-time); else null. */
 function sameForm(slot: string, start: EventTime): string | null {

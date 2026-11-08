@@ -2501,6 +2501,123 @@ describe("followingCost", () => {
     ).toBe("lostSlot 2026-11-20");
   });
 
+  /** followingCost for a series of its own, opened at `opened`. */
+  const costIn = (params: {
+    edited?: { end?: Time; start?: Time; summary?: string };
+    loaded: ReturnType<typeof meeting>[];
+    opened: ReturnType<typeof meeting>;
+    recurrence?: string[];
+    series: typeof master;
+  }) => {
+    const cost = followingCost({
+      edited: { ...params.opened, ...params.edited },
+      loaded: params.loaded,
+      master: params.series,
+      occurrence: params.opened,
+      recurrence: params.recurrence,
+      timeZone: zone,
+    });
+    return cost ? `${cost.reason} ${cost.day.toString()}` : undefined;
+  };
+
+  test("an added meeting keeps its own slot in the new series", () => {
+    // Fri Nov 20 added and renamed: Mondays only from Nov 9, with it kept.
+    const added = "RDATE;TZID=America/New_York:20261120T090000";
+    const series = { ...master, recurrence: [...master.recurrence, added] };
+    const friday = meeting("2026-11-20T09:00:00-05:00", { summary: "Review" });
+    expect(
+      costIn({
+        loaded: [opened, friday],
+        opened,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", added],
+        series,
+      })
+    ).toBeUndefined();
+  });
+
+  test("two meetings that land on one slot both lose their changes", () => {
+    // Mondays from Nov 2, plus an added Tue Nov 17; Mon Nov 16 and the
+    // added Nov 17 renamed. Moved from Mon Nov 9 to Tue Nov 10, Tuesdays:
+    // Nov 16 lands a day on, on Nov 17, the added one's slot. The
+    // earliest is named.
+    const added = "RDATE;TZID=America/New_York:20261117T090000";
+    const series = {
+      ...master,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", added],
+    };
+    const monday = meeting("2026-11-16T09:00:00-05:00", { summary: "Plan" });
+    const tuesday = meeting("2026-11-17T09:00:00-05:00", { summary: "Demo" });
+    expect(
+      costIn({
+        edited: {
+          end: at("2026-11-10T09:30:00-05:00"),
+          start: at("2026-11-10T09:00:00-05:00"),
+        },
+        loaded: [opened, tuesday, monday],
+        opened,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU", added],
+        series,
+      })
+    ).toBe("lostSlot 2026-11-16");
+  });
+
+  test("the opened meeting holds its own slot when it keeps its own changes", () => {
+    // Tuesdays from Dec 1, plus an added Wed Dec 9; Dec 8 and Dec 9 each
+    // renamed. Dec 8, its title kept, moved onto Dec 9, Wednesdays: both
+    // land on Dec 9.
+    const added = "RDATE;TZID=America/New_York:20261209T090000";
+    const series = {
+      ...master,
+      end: at("2026-12-01T09:30:00-05:00"),
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU", added],
+      start: at("2026-12-01T09:00:00-05:00"),
+    };
+    const dec8 = meeting("2026-12-08T09:00:00-05:00", { summary: "Plan" });
+    const dec9 = meeting("2026-12-09T09:00:00-05:00", { summary: "Demo" });
+    expect(
+      costIn({
+        edited: {
+          end: at("2026-12-09T09:30:00-05:00"),
+          start: at("2026-12-09T09:00:00-05:00"),
+        },
+        loaded: [dec8, dec9],
+        opened: dec8,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=WE", added],
+        series,
+      })
+    ).toBe("lostSlot 2026-12-08");
+  });
+
+  test("carries the series' COUNT on to the new series", () => {
+    // Mondays six times from Nov 2, split at the 3rd (Nov 16), Mondays and
+    // Wednesdays still six times: four are left (Nov 16, 18, 23, 25), so
+    // a renamed Mon Nov 30 has no slot; Nov 23 keeps one.
+    const series = {
+      ...master,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6"],
+    };
+    const third = meeting("2026-11-16T09:00:00-05:00");
+    const nov23 = meeting("2026-11-23T09:00:00-05:00", { summary: "Plan" });
+    const nov30 = meeting("2026-11-30T09:00:00-05:00", { summary: "Demo" });
+    const repeat = ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=6"];
+    expect(
+      costIn({
+        loaded: [third, nov23, nov30],
+        opened: third,
+        recurrence: repeat,
+        series,
+      })
+    ).toBe("lostSlot 2026-11-30");
+    expect(
+      costIn({
+        loaded: [third, nov23],
+        opened: third,
+        recurrence: repeat,
+        series,
+      })
+    ).toBeUndefined();
+  });
+
   test("a switch to all day can't carry a timed meeting's changes", () => {
     expect(
       costOf({
