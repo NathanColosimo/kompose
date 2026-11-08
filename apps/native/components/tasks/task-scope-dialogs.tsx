@@ -13,61 +13,62 @@ import { RadioGroup } from "@/components/ui/radio";
 import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 
 function noop() {
-  // Intentionally empty: see TaskSaveScopeDialog's onClose.
+  // Intentionally empty: see onClose below.
 }
 
 /**
- * Save scope for a recurring task. Render it inside the editor sheet: iOS
- * presents a modal from the one showing, not beside it, and this opens over
- * the editor so Cancel goes straight back to it.
+ * Save and delete scope for a recurring task. Render them inside the
+ * editor sheet (its `overlay`): iOS presents a modal only from the one
+ * showing, so beside the sheet they'd never appear. Over it, Cancel goes
+ * straight back to the editor.
  */
-export function TaskSaveScopeDialog({ flow }: { flow: TaskEditorFlow }) {
+export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
   return (
-    <AlertDialog
-      closeOnConfirm={false}
-      confirmText="Apply"
-      description={SCOPE_DIALOG_COPY.saveTask.description}
-      isVisible={flow.scopeDialog === "save"}
-      // Over the editor: Cancel goes back to it, edits kept. After Apply
-      // the flow hides this dialog itself (it may be saving).
-      onCancel={flow.cancelScopedSave}
-      // Cancel and a backdrop tap already run onCancel. The dialog's close
-      // after its fade has nothing left to do, and must not clear a save
-      // started again meanwhile.
-      onClose={noop}
-      onConfirm={flow.confirmScopedSave}
-      pending={flow.isSavingStatus}
-      title={SCOPE_DIALOG_COPY.saveTask.title}
-    >
-      <View className="mt-2">
-        <RadioGroup
-          onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
-          options={TASK_UPDATE_SCOPE_OPTIONS}
-          value={flow.saveScope}
-        />
-      </View>
-    </AlertDialog>
-  );
-}
+    <>
+      <AlertDialog
+        // The flow hides the dialog itself once the save ends.
+        closeOnConfirm={false}
+        confirmText="Apply"
+        description={SCOPE_DIALOG_COPY.saveTask.description}
+        isVisible={flow.scopeDialog === "save"}
+        onCancel={flow.cancelScopeDialog}
+        // Cancel and a backdrop tap already run onCancel. The dialog's close
+        // after its fade has nothing left to do, and must not clear a save
+        // started again meanwhile.
+        onClose={noop}
+        onConfirm={flow.confirmScopedSave}
+        pending={flow.isSaving}
+        title={SCOPE_DIALOG_COPY.saveTask.title}
+      >
+        <View className="mt-2">
+          <RadioGroup
+            disabled={flow.isSaving}
+            onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
+            options={TASK_UPDATE_SCOPE_OPTIONS}
+            value={flow.saveScope}
+          />
+        </View>
+      </AlertDialog>
 
-/** Delete scope for a recurring task (the editor closes before it opens). */
-export function TaskDeleteScopeDialog({ flow }: { flow: TaskEditorFlow }) {
-  return (
-    <AlertDialog
-      confirmText="Delete"
-      description={SCOPE_DIALOG_COPY.deleteTask.description}
-      isVisible={flow.scopeDialog === "delete"}
-      onClose={flow.close}
-      onConfirm={flow.confirmScopedDelete}
-      title={SCOPE_DIALOG_COPY.deleteTask.title}
-    >
-      <View className="mt-2">
-        <RadioGroup
-          onValueChange={(value) => flow.setDeleteScope(value as DeleteScope)}
-          options={TASK_DELETE_SCOPE_OPTIONS}
-          value={flow.deleteScope}
-        />
-      </View>
-    </AlertDialog>
+      <AlertDialog
+        // Delete closes the editor, and this dialog with it.
+        closeOnConfirm={false}
+        confirmText="Delete"
+        description={SCOPE_DIALOG_COPY.deleteTask.description}
+        isVisible={flow.scopeDialog === "delete"}
+        onCancel={flow.cancelScopeDialog}
+        onClose={noop}
+        onConfirm={flow.confirmScopedDelete}
+        title={SCOPE_DIALOG_COPY.deleteTask.title}
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) => flow.setDeleteScope(value as DeleteScope)}
+            options={TASK_DELETE_SCOPE_OPTIONS}
+            value={flow.deleteScope}
+          />
+        </View>
+      </AlertDialog>
+    </>
   );
 }

@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/icon";
 import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
 import { Text, TextClassContext } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
+import type { Colors } from "@/theme/colors";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 export type ButtonVariant =
@@ -48,12 +49,36 @@ export interface ButtonProps extends Omit<TouchableOpacityProps, "style"> {
   textStyle?: TextStyle;
 }
 
-/** Label color for <Text> children on filled variants; others keep theirs. */
-const CHILD_TEXT_CLASS: Partial<Record<ButtonVariant, string>> = {
-  default: "text-primary-foreground",
-  destructive: "text-destructive-foreground",
-  secondary: "text-secondary-foreground",
-  success: "text-destructive-foreground",
+type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+
+/**
+ * Each variant's label (and icon) color, and on filled variants the same
+ * color as a class for <Text> children, so a filled button's text isn't
+ * the default dark on dark. Other variants' children keep their color.
+ */
+const LABEL_COLORS: Record<
+  ButtonVariant,
+  { childClass?: string; color: ThemeColor }
+> = {
+  default: {
+    childClass: "text-primary-foreground",
+    color: "primaryForeground",
+  },
+  destructive: {
+    childClass: "text-destructive-foreground",
+    color: "destructiveForeground",
+  },
+  ghost: { color: "primary" },
+  link: { color: "primary" },
+  outline: { color: "primary" },
+  secondary: {
+    childClass: "text-secondary-foreground",
+    color: "secondaryForeground",
+  },
+  success: {
+    childClass: "text-destructive-foreground",
+    color: "destructiveForeground",
+  },
 };
 
 export const Button = forwardRef<ViewInstance, ButtonProps>(
@@ -76,13 +101,11 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
     ref
   ) => {
     const primaryColor = useColor("primary");
-    const primaryForegroundColor = useColor("primaryForeground");
     const secondaryColor = useColor("secondary");
-    const secondaryForegroundColor = useColor("secondaryForeground");
     const destructiveColor = useColor("red");
-    const destructiveForegroundColor = useColor("destructiveForeground");
     const greenColor = useColor("green");
     const borderColor = useColor("border");
+    const labelColor = useColor(LABEL_COLORS[variant].color);
 
     const scale = useSharedValue(1);
     const brightness = useSharedValue(1);
@@ -147,45 +170,11 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
         fontWeight: "500",
       };
 
-      switch (variant) {
-        case "destructive":
-          return { ...baseTextStyle, color: destructiveForegroundColor };
-        case "success":
-          return { ...baseTextStyle, color: destructiveForegroundColor };
-        case "outline":
-          return { ...baseTextStyle, color: primaryColor };
-        case "secondary":
-          return { ...baseTextStyle, color: secondaryForegroundColor };
-        case "ghost":
-          return { ...baseTextStyle, color: primaryColor };
-        case "link":
-          return {
-            ...baseTextStyle,
-            color: primaryColor,
-            textDecorationLine: "underline",
-          };
-        default:
-          return { ...baseTextStyle, color: primaryForegroundColor };
-      }
-    };
-
-    const getColor = (): string => {
-      switch (variant) {
-        case "destructive":
-          return destructiveForegroundColor;
-        case "success":
-          return destructiveForegroundColor;
-        case "outline":
-          return primaryColor;
-        case "secondary":
-          return secondaryForegroundColor;
-        case "ghost":
-          return primaryColor;
-        case "link":
-          return primaryColor;
-        default:
-          return primaryForegroundColor;
-      }
+      return {
+        ...baseTextStyle,
+        color: labelColor,
+        ...(variant === "link" ? { textDecorationLine: "underline" } : {}),
+      };
     };
 
     const getIconSize = (): number => {
@@ -315,17 +304,17 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       });
     };
 
-    // <Text> children take the label color too, so a filled button's text
-    // isn't the default dark on dark. (Plain-string children get it above.)
-    const childTextClass = CHILD_TEXT_CLASS[variant];
+    const childTextClass = LABEL_COLORS[variant].childClass;
     const buttonStyle = getButtonStyle();
     const finalTextStyle = getButtonTextStyle();
-    const contentColor = getColor();
+    const contentColor = labelColor;
     const iconSize = getIconSize();
     const styleWithoutFlex = getStyleWithoutFlex();
 
     return animation ? (
       <Pressable
+        // VoiceOver says "button"; a caller's role (a tab, a switch) wins.
+        accessibilityRole="button"
         disabled={disabled || loading}
         onPress={handlePress}
         onPressIn={handlePressIn}
@@ -362,6 +351,7 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
       </Pressable>
     ) : (
       <TouchableOpacity
+        accessibilityRole="button"
         activeOpacity={0.8}
         disabled={disabled || loading}
         onPress={handleTouchablePress}
