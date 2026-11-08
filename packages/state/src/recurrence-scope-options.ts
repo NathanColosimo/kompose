@@ -37,12 +37,12 @@ export const SCOPE_DIALOG_COPY = {
   },
   /** Shown instead of the description when an occurrence's day moves. */
   moveDate: "A new day applies to this occurrence, or from it on.",
-  /** A new repeat that takes its day from this occurrence, not the series'. */
+  /** A new repeat that, counted from the series' first meeting, skips this one. */
   repeatOffDay:
-    "The new repeat takes its day from this occurrence, so it applies from here on. To change the whole series, pick the repeat's day.",
+    "Counted from the series' first meeting, the new repeat would skip this occurrence, so it applies from here on.",
   /** The same, on an occurrence added on its own (no new series there). */
   repeatOffDayAdded:
-    "The new repeat takes its day from this occurrence, which was added to the series on its own. Pick the repeat's day to save it for the entire series.",
+    "This occurrence was added to the series on its own, and counted from the series' first meeting the new repeat would skip it. Change the repeat from one of the series' regular occurrences.",
   /** Shown when the series' rule couldn't load. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
@@ -55,7 +55,7 @@ export const SCOPE_DIALOG_COPY = {
   moveEvent: "Moving to another calendar moves the whole series.",
   /** A calendar move with a new repeat that takes this occurrence's day. */
   moveEventRepeatDay:
-    "Moving to another calendar moves the whole series, but the new repeat takes its day from this occurrence. Pick the repeat's day, or move the calendar and change the repeat in two saves.",
+    "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -98,9 +98,8 @@ export interface EventSaveChanges {
   /** It moves an occurrence to another day. */
   dateMoved: boolean;
   /**
-   * The new repeat leaves its day implicit and takes it from this
-   * occurrence, not the series' first day: it can't apply to the whole
-   * series as shown (`repeatOffSeriesDay`).
+   * The new repeat, counted from the series' first meeting as an Entire
+   * series save would, skips this occurrence (`repeatOffSeriesDay`).
    */
   offSeriesDay?: boolean;
   /** The user changed the repeat. */

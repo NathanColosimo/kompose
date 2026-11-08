@@ -1,3 +1,4 @@
+import { countedRuleDays, isRuleDay } from "@kompose/google-cal/rule-days";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -575,15 +576,16 @@ export function repeatCountingDay(params: {
 }
 
 /**
- * Whether a new repeat set from an occurrence takes its day from that
- * occurrence where the whole series would take another: its day is left
- * implicit (weekly with no days picked, monthly on "Day N", yearly), so it
- * counts from wherever the series starts, and the occurrence's weekday or
- * date (in the series' zone) differs from the series' first day's (its
+ * Whether a new repeat, saved for the entire series, would skip this
+ * occurrence: an Entire series save keeps the series' first meeting (its
  * DTSTART; before the series loads, where the series puts this
- * occurrence). The editor counts it from the occurrence, which an Entire
- * series save can't keep. Days picked explicitly, or a change of interval
- * or end that keeps the series' day, apply to the whole series as shown.
+ * occurrence) and counts the rule from there, so a day left implicit
+ * (weekly with no days picked, monthly on "Day N", yearly) comes from that
+ * first meeting, an interval counts its weeks or months from it, and a
+ * COUNT or UNTIL can end the series before today. When the rule counted
+ * that way doesn't meet on the occurrence's day, the editor's words (which
+ * count from it) aren't what Entire series would save, and it would drop
+ * the very meeting being edited: so the change applies from here on.
  */
 export function repeatOffSeriesDay(params: {
   editedStart: { date?: string | null; dateTime?: string | null };
@@ -606,24 +608,40 @@ export function repeatOffSeriesDay(params: {
   const timeZone = eventTimeZone(occurrence, params.timeZone);
   const first = dayOfStart(anchor, timeZone);
   const day = dayOfStart(params.editedStart, timeZone);
-  if (!(first && day)) {
+  if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
     return false;
   }
-  const { byDay, freq, monthDays } = parseGoogleEventRecurrenceRule(rule);
-  const explicit = byDay.length > 0 || monthDays.length > 0;
-  switch (freq) {
-    case "WEEKLY":
-      return byDay.length === 0 && first.dayOfWeek !== day.dayOfWeek;
-    case "MONTHLY":
-      return !explicit && first.day !== day.day;
-    case "YEARLY":
-      return (
-        !(explicit || BY_MONTH.test(rule)) &&
-        (first.month !== day.month || first.day !== day.day)
-      );
-    default:
-      return false;
+  // Its days, counted from the series' first meeting (unknown parts: as
+  // shown, as before).
+  if (isRuleDay(rule, first, day) === false) {
+    return true;
   }
+  return seriesEndsBefore(rule, first, day, timeZone);
+}
+
+/** Whether a rule counted from `first` ends (COUNT or UNTIL) before `day`. */
+function seriesEndsBefore(
+  rule: string,
+  first: Temporal.PlainDate,
+  day: Temporal.PlainDate,
+  timeZone: string
+): boolean {
+  const { end } = parseGoogleEventRecurrenceRule(rule);
+  if (end.type === "until") {
+    const last = untilRuleToDay(end.date, timeZone);
+    return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
+  }
+  if (end.type === "count") {
+    const days = countedRuleDays(rule, first, end.count);
+    const last = days?.at(-1);
+    return Boolean(
+      days &&
+        days.length >= end.count &&
+        last &&
+        Temporal.PlainDate.compare(last, day) < 0
+    );
+  }
+  return false;
 }
 
 /**

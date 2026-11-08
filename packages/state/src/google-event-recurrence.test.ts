@@ -1726,6 +1726,34 @@ describe("repeatOffSeriesDay", () => {
     expect(off(["RRULE:FREQ=WEEKLY;BYDAY=TU"], tuesday)).toBe(false);
   });
 
+  test("an interval counted from the first meeting that skips this one", () => {
+    // Every 2 weeks from Nov 1 meets Nov 1, 15, 29: not Nov 8.
+    const nov8 = {
+      ...later,
+      originalStartTime: { dateTime: "2026-11-08T16:00:00-05:00" },
+      start: { dateTime: "2026-11-08T16:00:00-05:00" },
+    };
+    expect(off(["RRULE:FREQ=WEEKLY;INTERVAL=2"], nov8)).toBe(true);
+    expect(off(["RRULE:FREQ=WEEKLY;INTERVAL=2"])).toBe(false);
+  });
+
+  test("an end that, counted from the first meeting, is already past", () => {
+    const old = { dateTime: "2025-01-05T16:00:00-05:00" };
+    const today = (recurrence: string[]) =>
+      repeatOffSeriesDay({
+        editedStart: later.start,
+        occurrence: later,
+        recurrence,
+        seriesStart: old,
+        timeZone: zone,
+      });
+    // Ten Sundays from Jan 5 2025 end in March 2025.
+    expect(today(["RRULE:FREQ=WEEKLY;COUNT=10"])).toBe(true);
+    expect(today(["RRULE:FREQ=WEEKLY;COUNT=200"])).toBe(false);
+    expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20251231T235959Z"])).toBe(true);
+    expect(today(["RRULE:FREQ=WEEKLY;UNTIL=20270131T235959Z"])).toBe(false);
+  });
+
   test("daily, or no repeat, never", () => {
     expect(off(["RRULE:FREQ=DAILY"])).toBe(false);
     expect(off([])).toBe(false);
