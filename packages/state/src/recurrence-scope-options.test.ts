@@ -248,7 +248,7 @@ test("turns This and following off where a new series can't start", () => {
   expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
   // A moved day keeps its own sentence, with the reason after it.
   expect(eventSaveDescription({ ...blocked, dateMoved: true })).toBe(
-    "This occurrence is now on another day than its series, so your changes apply to it, or from it on. This and following isn't available for an occurrence added to the series on its own."
+    "This occurrence is now on another day than its series, so your changes apply to it alone. This and following isn't available for an occurrence added to the series on its own."
   );
   // A new repeat can then only go to the entire series.
   expect(eventSaveDescription({ ...blocked, patternChanged: true })).toBe(
@@ -571,6 +571,13 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(off(newTime)).toEqual(["all", "following"]);
     expect(eventSaveDescription(newTime)).toBe(
       `This occurrence is now on another day than its series, so your changes apply to it alone. ${SCOPE_DIALOG_COPY.severalRulesTime} From its first meeting, This and following is the entire series too.`
+    );
+    // With a new repeat too, nothing is on: the times and the repeat take
+    // two saves.
+    const andRepeat = { ...newTime, patternChanged: true };
+    expect(off(andRepeat)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(andRepeat)).toBe(
+      `This occurrence is now on another day than its series, and a new repeat can't apply to it alone. ${SCOPE_DIALOG_COPY.splitBlockedThen.timesAndRepeat} From its first meeting, This and following is the entire series too.`
     );
     // A new day alone keeps every meeting's time: only Entire series is off.
     expect(off({ ...twice, movesSeveralADay: false })).toEqual(["all"]);

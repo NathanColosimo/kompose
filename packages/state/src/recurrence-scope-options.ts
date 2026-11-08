@@ -608,20 +608,43 @@ function firstMeetingRefused(changes: EventSaveChanges): boolean {
  * which it saves as the whole series from that day, in its order: a new
  * time of day for a series meeting several times a day, then a meeting
  * changed on its own, which the new start resets (Google cancels them
- * all). Null when it takes it. Only `movesSeveralADay` tells a new time
- * of day here: `retimed` is set by the new day alone.
+ * all, so the line names the earliest whatever the cost's reason). Null when
+ * it takes it. Only `movesSeveralADay` tells a new time of day here:
+ * `retimed` is set by the new day alone.
  */
-function firstMeetingNewDayRefusal(changes: EventSaveChanges): string | null {
+function firstMeetingNewDayRefusal(
+  changes: EventSaveChanges
+):
+  | { reason: "severalTimesADay" }
+  | { cost: EntireSeriesCost; reason: "changedMeeting" }
+  | null {
   if (!(changes.opensSeries && changes.dateMoved)) {
     return null;
   }
   if (changes.movesSeveralADay) {
-    return SCOPE_DIALOG_COPY.severalRulesTime;
+    return { reason: "severalTimesADay" };
   }
   const cost = changedMeetingCost(changes);
-  return cost
-    ? `Moving the series to this day would reset your changed ${shortDay(cost.day)} meeting.`
-    : null;
+  return cost ? { cost, reason: "changedMeeting" } : null;
+}
+
+/** Why the server refuses a first meeting's new day (`firstMeetingNewDayRefusal`), in words. */
+function firstMeetingNewDayLine(
+  changes: EventSaveChanges,
+  refusal: NonNullable<ReturnType<typeof firstMeetingNewDayRefusal>>
+): string {
+  switch (refusal.reason) {
+    case "severalTimesADay":
+      // With a new repeat too, one occurrence can take neither, so the
+      // server's "one at a time" can't work.
+      return changes.patternChanged
+        ? SCOPE_DIALOG_COPY.splitBlockedThen.timesAndRepeat
+        : SCOPE_DIALOG_COPY.severalRulesTime;
+    case "changedMeeting":
+      return `Moving the series to this day would reset your changed ${shortDay(refusal.cost.day)} meeting.`;
+    default:
+      return refusal satisfies never;
+  }
 }
 
 /** Whether the server refuses the save's new time for the series (`movesSeveralADay`). */
@@ -732,9 +755,11 @@ export function chosenScope(
  * series' zone, named when it isn't the app's. That can't move the whole
  * series, and a new repeat (never one occurrence's) only goes from here.
  * From the series' first meeting, "from here" is the series' new start,
- * which the server can refuse too (`firstMeetingNewDayRefusal`).
+ * which the server can refuse too (`firstMeetingNewDayRefusal`). Where
+ * This and following is off as well (`splitBlocked`, said by the caller),
+ * the changes apply to the occurrence alone.
  */
-function newDayLine(changes: EventSaveChanges): string {
+function newDayLine(changes: EventSaveChanges, splitBlocked = false): string {
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)
     : null;
@@ -742,11 +767,13 @@ function newDayLine(changes: EventSaveChanges): string {
     ? `In ${city} time, this occurrence is now on another day than its series`
     : "This occurrence is now on another day than its series";
   const refusal = firstMeetingNewDayRefusal(changes);
-  if (refusal) {
+  if (refusal || splitBlocked) {
     const alone = changes.patternChanged
       ? `${where}, and a new repeat can't apply to it alone.`
       : `${where}, so your changes apply to it alone.`;
-    return `${alone} ${refusal}`;
+    return refusal
+      ? `${alone} ${firstMeetingNewDayLine(changes, refusal)}`
+      : alone;
   }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`
@@ -853,7 +880,7 @@ function splitBlockedDescription(
     case "newDay":
       return patternChanged
         ? `${why} ${then.timesAndRepeat}`
-        : `${newDayLine(changes)} ${why}`;
+        : `${newDayLine(changes, true)} ${why}`;
     case "repeatDay":
       return `${why} ${then.repeatOffDay}`;
     case "repeatEnd":
