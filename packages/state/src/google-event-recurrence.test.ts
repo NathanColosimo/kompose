@@ -1534,6 +1534,71 @@ describe("seriesRecurrenceForSave", () => {
   });
 });
 
+describe("a series in another zone than its rescheduled occurrence", () => {
+  // Tuesdays 9:00 in Tokyo. The Nov 10 meeting was rescheduled to Mon
+  // Nov 9 20:00 in New York (Tue 10:00 in Tokyo), and is now moved to
+  // Tue Nov 10 20:00 in New York: Wednesday in Tokyo.
+  const masterStart = {
+    dateTime: "2026-11-03T09:00:00+09:00",
+    timeZone: "Asia/Tokyo",
+  };
+  const occurrence = {
+    end: {
+      dateTime: "2026-11-09T20:30:00-05:00",
+      timeZone: "America/New_York",
+    },
+    originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
+    recurringEventId: "series",
+    start: {
+      dateTime: "2026-11-09T20:00:00-05:00",
+      timeZone: "America/New_York",
+    },
+  };
+  const editedStart = {
+    dateTime: "2026-11-10T20:00:00-05:00",
+    timeZone: "America/New_York",
+  };
+  const editedEnd = {
+    dateTime: "2026-11-10T20:30:00-05:00",
+    timeZone: "America/New_York",
+  };
+
+  test("counts the series' days in the series' zone", () => {
+    expect(
+      occurrenceDayMoved({
+        editedEnd,
+        editedStart,
+        occurrence,
+        seriesStart: masterStart,
+        timeZone: "America/New_York",
+      })
+    ).toBe(true);
+    expect(
+      seriesRecurrenceForSave({
+        editedEnd,
+        editedStart,
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+        masterStart,
+        occurrence,
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+  });
+
+  test("keeps a slot the new repeat still has, on the series' day", () => {
+    const skips = (recurrence: string[]) =>
+      repeatSkipsOccurrence({
+        occurrence,
+        recurrence,
+        seriesStart: masterStart,
+        timeZone: "America/New_York",
+      });
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=TU,WE"])).toBeNull();
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=WE"])).toBe("day");
+  });
+});
+
 describe("occurrenceRepeatShown", () => {
   const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=SU"];
 

@@ -7,6 +7,7 @@ import {
   repeatChanged,
   repeatCountingDay,
   seriesRecurrenceForSave,
+  seriesTimeZone,
 } from "./google-event-recurrence";
 import type { EventTime, StartTime } from "./google-event-times";
 
@@ -92,7 +93,10 @@ export function seriesRepeatForEdit(params: {
   seriesRecurrence: string[] | undefined;
   /** The series' own start (its master's), once loaded. */
   seriesStart: StartTime | null | undefined;
-  /** The series' zone (`eventTimeZone`), where its days count. */
+  /**
+   * The event's zone (`eventTimeZone`). An occurrence's days count in its
+   * series' (`seriesTimeZone`), which this reads first.
+   */
   timeZone: string;
 }): {
   /** The repeat differs from the series' (what a save would send). */
@@ -104,9 +108,12 @@ export function seriesRepeatForEdit(params: {
   /** The day a save for the series starts on. */
   startDay: Temporal.PlainDate | null;
 } {
-  const { edited, event, timeZone } = params;
+  const { edited, event } = params;
   const editedStart = edited.start;
   const occurrence = event?.recurringEventId ? event : null;
+  const timeZone = occurrence
+    ? seriesTimeZone(occurrence, params.seriesStart, params.timeZone)
+    : params.timeZone;
   const changed = repeatChanged({
     edited: params.recurrenceEdited,
     recurrence: params.recurrence,
@@ -120,6 +127,7 @@ export function seriesRepeatForEdit(params: {
         editedEnd: edited.end,
         editedStart,
         occurrence,
+        seriesStart: params.seriesStart,
         timeZone,
       })
   );

@@ -125,6 +125,34 @@ describe("seriesRepeatForEdit", () => {
     expect(moved.startDay?.toString()).toBe("2026-11-17");
   });
 
+  test("counts days in the series' zone, not a rescheduled meeting's", () => {
+    // Tuesdays 9:00 in Tokyo; the Nov 10 meeting, rescheduled to New York
+    // Mon Nov 9 20:00, moved to Tue Nov 10 20:00 there: Wednesday in Tokyo.
+    const tokyo = {
+      dateTime: "2026-11-03T09:00:00+09:00",
+      timeZone: "Asia/Tokyo",
+    };
+    const rescheduled = {
+      end: { dateTime: "2026-11-09T20:30:00-05:00", timeZone: zone },
+      originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-09T20:00:00-05:00", timeZone: zone },
+    };
+    const tuesdays = ["RRULE:FREQ=WEEKLY;BYDAY=TU"];
+    const moved = repeat({
+      edited: {
+        end: { dateTime: "2026-11-10T20:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-10T20:00:00-05:00", timeZone: zone },
+      },
+      event: rescheduled,
+      recurrence: tuesdays,
+      seriesRecurrence: tuesdays,
+      seriesStart: tokyo,
+    });
+    expect(moved.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+    expect(moved.startDay?.toString()).toBe("2026-11-11");
+  });
+
   test("left where it is, the series' own rule from its first day", () => {
     const kept = repeat({});
     expect(kept.recurrence).toEqual(seriesRecurrence);

@@ -834,6 +834,15 @@ test("a series start without an offset is read in its own zone", () => {
     start: local("2026-11-16T09:00:00"),
   };
   expect(seriesSplitBlock(later, master, "America/New_York")).toBeNull();
+  // And the added Nov 11 meeting is still read as one.
+  const added = {
+    ...later,
+    originalStartTime: local("2026-11-11T09:00:00"),
+    start: local("2026-11-11T09:00:00"),
+  };
+  expect(seriesSplitBlock(added, master, "America/New_York")).toBe(
+    "addedOccurrence"
+  );
 });
 
 test("a series meets several times a day by two rules, or one at its own hour", () => {

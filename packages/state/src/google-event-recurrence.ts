@@ -475,6 +475,24 @@ export function eventTimeZone(
 }
 
 /**
+ * The zone an occurrence's series counts its days in: its master's once
+ * loaded, as the server reads it, else its original slot's. Not the
+ * occurrence's own: a Tokyo series' meeting rescheduled in New York
+ * still holds a Tokyo slot. `fallback` when none says.
+ */
+export function seriesTimeZone(
+  occurrence: Pick<GoogleEvent, "originalStartTime" | "start">,
+  seriesStart: StartTime | null | undefined,
+  fallback: string
+): string {
+  return (
+    seriesStart?.timeZone ??
+    occurrence.originalStartTime?.timeZone ??
+    eventTimeZone(occurrence, fallback)
+  );
+}
+
+/**
  * The day a start shown in `fromZone` falls on in the series' zone: a
  * Tuesday 9:00 Tokyo meeting shown Monday evening in New York is on
  * Tuesday, which is the day its repeat counts. An all-day start (no time)
@@ -593,7 +611,7 @@ export function repeatSkipsOccurrence(params: {
     recurrence,
     seriesStart,
     slot: occurrence.originalStartTime ?? occurrence.start,
-    timeZone: eventTimeZone(occurrence, params.timeZone),
+    timeZone: seriesTimeZone(occurrence, seriesStart, params.timeZone),
   });
 }
 
@@ -639,8 +657,7 @@ export function entireSeriesCost(params: {
   if (!occurrence.recurringEventId) {
     return null;
   }
-  const zone =
-    master.start.timeZone ?? eventTimeZone(occurrence, params.timeZone);
+  const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
   const times = entireSeriesTimes({ edited, master, occurrence, zone });
   const seriesZone = master.start.timeZone ?? times.start.timeZone ?? zone;
   // As the server writes it with the series' new start (its ruleForStart).
@@ -719,8 +736,7 @@ export function entireSeriesStartMoves(params: {
   timeZone: string;
 }): boolean {
   const { edited, master, occurrence } = params;
-  const zone =
-    master?.start.timeZone ?? eventTimeZone(occurrence, params.timeZone);
+  const zone = seriesTimeZone(occurrence, master?.start, params.timeZone);
   if (!master) {
     return !keepsTimes(edited, occurrence, zone);
   }
@@ -830,7 +846,8 @@ export function movedMeetingDropped(params: {
   if (!(occurrence.recurringEventId && seriesStart && recurrence?.length)) {
     return null;
   }
-  const timeZone = eventTimeZone(occurrence, params.timeZone);
+  const timeZone =
+    seriesStart.timeZone ?? eventTimeZone(occurrence, params.timeZone);
   const dropped = params.loaded.flatMap((event) => {
     const slot = event.originalStartTime;
     const moved =
@@ -930,13 +947,19 @@ export function occurrenceDayMoved(params: {
     GoogleEvent,
     "end" | "originalStartTime" | "recurringEventId" | "start"
   >;
+  /** The series' own start (its master's), once loaded: its zone. */
+  seriesStart?: StartTime | null;
   timeZone: string;
 }): boolean {
   const { editedEnd, editedStart, occurrence } = params;
   if (!occurrence.recurringEventId) {
     return false;
   }
-  const timeZone = eventTimeZone(occurrence, params.timeZone);
+  const timeZone = seriesTimeZone(
+    occurrence,
+    params.seriesStart,
+    params.timeZone
+  );
   const edited = { end: editedEnd, start: editedStart };
   if (keepsTimes(edited, occurrence, timeZone)) {
     return false;
@@ -974,7 +997,11 @@ export function seriesRecurrenceForSave(params: {
   timeZone: string;
 }): string[] | undefined {
   const { editedEnd, editedStart, masterRecurrence, occurrence } = params;
-  const timeZone = eventTimeZone(occurrence, params.timeZone);
+  const timeZone = seriesTimeZone(
+    occurrence,
+    params.masterStart,
+    params.timeZone
+  );
   if (
     params.recurrence !== undefined ||
     !occurrence.recurringEventId ||
@@ -990,7 +1017,15 @@ export function seriesRecurrenceForSave(params: {
   // or form (All day) on its own day is lined up with the series' own
   // rule, freshly read, on the server, so a copy cached here can't write
   // an old rule back.
-  if (!occurrenceDayMoved({ editedEnd, editedStart, occurrence, timeZone })) {
+  if (
+    !occurrenceDayMoved({
+      editedEnd,
+      editedStart,
+      occurrence,
+      seriesStart: params.masterStart,
+      timeZone,
+    })
+  ) {
     return;
   }
   const allDay = Boolean(editedStart.date);

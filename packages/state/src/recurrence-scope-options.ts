@@ -29,7 +29,7 @@ import { ORPCError } from "@orpc/client";
 import type { Temporal } from "temporal-polyfill";
 import {
   type EntireSeriesCost,
-  eventTimeZone,
+  seriesTimeZone,
   timeZoneCity,
 } from "./google-event-recurrence";
 import type { StartTime } from "./google-event-times";
@@ -441,7 +441,7 @@ export function opensSeries(
   if (!(occurrence?.recurringEventId && master)) {
     return false;
   }
-  const zone = master.start.timeZone ?? eventTimeZone(occurrence, appTimeZone);
+  const zone = seriesTimeZone(occurrence, master.start, appTimeZone);
   return sameTime(
     occurrence.originalStartTime ?? occurrence.start,
     master.start,
@@ -522,8 +522,7 @@ function splitAt(
     return null;
   }
   // The series' own zone first, as the server reads it.
-  const seriesZone =
-    master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone);
+  const seriesZone = seriesTimeZone(occurrence, master.start, appTimeZone);
   const originalStart = seriesSlotOf(original, seriesZone);
   return originalStart
     ? {
@@ -715,7 +714,7 @@ function newDayLine(changes: EventSaveChanges): string {
       ? `${where}, and a new repeat can't apply to it alone.`
       : `${where}, so your changes apply to it alone.`;
     // The new day moves the series' start, which resets every meeting
-    // changed on its own (D4), whatever the cost's reason.
+    // changed on its own (Google cancels them all), whatever the cost's reason.
     return `${alone} Moving the series to this day would reset your changed ${shortDay(cost.day)} meeting.`;
   }
   return changes.patternChanged
