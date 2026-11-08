@@ -25,7 +25,13 @@ export function buildRecurrenceRule(
   byDay: string[],
   end: RecurrenceEnd
 ): string | null {
-  return buildGoogleEventRecurrenceRule(freq, byDay, end);
+  return buildGoogleEventRecurrenceRule({
+    byDay,
+    end,
+    freq,
+    interval: 1,
+    monthDays: [],
+  });
 }
 
 interface TemporalFormValues {

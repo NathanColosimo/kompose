@@ -9,7 +9,11 @@ import type { Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  getGoogleEventsByCalendarQueryKey,
+  invalidateGoogleEventQueries,
+} from "../google-calendar-query-keys";
+import { type HeldSave, reportHeldSaveFailure } from "../held-save";
 
 /**
  * Extended update input that includes the full Event for client-side sanitization.
@@ -27,8 +31,11 @@ export function useGoogleEventMutations() {
   const { orpc, notifyError } = useStateConfig();
 
   const createEvent = useMutation({
-    mutationFn: async (variables: CreateEventInput) =>
-      orpc.googleCal.events.create(variables),
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      quiet: _quiet,
+      ...variables
+    }: CreateEventInput & HeldSave) => orpc.googleCal.events.create(variables),
     onMutate: async (variables) => {
       if (variables.event.recurrence?.length) {
         return { previousQueries: undefined, optimisticId: undefined };
@@ -80,8 +87,8 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousQueries) {
         for (const [qk, data] of context.previousQueries) {
           queryClient.setQueryData(qk, data);
@@ -92,17 +99,25 @@ export function useGoogleEventMutations() {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 
   const updateEvent = useMutation({
-    mutationFn: async (variables: UpdateGoogleEventInput) =>
+    mutationFn: async (
+      variables: UpdateGoogleEventInput &
+        HeldSave & {
+          /**
+           * False to wait for the server instead of updating the cache
+           * first. An editor that holds open on the save needs this: an
+           * optimistic move would re-render (or unmount) it mid-save, and
+           * the rollback would reset its fields.
+           */
+          optimistic?: boolean;
+        }
+    ) =>
       orpc.googleCal.events.update({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -125,7 +140,7 @@ export function useGoogleEventMutations() {
         queryKey,
       });
 
-      if (scope === "this") {
+      if (scope === "this" && variables.optimistic !== false) {
         for (const [cachedKey, cachedEvents] of previousQueries) {
           if (Array.isArray(cachedEvents)) {
             queryClient.setQueryData<Event[]>(
@@ -140,8 +155,8 @@ export function useGoogleEventMutations() {
 
       return { previousQueries };
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
 
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {
@@ -149,16 +164,33 @@ export function useGoogleEventMutations() {
         }
       }
     },
+    onSuccess: (saved, variables) => {
+      // A held save shows the server's copy as soon as it's in; other
+      // scopes change more events, so the refetch below brings them.
+      if (
+        variables.optimistic !== false ||
+        variables.recurrenceScope !== "this"
+      ) {
+        return;
+      }
+      queryClient.setQueriesData<Event[]>(
+        {
+          queryKey: getGoogleEventsByCalendarQueryKey({
+            accountId: variables.accountId,
+            calendarId: variables.calendarId,
+          }),
+        },
+        (cached) =>
+          cached?.map((event) => (event.id === saved.id ? saved : event))
+      );
+    },
     onSettled: (_data, _error, variables) => {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 
@@ -203,12 +235,9 @@ export function useGoogleEventMutations() {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 

@@ -11,10 +11,6 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
-  dateToUntilRule,
-  untilRuleToDate,
-} from "@kompose/state/google-event-recurrence";
-import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
@@ -107,6 +103,43 @@ import {
   type RecurrenceEnd,
   WEEKDAYS,
 } from "./event-edit-utils";
+
+// Until-date helpers this editor used before the repeat rules moved to
+// Temporal. The redesigned editor replaces this file later in the stack.
+const UNTIL_RULE_DATE_ONLY = /^(\d{4})(\d{2})(\d{2})$/;
+const UNTIL_RULE_FULL =
+  /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?$/;
+const UNTIL_SEPARATORS = /[-:]/g;
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function untilRuleToDate(raw?: string | null): Date | null {
+  if (!raw) {
+    return null;
+  }
+  const cleaned = raw.replace(UNTIL_SEPARATORS, "");
+  const dateOnly = cleaned.match(UNTIL_RULE_DATE_ONLY);
+  if (dateOnly) {
+    const [, y, m, d] = dateOnly;
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  const full = cleaned.match(UNTIL_RULE_FULL);
+  if (!full) {
+    return null;
+  }
+  const [, y, m, d, hh, mm, ss, offset] = full;
+  const date = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}${offset ?? "Z"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateToUntilRule(date: Date): string | null {
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}00Z`;
+}
 
 interface EventEditPopoverProps {
   accountId: string;

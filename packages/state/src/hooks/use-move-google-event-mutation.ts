@@ -3,7 +3,10 @@
 import type { MoveEventInput } from "@kompose/api/routers/google-cal/contract";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  getGoogleEventsByCalendarQueryKey,
+  invalidateGoogleEventQueries,
+} from "../google-calendar-query-keys";
 
 export function useMoveGoogleEventMutation() {
   const queryClient = useQueryClient();
@@ -61,18 +64,13 @@ export function useMoveGoogleEventMutation() {
         return;
       }
 
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+        {
           accountId: variables.accountId,
           calendarId: variables.destinationCalendarId,
-        }),
-      });
+        },
+      ]);
     },
   });
 }
