@@ -84,6 +84,7 @@ describe("repeatBlocksSave", () => {
 describe("getTaskUpdateScopeDecision", () => {
   const base = {
     hasCoreFieldChanges: true,
+    hasFollowing: true,
     isRecurring: true,
     nextRecurrence: null,
     nextTagIds: [],
@@ -95,6 +96,22 @@ describe("getTaskUpdateScopeDecision", () => {
       action: "prompt",
       defaultScope: "this",
     });
+  });
+
+  test("applies a pattern change from this occurrence on, with no question", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    // A new pattern, and "Repeat: None".
+    expect(
+      getTaskUpdateScopeDecision({
+        ...base,
+        hasCoreFieldChanges: false,
+        nextRecurrence: { ...daily, count: 3 },
+        previousRecurrence: daily,
+      })
+    ).toEqual({ action: "apply", scope: "following" });
+    expect(
+      getTaskUpdateScopeDecision({ ...base, previousRecurrence: daily })
+    ).toEqual({ action: "apply", scope: "following" });
   });
 
   test("applies an inbox occurrence's edits to it alone, with no question", () => {

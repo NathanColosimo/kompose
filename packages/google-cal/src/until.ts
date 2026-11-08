@@ -103,7 +103,7 @@ function endedBefore(
  * `own`'s parts that `rule` sets (its BYHOUR, BYMINUTE, BYSECOND), the
  * rest `start`'s: where a rule's meeting moves when the start does.
  */
-function withRuleClock(
+export function withRuleClock(
   rule: string,
   own: Temporal.PlainTime,
   start: Temporal.PlainTime
@@ -125,7 +125,7 @@ function withRuleClock(
  * time's ("BYHOUR=9" and "BYHOUR=9;BYMINUTE=0" are one time for a 9:00
  * series); without it, rules written differently count as different.
  */
-export function meetsSeveralTimesADay(
+function meetsSeveralTimesADay(
   recurrence: string[],
   base: Temporal.PlainTime | null = null
 ): boolean {
@@ -231,10 +231,50 @@ function compactDate(day: Temporal.PlainDate): string {
   return day.toString().replace(/-/g, "");
 }
 
-/** A start as Google writes it: a date (all day) or a date-time. */
+/**
+ * A start as Google writes it: a date (all day) or a date-time, which may
+ * leave out its offset when it names its time zone.
+ */
 interface StartTime {
   date?: string | null;
   dateTime?: string | null;
+  timeZone?: string | null;
+}
+
+const OFFSET = /(?:[+-]\d{2}:\d{2}|Z)$/;
+
+/**
+ * The moment a Google dateTime names. Google also takes one without an
+ * offset when a time zone comes with it, read in that zone; null for one
+ * that doesn't parse.
+ */
+export function instantOf(
+  dateTime: string,
+  timeZone: string
+): Temporal.Instant | null {
+  try {
+    return OFFSET.test(dateTime)
+      ? Temporal.Instant.from(dateTime)
+      : Temporal.PlainDateTime.from(dateTime)
+          .toZonedDateTime(timeZone)
+          .toInstant();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A Google time's moment, as Google reads it: a date-time without an
+ * offset in its own zone (or `timeZone` when it names none). Null for a
+ * date (all day) or one that doesn't parse.
+ */
+export function startInstant(
+  start: StartTime,
+  timeZone: string
+): Temporal.Instant | null {
+  return start.dateTime
+    ? instantOf(start.dateTime, start.timeZone ?? timeZone)
+    : null;
 }
 
 /**
@@ -245,31 +285,25 @@ export function dayOfStart(
   start: StartTime,
   timeZone: string
 ): Temporal.PlainDate | null {
-  try {
-    if (start.date) {
+  if (start.date) {
+    try {
       return Temporal.PlainDate.from(start.date);
+    } catch {
+      return null;
     }
-    return start.dateTime
-      ? Temporal.Instant.from(start.dateTime)
-          .toZonedDateTimeISO(timeZone)
-          .toPlainDate()
-      : null;
-  } catch {
-    return null;
   }
+  return (
+    startInstant(start, timeZone)?.toZonedDateTimeISO(timeZone).toPlainDate() ??
+    null
+  );
 }
 
 /** The start's wall-clock time in `timeZone` ("09:00"), for a timed one. */
 function wallClock(start: StartTime, timeZone: string): Temporal.PlainTime {
-  try {
-    return start.dateTime
-      ? Temporal.Instant.from(start.dateTime)
-          .toZonedDateTimeISO(timeZone)
-          .toPlainTime()
-      : Temporal.PlainTime.from("00:00");
-  } catch {
-    return Temporal.PlainTime.from("00:00");
-  }
+  return (
+    startInstant(start, timeZone)?.toZonedDateTimeISO(timeZone).toPlainTime() ??
+    Temporal.PlainTime.from("00:00")
+  );
 }
 
 /** A recurrence value read: its day in the series' zone, its moment if timed. */

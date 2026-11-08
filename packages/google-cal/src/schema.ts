@@ -31,6 +31,8 @@ export type CreateCalendar = z.infer<typeof CreateCalendarInputSchema>;
 
 export const EventSchema = z.object({
   id: z.string(),
+  /** Shared by a series' master and its exceptions. */
+  iCalUID: z.string().optional(),
   summary: z.string().optional(),
   description: z.string().optional(),
   location: z.string().optional(),
