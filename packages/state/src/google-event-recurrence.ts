@@ -532,6 +532,25 @@ function sameStart(
   }
 }
 
+/**
+ * The day an occurrence's repeat counts its implicit days from: its place
+ * in the series (where the rule puts it), in the series' zone, so moving
+ * this one occurrence doesn't change how the series is described ("weekly"
+ * stays on the series' Sunday, not the Tuesday it was moved to). Null for
+ * an event that isn't an occurrence: its own start is the series'.
+ */
+export function occurrenceSeriesDay(
+  event:
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
+    | null
+    | undefined,
+  timeZone: string
+): Temporal.PlainDate | null {
+  return event?.recurringEventId && event.originalStartTime
+    ? dayOfStart(event.originalStartTime, timeZone)
+    : null;
+}
+
 /** Whether a save moves an occurrence to another day (not just its time). */
 export function occurrenceDayMoved(params: {
   editedStart: {

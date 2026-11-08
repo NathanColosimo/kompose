@@ -25,6 +25,7 @@ import {
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
   occurrenceRepeatShown,
+  occurrenceSeriesDay,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
@@ -1556,12 +1557,17 @@ export function EventEditorSheet({
       recurrence={shownRepeat.rules}
       rule={primaryRule}
       // The start's day in the series' zone: its repeat's days count there.
-      startDate={dayInZone(
-        values.startDate,
-        values.allDay ? null : values.startTime,
-        appTimeZone,
-        seriesTimeZone
-      )}
+      // An occurrence's count from its place in the series, not from where
+      // it's being moved to.
+      startDate={
+        occurrenceSeriesDay(sourceEvent, seriesTimeZone) ??
+        dayInZone(
+          values.startDate,
+          values.allDay ? null : values.startTime,
+          appTimeZone,
+          seriesTimeZone
+        )
+      }
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
       // It repeats, but how isn't known yet. (Offline, React Native's

@@ -11,6 +11,7 @@ import {
   monthlyWeekdayOf,
   occurrenceDayMoved,
   occurrenceRepeatShown,
+  occurrenceSeriesDay,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesCountingDays,
@@ -1576,5 +1577,54 @@ describe("occurrenceRepeatShown", () => {
         unusable: true,
       })
     ).toEqual({ loading: false, rules: [] });
+  });
+});
+
+describe("occurrenceSeriesDay", () => {
+  const zone = "America/New_York";
+
+  test("a moved occurrence keeps its series' day for the repeat", () => {
+    // Sunday's meeting, moved to Tuesday: "weekly" is still on Sundays.
+    const seriesDay = occurrenceSeriesDay(
+      {
+        originalStartTime: {
+          dateTime: "2026-11-08T16:00:00-05:00",
+          timeZone: zone,
+        },
+        recurringEventId: "m1",
+      },
+      zone
+    );
+    expect(seriesDay?.toString()).toBe("2026-11-08");
+    expect(seriesDay?.dayOfWeek).toBe(7);
+  });
+
+  test("an all-day occurrence's day is its date", () => {
+    expect(
+      occurrenceSeriesDay(
+        { originalStartTime: { date: "2026-11-30" }, recurringEventId: "m1" },
+        zone
+      )?.toString()
+    ).toBe("2026-11-30");
+  });
+
+  test("counts in the series' zone", () => {
+    // 20:00 Sunday in New York is Monday in Tokyo.
+    expect(
+      occurrenceSeriesDay(
+        {
+          originalStartTime: { dateTime: "2026-11-08T20:00:00-05:00" },
+          recurringEventId: "m1",
+        },
+        "Asia/Tokyo"
+      )?.toString()
+    ).toBe("2026-11-09");
+  });
+
+  test("not an occurrence: null", () => {
+    expect(occurrenceSeriesDay({ recurringEventId: undefined }, zone)).toBe(
+      null
+    );
+    expect(occurrenceSeriesDay(null, zone)).toBe(null);
   });
 });

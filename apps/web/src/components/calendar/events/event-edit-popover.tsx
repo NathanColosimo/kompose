@@ -31,6 +31,7 @@ import {
   followStart,
   getPrimaryRecurrenceRule,
   occurrenceDayMoved,
+  occurrenceSeriesDay,
   otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
@@ -2902,7 +2903,12 @@ export function EventEditForm({
         recurrenceWaitReason={
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
-        seriesStart={seriesDayOf(watchedValues)}
+        // An occurrence's repeat counts from its place in the series, not
+        // from where it's being moved to.
+        seriesStart={
+          occurrenceSeriesDay(event, seriesTimeZone) ??
+          seriesDayOf(watchedValues)
+        }
         seriesTimeZone={seriesTimeZone}
         showsZone={seriesTimeZone !== timeZone}
       />
