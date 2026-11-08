@@ -1882,6 +1882,47 @@ describe("movedMeetingDropped", () => {
     ).toBeNull();
   });
 
+  test("only the series' first meeting itself is always kept", () => {
+    // From Mon Nov 30 9:00, daily, plus Mondays at 15:00 by a second rule,
+    // now Tuesdays: Nov 30's moved 15:00 meeting was the second rule's,
+    // on the series' first day but not its first meeting, and is gone.
+    const series = { dateTime: "2026-11-30T09:00:00-05:00" };
+    const firstDayAt3 = meeting(
+      "2026-11-30T15:00:00-05:00",
+      "2026-11-30T17:00:00-05:00"
+    );
+    const rules = ["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15", "RRULE:FREQ=DAILY"];
+    expect(
+      movedMeetingDropped({
+        loaded: [firstDayAt3],
+        occurrence: edited,
+        recurrence: rules,
+        seriesStart: series,
+        timeZone: zone,
+      })
+    ).toEqual(Temporal.PlainDate.from("2026-11-30"));
+    expect(
+      repeatSkipsOccurrence({
+        occurrence: firstDayAt3,
+        recurrence: rules,
+        seriesStart: series,
+        timeZone: zone,
+      })
+    ).toBe("day");
+    // The 9:00 first meeting itself, moved: always the series'.
+    expect(
+      movedMeetingDropped({
+        loaded: [
+          meeting("2026-11-30T09:00:00-05:00", "2026-11-30T11:00:00-05:00"),
+        ],
+        occurrence: edited,
+        recurrence: rules,
+        seriesStart: series,
+        timeZone: zone,
+      })
+    ).toBeNull();
+  });
+
   test("counts a rule at another time from its own first meeting", () => {
     // Mondays at 15:00 twice, beside the series' daily 9:00 (from Tue Dec
     // 1): its meetings are Dec 7 and Dec 14, not the series' Dec 1.

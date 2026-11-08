@@ -4,12 +4,8 @@ import { seriesEditFields, seriesRepeatForEdit } from "./series-edit";
 const zone = "America/New_York";
 
 describe("seriesEditFields", () => {
-  // A weekly Monday 10:00-10:30 series; its Nov 16 meeting was moved
-  // before to Tue Nov 17 11:00-12:00 and renamed.
-  const series = {
-    end: { dateTime: "2026-11-02T10:30:00-05:00", timeZone: zone },
-    start: { dateTime: "2026-11-02T10:00:00-05:00", timeZone: zone },
-  };
+  // A weekly Monday 10:00 series' Nov 16 meeting, moved before to Tue
+  // Nov 17 11:00-12:00 and renamed.
   const rescheduled = {
     colorId: "5",
     description: "Agenda",
@@ -32,94 +28,47 @@ describe("seriesEditFields", () => {
     summary: "Moved standup",
   };
 
-  test("sends nothing the user didn't change, and keeps the series' slot and length", () => {
+  test("sends nothing the user didn't change, and its times as they are", () => {
+    // The server keeps the series' slot for times the edit leaves alone,
+    // and the moved meeting's own move with them.
     expect(
-      seriesEditFields({ edited: untouched, occurrence: rescheduled, series })
+      seriesEditFields({ edited: untouched, occurrence: rescheduled })
     ).toEqual({
       colorId: undefined,
       conferenceData: undefined,
       description: undefined,
-      end: { dateTime: "2026-11-16T15:30:00Z", timeZone: zone },
+      end: rescheduled.end,
       location: undefined,
-      start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+      start: rescheduled.start,
       summary: undefined,
     });
   });
 
   test("sends what the user changed, a cleared field included", () => {
     const fields = seriesEditFields({
-      edited: { ...untouched, description: "", summary: "Standup" },
+      edited: {
+        ...untouched,
+        colorId: undefined,
+        description: "",
+        summary: "Standup",
+      },
       occurrence: rescheduled,
-      series,
     });
     expect(fields.summary).toBe("Standup");
     expect(fields.description).toBe("");
+    // A cleared color is sent empty: left out, it would read as unchanged.
+    expect(fields.colorId).toBe("");
     expect(fields.location).toBeUndefined();
   });
 
-  test("a new end alone keeps the slot and takes the new length", () => {
+  test("sends a new color, and a new meeting", () => {
+    const meeting = { conferenceId: "abc-defg-hij" };
     const fields = seriesEditFields({
-      edited: {
-        ...untouched,
-        end: { dateTime: "2026-11-17T11:45:00-05:00", timeZone: zone },
-      },
+      edited: { ...untouched, colorId: "7", conferenceData: meeting },
       occurrence: rescheduled,
-      series,
     });
-    expect(fields.start).toEqual({
-      dateTime: "2026-11-16T10:00:00-05:00",
-      timeZone: zone,
-    });
-    expect(fields.end).toEqual({
-      dateTime: "2026-11-16T15:45:00Z",
-      timeZone: zone,
-    });
-  });
-
-  test("a new start is the user's own", () => {
-    const start = { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone };
-    const end = { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone };
-    const fields = seriesEditFields({
-      edited: { ...untouched, end, start },
-      occurrence: rescheduled,
-      series,
-    });
-    expect(fields.start).toEqual(start);
-    expect(fields.end).toEqual(end);
-  });
-
-  test("an all-day series keeps its days", () => {
-    const allDay = {
-      end: { date: "2026-11-18" },
-      originalStartTime: { date: "2026-11-16" },
-      start: { date: "2026-11-17" },
-      summary: "Offsite",
-    };
-    const fields = seriesEditFields({
-      edited: { end: allDay.end, start: allDay.start, summary: "Offsite" },
-      occurrence: allDay,
-      series: { end: { date: "2026-11-03" }, start: { date: "2026-11-02" } },
-    });
-    expect(fields.start).toEqual({ date: "2026-11-16" });
-    expect(fields.end).toEqual({ date: "2026-11-17" });
-  });
-
-  test("a regular occurrence left alone sends its own times", () => {
-    const regular = {
-      ...rescheduled,
-      end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
-      start: rescheduled.originalStartTime,
-    };
-    const fields = seriesEditFields({
-      edited: { ...untouched, end: regular.end, start: regular.start },
-      occurrence: regular,
-      series,
-    });
-    expect(fields.start).toEqual(regular.start);
-    expect(fields.end).toEqual({
-      dateTime: "2026-11-16T15:30:00Z",
-      timeZone: zone,
-    });
+    expect(fields.colorId).toBe("7");
+    expect(fields.conferenceData).toEqual(meeting);
   });
 });
 
@@ -128,6 +77,7 @@ describe("seriesRepeatForEdit", () => {
   const seriesRecurrence = ["RRULE:FREQ=WEEKLY;BYDAY=MO"];
   const seriesStart = { dateTime: "2026-11-02T10:00:00-05:00" };
   const monday = {
+    end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
     originalStartTime: {
       dateTime: "2026-11-16T10:00:00-05:00",
       timeZone: zone,
@@ -137,7 +87,7 @@ describe("seriesRepeatForEdit", () => {
   };
   const repeat = (params: Partial<Parameters<typeof seriesRepeatForEdit>[0]>) =>
     seriesRepeatForEdit({
-      editedStart: monday.start,
+      edited: { end: monday.end, start: monday.start },
       event: monday,
       recurrence: seriesRecurrence,
       recurrenceEdited: false,
@@ -149,7 +99,10 @@ describe("seriesRepeatForEdit", () => {
 
   test("a day moved in this edit shows the rule the save sends, from that day", () => {
     const moved = repeat({
-      editedStart: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+      edited: {
+        end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+      },
     });
     expect(moved.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU"]);
     expect(moved.changed).toBe(false);
@@ -167,10 +120,11 @@ describe("seriesRepeatForEdit", () => {
   test("a meeting moved before saves from its place in the series", () => {
     const movedBefore = {
       ...monday,
+      end: { dateTime: "2026-11-17T12:00:00-05:00", timeZone: zone },
       start: { dateTime: "2026-11-17T11:00:00-05:00", timeZone: zone },
     };
     const changed = repeat({
-      editedStart: movedBefore.start,
+      edited: { end: movedBefore.end, start: movedBefore.start },
       event: movedBefore,
       recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
       recurrenceEdited: true,
@@ -179,11 +133,26 @@ describe("seriesRepeatForEdit", () => {
     expect(changed.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"]);
     expect(changed.countingDay?.toString()).toBe("2026-11-16");
     expect(changed.startDay?.toString()).toBe("2026-11-16");
+    // A new end makes its times the user's own: the save starts there.
+    const retimed = repeat({
+      edited: {
+        end: { dateTime: "2026-11-17T12:30:00-05:00", timeZone: zone },
+        start: movedBefore.start,
+      },
+      event: movedBefore,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+      recurrenceEdited: true,
+    });
+    expect(retimed.countingDay?.toString()).toBe("2026-11-17");
+    expect(retimed.startDay?.toString()).toBe("2026-11-17");
   });
 
   test("a new event's repeat counts from its own start", () => {
     const fresh = repeat({
-      editedStart: { dateTime: "2026-11-18T10:00:00-05:00" },
+      edited: {
+        end: { dateTime: "2026-11-18T10:30:00-05:00" },
+        start: { dateTime: "2026-11-18T10:00:00-05:00" },
+      },
       event: null,
       recurrence: ["RRULE:FREQ=WEEKLY"],
       recurrenceEdited: true,

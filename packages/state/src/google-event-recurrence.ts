@@ -680,8 +680,8 @@ function ruleLineTime(
  * interval's phase; unknown parts: as shown, as before), or "end", the
  * rule's COUNT or UNTIL comes first. Each rule counts from the series'
  * first meeting. In a series of several rules, only a rule that meets at
- * the slot's time can produce it. A series' first meeting is always its
- * own.
+ * the slot's time can produce it. The series' first meeting (its DTSTART,
+ * day and time) is always its own; another rule's slot that day isn't.
  */
 function slotDropped(params: {
   recurrence: string[];
@@ -692,12 +692,19 @@ function slotDropped(params: {
   const { timeZone } = params;
   const first = dayOfStart(params.seriesStart, timeZone);
   const day = dayOfStart(params.slot, timeZone);
-  if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
+  const seriesTime = timeOfStart(params.seriesStart, timeZone);
+  const slotTime = timeOfStart(params.slot, timeZone);
+  if (!(first && day) || Temporal.PlainDate.compare(day, first) < 0) {
+    return null;
+  }
+  const firstMeeting =
+    Temporal.PlainDate.compare(day, first) === 0 &&
+    (!(seriesTime && slotTime) ||
+      Temporal.PlainTime.compare(seriesTime, slotTime) === 0);
+  if (firstMeeting) {
     return null;
   }
   const rules = params.recurrence.filter(isRule);
-  const seriesTime = timeOfStart(params.seriesStart, timeZone);
-  const slotTime = timeOfStart(params.slot, timeZone);
   let why: "day" | "end" = "day";
   for (const rule of rules) {
     const ruleTime = ruleLineTime(rule, seriesTime);
