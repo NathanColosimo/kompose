@@ -25,27 +25,13 @@ import { isDesktopRuntime } from "@/lib/desktop";
 
 /** A card per plugin with its connected accounts. See documents/plugins.md. */
 export function PluginConnectionsSettings() {
-  const { cards, connectionsQuery, disconnect, refresh } =
-    usePluginConnections();
   const [isDesktop, setIsDesktop] = useState(false);
-  const [connectingPluginId, setConnectingPluginId] = useState<string | null>(
-    null
-  );
-
-  useMountEffect(() => {
-    setIsDesktop(isDesktopRuntime());
-    // The desktop app connects in the system browser; refresh on return.
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  });
-
-  const connect = async (plugin: PluginManifest) => {
-    if (isDesktop) {
-      window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
-      return;
-    }
-    setConnectingPluginId(plugin.id);
-    try {
+  const { cards, connect, connectionsQuery, disconnect, refresh } =
+    usePluginConnections(async (plugin: PluginManifest) => {
+      if (isDesktop) {
+        window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
+        return;
+      }
       // Redirects to the provider, which returns to this page.
       const callbackURL = `${window.location.origin}/dashboard/settings`;
       const result = await authClient.linkSocial({
@@ -55,12 +41,16 @@ export function PluginConnectionsSettings() {
       });
       const authError = extractAuthErrorMessage(result);
       if (authError) {
-        toast.error(authError);
+        throw new Error(authError);
       }
-    } finally {
-      setConnectingPluginId(null);
-    }
-  };
+    });
+
+  useMountEffect(() => {
+    setIsDesktop(isDesktopRuntime());
+    // The desktop app connects in the system browser; refresh on return.
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  });
 
   const disconnectAccount = (connection: PluginConnection, name: string) =>
     disconnect.mutate(connection.accountId, {
@@ -79,11 +69,16 @@ export function PluginConnectionsSettings() {
               <CardDescription>{plugin.description}</CardDescription>
             </div>
             <Button
-              disabled={connectingPluginId !== null || isFull}
-              onClick={() => connect(plugin)}
+              disabled={connect.isPending || isFull}
+              onClick={() =>
+                connect.mutate(plugin, {
+                  onError: (error) => toast.error(error.message),
+                })
+              }
             >
               {connectLabel(card, {
-                connecting: connectingPluginId === plugin.id,
+                connecting:
+                  connect.isPending && connect.variables.id === plugin.id,
                 inBrowser: isDesktop,
               })}
             </Button>

@@ -6,7 +6,6 @@ import {
 } from "@kompose/state/hooks/use-plugin-connections";
 import { createURL } from "expo-linking";
 import { Unlink2 } from "lucide-react-native";
-import { useState } from "react";
 import { Image, Alert as RNAlert, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,26 +20,14 @@ import { authClient } from "@/lib/auth-client";
 
 /** A card per plugin with its connected accounts. See documents/plugins.md. */
 export function PluginConnectionsCards() {
-  const { cards, connectionsQuery, disconnect, refresh } =
-    usePluginConnections();
-  const [connectingPluginId, setConnectingPluginId] = useState<string | null>(
-    null
+  const { cards, connect, connectionsQuery, disconnect } = usePluginConnections(
+    (plugin: PluginManifest) =>
+      // Resolves after the in-app browser closes.
+      authClient.linkSocial({
+        callbackURL: createURL("settings"),
+        provider: plugin.connection.provider,
+      })
   );
-
-  const connect = async (plugin: PluginManifest) => {
-    setConnectingPluginId(plugin.id);
-    try {
-      await authClient.linkSocial(
-        {
-          callbackURL: createURL("settings"),
-          provider: plugin.connection.provider,
-        },
-        { onSuccess: refresh }
-      );
-    } finally {
-      setConnectingPluginId(null);
-    }
-  };
 
   const confirmDisconnect = (accountId: string, name: string) => {
     RNAlert.alert(`Disconnect ${name}?`, undefined, [
@@ -67,12 +54,13 @@ export function PluginConnectionsCards() {
         </CardHeader>
         <CardContent className="gap-3">
           <Button
-            disabled={connectingPluginId !== null || isFull}
-            onPress={() => connect(plugin)}
+            disabled={connect.isPending || isFull}
+            onPress={() => connect.mutate(plugin)}
           >
             <Text className="text-primary-foreground">
               {connectLabel(card, {
-                connecting: connectingPluginId === plugin.id,
+                connecting:
+                  connect.isPending && connect.variables.id === plugin.id,
               })}
             </Text>
           </Button>

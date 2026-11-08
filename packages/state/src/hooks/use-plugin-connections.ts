@@ -16,10 +16,13 @@ export interface PluginCard {
 }
 
 /**
- * The plugins the user connected, and disconnecting one by unlinking its
- * account. See documents/plugins.md.
+ * The plugins the user connected, connecting one through `linkAccount`, and
+ * disconnecting one by unlinking its account. See documents/plugins.md.
  */
-export function usePluginConnections() {
+export function usePluginConnections(
+  /** Starts the provider's sign-in; resolves once it is done or under way. */
+  linkAccount: (plugin: PluginManifest) => Promise<unknown>
+) {
   const queryClient = useQueryClient();
   const { authClient, orpc } = useStateConfig();
 
@@ -47,12 +50,14 @@ export function usePluginConnections() {
     queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   };
 
+  const connect = useMutation({ mutationFn: linkAccount, onSuccess: refresh });
+
   const disconnect = useMutation({
     mutationFn: (accountId: string) => authClient.unlinkAccount({ accountId }),
     onSuccess: refresh,
   });
 
-  return { cards, connectionsQuery, disconnect, refresh };
+  return { cards, connect, connectionsQuery, disconnect, refresh };
 }
 
 /** The label for a card's Connect button. */
