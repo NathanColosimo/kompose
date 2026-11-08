@@ -2564,7 +2564,7 @@ describe("followingCost", () => {
   test("the opened meeting holds its own slot when it keeps its own changes", () => {
     // Tuesdays from Dec 1, plus an added Wed Dec 9; Dec 8 and Dec 9 each
     // renamed. Dec 8, its title kept, moved onto Dec 9, Wednesdays: both
-    // land on Dec 9.
+    // land on Dec 9. The one named is Dec 9, not the meeting being moved.
     const added = "RDATE;TZID=America/New_York:20261209T090000";
     const series = {
       ...master,
@@ -2585,7 +2585,7 @@ describe("followingCost", () => {
         recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=WE", added],
         series,
       })
-    ).toBe("lostSlot 2026-12-08");
+    ).toBe("lostSlot 2026-12-09");
   });
 
   test("carries the series' COUNT on to the new series", () => {

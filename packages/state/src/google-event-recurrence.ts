@@ -816,9 +816,11 @@ export function followingCost(params: {
     (event.originalStartTime &&
       dayOfStart(event.originalStartTime, zone)?.toString()) ??
     "";
-  const [first] = [...lost].sort((a, b) =>
-    slotDay(a.event).localeCompare(slotDay(b.event))
-  );
+  // The opened occurrence is lost only with a later one that lands on its
+  // slot: that one, which the form doesn't show, is the one to name.
+  const [first] = lost
+    .filter(({ event }) => event.id !== occurrence.id)
+    .sort((a, b) => slotDay(a.event).localeCompare(slotDay(b.event)));
   const day = first && dayOfStart(first.event.start, params.timeZone);
   return first && day ? { day, reason: first.reason } : null;
 }

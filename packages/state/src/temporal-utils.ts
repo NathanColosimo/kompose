@@ -299,8 +299,10 @@ interface EventRange {
  * midnight. An all-day event keeps its day span. Given the zone its times
  * are in, the length is real time, so a meeting over a clock change keeps
  * its hours (a 0:30-2:30 meeting on the night the clocks go back is three
- * hours), and the result carries its ends as moments (`start`, `end`): a
- * clock time alone can't say which of a repeated hour's halves it's in.
+ * hours), the result carries its ends as moments (`start`, `end`): a
+ * clock time alone can't say which of a repeated hour's halves it's in,
+ * and a start the clocks skip comes back as the time it lands on (2:30
+ * on the night they go forward is 3:30).
  * Without a zone, the length is the clock's. A zero-length event stays
  * zero; with no length to keep (no end, or an end before the start), it
  * gets 30 minutes.
