@@ -113,7 +113,9 @@ export function keepsEditedOccurrence(
  * the edited occurrence now starts: its new date when the edit moves it
  * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
  * one. Dates in `keptDates` (exceptions, including the kept edited
- * occurrence) are left out. The first row is the new series master. New
+ * occurrence) are left out. The first row is the new series master,
+ * unless the edited occurrence is kept: then it is the master
+ * (`seriesMasterId` is its id) and carries the pattern. New
  * occurrences start open; when the edited occurrence is replaced, the new
  * one on its date keeps its status.
  */
@@ -131,20 +133,10 @@ export function regeneratedOccurrenceRows(params: {
   const seriesStartDate = Temporal.PlainDate.from(
     input.startDate ?? task.startDate
   );
-  const generated = generateOccurrences(input.recurrence, seriesStartDate);
-  const occurrenceDates = generated.filter(
-    (date) => !params.keptDates.has(date.toString())
-  );
-  // The master is the first new date; kept dates before it (the edited
-  // occurrence) already used part of the count, so it stores what's left.
-  const firstNew = occurrenceDates[0];
-  const masterAt = firstNew
-    ? generated.findIndex((date) => date.equals(firstNew))
-    : 0;
-  const masterRecurrence =
-    input.recurrence.count && masterAt > 0
-      ? { ...input.recurrence, count: input.recurrence.count - masterAt }
-      : input.recurrence;
+  const occurrenceDates = generateOccurrences(
+    input.recurrence,
+    seriesStartDate
+  ).filter((date) => !params.keptDates.has(date.toString()));
   return buildOccurrenceRowsFromTask({
     input,
     occurrenceDates,
@@ -156,8 +148,10 @@ export function regeneratedOccurrenceRows(params: {
     userId: params.userId,
   }).map((row, index) => ({
     ...row,
-    ...(index === 0
-      ? { id: params.seriesMasterId, recurrence: masterRecurrence }
+    // A kept edited occurrence is the master (the caller gives it the
+    // pattern); otherwise the first new row is.
+    ...(!params.keepEdited && index === 0
+      ? { id: params.seriesMasterId, recurrence: input.recurrence }
       : {}),
     ...(!params.keepEdited && row.startDate === seriesStartDate.toString()
       ? { status: task.status }

@@ -61,24 +61,23 @@ describe("keepsEditedOccurrence", () => {
 });
 
 describe("regeneratedOccurrenceRows", () => {
-  test("stores the count left on the new master", () => {
-    // Nov 9 (kept) is the first of four Tuesdays-pattern dates, so the
-    // master on Nov 10 repeats three times: Nov 10, 17, 24.
-    const [master] = regeneratedOccurrenceRows({
+  test("leaves the pattern to a kept edited occurrence, the master", () => {
+    const rowsKept = regeneratedOccurrenceRows({
       input: { recurrence: tuesdays },
       keepEdited: true,
       keptDates: new Set(["2026-11-09"]),
-      seriesMasterId: "new-master",
+      seriesMasterId: "nov9",
       task: nov9,
       userId: "user",
     });
-    expect(master?.recurrence?.count).toBe(3);
+    expect(rowsKept.every((r) => r.seriesMasterId === "nov9")).toBe(true);
+    expect(rowsKept.every((r) => r.recurrence === null)).toBe(true);
   });
 
   test("starts every new occurrence open, even from a done one", () => {
     // Nov 9 (a Monday, kept) is the first of the four; three are new.
     expect(rows({ recurrence: tuesdays }, true, ["2026-11-09"])).toEqual([
-      "2026-11-10 todo R",
+      "2026-11-10 todo",
       "2026-11-17 todo",
       "2026-11-24 todo",
     ]);
@@ -86,7 +85,7 @@ describe("regeneratedOccurrenceRows", () => {
 
   test("leaves out kept dates instead of doubling them", () => {
     expect(rows({ recurrence: monTue }, true, ["2026-11-09"])).toEqual([
-      "2026-11-10 todo R",
+      "2026-11-10 todo",
       "2026-11-16 todo",
       "2026-11-17 todo",
     ]);
@@ -164,7 +163,7 @@ describe("regeneratedOccurrenceRows", () => {
       rows({ recurrence: tuesdays, startDate: "2026-11-23" }, true, [
         "2026-11-23",
       ])
-    ).toEqual(["2026-11-24 todo R", "2026-12-01 todo", "2026-12-08 todo"]);
+    ).toEqual(["2026-11-24 todo", "2026-12-01 todo", "2026-12-08 todo"]);
   });
 });
 

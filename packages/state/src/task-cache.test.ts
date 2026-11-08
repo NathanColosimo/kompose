@@ -61,4 +61,28 @@ describe("mergeSavedTasks", () => {
       "nov17:todo",
     ]);
   });
+
+  test("drops replaced occurrences from the moved date when it's earlier", () => {
+    // Nov 16 moved to Nov 9 with a new pattern: the server split the series
+    // at Nov 9, so the cached Nov 9 goes too.
+    const saved = [
+      row("new9", "2026-11-09", { seriesMasterId: "new" }),
+      row("new16", "2026-11-16", { seriesMasterId: "new" }),
+    ];
+    expect(
+      ids(
+        mergeSavedTasks(cached, saved, {
+          id: "nov16",
+          scope: "following",
+          startDate: Temporal.PlainDate.from("2026-11-09"),
+        })
+      )
+    ).toEqual([
+      "nov2:todo",
+      "nov23:todo",
+      "other:todo",
+      "new9:todo",
+      "new16:todo",
+    ]);
+  });
 });

@@ -211,12 +211,21 @@ export function useTasks(options: UseTasksOptions = {}) {
     // Without the early update, write the saved tasks in as soon as the
     // server answers, so the editor that waited closes onto them (the
     // refetch below can take a while on a cold start).
-    onSuccess: (saved, { id, optimistic: isOptimistic = true, scope }) => {
+    onSuccess: (
+      saved,
+      { id, optimistic: isOptimistic = true, scope, task }
+    ) => {
       if (isOptimistic) {
         return;
       }
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
-        old ? mergeSavedTasks(old, saved, { id, scope }) : old
+        old
+          ? mergeSavedTasks(old, saved, {
+              id,
+              scope,
+              startDate: task.startDate,
+            })
+          : old
       );
     },
     onSettled: () => {

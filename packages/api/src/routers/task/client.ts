@@ -735,12 +735,22 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     keepEdited ? task.id : undefined
   );
 
+  // A kept edited occurrence is where the new series starts, so it becomes
+  // its master and carries the pattern (even when the pattern adds no other
+  // dates: Daily x1 from a done occurrence). Ending the repeat leaves it a
+  // standalone task.
+  let anchorSeries: Partial<TaskUpdateInput> = {
+    recurrence,
+    seriesMasterId: task.id,
+  };
+  if (ending) {
+    anchorSeries = { recurrence: null, seriesMasterId: null };
+  }
   const updatedAnchor = keepEdited
     ? yield* dbUpdate(userId, task.id, {
         ...occurrenceFields,
+        ...anchorSeries,
         isException: !ending,
-        recurrence: null,
-        ...(ending ? { seriesMasterId: null } : {}),
       })
     : [];
 
@@ -774,7 +784,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   if (updatedAnchor[0]?.startDate) {
     keptDates.add(updatedAnchor[0].startDate);
   }
-  const seriesMasterId = uuidv7();
+  const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
     input: { ...input, recurrence },
     keepEdited,
@@ -783,16 +793,9 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     task,
     userId,
   });
-  if (taskRows.length === 0) {
-    return {
-      retagIds: ids(updatedAnchor),
-      rows: [...updatedAnchor, ...endedMaster],
-    };
-  }
-  const inserted = yield* dbInsert(taskRows);
-  // Kept occurrences from the boundary on (and the edited one, wherever it
-  // moved) join the new series as exceptions, so they show and follow its
-  // pattern rather than the old one.
+  const inserted = taskRows.length > 0 ? yield* dbInsert(taskRows) : [];
+  // Kept occurrences from the boundary on join the new series as
+  // exceptions, so they show and follow its pattern rather than the old one.
   const moved = yield* dbMoveExceptionsToSeries({
     editedId: task.id,
     fromDate: boundary,
@@ -800,13 +803,19 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  // Every changed row goes back (so clients see the moved exceptions in
-  // their new series), but only the edited occurrence and the new rows take
-  // the edit's tags: the other kept exceptions keep their own.
-  const edited = moved.filter((row) => row.id === task.id);
+  // Every changed row goes back, once, latest write first (so clients see
+  // the moved exceptions in their new series), but only the edited
+  // occurrence and the new rows take the edit's tags: the other kept
+  // exceptions keep their own.
+  const rows = new Map(
+    [...updatedAnchor, ...endedMaster, ...inserted, ...moved].map((row) => [
+      row.id,
+      row,
+    ])
+  );
   return {
-    retagIds: [...ids(edited), ...ids(inserted)],
-    rows: [...moved, ...inserted, ...endedMaster],
+    retagIds: [...(keepEdited ? [task.id] : []), ...ids(inserted)],
+    rows: [...rows.values()],
   };
 });
 
