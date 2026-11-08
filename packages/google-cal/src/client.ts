@@ -203,13 +203,24 @@ function ruleForStart(
   return rule && matchRecurrenceToStart(rule, start, zone, master.start, days);
 }
 
-/** `time` labelled with the series' zone when it has one (same moment). */
+/**
+ * `time` in the series' zone when it has one, the same moment: a
+ * date-time without an offset is read in its own zone (as Google does)
+ * and written with the series' offset, so relabelling it can't move it.
+ */
 function inSeriesZone<
   T extends { date?: string; dateTime?: string; timeZone?: string },
 >(time: T, series: { timeZone?: string }): T {
-  return time.dateTime && series.timeZone
-    ? { ...time, timeZone: series.timeZone }
-    : time;
+  if (!(time.dateTime && series.timeZone)) {
+    return time;
+  }
+  const moment = instantOf(time.dateTime, time.timeZone ?? series.timeZone);
+  const dateTime = moment
+    ? moment
+        .toZonedDateTimeISO(series.timeZone)
+        .toString({ smallestUnit: "second", timeZoneName: "never" })
+    : time.dateTime;
+  return { ...time, dateTime, timeZone: series.timeZone };
 }
 
 function getConferenceDataVersion(event: {
@@ -958,7 +969,7 @@ export function makeGoogleCalendarService(
 
   const updateEventFollowing = (
     calendarId: string,
-    event: CreateEvent,
+    edited: CreateEvent,
     currentEvent: Event
   ) =>
     Effect.gen(function* () {
@@ -970,6 +981,14 @@ export function makeGoogleCalendarService(
           })
         );
       }
+      // Google repeats a series in its start's zone: the new part's times
+      // are read once, in the series' zone (the same moments), and the
+      // rule, the checks and the write all use them.
+      const event = {
+        ...edited,
+        end: inSeriesZone(edited.end, master.end),
+        start: inSeriesZone(edited.start, master.start),
+      };
 
       const startIso =
         currentEvent.originalStartTime?.dateTime ??
@@ -1066,14 +1085,11 @@ export function makeGoogleCalendarService(
 
       yield* parseEventResponse(truncateMasterResponse);
 
-      // Google repeats a series in its start's zone: the new part keeps
-      // the series' zone, whatever zone the edit was written in.
+      // The new part keeps the series' zone (`event` is in it already).
       const newSeriesPayload = sanitizeEventPayload({
         ...master,
         ...event,
-        end: inSeriesZone(event.end, master.end),
         recurrence,
-        start: inSeriesZone(event.start, master.start),
       });
       const newSeriesConferenceDataVersion =
         getConferenceDataVersion(newSeriesPayload);
