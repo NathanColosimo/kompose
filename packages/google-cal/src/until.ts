@@ -479,7 +479,10 @@ function allDayDates(params: {
   const ruleMeetings = (day: Temporal.PlainDate): number[] | null => {
     const meetings: number[] = [];
     for (const rule of rules) {
-      if (isRuleDay(rule, anchor, day) === false) {
+      if (
+        isRuleDay(rule, anchor, day) === false ||
+        endedBefore(rule, anchor, day, timeZone)
+      ) {
         continue;
       }
       const times = ruleTimes(rule);

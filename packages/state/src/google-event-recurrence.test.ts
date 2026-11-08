@@ -1116,6 +1116,28 @@ describe("seriesRecurrenceForSave", () => {
       ]);
     });
 
+    test("doesn't count a rule that has ended as meeting", () => {
+      // Daily 9:00, plus 15:00 until Nov 10 (by UNTIL or COUNT): Nov 16's
+      // only meeting was skipped, so the day stays skipped.
+      // (An UNTIL takes the all-day form, a date.)
+      for (const [end, allDayEnd] of [
+        ["UNTIL=20261110T200000Z", "UNTIL=20261110"],
+        ["COUNT=2", "COUNT=2"],
+      ]) {
+        expect(
+          allDay([
+            "RRULE:FREQ=DAILY;BYHOUR=9",
+            `RRULE:FREQ=DAILY;BYHOUR=15;${end}`,
+            "EXDATE;TZID=America/New_York:20261116T090000",
+          ])
+        ).toEqual([
+          "RRULE:FREQ=DAILY",
+          `RRULE:FREQ=DAILY;${allDayEnd}`,
+          "EXDATE;VALUE=DATE:20261116",
+        ]);
+      }
+    });
+
     test("keeps a several-a-day day unless all its times were skipped", () => {
       // 9:00 and 15:00: only Nov 16's 15:00 skipped keeps Nov 16; both of
       // Nov 17's skipped skips the day. The rule loses its times.
