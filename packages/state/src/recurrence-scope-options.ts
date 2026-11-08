@@ -151,7 +151,8 @@ export interface EventSaveChanges {
   patternChanged: boolean;
   /**
    * The new repeat, counted from the series' first meeting as an Entire
-   * series save would, skips this occurrence, and why: its day (an
+   * series save would, no longer has this occurrence's original slot (so
+   * Google would cancel it, a moved one too), and why: its day (an
    * implicit day, an interval's phase) or its end (`repeatSkipsOccurrence`).
    */
   repeatSkips?: "day" | "end" | null;

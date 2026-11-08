@@ -639,9 +639,10 @@ export function repeatSkipsOccurrence(params: {
  * that a new repeat saved for the entire series would cancel: Google keeps
  * one only while the rule still produces its original slot. The day it's
  * on now in `timeZone` (the app's), for the scope dialog to name; null
- * when none would go, or before the series loads. Only the edited rule's: in a series with several
- * rules, a meeting at another rule's time is that rule's, which the save
- * keeps. The edited occurrence is `repeatSkipsOccurrence`'s.
+ * when none would go, or before the series loads. Only the edited rule's
+ * count: in a series of several rules, a meeting at another rule's time
+ * is that rule's, which the save keeps. The edited occurrence is
+ * `repeatSkipsOccurrence`'s.
  */
 export function movedMeetingDropped(params: {
   /** The series' occurrences the app has loaded (from its events cache). */
