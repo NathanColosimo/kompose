@@ -128,11 +128,18 @@ export function seriesRepeatForEdit(params: {
       : (params.seriesRecurrence ?? []),
   });
   const moved = Boolean(
-    occurrence && occurrenceDayMoved({ editedStart, occurrence, timeZone })
+    occurrence &&
+      occurrenceDayMoved({
+        editedEnd: edited.end,
+        editedStart,
+        occurrence,
+        timeZone,
+      })
   );
   const followed =
     occurrence && moved && !changed
       ? seriesRecurrenceForSave({
+          editedEnd: edited.end,
           editedStart,
           masterRecurrence: params.seriesRecurrence,
           masterStart: params.seriesStart,

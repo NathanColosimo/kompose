@@ -748,11 +748,13 @@ describe("seriesRecurrenceForSave", () => {
   const after = (recurrence?: string[]) =>
     seriesRecurrenceForSave({
       editedStart: { dateTime: "2026-11-14T16:00:00-05:00" },
+      editedEnd: { dateTime: "2026-11-14T16:00:00-05:00" },
       masterRecurrence: ["RRULE:FREQ=MONTHLY;BYDAY=1SA"],
       occurrence: {
         originalStartTime: { dateTime: "2026-11-07T16:00:00-05:00" },
         recurringEventId: "series",
         start: { dateTime: "2026-11-07T16:00:00-05:00" },
+        end: { dateTime: "2026-11-07T16:00:00-05:00" },
       },
       recurrence,
       timeZone: "America/New_York",
@@ -774,11 +776,13 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       seriesRecurrenceForSave({
         editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        editedEnd: { dateTime: "2026-11-10T09:00:00-05:00" },
         masterRecurrence: hourly,
         occurrence: {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-09T09:00:00-05:00" },
+          end: { dateTime: "2026-11-09T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1009,6 +1013,7 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       seriesRecurrenceForSave({
         editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        editedEnd: { dateTime: "2026-11-10T09:00:00-05:00" },
         masterRecurrence: [
           "RRULE:FREQ=WEEKLY;BYDAY=MO",
           "RDATE;TZID=America/New_York:20261110T150000",
@@ -1018,6 +1023,7 @@ describe("seriesRecurrenceForSave", () => {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-09T09:00:00-05:00" },
+          end: { dateTime: "2026-11-09T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1035,6 +1041,7 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-10" },
+        editedEnd: { date: "2026-11-10" },
         masterRecurrence: [
           "RRULE:FREQ=WEEKLY;BYDAY=MO",
           "RDATE;TZID=America/New_York:20261110T150000",
@@ -1044,6 +1051,7 @@ describe("seriesRecurrenceForSave", () => {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-09T09:00:00-05:00" },
+          end: { dateTime: "2026-11-09T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1058,11 +1066,13 @@ describe("seriesRecurrenceForSave", () => {
     const movedAllDay = (rule: string, exdate: string) =>
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-10" },
+        editedEnd: { date: "2026-11-10" },
         masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
         occurrence: {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-09T09:00:00-05:00" },
+          end: { dateTime: "2026-11-09T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1077,11 +1087,11 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
-  test("counts from the occurrence's place when its day didn't move", () => {
-    // Mon Nov 9, rescheduled before to Tue Nov 10, made all day there for
-    // the series: the day didn't move, so the client sends nothing, and the
-    // server lines the series' own rule up with its first day (Nov 9), the
-    // rule and its skip staying on the series' days (Nov 16, Dec 9).
+  test("sends nothing for an occurrence made all day on its own day", () => {
+    // Mon Nov 9 made all day there for the series: the day didn't move, so
+    // the client sends nothing, and the server lines the series' own rule
+    // up with its first day (Nov 9), the rule and its skip staying on the
+    // series' days (Nov 16, Dec 9).
     for (const [rule, exdate, expected] of [
       ["RRULE:FREQ=WEEKLY", "20261116T090000", "EXDATE;VALUE=DATE:20261116"],
       ["RRULE:FREQ=MONTHLY", "20261209T090000", "EXDATE;VALUE=DATE:20261209"],
@@ -1089,13 +1099,15 @@ describe("seriesRecurrenceForSave", () => {
       const recurrence = [rule, `EXDATE;TZID=America/New_York:${exdate}`];
       expect(
         seriesRecurrenceForSave({
-          editedStart: { date: "2026-11-10" },
+          editedStart: { date: "2026-11-09" },
+          editedEnd: { date: "2026-11-10" },
           masterRecurrence: recurrence,
           masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
           occurrence: {
             originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
             recurringEventId: "series",
-            start: { dateTime: "2026-11-10T09:00:00-05:00" },
+            start: { dateTime: "2026-11-09T09:00:00-05:00" },
+            end: { dateTime: "2026-11-09T09:30:00-05:00" },
           },
           recurrence: undefined,
           timeZone: "America/New_York",
@@ -1131,12 +1143,14 @@ describe("seriesRecurrenceForSave", () => {
       expect(
         seriesRecurrenceForSave({
           editedStart: { date: "2026-11-16" },
+          editedEnd: { date: "2026-11-16" },
           masterRecurrence: rule,
           masterStart,
           occurrence: {
             originalStartTime: { dateTime: "2026-11-16T09:00:00-05:00" },
             recurringEventId: "series",
             start: { dateTime: "2026-11-16T09:00:00-05:00" },
+            end: { dateTime: "2026-11-16T09:00:00-05:00" },
           },
           recurrence: undefined,
           timeZone: "America/New_York",
@@ -1157,12 +1171,14 @@ describe("seriesRecurrenceForSave", () => {
     const firstMovedAllDay = (rule: string, exdate: string) =>
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-03" },
+        editedEnd: { date: "2026-11-03" },
         masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
         masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
         occurrence: {
           originalStartTime: { dateTime: "2026-11-02T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-02T09:00:00-05:00" },
+          end: { dateTime: "2026-11-02T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1214,12 +1230,14 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       seriesRecurrenceForSave({
         editedStart: { date: "2026-11-12" },
+        editedEnd: { date: "2026-11-12" },
         masterRecurrence: recurrence,
         masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
         occurrence: {
           originalStartTime: { dateTime: "2026-11-12T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-12T09:00:00-05:00" },
+          end: { dateTime: "2026-11-12T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1376,11 +1394,13 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       seriesRecurrenceForSave({
         editedStart: { dateTime: "2026-11-09T10:00:00-05:00" },
+        editedEnd: { dateTime: "2026-11-09T10:00:00-05:00" },
         masterRecurrence: rules,
         occurrence: {
           originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-09T09:00:00-05:00" },
+          end: { dateTime: "2026-11-09T09:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1397,11 +1417,13 @@ describe("seriesRecurrenceForSave", () => {
     const save = (editedStart: { date?: string; dateTime?: string }) =>
       seriesRecurrenceForSave({
         editedStart,
+        editedEnd: editedStart,
         masterRecurrence: rule,
         occurrence: {
           originalStartTime: { dateTime: "2026-11-07T16:00:00-05:00" },
           recurringEventId: "series",
           start: { dateTime: "2026-11-07T16:00:00-05:00" },
+          end: { dateTime: "2026-11-07T16:00:00-05:00" },
         },
         recurrence: undefined,
         timeZone: "America/New_York",
@@ -1415,46 +1437,75 @@ describe("seriesRecurrenceForSave", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;UNTIL=20261205"]);
   });
 
-  test("follows only a day this edit moves, from the series' slot", () => {
-    // A Monday occurrence rescheduled to Tuesday before.
+  test("follows a day the save moves the series to, from its slot", () => {
+    // A Monday 9:00-9:30 occurrence rescheduled to Tuesday before.
     const rescheduled = {
+      end: { dateTime: "2026-11-10T09:30:00-05:00" },
       originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
       recurringEventId: "series",
       start: { dateTime: "2026-11-10T09:00:00-05:00" },
     };
-    const save = (dateTime: string) =>
+    const zone = "America/New_York";
+    const save = (start: string, end: string) =>
       seriesRecurrenceForSave({
-        editedStart: { dateTime },
+        editedEnd: { dateTime: end },
+        editedStart: { dateTime: start },
         masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
         occurrence: rescheduled,
         recurrence: undefined,
-        timeZone: "America/New_York",
+        timeZone: zone,
       });
-    // Only renamed: the series keeps its Mondays.
-    expect(save("2026-11-10T09:00:00-05:00")).toBeUndefined();
-    expect(
+    const moved = (start: string, end: string) =>
       occurrenceDayMoved({
-        editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        editedEnd: { dateTime: end },
+        editedStart: { dateTime: start },
         occurrence: rescheduled,
-        timeZone: "America/New_York",
-      })
-    ).toBe(false);
+        timeZone: zone,
+      });
+    // Only renamed: its times are kept, so the series keeps its Mondays.
+    const tue = [
+      "2026-11-10T09:00:00-05:00",
+      "2026-11-10T09:30:00-05:00",
+    ] as const;
+    expect(save(...tue)).toBeUndefined();
+    expect(moved(...tue)).toBe(false);
+    // New times there (only its end): the series would start on Tuesday.
+    const longer = [
+      "2026-11-10T09:00:00-05:00",
+      "2026-11-10T10:00:00-05:00",
+    ] as const;
+    expect(moved(...longer)).toBe(true);
+    expect(save(...longer)).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU"]);
     // Moved on to Wednesday: Mondays become Wednesdays.
-    expect(save("2026-11-11T09:00:00-05:00")).toEqual([
-      "RRULE:FREQ=WEEKLY;BYDAY=WE",
-    ]);
+    const wed = [
+      "2026-11-11T09:00:00-05:00",
+      "2026-11-11T09:30:00-05:00",
+    ] as const;
+    expect(save(...wed)).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+    // Moved back onto its own Monday: no new day for the series.
+    const mon = [
+      "2026-11-09T10:00:00-05:00",
+      "2026-11-09T10:30:00-05:00",
+    ] as const;
+    expect(moved(...mon)).toBe(false);
+    expect(save(...mon)).toBeUndefined();
   });
 
   test("counts days in the series' own zone", () => {
     // A Tuesday 9:00 Tokyo meeting moved to Wednesday 9:00, seen from New York.
     expect(
       seriesRecurrenceForSave({
+        editedEnd: {
+          dateTime: "2026-11-11T01:00:00.000Z",
+          timeZone: "Asia/Tokyo",
+        },
         editedStart: {
           dateTime: "2026-11-11T00:00:00.000Z",
           timeZone: "Asia/Tokyo",
         },
         masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
         occurrence: {
+          end: { dateTime: "2026-11-10T10:00:00+09:00" },
           originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
           recurringEventId: "series",
           start: {
@@ -1699,6 +1750,27 @@ describe("repeatSkipsOccurrence", () => {
   test("daily, or no repeat, never", () => {
     expect(off(["RRULE:FREQ=DAILY"])).toBe(false);
     expect(off([])).toBe(false);
+  });
+
+  test("an added meeting the series still lists keeps its slot", () => {
+    // Mondays from Nov 2 at 9:00, with Tue Nov 10 added on its own; the
+    // repeat becomes Mondays and Fridays, the added date kept.
+    const added = {
+      originalStartTime: { dateTime: "2026-11-10T09:00:00-05:00" },
+      recurringEventId: "m1",
+      start: { dateTime: "2026-11-10T09:00:00-05:00" },
+    };
+    expect(
+      repeatSkipsOccurrence({
+        occurrence: added,
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,FR",
+          "RDATE;TZID=America/New_York:20261110T090000",
+        ],
+        seriesStart: { dateTime: "2026-11-02T09:00:00-05:00" },
+        timeZone: zone,
+      })
+    ).toBeNull();
   });
 
   test("another rule that still meets at its slot keeps it", () => {
