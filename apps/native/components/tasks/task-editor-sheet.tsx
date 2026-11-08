@@ -612,12 +612,14 @@ function TaskScheduleChips({
   // A date, time or due chip: as wide as its text (the picker's trigger
   // otherwise spans its parent), so it fits any locale's format, with its
   // text centered when the chip grows. (Centering the text itself would
-  // make iOS measure it at the full width available.) The side padding
-  // grows with the text.
+  // make iOS measure it at the full width available.) Never under 44pt
+  // wide, for a short value like "Due"; the side padding grows with the
+  // text.
   const chipStyle = {
     borderRadius: 999,
     justifyContent: "center",
     minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: scaled(6),
     width: "auto",
   } as const;
@@ -705,52 +707,49 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Due and Repeat stay together when the row wraps. */}
-      <View className="max-w-full flex-row items-center gap-1">
-        <View style={{ flexShrink: 1 }}>
-          <DatePicker
-            accessibilityLabel="Due date"
-            displayValue={
-              draft.dueDate ? `Due ${formatShortDate(draft.dueDate)}` : "Due"
-            }
-            mode="date"
-            onChange={(date) =>
-              setDraft((current) => ({
-                ...current,
-                dueDate: date ? dateToPlainDate(date) : null,
-              }))
-            }
-            placeholder="Due"
-            showIcon={false}
-            style={chipStyle}
-            value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={CHIP_TEXT_STYLE}
-            variant="outline"
-          />
-        </View>
-
-        <Button
-          accessibilityLabel="Repeat"
-          accessibilityState={{ expanded: isRecurrenceExpanded }}
-          accessibilityValue={{
-            text: draft.recurrence ? recurrenceSummary : "None",
-          }}
-          onPress={onToggleRecurrence}
-          size="icon"
-          style={{ borderRadius: 999, height: 44, width: 44 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
+      {/* Due and Repeat wrap on their own: when the due date needs a whole
+          line, Repeat moves to the next one rather than squeezing it. */}
+      <View style={{ maxWidth: "100%" }}>
+        <DatePicker
+          accessibilityLabel="Due date"
+          displayValue={
+            draft.dueDate ? `Due ${formatShortDate(draft.dueDate)}` : "Due"
+          }
+          mode="date"
+          onChange={(date) =>
+            setDraft((current) => ({
+              ...current,
+              dueDate: date ? dateToPlainDate(date) : null,
+            }))
+          }
+          placeholder="Due"
+          showIcon={false}
+          style={chipStyle}
+          value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
+          valueTextStyle={CHIP_TEXT_STYLE}
+          variant="outline"
+        />
       </View>
+
+      <Button
+        accessibilityLabel="Repeat"
+        accessibilityState={{ expanded: isRecurrenceExpanded }}
+        accessibilityValue={{
+          text: draft.recurrence ? recurrenceSummary : "None",
+        }}
+        onPress={onToggleRecurrence}
+        size="icon"
+        style={{ borderRadius: 999, height: 44, width: 44 }}
+        variant={isRecurrenceExpanded ? "default" : "outline"}
+      >
+        <Icon
+          as={Repeat2}
+          className={
+            isRecurrenceExpanded ? "text-primary-foreground" : "text-foreground"
+          }
+          size={14}
+        />
+      </Button>
     </View>
   );
 }
