@@ -1446,6 +1446,12 @@ export default function CalendarTab() {
 
   const buildEventPayload = useCallback(
     (currentDraft: EventDraft) => {
+      // An existing event keeps its own zone (Google repeats a series in
+      // its start's zone); a new one takes the app's.
+      const zone = eventTimeZone(
+        currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined,
+        timeZone
+      );
       let startPayload: { date?: string; dateTime?: string; timeZone?: string };
       let endPayload: { date?: string; dateTime?: string; timeZone?: string };
 
@@ -1461,12 +1467,6 @@ export default function CalendarTab() {
         const endZdt = combineDateTime(
           currentDraft.endDate,
           currentDraft.endTime ?? Temporal.PlainTime.from("10:00"),
-          timeZone
-        );
-        // An existing event keeps its own zone (Google repeats a series
-        // in its start's zone); a new one takes the app's.
-        const zone = eventTimeZone(
-          currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined,
           timeZone
         );
         startPayload = {
@@ -1488,7 +1488,7 @@ export default function CalendarTab() {
         recurrence: matchedRecurrence(
           recurrenceToSend(currentDraft, masterRecurrence),
           currentDraft.allDay,
-          timeZone
+          zone
         ),
         start: startPayload,
         summary: currentDraft.summary.trim(),

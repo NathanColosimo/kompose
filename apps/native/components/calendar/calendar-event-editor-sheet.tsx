@@ -19,6 +19,7 @@ import {
   defaultUntilDay,
   type EventRecurrenceFrequency,
   type EventRecurrencePattern,
+  eventTimeZone,
   followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
@@ -209,6 +210,7 @@ function RecurrenceEditorSection({
   parsedRecurrence,
   rule,
   startDate,
+  timeZone,
   updateRecurrence,
   applyPrimaryRecurrenceRule,
 }: {
@@ -219,6 +221,8 @@ function RecurrenceEditorSection({
   rule: string | undefined;
   /** Its weekday and day of the month are the series' defaults. */
   startDate: Temporal.PlainDate;
+  /** The series' zone, where its end day is counted. */
+  timeZone: string;
   updateRecurrence: (patch: RecurrencePatch) => void;
   applyPrimaryRecurrenceRule: (rule: string | null) => void;
 }) {
@@ -319,6 +323,7 @@ function RecurrenceEditorSection({
           allDay={allDay}
           parsedRecurrence={parsedRecurrence}
           startDate={startDate}
+          timeZone={timeZone}
           updateRecurrence={updateRecurrence}
         />
       )}
@@ -443,16 +448,17 @@ function RecurrenceEndSection({
   allDay,
   parsedRecurrence,
   startDate,
+  timeZone,
   updateRecurrence,
 }: {
   allDay: boolean;
   parsedRecurrence: EventRecurrencePattern;
   startDate: Temporal.PlainDate;
+  /** The series' zone, where its end day is counted. */
+  timeZone: string;
   updateRecurrence: (patch: RecurrencePatch) => void;
 }) {
   const { end } = parsedRecurrence;
-  // The zone the app shows and saves times in.
-  const timeZone = useAtomValue(timezoneAtom);
   const untilDay =
     end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
   return (
@@ -1060,6 +1066,7 @@ function EventDateTimeRow({
   startDate,
   startDatePickerValue,
   startTimePickerValue,
+  timeZone,
 }: {
   allDay: boolean;
   endDate: Temporal.PlainDate;
@@ -1075,8 +1082,9 @@ function EventDateTimeRow({
   startDate: Temporal.PlainDate;
   startDatePickerValue: Date;
   startTimePickerValue: Date;
+  /** The series' zone, where its days count. */
+  timeZone: string;
 }) {
-  const timeZone = useAtomValue(timezoneAtom);
   // Moving the start keeps the event's length (shared with web).
   const moveStart = (next: {
     date?: Temporal.PlainDate;
@@ -1296,6 +1304,7 @@ export function EventEditorSheet({
   onDelete,
   calendarOptions,
 }: EventEditorSheetProps) {
+  const appTimeZone = useAtomValue(timezoneAtom);
   const { getValues, handleSubmit, reset, setValue, watch } =
     useForm<EventDraft>({ defaultValues: draft });
   const values = watch();
@@ -1384,6 +1393,9 @@ export function EventEditorSheet({
     location.trim().length > 0 ? getMapsSearchUrl(location) : null;
 
   const sourceEvent = draft.mode === "edit" ? draft.sourceEvent : undefined;
+  // An existing series' days (its end day, its start's weekday) count in
+  // its own zone; a new event's in the app's.
+  const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1423,6 +1435,7 @@ export function EventEditorSheet({
       recurrence={recurrence}
       rule={primaryRule}
       startDate={values.startDate}
+      timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
     />
   );
@@ -1552,6 +1565,7 @@ export function EventEditorSheet({
           startDate={startDate}
           startDatePickerValue={startDatePickerValue}
           startTimePickerValue={startTimePickerValue}
+          timeZone={seriesTimeZone}
         />
         {/* Save stays off until the end comes after the start; say why. */}
         {endsAfterStart(values) ? null : (

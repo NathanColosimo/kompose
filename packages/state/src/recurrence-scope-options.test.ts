@@ -76,6 +76,13 @@ test("says why the scopes are what they are", () => {
     })
   ).toBe("A new day in Tokyo time applies to this occurrence, or from it on.");
   expect(
+    eventSaveDescription({
+      ...none,
+      dateMoved: true,
+      seriesTimeZone: "Etc/GMT-9",
+    })
+  ).toBe("A new day applies to this occurrence, or from it on.");
+  expect(
     eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
   ).toBe("Moving to another calendar moves the whole series.");
 });

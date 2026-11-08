@@ -76,9 +76,14 @@ export interface EventSaveChanges {
   seriesTimeZone?: string;
 }
 
-/** "Tokyo" for "Asia/Tokyo", "New York" for "America/New_York". */
-function zoneCity(timeZone: string): string {
-  return (timeZone.split("/").at(-1) ?? timeZone).replace(/_/g, " ");
+/**
+ * "Tokyo" for "Asia/Tokyo", "New York" for "America/New_York"; null for a
+ * zone that isn't a place ("UTC", "Etc/GMT-9", whose sign reads backwards).
+ */
+function zoneCity(timeZone: string): string | null {
+  const [area, ...rest] = timeZone.split("/");
+  const city = rest.at(-1);
+  return area === "Etc" || !city ? null : city.replace(/_/g, " ");
 }
 
 /**
@@ -133,7 +138,8 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
       ? SCOPE_DIALOG_COPY.seriesFailed
       : SCOPE_DIALOG_COPY.seriesLoading;
   }
-  return changes.seriesTimeZone
-    ? `A new day in ${zoneCity(changes.seriesTimeZone)} time applies to this occurrence, or from it on.`
+  const city = changes.seriesTimeZone ? zoneCity(changes.seriesTimeZone) : null;
+  return city
+    ? `A new day in ${city} time applies to this occurrence, or from it on.`
     : SCOPE_DIALOG_COPY.moveDate;
 }

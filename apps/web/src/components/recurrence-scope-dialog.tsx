@@ -86,12 +86,19 @@ export function RecurrenceScopeDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {/* What's being saved, when the dialog opens away from its editor
-              (a drop on the grid): "Retro → Mon, Nov 9 · 4 – 4:45 PM". */}
-          {subject ? (
-            <p className="font-medium text-foreground text-sm">{subject}</p>
-          ) : null}
-          {description ? (
-            <DialogDescription>{description}</DialogDescription>
+              (a drop on the grid): "Retro → Mon, Nov 9 · 4 – 4:45 PM". Part
+              of the description, so a screen reader says it too. */}
+          {subject || description ? (
+            <DialogDescription className="space-y-1">
+              {subject ? (
+                <span className="block font-medium text-foreground">
+                  {subject}
+                </span>
+              ) : null}
+              {description ? (
+                <span className="block">{description}</span>
+              ) : null}
+            </DialogDescription>
           ) : null}
         </DialogHeader>
 

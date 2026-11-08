@@ -39,14 +39,7 @@ import {
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
@@ -110,8 +103,6 @@ function droppedSubject(
 /** A recurring event's dropped move or resize, waiting for its scope. */
 interface PendingGoogleUpdate {
   occurrence: GoogleEvent;
-  /** Where it was dropped, kept outlined while the scope is asked. */
-  rect: PreviewRect | null;
   update: UpdateGoogleEventInput;
 }
 
@@ -199,13 +190,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [pendingGoogleUpdate, setPendingGoogleUpdate] =
     useState<PendingGoogleUpdate | null>(null);
   const [googleScope, setGoogleScope] = useState<RecurrenceScope>("this");
-  // The last drop outline shown, for a drop that waits on its scope.
-  const shownPreviewRef = useRef<PreviewRect | null>(null);
-  useEffect(() => {
-    if (previewRect) {
-      shownPreviewRef.current = previewRect;
-    }
-  }, [previewRect]);
   const pendingMaster = useRecurringEventMaster({
     accountId: pendingGoogleUpdate?.update.accountId ?? "",
     calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
@@ -329,11 +313,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       const update = buildGoogleMoveUpdate(data, start);
       if (data.event.recurringEventId) {
         setGoogleScope("this");
-        setPendingGoogleUpdate({
-          occurrence: data.event,
-          rect: shownPreviewRef.current,
-          update,
-        });
+        setPendingGoogleUpdate({ occurrence: data.event, update });
         return;
       }
       updateGoogleEventMutation.mutate(update);
@@ -355,11 +335,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
       if (data.event.recurringEventId) {
         setGoogleScope("this");
-        setPendingGoogleUpdate({
-          occurrence: data.event,
-          rect: shownPreviewRef.current,
-          update,
-        });
+        setPendingGoogleUpdate({ occurrence: data.event, update });
         return;
       }
 
@@ -815,20 +791,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
         ) : null}
       </DndContext>
-
-      {/* The drop stays outlined under the scope dialog. */}
-      {pendingGoogleUpdate?.rect ? (
-        <div
-          aria-hidden
-          className="pointer-events-none fixed z-30 rounded-md border-2 border-primary/70 bg-primary/10"
-          style={{
-            height: pendingGoogleUpdate.rect.height,
-            left: pendingGoogleUpdate.rect.left,
-            top: pendingGoogleUpdate.rect.top,
-            width: pendingGoogleUpdate.rect.width,
-          }}
-        />
-      ) : null}
 
       <RecurrenceScopeDialog
         description={
