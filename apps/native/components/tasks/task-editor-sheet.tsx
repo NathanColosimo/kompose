@@ -524,7 +524,8 @@ function TaskEditorHeaderActions({
         >
           <Icon
             as={Check}
-            className={canSave ? "text-green-500" : "text-muted-foreground"}
+            // Ink, not a light green: it reads on the cream sheet.
+            className={canSave ? "text-primary" : "text-muted-foreground"}
             size={18}
           />
         </Button>

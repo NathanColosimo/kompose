@@ -321,6 +321,63 @@ describe("followStart", () => {
     ]);
   });
 
+  test("moves weekly skips by the move, across a week's end", () => {
+    const followed = (recurrence: string[], from: string, to: string) =>
+      followStart({
+        allDay: true,
+        from: day(from),
+        recurrence,
+        timeZone: zone,
+        to: day(to),
+      });
+    const cases: [string, string, string, string, string][] = [
+      // Sundays -> Mondays: the skipped Nov 22 is Nov 23.
+      [
+        "RRULE:FREQ=WEEKLY;BYDAY=SU",
+        "2026-11-08",
+        "2026-11-09",
+        "20261122",
+        "20261123",
+      ],
+      // Fridays -> Mondays: Nov 27 is Nov 30.
+      [
+        "RRULE:FREQ=WEEKLY;BYDAY=FR",
+        "2026-11-13",
+        "2026-11-16",
+        "20261127",
+        "20261130",
+      ],
+      // Mondays -> the Sunday before: Nov 23 is Nov 22.
+      [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "2026-11-09",
+        "2026-11-08",
+        "20261123",
+        "20261122",
+      ],
+      // Every 2 weeks on Sunday -> Monday: Nov 22 is Nov 23.
+      [
+        "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU",
+        "2026-11-08",
+        "2026-11-09",
+        "20261122",
+        "20261123",
+      ],
+    ];
+    for (const [rule, from, to, skipped, moved] of cases) {
+      const next = followed([rule, `EXDATE;VALUE=DATE:${skipped}`], from, to);
+      expect(next[1]).toBe(`EXDATE;VALUE=DATE:${moved}`);
+    }
+    // Every other day moved a day later: the skipped Nov 13 is Nov 14.
+    expect(
+      followed(
+        ["RRULE:FREQ=DAILY;INTERVAL=2", "EXDATE;VALUE=DATE:20261113"],
+        "2026-11-09",
+        "2026-11-10"
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;INTERVAL=2", "EXDATE;VALUE=DATE:20261114"]);
+  });
+
   test("moves skips across month and year ends, and BYSETPOS ones", () => {
     const followed = (recurrence: string[], from: string, to: string) =>
       followStart({

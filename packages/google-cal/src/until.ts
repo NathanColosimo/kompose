@@ -305,10 +305,25 @@ function firstRuleDayIn(
 }
 
 /**
- * Where a skipped occurrence of the old pattern sits in the new one: the
- * same week's new weekday (weekly); the new rule's day in the period as
- * many periods after the new start as the skip was after the old one
- * (monthly, yearly). A daily skip is a date and never moves.
+ * The move's shift within one repeat period (`period` days), in its
+ * direction: Fri -> Mon is +3 days, Mon -> the next week's Wed +2, and
+ * Mon -> the Sunday before -1. Every occurrence moves by it.
+ */
+function shiftWithinPeriod(
+  from: Temporal.PlainDate,
+  to: Temporal.PlainDate,
+  period: number
+): number {
+  const days = from.until(to).days;
+  const forward = ((days % period) + period) % period;
+  return days >= 0 || forward === 0 ? forward : forward - period;
+}
+
+/**
+ * Where a skipped occurrence of the old pattern sits in the new one: moved
+ * as the pattern did, within one period (daily or weekly, by its
+ * INTERVAL); the new rule's day in the period as many periods after the
+ * new start as the skip was after the old one (monthly, yearly).
  */
 function placeInNewPattern(
   freq: string,
@@ -317,8 +332,10 @@ function placeInNewPattern(
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): Temporal.PlainDate | null {
-  if (freq === "WEEKLY") {
-    return day.add({ days: to.dayOfWeek - from.dayOfWeek });
+  const interval = Number(/INTERVAL=(\d+)/.exec(newRule)?.[1] ?? 1) || 1;
+  if (freq === "DAILY" || freq === "WEEKLY") {
+    const period = freq === "WEEKLY" ? 7 * interval : interval;
+    return day.add({ days: shiftWithinPeriod(from, to, period) });
   }
   if (freq === "MONTHLY") {
     const months = (day.year - from.year) * 12 + day.month - from.month;

@@ -653,21 +653,37 @@ export function makeGoogleCalendarService(
   const keepOccurrenceInMovedSeries = (params: {
     calendarId: string;
     instance: Event;
+    master: Event;
     seriesId: string;
     slot: { end: Event["end"]; start: Event["start"] };
   }) =>
     Effect.gen(function* () {
-      const { calendarId, instance, seriesId, slot } = params;
+      const { calendarId, instance, master, seriesId, slot } = params;
       const sameMoment = (a: Event["start"], b: Event["start"]) =>
         (a.date ?? Date.parse(a.dateTime ?? "")) ===
         (b.date ?? Date.parse(b.dateTime ?? ""));
-      if (
-        sameMoment(instance.start, slot.start) &&
-        sameMoment(instance.end, slot.end) &&
-        !instance.originalStartTime
-      ) {
+      // Only an occurrence that differs from the series gets written:
+      // otherwise its first meeting would become an exception for nothing.
+      const differs =
+        !sameMoment(instance.start, slot.start) ||
+        !sameMoment(instance.end, slot.end) ||
+        (["summary", "description", "location", "colorId"] as const).some(
+          (field) => (instance[field] ?? "") !== (master[field] ?? "")
+        );
+      if (!differs) {
         return;
       }
+      const logged = (cause: unknown) => {
+        logGoogleEventUpdateFailure({
+          operation: "update",
+          calendarId,
+          eventId: seriesId,
+          scope: "following-move-occurrence",
+          event: sanitizeEventPayload(instance),
+          cause,
+        });
+        return new GoogleApiError({ cause });
+      };
       const originalStart = slot.start.dateTime ?? slot.start.date;
       const listed = yield* Effect.tryPromise({
         try: () =>
@@ -676,10 +692,11 @@ export function makeGoogleCalendarService(
             maxResults: 1,
             originalStart,
           }),
-        catch: (cause) => new GoogleApiError({ cause }),
+        catch: logged,
       });
       const parsed = EventSchema.safeParse(listed.items?.[0]);
       if (!parsed.success) {
+        logged(parsed.error);
         return;
       }
       const first = parsed.data;
@@ -695,17 +712,7 @@ export function makeGoogleCalendarService(
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(first.id, { ...payload, calendarId }),
-        catch: (cause) => {
-          logGoogleEventUpdateFailure({
-            operation: "update",
-            calendarId,
-            eventId: first.id,
-            scope: "following-move-occurrence",
-            event: payload,
-            cause,
-          });
-          return new GoogleApiError({ cause });
-        },
+        catch: logged,
       });
     }).pipe(Effect.catch(() => Effect.void));
 
@@ -1256,6 +1263,7 @@ export function makeGoogleCalendarService(
         yield* keepOccurrenceInMovedSeries({
           calendarId: destinationCalendarId,
           instance,
+          master,
           seriesId: createdParsed.data.id,
           slot,
         });

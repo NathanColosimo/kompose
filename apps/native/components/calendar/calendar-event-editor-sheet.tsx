@@ -308,7 +308,8 @@ function RecurrenceEditorSection({
                   }}
                   variant={selected ? "default" : "outline"}
                 >
-                  <Text>{weekday.label.slice(0, 1)}</Text>
+                  {/* Two letters, so Saturday and Sunday read apart. */}
+                  <Text>{weekday.label.slice(0, 2)}</Text>
                 </Button>
               );
             })}
@@ -874,7 +875,8 @@ function EventEditorHeaderRight({
       >
         <Icon
           as={Check}
-          className={canSubmit ? "text-green-500" : "text-muted-foreground"}
+          // Ink, not a light green: it reads on the cream sheet.
+          className={canSubmit ? "text-primary" : "text-muted-foreground"}
           size={18}
         />
       </Button>
