@@ -77,21 +77,29 @@ function editCachedEvents(
   );
 }
 
-/** The cached copy of an event, from any of its calendar's lists. */
-function cachedEvent(
+/** Each cached list of a calendar's events that has the event, with its copy. */
+interface CachedCopy {
+  event: Event;
+  key: readonly unknown[];
+}
+
+/**
+ * The event's copy in each of its calendar's cached lists that has it: an
+ * event over a month's end is in two, maybe fetched at different times.
+ */
+function cachedCopies(
   queryClient: QueryClient,
   queryKey: readonly unknown[],
   eventId: string
-): Event | undefined {
-  for (const [, events] of queryClient.getQueriesData<Event[]>({ queryKey })) {
-    const found = Array.isArray(events)
-      ? events.find((event) => event.id === eventId)
-      : undefined;
-    if (found) {
-      return found;
-    }
-  }
-  return undefined;
+): CachedCopy[] {
+  return queryClient
+    .getQueriesData<Event[]>({ queryKey })
+    .flatMap(([key, events]) => {
+      const event = Array.isArray(events)
+        ? events.find((cached) => cached.id === eventId)
+        : undefined;
+      return event ? [{ event, key }] : [];
+    });
 }
 
 /** What a create's optimistic write left to undo: its stand-in's id. */
@@ -188,7 +196,8 @@ function updatesAtOnce(variables: UpdateGoogleEventVariables): boolean {
 /**
  * An update: for one occurrence, unless the editor holds the save
  * (`optimistic: false`), the event changes in the cached lists at once,
- * and on failure its old copy comes back where the edit still shows. A
+ * and on failure each list's old copy comes back where the edit still
+ * shows. A
  * failure is reported unless the editor says it (`quiet`).
  */
 export function updateGoogleEventMutationOptions(
@@ -209,12 +218,12 @@ export function updateGoogleEventMutationOptions(
       // first; anything else has nothing to put back on failure (putting a
       // snapshot back would undo what a refetch brought meanwhile).
       if (!updatesAtOnce(variables)) {
-        return { previous: undefined };
+        return { previous: [] };
       }
       const queryKey = getGoogleEventsByCalendarQueryKey(variables);
       await queryClient.cancelQueries({ queryKey });
 
-      const previous = cachedEvent(queryClient, queryKey, variables.eventId);
+      const previous = cachedCopies(queryClient, queryKey, variables.eventId);
       editCachedEvents(queryClient, variables, (events) =>
         events.map((event) =>
           event.id === variables.eventId ? variables.event : event
@@ -226,18 +235,18 @@ export function updateGoogleEventMutationOptions(
     onError: (
       err: Error,
       variables: UpdateGoogleEventVariables,
-      context: { previous: Event | undefined } | undefined
+      context: { previous: CachedCopy[] } | undefined
     ) => {
       reportHeldSaveFailure(notifyError, err, variables);
-      const previous = context?.previous;
-      if (previous) {
-        // Only where the edit still shows: a newer copy a refetch brought
-        // stays (`replaceEqualDeep` keeps the cached copy when it's equal).
-        editCachedEvents(queryClient, variables, (events) =>
-          events.map((event) =>
+      // Each list gets its own old copy back, and only where the edit
+      // still shows: a newer copy a refetch brought stays
+      // (`replaceEqualDeep` keeps the cached copy when it's equal).
+      for (const { event: old, key } of context?.previous ?? []) {
+        queryClient.setQueryData<Event[]>(key, (events) =>
+          events?.map((event) =>
             event.id === variables.eventId &&
             replaceEqualDeep(event, variables.event) === event
-              ? previous
+              ? old
               : event
           )
         );
@@ -286,14 +295,11 @@ export function deleteGoogleEventMutationOptions(
       await queryClient.cancelQueries({ queryKey });
 
       // The lists it leaves, each with its copy, to put back on failure.
-      const removedFrom = queryClient
-        .getQueriesData<Event[]>({ queryKey })
-        .flatMap(([key, events]) => {
-          const removed = Array.isArray(events)
-            ? events.find((event) => event.id === variables.eventId)
-            : undefined;
-          return removed ? [{ key, removed }] : [];
-        });
+      const removedFrom = cachedCopies(
+        queryClient,
+        queryKey,
+        variables.eventId
+      );
       editCachedEvents(queryClient, variables, (events) =>
         events.filter((event) => event.id !== variables.eventId)
       );
@@ -303,14 +309,12 @@ export function deleteGoogleEventMutationOptions(
     onError: (
       err: Error,
       variables: DeleteEventInput & HeldSave,
-      context:
-        | { removedFrom: { key: readonly unknown[]; removed: Event }[] }
-        | undefined
+      context: { removedFrom: CachedCopy[] } | undefined
     ) => {
       reportHeldSaveFailure(notifyError, err, variables);
       // Back in each list it left, unless a refetch already brought it;
       // the refetch after then orders it.
-      for (const { key, removed } of context?.removedFrom ?? []) {
+      for (const { event: removed, key } of context?.removedFrom ?? []) {
         queryClient.setQueryData<Event[]>(key, (events) =>
           Array.isArray(events) &&
           !events.some((event) => event.id === removed.id)

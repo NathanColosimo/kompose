@@ -59,18 +59,21 @@ const refused = () => Promise.reject(new Error("refused"));
 
 const removal = { ...calendar, eventId: "event", scope: "following" as const };
 
-/** A delete the server refuses, and what the app and cache were left with. */
-async function failedDelete(held: {
-  failureMessage?: string;
-  quiet?: boolean;
-}) {
+/**
+ * A delete the server refuses, after the realtime sync gives November
+ * `refreshed`, and what the app and cache were left with.
+ */
+async function failedDelete(
+  held: { failureMessage?: string; quiet?: boolean },
+  refreshed: unknown[] = [{ id: "other" }, { id: "new" }]
+) {
   const told: Error[] = [];
   const queryClient = new QueryClient();
   queryClient.setQueryData(november, [{ id: "event" }, { id: "other" }]);
   // October's list doesn't have it.
   queryClient.setQueryData(october, [{ id: "earlier" }]);
   const server = stubbedServer(queryClient, "delete", refused, () =>
-    queryClient.setQueryData(november, [{ id: "other" }, { id: "new" }])
+    queryClient.setQueryData(november, refreshed)
   );
   const observer = new MutationObserver(
     queryClient,
@@ -118,6 +121,13 @@ test("the event leaves the list at once, and comes back on failure", async () =>
   expect(octoberAfter).toEqual([{ id: "earlier" }]);
 });
 
+test("a failed delete doesn't add the event twice where a refetch brought it", async () => {
+  // The server still had it while the delete was out.
+  const refreshed = [{ id: "event" }, { id: "new" }];
+  const { novemberAfter } = await failedDelete({ quiet: true }, refreshed);
+  expect(novemberAfter).toEqual(refreshed);
+});
+
 // --- update ---
 
 /**
@@ -127,11 +137,13 @@ test("the event leaves the list at once, and comes back on failure", async () =>
  */
 async function update(params: {
   answer: () => Promise<unknown>;
+  before?: (queryClient: QueryClient) => void;
   meanwhile?: (queryClient: QueryClient) => void;
   variables?: Partial<UpdateGoogleEventVariables>;
 }) {
   const queryClient = new QueryClient();
   queryClient.setQueryData(november, [standup]);
+  params.before?.(queryClient);
   const server = stubbedServer(queryClient, "update", params.answer, () =>
     params.meanwhile?.(queryClient)
   );
@@ -152,6 +164,7 @@ async function update(params: {
     .catch(() => undefined);
   return {
     after: queryClient.getQueryData(november),
+    octoberAfter: queryClient.getQueryData(october),
     whileSent: server.whileSent,
   };
 }
@@ -197,6 +210,18 @@ test("a failed optimistic update puts back only that event", async () => {
   });
   expect(whileSent).toEqual([[{ ...standup, summary: "Planning" }]]);
   expect(after).toEqual([standup, { id: "new" }]);
+});
+
+test("a failed optimistic update puts each list's own copy back", async () => {
+  // Over the month's end, the event is in October's list too, there in an
+  // older copy than November's.
+  const older = { ...standup, summary: "Old title" };
+  const { after, octoberAfter } = await update({
+    answer: refused,
+    before: (queryClient) => queryClient.setQueryData(october, [older]),
+  });
+  expect(octoberAfter).toEqual([older]);
+  expect(after).toEqual([standup]);
 });
 
 test("a failed optimistic update keeps a newer copy of the event", async () => {
