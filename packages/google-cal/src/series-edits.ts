@@ -54,7 +54,14 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences": {
       const days = refusal.originalStarts.map(dayName).join(", ");
-      return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.`;
+      // The editor shows it where the save was made: from there, the save
+      // can go to this occurrence alone, or start after the last one.
+      const last = refusal.originalStarts
+        .map((start) => start.slice(0, 10))
+        .sort()
+        .at(-1);
+      const after = last ? ` from an occurrence after ${dayName(last)}` : "";
+      return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it for this occurrence only, or with This and following${after}.`;
     }
     default:
       return refusal satisfies never;

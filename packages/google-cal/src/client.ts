@@ -41,6 +41,7 @@ import {
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
   parseDateList,
+  type RecurrenceValue,
   readRecurrenceValue,
   startInstant,
   untilMoment,
@@ -127,44 +128,123 @@ function timeOfDayChange(
 }
 
 /**
- * Where the skips for occurrences deleted on their own (`cancelled`,
- * original starts) go when a series that meets once a day moves to
- * `start`'s time of day. A rule's (or the start's) meeting moves there,
- * so its skip is placed there as final (`atNewTime`), whatever rule the
- * edit sends (BYHOUR=10 with a 10:00 start reads as a time of its own
- * against the old start); never onto an added (RDATE) meeting that's
- * still on, which it would cancel. An added meeting keeps its time, so
- * its skip is lined up with the rule like any other (`withRule`), and is
- * placed at the new time too only if a rule or the start met there as
- * well. All of them go `withRule` when the time of day doesn't change or
- * the series meets several times a day.
+ * A skip's key: its moment, or its date for an all-day one.
  */
-function placeSkips(
-  cancelled: string[],
-  master: Event,
-  start: Event["start"]
-): { atNewTime: string[]; withRule: string[] } {
-  const zone = seriesZoneOf(master);
-  const recurrence = master.recurrence ?? [];
-  const change = timeOfDayChange(master, start);
-  if (!change || meetsSeveralTimesADay(recurrence, change.from)) {
-    return { atNewTime: [], withRule: cancelled };
+function skipKey(value: RecurrenceValue): string {
+  return value.instant
+    ? String(value.instant.epochMilliseconds)
+    : value.day.toString();
+}
+
+/** The values of `recurrence`'s skip (EXDATE) lines, read in `zone`. */
+function skippedValues(recurrence: string[], zone: string): RecurrenceValue[] {
+  return recurrence.flatMap((line) => {
+    const list = line.startsWith("EXDATE") ? parseDateList(line, zone) : null;
+    return (list?.values ?? []).flatMap((value) => {
+      const read = list && readRecurrenceValue(value, list.zone, zone);
+      return read ? [read] : [];
+    });
+  });
+}
+
+/**
+ * `recurrence` with the occurrences at `starts` (original starts, as
+ * Google writes them) skipped, each once: a skip it already has (read in
+ * the series' `zone`) isn't written again. Unchanged when it doesn't
+ * repeat.
+ */
+function skipping(
+  recurrence: string[],
+  starts: string[],
+  zone: string
+): string[] {
+  if (starts.length === 0 || !repeats(recurrence)) {
+    return recurrence;
   }
-  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const skipped = new Set(skippedValues(recurrence, zone).map(skipKey));
+  const fresh = starts.filter((start) => {
+    const value = readRecurrenceValue(start, zone, zone);
+    return !(value && skipped.has(skipKey(value)));
+  });
+  if (fresh.length === 0) {
+    return recurrence;
+  }
+  const dates = fresh
+    .filter((start) => DATE_ONLY.test(start))
+    .map((start) => start.replace(/-/g, ""));
+  const times = fresh
+    .filter((start) => !DATE_ONLY.test(start))
+    .map((start) =>
+      Temporal.Instant.from(start)
+        .toString({ smallestUnit: "second" })
+        .replace(/[-:]/g, "")
+    );
+  return [
+    ...recurrence,
+    ...(dates.length > 0 ? [`EXDATE;VALUE=DATE:${dates.join(",")}`] : []),
+    ...(times.length > 0 ? [`EXDATE:${times.join(",")}`] : []),
+  ];
+}
+
+/**
+ * The rule a series is written with once it starts at `start`: `rule`
+ * (the one being saved) lined up with that start, with the occurrences
+ * deleted on their own (`cancelled`) skipped.
+ *
+ * When a series that meets once a day moves to another time of day,
+ * every skip, those `rule` already has as well as `cancelled`, is placed
+ * once, as the meetings move, whatever times the rule sends (BYHOUR=10
+ * with a 10:00 start reads as a time of its own against the old start):
+ * - a rule's (or the start's) meeting moves to the new time on its day,
+ *   so its skip goes there, added after the rule is lined up, and never
+ *   onto an added (RDATE) meeting the saved series still has on;
+ * - an added meeting keeps its time, so its skip is lined up with the
+ *   rule like any other, and is placed at the new time too only if a
+ *   rule or the start met there as well.
+ * Otherwise the skips are lined up with the rule as it is.
+ */
+function lineUpRule(params: {
+  cancelled: string[];
+  master: Event;
+  rule: string[];
+  /** A split's original start (see `ruleForStart`). */
+  splitAt?: string;
+  start: Event["start"];
+}): string[] {
+  const { cancelled, master, rule, splitAt, start } = params;
+  const zone = seriesZoneOf(master);
+  const before = master.recurrence ?? [];
+  const change = timeOfDayChange(master, start);
+  if (!change || meetsSeveralTimesADay(before, change.from)) {
+    return (
+      ruleForStart(skipping(rule, cancelled, zone), master, start, splitAt) ??
+      []
+    );
+  }
+  // The rule's own timed skips are placed with the deleted occurrences.
+  const ownSkips = skippedValues(rule, zone).filter((value) => value.instant);
+  const rest = rule.filter(
+    (line) =>
+      !(
+        line.startsWith("EXDATE") &&
+        skippedValues([line], zone).every((value) => value.instant)
+      )
+  );
+  const slotOfValue = (value: RecurrenceValue) =>
+    (value.instant as Temporal.Instant)
+      .toZonedDateTimeISO(zone)
+      .toString({ smallestUnit: "second", timeZoneName: "never" });
+  const deleted = [...cancelled, ...ownSkips.map(slotOfValue)];
+  const rules = before.filter((line) => line.startsWith("RRULE:"));
   const atNewTime: string[] = [];
   const withRule: string[] = [];
-  for (const slot of cancelled) {
+  for (const slot of deleted) {
     const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
     if (!moment) {
       withRule.push(slot);
       continue;
     }
-    const moved = moment
-      .toZonedDateTimeISO(zone)
-      .toPlainDate()
-      .toZonedDateTime({ plainTime: change.to, timeZone: zone })
-      .toString({ smallestUnit: "second", timeZoneName: "never" });
-    const added = addsSlot(recurrence, slot, zone);
+    const added = addsSlot(before, slot, zone);
     if (added) {
       withRule.push(slot);
     }
@@ -178,65 +258,36 @@ function placeSkips(
         slot,
         start: master.start,
       }) !== false;
-    const onAddedMeeting =
-      addsSlot(recurrence, moved, zone) && !cancelled.includes(moved);
-    if (ruleMet && !onAddedMeeting) {
-      atNewTime.push(moved);
+    if (ruleMet) {
+      atNewTime.push(
+        moment
+          .toZonedDateTimeISO(zone)
+          .toPlainDate()
+          .toZonedDateTime({ plainTime: change.to, timeZone: zone })
+          .toString({ smallestUnit: "second", timeZoneName: "never" })
+      );
     }
   }
-  return { atNewTime, withRule };
-}
-
-/**
- * `recurrence` with the occurrences at `starts` (original starts, as
- * Google writes them) skipped. Unchanged when it doesn't repeat.
- */
-function skipping(recurrence: string[], given: string[]): string[] {
-  if (given.length === 0 || !repeats(recurrence)) {
-    return recurrence;
-  }
-  // Each skip once: one the series already has isn't written again.
-  const keyOf = (start: string) =>
-    DATE_ONLY.test(start)
-      ? start
-      : String(Temporal.Instant.from(start).epochMilliseconds);
-  const skipped = new Set(
-    recurrence.flatMap((line) => {
-      const list = line.startsWith("EXDATE")
-        ? parseDateList(line, "UTC")
-        : null;
-      return (list?.values ?? []).flatMap((value) => {
-        const read = list && readRecurrenceValue(value, list.zone, "UTC");
-        if (!read) {
-          return [];
-        }
-        return [
-          read.instant
-            ? String(read.instant.epochMilliseconds)
-            : read.day.toString(),
-        ];
-      });
+  const lined =
+    ruleForStart(skipping(rest, withRule, zone), master, start, splitAt) ?? [];
+  const deletedKeys = new Set(
+    deleted.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
     })
   );
-  const starts = given.filter((start) => !skipped.has(keyOf(start)));
-  if (starts.length === 0) {
-    return recurrence;
-  }
-  const dates = starts
-    .filter((start) => DATE_ONLY.test(start))
-    .map((start) => start.replace(/-/g, ""));
-  const times = starts
-    .filter((start) => !DATE_ONLY.test(start))
-    .map((start) =>
-      Temporal.Instant.from(start)
-        .toString({ smallestUnit: "second" })
-        .replace(/[-:]/g, "")
+  // An added meeting the saved series has, unless it was deleted too.
+  const onAddedMeeting = (at: string) => {
+    const value = readRecurrenceValue(at, zone, zone);
+    return (
+      addsSlot(lined, at, zone) && !(value && deletedKeys.has(skipKey(value)))
     );
-  return [
-    ...recurrence,
-    ...(dates.length > 0 ? [`EXDATE;VALUE=DATE:${dates.join(",")}`] : []),
-    ...(times.length > 0 ? [`EXDATE:${times.join(",")}`] : []),
-  ];
+  };
+  return skipping(
+    lined,
+    atNewTime.filter((at) => !onAddedMeeting(at)),
+    zone
+  );
 }
 
 /** A refusal, as the service fails with it. */
@@ -1334,16 +1385,13 @@ export function makeGoogleCalendarService(
       if (!counted) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const skips = placeSkips(params.cancelled, master, start);
-      const recurrence = skipping(
-        ruleForStart(
-          skipping(counted, skips.withRule),
-          master,
-          start,
-          originalStart
-        ) ?? [],
-        skips.atNewTime
-      );
+      const recurrence = lineUpRule({
+        cancelled: params.cancelled,
+        master,
+        rule: counted,
+        splitAt: originalStart,
+        start,
+      });
       if (endsBeforeStart(recurrence, start, repeatZone(master, start))) {
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
       }
@@ -1602,12 +1650,12 @@ export function makeGoogleCalendarService(
           master,
           null
         );
-        const skips = placeSkips(cancelled, master, times.start);
-        recurrence = skipping(
-          ruleForStart(skipping(rule, skips.withRule), master, times.start) ??
-            [],
-          skips.atNewTime
-        );
+        recurrence = lineUpRule({
+          cancelled,
+          master,
+          rule,
+          start: times.start,
+        });
         const lost = changed
           .map(({ originalStart }) => originalStart)
           .filter(

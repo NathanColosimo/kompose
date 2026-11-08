@@ -320,7 +320,7 @@ describe("This and following", () => {
         reason: "dropsChangedOccurrences",
       },
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.",
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -1793,4 +1793,97 @@ describe("skips for deleted occurrences when the series' time moves", () => {
     const recurrence = google.writes()[0]?.body?.recurrence as string[];
     expect(recurrence.filter((line) => line.startsWith("EXDATE"))).toEqual([]);
   });
+});
+
+describe("skips placed against the series being saved", () => {
+  // Mondays 9:00; Nov 30's 9:00 was deleted on its own.
+  const deletedNov30 = (series: Event): Event => ({
+    ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+    status: "cancelled",
+  });
+  const addedTen = "RDATE;TZID=America/New_York:20261130T100000";
+  const atTen = {
+    end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+    start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+  };
+  const exdates = (recurrence: unknown) =>
+    (recurrence as string[]).filter((line) => line.startsWith("EXDATE"));
+
+  const scopes = [["all"], ["following"]] as const;
+
+  test.each(scopes)(
+    "an added meeting the save removes doesn't shield the deleted one (%s)",
+    async (scope) => {
+      const series = {
+        ...weekly,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", addedTen],
+      };
+      const google = fakeGoogle(series, [deletedNov30(series)]);
+      const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              ...atTen,
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+            })
+          )
+        )
+      ).toBe(true);
+      expect(exdates(google.writes()[0]?.body?.recurrence)).toEqual([
+        "EXDATE:20261130T150000Z",
+      ]);
+    }
+  );
+
+  test.each(scopes)(
+    "an added meeting the save adds isn't skipped (%s)",
+    async (scope) => {
+      const google = fakeGoogle(weekly, [deletedNov30(weekly)]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, nov16, {
+              ...atTen,
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", addedTen],
+            })
+          )
+        )
+      ).toBe(true);
+      expect(exdates(google.writes()[0]?.body?.recurrence)).toEqual([]);
+    }
+  );
+
+  test.each(scopes)(
+    "a skip the rule already has moves when the rule's hour is sent too (%s)",
+    async (scope) => {
+      // Mondays 9:00 written with BYHOUR=9, Nov 30 skipped (an EXDATE).
+      const series: Event = {
+        ...weekly,
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+          "EXDATE:20261130T140000Z",
+        ],
+      };
+      const google = fakeGoogle(series);
+      const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              ...atTen,
+              recurrence: [
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+                "EXDATE:20261130T140000Z",
+              ],
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+        "EXDATE:20261130T150000Z",
+      ]);
+    }
+  );
 });
