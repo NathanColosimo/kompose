@@ -2385,3 +2385,62 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ]);
   });
 });
+
+describe("follow-up checks on the start and length rules", () => {
+  test("a length-only change in a series with an exclusion rule still saves", async () => {
+    // Daily but weekends, Nov 23 renamed (the series' length): its slot
+    // isn't moved, so nothing of its own is at stake.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=SA,SU"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        summary: "Planning (renamed)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
+  test("a COUNT past fifty years is carried from Google's list, not a partial walk", async () => {
+    // Yearly a hundred times from 1950: split in 2026, 24 are left.
+    const series: Event = {
+      end: { dateTime: "1950-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=100"],
+      start: { dateTime: "1950-11-09T09:00:00Z", timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    const years = Array.from({ length: 100 }, (_, i) => 1950 + i);
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: years.map((year) =>
+              occurrenceOf(series, `${year}-11-09T09:00:00Z`)
+            ),
+          }
+        : undefined
+    );
+    const opened = occurrenceOf(series, "2026-11-09T09:00:00Z");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Anniversary (new)" }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=24",
+    ]);
+  });
+});
