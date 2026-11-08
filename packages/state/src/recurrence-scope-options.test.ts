@@ -65,7 +65,13 @@ test("says why whenever a scope is off", () => {
   const all = combinations({
     calendarChanged: flags,
     dateMoved: flags,
-    droppedChangedDay: [null, Temporal.PlainDate.from("2026-12-07")],
+    entireSeriesCost: [
+      null,
+      ...(["lostSlot", "newStart", "ownLength"] as const).map((reason) => ({
+        day: Temporal.PlainDate.from("2026-12-07"),
+        reason,
+      })),
+    ],
     patternChanged: flags,
     repeatSkips: [null, "day", "end"],
     retimed: flags,
@@ -101,7 +107,10 @@ test("leaves no scope only for a save that needs two, or one waiting on the seri
   expect(
     noneLeft({
       calendarChanged: true,
-      droppedChangedDay: Temporal.PlainDate.from("2026-12-07"),
+      entireSeriesCost: {
+        day: Temporal.PlainDate.from("2026-12-07"),
+        reason: "lostSlot",
+      } as const,
       patternChanged: true,
     })
   ).toBe(true);
@@ -434,9 +443,10 @@ test("a new end before this occurrence says so", () => {
   ).toBe(SCOPE_DIALOG_COPY.repeatEndOff);
 });
 
-describe("a save that would undo a meeting's own changes", () => {
+describe("an Entire series save that would cost a meeting its own changes", () => {
   const dec7 = Temporal.PlainDate.from("2026-12-07");
-  const changes = { ...none, droppedChangedDay: dec7, patternChanged: true };
+  const lostSlot = { day: dec7, reason: "lostSlot" } as const;
+  const changes = { ...none, entireSeriesCost: lostSlot, patternChanged: true };
 
   test("turns Entire series off and names the meeting", () => {
     expect(off(changes)).toEqual(["all", "this"]);
@@ -445,21 +455,30 @@ describe("a save that would undo a meeting's own changes", () => {
     );
   });
 
-  test("a new time does it too", () => {
-    const retimed = { ...none, droppedChangedDay: dec7, retimed: true };
+  test("a new start resets it", () => {
+    const retimed = {
+      ...none,
+      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
+      retimed: true,
+    };
     expect(off(retimed)).toEqual(["all"]);
     expect(eventSaveDescription(retimed)).toBe(
-      "The new time would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
+      "Changing the time for the entire series would reset your changed Dec 7 meeting."
+    );
+    expect(eventSaveDescription({ ...retimed, calendarChanged: true })).toBe(
+      "Moving to another calendar moves the whole series, but changing its time would reset your changed Dec 7 meeting. Move the calendar and change the time in two saves."
     );
   });
 
-  test("names both when the save changes the repeat and the time", () => {
-    const both = { ...changes, retimed: true };
-    expect(eventSaveDescription(both)).toBe(
-      "The new repeat and time would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
-    );
-    expect(eventSaveDescription({ ...both, calendarChanged: true })).toBe(
-      "Moving to another calendar moves the whole series, but the new repeat and time would undo your changes to the Dec 7 meeting. Move the calendar and change the repeat and time in two saves."
+  test("a new length would take its own", () => {
+    const longer = {
+      ...none,
+      entireSeriesCost: { day: dec7, reason: "ownLength" } as const,
+      retimed: true,
+    };
+    expect(off(longer)).toEqual(["all"]);
+    expect(eventSaveDescription(longer)).toBe(
+      "Changing the length for the entire series would also change the length you gave the Dec 7 meeting."
     );
   });
 
@@ -485,10 +504,10 @@ describe("a save that would undo a meeting's own changes", () => {
     );
   });
 
-  test("a series of several rules says why a new time can't go first", () => {
+  test("a series meeting several times a day says why a new time can't go first", () => {
     const several = {
       ...none,
-      droppedChangedDay: dec7,
+      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
       retimed: true,
       severalRules: true,
     };
@@ -497,14 +516,11 @@ describe("a save that would undo a meeting's own changes", () => {
     );
   });
 
-  test("doesn't matter without a new repeat or time", () => {
-    expect(off({ ...changes, patternChanged: false })).toEqual([]);
-  });
-
   test("still reads the field it replaces, droppedMovedDay", () => {
     expect(
       off({ ...none, droppedMovedDay: dec7, patternChanged: true })
     ).toEqual(["all", "this"]);
+    expect(off({ ...none, droppedMovedDay: dec7 })).toEqual([]);
   });
 });
 
@@ -593,6 +609,23 @@ describe("the server's refusal of a series write", () => {
       originalStarts: ["2026-12-07T09:00:00-05:00", "2026-12-08"],
       reason: "dropsChangedOccurrences",
     });
+  });
+
+  test("reads a length refusal with the meetings it names", () => {
+    expect(
+      seriesRefusalOf(
+        refused({
+          originalStarts: ["2026-12-07T09:00:00-05:00"],
+          reason: "resizesChangedOccurrences",
+        })
+      )
+    ).toEqual({
+      originalStarts: ["2026-12-07T09:00:00-05:00"],
+      reason: "resizesChangedOccurrences",
+    });
+    expect(
+      seriesRefusalOf(refused({ reason: "resizesChangedOccurrences" }))
+    ).toBeNull();
   });
 
   test("isn't any other failure", () => {

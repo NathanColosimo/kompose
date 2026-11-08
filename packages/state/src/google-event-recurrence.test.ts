@@ -3,9 +3,10 @@ import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 import {
   buildGoogleEventRecurrenceRule,
-  changedMeetingDropped,
   dayInZone,
   type EventRecurrencePattern,
+  entireSeriesCost,
+  entireSeriesStartMoves,
   followStart,
   getPrimaryRecurrenceRule,
   lastWeekdayOf,
@@ -1832,7 +1833,7 @@ describe("repeatSkipsOccurrence", () => {
   });
 });
 
-describe("changedMeetingDropped", () => {
+describe("entireSeriesCost", () => {
   const zone = "America/New_York";
   const at = (dateTime: string) => ({ dateTime, timeZone: zone });
   // "Standup", daily from Tue Dec 1 2026 at 9:00-9:30.
@@ -1863,33 +1864,38 @@ describe("changedMeetingDropped", () => {
   });
   const untouched = meeting("2026-12-09T09:00:00-05:00");
   const keepTimes = { end: opened.end, start: opened.start };
+  /** What an Entire series save would cost, as "reason day". */
+  const costOf = (params: Parameters<typeof entireSeriesCost>[0]) => {
+    const cost = entireSeriesCost(params);
+    return cost ? `${cost.reason} ${cost.day}` : undefined;
+  };
   const dropped = (params: {
     edited?: { end: { dateTime: string }; start: { dateTime: string } };
     loaded?: ReturnType<typeof meeting>[];
     occurrence?: ReturnType<typeof meeting>;
     recurrence?: string[];
   }) =>
-    changedMeetingDropped({
+    costOf({
       edited: params.edited ?? keepTimes,
       loaded: params.loaded ?? [opened, renamed, moved, untouched],
       master,
       occurrence: params.occurrence ?? opened,
       recurrence: params.recurrence,
       timeZone: zone,
-    })?.toString();
+    });
 
   test("a new repeat drops a meeting renamed on its own, not only a moved one", () => {
     // Weekly on Thursdays: Dec 7 (Mon) and Dec 8 (Tue) are gone, and Google
     // would drop their own changes; the earliest is named.
     expect(dropped({ recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"] })).toBe(
-      "2026-12-07"
+      "lostSlot 2026-12-07"
     );
     expect(
       dropped({
         loaded: [opened, moved, untouched],
         recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
       })
-    ).toBe("2026-12-08");
+    ).toBe("lostSlot 2026-12-08");
   });
 
   test("a repeat that still has their slots drops nothing", () => {
@@ -1898,9 +1904,9 @@ describe("changedMeetingDropped", () => {
     ).toBeUndefined();
   });
 
-  test("a new time drops every changed meeting's slot", () => {
-    // 9:00 to 10:00 for the series: its slots move, and the renamed Dec 7
-    // 9:00 meeting has none left.
+  test("a new time resets every changed meeting", () => {
+    // 9:00 to 10:00 for the series: Google cancels every meeting changed
+    // on its own, even one the rule still meets on (Dec 7, only renamed).
     expect(
       dropped({
         edited: {
@@ -1908,7 +1914,47 @@ describe("changedMeetingDropped", () => {
           start: at("2026-12-03T10:00:00-05:00"),
         },
       })
-    ).toBe("2026-12-07");
+    ).toBe("newStart 2026-12-07");
+  });
+
+  test("a new start resets them even where the rule still meets", () => {
+    // Daily from Tue Dec 1; its first meeting moved to Wed Dec 2 at 9:00.
+    // The series still meets on Dec 7 at 9:00, but Google cancels every
+    // meeting changed on its own when the start moves.
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    expect(
+      dropped({
+        edited: {
+          end: at("2026-12-02T09:30:00-05:00"),
+          start: at("2026-12-02T09:00:00-05:00"),
+        },
+        loaded: [first, renamed],
+        occurrence: first,
+      })
+    ).toBe("newStart 2026-12-07");
+  });
+
+  test("tells a new start from a new length", () => {
+    const moves = (edited: {
+      end: { dateTime: string };
+      start: { dateTime: string };
+    }) =>
+      entireSeriesStartMoves({
+        edited,
+        master,
+        occurrence: opened,
+        timeZone: zone,
+      });
+    expect(moves(keepTimes)).toBe(false);
+    expect(
+      moves({ end: at("2026-12-03T10:00:00-05:00"), start: opened.start })
+    ).toBe(false);
+    expect(
+      moves({
+        end: at("2026-12-03T10:30:00-05:00"),
+        start: at("2026-12-03T10:00:00-05:00"),
+      })
+    ).toBe(true);
   });
 
   test("an edit that moves no slot drops nothing", () => {
@@ -1939,7 +1985,7 @@ describe("changedMeetingDropped", () => {
         loaded: [openedRenamed],
         occurrence: openedRenamed,
       })
-    ).toBe("2026-12-03");
+    ).toBe("newStart 2026-12-03");
   });
 
   test("names a moved meeting's day as the calendar shows it", () => {
@@ -1952,26 +1998,31 @@ describe("changedMeetingDropped", () => {
         loaded: [toWednesday],
         recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
       })
-    ).toBe("2026-12-09");
+    ).toBe("lostSlot 2026-12-09");
   });
 
-  test("reads the rule as the server writes it with the new time", () => {
-    // Daily at BYHOUR=9, moved to 10:00 for the series: the server writes
-    // BYHOUR=10, and the renamed Dec 7 9:00 meeting has no slot left.
-    const byHour = { ...master, recurrence: ["RRULE:FREQ=DAILY;BYHOUR=9"] };
+  test("a new length alone keeps changed meetings, unless one has its own length", () => {
+    // 9:00-10:00 for the series, the start kept: Google keeps changed
+    // meetings but gives each the new length, so only one with a length
+    // of its own loses something.
+    const longer = {
+      end: at("2026-12-03T10:00:00-05:00"),
+      start: at("2026-12-03T09:00:00-05:00"),
+    };
+    expect(dropped({ edited: longer })).toBeUndefined();
+    const ownLength = meeting("2026-12-10T09:00:00-05:00", {
+      end: "2026-12-10T10:30:00-05:00",
+    });
     expect(
-      changedMeetingDropped({
-        edited: {
-          end: at("2026-12-03T10:30:00-05:00"),
-          start: at("2026-12-03T10:00:00-05:00"),
-        },
-        loaded: [opened, renamed],
-        master: byHour,
-        occurrence: opened,
-        recurrence: undefined,
-        timeZone: zone,
-      })?.toString()
-    ).toBe("2026-12-07");
+      dropped({ edited: longer, loaded: [opened, renamed, ownLength] })
+    ).toBe("ownLength 2026-12-10");
+    // The opened meeting takes the edit's length: its own isn't lost.
+    const openedOwn = meeting("2026-12-03T09:00:00-05:00", {
+      end: "2026-12-03T10:30:00-05:00",
+    });
+    expect(
+      dropped({ edited: longer, loaded: [openedOwn], occurrence: openedOwn })
+    ).toBeUndefined();
   });
 
   test("through the series' first meeting, its new time is the series'", () => {
@@ -1985,7 +2036,7 @@ describe("changedMeetingDropped", () => {
         loaded: [first, renamed],
         occurrence: first,
       })
-    ).toBe("2026-12-07");
+    ).toBe("newStart 2026-12-07");
   });
 
   test("through the series' first meeting, a new day is the series' too", () => {
@@ -1996,7 +2047,7 @@ describe("changedMeetingDropped", () => {
     const first = meeting("2026-12-01T09:00:00-05:00");
     const tuesday = meeting("2026-12-08T09:00:00-05:00", { summary: "Demo" });
     expect(
-      changedMeetingDropped({
+      costOf({
         edited: {
           end: at("2026-12-02T09:30:00-05:00"),
           start: at("2026-12-02T09:00:00-05:00"),
@@ -2006,8 +2057,8 @@ describe("changedMeetingDropped", () => {
         occurrence: first,
         recurrence: undefined,
         timeZone: zone,
-      })?.toString()
-    ).toBe("2026-12-08");
+      })
+    ).toBe("newStart 2026-12-08");
   });
 
   test("an all-day series' slots are its days", () => {
@@ -2036,15 +2087,15 @@ describe("changedMeetingDropped", () => {
       summary: "Offsite",
     };
     const drops = (rule: string) =>
-      changedMeetingDropped({
+      costOf({
         edited: { end: monday.end, start: monday.start },
         loaded: [monday, wednesday],
         master: allDay,
         occurrence: monday,
         recurrence: [rule],
         timeZone: zone,
-      })?.toString();
-    expect(drops("RRULE:FREQ=WEEKLY;BYDAY=MO")).toBe("2026-12-09");
+      });
+    expect(drops("RRULE:FREQ=WEEKLY;BYDAY=MO")).toBe("lostSlot 2026-12-09");
     expect(drops("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR")).toBeUndefined();
   });
 
