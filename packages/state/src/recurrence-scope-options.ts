@@ -20,14 +20,19 @@ import {
   type SeriesRefusal,
   sameTime,
 } from "@kompose/google-cal/series-edits";
-import { meetsSeveralTimesADay } from "@kompose/google-cal/until";
+import {
+  googleDateTime,
+  meetsSeveralTimesADay,
+  startInstant,
+} from "@kompose/google-cal/until";
 import { ORPCError } from "@orpc/client";
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import {
   type EntireSeriesCost,
   eventTimeZone,
   timeZoneCity,
 } from "./google-event-recurrence";
+import type { StartTime } from "./google-event-times";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
   label: string;
@@ -453,7 +458,7 @@ export function opensSeries(
  */
 function countLeftUnknown(params: {
   masterRecurrence: string[];
-  masterStart: { date?: string | null; dateTime?: string | null };
+  masterStart: StartTime;
   originalStart: string;
   recurrence: string[] | undefined;
   seriesZone: string;
@@ -473,8 +478,7 @@ function countLeftUnknown(params: {
   const exact = carryCountExactly(rule, {
     masterRecurrence,
     originalStart,
-    seriesStart:
-      params.masterStart.dateTime ?? params.masterStart.date ?? originalStart,
+    seriesStart: seriesSlotOf(params.masterStart, seriesZone) ?? originalStart,
     seriesZone,
   });
   // Past the walk, it counts from Google's list, where an added day
@@ -494,11 +498,9 @@ export function seriesMeetsSeveralTimesADay(
   appTimeZone: string
 ): boolean {
   const zone = master.start.timeZone ?? appTimeZone;
-  const start = master.start.dateTime
-    ? Temporal.Instant.from(master.start.dateTime)
-        .toZonedDateTimeISO(zone)
-        .toPlainTime()
-    : null;
+  const start =
+    startInstant(master.start, zone)?.toZonedDateTimeISO(zone).toPlainTime() ??
+    null;
   return meetsSeveralTimesADay(master.recurrence ?? [], start);
 }
 
@@ -516,18 +518,34 @@ function splitAt(
   appTimeZone: string
 ): Parameters<typeof followingSplitBlocked>[0] | null {
   const original = occurrence?.originalStartTime;
-  const originalStart = original?.dateTime ?? original?.date;
-  if (!(occurrence?.recurringEventId && master && originalStart)) {
+  if (!(occurrence?.recurringEventId && master && original)) {
     return null;
   }
-  return {
-    masterRecurrence: master.recurrence,
-    masterStart: master.start,
-    originalStart,
-    // The series' own zone first, as the server reads it.
-    seriesZone:
-      master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone),
-  };
+  // The series' own zone first, as the server reads it.
+  const seriesZone =
+    master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone);
+  const originalStart = seriesSlotOf(original, seriesZone);
+  return originalStart
+    ? {
+        masterRecurrence: master.recurrence,
+        masterStart: master.start,
+        originalStart,
+        seriesZone,
+      }
+    : null;
+}
+
+/**
+ * A start as its series' slot, as the server reads one (its `slotOf`): a
+ * date, or a date-time with the series' offset (one Google wrote without
+ * an offset read in its own zone). Null when it has neither.
+ */
+function seriesSlotOf(start: StartTime, seriesZone: string): string | null {
+  if (start.date) {
+    return start.date;
+  }
+  const moment = startInstant(start, seriesZone);
+  return moment ? googleDateTime(moment.toZonedDateTimeISO(seriesZone)) : null;
 }
 
 /**
@@ -696,7 +714,9 @@ function newDayLine(changes: EventSaveChanges): string {
     const alone = changes.patternChanged
       ? `${where}, and a new repeat can't apply to it alone.`
       : `${where}, so your changes apply to it alone.`;
-    return `${alone} ${changedMeetingLine(cost)}`;
+    // The new day moves the series' start, which resets every meeting
+    // changed on its own (D4), whatever the cost's reason.
+    return `${alone} Moving the series to this day would reset your changed ${shortDay(cost.day)} meeting.`;
   }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`

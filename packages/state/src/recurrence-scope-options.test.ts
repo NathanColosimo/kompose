@@ -546,13 +546,13 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     const newDay = { ...first, dateMoved: true };
     expect(off(newDay)).toEqual(["all", "following"]);
     expect(eventSaveDescription(newDay)).toBe(
-      "This occurrence is now on another day than its series, so your changes apply to it alone. Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+      "This occurrence is now on another day than its series, so your changes apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
     );
     // With a new repeat too, which one occurrence can't take: nothing is on.
     const newDayRepeat = { ...newDay, patternChanged: true };
     expect(off(newDayRepeat)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(newDayRepeat)).toBe(
-      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
     );
   });
 
@@ -804,6 +804,36 @@ describe("This and following, turned off before the server would refuse it", () 
       )
     ).toBeNull();
   });
+});
+
+test("a series start without an offset is read in its own zone", () => {
+  const start = {
+    dateTime: "2026-11-02T09:00:00",
+    timeZone: "America/New_York",
+  };
+  const several = (recurrence: string[]) =>
+    seriesMeetsSeveralTimesADay({ recurrence, start }, "America/New_York");
+  expect(several(["RRULE:FREQ=WEEKLY"])).toBe(false);
+  expect(several(["RRULE:FREQ=WEEKLY;BYHOUR=15"])).toBe(true);
+  // A COUNT the app can walk, with an added day, carries on as with an
+  // offset: the split and the series' start are read as the server does.
+  const local = (dateTime: string) => ({
+    dateTime,
+    timeZone: "America/New_York",
+  });
+  const master = {
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+      "RDATE;TZID=America/New_York:20261111T090000",
+    ],
+    start: local("2026-11-09T09:00:00"),
+  };
+  const later = {
+    originalStartTime: local("2026-11-16T09:00:00"),
+    recurringEventId: "series",
+    start: local("2026-11-16T09:00:00"),
+  };
+  expect(seriesSplitBlock(later, master, "America/New_York")).toBeNull();
 });
 
 test("a series meets several times a day by two rules, or one at its own hour", () => {

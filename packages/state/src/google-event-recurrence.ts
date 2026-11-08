@@ -447,20 +447,18 @@ export function followStart(params: {
   });
 }
 
-/** The wall time a timed Google start is at in `timeZone`. */
+/**
+ * The wall time a timed Google start is at in `timeZone` (one without an
+ * offset read in its own zone, as Google does).
+ */
 function timeOfStart(
-  start: { dateTime?: string | null },
+  start: StartTime,
   timeZone: string
 ): Temporal.PlainTime | null {
-  try {
-    return start.dateTime
-      ? Temporal.Instant.from(start.dateTime)
-          .toZonedDateTimeISO(timeZone)
-          .toPlainTime()
-      : null;
-  } catch {
-    return null;
-  }
+  return (
+    startInstant(start, timeZone)?.toZonedDateTimeISO(timeZone).toPlainTime() ??
+    null
+  );
 }
 
 /**

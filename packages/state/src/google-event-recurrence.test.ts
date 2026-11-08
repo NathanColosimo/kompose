@@ -1207,6 +1207,14 @@ describe("seriesRecurrenceForSave", () => {
       rulesFrom: Temporal.PlainDate.from("2026-11-02"),
       viaOccurrence: true,
     });
+    // One Google wrote without an offset is read in its own zone.
+    expect(
+      seriesCountingDays(
+        { recurringEventId: "series" },
+        { dateTime: "2026-11-02T09:00:00", timeZone: "Asia/Tokyo" },
+        "America/New_York"
+      )?.firstTime
+    ).toEqual(Temporal.PlainTime.from("19:00"));
     // The series itself, or its master not loaded: the start is its own.
     expect(
       seriesCountingDays({}, masterStart, "America/New_York")
@@ -1668,6 +1676,24 @@ describe("repeatSkipsOccurrence", () => {
     expect(off(["RRULE:FREQ=MONTHLY"])).toBe(true);
   });
 
+  test("reads starts Google wrote without an offset in their own zone", () => {
+    const local = (dateTime: string) => ({ dateTime, timeZone: zone });
+    const occurrence = {
+      originalStartTime: local("2026-11-15T16:00:00"),
+      recurringEventId: "m1",
+      start: local("2026-11-15T16:00:00"),
+    };
+    const skips = (recurrence: string[]) =>
+      repeatSkipsOccurrence({
+        occurrence,
+        recurrence,
+        seriesStart: local("2026-11-01T16:00:00"),
+        timeZone: zone,
+      });
+    expect(skips(["RRULE:FREQ=WEEKLY;INTERVAL=2"])).toBeNull();
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=TU"])).toBe("day");
+  });
+
   test("monthly on a picked weekday of the month applies as shown", () => {
     expect(off(["RRULE:FREQ=MONTHLY;BYDAY=3SU"])).toBe(false);
   });
@@ -2047,6 +2073,28 @@ describe("entireSeriesCost", () => {
     });
     expect(
       dropped({ edited: longer, loaded: [openedOwn], occurrence: openedOwn })
+    ).toBeUndefined();
+  });
+
+  test("reads meetings Google wrote without an offset in their own zone", () => {
+    // Dec 7 renamed, its original start without an offset: weekly on
+    // Thursdays loses it, as with one.
+    const local = {
+      ...renamed,
+      originalStartTime: { dateTime: "2026-12-07T09:00:00", timeZone: zone },
+    };
+    expect(
+      dropped({
+        loaded: [opened, local],
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
+      })
+    ).toBe("lostSlot 2026-12-07");
+    // Daily keeps its slot.
+    expect(
+      dropped({
+        loaded: [opened, local],
+        recurrence: ["RRULE:FREQ=DAILY;INTERVAL=1"],
+      })
     ).toBeUndefined();
   });
 
