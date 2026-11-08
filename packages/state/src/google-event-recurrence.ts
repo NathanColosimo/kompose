@@ -541,10 +541,10 @@ function sameStart(
  * meeting needn't share them), or, before the series loads, the
  * occurrence's place in the series (where the rule puts it): moving
  * this one occurrence doesn't change how the series is described
- * ("weekly" stays on the series' Sunday, not the Tuesday it's moved to). A repeat the user
- * changed, or any other event's, counts from the form's start, where the
- * save puts the series (a changed repeat on a moved occurrence can only
- * start a new series there).
+ * ("weekly" stays on the series' Sunday, not the Tuesday it's moved to).
+ * A repeat the user changed, or any other event's, counts from the form's
+ * start, where the save puts the series (a changed repeat on a moved
+ * occurrence can only start a new series there).
  */
 export function repeatCountingDay(params: {
   /**
