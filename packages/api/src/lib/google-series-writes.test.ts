@@ -1633,3 +1633,38 @@ describe("a series made all day, its start also an added day", () => {
     });
   });
 });
+
+describe("an Entire series time change, a deleted meeting also an added day", () => {
+  test("skips it at both the added time and the series' new time", async () => {
+    // Mondays 9:00, with Nov 30 9:00 also listed as an added day; Nov 30
+    // was deleted on its own. At 10:00 the rule's Nov 30 moves to 10:00
+    // and the added one stays at 9:00: both stay skipped.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261130T090000",
+      ],
+    };
+    const deleted: Event = {
+      ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261130T090000",
+      "EXDATE;TZID=America/New_York:20261130T090000,20261130T100000",
+    ]);
+  });
+});

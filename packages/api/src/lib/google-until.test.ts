@@ -137,6 +137,24 @@ describe("skipped occurrences on the series' days", () => {
     ]);
   });
 
+  test("skips a deleted start an added day repeats at its new time too", () => {
+    // Mondays 9:00 from Nov 9, its start also listed as an added day, and
+    // skipped. Moved to 10:00, the added 9:00 stays skipped and so does
+    // the start's meeting, now at 10:00.
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261109T090000",
+          "EXDATE;TZID=America/New_York:20261109T090000",
+        ],
+        { dateTime: "2026-11-09T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261109T090000,20261109T100000");
+  });
+
   test("keeps a skipped start off the rule's days when made all day", () => {
     // Mondays, but started on Sun Nov 8, which was skipped: made all day,
     // that skip becomes the date (the start is a meeting of its own).
