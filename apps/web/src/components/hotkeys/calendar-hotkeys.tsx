@@ -7,6 +7,7 @@ import {
 } from "@kompose/state/atoms/current-date";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useRequestCreateEvent } from "@/hooks/use-request-create-event";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import {
   dashboardResponsiveLayoutAtom,
@@ -17,7 +18,25 @@ import {
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
-const hotkeyOptions = { enableOnFormTags: false } as const;
+/**
+ * Calendar shortcuts are for the calendar itself. A key another control
+ * already handled (arrows on a popover's tabs, which Radix marks handled)
+ * or typed inside a dialog or popover (the command bar, an editor) isn't
+ * one: "c" in a search would open the create popover, and an arrow would
+ * move the calendar under the editor.
+ */
+function isForAnotherControl(e: KeyboardEvent): boolean {
+  return (
+    e.defaultPrevented ||
+    (e.target instanceof Element &&
+      e.target.closest('[role="dialog"]') !== null)
+  );
+}
+
+const hotkeyOptions = {
+  enableOnFormTags: false,
+  ignoreEventWhen: isForAnotherControl,
+} as const;
 
 /**
  * Calendar shortcuts; Cmd+K also works in form fields.
@@ -36,6 +55,7 @@ export function CalendarHotkeys() {
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const goToToday = useSetAtom(goToTodayAtom);
+  const requestCreateEvent = useRequestCreateEvent();
 
   useHotkeys(
     "meta+k",
@@ -46,6 +66,8 @@ export function CalendarHotkeys() {
     { enableOnFormTags: true }, // Allow opening even when in form fields
     [setCommandBarOpen]
   );
+
+  useHotkeys("c", requestCreateEvent, hotkeyOptions, [requestCreateEvent]);
 
   useHotkeys("1", () => setVisibleDaysCount(1), hotkeyOptions, []);
   useHotkeys("2", () => setVisibleDaysCount(2), hotkeyOptions, []);

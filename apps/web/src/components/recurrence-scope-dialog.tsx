@@ -5,7 +5,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
 } from "@kompose/state/recurrence-scope-options";
-import { useId } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,10 +19,19 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
+/** A moved event and its new time: "Retro" → "Mon, Nov 9 · 4 – 4:45 PM". */
+export interface ScopeDialogSubject {
+  /** It moved (a drop), rather than changing length (a resize). */
+  moved: boolean;
+  name: string;
+  when: string;
+}
+
 export function RecurrenceScopeDialog({
   open,
   onOpenChange,
   title,
+  subject,
   description,
   value,
   onValueChange,
@@ -36,6 +45,8 @@ export function RecurrenceScopeDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  /** What the save changes, in a line. */
+  subject?: ScopeDialogSubject;
   description?: string;
   value: RecurrenceScope;
   onValueChange: (value: RecurrenceScope) => void;
@@ -47,14 +58,65 @@ export function RecurrenceScopeDialog({
   options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
+  // One confirm at a time: a held Cmd+Enter or a double click on Delete
+  // would otherwise send the change twice while the first is running.
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState(false);
+  // The callers give a scope that's available (`chosenScope`); should it
+  // still be off, nothing is sent.
+  const chosenOff = Boolean(disabledScopes?.[value]);
+  const confirm = async () => {
+    if (pendingRef.current || chosenOff) {
+      return;
+    }
+    pendingRef.current = true;
+    setPending(true);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  };
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent
+        className="sm:max-w-[420px]"
+        // Cmd+Enter confirms the choice, as it saves the editor behind.
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            if (!e.repeat) {
+              confirm().catch(() => null);
+            }
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? (
-            <DialogDescription>{description}</DialogDescription>
+          {/* What's being saved, when the dialog opens away from its editor
+              (a drop on the grid): "Retro → Mon, Nov 9 · 4 – 4:45 PM". Part
+              of the description, so a screen reader says it too. */}
+          {subject || description ? (
+            <DialogDescription className="space-y-1">
+              {subject ? (
+                <span className="block font-medium text-foreground">
+                  {subject.name}
+                  {/* Read as "Retro, moved to Mon, Nov 9…" (or "now", for a
+                      resize), not "right arrow". */}
+                  <span aria-hidden> → </span>
+                  <span className="sr-only">
+                    , {subject.moved ? "moved to" : "now"}{" "}
+                  </span>
+                  {subject.when}
+                </span>
+              ) : null}
+              {description ? (
+                <span className="block">{description}</span>
+              ) : null}
+            </DialogDescription>
           ) : null}
         </DialogHeader>
 
@@ -78,6 +140,9 @@ export function RecurrenceScopeDialog({
                 key={opt.value}
               >
                 <RadioGroupItem
+                  // A circle that stands out on the paper (3:1), dimmed
+                  // once with its row when off, not twice.
+                  className="border-muted-foreground disabled:opacity-100"
                   disabled={isDisabled}
                   id={id}
                   value={opt.value}
@@ -100,9 +165,9 @@ export function RecurrenceScopeDialog({
             {cancelLabel}
           </Button>
           <Button
-            onClick={async () => {
-              await onConfirm();
-              onOpenChange(false);
+            disabled={pending || chosenOff}
+            onClick={() => {
+              confirm().catch(() => null);
             }}
             type="button"
           >

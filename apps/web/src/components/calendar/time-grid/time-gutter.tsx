@@ -24,7 +24,7 @@ export const TimeGutter = memo(function TimeGutterInner({
       {hours.map((hour) => (
         <div
           className={cn(
-            "relative flex justify-end pr-2 text-muted-foreground text-xs",
+            "relative flex justify-end pr-2 text-[11px] text-muted-foreground tabular-nums",
             hour === 0 ? "items-start" : "items-center"
           )}
           key={hour}

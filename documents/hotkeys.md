@@ -4,11 +4,12 @@ Keyboard shortcuts for Kompose calendar. Implemented using `react-hotkeys-hook`.
 
 ## Global Hotkeys
 
-These hotkeys work anywhere in the app (except when typing in input fields, unless noted).
+These hotkeys work anywhere in the app, except when typing in input fields (unless noted), inside a dialog or popover (the command bar, an editor), or on a key another control already handled (arrow keys on a popover's tabs).
 
 | Key       | Action                                 |
 | --------- | -------------------------------------- |
 | `⌘K`      | Open command bar (works in inputs too) |
+| `c`       | New event at the next half hour today (9 AM tomorrow once today is over; else 9 AM on the first visible day); also "Create event" in the command bar. Without a Google calendar it says so in a toast. The grid's time slots are mouse-only, so this is the keyboard and screen-reader path. |
 | `1` - `7` | Set visible days count (1-7 days)      |
 | `w`       | Week view (7 days)                     |
 | `t`       | Go to today and switch sidebar to Today |
