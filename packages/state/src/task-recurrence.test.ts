@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { repeatBlocksSave, repeatNote } from "./task-recurrence";
+import {
+  getTaskUpdateScopeDecision,
+  repeatBlocksSave,
+  repeatNote,
+} from "./task-recurrence";
 
 const dailyUntil14 = {
   byDay: [],
@@ -74,5 +78,28 @@ describe("repeatBlocksSave", () => {
         startDate: nov16,
       })?.text
     ).toBe("Makes this task a series of its own.");
+  });
+});
+
+describe("getTaskUpdateScopeDecision", () => {
+  const base = {
+    hasCoreFieldChanges: true,
+    isRecurring: true,
+    nextRecurrence: null,
+    nextTagIds: [],
+    previousRecurrence: null,
+    previousTagIds: [],
+  };
+  test("asks this-or-following for a dated occurrence", () => {
+    expect(getTaskUpdateScopeDecision(base)).toEqual({
+      action: "prompt",
+      defaultScope: "this",
+    });
+  });
+
+  test("applies an inbox occurrence's edits to it alone, with no question", () => {
+    expect(
+      getTaskUpdateScopeDecision({ ...base, hasFollowing: false })
+    ).toEqual({ action: "apply", scope: "this" });
   });
 });

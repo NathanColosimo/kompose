@@ -17,7 +17,7 @@ import {
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
-import { Keyboard } from "react-native";
+import { Alert, Keyboard } from "react-native";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
@@ -200,6 +200,7 @@ export function useTaskEditorFlow() {
     return {
       decision: getTaskUpdateScopeDecision({
         hasCoreFieldChanges,
+        hasFollowing: Boolean(task.startDate),
         isRecurring: task.seriesMasterId !== null,
         nextRecurrence: nextDraft.recurrence,
         nextTagIds: nextDraft.tagIds,
@@ -283,8 +284,19 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    close();
+    // No undo, and the trash sits beside Save: confirm first, as web does.
+    const id = editingTask.id;
+    Alert.alert("Delete task?", "This can't be undone.", [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => {
+          deleteTask.mutate({ id, scope: "this" });
+          close();
+        },
+        style: "destructive",
+        text: "Delete",
+      },
+    ]);
   }
 
   /**

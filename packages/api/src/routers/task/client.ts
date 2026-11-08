@@ -1203,7 +1203,6 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   return [...updatedMaster, ...insertedOccurrences];
 });
 
-/** Handle scope=following update for recurring task */
 /**
  * A repeat change on an undated occurrence (moved to the inbox): it leaves
  * its series as a standalone task, and a new pattern makes it a series of
@@ -1233,8 +1232,11 @@ const repatternUndated = Effect.fn("repatternUndated")(function* (
   return { retagIds: ids(rows), rows: [...written.values()] };
 });
 
+// The editors show the same words (@kompose/state task-recurrence); the
+// API can't import state, which depends on it.
 const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
 
+/** Handle scope=following update for recurring task */
 const updateFollowing = Effect.fn("updateFollowing")(function* (
   userId: string,
   task: TaskSelect,

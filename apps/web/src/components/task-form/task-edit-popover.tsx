@@ -706,6 +706,7 @@ export function TaskEditForm({
                 title: task.title,
               },
             }),
+            hasFollowing: hasFollowing(task),
             isRecurring,
             nextRecurrence: values.recurrence,
             nextTagIds: values.tagIds,

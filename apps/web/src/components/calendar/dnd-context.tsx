@@ -178,7 +178,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
 
-      if (task.seriesMasterId) {
+      // A dated series occurrence asks this-or-following; one moved to the
+      // inbox has nothing following it.
+      if (task.seriesMasterId && task.startDate) {
         setPendingUpdate({ id: update.id, task: update.task });
         return;
       }
@@ -240,7 +242,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      if (payload.task.seriesMasterId) {
+      if (payload.task.seriesMasterId && payload.task.startDate) {
         setPendingUpdate({ id: update.id, task: update.task });
         return;
       }

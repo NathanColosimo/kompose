@@ -78,7 +78,7 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
         };
       }
 
-      // Inbox: uncompleted, non-recurring, no startDate. This also catches
+      // Inbox: uncompleted, no startDate (isInboxTask). This also catches
       // legacy rows with an orphaned startTime but no startDate.
       const inbox = tasks
         .filter(isInboxTask)

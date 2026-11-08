@@ -35,12 +35,13 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
   return task.startDate !== null && task.startTime !== null;
 }
 
+/**
+ * Inbox: open tasks with no date. That includes an occurrence of a series
+ * moved there alone ("I'll do this one later"); a series' scheduled
+ * occurrences always have a date. Leaving those out hid them everywhere.
+ */
 export function isInboxTask(task: TaskSelectDecoded): boolean {
-  return (
-    task.status !== "done" &&
-    task.seriesMasterId === null &&
-    task.startDate === null
-  );
+  return task.status !== "done" && task.startDate === null;
 }
 
 /** Overdue: uncompleted tasks with past due date or past end time (start + duration). */
