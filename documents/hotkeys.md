@@ -9,7 +9,7 @@ These hotkeys work anywhere in the app, except when typing in input fields (unle
 | Key       | Action                                 |
 | --------- | -------------------------------------- |
 | `⌘K`      | Open command bar (works in inputs too) |
-| `c`       | New event at the next half hour today (9 AM tomorrow once today is over; else 9 AM on the first visible day); also "Create event" in the command bar. Without a Google calendar it says so in a toast. The grid's time slots are mouse-only, so this is the keyboard and screen-reader path. |
+| `c`       | New event at the next half hour today (9 AM tomorrow once today is over; else 9 AM on the first visible day); also "Create event" in the command bar. Without a Google calendar, the create popover's Event tab says why. The grid's time slots are mouse-only, so this is the keyboard and screen-reader path. |
 | `1` - `7` | Set visible days count (1-7 days)      |
 | `w`       | Week view (7 days)                     |
 | `t`       | Go to today and switch sidebar to Today |
