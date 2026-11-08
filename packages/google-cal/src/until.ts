@@ -226,6 +226,24 @@ function matchDateList(
     .join(",")}`;
 }
 
+/**
+ * An RRULE whose single BYHOUR / BYMINUTE / BYSECOND fixes the time set to
+ * the start's (moving a "BYHOUR=9" series to 10:00 moves the rule too, or
+ * it keeps meeting at 9). Several values are the rule's own times; left.
+ */
+function matchClock(line: string, start: StartTime, timeZone: string): string {
+  if (!start.dateTime || SEVERAL_A_DAY.test(line)) {
+    return line;
+  }
+  const time = wallClock(start, timeZone);
+  const parts = { BYHOUR: time.hour, BYMINUTE: time.minute, BYSECOND: time.second };
+  return line.replace(
+    /([:;])(BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g,
+    (_, separator: string, part: keyof typeof parts) =>
+      `${separator}${part}=${parts[part]}`
+  );
+}
+
 /** An RRULE line with its UNTIL in the start's form. */
 function matchUntil(line: string, allDay: boolean, timeZone: string): string {
   const match = UNTIL_PART.exec(line);
@@ -261,7 +279,7 @@ export function matchRecurrenceToStart(
   let changed = false;
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")
-      ? matchUntil(line, allDay, timeZone)
+      ? matchClock(matchUntil(line, allDay, timeZone), start, timeZone)
       : matchDateList(line, start, timeZone, severalADay);
     changed ||= matched !== line;
     return matched;

@@ -141,6 +141,13 @@ function order(value: RecurrenceValue): number {
     : Date.UTC(value.day.year, value.day.month - 1, value.day.day);
 }
 
+/** The values, each moment (or day) once. */
+function unique(values: RecurrenceValue[]): RecurrenceValue[] {
+  return values.filter(
+    (value, index) => values.findIndex((other) => sameValue(other, value)) === index
+  );
+}
+
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
   return a.instant && b.instant
     ? Temporal.Instant.compare(a.instant, b.instant) === 0
@@ -186,9 +193,20 @@ export function carryCount(
         : [];
     });
   if (hasAddedDays(masterRecurrence)) {
-    const added = listedValues("RDATE");
+    // The rule has COUNT positions; every distinct day beyond them (listed
+    // or skipped) is an added day that isn't also a rule day. Those extras
+    // are taken from the latest added days (added days usually run past
+    // the rule), and the rule's last day is the latest of the rest. An
+    // added day that's also a rule day stays one.
+    const distinct = unique([...listed, ...listedValues("EXDATE")]);
+    const count = countOf(masterRecurrence) ?? distinct.length;
+    const extras = Math.max(0, distinct.length - count);
+    const latestAddedFirst = unique(listedValues("RDATE")).sort(
+      (a, b) => order(b) - order(a)
+    );
+    const extraDays = latestAddedFirst.slice(0, extras);
     const ruleDays = listed.filter(
-      (value) => !added.some((day) => sameValue(day, value))
+      (value) => !extraDays.some((day) => sameValue(day, value))
     );
     const last = ruleDays.reduce<RecurrenceValue | null>(
       (latest, value) =>
@@ -216,10 +234,10 @@ export function carryCount(
     beforeSplit(value, originalStart, seriesZone);
   // Each position once: a skipped day Google also lists (as a cancelled
   // occurrence) isn't counted twice.
-  const used = [...listed.filter(before), ...listedValues("EXDATE").filter(before)]
-    .filter((value, index, all) =>
-      all.findIndex((other) => sameValue(other, value)) === index
-    ).length;
+  const used = unique([
+    ...listed.filter(before),
+    ...listedValues("EXDATE").filter(before),
+  ]).length;
   return withRemainingCount(recurrence, used);
 }
 

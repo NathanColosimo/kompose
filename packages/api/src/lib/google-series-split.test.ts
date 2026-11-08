@@ -171,4 +171,27 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261107T045959Z"]);
   });
+
+  test("keeps an added day that's also the rule's last day", () => {
+    // Daily COUNT=5 Nov 1–5 with an RDATE on Nov 5 (a rule day too), split
+    // at Nov 3 and moved to Nov 4: the new part runs Nov 4–6.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "RDATE;VALUE=DATE:20261105",
+        ],
+        newStart: "2026-11-04",
+        originalStart: "2026-11-03",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-11-01",
+          "2026-11-02",
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-05",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261106"]);
+  });
 });

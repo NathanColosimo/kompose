@@ -150,16 +150,17 @@ describe("skipped occurrences on the series' days", () => {
     ).toBe(rule);
   });
 
-  test("still moves a skipped time with a single BYHOUR", () => {
+  test("moves a single BYHOUR with the series, and its skipped time", () => {
+    // The rule's 9:00 is the series' time: moving it to 10:00 moves both.
     expect(
       matchRecurrenceToStart(
-        ["RRULE:FREQ=DAILY;BYHOUR=9", "EXDATE:20261104T140000Z"],
-        { dateTime: "2026-11-01T10:00:00-05:00" },
+        ["RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0", "EXDATE:20261104T140000Z"],
+        { dateTime: "2026-11-01T10:30:00-05:00" },
         "America/New_York"
       )
     ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9",
-      "EXDATE;TZID=America/New_York:20261104T100000",
+      "RRULE:FREQ=DAILY;BYHOUR=10;BYMINUTE=30",
+      "EXDATE;TZID=America/New_York:20261104T103000",
     ]);
   });
 });
