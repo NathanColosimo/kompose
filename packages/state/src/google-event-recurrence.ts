@@ -635,9 +635,34 @@ export function seriesRecurrenceForSave(params: {
     editedStart,
     timeZone,
     occurrence.originalStartTime ?? occurrence.start,
-    { firstDay, rulesFrom }
+    // Rules that followed the start count their COUNT from there too (a
+    // later occurrence's day can only run long, which keeps skips).
+    { firstDay: moved ? to : firstDay, rulesFrom }
   );
   return matched === masterRecurrence ? undefined : matched;
+}
+
+/**
+ * Where a series edited through one of its occurrences counts its days
+ * and COUNT from: the series' own first day, for lining its rule up with
+ * the start (`matchRecurrenceToStart`'s `days`). Undefined for the series
+ * itself, or before its master loads: the start is then its own.
+ */
+export function seriesCountingDays(
+  event: Pick<GoogleEvent, "recurringEventId"> | null | undefined,
+  masterStart:
+    | { date?: string | null; dateTime?: string | null }
+    | null
+    | undefined,
+  timeZone: string
+):
+  | { firstDay: Temporal.PlainDate | null; rulesFrom?: Temporal.PlainDate }
+  | undefined {
+  const firstDay =
+    event?.recurringEventId && masterStart
+      ? dayOfStart(masterStart, timeZone)
+      : null;
+  return firstDay ? { firstDay, rulesFrom: firstDay } : undefined;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

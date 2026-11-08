@@ -34,6 +34,7 @@ import {
   otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   timeInZone,
@@ -1265,6 +1266,8 @@ function buildEditPayload(
     event: GoogleEvent | undefined;
     hasEdits: boolean;
     masterRecurrence: string[] | null | undefined;
+    /** The series' own start, when the event is one of its occurrences. */
+    masterStart?: GoogleEvent["start"];
     /** The user used the Repeat control. */
     recurrenceEdited: boolean;
     /** The zone the editor shows days in. */
@@ -1319,7 +1322,12 @@ function buildEditPayload(
             temporalPayload.startPayload,
             eventTimeZone(ctx.event, ctx.timeZone),
             // The series' slot before the edit: which rules share its time.
-            ctx.event?.originalStartTime ?? ctx.event?.start
+            ctx.event?.originalStartTime ?? ctx.event?.start,
+            seriesCountingDays(
+              ctx.event,
+              ctx.masterStart,
+              eventTimeZone(ctx.event, ctx.timeZone)
+            )
           )
         : undefined,
       start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
@@ -2549,6 +2557,7 @@ export function EventEditForm({
         event,
         hasEdits: hasUserEditedRef.current,
         masterRecurrence: masterQuery.data?.recurrence,
+        masterStart: masterQuery.data?.start,
         recurrenceEdited: recurrenceEditedRef.current,
         timeZone,
       });

@@ -12,6 +12,7 @@ import {
   occurrenceDayMoved,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
 } from "./google-event-recurrence";
@@ -1125,6 +1126,56 @@ describe("seriesRecurrenceForSave", () => {
         dateTime: "2026-11-09T09:00:00-05:00",
       })
     ).toEqual(expected);
+  });
+
+  test("counts a moved first occurrence's COUNT from its new day", () => {
+    // Five weeks (or three months) from Mon Nov 2 9:00, the last but one
+    // skipped; the first occurrence moved to Tue Nov 3 and made all day:
+    // the rule and its skip follow, and the skip stays.
+    const firstMovedAllDay = (rule: string, exdate: string) =>
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-03" },
+        masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
+        masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-02T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-02T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      });
+    expect(
+      firstMovedAllDay("RRULE:FREQ=WEEKLY;COUNT=5", "20261130T090000")
+    ).toEqual(["RRULE:FREQ=WEEKLY;COUNT=5", "EXDATE;VALUE=DATE:20261201"]);
+    expect(
+      firstMovedAllDay("RRULE:FREQ=MONTHLY;COUNT=3", "20270102T090000")
+    ).toEqual(["RRULE:FREQ=MONTHLY;COUNT=3", "EXDATE;VALUE=DATE:20270103"]);
+  });
+
+  test("names the series' first day for an occurrence's edit", () => {
+    const masterStart = { dateTime: "2026-11-02T09:00:00-05:00" };
+    expect(
+      seriesCountingDays(
+        { recurringEventId: "series" },
+        masterStart,
+        "America/New_York"
+      )
+    ).toEqual({
+      firstDay: Temporal.PlainDate.from("2026-11-02"),
+      rulesFrom: Temporal.PlainDate.from("2026-11-02"),
+    });
+    // The series itself, or its master not loaded: the start is its own.
+    expect(
+      seriesCountingDays({}, masterStart, "America/New_York")
+    ).toBeUndefined();
+    expect(
+      seriesCountingDays(
+        { recurringEventId: "series" },
+        null,
+        "America/New_York"
+      )
+    ).toBeUndefined();
   });
 
   test("counts a COUNT from the series' first day", () => {

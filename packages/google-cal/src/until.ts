@@ -744,9 +744,9 @@ export function matchRecurrenceToStart(
         // one (followStart has moved them and their skips there), unless
         // the caller says they didn't move.
         anchor: days?.rulesFrom ?? Temporal.PlainDate.from(start.date),
-        // Without word from the caller, the series' start before the edit
-        // is its first (as the server passes it).
-        countFrom: days ? days.firstDay : baseDay,
+        // Without word from the caller, the new start is the series' first
+        // (on the server it is the series' own start).
+        countFrom: days ? days.firstDay : Temporal.PlainDate.from(start.date),
         base,
         recurrence,
         rules,

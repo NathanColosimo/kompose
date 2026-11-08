@@ -48,6 +48,7 @@ import {
   isRecurringGoogleEvent,
   occurrenceDayMoved,
   otherTimeZone,
+  seriesCountingDays,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
@@ -708,11 +709,13 @@ function matchedRecurrence(
   start: { date?: string; dateTime?: string },
   timeZone: string,
   /** The series' start before the edit: which rules share its time. */
-  seriesStart?: { date?: string; dateTime?: string }
+  seriesStart?: { date?: string; dateTime?: string },
+  /** Where the series counts its days from (`seriesCountingDays`). */
+  days?: ReturnType<typeof seriesCountingDays>
 ): string[] | undefined {
   return (
     recurrence &&
-    matchRecurrenceToStart(recurrence, start, timeZone, seriesStart)
+    matchRecurrenceToStart(recurrence, start, timeZone, seriesStart, days)
   );
 }
 
@@ -1500,13 +1503,16 @@ export default function CalendarTab() {
           zone,
           currentDraft.mode === "edit"
             ? currentDraft.sourceEvent.start
+            : undefined,
+          currentDraft.mode === "edit"
+            ? seriesCountingDays(currentDraft.sourceEvent, masterStart, zone)
             : undefined
         ),
         start: startPayload,
         summary: currentDraft.summary.trim(),
       };
     },
-    [masterRecurrence, timeZone]
+    [masterRecurrence, masterStart, timeZone]
   );
 
   const commitEventUpdate = useCallback(
