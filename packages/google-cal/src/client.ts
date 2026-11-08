@@ -105,22 +105,30 @@ function ruleForStart(
   splitAt?: string
 ): string[] | undefined {
   const zone = seriesZoneOf(master);
-  const firstTime =
-    start.date && splitAt && !DATE_ONLY.test(splitAt)
-      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
+  const clockOf = (dateTime: string | undefined) =>
+    dateTime && !DATE_ONLY.test(dateTime)
+      ? Temporal.Instant.from(dateTime).toZonedDateTimeISO(zone).toPlainTime()
       : null;
-  return (
-    rule &&
-    matchRecurrenceToStart(
-      rule,
-      start,
-      zone,
-      master.start,
-      start.date && firstTime
-        ? { firstDay: Temporal.PlainDate.from(start.date), firstTime }
-        : undefined
-    )
+  const splitClock = clockOf(splitAt);
+  const seriesClock = clockOf(master.start.dateTime);
+  // Split at a meeting off the series' own time (an added one, another
+  // rule's): the rules keep the times pinRuleTimes wrote.
+  const keepTimes = Boolean(
+    start.dateTime &&
+      splitClock &&
+      seriesClock &&
+      Temporal.PlainTime.compare(splitClock, seriesClock) !== 0
   );
+  let days: Parameters<typeof matchRecurrenceToStart>[4];
+  if (start.date && splitClock) {
+    days = {
+      firstDay: Temporal.PlainDate.from(start.date),
+      firstTime: splitClock,
+    };
+  } else if (keepTimes) {
+    days = { firstDay: null, keepTimes };
+  }
+  return rule && matchRecurrenceToStart(rule, start, zone, master.start, days);
 }
 
 /** `time` labelled with the series' zone when it has one (same moment). */

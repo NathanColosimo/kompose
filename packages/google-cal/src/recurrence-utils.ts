@@ -479,6 +479,13 @@ export function carryCountExactly(
 const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
 
 const CLOCK_NAMES = ["BYHOUR", "BYMINUTE", "BYSECOND"] as const;
+const FREQ_REGEX = /FREQ=([A-Z]+)/;
+/** The clock parts a sub-daily rule takes from its start (others meet at every value). */
+const INHERITED_CLOCK: Record<string, (typeof CLOCK_NAMES)[number][]> = {
+  HOURLY: ["BYMINUTE", "BYSECOND"],
+  MINUTELY: ["BYSECOND"],
+  SECONDLY: [],
+};
 
 /**
  * A series split at a meeting not at the series' own time (another rule's
@@ -518,7 +525,13 @@ export function pinRuleTimes(
     if (!isRule(line)) {
       return line;
     }
-    const missing = CLOCK_NAMES.filter(
+    // Only the parts the rule takes from its start: an hourly rule meets
+    // every hour (its minute and second are the start's), a minutely one
+    // every minute.
+    const inherited = INHERITED_CLOCK[FREQ_REGEX.exec(line)?.[1] ?? ""] ?? [
+      ...CLOCK_NAMES,
+    ];
+    const missing = inherited.filter(
       (name) =>
         !(line.includes(`;${name}=`) || line.includes(`:${name}=`)) &&
         (name !== "BYSECOND" || values.BYSECOND !== splitClock.second)

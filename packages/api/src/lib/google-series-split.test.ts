@@ -686,6 +686,61 @@ describe("splitting a series", () => {
     ).toBe("RRULE:FREQ=DAILY;COUNT=2;BYHOUR=9;BYMINUTE=0");
   });
 
+  test("keeps pinned times through the server's lining-up", () => {
+    // Daily five times and Mondays three times, both at the series' 9:00,
+    // plus an added Nov 9 15:00; split there, as the server does it: pin,
+    // count, then line up with the new 15:00 start keeping the rules'
+    // times. Both keep their 9:00 and every meeting: Nov 10-13, Nov 16
+    // and 23.
+    const zone = "America/New_York";
+    const seriesStart = { dateTime: "2026-11-09T09:00:00-05:00" };
+    const split = "2026-11-09T15:00:00-05:00";
+    const master = [
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+      "RDATE;TZID=America/New_York:20261109T150000",
+    ];
+    const carried = carryCountExactly(
+      pinRuleTimes(master, seriesStart, split, zone),
+      {
+        masterRecurrence: master,
+        originalStart: split,
+        seriesStart: seriesStart.dateTime,
+        seriesZone: zone,
+      }
+    );
+    expect(
+      matchRecurrenceToStart(
+        carried ?? [],
+        { dateTime: split, timeZone: zone },
+        zone,
+        seriesStart,
+        { firstDay: null, keepTimes: true }
+      )
+    ).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=4;BYHOUR=9;BYMINUTE=0",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2;BYHOUR=9;BYMINUTE=0",
+      "RDATE;TZID=America/New_York:20261109T150000",
+    ]);
+  });
+
+  test("pins only the time parts a rule takes from its start", () => {
+    // Every 4 hours plus daily 15:00, split at 15:00 off the series' 9:00:
+    // the hourly rule keeps meeting every few hours (only its minute is
+    // the start's), never just at 9:00.
+    expect(
+      pinRuleTimes(
+        ["RRULE:FREQ=HOURLY;INTERVAL=4", "RRULE:FREQ=DAILY;BYHOUR=15"],
+        { dateTime: "2026-11-09T09:00:00-05:00" },
+        "2026-11-09T15:00:00-05:00",
+        "America/New_York"
+      )
+    ).toEqual([
+      "RRULE:FREQ=HOURLY;INTERVAL=4;BYMINUTE=0",
+      "RRULE:FREQ=DAILY;BYHOUR=15;BYMINUTE=0",
+    ]);
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(

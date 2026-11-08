@@ -878,11 +878,18 @@ export function matchRecurrenceToStart(
      * COUNT for the server to carry and convert from the series' start.
      */
     viaOccurrence?: boolean;
+    /**
+     * The new start is at a meeting off the series' own time (a split at
+     * an added meeting or another rule's): the rules and skipped times
+     * keep their times (`pinRuleTimes` wrote them) instead of following it.
+     */
+    keepTimes?: boolean;
   }
 ): string[] {
   const allDay = Boolean(start.date);
   const base = seriesStart?.dateTime ? wallClock(seriesStart, timeZone) : null;
-  const severalADay = meetsSeveralTimesADay(recurrence, base);
+  const severalADay =
+    Boolean(days?.keepTimes) || meetsSeveralTimesADay(recurrence, base);
   // A several-times-a-day series whose start's time changed: each skipped
   // time moves with the rule it belongs to (a rule without BYHOUR meets
   // at the start's hour), others' stay.
