@@ -5,7 +5,14 @@ import {
   TASK_CREATE_FAILURE_MESSAGE,
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
@@ -54,7 +61,12 @@ export function EventCreationPopover() {
   const { state, actions, eventUnavailableReason, popoverTimes } =
     useEventCreation();
   const { createEvent } = useGoogleEventMutations();
+  // The type the user last picked; the chooser reopens on it.
   const [mode, setMode] = useState<CreationMode>("event");
+  // Set when the chooser opens with no calendar to write to: it shows Task
+  // this time, without changing the user's pick.
+  const [forcedTask, setForcedTask] = useState(false);
+  const shownMode: CreationMode = forcedTask ? "task" : mode;
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
@@ -100,14 +112,14 @@ export function EventCreationPopover() {
     if (nextMode !== "event" && nextMode !== "task") {
       return;
     }
-    if (nextMode === mode) {
+    if (nextMode === shownMode) {
       return;
     }
     // A failed create's message belongs to the other form.
     setFailure(null);
 
     const currentInterop =
-      mode === "event" ? eventInteropRef.current : taskInteropRef.current;
+      shownMode === "event" ? eventInteropRef.current : taskInteropRef.current;
     const nextInterop =
       nextMode === "event" ? eventInteropRef.current : taskInteropRef.current;
     const sharedFields = currentInterop?.getSharedFields();
@@ -116,6 +128,7 @@ export function EventCreationPopover() {
       nextInterop?.applySharedFields(sharedFields);
     }
 
+    setForcedTask(false);
     setMode(nextMode);
   };
 
@@ -123,14 +136,18 @@ export function EventCreationPopover() {
   // failed one keeps the draft. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
-  // With no calendar to write to, the chooser opens on Task; the Event tab
-  // says why there's no event.
-  useEffect(() => {
-    if (state.showPopover && eventUnavailableReason) {
-      setMode("task");
+  // Each time it opens: on Task when there's no calendar to write to (the
+  // Event tab says why), else on the user's pick. Before paint, so the
+  // Event tab never flashes.
+  const blockedRef = useRef(false);
+  blockedRef.current = eventUnavailableReason !== null;
+  // Only on opening: a calendar that loads later doesn't switch tabs.
+  useLayoutEffect(() => {
+    if (state.showPopover) {
+      setForcedTask(blockedRef.current);
     }
-  }, [state.showPopover, eventUnavailableReason]);
-  const eventBlocked = mode === "event" && eventUnavailableReason !== null;
+  }, [state.showPopover]);
+  const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
 
   /** Why the last create failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
@@ -165,10 +182,12 @@ export function EventCreationPopover() {
   }, [actions]);
 
   const handleSave = useCallback(() => {
-    if (savingRef.current) {
+    // Cmd+Enter too: the blocked Event tab has nothing to save, and closing
+    // would drop the draft.
+    if (savingRef.current || eventBlocked) {
       return;
     }
-    if (mode === "task") {
+    if (shownMode === "task") {
       const result = taskSubmitRef.current?.() ?? true;
       if (result === true) {
         actions.closePopover();
@@ -201,7 +220,7 @@ export function EventCreationPopover() {
         ),
       EVENT_CREATE_FAILURE_MESSAGE
     );
-  }, [actions, createEvent, holdForCreate, mode]);
+  }, [actions, createEvent, eventBlocked, holdForCreate, shownMode]);
 
   useHotkeys(
     "mod+enter",
@@ -245,12 +264,28 @@ export function EventCreationPopover() {
           e.preventDefault();
           handleCancel();
         }}
+        // Typing goes to the title, the first thing to fill in.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          const content = e.currentTarget as HTMLElement;
+          requestAnimationFrame(() => {
+            content
+              .querySelector<HTMLInputElement>(
+                '[role="tabpanel"][data-state="active"] input'
+              )
+              ?.focus();
+          });
+        }}
         side="right"
       >
         {/* Read-only while the create runs: a change typed then wouldn't
             be saved. */}
         <fieldset className="min-w-0" disabled={isSaving}>
-          <Tabs className="gap-3" onValueChange={handleModeChange} value={mode}>
+          <Tabs
+            className="gap-3"
+            onValueChange={handleModeChange}
+            value={shownMode}
+          >
             <div className="flex items-center gap-2">
               <TabsList className="grid grid-cols-2">
                 <TabsTrigger value="event">Event</TabsTrigger>

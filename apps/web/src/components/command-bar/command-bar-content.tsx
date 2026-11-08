@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Command, CommandInput, CommandList } from "@/components/ui/command";
 import { CommandBarCreateTask } from "./command-bar-create-task";
 import { CommandBarRoot } from "./command-bar-root";
@@ -71,9 +71,13 @@ export function CommandBarContent({
     [onRequestClose, selectionMode, view]
   );
 
+  const inputRef = useRef<HTMLInputElement>(null);
   const navigateToView = useCallback((targetView: CommandBarView) => {
     setView(targetView);
     setSearch("");
+    // Choosing a view with the mouse moves focus to the item; typing then
+    // has to land in the search field, not on the page's shortcuts.
+    inputRef.current?.focus();
   }, []);
   const handleCreated = useCallback(() => setSearch(""), []);
 
@@ -95,6 +99,7 @@ export function CommandBarContent({
         autoFocus
         onValueChange={setSearch}
         placeholder={placeholder}
+        ref={inputRef}
         value={search}
       />
       <CommandList>

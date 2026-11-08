@@ -8,7 +8,6 @@ import {
   todayPlainDateAtom,
 } from "../atoms/current-date";
 import { isListedAlone, isOverdueTask } from "../task-search-routing";
-
 import { useTasks } from "./use-tasks";
 
 const isTagged = (task: TaskSelectDecoded, tagId: string): boolean =>

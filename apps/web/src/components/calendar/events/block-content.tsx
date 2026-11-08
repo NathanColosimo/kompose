@@ -4,7 +4,7 @@ import {
   formatTimeRange,
 } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, Fragment, type ReactNode } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,20 @@ interface BlockContentProps {
    * text fits that part, top-aligned, so it isn't cut off mid-line.
    */
   uncoveredMinutes?: number;
+}
+
+/**
+ * Words that wrap whole, each cut with an ellipsis only if it alone is
+ * wider than the line.
+ */
+function WordsCutToFit({ text }: { text: string }) {
+  return text.split(" ").map((word, index) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: a title's words in order
+    <Fragment key={index}>
+      {index > 0 ? " " : null}
+      <span className="inline-block max-w-full truncate align-top">{word}</span>
+    </Fragment>
+  ));
 }
 
 /**
@@ -171,14 +185,20 @@ export function BlockContent({
             // split ordinary words like "re-view"). A word that still can't
             // fit breaks anywhere rather than being clipped.
             "hyphens-manual [overflow-wrap:break-word]",
-            titleClampClass(isTall, hasTwoTitleLines)
+            titleClampClass(isTall, hasTwoTitleLines),
+            "@max-[4rem]:[overflow-wrap:normal]"
           )}
         >
-          {/* Soft hyphens only where the block is narrow: elsewhere a long
-              word moves down whole instead of being split. */}
+          {/* Wide: words move down whole. Narrow: long words break with a
+              hyphen. Narrowest (about four letters a line, where hyphens
+              read as "Roa-d-…"): words still wrap whole, and only one too
+              long for a line is cut short ("Road…"). */}
           <span className="@max-[5.5rem]:hidden">{title}</span>
-          <span className="@max-[5.5rem]:inline hidden">
+          <span className="@max-[5.5rem]:inline @max-[4rem]:hidden hidden">
             {withSoftHyphens(title)}
+          </span>
+          <span className="@max-[4rem]:inline hidden">
+            <WordsCutToFit text={title} />
           </span>
         </span>
         {/* The time comes first: icons that don't fit beside it wrap onto

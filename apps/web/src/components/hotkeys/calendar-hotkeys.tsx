@@ -18,8 +18,6 @@ import {
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
-const hotkeyOptions = { enableOnFormTags: false } as const;
-
 /**
  * Calendar shortcuts; Cmd+K also works in form fields.
  * See documents/hotkeys.md for the full bindings.
@@ -35,7 +33,13 @@ export function CalendarHotkeys() {
   const setVisibleDaysCount = useSetAtom(visibleDaysCountAtom);
   const navigationStep = useAtomValue(effectiveVisibleDaysCountAtom);
   const setSidebarLeftViewSelection = useSetAtom(sidebarLeftViewSelectionAtom);
-  const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
+  const [commandBarOpen, setCommandBarOpen] = useAtom(commandBarOpenAtom);
+  // Off while the command bar is open: its typing isn't a shortcut ("c" in
+  // a search would open the create popover over it).
+  const hotkeyOptions = {
+    enableOnFormTags: false,
+    enabled: !commandBarOpen,
+  } as const;
   const goToToday = useSetAtom(goToTodayAtom);
   const requestCreateEvent = useRequestCreateEvent();
 

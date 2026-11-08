@@ -7,6 +7,7 @@ import {
   googleCalendarsLoadingAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
+import { eventCreationBlockedReason } from "@kompose/state/event-creation";
 import { useAtomValue } from "jotai";
 import {
   createContext,
@@ -211,8 +212,12 @@ export function useEventCreationState(): EventCreationContextValue {
   // so the drag continues while the cursor crosses existing events.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
-      // Without a calendar to write to, the chooser still opens for a task;
-      // its Event tab says why there's no event.
+      // While the calendars load, a press waits (the calendar to create in
+      // isn't known yet). Without one to write to, the chooser still opens
+      // for a task; its Event tab says why there's no event.
+      if (!defaultCalendar && isLoadingCalendars) {
+        return;
+      }
       documentListenerCleanupRef.current?.();
 
       startDateTimeRef.current = dateTime;
@@ -290,7 +295,7 @@ export function useEventCreationState(): EventCreationContextValue {
         documentListenerCleanupRef.current = null;
       };
     },
-    [defaultCalendar, onSlotDragMove, onSlotMouseUp]
+    [defaultCalendar, isLoadingCalendars, onSlotDragMove, onSlotMouseUp]
   );
 
   const createAt = useCallback(
@@ -370,21 +375,34 @@ export function useEventCreationState(): EventCreationContextValue {
   }, [state.startDateTime, state.endDateTime]);
 
   // Why the chooser can't make an event (it can still make a task).
-  let eventUnavailableReason: string | null = null;
-  if (!defaultCalendar) {
-    eventUnavailableReason =
-      googleAccounts.length === 0
-        ? "Connect a Google calendar in Settings to create events."
-        : "Show a calendar you can edit from the Calendars menu to create events.";
-  }
+  const eventUnavailableReason = defaultCalendar
+    ? null
+    : eventCreationBlockedReason({
+        hasGoogleAccount: googleAccounts.length > 0,
+        loading: isLoadingCalendars,
+      });
+
+  // A chooser opened before the calendars loaded takes the default calendar
+  // once it's known, rather than keeping none.
+  const resolvedState = useMemo(
+    () =>
+      state.calendarId || !defaultCalendar
+        ? state
+        : {
+            ...state,
+            accountId: defaultCalendar.accountId,
+            calendarId: defaultCalendar.calendarId,
+          },
+    [state, defaultCalendar]
+  );
 
   return useMemo(
     () => ({
       actions,
       eventUnavailableReason,
       popoverTimes,
-      state,
+      state: resolvedState,
     }),
-    [state, actions, eventUnavailableReason, popoverTimes]
+    [resolvedState, actions, eventUnavailableReason, popoverTimes]
   );
 }

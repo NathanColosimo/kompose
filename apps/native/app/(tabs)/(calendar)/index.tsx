@@ -18,7 +18,9 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import {
+  googleAccountsDataAtom,
   googleCalendarsDataAtom,
+  googleCalendarsLoadingAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
@@ -34,6 +36,7 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { eventCreationBlockedReason } from "@kompose/state/event-creation";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
@@ -860,6 +863,8 @@ export default function CalendarTab() {
   );
 
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const isLoadingCalendars = useAtomValue(googleCalendarsLoadingAtom);
   const calendarMetadataByKey = useMemo(() => {
     const metadata = new Map<
       string,
@@ -2288,7 +2293,10 @@ export default function CalendarTab() {
           </Button>
           {defaultCalendar ? null : (
             <Text className="text-muted-foreground text-xs">
-              Show a calendar you can edit to create events.
+              {eventCreationBlockedReason({
+                hasGoogleAccount: googleAccounts.length > 0,
+                loading: isLoadingCalendars,
+              })}
             </Text>
           )}
         </View>
