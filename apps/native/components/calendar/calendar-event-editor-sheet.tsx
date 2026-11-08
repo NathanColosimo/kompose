@@ -10,6 +10,7 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import {
   buildGoogleEventRecurrenceRule,
+  byDayForFrequency,
   dateToUntilRule,
   describeEventRecurrence,
   type EventRecurrenceEnd,
@@ -234,16 +235,24 @@ function RecurrenceEditorSection({
             <Button
               key={frequency.value}
               onPress={() => {
+                // Tapping the picked chip again changes nothing.
+                if (active) {
+                  return;
+                }
                 if (frequency.value === "none") {
                   applyPrimaryRecurrenceRule(null);
                   return;
                 }
-
                 // Weekly with no days picked repeats on the start's weekday
                 // (no BYDAY), so moving the start moves the series with it.
-                const byDay =
-                  frequency.value === "WEEKLY" ? parsedRecurrence.byDay : [];
-                updateRecurrence({ byDay, freq: frequency.value });
+                updateRecurrence({
+                  byDay: byDayForFrequency(
+                    parsedRecurrence.byDay,
+                    parsedRecurrence.freq,
+                    frequency.value
+                  ),
+                  freq: frequency.value,
+                });
               }}
               size="sm"
               style={{ borderRadius: 999 }}

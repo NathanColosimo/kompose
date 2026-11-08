@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildGoogleEventRecurrenceRule,
+  byDayForFrequency,
   describeEventRecurrence,
   getPrimaryRecurrenceRule,
   parseGoogleEventRecurrenceRule,
@@ -94,9 +95,40 @@ describe("buildGoogleEventRecurrenceRule", () => {
         "WEEKLY",
         ["MO"],
         { type: "none" },
-        "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15"
+        "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;WKST=SU"
       )
-    ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=3;BYDAY=MO");
+    ).toBe("RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=MO");
+  });
+
+  test("picking a frequency keeps what still applies", () => {
+    const pick = (
+      rule: string,
+      to: Parameters<typeof byDayForFrequency>[2]
+    ) => {
+      const { byDay, end, freq } = parseGoogleEventRecurrenceRule(rule);
+      return buildGoogleEventRecurrenceRule(
+        to,
+        byDayForFrequency(byDay, freq, to),
+        end,
+        rule
+      );
+    };
+    // Re-picking the current frequency changes nothing.
+    for (const rule of [
+      "RRULE:FREQ=MONTHLY;BYDAY=2TU",
+      "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE",
+    ]) {
+      const { freq } = parseGoogleEventRecurrenceRule(rule);
+      expect(pick(rule, freq)).toBe(rule);
+    }
+    // "2nd Tuesday" means nothing weekly; it repeats on the start's weekday.
+    expect(pick("RRULE:FREQ=MONTHLY;BYDAY=2TU", "WEEKLY")).toBe(
+      "RRULE:FREQ=WEEKLY"
+    );
+    expect(pick("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", "MONTHLY")).toBe(
+      "RRULE:FREQ=MONTHLY"
+    );
   });
 
   test("keeps a yearly schedule when only its end changes", () => {

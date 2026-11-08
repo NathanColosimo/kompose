@@ -159,8 +159,12 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
 
 /** The rule parts the repeat editors set; the rest of a rule is kept. */
 const EDITED_PARTS = new Set(["FREQ", "BYDAY", "UNTIL", "COUNT"]);
-/** Parts tied to a frequency, dropped when the frequency changes. */
+/**
+ * Parts tied to a frequency, dropped when the frequency changes: picking
+ * Monthly on an "every 2 weeks" series means every month, not every 2.
+ */
 const FREQUENCY_PARTS = new Set([
+  "INTERVAL",
   "BYMONTHDAY",
   "BYMONTH",
   "BYSETPOS",
@@ -191,6 +195,25 @@ function keptRuleParts(
     }
     return baseFreq === freq || !FREQUENCY_PARTS.has(key);
   });
+}
+
+const PLAIN_WEEKDAY = /^[A-Z]{2}$/;
+
+/**
+ * The BYDAY a repeat keeps when its frequency is picked: all of it for the
+ * same frequency (re-picking Monthly keeps "2nd Tuesday"); the plain
+ * weekdays when moving to Weekly ("2TU" isn't valid there, and none left
+ * means the start's weekday); nothing for any other frequency.
+ */
+export function byDayForFrequency(
+  byDay: string[],
+  from: EventRecurrenceFrequency,
+  to: EventRecurrenceFrequency
+): string[] {
+  if (from === to) {
+    return byDay;
+  }
+  return to === "WEEKLY" ? byDay.filter((day) => PLAIN_WEEKDAY.test(day)) : [];
 }
 
 export function buildGoogleEventRecurrenceRule(

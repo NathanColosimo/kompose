@@ -5,7 +5,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
 } from "@kompose/state/recurrence-scope-options";
-import { useId } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,9 +47,23 @@ export function RecurrenceScopeDialog({
   options?: readonly RecurrenceScopeOption<RecurrenceScope>[];
 }) {
   const idBase = useId();
+  // One confirm at a time: a held Cmd+Enter or a double click on Delete
+  // would otherwise send the change twice while the first is running.
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState(false);
   const confirm = async () => {
-    await onConfirm();
-    onOpenChange(false);
+    if (pendingRef.current) {
+      return;
+    }
+    pendingRef.current = true;
+    setPending(true);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
   };
 
   return (
@@ -60,7 +74,9 @@ export function RecurrenceScopeDialog({
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            confirm().catch(() => null);
+            if (!e.repeat) {
+              confirm().catch(() => null);
+            }
           }
         }}
       >
@@ -113,6 +129,7 @@ export function RecurrenceScopeDialog({
             {cancelLabel}
           </Button>
           <Button
+            disabled={pending}
             onClick={() => {
               confirm().catch(() => null);
             }}

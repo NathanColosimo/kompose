@@ -13,6 +13,7 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
+  byDayForFrequency,
   dateToUntilRule,
   describeEventRecurrence,
   getPrimaryRecurrenceRule,
@@ -365,7 +366,7 @@ function RecurrenceEditor({
           onValueChange={(v) => {
             const nextFreq = v as Frequency;
             emitChanges({
-              byDay: nextFreq === "WEEKLY" ? values.byDay : [],
+              byDay: byDayForFrequency(values.byDay, values.freq, nextFreq),
               freq: nextFreq,
             });
           }}
