@@ -4,15 +4,19 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
-  countedRuleMeetings,
   dayOfStart,
   matchRecurrenceToStart,
   moveSkippedDays,
-  ruleTimesOf,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
+
+/** A start as Google writes it: a date (all day) or a date-time. */
+interface StartTime {
+  date?: string | null;
+  dateTime?: string | null;
+}
 
 export type EventRecurrenceFrequency =
   | "none"
@@ -521,10 +525,7 @@ export function otherTimeZone(
 }
 
 /** Whether two Google starts are the same moment (or the same date). */
-function sameStart(
-  a: { date?: string | null; dateTime?: string | null },
-  b: { date?: string | null; dateTime?: string | null } | undefined
-): boolean {
+function sameStart(a: StartTime, b: StartTime | undefined): boolean {
   if (!b) {
     return false;
   }
@@ -571,7 +572,7 @@ export function repeatCountingDay(params: {
   /** The form's start day, in the series' zone. */
   formDay: Temporal.PlainDate | null;
   /** The series' own start (its master's), once loaded. */
-  seriesStart?: { date?: string | null; dateTime?: string | null } | null;
+  seriesStart?: StartTime | null;
   timeZone: string;
 }): Temporal.PlainDate | null {
   const { changed, event, timeZone } = params;
@@ -587,8 +588,20 @@ export function repeatCountingDay(params: {
   return first ?? placed ?? params.formDay;
 }
 
-interface RepeatSkipParams {
-  editedStart: { date?: string | null; dateTime?: string | null };
+/**
+ * Why a new repeat, saved for the entire series, would cancel this
+ * occurrence (null when it wouldn't, or before the series loads: the
+ * scope rules wait for it). Google keeps an occurrence, a rescheduled one
+ * too, only while the series' rule still produces its original slot
+ * (`originalStartTime`), counted from the series' first meeting (its
+ * DTSTART): a day left implicit (weekly with no days picked, monthly on
+ * "Day N", yearly) comes from that first meeting, an interval counts its
+ * weeks or months from it, and a COUNT or UNTIL can end the series before
+ * the slot. The editor's words count from the occurrence instead, so
+ * Entire series would then save something else and drop the very meeting
+ * being edited.
+ */
+export function repeatSkipsOccurrence(params: {
   occurrence: Pick<
     GoogleEvent,
     "originalStartTime" | "recurringEventId" | "start"
@@ -596,108 +609,147 @@ interface RepeatSkipParams {
   /** The repeat the save sends. */
   recurrence: string[] | undefined;
   /** The series' own start (its master's), once loaded. */
-  seriesStart?: { date?: string | null; dateTime?: string | null } | null;
+  seriesStart?: StartTime | null;
   timeZone: string;
+}): "day" | "end" | null {
+  const { occurrence, seriesStart } = params;
+  const rule = getPrimaryRecurrenceRule(params.recurrence);
+  if (!(occurrence.recurringEventId && seriesStart && rule)) {
+    return null;
+  }
+  return slotDropped({
+    rule,
+    seriesStart,
+    slot: occurrence.originalStartTime ?? occurrence.start,
+    timeZone: eventTimeZone(occurrence, params.timeZone),
+  });
 }
 
 /**
- * Why a new repeat, saved for the entire series, would skip this
- * occurrence (null when it wouldn't, or before the series loads: the
- * scope rules wait for it): an Entire series save keeps the series' first
- * meeting (its DTSTART) and counts the rule from there, so a day
- * left implicit (weekly with no days picked, monthly on "Day N", yearly)
- * comes from that first meeting, an interval counts its weeks or months
- * from it, and a COUNT or UNTIL can end the series before today. When the
- * rule counted that way doesn't meet on the occurrence's day, the editor's
- * words (which count from it) aren't what Entire series would save, and it
- * would drop the very meeting being edited: so the change applies from
- * here on.
+ * The series' first moved (rescheduled) meeting, among those `loaded`,
+ * that a new repeat saved for the entire series would cancel: Google keeps
+ * one only while the rule still produces its original slot. Its start, as
+ * moved, for the scope dialog to name; null when none would go, or before
+ * the series loads. Only the edited rule's: in a series with several
+ * rules, a meeting at another rule's time is that rule's, which the save
+ * keeps. The edited occurrence is `repeatSkipsOccurrence`'s.
  */
-export function repeatSkipsOccurrence(
-  params: RepeatSkipParams
-): "day" | "end" | null {
+export function movedMeetingDropped(params: {
+  /** The series' occurrences the app has loaded (from its events cache). */
+  loaded: Pick<
+    GoogleEvent,
+    "id" | "originalStartTime" | "recurringEventId" | "start"
+  >[];
+  occurrence: Pick<GoogleEvent, "id" | "recurringEventId" | "start">;
+  /** The repeat the save sends. */
+  recurrence: string[] | undefined;
+  /** The series' own start (its master's), once loaded. */
+  seriesStart?: StartTime | null;
+  timeZone: string;
+}): GoogleEvent["start"] | null {
   const { occurrence, seriesStart } = params;
   const rule = getPrimaryRecurrenceRule(params.recurrence);
   if (!(occurrence.recurringEventId && seriesStart && rule)) {
     return null;
   }
   const timeZone = eventTimeZone(occurrence, params.timeZone);
-  const first = dayOfStart(seriesStart, timeZone);
-  const day = dayOfStart(params.editedStart, timeZone);
-  if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
-    return null;
-  }
-  // "day": its day isn't one, counted from the series' first meeting (an
-  // implicit day, an interval's phase; unknown parts: as shown, as before).
-  if (isRuleDay(rule, first, day) === false) {
-    return "day";
-  }
-  // "end": its COUNT or UNTIL ends first. Entire series keeps the series'
-  // own start time unless the edit retimes this occurrence (the server's
-  // seriesTimesForEdit), and a timed COUNT counts from that time. A kept
-  // start can still be a retime, by a new end, which isn't known here, so
-  // both times count.
-  const editedTime = timeOfStart(params.editedStart, timeZone);
-  const savedTimes = sameStart(params.editedStart, occurrence.start)
-    ? [timeOfStart(seriesStart, timeZone), editedTime]
-    : [editedTime];
-  const ends = savedTimes.some((seriesTime) =>
-    seriesEndsBefore({
-      edited: params.editedStart,
-      first,
-      rule,
-      seriesTime,
-      timeZone,
-    })
-  );
-  return ends ? "end" : null;
+  const severalRules = (params.recurrence ?? []).filter(isRule).length > 1;
+  const ruleTime = ruleLineTime(rule, timeOfStart(seriesStart, timeZone));
+  const dropped = params.loaded.flatMap((event) => {
+    const slot = event.originalStartTime;
+    const moved =
+      event.recurringEventId === occurrence.recurringEventId &&
+      event.id !== occurrence.id &&
+      slot &&
+      !sameStart(event.start, slot);
+    if (!moved) {
+      return [];
+    }
+    const slotTime = timeOfStart(slot, timeZone);
+    const othersRule =
+      severalRules &&
+      ruleTime &&
+      slotTime &&
+      Temporal.PlainTime.compare(ruleTime, slotTime) !== 0;
+    return !othersRule && slotDropped({ rule, seriesStart, slot, timeZone })
+      ? [{ slot, start: event.start }]
+      : [];
+  });
+  // Earliest original day first (ISO days sort as text).
+  const slotDay = (event: (typeof dropped)[number]) =>
+    dayOfStart(event.slot, timeZone)?.toString() ?? "";
+  const [first] = dropped.sort((a, b) => slotDay(a).localeCompare(slotDay(b)));
+  return first?.start ?? null;
 }
 
 /**
- * Whether a rule counted from the series' first meeting (`first`, at
- * `seriesTime`) ends (COUNT or UNTIL) before the `edited` start. A timed
- * series' COUNT counts each meeting (each of a rule's times a day, a time
- * the clocks skip not counted), as the server does; an all-day one's
- * counts days.
+ * The time of day a rule line meets, as Google reads it: its own single
+ * BYHOUR and BYMINUTE, the rest from the series' start time (a list is
+ * ignored: the series' time). Null for an all-day series.
  */
-function seriesEndsBefore(params: {
-  edited: { date?: string | null; dateTime?: string | null };
-  first: Temporal.PlainDate;
+function ruleLineTime(
+  rule: string,
+  seriesTime: Temporal.PlainTime | null
+): Temporal.PlainTime | null {
+  if (!seriesTime) {
+    return null;
+  }
+  const single = (name: string) => {
+    const value = new RegExp(`(?:^|;)${name}=(\\d+)(?:;|$)`).exec(rule)?.[1];
+    return value === undefined ? undefined : Number(value);
+  };
+  return seriesTime.with({
+    hour: single("BYHOUR") ?? seriesTime.hour,
+    minute: single("BYMINUTE") ?? seriesTime.minute,
+  });
+}
+
+/**
+ * Why `rule`, counted from the series' first meeting, no longer produces
+ * `slot`'s day: "day", it isn't one of the rule's days (an implicit day,
+ * an interval's phase; unknown parts: as shown, as before), or "end", its
+ * COUNT or UNTIL comes first. Null when it still does. A series' first
+ * meeting is always its own.
+ */
+function slotDropped(params: {
   rule: string;
-  /** The series' start time once saved; null all day. */
-  seriesTime: Temporal.PlainTime | null;
+  seriesStart: StartTime;
+  slot: StartTime;
   timeZone: string;
-}): boolean {
-  const { edited, first, rule, seriesTime, timeZone } = params;
-  const day = dayOfStart(edited, timeZone);
+}): "day" | "end" | null {
+  const { rule, timeZone } = params;
+  const first = dayOfStart(params.seriesStart, timeZone);
+  const day = dayOfStart(params.slot, timeZone);
+  if (!(first && day) || Temporal.PlainDate.compare(day, first) <= 0) {
+    return null;
+  }
+  if (isRuleDay(rule, first, day) === false) {
+    return "day";
+  }
   const { end } = parseGoogleEventRecurrenceRule(rule);
-  if (!day || end.type === "none") {
-    return false;
-  }
+  let last: Temporal.PlainDate | null | undefined = null;
   if (end.type === "until") {
-    const last = untilRuleToDay(end.date, timeZone);
-    return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
+    last = untilRuleToDay(end.date, timeZone);
+  } else if (end.type === "count") {
+    // Null unless it found all `count` days.
+    last = countedRuleDays(withoutClockParts(rule), first, end.count)?.at(-1);
   }
-  const at = edited.dateTime ? Temporal.Instant.from(edited.dateTime) : null;
-  const times = seriesTime ? ruleTimesOf(rule, seriesTime) : null;
-  if (at && times) {
-    const meetings = countedRuleMeetings({
-      base: seriesTime,
-      count: end.count,
-      from: first,
-      rule,
-      times,
-      timeZone,
-    });
-    // Null, or short of `count`, when its meetings can't all be listed.
-    return Boolean(
-      meetings?.size === end.count &&
-        Math.max(...meetings) < at.epochMilliseconds
-    );
-  }
-  // Null unless it found all `count` days.
-  const last = countedRuleDays(rule, first, end.count)?.at(-1);
-  return Boolean(last && Temporal.PlainDate.compare(last, day) < 0);
+  return last && Temporal.PlainDate.compare(last, day) < 0 ? "end" : null;
+}
+
+const CLOCK_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
+
+/**
+ * `rule` without its BYHOUR, BYMINUTE and BYSECOND. Google meets once a
+ * rule day, at the series' start time, and ignores a list of times there
+ * (FREQ=DAILY;BYHOUR=9,15;COUNT=8 is eight 9:00 meetings, checked against
+ * its API), so they don't change which days a COUNT reaches.
+ */
+function withoutClockParts(rule: string): string {
+  return rule
+    .split(";")
+    .filter((part) => !CLOCK_PART.test(part))
+    .join(";");
 }
 
 /**
@@ -757,7 +809,7 @@ export function seriesRecurrenceForSave(params: {
   };
   masterRecurrence: string[] | null | undefined;
   /** The series' own start, its first day (where COUNT counts from). */
-  masterStart?: { date?: string | null; dateTime?: string | null } | null;
+  masterStart?: StartTime | null;
   occurrence: Pick<
     GoogleEvent,
     "originalStartTime" | "recurringEventId" | "start"
@@ -839,10 +891,7 @@ export function seriesRecurrenceForSave(params: {
  */
 export function seriesCountingDays(
   event: Pick<GoogleEvent, "recurringEventId"> | null | undefined,
-  masterStart:
-    | { date?: string | null; dateTime?: string | null }
-    | null
-    | undefined,
+  masterStart: StartTime | null | undefined,
   timeZone: string
 ):
   | {
