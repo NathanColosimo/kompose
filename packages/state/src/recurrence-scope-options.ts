@@ -668,7 +668,8 @@ function scopesOff(
   const followingOn =
     followingRuleKnown(changes) &&
     !changes.splitBlocked &&
-    !firstMeetingRefused(changes);
+    !firstMeetingRefused(changes) &&
+    !refusedScopes(changes).following;
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(allOff ? { all: true } : {}),
@@ -732,20 +733,23 @@ function firstMeetingNewDayLine(
 /**
  * What to do where the save is left no scope (`eventSaveDescription`),
  * after saying why. Null where the line already says it: a calendar move,
- * or the series loading. Off every scope but by a calendar move, a save
- * has a new repeat, as only that turns Only this off.
+ * or the series loading, while that can open a scope. Off every scope but
+ * by a calendar move, a save has a new repeat, as only that turns Only
+ * this off.
  */
 function noScopeStepFor(changes: EventSaveChanges): string | null {
-  if (changes.calendarChanged || !followingRuleKnown(changes)) {
+  if (changes.calendarChanged) {
+    return null;
+  }
+  const pending =
+    !followingRuleKnown(changes) ||
+    entireSeriesOff(changes)?.reason === "seriesPending";
+  const opens = loadingOpens(changes);
+  if (pending && (opens.all || opens.following)) {
     return null;
   }
   const off = eventSaveDisabledScopes(changes);
-  if (!(off.all && off.following && off.this)) {
-    return null;
-  }
-  return entireSeriesOff(changes)?.reason === "seriesPending"
-    ? null
-    : noScopeStep(changes);
+  return off.all && off.following && off.this ? noScopeStep(changes) : null;
 }
 
 /**
@@ -882,6 +886,41 @@ function refusedAsWholeSeries(changes: EventSaveChanges): boolean {
 }
 
 /**
+ * The series scopes the server refused for this save. From the series'
+ * first meeting, a refusal for one is for both: This and following there
+ * is the entire series (`refusedAsWholeSeries`, `firstMeetingRefused`).
+ */
+function refusedScopes(changes: EventSaveChanges): {
+  all: boolean;
+  following: boolean;
+} {
+  const scopes = changes.refused?.scopes;
+  return {
+    all: Boolean(scopes?.all) || refusedAsWholeSeries(changes),
+    following:
+      Boolean(scopes?.following) || Boolean(changes.opensSeries && scopes?.all),
+  };
+}
+
+/**
+ * What loading the series could open past the server's refusals: This and
+ * following, and Entire series where it waits for the series (a new
+ * repeat or time on the occurrence's own day).
+ */
+function loadingOpens(changes: EventSaveChanges): {
+  all: boolean;
+  following: boolean;
+} {
+  const refused = refusedScopes(changes);
+  return {
+    all:
+      !(refused.all || changes.dateMoved) &&
+      Boolean(changes.patternChanged || changes.retimed),
+    following: !refused.following,
+  };
+}
+
+/**
  * The scope a save dialog shows and saves with: the user's own pick while
  * it's available, else the preferred one, else the narrowest on. Worked
  * out each time, so a preferred scope that's off for a moment (the series
@@ -1005,7 +1044,7 @@ function calendarMoveDescription(changes: EventSaveChanges): string {
       return copy.moveEventRefused;
     case "seriesPending":
       // Loading can't open what the server refused.
-      if (changes.refused?.scopes.all) {
+      if (refusedScopes(changes).all) {
         return copy.moveEventRefused;
       }
       if (changes.patternChanged) {
@@ -1019,16 +1058,24 @@ function calendarMoveDescription(changes: EventSaveChanges): string {
   }
 }
 
-/** The scope dialog's line while the series' rule loads, or failed to. */
+/**
+ * The scope dialog's line while the series' rule loads, or failed to, and
+ * what loading would open (`loadingOpens`). Where it can open nothing the
+ * server didn't refuse, the line says what's left now instead: the
+ * occurrence alone, or, for a new repeat, nothing (`noScopeStep`).
+ */
 function seriesPendingDescription(changes: EventSaveChanges): string {
   const copy = SCOPE_DIALOG_COPY;
-  if (changes.patternChanged) {
-    if (changes.seriesRuleFailed) {
-      return copy.seriesFailedRepeat;
+  const opens = loadingOpens(changes);
+  if (!(opens.all || opens.following)) {
+    if (changes.dateMoved) {
+      return newDayLine(changes, { why: null });
     }
-    const refused = changes.refused?.scopes;
-    return refused?.all && refused.following
-      ? copy.seriesLoadingRefused
+    return changes.patternChanged ? copy.repeatNotAlone : "";
+  }
+  if (changes.patternChanged) {
+    return changes.seriesRuleFailed
+      ? copy.seriesFailedRepeat
       : copy.seriesLoadingRepeat;
   }
   if (changes.seriesRuleFailed) {
@@ -1038,24 +1085,18 @@ function seriesPendingDescription(changes: EventSaveChanges): string {
     return changes.retimed ? copy.seriesFailedTime : copy.seriesFailedSave;
   }
   if (changes.dateMoved) {
-    return `${newDayLine(changes)} ${loadingLine(changes, false)}`;
+    return `${newDayLine(changes)} ${loadingLine(opens)}`;
   }
-  return loadingLine(changes, Boolean(changes.retimed));
+  return loadingLine(opens);
 }
 
-/**
- * "Loading the series…", and what opens once it's in: This and following,
- * and Entire series too for a new time (`withAll`), each unless the
- * server refused it.
- */
-function loadingLine(changes: EventSaveChanges, withAll: boolean): string {
+/** "Loading the series…", and what opens once it's in (`loadingOpens`). */
+function loadingLine(opens: { all: boolean; following: boolean }): string {
   const copy = SCOPE_DIALOG_COPY;
-  const following = !changes.refused?.scopes.following;
-  const all = withAll && !changes.refused?.scopes.all;
-  if (following) {
-    return all ? copy.seriesLoadingTime : copy.seriesLoading;
+  if (opens.following) {
+    return opens.all ? copy.seriesLoadingTime : copy.seriesLoading;
   }
-  return all ? copy.seriesLoadingAll : copy.seriesLoadingRefused;
+  return opens.all ? copy.seriesLoadingAll : copy.seriesLoadingRefused;
 }
 
 /**
@@ -1097,7 +1138,7 @@ function splitBlockedDescription(
           why,
           patternChanged
             ? SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason
-            : then.severalRulesTime
+            : `${SCOPE_DIALOG_COPY.severalRulesTimeReason} ${then.severalRulesTime}`
         );
       case "seriesPending":
         return seriesPendingDescription(changes);
@@ -1188,7 +1229,7 @@ function whyScopesOff(changes: EventSaveChanges): string {
   if (!followingRuleKnown(changes)) {
     return seriesPendingDescription(changes);
   }
-  if (changes.splitBlocked || changes.refused?.scopes.following) {
+  if (changes.splitBlocked || refusedScopes(changes).following) {
     return splitBlockedDescription(changes, ownSplitBlock(changes));
   }
   const off = entireSeriesOff(changes);

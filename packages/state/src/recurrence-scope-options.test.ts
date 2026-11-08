@@ -711,7 +711,7 @@ describe("a new time for a series of several rules", () => {
     const occurrence = { ...changes, splitBlocked: "severalRules" as const };
     expect(off(occurrence)).toEqual(["all", "following"]);
     expect(eventSaveDescription(occurrence)).toBe(
-      "This and following isn't available for a series with more than one rule. A new time applies to this occurrence only."
+      "This and following isn't available for a series with more than one rule. This series' meetings keep times of their own, so a new time can't apply to the entire series. A new time applies to this occurrence only."
     );
     // No split block (one rule at another hour than the start's):
     // This and following takes the new time.
@@ -1009,8 +1009,9 @@ describe("the server's refusal of a series write", () => {
     const following = refuseSave(null, "following", { reason: "countUnknown" });
     const unknown = refusalReason({ reason: "countUnknown" });
     const all = refuseSave(null, "all", drops);
+    // Loading would open only what the server refused: nothing to wait for.
     expect(eventSaveDescription({ ...loading, refused: following })).toBe(
-      `${unknown} Loading the series…`
+      `${unknown} Apply your changes to:`
     );
     expect(
       eventSaveDescription({ ...loading, refused: following, retimed: true })
@@ -1018,14 +1019,16 @@ describe("the server's refusal of a series write", () => {
     expect(
       eventSaveDescription({ ...loading, refused: all, retimed: true })
     ).toBe(`${refusalReason(drops)} ${SCOPE_DIALOG_COPY.seriesLoading}`);
-    // A new repeat neither scope will take.
+    // A new repeat neither scope will take: no scope is left.
     expect(
       eventSaveDescription({
         ...loading,
         patternChanged: true,
         refused: refuseSave(all, "following", { reason: "countUnknown" }),
       })
-    ).toBe(`${unknown} ${refusalReason(drops)} Loading the series…`);
+    ).toBe(
+      `${unknown} ${refusalReason(drops)} One occurrence can't take a new repeat either. Pick a repeat that keeps those occurrences.`
+    );
     // A calendar move, which only Entire series takes.
     expect(
       eventSaveDescription({
@@ -1037,6 +1040,59 @@ describe("the server's refusal of a series write", () => {
     ).toBe(
       `${refusalReason(drops)} Moving to another calendar moves the whole series, so move it in a save of its own first.`
     );
+    // A new day: the occurrence alone, with nothing to wait for.
+    expect(
+      eventSaveDescription({
+        ...loading,
+        dateMoved: true,
+        refused: following,
+        retimed: true,
+      })
+    ).toBe(
+      `${unknown} This occurrence is now on another day than its series, so your changes apply to it alone.`
+    );
+    // Failing to load: no retry for what the server refused.
+    const failed = { ...loading, seriesRuleFailed: true };
+    expect(eventSaveDescription({ ...failed, refused: following })).toBe(
+      `${unknown} Apply your changes to:`
+    );
+    expect(
+      eventSaveDescription({
+        ...failed,
+        refused: refuseSave(all, "following", { reason: "countUnknown" }),
+        retimed: true,
+      })
+    ).toBe(`${unknown} ${refusalReason(drops)} Apply your changes to:`);
+    expect(
+      eventSaveDescription({ ...failed, dateMoved: true, refused: following })
+    ).toBe(
+      `${unknown} This occurrence is now on another day than its series, so your changes apply to it alone.`
+    );
+    // From the first meeting, a refusal for one scope is for both.
+    const first = { ...loading, opensSeries: true, retimed: true };
+    for (const refusal of [all, refuseSave(null, "following", drops)]) {
+      expect(eventSaveDescription({ ...first, refused: refusal })).toBe(
+        `${refusalReason(drops)} From its first meeting, This and following is the entire series too. Apply your changes to:`
+      );
+      expect(
+        eventSaveDescription({
+          ...first,
+          patternChanged: true,
+          refused: refusal,
+        })
+      ).toBe(
+        `${refusalReason(drops)} One occurrence can't take a new repeat either. From its first meeting, This and following is the entire series too. Save the new times on their own first.`
+      );
+      expect(
+        eventSaveDescription({
+          ...first,
+          calendarChanged: true,
+          refused: refusal,
+        })
+      ).toBe(
+        `${refusalReason(drops)} Moving to another calendar moves the whole series, so move it in a save of its own first.`
+      );
+    }
     // A delete.
     const refusal = { reason: "deleteFromAddedOccurrence" } as const;
     expect(
