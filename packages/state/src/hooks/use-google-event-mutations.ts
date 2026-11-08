@@ -9,7 +9,10 @@ import type { Event } from "@kompose/google-cal/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  getGoogleEventsByCalendarQueryKey,
+  invalidateGoogleEventQueries,
+} from "../google-calendar-query-keys";
 import { type HeldSave, reportHeldSaveFailure } from "../held-save";
 
 /**
@@ -96,12 +99,9 @@ export function useGoogleEventMutations() {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 
@@ -188,12 +188,9 @@ export function useGoogleEventMutations() {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 
@@ -238,12 +235,9 @@ export function useGoogleEventMutations() {
       if (!variables) {
         return;
       }
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+      ]);
     },
   });
 

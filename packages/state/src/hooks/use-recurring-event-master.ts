@@ -3,6 +3,7 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { useQuery } from "@tanstack/react-query";
 import { useStateConfig } from "../config";
+import { getGoogleEventMastersByCalendarQueryKey } from "../google-calendar-query-keys";
 
 function recurringEventMasterQueryKey(params: {
   accountId: string;
@@ -10,9 +11,7 @@ function recurringEventMasterQueryKey(params: {
   recurringEventId: string;
 }) {
   return [
-    "google-event-master",
-    params.accountId,
-    params.calendarId,
+    ...getGoogleEventMastersByCalendarQueryKey(params),
     params.recurringEventId,
   ] as const;
 }
