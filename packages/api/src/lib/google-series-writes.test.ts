@@ -1522,3 +1522,41 @@ describe("a series This and following can't keep", () => {
     expect(google.writes()).toEqual([]);
   });
 });
+
+describe("a series of added days only", () => {
+  test("keeps a deleted one deleted when made timed", async () => {
+    // All day Nov 9, plus added Nov 16 and Nov 23 (no rule); Nov 23 was
+    // deleted on its own. Made 9:00, it's skipped at 9:00.
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RDATE;VALUE=DATE:20261116,20261123"],
+      start: { date: "2026-11-09" },
+    };
+    const deleted: Event = {
+      ...series,
+      end: { date: "2026-11-24" },
+      id: "series_20261123",
+      originalStartTime: { date: "2026-11-23" },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: "2026-11-23" },
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RDATE;TZID=America/New_York:20261116T090000,20261123T090000",
+      "EXDATE;TZID=America/New_York:20261123T090000",
+    ]);
+  });
+});

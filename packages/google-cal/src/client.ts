@@ -101,13 +101,14 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
 
 /**
  * `recurrence` with the occurrences at `starts` (original starts, as
- * Google writes them) skipped. Unchanged without a rule to skip from.
+ * Google writes them) skipped. Unchanged when it has no meetings to skip
+ * (no rule, no added day).
  */
 function skipping(recurrence: string[], starts: string[]): string[] {
-  if (
-    starts.length === 0 ||
-    !recurrence.some((line) => line.startsWith("RRULE:"))
-  ) {
+  const repeats = recurrence.some(
+    (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
+  );
+  if (starts.length === 0 || !repeats) {
     return recurrence;
   }
   const dates = starts
