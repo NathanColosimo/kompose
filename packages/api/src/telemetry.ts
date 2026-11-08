@@ -77,11 +77,12 @@ class ExportSpanProcessor extends BatchSpanProcessor {
     }
     super.onEnd(span);
 
+    // A request, or work that runs after its response (a CONSUMER span).
     const parent = span.parentSpanContext;
-    const isRequestRoot =
-      span.kind === SpanKind.SERVER &&
+    const isWorkRoot =
+      (span.kind === SpanKind.SERVER || span.kind === SpanKind.CONSUMER) &&
       (parent === undefined || parent.isRemote === true);
-    if (flushAtRequestEnd && isRequestRoot) {
+    if (flushAtRequestEnd && isWorkRoot) {
       // Keep Vercel alive until buffered spans export; the batch timer can freeze.
       // See documents/otel.md for why waitUntil is needed here.
       waitUntil(this.#flush());

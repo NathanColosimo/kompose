@@ -38,7 +38,15 @@ export function handleGoogleCalendarWebhook(request: Request) {
   }).pipe(
     Effect.catch((error) =>
       Effect.logWarning("GOOGLE_WEBHOOK_SYNC_FAILED", { channelId, error })
-    )
+    ),
+    // The request's spans were flushed when it replied. A root consumer span
+    // gets its own flush before Vercel freezes the function (telemetry.ts),
+    // and stays out of the dashboards' one-row-per-request `server` spans.
+    Effect.withSpan("GoogleCalendarWebhook.sync", {
+      attributes: { channelId, resourceId },
+      kind: "consumer",
+      root: true,
+    })
   );
 
   return { response: new Response("OK"), sync };

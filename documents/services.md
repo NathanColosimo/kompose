@@ -304,7 +304,7 @@ Top-level orchestrator. Depends on `GoogleCalendarWebhookService` and `WebhookRe
 
 `refreshAll` processes each account independently — one revoked token does not fail the batch. Per-account errors are logged via `Effect.tapError` and caught so other accounts continue.
 
-`handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). It yields typed errors for invalid requests. The route handler maps errors to HTTP responses.
+`handleGoogleNotification` returns business data only (`{ followUpRefresh? }`). The route has already checked the headers and replied, so its typed errors (for example, a channel with no active subscription) are only logged.
 
 Webhook subscriptions keep both Google account identifiers:
 
@@ -320,6 +320,7 @@ A plain Next.js `POST` handler (not an oRPC route). `handleGoogleCalendarWebhook
 1. Checks the `X-Goog-Channel-Id`, `X-Goog-Resource-Id` and `X-Goog-Channel-Token` headers, answering 400 when one is missing or the token is wrong
 2. Otherwise replies 200 at once, and in `after()` runs `WebhookService.handleGoogleNotification`, then `WebhookService.refreshAll` if `result.followUpRefresh` is set
 3. Logs `GOOGLE_WEBHOOK_SYNC_FAILED` if that sync fails (for example, a channel with no active subscription)
+4. Traces the sync as its own root `CONSUMER` span, `GoogleCalendarWebhook.sync`, because the request's spans were flushed when it replied (see `documents/otel.md`)
 
 ### Errors (`Schema.TaggedError`)
 
