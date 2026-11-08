@@ -6,9 +6,13 @@ import type {
 } from "@kompose/api/routers/google-cal/contract";
 import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
-import { useStateConfig } from "../config";
+import { type StateConfig, useStateConfig } from "../config";
 import {
   getGoogleEventsByCalendarQueryKey,
   invalidateGoogleEventQueries,
@@ -194,10 +198,29 @@ export function useGoogleEventMutations() {
     },
   });
 
-  const deleteEvent = useMutation({
-    mutationFn: async (variables: DeleteEventInput) =>
-      orpc.googleCal.events.delete(variables),
-    onMutate: async (variables) => {
+  const deleteEvent = useMutation(
+    deleteGoogleEventMutationOptions(queryClient, { notifyError, orpc })
+  );
+
+  return { createEvent, updateEvent, deleteEvent };
+}
+
+/**
+ * A delete: the event leaves the cached lists at once and comes back on
+ * failure, which is reported unless the dialog holding it says it
+ * (`quiet`), as for a held save.
+ */
+export function deleteGoogleEventMutationOptions(
+  queryClient: QueryClient,
+  { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
+) {
+  return {
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      quiet: _quiet,
+      ...variables
+    }: DeleteEventInput & HeldSave) => orpc.googleCal.events.delete(variables),
+    onMutate: async (variables: DeleteEventInput & HeldSave) => {
       const queryKey = getGoogleEventsByCalendarQueryKey({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -222,8 +245,14 @@ export function useGoogleEventMutations() {
 
       return { previousQueries };
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (
+      err: Error,
+      variables: DeleteEventInput & HeldSave,
+      context:
+        | { previousQueries: [readonly unknown[], Event[] | undefined][] }
+        | undefined
+    ) => {
+      reportHeldSaveFailure(notifyError, err, variables);
 
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {
@@ -231,7 +260,11 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onSettled: (_data, _error, variables) => {
+    onSettled: (
+      _data: unknown,
+      _error: Error | null,
+      variables: (DeleteEventInput & HeldSave) | undefined
+    ) => {
       if (!variables) {
         return;
       }
@@ -239,7 +272,5 @@ export function useGoogleEventMutations() {
         { accountId: variables.accountId, calendarId: variables.calendarId },
       ]);
     },
-  });
-
-  return { createEvent, updateEvent, deleteEvent };
+  };
 }
