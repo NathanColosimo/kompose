@@ -2086,3 +2086,56 @@ describe("This and following: a removed added day the new rule reaches from the 
     ]);
   });
 });
+
+describe("a removed added day's skip, read where the saved series meets", () => {
+  // Mondays 9:00 plus an added Tue Dec 1 9:00, deleted on its own; the
+  // save makes it Mondays and Tuesdays and drops the added day.
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261201T090000",
+    ],
+  };
+  const deleted: Event = {
+    ...occurrenceOf(series, "2026-12-01T09:00:00-05:00"),
+    status: "cancelled",
+  };
+  const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+  const save = (scope: "all" | "following", changes: Partial<CreateEvent>) => {
+    const google = fakeGoogle(series, [deleted]);
+    return run(edit(scope, opened, changes)).then((exit) => {
+      expect(Exit.isSuccess(exit)).toBe(true);
+      return google.writes()[0]?.body?.recurrence;
+    });
+  };
+  const scopes = [["all"], ["following"]] as const;
+
+  test.each(scopes)("made all day, Dec 1 stays skipped (%s)", async (scope) => {
+    expect(
+      await save(scope, {
+        end: { date: "2026-11-17" },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+        start: { date: "2026-11-16" },
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,TU", "EXDATE;VALUE=DATE:20261201"]);
+  });
+
+  test.each([
+    ["all", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+    ["all", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU;BYHOUR=10"],
+    ["following", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+    ["following", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU;BYHOUR=10"],
+  ] as const)(
+    "moved to 10:00, Dec 1 stays skipped there (%s, %s)",
+    async (scope, rule) => {
+      expect(
+        await save(scope, {
+          end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+          recurrence: [rule],
+          start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        })
+      ).toEqual([rule, "EXDATE:20261201T150000Z"]);
+    }
+  );
+});
