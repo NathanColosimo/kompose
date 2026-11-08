@@ -37,6 +37,7 @@ describe.skipIf(!databaseUrl)("getPluginTokens", () => {
   const fetchSpy = spyOn(globalThis, "fetch");
 
   let modules: {
+    connectionTable: typeof import("@kompose/db/schema/connection")["connectionTable"];
     db: typeof import("@kompose/db/legacy")["db"];
     eq: typeof import("drizzle-orm")["eq"];
     getPluginTokens: typeof import("./oauth-tokens")["getPluginTokens"];
@@ -71,13 +72,15 @@ describe.skipIf(!databaseUrl)("getPluginTokens", () => {
     process.env.WHOOP_CLIENT_ID ??= "test-client";
     process.env.WHOOP_CLIENT_SECRET ??= "test-secret";
 
-    const [{ db }, { eq }, { getPluginTokens }, schema] = await Promise.all([
-      import("@kompose/db/legacy"),
-      import("drizzle-orm"),
-      import("./oauth-tokens"),
-      import("@kompose/db/schema/auth"),
-    ]);
-    modules = { db, eq, getPluginTokens, schema };
+    const [{ db }, { eq }, { getPluginTokens }, schema, { connectionTable }] =
+      await Promise.all([
+        import("@kompose/db/legacy"),
+        import("drizzle-orm"),
+        import("./oauth-tokens"),
+        import("@kompose/db/schema/auth"),
+        import("@kompose/db/schema/connection"),
+      ]);
+    modules = { connectionTable, db, eq, getPluginTokens, schema };
 
     const whoopTokenEndpoint = async (
       input: Parameters<typeof fetch>[0],
@@ -125,6 +128,12 @@ describe.skipIf(!databaseUrl)("getPluginTokens", () => {
       providerId: "whoop",
       scope: "offline,read:cycles",
       updatedAt: now,
+      userId,
+    });
+    await db.insert(connectionTable).values({
+      accountId,
+      id: crypto.randomUUID(),
+      pluginId: "whoop",
       userId,
     });
   });
@@ -202,5 +211,25 @@ describe.skipIf(!databaseUrl)("getPluginTokens", () => {
     const refreshed = await getPluginTokens({ ...request, type: "refresh" });
     expect(refreshCalls).toBe(2);
     expect(refreshed.refreshToken).toBe("refreshed-refresh-2");
+  });
+
+  test("marks the connection needs-reauth when the grant is revoked", async () => {
+    const { connectionTable, db, eq, getPluginTokens } = modules;
+    usedRefreshTokens.add("revoked-refresh");
+    await setStoredTokens(10_000, {
+      accessToken: await encrypt("stored-access"),
+      refreshToken: await encrypt("revoked-refresh"),
+    });
+
+    await expect(getPluginTokens(request)).rejects.toThrow(
+      "The provider revoked access"
+    );
+
+    // Committed with the refresh's transaction, not rolled back with it.
+    const [connection] = await db
+      .select()
+      .from(connectionTable)
+      .where(eq(connectionTable.accountId, accountId));
+    expect(connection?.status).toBe("needs-reauth");
   });
 });

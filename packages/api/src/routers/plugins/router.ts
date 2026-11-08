@@ -17,32 +17,44 @@ const os = implement(pluginsContract)
 export const pluginsRouter = os.router({
   connections: os.connections.effect(function* ({ context }) {
     const db = yield* Database;
-    const connections = yield* db
+    const userConnections = db
       .select()
       .from(connectionTable)
       .where(eq(connectionTable.userId, context.user.id))
       .orderBy(asc(connectionTable.createdAt));
-    return yield* Effect.forEach(
-      connections,
-      ({ accountId, id, pluginId, status }) =>
-        Effect.tryPromise(() =>
-          auth.api.accountInfo({
-            query: { accountId, userId: context.user.id },
-          })
-        ).pipe(
-          // A failed profile lookup shows the connection without a name.
-          Effect.orElseSucceed(() => null),
-          Effect.map((info) => ({
-            accountId,
-            email: info?.user?.email ?? "",
-            id,
-            image: info?.user?.image ?? null,
-            name: info?.user?.name ?? "",
-            pluginId,
-            status,
-          }))
-        ),
-      { concurrency: "unbounded" }
+
+    const profiles = new Map(
+      yield* Effect.forEach(
+        yield* userConnections,
+        ({ accountId }) =>
+          Effect.tryPromise(() =>
+            auth.api.accountInfo({
+              query: { accountId, userId: context.user.id },
+            })
+          ).pipe(
+            // A failed profile lookup shows the connection without a name.
+            Effect.orElseSucceed(() => null),
+            Effect.map((info) => [accountId, info?.user] as const)
+          ),
+        { concurrency: "unbounded" }
+      )
+    );
+
+    // Read again: a lookup that finds the grant revoked marks its connection
+    // `needs-reauth`, and Settings should offer Reconnect right away.
+    return (yield* userConnections).map(
+      ({ accountId, id, pluginId, status }) => {
+        const profile = profiles.get(accountId);
+        return {
+          accountId,
+          email: profile?.email ?? "",
+          id,
+          image: profile?.image ?? null,
+          name: profile?.name ?? "",
+          pluginId,
+          status,
+        };
+      }
     );
   }),
 });

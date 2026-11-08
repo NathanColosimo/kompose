@@ -65,8 +65,9 @@ const tokenResponseSchema = z.object({
  * `@kompose/api` turns any Better Auth `APIError` into "reconnect it in
  * Settings", and the provider's answer goes in the message.
  */
-function tokenError(message: string): APIError {
-  return new APIError("BAD_REQUEST", { message });
+function tokenError(message: string, cause?: unknown): APIError {
+  // Better Auth keeps `cause` out of the response body.
+  return new APIError("BAD_REQUEST", { cause, message });
 }
 
 /** The provider revoked the grant; only signing in again fixes it. */
@@ -85,7 +86,7 @@ const refreshTokens = Effect.fn("OAuthTokens.refresh")(function* (
   }
 
   const response = yield* Effect.tryPromise({
-    catch: () => tokenError("Token request failed"),
+    catch: (cause) => tokenError("Token request failed", cause),
     try: () =>
       fetch(config.tokenUrl, {
         body: new URLSearchParams({
@@ -111,13 +112,15 @@ const refreshTokens = Effect.fn("OAuthTokens.refresh")(function* (
       });
     }
     return yield* Effect.fail(
-      tokenError(`Token refresh failed: ${response.status}`)
+      tokenError(`Token refresh failed: ${response.status}`, body)
     );
   }
 
   const token = tokenResponseSchema.safeParse(body);
   if (!token.success) {
-    return yield* Effect.fail(tokenError("Token refresh response was invalid"));
+    return yield* Effect.fail(
+      tokenError("Token refresh response was invalid", token.error)
+    );
   }
   return {
     accessToken: token.data.access_token,
@@ -187,77 +190,83 @@ const getTokens = Effect.fn("OAuthTokens.get")(function* (
     }
   }
 
-  return yield* db
-    .transaction((tx) =>
-      Effect.gen(function* () {
-        const [account] = yield* tx
-          .select()
-          .from(accountTable)
-          .where(accountRow)
-          .for("update");
-        if (!account?.refreshToken) {
-          return yield* Effect.fail(
-            tokenError("Account not found or has no refresh token")
-          );
-        }
-
-        const refreshToken = yield* decrypt(account.refreshToken);
-        // Check again under the lock: a concurrent caller may have refreshed
-        // while this one waited, so use its token instead of refreshing again.
-        // A refresh only ever uses the refresh token read under the lock,
-        // because WHOOP's refresh tokens are single-use.
-        if (request.type === "access" && hasFreshAccessToken(account)) {
-          const accessToken = yield* decrypt(account.accessToken);
-          // Tokens stored before `encryptOAuthTokens` decrypt to themselves;
-          // encrypt them now. A refresh (below) always writes them encrypted.
-          if (
-            accessToken === account.accessToken ||
-            refreshToken === account.refreshToken
-          ) {
-            yield* tx
-              .update(accountTable)
-              .set({
-                accessToken: yield* encrypt(accessToken),
-                refreshToken: yield* encrypt(refreshToken),
-              })
-              .where(eq(accountTable.id, account.id));
-          }
-          return {
-            accessToken,
-            accessTokenExpiresAt: account.accessTokenExpiresAt,
-            refreshToken,
-            scope: account.scope,
-          };
-        }
-
-        const token = yield* refreshTokens(
-          refreshConfigs[request.provider],
-          refreshToken
+  const result = yield* db.transaction((tx) =>
+    Effect.gen(function* () {
+      const [account] = yield* tx
+        .select()
+        .from(accountTable)
+        .where(accountRow)
+        .for("update");
+      if (!account?.refreshToken) {
+        return yield* Effect.fail(
+          tokenError("Account not found or has no refresh token")
         );
-        yield* tx
-          .update(accountTable)
-          .set({
-            accessToken: yield* encrypt(token.accessToken),
-            accessTokenExpiresAt: token.accessTokenExpiresAt,
-            refreshToken: yield* encrypt(token.refreshToken),
-            updatedAt: new Date(),
-          })
-          .where(eq(accountTable.id, account.id));
-        // A refresh can grant fewer scopes than the original consent; keep
-        // the stored grant, as Better Auth does.
-        return { ...token, scope: account.scope };
-      })
-    )
-    .pipe(
-      // After the rollback, so the status change sticks.
-      Effect.catchTag("ReauthRequiredError", (error) =>
-        db
-          .update(connectionTable)
-          .set({ status: "needs-reauth" })
-          .where(eq(connectionTable.accountId, request.accountId))
-          .pipe(Effect.andThen(Effect.fail(tokenError(error.message))))
-      )
-    );
+      }
+
+      const refreshToken = yield* decrypt(account.refreshToken);
+      // Check again under the lock: a concurrent caller may have refreshed
+      // while this one waited, so use its token instead of refreshing again.
+      // A refresh only ever uses the refresh token read under the lock,
+      // because WHOOP's refresh tokens are single-use.
+      if (request.type === "access" && hasFreshAccessToken(account)) {
+        const accessToken = yield* decrypt(account.accessToken);
+        // Tokens stored before `encryptOAuthTokens` decrypt to themselves;
+        // encrypt them now. A refresh (below) always writes them encrypted.
+        if (
+          accessToken === account.accessToken ||
+          refreshToken === account.refreshToken
+        ) {
+          yield* tx
+            .update(accountTable)
+            .set({
+              accessToken: yield* encrypt(accessToken),
+              refreshToken: yield* encrypt(refreshToken),
+            })
+            .where(eq(accountTable.id, account.id));
+        }
+        return {
+          accessToken,
+          accessTokenExpiresAt: account.accessTokenExpiresAt,
+          refreshToken,
+          scope: account.scope,
+        };
+      }
+
+      const token = yield* refreshTokens(
+        refreshConfigs[request.provider],
+        refreshToken
+      ).pipe(
+        // Commit the status with the lock held: a reconnect waiting on this
+        // row then reactivates the connection after it, not before.
+        Effect.catchTag("ReauthRequiredError", (error) =>
+          tx
+            .update(connectionTable)
+            .set({ status: "needs-reauth" })
+            .where(eq(connectionTable.accountId, account.id))
+            .pipe(Effect.as(error))
+        )
+      );
+      if (token instanceof ReauthRequiredError) {
+        return token;
+      }
+      yield* tx
+        .update(accountTable)
+        .set({
+          accessToken: yield* encrypt(token.accessToken),
+          accessTokenExpiresAt: token.accessTokenExpiresAt,
+          refreshToken: yield* encrypt(token.refreshToken),
+          updatedAt: new Date(),
+        })
+        .where(eq(accountTable.id, account.id));
+      // A refresh can grant fewer scopes than the original consent; keep
+      // the stored grant, as Better Auth does.
+      return { ...token, scope: account.scope };
+    })
+  );
+  if (result instanceof ReauthRequiredError) {
+    return yield* Effect.fail(tokenError(result.message));
+  }
+  return result;
 });
 
 // Shares the API runtime's Postgres pool through the memo map.
