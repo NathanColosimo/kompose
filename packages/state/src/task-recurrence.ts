@@ -318,6 +318,12 @@ export type TaskUpdateScopeDecision =
 
 export function getTaskUpdateScopeDecision(params: {
   isRecurring: boolean;
+  /**
+   * The task has a date, before and after the edit, so later occurrences
+   * follow it. An occurrence in the inbox, or moved there by this edit, has
+   * none: its edits apply to it alone, no question.
+   */
+  hasFollowing: boolean;
   hasCoreFieldChanges: boolean;
   previousRecurrence: TaskRecurrence | null | undefined;
   nextRecurrence: TaskRecurrence | null | undefined;
@@ -348,6 +354,10 @@ export function getTaskUpdateScopeDecision(params: {
   // choice to offer.
   if (recurrenceChanged) {
     return { action: "apply", scope: "following" };
+  }
+
+  if (!params.hasFollowing) {
+    return { action: "apply", scope: "this" };
   }
 
   return { action: "prompt", defaultScope: "this" };

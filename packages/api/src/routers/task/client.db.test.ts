@@ -213,9 +213,9 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     );
   }
 
-  /** Steps that find a task by its date, then act on it. */
+  /** Steps that find a task by its date (null: the inbox), then act on it. */
   function forUser(service: TaskService["Service"], userId: string) {
-    const find = (date: string) =>
+    const find = (date: string | null) =>
       Effect.gen(function* () {
         const db = yield* modules.db.Database;
         const rows = yield* db
@@ -245,7 +245,11 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
-      update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
+      update: (
+        date: string | null,
+        input: TaskUpdateInput,
+        scope: UpdateScope
+      ) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
         ),
@@ -442,6 +446,47 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-10 Renamed todo in 2026-11-09",
       "2026-11-11 Renamed todo in 2026-11-09",
       "2026-11-14 Renamed todo exc in 2026-11-09",
+    ]);
+  });
+
+  test("moves only the occurrence itself to the inbox, even from following", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(4));
+          yield* u.update(
+            "2026-11-10",
+            { startDate: null, title: "Later" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x4",
+      "2026-11-11 Review todo in 2026-11-09",
+      "2026-11-12 Review todo in 2026-11-09",
+      "inbox Later todo exc in 2026-11-09",
+    ]);
+  });
+
+  test("makes an inbox occurrence a series of its own from the start it's given", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.update(
+            null,
+            { recurrence: daily(2), startDate: "2026-11-20" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+      "2026-11-20 Review todo MASTER DAILY/1 x2",
+      "2026-11-21 Review todo in 2026-11-20",
     ]);
   });
 });

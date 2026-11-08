@@ -4,6 +4,7 @@ import { getTaskUpdateScopeDecision } from "./task-recurrence";
 describe("getTaskUpdateScopeDecision", () => {
   const base = {
     hasCoreFieldChanges: true,
+    hasFollowing: true,
     isRecurring: true,
     nextRecurrence: null,
     nextTagIds: [],
@@ -44,5 +45,11 @@ describe("getTaskUpdateScopeDecision", () => {
         previousRecurrence: { ...until, count: 4 },
       })
     ).toEqual({ action: "apply", scope: "following" });
+  });
+
+  test("applies an inbox occurrence's edits to it alone, with no question", () => {
+    expect(
+      getTaskUpdateScopeDecision({ ...base, hasFollowing: false })
+    ).toEqual({ action: "apply", scope: "this" });
   });
 });

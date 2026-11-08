@@ -16,6 +16,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lt,
   ne,
   or,
@@ -162,7 +163,9 @@ const dbDelete = (userId: string, taskId: string) =>
 
 /**
  * Pass a master's role and pattern to the series' next dated occurrence
- * (counting the dated ones left), the rest of the series following it.
+ * (counting the dated ones left), the rest of the series following it. When
+ * only undated ones (moved to the inbox) are left, they stand alone: an
+ * undated task can't carry a repeat.
  */
 const handOffMasterRole = Effect.fn("handOffMasterRole")(function* (
   userId: string,
@@ -183,7 +186,7 @@ const handOffMasterRole = Effect.fn("handOffMasterRole")(function* (
   const dated = rest.filter((row) => row.startDate);
   const [heir] = dated;
   if (!heir) {
-    return [] as TaskSelect[];
+    return yield* dbDetachUndated(userId, master.id);
   }
   return yield* makeMaster(userId, {
     heir,
@@ -218,6 +221,23 @@ const makeMaster = Effect.fn("makeMaster")(function* (
   return newMaster
     ? [...followed.filter((row) => row.id !== params.heir.id), newMaster]
     : followed;
+});
+
+/**
+ * Take an undated occurrence (moved to the inbox) out of its series, as a
+ * standalone task: it has no place in a pattern. A master hands its role
+ * to the next occurrence first.
+ */
+const releaseFromSeries = Effect.fn("releaseFromSeries")(function* (
+  userId: string,
+  task: TaskSelect
+) {
+  const handedOff =
+    task.seriesMasterId === task.id
+      ? yield* handOffMasterRole(userId, task)
+      : [];
+  const released = yield* dbUpdate(userId, task.id, STANDALONE);
+  return [...handedOff, ...released];
 });
 
 const dbDeleteBySeriesFrom = (
@@ -789,6 +809,13 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   return allRetagged([task]);
 });
 
+/** A task's series fields once it's out of any series. */
+const STANDALONE = {
+  isException: false,
+  recurrence: null,
+  seriesMasterId: null,
+} as const;
+
 /** A series occurrence with a start date, which "following" edits need. */
 type DatedSeriesTask = TaskSelect & {
   seriesMasterId: string;
@@ -853,8 +880,8 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     });
   // The earlier part of the series stops before the edit, so its master no
   // longer claims to repeat past it. First, while the master is still
-  // there: a split before it deletes it below, and its earlier occurrences
-  // need it to move to a series of their own.
+  // there: a split before it deletes it below, and its undated and earlier
+  // occurrences need it to move to a series of their own.
   const ended = yield* endSeriesBefore(userId, task, boundary);
   const deletedIds = new Set(
     ids(
@@ -879,7 +906,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
         recurrence: pattern.recurrence,
         seriesMasterId: task.id,
       }
-    : { isException: false, recurrence: null, seriesMasterId: null };
+    : STANDALONE;
   const updatedAnchor = keepEdited
     ? yield* dbUpdate(userId, task.id, { ...occurrenceFields, ...anchorSeries })
     : [];
@@ -952,20 +979,37 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   boundary: string
 ) {
   if (task.seriesMasterId === task.id) {
-    return yield* handOffEarlierPart(userId, task, boundary);
+    return [
+      ...(yield* handOffEarlierPart(userId, task, boundary)),
+      ...(yield* dbDetachUndated(userId, task.id)),
+    ];
   }
   const [master] = yield* dbSelectById(userId, task.seriesMasterId);
-  if (!master?.recurrence) {
+  // A master already gone (older data): its undated occurrences stand alone.
+  if (!master) {
+    return yield* dbDetachUndated(userId, task.seriesMasterId);
+  }
+  if (!master.recurrence) {
     return [] as TaskSelect[];
+  }
+  // The master was moved to the inbox: it can't carry the earlier part's
+  // pattern, so that part becomes a series of its own (or a lone task), and
+  // the master and any other undated occurrences stand alone.
+  if (!master.startDate) {
+    const handedOff = yield* handOffEarlierPart(userId, master, boundary);
+    const detached = yield* dbDetachUndated(userId, master.id);
+    const released = yield* dbUpdate(userId, master.id, STANDALONE);
+    return [...handedOff, ...detached, ...released];
   }
   // The split starts on or before the master, so the master's pattern goes
   // rather than ending before its own start. Occurrences before the split
   // (the master was moved later alone) keep the original pattern as a
   // series of their own first.
-  if (master.startDate && boundary <= master.startDate) {
+  if (boundary <= master.startDate) {
     const handedOff = yield* handOffEarlierPart(userId, master, boundary);
+    const detached = yield* dbDetachUndated(userId, master.id);
     const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
-    return [...handedOff, ...cleared];
+    return [...handedOff, ...detached, ...cleared];
   }
   const db = yield* Database;
   const [last] = yield* db
@@ -984,6 +1028,29 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
     recurrence: endedBefore(master.recurrence, boundary, last?.startDate),
   });
 });
+
+/**
+ * A series' undated occurrences (moved to the inbox alone) have no place
+ * before or after a split, so when a split starts at or before their master
+ * they become standalone tasks rather than members of a series that's
+ * changed or gone.
+ */
+const dbDetachUndated = (userId: string, seriesMasterId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .update(taskTable)
+      .set(STANDALONE)
+      .where(
+        and(
+          eq(taskTable.userId, userId),
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          ne(taskTable.id, seriesMasterId),
+          isNull(taskTable.startDate)
+        )
+      )
+      .returning();
+  });
 
 /**
  * Occurrences of `master`'s series before `boundary` (the master was moved
@@ -1115,6 +1182,26 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
   return [...updatedMaster, ...insertedOccurrences];
 });
 
+/**
+ * A repeat change on an undated occurrence (moved to the inbox): it leaves
+ * its series as a standalone task, and a new pattern makes it a series of
+ * its own, from the start date the edit gives it.
+ */
+const repatternUndated = Effect.fn("repatternUndated")(function* (
+  userId: string,
+  task: TaskSelect,
+  input: TaskUpdateInput,
+  newPattern: CheckedPattern | null
+) {
+  const released = yield* releaseFromSeries(userId, task);
+  const standalone: TaskSelect = { ...task, ...STANDALONE };
+  const rows = newPattern
+    ? yield* convertToRecurring(userId, standalone, input, newPattern)
+    : yield* dbUpdate(userId, task.id, { ...input, recurrence: null });
+  const written = new Map([...released, ...rows].map((row) => [row.id, row]));
+  return { retagIds: ids(rows), rows: [...written.values()] };
+});
+
 /** Handle scope=following update for recurring task */
 const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   input: TaskUpdateInput;
@@ -1127,6 +1214,9 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   const { input, recurrenceChanged, task, userId } = params;
   // Without a start date there is no "following"; edit this occurrence alone.
   if (!isDatedSeriesTask(task)) {
+    if (recurrenceChanged) {
+      return yield* repatternUndated(userId, task, input, params.newPattern);
+    }
     return allRetagged(
       yield* dbUpdate(userId, task.id, { ...input, isException: true })
     );
@@ -1136,6 +1226,14 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   // updateTask's transaction, like everything below).
   if (recurrenceChanged) {
     return yield* regenerateOccurrences(userId, task, input, params.newPattern);
+  }
+
+  // Moving it to the inbox takes this occurrence alone: an undated task has
+  // no place in the pattern, and the later ones keep their dates.
+  if (input.startDate === null) {
+    return allRetagged(
+      yield* dbUpdate(userId, task.id, { ...input, isException: true })
+    );
   }
 
   // No recurrence change: update this and following with scaled date/time
