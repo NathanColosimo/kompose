@@ -713,31 +713,18 @@ export default function CalendarTab() {
     setCreateSlotSelection(null);
   }, []);
 
-  useEffect(() => {
-    if (createSlotSelection !== null || pendingCreateAction === null) {
+  const handleCreateChooserDismissed = useCallback(() => {
+    if (pendingCreateAction === null) {
       return;
     }
 
-    // Wait for the chooser bottom-sheet modal to finish closing before opening
-    // the next sheet. Otherwise the closing modal can swallow the new one.
-    const timeoutId = setTimeout(() => {
-      if (pendingCreateAction.kind === "event") {
-        openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      } else {
-        openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      }
-      setPendingCreateAction(null);
-    }, 320);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [
-    createSlotSelection,
-    openCreateEventAt,
-    openCreateTaskAt,
-    pendingCreateAction,
-  ]);
+    setPendingCreateAction(null);
+    if (pendingCreateAction.kind === "event") {
+      openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    } else {
+      openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    }
+  }, [openCreateEventAt, openCreateTaskAt, pendingCreateAction]);
 
   const openEditTimedEvent = useCallback(
     (item: PositionedGoogleEvent) => {
@@ -1428,6 +1415,7 @@ export default function CalendarTab() {
       <BottomSheet
         isVisible={createSlotSelection !== null}
         onClose={closeCreateChooser}
+        onDismissed={handleCreateChooserDismissed}
         snapPoints={[0.34, 0.42]}
         title="Create"
       >
