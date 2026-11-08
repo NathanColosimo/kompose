@@ -267,6 +267,14 @@ interface StartTime {
   timeZone?: string | null;
 }
 
+/**
+ * "2026-10-06T09:00:00-04:00": a zoned time as Google takes a date-time,
+ * and as a series' slots are written and compared.
+ */
+export function googleDateTime(time: Temporal.ZonedDateTime): string {
+  return time.toString({ smallestUnit: "second", timeZoneName: "never" });
+}
+
 /** A date-time's offset ("-05:00" or "Z"), at its end. */
 export const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
 

@@ -38,6 +38,7 @@ import {
 import { seriesTimesForEdit } from "./series-times";
 import {
   DATE_ONLY,
+  googleDateTime,
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
   parseDateList,
@@ -85,9 +86,7 @@ function seriesSlotAt(
   const length = from && to ? from.until(to) : new Temporal.Duration();
   const start = Temporal.Instant.from(originalStart);
   const written = (moment: Temporal.Instant) =>
-    moment
-      .toZonedDateTimeISO(zone)
-      .toString({ smallestUnit: "second", timeZoneName: "never" });
+    googleDateTime(moment.toZonedDateTimeISO(zone));
   return {
     end: {
       dateTime: written(start.add(length)),
@@ -204,9 +203,7 @@ function takeTimedSkips(
     if (values.length > 0 && moments.length === values.length) {
       skips.push(
         ...moments.map((moment) =>
-          moment
-            .toZonedDateTimeISO(zone)
-            .toString({ smallestUnit: "second", timeZoneName: "never" })
+          googleDateTime(moment.toZonedDateTimeISO(zone))
         )
       );
     } else {
@@ -234,9 +231,7 @@ function keepingSkips(
     const kept = list.values.filter((value) => {
       const read = readRecurrenceValue(value, list.zone, zone);
       const slot = read?.instant
-        ? read.instant
-            .toZonedDateTimeISO(zone)
-            .toString({ smallestUnit: "second", timeZoneName: "never" })
+        ? googleDateTime(read.instant.toZonedDateTimeISO(zone))
         : read?.day.toString();
       return !slot || keep(slot);
     });
@@ -261,9 +256,11 @@ function keepingSkips(
  * - a rule's (or the start's) meeting moves to the new time on its day,
  *   so its skip goes there, added after the rule is lined up, and never
  *   onto an added (RDATE) meeting the saved series still has on;
- * - an added meeting keeps its time, so its skip is lined up with the
- *   rule like any other, and is placed at the new time too only if a
- *   rule or the start met there as well.
+ * - an added meeting keeps its time, so its skip stays there, added
+ *   after the rule is lined up too (lining up would read the saved
+ *   rule's meetings as its own), and is placed at the new time as well
+ *   only if a rule or the start met there, or, when the save drops that
+ *   added day, the saved rule meets there.
  * Otherwise the skips are lined up with the rule as it is.
  */
 function lineUpRule(params: {
@@ -288,12 +285,58 @@ function lineUpRule(params: {
       start: master.start,
     }) !== false;
   // A deleted added (RDATE) meeting the save removes has nothing left to
-  // skip (unless a rule met there too): kept, its skip would be lined up
-  // onto that day's other meeting.
+  // skip, unless a rule (the old series' or the saved one's) or the start
+  // meets there: kept, its timed skip would be lined up onto that day's
+  // other meeting.
+  // As they'll be written: lined up with the new start (a kept BYHOUR=9
+  // becomes the new start's hour).
+  const savedRules = (
+    ruleForStart(
+      params.rule.filter((line) => line.startsWith("RRULE:")),
+      master,
+      start,
+      splitAt
+    ) ?? []
+  ).filter((line) => line.startsWith("RRULE:"));
+  // Whether the saved series' rules, repeating from its new start, meet
+  // at a deleted occurrence's place in that series: its date when the
+  // series is now all day; its day at the new time of day when it was at
+  // the series' own time (that meeting moved); else as it was.
+  const clockOf = (time: { date?: string; dateTime?: string }) =>
+    startInstant(time, zone)?.toZonedDateTimeISO(zone).toPlainTime();
+  const oldClock = clockOf(master.start);
+  const newClock = clockOf(start);
+  const savedMeetsAt = (slot: string) => {
+    const moment = slotMoment(slot, zone)?.toZonedDateTimeISO(zone);
+    if (!moment) {
+      return false;
+    }
+    let place = slot;
+    if (start.date) {
+      place = moment.toPlainDate().toString();
+    } else if (
+      oldClock &&
+      newClock &&
+      Temporal.PlainTime.compare(moment.toPlainTime(), oldClock) === 0
+    ) {
+      place = googleDateTime(moment.withPlainTime(newClock));
+    }
+    return (
+      seriesMeetsAt({
+        recurrence: savedRules,
+        seriesZone: zone,
+        slot: place,
+        start,
+      }) !== false
+    );
+  };
   const stillMeets = (slot: string) =>
+    // A date skips the whole day, whatever meets on it.
+    DATE_ONLY.test(slot) ||
     !addsSlot(before, slot, zone) ||
     addsSlot(params.rule, slot, zone) ||
-    ruleMetAt(slot);
+    ruleMetAt(slot) ||
+    savedMeetsAt(slot);
   const cancelled = params.cancelled.filter(stillMeets);
   const rule = keepingSkips(params.rule, zone, stillMeets);
   const change = timeOfDayChange(master, start);
@@ -307,30 +350,37 @@ function lineUpRule(params: {
   const { rest, skips } = takeTimedSkips(rule, zone);
   const deleted = [...cancelled, ...skips];
   const atNewTime: string[] = [];
-  const withRule: string[] = [];
+  const atOwnTime: string[] = [];
   for (const slot of deleted) {
     const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
     if (!moment) {
-      withRule.push(slot);
+      atOwnTime.push(slot);
       continue;
     }
     const added = addsSlot(before, slot, zone);
-    if (added) {
-      withRule.push(slot);
+    const stillAdded = added && addsSlot(rule, slot, zone);
+    // An added meeting the saved rule still adds keeps its time.
+    if (stillAdded) {
+      atOwnTime.push(slot);
     }
-    const ruleMet = !added || ruleMetAt(slot);
+    const ruleMet =
+      !added || ruleMetAt(slot) || (!stillAdded && savedMeetsAt(slot));
     if (ruleMet) {
       atNewTime.push(
-        moment
-          .toZonedDateTimeISO(zone)
-          .toPlainDate()
-          .toZonedDateTime({ plainTime: change.to, timeZone: zone })
-          .toString({ smallestUnit: "second", timeZoneName: "never" })
+        googleDateTime(
+          moment
+            .toZonedDateTimeISO(zone)
+            .toPlainDate()
+            .toZonedDateTime({ plainTime: change.to, timeZone: zone })
+        )
       );
     }
   }
-  const lined =
-    ruleForStart(skipping(rest, withRule, zone), master, start, splitAt) ?? [];
+  const lined = skipping(
+    ruleForStart(rest, master, start, splitAt) ?? [],
+    atOwnTime,
+    zone
+  );
   const deletedKeys = new Set(
     deleted.flatMap((slot) => {
       const value = readRecurrenceValue(slot, zone, zone);
@@ -495,9 +545,7 @@ function inSeriesZone<
   }
   const moment = startInstant(time, series.timeZone);
   const dateTime = moment
-    ? moment
-        .toZonedDateTimeISO(series.timeZone)
-        .toString({ smallestUnit: "second", timeZoneName: "never" })
+    ? googleDateTime(moment.toZonedDateTimeISO(series.timeZone))
     : time.dateTime;
   return { ...time, dateTime, timeZone: series.timeZone };
 }
@@ -514,11 +562,8 @@ function slotOf(
   if (start.date) {
     return start.date;
   }
-  return (
-    startInstant(start, zone)
-      ?.toZonedDateTimeISO(zone)
-      .toString({ smallestUnit: "second", timeZoneName: "never" }) ?? null
-  );
+  const moment = startInstant(start, zone);
+  return moment ? googleDateTime(moment.toZonedDateTimeISO(zone)) : null;
 }
 
 /** An occurrence's original start: the slot it holds in its series. */

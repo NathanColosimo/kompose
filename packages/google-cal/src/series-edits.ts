@@ -7,7 +7,7 @@
  */
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
-import { DATE_ONLY, startInstant } from "./until";
+import { DATE_ONLY, googleDateTime, startInstant } from "./until";
 
 /**
  * Why Kompose won't make a series write. Each is refused before anything
@@ -227,13 +227,14 @@ export function placeInNewSeries(params: {
     .toZonedDateTimeISO(zone)
     .toPlainDate()
     .until(to.toZonedDateTimeISO(zone).toPlainDate());
-  return original
-    .toZonedDateTimeISO(zone)
-    .toPlainDate()
-    .add(days)
-    .toZonedDateTime({
-      plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
-      timeZone: zone,
-    })
-    .toString({ smallestUnit: "second", timeZoneName: "never" });
+  return googleDateTime(
+    original
+      .toZonedDateTimeISO(zone)
+      .toPlainDate()
+      .add(days)
+      .toZonedDateTime({
+        plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
+        timeZone: zone,
+      })
+  );
 }
