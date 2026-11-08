@@ -86,6 +86,11 @@ export function RadioButton({
   return (
     <TouchableOpacity
       activeOpacity={0.7}
+      // VoiceOver hears "radio button, checked" (or "unchecked"): for a
+      // radio, React Native reports `checked` in the accessibility value,
+      // while `selected` is only a trait, which TalkBack ignores for radios.
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected, disabled: isDisabled }}
       disabled={isDisabled}
       onPress={onPress}
       style={[containerStyle, style]}
@@ -120,7 +125,7 @@ export function RadioGroup({
   };
 
   return (
-    <View style={[containerStyle, style]}>
+    <View accessibilityRole="radiogroup" style={[containerStyle, style]}>
       {options.map((option) => (
         <RadioButton
           disabled={disabled}
