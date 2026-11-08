@@ -575,22 +575,6 @@ export function repeatCountingDay(params: {
   return first ?? placed ?? params.formDay;
 }
 
-/**
- * Whether a new repeat, saved for the entire series, would skip this
- * occurrence: an Entire series save keeps the series' first meeting (its
- * DTSTART; before the series loads, where the series puts this
- * occurrence) and counts the rule from there, so a day left implicit
- * (weekly with no days picked, monthly on "Day N", yearly) comes from that
- * first meeting, an interval counts its weeks or months from it, and a
- * COUNT or UNTIL can end the series before today. When the rule counted
- * that way doesn't meet on the occurrence's day, the editor's words (which
- * count from it) aren't what Entire series would save, and it would drop
- * the very meeting being edited: so the change applies from here on.
- */
-export function repeatOffSeriesDay(params: RepeatSkipParams): boolean {
-  return repeatSkipsOccurrence(params) !== null;
-}
-
 interface RepeatSkipParams {
   editedStart: { date?: string | null; dateTime?: string | null };
   occurrence: Pick<
@@ -605,10 +589,16 @@ interface RepeatSkipParams {
 }
 
 /**
- * Why an Entire series save of a new repeat would skip this occurrence
- * (`repeatOffSeriesDay`): "day", the rule counted from the series' first
- * meeting doesn't meet on its day (an implicit day, an interval's phase);
- * "end", its COUNT or UNTIL ends before it; null when it meets there.
+ * Why a new repeat, saved for the entire series, would skip this
+ * occurrence (null when it wouldn't): an Entire series save keeps the series' first meeting (its
+ * DTSTART; before the series loads, where the series puts this
+ * occurrence) and counts the rule from there, so a day left implicit
+ * (weekly with no days picked, monthly on "Day N", yearly) comes from that
+ * first meeting, an interval counts its weeks or months from it, and a
+ * COUNT or UNTIL can end the series before today. When the rule counted
+ * that way doesn't meet on the occurrence's day, the editor's words (which
+ * count from it) aren't what Entire series would save, and it would drop
+ * the very meeting being edited: so the change applies from here on.
  */
 export function repeatSkipsOccurrence(
   params: RepeatSkipParams
@@ -630,6 +620,8 @@ export function repeatSkipsOccurrence(
   if (isRuleDay(rule, first, day) === false) {
     return "day";
   }
+  // "day": its day isn't one (an implicit day, an interval's phase);
+  // "end": its COUNT or UNTIL ends first.
   return seriesEndsBefore(rule, first, day, timeZone) ? "end" : null;
 }
 

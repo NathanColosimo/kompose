@@ -15,7 +15,6 @@ import {
   pickRecurrenceFrequency,
   repeatCountingDay,
   repeatEndsBeforeStart,
-  repeatOffSeriesDay,
   repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -1689,7 +1688,10 @@ describe("repeatCountingDay", () => {
   });
 });
 
-describe("repeatOffSeriesDay", () => {
+describe("repeatSkipsOccurrence", () => {
+  // Whether Entire series would skip it, for any reason.
+  const skipped = (params: Parameters<typeof repeatSkipsOccurrence>[0]) =>
+    repeatSkipsOccurrence(params) !== null;
   const zone = "America/New_York";
   // The series started Sun Nov 1; this is its Sunday Nov 15 meeting.
   const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
@@ -1699,7 +1701,7 @@ describe("repeatOffSeriesDay", () => {
     start: { dateTime: "2026-11-15T16:00:00-05:00" },
   };
   const off = (recurrence: string[], occurrence = later) =>
-    repeatOffSeriesDay({
+    skipped({
       editedStart: occurrence.start,
       occurrence,
       recurrence,
@@ -1742,7 +1744,7 @@ describe("repeatOffSeriesDay", () => {
   test("an end that, counted from the first meeting, is already past", () => {
     const old = { dateTime: "2025-01-05T16:00:00-05:00" };
     const today = (recurrence: string[]) =>
-      repeatOffSeriesDay({
+      skipped({
         editedStart: later.start,
         occurrence: later,
         recurrence,
@@ -1778,7 +1780,7 @@ describe("repeatOffSeriesDay", () => {
 
   test("before the series loads, counts from the meeting's own place", () => {
     expect(
-      repeatOffSeriesDay({
+      skipped({
         editedStart: later.start,
         occurrence: later,
         recurrence: ["RRULE:FREQ=MONTHLY"],

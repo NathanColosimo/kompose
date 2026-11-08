@@ -17,7 +17,7 @@ const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
  * offset when a time zone comes with it, read in that zone; null for one
  * that doesn't parse.
  */
-function instantOf(
+export function instantOf(
   dateTime: string,
   timeZone: string
 ): Temporal.Instant | null {

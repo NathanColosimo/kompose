@@ -23,7 +23,7 @@ import {
   EventSchema,
   type RecurrenceScope,
 } from "./schema";
-import { seriesTimesForEdit } from "./series-times";
+import { instantOf, seriesTimesForEdit } from "./series-times";
 import { matchRecurrenceToStart, untilMoment } from "./until";
 
 interface GoogleWatchChannelInput {
@@ -115,19 +115,27 @@ function splitBlockedError(
 
 const RULE_UNTIL = /[:;]UNTIL=([^;]+)/;
 
-/** A start's moment: its date-time, or the start of its date in `zone`. */
+/**
+ * A start's moment: its date-time (one without an offset read in its own
+ * time zone, or `zone`, as Google does), or the start of its date in
+ * `zone`; null when it doesn't parse.
+ */
 function firstMoment(
-  start: { date?: string; dateTime?: string },
+  start: { date?: string; dateTime?: string; timeZone?: string },
   zone: string
 ): Temporal.Instant | null {
   if (start.dateTime) {
-    return Temporal.Instant.from(start.dateTime);
+    return instantOf(start.dateTime, start.timeZone ?? zone);
   }
-  return start.date
-    ? Temporal.PlainDate.from(start.date)
-        .toZonedDateTime({ timeZone: zone })
-        .toInstant()
-    : null;
+  try {
+    return start.date
+      ? Temporal.PlainDate.from(start.date)
+          .toZonedDateTime({ timeZone: zone })
+          .toInstant()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -137,13 +145,16 @@ function firstMoment(
  */
 function endsBeforeStartError(
   recurrence: string[] | undefined,
-  start: { date?: string; dateTime?: string },
+  start: { date?: string; dateTime?: string; timeZone?: string },
   zone: string
 ): GoogleApiError | null {
   const until = recurrence
     ?.find((line) => line.startsWith("RRULE:"))
     ?.match(RULE_UNTIL)?.[1];
-  const last = until ? untilMoment(until, zone) : null;
+  if (!until) {
+    return null;
+  }
+  const last = untilMoment(until, zone);
   const first = firstMoment(start, zone);
   if (!(last && first && Temporal.Instant.compare(last, first) < 0)) {
     return null;
@@ -156,7 +167,7 @@ function endsBeforeStartError(
 /** Fails with `endsBeforeStartError`'s refusal, if there is one. */
 function refuseEndsBeforeStart(
   recurrence: string[] | undefined,
-  start: { date?: string; dateTime?: string },
+  start: { date?: string; dateTime?: string; timeZone?: string },
   zone: string
 ): Effect.Effect<void, GoogleApiError> {
   const refusal = endsBeforeStartError(recurrence, start, zone);
