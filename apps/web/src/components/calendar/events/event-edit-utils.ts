@@ -2,7 +2,10 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { GOOGLE_EVENT_WEEKDAYS } from "@kompose/state/google-event-recurrence";
+import {
+  GOOGLE_EVENT_WEEKDAYS,
+  seriesRecurrenceForSave,
+} from "@kompose/state/google-event-recurrence";
 import {
   type EventSaveChanges,
   eventSaveDescription,
@@ -99,17 +102,49 @@ export function buildTemporalPayload(
 }
 
 /**
- * An edit made through one occurrence, as a save for its series ("This and
- * following", "Entire series") sends it: the event's id, its repeat when
- * the save sends one, and `seriesEditFields` (its times as they are, and
- * only the fields the user changed). The editor's payload starts from the
- * whole occurrence; everything else (guests, reminders, a title left
- * alone) is left out, and the server fills it from the series.
+ * What a save sends for `scope`, as #125's server reads it. One occurrence
+ * ("this") gets the whole edit: the occurrence as loaded, with the form's
+ * values. For the series ("following", "all") through an occurrence:
+ * - its id and its times as they are: the occurrence's own times mean
+ *   unchanged, and under This and following a moved one stays moved;
+ * - only the fields the user changed (`seriesEditFields`): a field left
+ *   out, or empty where the occurrence had none, is unchanged, and a
+ *   cleared one goes empty, which clears the series' too;
+ * - a repeat only when the user changed it, or the day moved and the
+ *   series' rule follows the new day (`seriesRecurrenceForSave`).
+ * Guests, reminders and anything else left alone stay out, and the server
+ * fills them from the series.
  */
-export function seriesSave(
-  edited: GoogleEvent,
-  occurrence: GoogleEvent
-): GoogleEvent {
+export function eventForScope({
+  edited,
+  master,
+  occurrence,
+  scope,
+  timeZone,
+}: {
+  /** The save built from the form or the drop. */
+  edited: GoogleEvent;
+  /** The series' own rule and start, once loaded. */
+  master: Pick<GoogleEvent, "recurrence" | "start"> | undefined;
+  /** The event the edit started from, as loaded. */
+  occurrence: GoogleEvent | undefined;
+  scope: RecurrenceScope;
+  timeZone: string;
+}): GoogleEvent {
+  if (scope === "this" || !occurrence?.recurringEventId) {
+    return edited;
+  }
+  const recurrence =
+    edited.recurrence ??
+    seriesRecurrenceForSave({
+      editedEnd: edited.end,
+      editedStart: edited.start,
+      masterRecurrence: master?.recurrence,
+      masterStart: master?.start,
+      occurrence,
+      recurrence: undefined,
+      timeZone,
+    });
   return {
     // Fields left as they were come back undefined, which the request
     // leaves out, so the series keeps its own.
@@ -118,7 +153,7 @@ export function seriesSave(
       occurrence,
     }),
     id: edited.id,
-    ...(edited.recurrence ? { recurrence: edited.recurrence } : {}),
+    ...(recurrence ? { recurrence } : {}),
   };
 }
 

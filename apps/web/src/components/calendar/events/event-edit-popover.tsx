@@ -41,7 +41,6 @@ import {
   repeatEndsBeforeStart,
   repeatSkipsOccurrence,
   seriesCountingDays,
-  seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
@@ -171,11 +170,11 @@ import type {
 } from "../event-creation/create-form-shared";
 import {
   buildTemporalPayload,
+  eventForScope,
   type Refusals,
   refuse,
   saveScopeDialog,
   seriesRefusal,
-  seriesSave,
   WEEKDAYS,
 } from "./event-edit-utils";
 
@@ -944,34 +943,18 @@ export function EventEditPopover({
       scope: RecurrenceScope
     ) => {
       if (edits.hasDataEdits) {
-        // A moved date carries the series' rule along, for the series.
-        const {
-          end: editedEnd,
-          recurrence: sent,
-          start: editedStart,
-        } = edits.variables.event;
-        const recurrence =
-          scope === "this" || !event
-            ? sent
-            : (sent ??
-              seriesRecurrenceForSave({
-                editedEnd,
-                editedStart,
-                masterRecurrence: seriesMaster.data?.recurrence,
-                masterStart: seriesMaster.data?.start,
-                occurrence: event,
-                recurrence: sent,
-                timeZone,
-              }));
-        const edited = { ...edits.variables.event, recurrence };
         await updateEvent.mutateAsync({
           ...edits.variables,
-          // For the series, only what the user changed: an occurrence
-          // rescheduled or renamed on its own keeps that to itself.
-          event:
-            scope !== "this" && event?.recurringEventId
-              ? seriesSave(edited, event)
-              : edited,
+          // For the series, only what the user changed, and a rule that
+          // follows a moved day: an occurrence rescheduled or renamed on
+          // its own keeps that to itself.
+          event: eventForScope({
+            edited: edits.variables.event,
+            master: seriesMaster.data ?? undefined,
+            occurrence: event,
+            scope,
+            timeZone,
+          }),
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
           // The editor says what failed, beside Save.
