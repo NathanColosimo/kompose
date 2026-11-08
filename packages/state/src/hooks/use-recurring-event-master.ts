@@ -75,6 +75,17 @@ export function useRecurringEventMaster(params: {
     /** The rule isn't usable yet: first load, or a stale copy refreshing. */
     ruleLoading: query.isLoading || refreshing,
     ruleReady: seriesRuleReady(query),
+    /**
+     * An occurrence's series rule that can't be used now (loading, or its
+     * load failed): its repeat can't be edited from it.
+     */
+    ruleUnavailable: enabled && !seriesRuleReady(query),
+    /** The series' rule couldn't be loaded (it's unavailable, and failed). */
+    ruleFailed: enabled && !seriesRuleReady(query) && query.isError,
+    /** Load the series again (after it failed). */
+    retry: () => {
+      query.refetch().catch(() => undefined);
+    },
   };
 }
 

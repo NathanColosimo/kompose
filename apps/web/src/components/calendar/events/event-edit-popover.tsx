@@ -1564,10 +1564,88 @@ function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
   );
 }
 
+/**
+ * In place of the repeat chip when the series' rule didn't load: its repeat
+ * can't be edited from a copy that may be old, so say so and offer to load
+ * it again.
+ */
+function RepeatRetryButton({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <Button
+      className="h-8 gap-1.5 px-2 text-xs"
+      onClick={onRetry}
+      size="sm"
+      title="The series' repeat didn't load. Try again."
+      variant="outline"
+    >
+      <Repeat className="size-4 shrink-0" />
+      Repeat didn't load · Retry
+    </Button>
+  );
+}
+
+/** The repeat chip, which opens the repeat editor. */
+function RepeatControl({
+  allDay,
+  city,
+  disabled,
+  onRecurrenceChange,
+  recurrenceRule,
+  ruleLabel,
+  seriesStart,
+  seriesTimeZone,
+  showsZone,
+}: {
+  allDay: boolean;
+  city: string | null;
+  disabled: boolean;
+  onRecurrenceChange: (rule: string | null) => void;
+  recurrenceRule: string | undefined;
+  ruleLabel: string | null | undefined;
+  seriesStart: Temporal.PlainDate | null;
+  seriesTimeZone: string;
+  showsZone: boolean;
+}) {
+  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleLabel;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {/* Says how the event repeats, so the editor shows it's a series. */}
+        <Button
+          aria-label={`Repeat: ${repeatLabel ?? "None"}`}
+          className={cn(
+            // The rule gives way first: the calendar beside it stays readable.
+            repeatLabel ? "h-8 min-w-0 shrink gap-1.5 px-2 text-xs" : "size-8"
+          )}
+          disabled={disabled}
+          size={repeatLabel ? "sm" : "icon"}
+          title={repeatLabel ?? "Repeat"}
+          variant={repeatLabel ? "secondary" : "outline"}
+        >
+          <Repeat className="size-4 shrink-0" />
+          {ruleLabel ? <RepeatChipText city={city} rule={ruleLabel} /> : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[360px]">
+        <RecurrenceEditor
+          allDay={allDay}
+          onChange={onRecurrenceChange}
+          recurrenceRule={recurrenceRule}
+          start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
+          timeZone={seriesTimeZone}
+          zoneCity={showsZone ? timeZoneCity(seriesTimeZone) : null}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
   recurrenceLoading,
+  recurrenceFailed = false,
+  onRetryRecurrence,
   readOnly = false,
   recurrenceRule,
   seriesStart,
@@ -1580,8 +1658,11 @@ function EventAllDayAndRecurrenceRow({
 }: {
   allDay: boolean;
   onToggleAllDay: () => void;
-  /** The occurrence's pattern is still loading. */
+  /** The occurrence's pattern isn't usable yet (loading, or it failed). */
   recurrenceLoading: boolean;
+  /** Loading the occurrence's pattern failed: offer to try again. */
+  recurrenceFailed?: boolean;
+  onRetryRecurrence?: () => void;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
   /**
@@ -1606,7 +1687,6 @@ function EventAllDayAndRecurrenceRow({
   // Its days are the series' zone's: say so beside a date shown here.
   const city = showsZone ? timeZoneCity(seriesTimeZone) : null;
   const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
-  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleLabel;
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1631,35 +1711,21 @@ function EventAllDayAndRecurrenceRow({
           All day
         </Button>
       )}
-      <Popover>
-        <PopoverTrigger asChild>
-          {/* Says how the event repeats, so the editor shows it's a series. */}
-          <Button
-            aria-label={`Repeat: ${repeatLabel ?? "None"}`}
-            className={cn(
-              // The rule gives way first: the calendar beside it stays readable.
-              repeatLabel ? "h-8 min-w-0 shrink gap-1.5 px-2 text-xs" : "size-8"
-            )}
-            disabled={readOnly || recurrenceLoading}
-            size={repeatLabel ? "sm" : "icon"}
-            title={repeatLabel ?? "Repeat"}
-            variant={repeatLabel ? "secondary" : "outline"}
-          >
-            <Repeat className="size-4 shrink-0" />
-            {ruleLabel ? <RepeatChipText city={city} rule={ruleLabel} /> : null}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-[360px]">
-          <RecurrenceEditor
-            allDay={allDay}
-            onChange={onRecurrenceChange}
-            recurrenceRule={recurrenceRule}
-            start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
-            timeZone={seriesTimeZone}
-            zoneCity={showsZone ? timeZoneCity(seriesTimeZone) : null}
-          />
-        </PopoverContent>
-      </Popover>
+      {recurrenceFailed ? (
+        <RepeatRetryButton onRetry={onRetryRecurrence} />
+      ) : (
+        <RepeatControl
+          allDay={allDay}
+          city={city}
+          disabled={readOnly || recurrenceLoading}
+          onRecurrenceChange={onRecurrenceChange}
+          recurrenceRule={recurrenceRule}
+          ruleLabel={ruleLabel}
+          seriesStart={seriesStart}
+          seriesTimeZone={seriesTimeZone}
+          showsZone={showsZone}
+        />
+      )}
       <Select
         disabled={readOnly}
         onValueChange={onCalendarChange}
@@ -2638,7 +2704,7 @@ export function EventEditForm({
   // Any editable event can repeat, a one-off one included. While an
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
-  const recurrenceLoading = masterQuery.ruleLoading;
+  const recurrenceLoading = masterQuery.ruleUnavailable;
 
   if (readOnly) {
     const source = calendars.find(
@@ -2725,11 +2791,13 @@ export function EventEditForm({
             { shouldDirty: true }
           );
         }}
+        onRetryRecurrence={masterQuery.retry}
         onToggleAllDay={() => {
           hasUserEditedRef.current = true;
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
         readOnly={readOnly}
+        recurrenceFailed={masterQuery.ruleFailed}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
         seriesStart={seriesDayOf(watchedValues)}

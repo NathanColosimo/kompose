@@ -1309,7 +1309,9 @@ interface EventEditorSheetProps {
    * dismissal) until it ends.
    */
   isSaving?: boolean;
-  /** The occurrence's series pattern is loading. */
+  /** Loading the occurrence's series pattern failed: offer to try again. */
+  masterFailed?: boolean;
+  /** The occurrence's series pattern isn't usable yet (loading or failed). */
   masterLoading?: boolean;
   /**
    * The series' pattern when the event is an occurrence; it can load after
@@ -1318,6 +1320,7 @@ interface EventEditorSheetProps {
   masterRecurrence?: string[];
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
+  onRetryMaster?: () => void;
   onSubmit: (draft: EventDraft) => void;
   /** Dialogs that open over the editor (iOS presents them from its modal). */
   overlay?: React.ReactNode;
@@ -1330,7 +1333,9 @@ interface EventEditorSheetProps {
 export function EventEditorSheet({
   draft,
   isSaving = false,
+  masterFailed = false,
   masterLoading = false,
+  onRetryMaster,
   masterRecurrence,
   onClose,
   overlay,
@@ -1623,7 +1628,20 @@ export function EventEditorSheet({
           </Text>
         )}
 
-        {recurrenceEditor}
+        {masterFailed ? (
+          // The series' rule didn't load: its repeat can't be edited from
+          // a copy that may be old. Say so, and offer to load it again.
+          <Button
+            accessibilityHint="Loads the series' repeat again"
+            className="mb-2.5"
+            onPress={onRetryMaster}
+            variant="outline"
+          >
+            Repeat didn't load · Try again
+          </Button>
+        ) : (
+          recurrenceEditor
+        )}
 
         <EventAllDayAndMeetingRow
           allDay={allDay}

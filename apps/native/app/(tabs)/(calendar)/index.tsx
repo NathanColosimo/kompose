@@ -2320,10 +2320,12 @@ export default function CalendarTab() {
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
           isSaving={isSavingEvent || isDeletingEvent}
-          masterLoading={recurringMasterEvent.ruleLoading}
+          masterFailed={recurringMasterEvent.ruleFailed}
+          masterLoading={recurringMasterEvent.ruleUnavailable}
           masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
+          onRetryMaster={recurringMasterEvent.retry}
           onSubmit={(draft) => {
             // The sheet holds ("Saving…") until the save ends; a failure
             // leaves it open with the draft.
