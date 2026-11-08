@@ -21,26 +21,20 @@ import {
   describeEventRecurrence,
   monthlyDayOptions,
 } from "@kompose/state/event-recurrence-words";
-import { getGoogleEventsByCalendarQueryKey } from "@kompose/state/google-calendar-query-keys";
 import {
   buildGoogleEventRecurrenceRule,
   dayInZone,
   type EventRecurrencePattern,
-  eventTimeZone,
   type EventRecurrenceFrequency as Frequency,
   followStart,
   getPrimaryRecurrenceRule,
-  hasSeveralRules,
-  movedMeetingDropped,
-  occurrenceDayMoved,
-  otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatChanged,
   repeatCountingDay,
   repeatEndsBeforeStart,
-  repeatSkipsOccurrence,
   seriesCountingDays,
+  seriesTimeZone as seriesZoneOf,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
@@ -48,10 +42,7 @@ import {
   weekdayCodeOf,
   weekOrdered,
 } from "@kompose/state/google-event-recurrence";
-import {
-  keepsEventTimes,
-  withEditedTime,
-} from "@kompose/state/google-event-times";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
   SAVE_FAILURE_MESSAGE,
@@ -73,9 +64,15 @@ import {
   chosenScope,
   type EventSaveChanges,
   eventDeleteScopeState,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  refusalReason,
+  refuseSave,
+  type SaveRefusals,
   SCOPE_DIALOG_COPY,
   seriesCutUnsure,
+  seriesRefusalOf,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import { seriesRepeatForEdit } from "@kompose/state/series-edit";
@@ -84,7 +81,7 @@ import {
   formatEventWhen,
   moveEventStart,
 } from "@kompose/state/temporal-utils";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import {
   CalendarIcon,
@@ -175,11 +172,9 @@ import type {
 } from "../event-creation/create-form-shared";
 import {
   buildTemporalPayload,
+  cachedOccurrences,
   eventForScope,
-  type Refusals,
-  refuse,
-  saveScopeDialog,
-  seriesRefusal,
+  saveFacts,
   WEEKDAYS,
 } from "./event-edit-utils";
 
@@ -216,14 +211,11 @@ interface EventFormValues {
 }
 
 /**
- * What a save changes for the scopes the dialog offers (`scopeFacts`),
+ * What a save changes for the scopes the dialog offers (`saveFacts`),
  * worked out each render from the pending edit and the series as loaded
  * now, so a series that loads after Save counts.
  */
-type ScopeFacts = Pick<
-  EventSaveChanges,
-  "dateMoved" | "droppedMovedDay" | "repeatSkips" | "retimed" | "severalRules"
->;
+type ScopeFacts = ReturnType<typeof saveFacts>;
 
 /**
  * What a pending save changes, for the scopes the dialog offers. Whether
@@ -231,16 +223,20 @@ type ScopeFacts = Pick<
  * loads.
  */
 function saveChanges(
-  pendingSave: Pick<PendingSave, "calendarChanged" | "patternChanged"> | null,
+  pendingSave: Pick<
+    PendingSave,
+    "calendarChanged" | "patternChanged" | "refused"
+  > | null,
   facts: ScopeFacts,
   series: Pick<
     EventSaveChanges,
-    "seriesRuleFailed" | "seriesRuleLoaded" | "seriesTimeZone" | "splitBlocked"
+    "seriesRuleFailed" | "seriesRuleLoaded" | "splitBlocked"
   >
 ): EventSaveChanges {
   return {
     calendarChanged: Boolean(pendingSave?.calendarChanged),
     patternChanged: pendingSave?.patternChanged ?? false,
+    refused: pendingSave?.refused,
     ...facts,
     ...series,
   };
@@ -723,12 +719,16 @@ type PendingSave = Omit<
   Extract<CloseSaveRequest, { type: "save" }>,
   "isRecurring" | "type"
 > & {
-  /** The scopes the server refused for this save, and its latest reason. */
-  refused?: Refusals | null;
+  /** The scopes the server refused for this save, and why (`refuseSave`). */
+  refused?: SaveRefusals | null;
 };
 
 interface EventEditDialogState {
   deleteDialogOpen: boolean;
+  /** The last delete failed other than by a refusal. */
+  deleteFailed: boolean;
+  /** The scopes the server refused for this delete, and why. */
+  deleteRefused: SaveRefusals | null;
   deleteScope: RecurrenceScope;
   pendingSave: PendingSave | null;
   scopeDialogOpen: boolean;
@@ -741,6 +741,8 @@ type EventEditDialogAction =
   | { type: "open-recurring-delete"; scope: RecurrenceScope }
   | { type: "set-delete-dialog-open"; value: boolean }
   | { type: "set-delete-scope"; value: RecurrenceScope }
+  | { type: "refuse-delete"; refused: SaveRefusals }
+  | { type: "fail-delete" }
   | { type: "open-simple-delete" }
   | { type: "set-simple-delete-open"; value: boolean }
   | {
@@ -752,6 +754,8 @@ type EventEditDialogAction =
 
 const eventEditDialogInitialState: EventEditDialogState = {
   deleteDialogOpen: false,
+  deleteFailed: false,
+  deleteRefused: null,
   deleteScope: "this",
   pendingSave: null,
   scopeDialogOpen: false,
@@ -765,7 +769,17 @@ function eventEditDialogReducer(
 ): EventEditDialogState {
   switch (action.type) {
     case "open-recurring-delete":
-      return { ...state, deleteDialogOpen: true, deleteScope: action.scope };
+      return {
+        ...state,
+        deleteDialogOpen: true,
+        deleteFailed: false,
+        deleteRefused: null,
+        deleteScope: action.scope,
+      };
+    case "refuse-delete":
+      return { ...state, deleteFailed: false, deleteRefused: action.refused };
+    case "fail-delete":
+      return { ...state, deleteFailed: true };
     case "set-delete-dialog-open":
       return { ...state, deleteDialogOpen: action.value };
     case "set-delete-scope":
@@ -806,8 +820,11 @@ function heldFailure(error: unknown, fallback: string): string {
   if (error instanceof SavedNotMovedError) {
     return error.message;
   }
-  return seriesRefusal(error)?.message ?? fallback;
+  const refusal = seriesRefusalOf(error);
+  return refusal ? refusalReason(refusal) : fallback;
 }
+
+const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
 
 /** The edits saved, but the move to another calendar that followed didn't. */
 class SavedNotMovedError extends Error {
@@ -862,6 +879,8 @@ export function EventEditPopover({
   );
   const {
     deleteDialogOpen,
+    deleteFailed,
+    deleteRefused,
     deleteScope,
     simpleDeleteConfirmOpen,
     scopeDialogOpen,
@@ -884,14 +903,21 @@ export function EventEditPopover({
   const seriesStatus = {
     seriesRuleFailed: seriesMaster.ruleFailed,
     seriesRuleLoaded,
-    seriesTimeZone: otherTimeZone(event, timeZone),
     splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
-  const deleteScopeState = eventDeleteScopeState({
+  const deleteState = eventDeleteScopeState({
     cutUnsure: seriesCutUnsure(event, seriesMaster.data, timeZone),
+    refused: deleteRefused,
     seriesRuleFailed: seriesMaster.ruleFailed,
     seriesRuleLoaded,
   });
+  // A delete that failed for another reason says so, leading its line.
+  const deleteScopeState = deleteFailed
+    ? {
+        ...deleteState,
+        description: `${DELETE_FAILURE_MESSAGE} ${deleteState.description}`,
+      }
+    : deleteState;
 
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
@@ -974,6 +1000,9 @@ export function EventEditPopover({
           calendarId,
           destinationCalendarId: edits.calendarChanged.destinationCalendarId,
           eventId: event.id,
+          failureMessage: SAVE_FAILURE_MESSAGE,
+          // The editor says what failed, beside Save.
+          quiet: true,
           scope,
         });
         // The edits are in by now: a failed move mustn't say they aren't.
@@ -1008,16 +1037,22 @@ export function EventEditPopover({
   // The scope the save dialog shows and saves with, worked out each time
   // from the pending edit, the series as loaded now, and its occurrences
   // as cached when the save went pending.
-  const pendingFacts = scopeFacts(pendingSave?.variables.event, {
-    event,
-    loaded: pendingOccurrences,
-    master: seriesMaster.data ?? undefined,
-    timeZone,
-  });
-  const saveDialog = saveScopeDialog(
-    saveChanges(pendingSave, pendingFacts, seriesStatus),
-    pendingSave?.refused ?? null
-  );
+  const pendingFacts: ScopeFacts =
+    pendingSave && event
+      ? saveFacts({
+          edited: pendingSave.variables.event,
+          event,
+          loaded: pendingOccurrences,
+          master: seriesMaster.data ?? undefined,
+          timeZone,
+        })
+      : { dateMoved: false };
+  const saveScopeChanges = saveChanges(pendingSave, pendingFacts, seriesStatus);
+  const saveDialog = {
+    // Says why each scope that's off is, led by any refusal.
+    description: eventSaveDescription(saveScopeChanges),
+    disabled: eventSaveDisabledScopes(saveScopeChanges),
+  };
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
@@ -1031,16 +1066,12 @@ export function EventEditPopover({
       // The server won't make this write (a meeting changed on its own
       // would be undone, say): ask again, with that scope off and its
       // reason leading the dialog.
-      const refusal = seriesRefusal(error);
+      const refusal = seriesRefusalOf(error);
       if (refusal) {
         dispatchDialog({
           pendingSave: {
             ...pendingSave,
-            refused: refuse(
-              pendingSave.refused ?? null,
-              saveScope,
-              refusal.message
-            ),
+            refused: refuseSave(pendingSave.refused, saveScope, refusal),
           },
           type: "open-scope-dialog",
         });
@@ -1092,13 +1123,30 @@ export function EventEditPopover({
     if (!event) {
       return;
     }
-    await deleteEvent.mutateAsync({
-      accountId,
-      calendarId,
-      eventId: event.id,
-      scope: deleteChoice,
-    });
-  }, [accountId, calendarId, deleteChoice, deleteEvent, event]);
+    try {
+      await deleteEvent.mutateAsync({
+        accountId,
+        calendarId,
+        eventId: event.id,
+        failureMessage: DELETE_FAILURE_MESSAGE,
+        // The dialog says what failed, and stays open.
+        quiet: true,
+        scope: deleteChoice,
+      });
+    } catch (error) {
+      // A refused scope turns off, led by why; another failure says so.
+      const refusal = seriesRefusalOf(error);
+      dispatchDialog(
+        refusal
+          ? {
+              refused: refuseSave(deleteRefused, deleteChoice, refusal),
+              type: "refuse-delete",
+            }
+          : { type: "fail-delete" }
+      );
+      throw error;
+    }
+  }, [accountId, calendarId, deleteChoice, deleteEvent, deleteRefused, event]);
 
   const handleCancel = useCallback(() => {
     if (!savingRef.current) {
@@ -1419,81 +1467,6 @@ function editedPattern(
   };
 }
 
-/**
- * The series' occurrences in the events cache, for the moved meetings a
- * new repeat would cancel (`movedMeetingDropped`).
- */
-function cachedOccurrences(
-  queryClient: QueryClient,
-  calendar: { accountId: string; calendarId: string },
-  event: GoogleEvent | undefined
-): GoogleEvent[] {
-  const seriesId = event?.recurringEventId;
-  if (!seriesId) {
-    return [];
-  }
-  return queryClient
-    .getQueriesData<GoogleEvent[]>({
-      queryKey: getGoogleEventsByCalendarQueryKey(calendar),
-    })
-    .flatMap(([, events]) => events ?? [])
-    .filter((cached) => cached.recurringEventId === seriesId);
-}
-
-/**
- * What the scope dialog needs to know about an edit to an existing event,
- * from what the save sends (its times, and its repeat when it sends one)
- * and the series as loaded.
- */
-function scopeFacts(
-  edited: Pick<GoogleEvent, "end" | "recurrence" | "start"> | undefined,
-  ctx: {
-    event: GoogleEvent | undefined;
-    /** The series' occurrences in the events cache. */
-    loaded: GoogleEvent[];
-    master: GoogleEvent | undefined;
-    timeZone: string;
-  }
-): ScopeFacts {
-  const { event, timeZone } = ctx;
-  if (!(edited && event)) {
-    return { dateMoved: false };
-  }
-  const seriesStart = ctx.master?.start;
-  const dateMoved = occurrenceDayMoved({
-    editedEnd: edited.end,
-    editedStart: edited.start,
-    occurrence: event,
-    timeZone,
-  });
-  const { recurrence } = edited;
-  return {
-    dateMoved,
-    droppedMovedDay: movedMeetingDropped({
-      loaded: ctx.loaded,
-      occurrence: event,
-      recurrence,
-      seriesStart,
-      timeZone,
-    }),
-    repeatSkips: repeatSkipsOccurrence({
-      occurrence: event,
-      recurrence,
-      seriesStart,
-      timeZone,
-    }),
-    // A new time for this occurrence on its own day: for the series, a
-    // new time.
-    retimed:
-      Boolean(event.recurringEventId) &&
-      !dateMoved &&
-      !keepsEventTimes(edited, event, eventTimeZone(event, timeZone)),
-    severalRules: hasSeveralRules(
-      event.recurrence?.length ? event.recurrence : ctx.master?.recurrence
-    ),
-  };
-}
-
 function buildEditPayload(
   values: EventFormValues,
   ctx: {
@@ -1520,6 +1493,10 @@ function buildEditPayload(
   if (!(ctx.hasEdits || calendarChanged)) {
     return { type: "none" };
   }
+  // A series is written in its own zone (Google repeats it there): the
+  // series' once loaded, as the server reads it.
+  const seriesZone = (fallback: string) =>
+    ctx.event ? seriesZoneOf(ctx.event, ctx.masterStart, fallback) : fallback;
 
   const temporalPayload = buildTemporalPayload(
     values,
@@ -1530,8 +1507,7 @@ function buildEditPayload(
         ctx.event?.recurringEventId ||
         ctx.event?.recurrence?.length ||
         ctx.masterRecurrence?.length
-          ? // A series is written in its own zone (Google repeats it there).
-            eventTimeZone(ctx.event, ctx.calendarTimeZone ?? ctx.timeZone)
+          ? seriesZone(ctx.calendarTimeZone ?? ctx.timeZone)
           : undefined,
     }
   );
@@ -1562,13 +1538,13 @@ function buildEditPayload(
         ? matchRecurrenceToStart(
             values.recurrence ?? [],
             temporalPayload.startPayload,
-            eventTimeZone(ctx.event, ctx.timeZone),
+            seriesZone(ctx.timeZone),
             // The series' slot before the edit: which rules share its time.
             ctx.event?.originalStartTime ?? ctx.event?.start,
             seriesCountingDays(
               ctx.event,
               ctx.masterStart,
-              eventTimeZone(ctx.event, ctx.timeZone)
+              seriesZone(ctx.timeZone)
             )
           )
         : undefined,
@@ -2616,8 +2592,6 @@ export function EventEditForm({
   const recurrenceEditedRef = useRef(false);
   // Days in the zone the app shows (and saves) times in.
   const timeZone = useAtomValue(timezoneAtom);
-  // An existing series' days count in its own zone; a new one's here.
-  const seriesTimeZone = eventTimeZone(event, timeZone);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
@@ -2625,6 +2599,11 @@ export function EventEditForm({
     enabled: open,
     event: event ?? (null as GoogleEvent | null),
   });
+  // An existing series' days count in its own zone (the series' own, once
+  // loaded, as the server reads it); a new one's here.
+  const seriesTimeZone = event
+    ? seriesZoneOf(event, masterQuery.data?.start, timeZone)
+    : timeZone;
 
   const isAllDay = Boolean(event?.start?.date);
   // All-day dates go to the pickers as local dates. (new Date("2026-11-12")

@@ -21,13 +21,6 @@ import type {
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
-  eventTimeZone,
-  hasSeveralRules,
-  occurrenceDayMoved,
-  otherTimeZone,
-} from "@kompose/state/google-event-recurrence";
-import { keepsEventTimes } from "@kompose/state/google-event-times";
-import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
@@ -44,6 +37,7 @@ import {
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -76,7 +70,11 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
-import { eventForScope } from "./events/event-edit-utils";
+import {
+  cachedOccurrences,
+  eventForScope,
+  saveFacts,
+} from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -120,37 +118,6 @@ function droppedSubject(
     moved: pending.moved,
     name: pending.occurrence.summary || "(No title)",
     when,
-  };
-}
-
-/**
- * What a recurring event's drop changes, for the scopes its dialog offers:
- * a new day, or a new time on its own day (`retimed`), which can't go to a
- * series of several rules.
- */
-function dropFacts(
-  pending: PendingGoogleUpdate,
-  master: Pick<GoogleEvent, "recurrence"> | null | undefined,
-  timeZone: string
-): Pick<EventSaveChanges, "dateMoved" | "retimed" | "severalRules"> {
-  const { occurrence, update } = pending;
-  const dateMoved = occurrenceDayMoved({
-    editedEnd: update.event.end,
-    editedStart: update.event.start,
-    occurrence,
-    timeZone,
-  });
-  return {
-    dateMoved,
-    retimed: !(
-      dateMoved ||
-      keepsEventTimes(
-        update.event,
-        occurrence,
-        eventTimeZone(occurrence, timeZone)
-      )
-    ),
-    severalRules: hasSeveralRules(master?.recurrence),
   };
 }
 
@@ -253,6 +220,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [scopeDialog, setScopeDialog] = useState<"google" | "task" | null>(
     null
   );
+  const queryClient = useQueryClient();
   const pendingMaster = useRecurringEventMaster({
     accountId: pendingGoogleUpdate?.update.accountId ?? "",
     calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
@@ -776,14 +744,32 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
   }, [pendingUpdate, taskScope, updateTask]);
 
+  // The series' cached occurrences, read once per drop.
+  const pendingOccurrences = useMemo(
+    () =>
+      pendingGoogleUpdate
+        ? cachedOccurrences(
+            queryClient,
+            pendingGoogleUpdate.update,
+            pendingGoogleUpdate.occurrence
+          )
+        : [],
+    [pendingGoogleUpdate, queryClient]
+  );
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
         calendarChanged: false,
-        ...dropFacts(pendingGoogleUpdate, pendingMaster.data, timeZone),
+        // A new day, or a new time on its own day, as the editor reads it.
+        ...saveFacts({
+          edited: pendingGoogleUpdate.update.event,
+          event: pendingGoogleUpdate.occurrence,
+          loaded: pendingOccurrences,
+          master: pendingMaster.data ?? undefined,
+          timeZone,
+        }),
         patternChanged: false,
         seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,
-        seriesTimeZone: otherTimeZone(pendingGoogleUpdate.occurrence, timeZone),
         splitBlocked: seriesSplitBlock(
           pendingGoogleUpdate.occurrence,
           pendingMaster.data,
