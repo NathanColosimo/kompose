@@ -30,6 +30,18 @@ export interface UpdateGoogleEventInput {
   recurrenceScope?: "this" | "all" | "following";
 }
 
+/** An update's variables, with how an editor holds the save. */
+export type UpdateGoogleEventVariables = UpdateGoogleEventInput &
+  HeldSave & {
+    /**
+     * False to wait for the server instead of updating the cache first. An
+     * editor that holds open on the save needs this: an optimistic move
+     * would re-render (or unmount) it mid-save, and the rollback would
+     * reset its fields.
+     */
+    optimistic?: boolean;
+  };
+
 export function useGoogleEventMutations() {
   const queryClient = useQueryClient();
   const { orpc, notifyError } = useStateConfig();
@@ -106,19 +118,37 @@ export function useGoogleEventMutations() {
     },
   });
 
-  const updateEvent = useMutation({
-    mutationFn: async (
-      variables: UpdateGoogleEventInput &
-        HeldSave & {
-          /**
-           * False to wait for the server instead of updating the cache
-           * first. An editor that holds open on the save needs this: an
-           * optimistic move would re-render (or unmount) it mid-save, and
-           * the rollback would reset its fields.
-           */
-          optimistic?: boolean;
-        }
-    ) =>
+  const updateEvent = useMutation(
+    updateGoogleEventMutationOptions(queryClient, { notifyError, orpc })
+  );
+
+  const deleteEvent = useMutation(
+    deleteGoogleEventMutationOptions(queryClient, { notifyError, orpc })
+  );
+
+  return { createEvent, updateEvent, deleteEvent };
+}
+
+/** Whether an update changes the cached event before the server answers. */
+function updatesAtOnce(variables: UpdateGoogleEventVariables): boolean {
+  return (
+    (variables.recurrenceScope ?? "this") === "this" &&
+    variables.optimistic !== false
+  );
+}
+
+/**
+ * An update: for one occurrence, unless the editor holds the save
+ * (`optimistic: false`), the event changes in the cached lists at once and
+ * comes back on failure. A failure is reported unless the editor says it
+ * (`quiet`).
+ */
+export function updateGoogleEventMutationOptions(
+  queryClient: QueryClient,
+  { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
+) {
+  return {
+    mutationFn: async (variables: UpdateGoogleEventVariables) =>
       orpc.googleCal.events.update({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -126,8 +156,13 @@ export function useGoogleEventMutations() {
         event: sanitizeEventPayload(variables.event),
         scope: variables.recurrenceScope ?? "this",
       }),
-    onMutate: async (variables) => {
-      const scope = variables.recurrenceScope ?? "this";
+    onMutate: async (variables: UpdateGoogleEventVariables) => {
+      // Only one occurrence, saved without holding, changes the cache
+      // first; anything else has nothing to put back on failure (putting a
+      // snapshot back would undo what a refetch brought meanwhile).
+      if (!updatesAtOnce(variables)) {
+        return { previousQueries: undefined };
+      }
       const queryKey = getGoogleEventsByCalendarQueryKey({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -141,22 +176,26 @@ export function useGoogleEventMutations() {
         queryKey,
       });
 
-      if (scope === "this" && variables.optimistic !== false) {
-        for (const [cachedKey, cachedEvents] of previousQueries) {
-          if (Array.isArray(cachedEvents)) {
-            queryClient.setQueryData<Event[]>(
-              cachedKey,
-              cachedEvents.map((event) =>
-                event.id === variables.eventId ? variables.event : event
-              )
-            );
-          }
+      for (const [cachedKey, cachedEvents] of previousQueries) {
+        if (Array.isArray(cachedEvents)) {
+          queryClient.setQueryData<Event[]>(
+            cachedKey,
+            cachedEvents.map((event) =>
+              event.id === variables.eventId ? variables.event : event
+            )
+          );
         }
       }
 
       return { previousQueries };
     },
-    onError: (err, variables, context) => {
+    onError: (
+      err: Error,
+      variables: UpdateGoogleEventVariables,
+      context:
+        | { previousQueries?: [readonly unknown[], Event[] | undefined][] }
+        | undefined
+    ) => {
       reportHeldSaveFailure(notifyError, err, variables);
 
       if (context?.previousQueries) {
@@ -165,12 +204,12 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onSuccess: (saved, variables) => {
+    onSuccess: (saved: Event, variables: UpdateGoogleEventVariables) => {
       // A held save shows the server's copy as soon as it's in; other
       // scopes change more events, so the refetch below brings them.
       if (
         variables.optimistic !== false ||
-        variables.recurrenceScope !== "this"
+        (variables.recurrenceScope ?? "this") !== "this"
       ) {
         return;
       }
@@ -185,18 +224,16 @@ export function useGoogleEventMutations() {
           cached?.map((event) => (event.id === saved.id ? saved : event))
       );
     },
-    onSettled: (_data, _error, variables) => {
+    onSettled: (
+      _data: unknown,
+      _error: Error | null,
+      variables: UpdateGoogleEventVariables
+    ) => {
       invalidateGoogleEventQueries(queryClient, [
         { accountId: variables.accountId, calendarId: variables.calendarId },
       ]);
     },
-  });
-
-  const deleteEvent = useMutation(
-    deleteGoogleEventMutationOptions(queryClient, { notifyError, orpc })
-  );
-
-  return { createEvent, updateEvent, deleteEvent };
+  };
 }
 
 /**

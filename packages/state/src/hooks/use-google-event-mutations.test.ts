@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import type { StateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
-import { deleteGoogleEventMutationOptions } from "./use-google-event-mutations";
+import {
+  deleteGoogleEventMutationOptions,
+  updateGoogleEventMutationOptions,
+} from "./use-google-event-mutations";
 
 const removal = {
   accountId: "acct",
@@ -70,4 +73,85 @@ test("the event leaves the list at once, and comes back on failure", async () =>
   expect(sent).toEqual([removal]);
   expect(whileSent).toEqual([[{ id: "other" }]]);
   expect(cached).toEqual([{ id: "event" }, { id: "other" }]);
+});
+
+/**
+ * A held update (`optimistic: false`) the server answers with `answer`,
+ * and the calendar's list after it, which the realtime sync refreshed
+ * while the save was out.
+ */
+async function heldUpdate(
+  answer: () => Promise<unknown>,
+  recurrenceScope?: "all" | "this"
+) {
+  const queryClient = new QueryClient();
+  const queryKey = [
+    ...getGoogleEventsByCalendarQueryKey({
+      accountId: "acct",
+      calendarId: "work",
+    }),
+    "2026-11",
+  ];
+  const event = {
+    end: { dateTime: "2026-11-09T09:30:00-05:00" },
+    id: "event",
+    start: { dateTime: "2026-11-09T09:00:00-05:00" },
+    summary: "Standup",
+  };
+  queryClient.setQueryData(queryKey, [event]);
+  const orpc = {
+    googleCal: {
+      events: {
+        update: () => {
+          queryClient.setQueryData(queryKey, [event, { id: "new" }]);
+          return answer();
+        },
+      },
+    },
+    // Only the call an update makes: the client's type has every route.
+  } as unknown as StateConfig["orpc"];
+  const observer = new MutationObserver(
+    queryClient,
+    updateGoogleEventMutationOptions(queryClient, {
+      notifyError: () => undefined,
+      orpc,
+    })
+  );
+  await observer
+    .mutate({
+      accountId: "acct",
+      calendarId: "work",
+      event: { ...event, summary: "Planning" },
+      eventId: "event",
+      optimistic: false,
+      quiet: true,
+      recurrenceScope,
+    })
+    .catch(() => undefined);
+  return queryClient.getQueryData(queryKey);
+}
+
+test("a failed held update leaves the list as it's since been refreshed", async () => {
+  // It changed nothing before the server answered, so nothing goes back.
+  const refused = () => Promise.reject(new Error("refused"));
+  const lists = await Promise.all(
+    (["all", "this"] as const).map((scope) => heldUpdate(refused, scope))
+  );
+  for (const cached of lists) {
+    expect(cached).toEqual([
+      expect.objectContaining({ summary: "Standup" }),
+      { id: "new" },
+    ]);
+  }
+});
+
+test("a held update of one occurrence shows the server's copy once it's in", async () => {
+  // With no scope given, the save is for this occurrence.
+  const cached = await heldUpdate(() =>
+    Promise.resolve({ id: "event", summary: "Planning (saved)" })
+  );
+  expect(cached).toEqual([
+    { id: "event", summary: "Planning (saved)" },
+    { id: "new" },
+  ]);
 });
