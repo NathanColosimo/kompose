@@ -19,6 +19,7 @@ const SEVERAL_A_DAY =
 
 const INTERVAL_PART = /INTERVAL=(\d+)/;
 const COUNT_VALUE = /[:;]COUNT=(\d+)/;
+const CLOCK_PART_NAME = /^BY(?:HOUR|MINUTE|SECOND)=/;
 /** A rule that repeats within a day: its times don't follow the start's. */
 const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ_PART = /FREQ=([A-Z]+)/;
@@ -335,8 +336,8 @@ function matchDateList(
     | null = null,
   /** The series' added (RDATE) meetings, as epoch milliseconds. */
   added: Set<number> = new Set(),
-  /** The series' time before the edit, when known. */
-  base: Temporal.PlainTime | null = null
+  /** Turning the series all day: whether a timed value becomes a date. */
+  keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null = null
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -353,29 +354,13 @@ function matchDateList(
     if (values.every((value) => value.instant === null)) {
       return line;
     }
-    // A timed skip on the start's own day becomes a date that cancels the
-    // whole first day. It stays only as the first meeting itself, deleted
-    // (once a day, at the series' time); an added meeting's, another
-    // time's, or one of several that day goes.
-    const cancelsFirstDay = (value: RecurrenceValue) => {
-      if (
-        list.name !== "EXDATE" ||
-        !value.instant ||
-        value.day.toString() !== start.date
-      ) {
-        return false;
-      }
-      const time = value.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
-      return (
-        severalADay ||
-        added.has(value.instant.epochMilliseconds) ||
-        Boolean(base && Temporal.PlainTime.compare(time, base) !== 0)
-      );
-    };
     const days = [
       ...new Set(
         values
-          .filter((value) => !cancelsFirstDay(value))
+          .filter(
+            (value) =>
+              !(value.instant && keepAsDate) || keepAsDate(list.name, value)
+          )
           .map((value) => compactDate(value.day))
       ),
     ];
@@ -425,6 +410,107 @@ function matchDateList(
       })
     ),
   ].join(",")}`;
+}
+
+/**
+ * Turning a timed series all day, which of its timed added (RDATE) and
+ * skipped (EXDATE) values become dates. A date skips or adds the whole
+ * day, so: an added meeting that was cancelled goes from both lists; a
+ * skip becomes its date only when every meeting that day (the rules'
+ * times, from the series' time `base` for parts they leave out, and the
+ * added ones) was skipped, so one skipped time never erases a day that
+ * still met. Without `base`, a once-a-day series' skip is taken as its
+ * meeting's.
+ */
+function allDayDates(params: {
+  anchor: Temporal.PlainDate;
+  base: Temporal.PlainTime | null;
+  recurrence: string[];
+  rules: string[];
+  severalADay: boolean;
+  timeZone: string;
+}): (name: string, value: RecurrenceValue) => boolean {
+  const { anchor, base, recurrence, rules, severalADay, timeZone } = params;
+  const momentsOf = (name: string) => {
+    const moments: Temporal.Instant[] = [];
+    for (const line of recurrence) {
+      const list = line.startsWith(name) ? parseDateList(line, timeZone) : null;
+      for (const value of list?.values ?? []) {
+        const read = list && readRecurrenceValue(value, list.zone, timeZone);
+        if (read?.instant) {
+          moments.push(read.instant);
+        }
+      }
+    }
+    return moments;
+  };
+  const skipped = new Set(momentsOf("EXDATE").map((m) => m.epochMilliseconds));
+  const added = momentsOf("RDATE");
+  const cancelled = new Set(
+    added.map((m) => m.epochMilliseconds).filter((ms) => skipped.has(ms))
+  );
+  const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
+    day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
+  // The times a rule meets on a day, or null when they can't be listed.
+  const ruleTimes = (rule: string): Temporal.PlainTime[] | null => {
+    if (SUB_DAILY.test(rule)) {
+      return null;
+    }
+    const parts = new Map(
+      [...rule.matchAll(CLOCK_PART)].map((match) => [
+        match[1],
+        (match[2] ?? "").split(",").map(Number),
+      ])
+    );
+    const fill = (name: string, own: number | undefined) =>
+      parts.get(name) ?? (own === undefined ? null : [own]);
+    const hours = fill("BYHOUR", base?.hour);
+    const minutes = fill("BYMINUTE", base?.minute);
+    const seconds = fill("BYSECOND", base?.second);
+    if (!(hours && minutes && seconds)) {
+      return null;
+    }
+    return hours.flatMap((hour) =>
+      minutes.flatMap((minute) =>
+        seconds.map((second) =>
+          Temporal.PlainTime.from({ hour, minute, second })
+        )
+      )
+    );
+  };
+  return (name, value) => {
+    const ms = value.instant?.epochMilliseconds;
+    if (ms === undefined || cancelled.has(ms)) {
+      return ms === undefined;
+    }
+    if (name !== "EXDATE") {
+      return true;
+    }
+    const meetings: number[] = [];
+    for (const rule of rules) {
+      if (isRuleDay(rule, anchor, value.day) === false) {
+        continue;
+      }
+      const times = ruleTimes(rule);
+      if (!times) {
+        // A once-a-day series' time unknown: the skip is its meeting's.
+        return !severalADay;
+      }
+      meetings.push(...times.map((time) => at(value.day, time)));
+    }
+    for (const moment of added) {
+      const local = moment.toZonedDateTimeISO(timeZone).toPlainDate();
+      if (
+        Temporal.PlainDate.compare(local, value.day) === 0 &&
+        !cancelled.has(moment.epochMilliseconds)
+      ) {
+        meetings.push(moment.epochMilliseconds);
+      }
+    }
+    return (
+      meetings.length > 0 && meetings.every((meeting) => skipped.has(meeting))
+    );
+  };
 }
 
 /** A series' all-day added (RDATE) days ("2026-11-16"). */
@@ -508,6 +594,14 @@ function matchClock(
   timeZone: string,
   severalADay: boolean
 ): string {
+  if (start.date && !SUB_DAILY.test(line)) {
+    // An all-day rule has no time of day.
+    return `RRULE:${line
+      .slice("RRULE:".length)
+      .split(";")
+      .filter((part) => !CLOCK_PART_NAME.test(part))
+      .join(";")}`;
+  }
   if (!start.dateTime || severalADay) {
     return line;
   }
@@ -565,6 +659,16 @@ export function matchRecurrenceToStart(
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const baseDay = seriesStart ? dayOfStart(seriesStart, timeZone) : null;
   const added = addedMoments(recurrence, timeZone);
+  const keepAsDate = start.date
+    ? allDayDates({
+        anchor: baseDay ?? Temporal.PlainDate.from(start.date),
+        base,
+        recurrence,
+        rules,
+        severalADay,
+        timeZone,
+      })
+    : null;
   const isAdded = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
     added.has(
       day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds
@@ -631,7 +735,15 @@ export function matchRecurrenceToStart(
           timeZone,
           severalADay
         )
-      : matchDateList(line, start, timeZone, severalADay, retime, added, base);
+      : matchDateList(
+          line,
+          start,
+          timeZone,
+          severalADay,
+          retime,
+          added,
+          keepAsDate
+        );
     changed ||= matched !== line;
     // A list whose every value went (onto the new start) goes too.
     return matched ? [matched] : [];

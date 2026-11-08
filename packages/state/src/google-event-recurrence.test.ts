@@ -1015,41 +1015,75 @@ describe("seriesRecurrenceForSave", () => {
   });
 
   test("never leaves an all-day start's own day skipped", () => {
-    // The same series moved onto Tue Nov 10 and made all day: the start
-    // takes the whole day, so the 15:00 skip, now a date, goes with it.
-    const saved = seriesRecurrenceForSave({
-      editedStart: { date: "2026-11-10" },
-      masterRecurrence: [
-        "RRULE:FREQ=WEEKLY;BYDAY=MO",
-        "RDATE;TZID=America/New_York:20261110T150000",
-        "EXDATE;TZID=America/New_York:20261110T150000",
-      ],
-      occurrence: {
-        originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
-        recurringEventId: "series",
-        start: { dateTime: "2026-11-09T09:00:00-05:00" },
-      },
-      recurrence: undefined,
-      timeZone: "America/New_York",
-    });
-    expect(saved?.some((line) => line.startsWith("EXDATE"))).toBe(false);
-    // Made all day without moving: a skip at another time on the start's
-    // day goes, one on another day becomes that date, and the first
-    // meeting itself, deleted, stays deleted.
-    const allDay = (exdates: string) =>
-      matchRecurrenceToStart(
-        [
+    // Moved onto Tue Nov 10, where an added 15:00 was cancelled, and made
+    // all day: the start takes the whole day, so no skip is left on it.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-10" },
+        masterRecurrence: [
           "RRULE:FREQ=WEEKLY;BYDAY=MO",
-          `EXDATE;TZID=America/New_York:${exdates}`,
+          "RDATE;TZID=America/New_York:20261110T150000",
+          "EXDATE;TZID=America/New_York:20261110T150000",
         ],
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU", "RDATE;VALUE=DATE:20261110"]);
+  });
+
+  describe("making a timed series all day", () => {
+    const allDay = (recurrence: string[]) =>
+      matchRecurrenceToStart(
+        recurrence,
         { date: "2026-11-09" },
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
-      ).at(-1);
-    expect(allDay("20261109T150000,20261116T090000")).toBe(
-      "EXDATE;VALUE=DATE:20261116"
-    );
-    expect(allDay("20261109T090000")).toBe("EXDATE;VALUE=DATE:20261109");
+      );
+
+    test("skips a whole day only when its meeting was skipped", () => {
+      // Mondays 9:00: a stale 15:00 skip goes; Nov 16's 9:00 becomes its
+      // date; the first meeting itself, deleted, stays deleted.
+      expect(
+        allDay([
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE;TZID=America/New_York:20261109T150000,20261116T090000",
+        ])
+      ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261116"]);
+      expect(
+        allDay([
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE;TZID=America/New_York:20261109T090000",
+        ])
+      ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261109"]);
+    });
+
+    test("drops a cancelled added meeting from both lists", () => {
+      // An added, then cancelled, Mon Nov 16 15:00 adds nothing: as dates
+      // it would skip Nov 16's regular meeting too.
+      expect(
+        allDay([
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261116T150000",
+          "EXDATE;TZID=America/New_York:20261116T150000",
+        ])
+      ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
+    });
+
+    test("keeps a several-a-day day unless all its times were skipped", () => {
+      // 9:00 and 15:00: only Nov 16's 15:00 skipped keeps Nov 16; both of
+      // Nov 17's skipped skips the day. The rule loses its times.
+      expect(
+        allDay([
+          "RRULE:FREQ=DAILY;BYHOUR=9,15",
+          "EXDATE;TZID=America/New_York:20261116T150000,20261117T090000,20261117T150000",
+        ])
+      ).toEqual(["RRULE:FREQ=DAILY", "EXDATE;VALUE=DATE:20261117"]);
+    });
   });
 
   test("keeps a retimed skip off another rule's real meeting", () => {
