@@ -163,6 +163,7 @@ function buildRecurrenceRuleFromCurrent(
  */
 function RecurrenceRow({
   disabled,
+  waitingLabel,
   isExpanded,
   onToggle,
   recurrence,
@@ -171,6 +172,11 @@ function RecurrenceRow({
 }: React.ComponentProps<typeof RecurrenceEditorSection> & {
   /** The occurrence's pattern is still loading. */
   disabled: boolean;
+  /**
+   * Said in place of "Doesn't repeat" while an occurrence's pattern hasn't
+   * loaded: it repeats, but how isn't known yet.
+   */
+  waitingLabel: string | null;
   isExpanded: boolean;
   onToggle: () => void;
   recurrence: string[];
@@ -181,7 +187,9 @@ function RecurrenceRow({
     describeEventRecurrence({
       rules: recurrence,
       start: editor.startDate,
-    }) ?? "Doesn't repeat";
+    }) ??
+    waitingLabel ??
+    "Doesn't repeat";
   // Its days are the series' zone's, not the ones shown here.
   const repeats = zoneCity ? `${said} · ${zoneCity} time` : said;
   return (
@@ -209,6 +217,17 @@ function RecurrenceRow({
       {isExpanded ? <RecurrenceEditorSection {...editor} /> : null}
     </>
   );
+}
+
+/** What the repeat row says while an occurrence's pattern isn't in. */
+function recurrenceWaitingLabel(
+  loading: boolean,
+  paused: boolean
+): string | null {
+  if (!loading) {
+    return null;
+  }
+  return paused ? "Repeat loads when you're online" : "Loading repeat…";
 }
 
 const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
@@ -1313,6 +1332,8 @@ interface EventEditorSheetProps {
   masterFailed?: boolean;
   /** The occurrence's series pattern isn't usable yet (loading or failed). */
   masterLoading?: boolean;
+  /** Its load waits for the network. */
+  masterPaused?: boolean;
   /**
    * The series' pattern when the event is an occurrence; it can load after
    * the editor opens.
@@ -1335,6 +1356,7 @@ export function EventEditorSheet({
   isSaving = false,
   masterFailed = false,
   masterLoading = false,
+  masterPaused = false,
   onRetryMaster,
   masterRecurrence,
   onClose,
@@ -1495,6 +1517,7 @@ export function EventEditorSheet({
       )}
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
+      waitingLabel={recurrenceWaitingLabel(masterLoading, masterPaused)}
       zoneCity={
         seriesTimeZone === appTimeZone ? null : timeZoneCity(seriesTimeZone)
       }

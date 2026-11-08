@@ -2322,6 +2322,7 @@ export default function CalendarTab() {
           isSaving={isSavingEvent || isDeletingEvent}
           masterFailed={recurringMasterEvent.ruleFailed}
           masterLoading={recurringMasterEvent.ruleUnavailable}
+          masterPaused={recurringMasterEvent.rulePaused}
           masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}

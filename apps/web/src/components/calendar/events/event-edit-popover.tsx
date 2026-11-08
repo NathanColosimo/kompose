@@ -1591,6 +1591,7 @@ function RepeatControl({
   allDay,
   city,
   disabled,
+  loading,
   onRecurrenceChange,
   recurrenceRule,
   ruleLabel,
@@ -1601,6 +1602,11 @@ function RepeatControl({
   allDay: boolean;
   city: string | null;
   disabled: boolean;
+  /**
+   * The occurrence's series rule hasn't loaded yet: it repeats, but how
+   * isn't known, so it mustn't read as "doesn't repeat".
+   */
+  loading: boolean;
   onRecurrenceChange: (rule: string | null) => void;
   recurrenceRule: string | undefined;
   ruleLabel: string | null | undefined;
@@ -1608,7 +1614,9 @@ function RepeatControl({
   seriesTimeZone: string;
   showsZone: boolean;
 }) {
-  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleLabel;
+  const waiting = loading && !ruleLabel;
+  const ruleText = waiting ? "Loading repeat…" : ruleLabel;
+  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleText;
   // While the series' rule isn't usable (it's being fetched again), an
   // open editor closes and its changes are dropped: one then would keep
   // the old rule.
@@ -1623,7 +1631,9 @@ function RepeatControl({
       <PopoverTrigger asChild>
         {/* Says how the event repeats, so the editor shows it's a series. */}
         <Button
-          aria-label={`Repeat: ${repeatLabel ?? "None"}`}
+          aria-label={
+            waiting ? "Loading repeat…" : `Repeat: ${repeatLabel ?? "None"}`
+          }
           className={cn(
             // The rule gives way first: the calendar beside it stays readable.
             repeatLabel ? "h-8 min-w-0 shrink gap-1.5 px-2 text-xs" : "size-8"
@@ -1635,6 +1645,7 @@ function RepeatControl({
         >
           <Repeat className="size-4 shrink-0" />
           {ruleLabel ? <RepeatChipText city={city} rule={ruleLabel} /> : null}
+          {waiting ? <span className="truncate">{ruleText}</span> : null}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[360px]">
@@ -1747,6 +1758,7 @@ function EventAllDayAndRecurrenceRow({
           allDay={allDay}
           city={city}
           disabled={readOnly || recurrenceLoading}
+          loading={recurrenceLoading}
           onRecurrenceChange={onRecurrenceChange}
           recurrenceRule={recurrenceRule}
           ruleLabel={ruleLabel}
