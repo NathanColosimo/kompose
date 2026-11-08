@@ -2,11 +2,16 @@
 
 /**
  * TaskService's series writes against a real Postgres. Opt-in: CI has no
- * database yet, so this runs only with TASK_SERIES_TEST_DATABASE_URL set to
- * a migrated scratch database, where it writes demo users and tasks (and
- * deletes them after):
+ * database yet, so these run only with TASK_SERIES_TEST_DATABASE_URL set.
+ * They write demo users and tasks and delete them after, so the URL must
+ * name a throwaway database: one whose name has "test" or "scratch" as a
+ * word, split by "_" or "-" (kompose_test, kompose_series_test,
+ * scratch-kompose). Any other name fails before connecting. To run them
+ * from packages/api against the local Docker Postgres:
  *
- *   SKIP_ENV_VALIDATION=1 TASK_SERIES_TEST_DATABASE_URL=postgres://… \
+ *   docker exec -i kompose-postgres psql -U postgres -c "create database kompose_test"
+ *   (cd ../db && DATABASE_URL=postgres://…/kompose_test bunx drizzle-kit migrate)
+ *   SKIP_ENV_VALIDATION=1 TASK_SERIES_TEST_DATABASE_URL=postgres://…/kompose_test \
  *     bun test src/routers/task/client.db.test.ts
  */
 
@@ -19,6 +24,19 @@ import type { DeleteScope, UpdateScope } from "./contract";
 import type { TaskUpdateInput } from "./occurrence-rows";
 
 const testDatabaseUrl = process.env.TASK_SERIES_TEST_DATABASE_URL;
+
+const SCRATCH_DATABASE_NAME = /(^|[_-])(test|scratch)([_-]|$)/i;
+
+/** The database a URL names, if it's marked as throwaway; else throws why. */
+function scratchDatabaseName(url: string): string {
+  const name = decodeURIComponent(new URL(url).pathname.slice(1));
+  if (!SCRATCH_DATABASE_NAME.test(name)) {
+    throw new Error(
+      `TASK_SERIES_TEST_DATABASE_URL names the database "${name}", which isn't marked as throwaway. These tests write and delete rows, so its name must have "test" or "scratch" as a word split by "_" or "-" (for example kompose_test).`
+    );
+  }
+  return name;
+}
 
 // @kompose/db reads DATABASE_URL as it loads, so it's pointed at the test
 // database before the first import.
@@ -93,6 +111,27 @@ const mondays = (count: number): TaskRecurrence => ({
   interval: 1,
 });
 
+describe("scratchDatabaseName", () => {
+  test("accepts a database marked as test or scratch", () => {
+    expect(
+      scratchDatabaseName("postgres://u:p@localhost:5432/kompose_test")
+    ).toBe("kompose_test");
+    expect(
+      scratchDatabaseName("postgres://u:p@localhost:5432/scratch-kompose")
+    ).toBe("scratch-kompose");
+  });
+
+  test("refuses any other database, saying why", () => {
+    for (const name of ["kompose", "kompose_latest", "contest"]) {
+      expect(() =>
+        scratchDatabaseName(`postgres://u:p@localhost:5432/${name}`)
+      ).toThrow(
+        `names the database "${name}", which isn't marked as throwaway`
+      );
+    }
+  });
+});
+
 describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
   let modules: Awaited<ReturnType<typeof loadModules>>;
   let runtime: ManagedRuntime.ManagedRuntime<Database | TaskService, never>;
@@ -100,11 +139,13 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
 
   beforeAll(async () => {
     const url = testDatabaseUrl ?? "";
+    // Before connecting: only ever a throwaway database.
+    const name = scratchDatabaseName(url);
     modules = await loadModules(url);
     runtime = ManagedRuntime.make(
       Layer.mergeAll(modules.client.TaskService.layer, modules.db.DatabaseLive)
     );
-    // Never write to any database but the one named.
+    // And the connection really is to it.
     const { rows } = await runtime.runPromise(
       Effect.gen(function* () {
         const db = yield* modules.db.Database;
@@ -113,10 +154,14 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         );
       })
     );
-    expect(rows[0]?.name).toBe(new URL(url).pathname.slice(1));
+    expect(rows[0]?.name).toBe(name);
   });
 
   afterAll(async () => {
+    // Nothing ran, and nothing connected, if beforeAll refused the database.
+    if (userIds.length === 0) {
+      return;
+    }
     await runtime.runPromise(
       Effect.gen(function* () {
         const db = yield* modules.db.Database;

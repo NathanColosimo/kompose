@@ -3,10 +3,12 @@ import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
 import {
   countedRuleMeetings,
+  DATE_ONLY,
   parseDateList,
   type RecurrenceValue,
   readRecurrenceValue,
-  ruleTimesOf,
+  ruleClock,
+  ruleTimeOf,
   untilMoment,
 } from "./until";
 
@@ -22,7 +24,6 @@ const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
   SECONDLY: "seconds",
 };
 const COUNT_PART = /([:;])COUNT=[^;]+/;
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The series' rule cut to end just before the occurrence that started at
@@ -243,6 +244,24 @@ export function followingCutUnsure(params: {
     );
 }
 
+/**
+ * Whether `slot` (an original start, as Google writes them) is one of the
+ * series' added (RDATE) meetings.
+ */
+export function addsSlot(
+  recurrence: string[],
+  slot: string,
+  seriesZone: string
+): boolean {
+  const value = asValue(slot, seriesZone);
+  return Boolean(
+    value &&
+      addedValues(recurrence, seriesZone).some((added) =>
+        sameValue(added, value)
+      )
+  );
+}
+
 /** A series' added (RDATE) values. */
 function addedValues(
   recurrence: string[],
@@ -292,7 +311,7 @@ export function followingSplitBlocked(params: {
   const rule = rules[0];
   return rule &&
     first &&
-    ruleMeetsAt(rule, first, split, params.seriesZone) === true
+    ruleHasSlot(rule, first, split, params.seriesZone) === true
     ? null
     : "addedOccurrence";
 }
@@ -303,7 +322,7 @@ export function followingSplitBlocked(params: {
  * rule once a day, at its one BYHOUR / BYMINUTE or the start's; a list
  * there it ignores). Null when that can't be told.
  */
-function ruleMeetsAt(
+function ruleHasSlot(
   rule: string,
   first: RecurrenceValue,
   slot: RecurrenceValue,
@@ -358,6 +377,11 @@ export function seriesMeetsAt(params: {
   if (!(first && slot)) {
     return null;
   }
+  // An exclusion rule isn't read here: whether it drops `slot` can't be
+  // told.
+  if (recurrence.some((line) => line.startsWith("EXRULE"))) {
+    return null;
+  }
   const at = (values: RecurrenceValue[]) =>
     values.some((value) => sameValue(value, slot));
   const skipped = recurrence.flatMap((line) => {
@@ -385,7 +409,7 @@ export function seriesMeetsAt(params: {
   }
   let unknown = false;
   for (const rule of recurrence.filter(isRule)) {
-    const meets = ruleMeetsAt(rule, first, slot, seriesZone);
+    const meets = ruleHasSlot(rule, first, slot, seriesZone);
     if (meets) {
       return true;
     }
@@ -427,7 +451,7 @@ function subDailyEndsBefore(
 /**
  * Whether `rule` ends before `split` (a moment): its UNTIL's moment is
  * earlier, or its last COUNT meeting is (counted from the series' `first`
- * start, each time of a rule meeting several times a day). Null when that
+ * start, one meeting a day at the rule's time). Null when that
  * can't be told: a rule it can't walk, or no first start.
  */
 function ruleEndsBefore(
@@ -453,16 +477,16 @@ function ruleEndsBefore(
     return subDailyEndsBefore(rule, step, first, count, split, seriesZone);
   }
   const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const times = clock ? ruleTimesOf(rule, clock) : null;
+  const time = clock ? ruleTimeOf(rule, clock) : null;
   // A timed rule is counted meeting by meeting, so a time the clocks
   // skip that day isn't one (RFC 5545; see until.ts `existsOn`).
-  if (clock && times && times.length > 0) {
+  if (clock && time) {
     const meetings = countedRuleMeetings({
       base: clock,
       count,
       from: first.day,
       rule,
-      times,
+      time,
       timeZone: seriesZone,
     });
     return meetings && meetings.size === count
@@ -476,7 +500,7 @@ function ruleEndsBefore(
   // Its last day's meeting, at the rule's time (or that day's start).
   const lastAt = last
     .toZonedDateTime({
-      plainTime: times?.[0] ?? clock ?? undefined,
+      plainTime: time ?? clock ?? undefined,
       timeZone: seriesZone,
     })
     .toInstant();
@@ -686,23 +710,6 @@ export function carryCountExactly(
       ? split.instant.toString({ smallestUnit: "second" }).replace(/[-:]/g, "")
       : split.day.toString().replace(/-/g, "")
   );
-}
-
-const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
-
-/** The time of day a rule meets: its single BYHOUR / BYMINUTE / BYSECOND over `base`. */
-function ruleClock(rule: string, base: Temporal.PlainTime): Temporal.PlainTime {
-  const parts = new Map(
-    [...rule.matchAll(SINGLE_CLOCK_PART)].map((match) => [
-      match[1],
-      Number(match[2]),
-    ])
-  );
-  return base.with({
-    hour: parts.get("BYHOUR") ?? base.hour,
-    minute: parts.get("BYMINUTE") ?? base.minute,
-    second: parts.get("BYSECOND") ?? base.second,
-  });
 }
 
 /**
