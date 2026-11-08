@@ -32,6 +32,7 @@ import {
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
+  chosenScope,
   type EventSaveChanges,
   eventSaveDescription,
   eventSaveDisabledScopes,
@@ -199,7 +200,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   // editor: a new day applies to this occurrence or from it on.
   const [pendingGoogleUpdate, setPendingGoogleUpdate] =
     useState<PendingGoogleUpdate | null>(null);
-  const [googleScope, setGoogleScope] = useState<RecurrenceScope>("this");
+  /** The user's own pick in the drop's scope dialog; null until they pick. */
+  const [googlePick, setGooglePick] = useState<RecurrenceScope | null>(null);
   const pendingMaster = useRecurringEventMaster({
     accountId: pendingGoogleUpdate?.update.accountId ?? "",
     calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
@@ -322,7 +324,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     ) => {
       const update = buildGoogleMoveUpdate(data, start);
       if (data.event.recurringEventId) {
-        setGoogleScope("this");
+        setGooglePick(null);
         setPendingGoogleUpdate({ moved: true, occurrence: data.event, update });
         return;
       }
@@ -344,7 +346,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
       if (data.event.recurringEventId) {
-        setGoogleScope("this");
+        setGooglePick(null);
         setPendingGoogleUpdate({
           moved: false,
           occurrence: data.event,
@@ -743,6 +745,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
     : null;
 
+  // The scope the drop's dialog shows and saves with, worked out each time.
+  const googleScope = chosenScope(
+    googlePick,
+    "this",
+    googleSaveChanges ? eventSaveDisabledScopes(googleSaveChanges) : {}
+  );
+
   const confirmGoogleScope = useCallback(() => {
     if (!pendingGoogleUpdate) {
       return;
@@ -828,7 +837,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
             setPendingGoogleUpdate(null);
           }
         }}
-        onValueChange={setGoogleScope}
+        onValueChange={setGooglePick}
         open={pendingGoogleUpdate !== null}
         subject={
           pendingGoogleUpdate

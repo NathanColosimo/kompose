@@ -613,42 +613,35 @@ export function seriesRecurrenceForSave(params: {
     timeZone
   );
   const to = dayOfStart(editedStart, timeZone);
-  const followed =
-    from && to
-      ? followStart({
-          allDay,
-          from,
-          recurrence: masterRecurrence,
-          timeZone,
-          fromTime: timeOfStart(
-            occurrence.originalStartTime ?? occurrence.start,
-            timeZone
-          ),
-          to,
-          toTime: timeOfStart(editedStart, timeZone),
-        })
-      : masterRecurrence;
-  // The rules count from the edited day only when they followed it there;
-  // otherwise from the series' first day (or, not known, the occurrence's
-  // place in it).
-  const firstDay = params.masterStart
-    ? dayOfStart(params.masterStart, timeZone)
-    : null;
-  const rulesFrom = to ?? undefined;
+  if (!(from && to)) {
+    return;
+  }
+  const followed = followStart({
+    allDay,
+    from,
+    recurrence: masterRecurrence,
+    timeZone,
+    fromTime: timeOfStart(
+      occurrence.originalStartTime ?? occurrence.start,
+      timeZone
+    ),
+    to,
+    toTime: timeOfStart(editedStart, timeZone),
+  });
   const matched = matchRecurrenceToStart(
     followed,
     editedStart,
     timeZone,
     occurrence.originalStartTime ?? occurrence.start,
-    // Rules that followed the start count their COUNT from there too (a
-    // later occurrence's day can only run long, which keeps skips), from
-    // the series' own start time.
+    // The rules followed the start, so they and their COUNT count from the
+    // new day (a later occurrence's day can only run long, which keeps
+    // skips), from the series' own start time.
     {
-      firstDay: to ?? firstDay,
+      firstDay: to,
       firstTime: params.masterStart
         ? timeOfStart(params.masterStart, timeZone)
         : null,
-      rulesFrom,
+      rulesFrom: to,
       viaOccurrence: true,
     }
   );

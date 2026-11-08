@@ -770,23 +770,23 @@ function EventDeleteDialogs({
   pending: boolean;
   scope: RecurrenceScope;
 }) {
-  const off = followingOff && scope === "following";
-  useEffect(() => {
-    if (dialog === "delete" && off) {
-      onScopeChange("this");
-    }
-  }, [dialog, off, onScopeChange]);
+  // The scope asked for, or the nearest available while it's off (the
+  // series loading), worked out each time.
+  const shown = chosenScope(
+    scope,
+    scope,
+    followingOff ? { following: true } : {}
+  );
   return (
     <>
       <AlertDialog
         closeOnConfirm={false}
-        confirmDisabled={off}
         confirmText="Delete"
         description={description}
         isVisible={dialog === "delete"}
         onCancel={onCancel}
         onClose={noop}
-        onConfirm={() => onConfirm(scope)}
+        onConfirm={() => onConfirm(shown)}
         pending={pending}
         pendingText="Deleting…"
         title={SCOPE_DIALOG_COPY.deleteEvent.title}
@@ -799,7 +799,7 @@ function EventDeleteDialogs({
               label: option.label,
               value: option.value,
             }))}
-            value={scope}
+            value={shown}
           />
         </View>
       </AlertDialog>

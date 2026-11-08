@@ -962,6 +962,13 @@ export function EventEditPopover({
     dispatchDialog({ type: "set-simple-delete-open", value: false });
   }, [accountId, calendarId, deleteEvent, event]);
 
+  // The delete's scope: the one asked for, or the nearest available while
+  // it's off (the series loading), worked out each time.
+  const deleteChoice = chosenScope(
+    deleteScope,
+    deleteScope,
+    deleteScopeState.disabled
+  );
   const commitDelete = useCallback(async () => {
     if (!event) {
       return;
@@ -970,9 +977,9 @@ export function EventEditPopover({
       accountId,
       calendarId,
       eventId: event.id,
-      scope: deleteScope,
+      scope: deleteChoice,
     });
-  }, [accountId, calendarId, deleteEvent, deleteScope, event]);
+  }, [accountId, calendarId, deleteChoice, deleteEvent, event]);
 
   const handleCancel = useCallback(() => {
     if (!savingRef.current) {
@@ -1146,7 +1153,7 @@ export function EventEditPopover({
         }
         open={deleteDialogOpen}
         title={SCOPE_DIALOG_COPY.deleteEvent.title}
-        value={deleteScope}
+        value={deleteChoice}
       />
 
       {/* Simple delete confirmation for non-recurring events */}

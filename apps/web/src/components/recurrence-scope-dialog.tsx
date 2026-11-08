@@ -5,7 +5,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   type RecurrenceScopeOption,
 } from "@kompose/state/recurrence-scope-options";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -62,18 +62,9 @@ export function RecurrenceScopeDialog({
   // would otherwise send the change twice while the first is running.
   const pendingRef = useRef(false);
   const [pending, setPending] = useState(false);
-  // The chosen scope can turn off after the dialog opens (the series
-  // loads): nothing is sent until an available one is chosen.
+  // The callers give a scope that's available (`chosenScope`); should it
+  // still be off, nothing is sent.
   const chosenOff = Boolean(disabledScopes?.[value]);
-  // ...and the choice moves to the first one still available.
-  const firstAvailable = options.find(
-    (option) => !disabledScopes?.[option.value]
-  )?.value;
-  useEffect(() => {
-    if (open && chosenOff && firstAvailable) {
-      onValueChange(firstAvailable);
-    }
-  }, [chosenOff, firstAvailable, onValueChange, open]);
   const confirm = async () => {
     if (pendingRef.current || chosenOff) {
       return;
