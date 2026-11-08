@@ -18,6 +18,8 @@ const SEVERAL_A_DAY =
   /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
 const INTERVAL_PART = /INTERVAL=(\d+)/;
+/** A rule that repeats within a day: its times don't follow the start's. */
+const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ_PART = /FREQ=([A-Z]+)/;
 const BY_MONTH_PART = /BYMONTH=([^;]*)/;
 const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
@@ -154,6 +156,11 @@ export function untilRuleToDay(
   }
 }
 
+/** "093000" for 9:30. */
+function compactTime(time: Temporal.PlainTime): string {
+  return time.toString({ smallestUnit: "second" }).replace(/:/g, "");
+}
+
 function compactDate(day: Temporal.PlainDate): string {
   return day.toString().replace(/-/g, "");
 }
@@ -266,7 +273,12 @@ function matchDateList(
   start: StartTime,
   seriesZone: string,
   /** The rule repeats more than once a day: a skipped time is its own. */
-  severalADay: boolean
+  severalADay: boolean,
+  /**
+   * In such a series, where a skipped time goes when the start's time
+   * changes (its rule's new time); null when it doesn't change.
+   */
+  retime: ((time: Temporal.PlainTime) => Temporal.PlainTime) | null = null
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -291,7 +303,9 @@ function matchDateList(
     (list.name === "RDATE" || severalADay) &&
     values.every((value) => value.instant)
   ) {
-    return line;
+    return list.name === "EXDATE" && severalADay && retime
+      ? retimedList(list.name, values, seriesZone, retime, line)
+      : line;
   }
   const time = wallClock(start, seriesZone);
   const moments = values.map((value) =>
@@ -312,6 +326,31 @@ function matchDateList(
   return `${list.name};TZID=${seriesZone}:${values
     .map((value) => `${compactDate(value.day)}T${clock}`)
     .join(",")}`;
+}
+
+/**
+ * A several-times-a-day series' skipped times, each at its rule's new
+ * time; `line` itself when none moves.
+ */
+function retimedList(
+  name: string,
+  values: RecurrenceValue[],
+  seriesZone: string,
+  retime: (time: Temporal.PlainTime) => Temporal.PlainTime,
+  line: string
+): string {
+  let moved = false;
+  const written = values.map((value) => {
+    const time = (value.instant as Temporal.Instant)
+      .toZonedDateTimeISO(seriesZone)
+      .toPlainTime();
+    const next = retime(time);
+    moved ||= Temporal.PlainTime.compare(next, time) !== 0;
+    return `${compactDate(value.day)}T${compactTime(next)}`;
+  });
+  return moved
+    ? `${name};TZID=${seriesZone}:${[...new Set(written)].join(",")}`
+    : line;
 }
 
 /**
@@ -373,10 +412,25 @@ export function matchRecurrenceToStart(
   seriesStart?: StartTime
 ): string[] {
   const allDay = Boolean(start.date);
-  const severalADay = meetsSeveralTimesADay(
-    recurrence,
-    seriesStart?.dateTime ? wallClock(seriesStart, timeZone) : null
-  );
+  const base = seriesStart?.dateTime ? wallClock(seriesStart, timeZone) : null;
+  const severalADay = meetsSeveralTimesADay(recurrence, base);
+  // A several-times-a-day series whose start's time changed: each skipped
+  // time moves with the rule it belongs to (a rule without BYHOUR meets
+  // at the start's hour), others' stay.
+  const newTime = start.dateTime ? wallClock(start, timeZone) : null;
+  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const retime =
+    severalADay &&
+    base &&
+    newTime &&
+    Temporal.PlainTime.compare(base, newTime) !== 0
+      ? (time: Temporal.PlainTime) => {
+          const rule = rules.find((line) => ruleMeetsAt(line, time, base));
+          return rule && !SUB_DAILY.test(rule)
+            ? withRuleClock(rule, time, newTime)
+            : time;
+        }
+      : null;
   let changed = false;
   const next = recurrence.map((line) => {
     const matched = line.startsWith("RRULE:")
@@ -386,7 +440,7 @@ export function matchRecurrenceToStart(
           timeZone,
           severalADay
         )
-      : matchDateList(line, start, timeZone, severalADay);
+      : matchDateList(line, start, timeZone, severalADay, retime);
     changed ||= matched !== line;
     return matched;
   });
@@ -656,10 +710,29 @@ export function moveSkippedDays(params: {
     }
     const day = placeOf(value.day);
     const movedTime =
-      time && toTime ? withRuleClock(oldRule, time, toTime) : time;
+      time && toTime && !SUB_DAILY.test(oldRule)
+        ? withRuleClock(oldRule, time, toTime)
+        : time;
     return day && !othersMeet(day, movedTime, to, toTime ?? null)
       ? { day, time: movedTime }
       : null;
+  };
+  // A skip of the moved rule that stays on its day still moves to the
+  // rule's new time (in a series several times a day; otherwise every
+  // skip takes the start's time when the rule is lined up with it).
+  const retimedSkip = (value: RecurrenceValue) => {
+    const time = wallTime(value);
+    if (
+      !(severalADay && time && toTime && ownSkip(value)) ||
+      SUB_DAILY.test(oldRule) ||
+      othersMeet(value.day, time, from, fromTime)
+    ) {
+      return null;
+    }
+    const retimed = withRuleClock(oldRule, time, toTime);
+    return Temporal.PlainTime.compare(retimed, time) === 0
+      ? null
+      : { day: value.day, time: retimed };
   };
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
@@ -688,7 +761,9 @@ export function moveSkippedDays(params: {
     const read = list.values.map((value) =>
       readRecurrenceValue(value, list.zone, seriesZone)
     );
-    const moved = read.map((value) => (value ? movedSkip(value) : null));
+    const moved = read.map((value) =>
+      value ? (movedSkip(value) ?? retimedSkip(value)) : null
+    );
     const dropped = read.map((value) => isNewStart(value));
     if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
       return [line];
@@ -704,19 +779,17 @@ export function moveSkippedDays(params: {
         return [list.values[index] ?? ""];
       }
       const time = moved[index]?.time ?? wallTime(value);
-      if (!time) {
-        return [compactDate(day)];
-      }
-      const clock = time.toString({ smallestUnit: "second" }).replace(/:/g, "");
-      return [`${compactDate(day)}T${clock}`];
+      return [
+        time ? `${compactDate(day)}T${compactTime(time)}` : compactDate(day),
+      ];
     });
     if (values.length === 0) {
       return [];
     }
     return [
       timed
-        ? `${list.name};TZID=${seriesZone}:${values.join(",")}`
-        : `${list.name};VALUE=DATE:${values.join(",")}`,
+        ? `${list.name};TZID=${seriesZone}:${[...new Set(values)].join(",")}`
+        : `${list.name};VALUE=DATE:${[...new Set(values)].join(",")}`,
     ];
   });
   return changed ? next : recurrence;
