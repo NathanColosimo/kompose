@@ -491,7 +491,7 @@ function TaskDoneButton({
   isSaving,
   onClick,
 }: {
-  /** Another save (Save) is running. */
+  /** Save is running, or the repeat can't save. */
   disabled: boolean;
   isDone: boolean;
   /** Saving the editor's edits with it; the editor closes once saved. */
@@ -627,23 +627,19 @@ export function TaskEditForm({
   });
 
   /**
-   * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
-   * failure is reported by the mutation.
+   * Saves the edits, plus `extra` fields, while the editor holds open.
+   * Resolves to whether it saved; a failure shows beside Save, and the cache
+   * waits for the server (no optimistic update) so it can't roll back over
+   * the draft.
    */
   const commitUpdate = useCallback(
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      extra: Partial<TaskUpdateDecoded> = {},
-      /**
-       * While the editor holds open on the save: optimistic
-       * false, and a failure message that says the edits are still here.
-       */
-      held?: { failureMessage: string }
+      failureMessage: string,
+      extra: Partial<TaskUpdateDecoded> = {}
     ): Promise<boolean> => {
-      if (held) {
-        setFailure(null);
-      }
+      setFailure(null);
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -651,11 +647,11 @@ export function TaskEditForm({
 
       return updateTask
         .mutateAsync({
-          failureMessage: held?.failureMessage,
+          failureMessage,
           id: task.id,
-          optimistic: !held,
-          // The held editor says what failed, beside Save.
-          quiet: Boolean(held),
+          optimistic: false,
+          // The editor says what failed, beside Save.
+          quiet: true,
           scope,
           task: {
             description: values.description ?? "",
@@ -680,7 +676,7 @@ export function TaskEditForm({
         .then(
           () => true,
           () => {
-            setFailure(held?.failureMessage ?? null);
+            setFailure(failureMessage);
             return false;
           }
         );
@@ -689,29 +685,19 @@ export function TaskEditForm({
   );
 
   /**
-   * Saves the scope dialog's edits, then marks this occurrence done when
-   * Mark done asked for it.
+   * Saves the edits and marks this occurrence done (or not) in one write:
+   * the status goes on this occurrence alone, which the server keeps when a
+   * "following" save also changes the series.
    */
   const commitWithStatus = useCallback(
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      status: TaskSelectDecoded["status"] | null
-    ): Promise<boolean> => {
-      if (!status) {
-        return commitUpdate(values, scope);
-      }
-      // One write: the status goes on this occurrence alone (the server
-      // keeps it when a "following" save also changes the series). The
-      // editor holds open until it saves, so the cache waits for the server:
-      // an early update could unmount the editor or roll back over the draft.
-      return commitUpdate(
-        values,
-        scope,
-        { status },
-        { failureMessage: markStatusFailureMessage(status) }
-      );
-    },
+      status: TaskSelectDecoded["status"]
+    ): Promise<boolean> =>
+      commitUpdate(values, scope, markStatusFailureMessage(status), {
+        status,
+      }),
     [commitUpdate]
   );
 
@@ -772,12 +758,7 @@ export function TaskEditForm({
       // failed save keeps the edits.
       holdOpen(
         "save",
-        commitUpdate(
-          values,
-          decision.scope,
-          {},
-          { failureMessage: SAVE_FAILURE_MESSAGE }
-        )
+        commitUpdate(values, decision.scope, SAVE_FAILURE_MESSAGE)
       );
     },
     [askScope, commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
@@ -955,12 +936,7 @@ export function TaskEditForm({
             if (!status) {
               holdOpen(
                 "save",
-                commitUpdate(
-                  pendingUpdate,
-                  tagScope,
-                  {},
-                  { failureMessage: SAVE_FAILURE_MESSAGE }
-                )
+                commitUpdate(pendingUpdate, tagScope, SAVE_FAILURE_MESSAGE)
               );
               return;
             }
