@@ -174,7 +174,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const details = useMemo(() => eventDetails(event), [event]);
 
   const eventCard = (
-    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the lock tooltip; matches the task card (see openOnEnterOrSpace)
+    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the lock tooltip (see openOnEnterOrSpace)
     <div
       className={cn(
         "group pointer-events-auto relative rounded-md bg-background p-px",

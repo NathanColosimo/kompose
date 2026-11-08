@@ -139,7 +139,11 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { HeldFieldset, SaveFailure } from "@/components/ui/held-fieldset";
+import {
+  HeldFieldset,
+  SaveFailure,
+  SavingLabel,
+} from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -163,6 +167,7 @@ import {
   pickerDateToTemporal,
   temporalToPickerDate,
 } from "@/lib/temporal-utils";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
@@ -897,6 +902,7 @@ export function EventEditPopover({
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const narrowWindow = useIsMobile();
   /** The editor's focused field when the scope dialog opened. */
   const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
   /** Why the last save failed, shown beside Save until the next one. */
@@ -1179,7 +1185,7 @@ export function EventEditPopover({
       >
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
-          align={align}
+          align={narrowWindow ? "center" : align}
           className="max-h-(--radix-popover-content-available-height) w-[420px] max-w-[calc(100vw-1rem)] space-y-3 overflow-y-auto p-4"
           // Fits the space Radix measured and the window's width, scrolling
           // long notes rather than running off screen.
@@ -1207,7 +1213,10 @@ export function EventEditPopover({
             }
           }}
           ref={contentRef}
-          side={side}
+          // Beside its event there's no room for it on a narrow window, and
+          // Radix only shifts a side placement up or down: below the event,
+          // it shifts sideways to fit.
+          side={narrowWindow ? "bottom" : side}
         >
           <EventEditForm
             accountId={accountId}
@@ -1244,18 +1253,21 @@ export function EventEditPopover({
         // put it (the event).
         onCloseAutoFocus={(e) => {
           e.preventDefault();
-          if (!open) {
+          const content = contentRef.current;
+          // Already in the editor: a fast failure's message took it as the
+          // dialog faded, and keeps it.
+          if (!(open && content) || content.contains(document.activeElement)) {
             return;
           }
           const before = focusBeforeScopeRef.current;
           if (
             !savingRef.current &&
             before?.isConnected &&
-            contentRef.current?.contains(before)
+            content.contains(before)
           ) {
             before.focus();
           } else {
-            contentRef.current?.focus();
+            content.focus();
           }
         }}
         onConfirm={commitPendingSave}
@@ -2528,23 +2540,7 @@ function EventFormActionRow({
             size="sm"
             type="button"
           >
-            {/* Both labels share one cell, so the button keeps the
-                width of "Saving…" and Cancel doesn't shift. */}
-            <span className="grid justify-items-center">
-              <span
-                className={cn("col-start-1 row-start-1", saving && "invisible")}
-              >
-                Save
-              </span>
-              <span
-                className={cn(
-                  "col-start-1 row-start-1",
-                  saving ? null : "invisible"
-                )}
-              >
-                Saving…
-              </span>
-            </span>
+            <SavingLabel saving={saving}>Save</SavingLabel>
           </Button>
         </div>
       </div>

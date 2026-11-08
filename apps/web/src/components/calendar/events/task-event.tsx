@@ -9,7 +9,6 @@ import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { openOnEnterOrSpace } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
@@ -136,6 +135,12 @@ export const TaskEvent = memo(function TaskEventInner({
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
+  // Under 30 minutes visible, the block is one centered line.
+  const isShort =
+    Math.min(
+      segmentDurationMinutes,
+      layout?.uncoveredMinutes ?? segmentDurationMinutes
+    ) < 30;
   const style: React.CSSProperties = {
     ...blockHorizontalStyle(layout),
     height,
@@ -145,77 +150,91 @@ export const TaskEvent = memo(function TaskEventInner({
   };
 
   return (
-    <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
-      {/* biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace) */}
+    // The block drags (pointer only); its checkbox and the button that
+    // opens the editor sit side by side, so neither control holds the
+    // other. The button's ::after stretches over the block, so a click
+    // anywhere opens it, and it reaches the block's right edge, where the
+    // editor opens.
+    <div
+      className={cn(
+        "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
+        BLOCK_RAISE_CLASS,
+        isDragging || isMoving ? "opacity-0" : "",
+        isDone ? "opacity-60" : ""
+      )}
+      ref={setNodeRef}
+      style={style}
+      title={`${task.title} · ${formatTimeRange(
+        taskStart,
+        taskStart.add({ minutes: task.durationMinutes })
+      )}`}
+      {...listeners}
+    >
       <div
         className={cn(
-          "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
-          BLOCK_RAISE_CLASS,
-          isDragging || isMoving ? "opacity-0" : "",
-          isDone ? "opacity-60" : ""
+          "@container relative flex h-full gap-1.5 overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
+          isShort ? "items-center py-0" : "items-start py-1"
         )}
-        ref={setNodeRef}
-        style={style}
-        title={`${task.title} · ${formatTimeRange(
-          taskStart,
-          taskStart.add({ minutes: task.durationMinutes })
-        )}`}
-        {...attributes}
-        {...listeners}
-        onKeyDown={openOnEnterOrSpace}
-        role="button"
-        tabIndex={0}
       >
-        <div
+        {/* Narrow blocks give the checkbox's room to the title; the editor
+            has Done too. */}
+        <span
           className={cn(
-            "h-full overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
-            Math.min(
-              segmentDurationMinutes,
-              layout?.uncoveredMinutes ?? segmentDurationMinutes
-            ) < 30
-              ? "py-0"
-              : "py-1"
+            "relative z-10 flex @max-[5.5rem]:hidden shrink-0",
+            isShort ? null : "mt-px"
           )}
         >
-          <BlockContent
-            details={taskTagDetails(task)}
-            end={segmentEnd}
-            leading={
-              <Checkbox
-                aria-label={isDone ? "Mark as not done" : "Mark as done"}
-                checked={isDone}
-                className="mt-px size-3.5 shrink-0 cursor-pointer border-foreground/60"
-                onClick={handleStatusToggle}
-              />
-            }
-            shownEnd={taskStart.add({ minutes: task.durationMinutes })}
-            shownStart={taskStart}
-            start={segmentStart}
-            struck={isDone}
-            title={task.title}
-            uncoveredMinutes={layout?.uncoveredMinutes}
+          <Checkbox
+            aria-label={`Done: ${task.title}`}
+            checked={isDone}
+            className="size-3.5 cursor-pointer border-foreground/60"
+            onClick={handleStatusToggle}
           />
-        </div>
-        {isFirstSegment ? (
-          <div
-            className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
-            ref={setStartHandleRef}
-            {...startAttributes}
-            {...startListeners}
-            {...GRIP_PROPS}
-          />
-        ) : null}
-        {isLastSegment ? (
-          <div
-            className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
-            ref={setEndHandleRef}
-            {...endAttributes}
-            {...endListeners}
-            {...GRIP_PROPS}
-          />
-        ) : null}
+        </span>
+        <TaskEditPopover
+          align="start"
+          side="right"
+          surface="calendar"
+          task={task}
+        >
+          <button
+            // dnd-kit's drag instructions (set on DndContext).
+            aria-describedby={attributes["aria-describedby"]}
+            className="h-full min-w-0 flex-1 cursor-grab text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+            type="button"
+          >
+            <BlockContent
+              details={taskTagDetails(task)}
+              end={segmentEnd}
+              shownEnd={taskStart.add({ minutes: task.durationMinutes })}
+              shownStart={taskStart}
+              start={segmentStart}
+              struck={isDone}
+              title={task.title}
+              uncoveredMinutes={layout?.uncoveredMinutes}
+            />
+          </button>
+        </TaskEditPopover>
       </div>
-    </TaskEditPopover>
+      {isFirstSegment ? (
+        <div
+          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
+          {...GRIP_PROPS}
+        />
+      ) : null}
+      {isLastSegment ? (
+        <div
+          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+          {...GRIP_PROPS}
+        />
+      ) : null}
+    </div>
   );
 });
 

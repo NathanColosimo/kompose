@@ -29,6 +29,35 @@ export function HeldFieldset({
 }
 
 /**
+ * A Save button's label, or "Saving…" while its save runs. Both share one
+ * cell, so the button keeps the wider one's width and nothing beside it
+ * shifts.
+ */
+export function SavingLabel({
+  children,
+  saving,
+}: {
+  children: ReactNode;
+  saving: boolean;
+}) {
+  return (
+    <span className="grid justify-items-center">
+      <span
+        className={cn(
+          "col-start-1 row-start-1 flex items-center gap-1.5",
+          saving && "invisible"
+        )}
+      >
+        {children}
+      </span>
+      <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
+        Saving…
+      </span>
+    </span>
+  );
+}
+
+/**
  * Why a held save failed, beside the editor's Save button: a toast in a
  * corner could land on the editor it's about. It takes focus when it
  * appears, since the fields remounted when the save started and focus was
