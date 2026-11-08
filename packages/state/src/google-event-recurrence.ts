@@ -575,32 +575,70 @@ export function repeatCountingDay(params: {
 }
 
 /**
- * Whether an occurrence's edited start is on another day than its series'
- * first one (its DTSTART; before the series loads, the day the series puts
- * this occurrence on), in the series' zone. A new repeat there counts its
- * days from this one ("monthly on day 15"), but an Entire series save keeps
- * the series' first day, which would count them from that (day 1): so it
- * can only apply from here on.
+ * Whether a new repeat set from an occurrence takes its day from that
+ * occurrence where the whole series would take another: its day is left
+ * implicit (weekly with no days picked, monthly on "Day N", yearly), so it
+ * counts from wherever the series starts, and the occurrence's weekday or
+ * date (in the series' zone) differs from the series' first day's (its
+ * DTSTART; before the series loads, where the series puts this
+ * occurrence). The editor counts it from the occurrence, which an Entire
+ * series save can't keep. Days picked explicitly, or a change of interval
+ * or end that keeps the series' day, apply to the whole series as shown.
  */
-export function occurrenceOffSeriesDay(params: {
+export function repeatOffSeriesDay(params: {
   editedStart: { date?: string | null; dateTime?: string | null };
   occurrence: Pick<
     GoogleEvent,
     "originalStartTime" | "recurringEventId" | "start"
   >;
+  /** The repeat the save sends. */
+  recurrence: string[] | undefined;
   /** The series' own start (its master's), once loaded. */
   seriesStart?: { date?: string | null; dateTime?: string | null } | null;
   timeZone: string;
 }): boolean {
   const { occurrence } = params;
   const anchor = params.seriesStart ?? occurrence.originalStartTime;
-  if (!(occurrence.recurringEventId && anchor)) {
+  const rule = getPrimaryRecurrenceRule(params.recurrence);
+  if (!(occurrence.recurringEventId && anchor && rule)) {
     return false;
   }
   const timeZone = eventTimeZone(occurrence, params.timeZone);
   const first = dayOfStart(anchor, timeZone);
   const day = dayOfStart(params.editedStart, timeZone);
-  return Boolean(first && day && Temporal.PlainDate.compare(first, day) !== 0);
+  if (!(first && day)) {
+    return false;
+  }
+  const { byDay, freq, monthDays } = parseGoogleEventRecurrenceRule(rule);
+  const explicit = byDay.length > 0 || monthDays.length > 0;
+  switch (freq) {
+    case "WEEKLY":
+      return byDay.length === 0 && first.dayOfWeek !== day.dayOfWeek;
+    case "MONTHLY":
+      return !explicit && first.day !== day.day;
+    case "YEARLY":
+      return (
+        !(explicit || BY_MONTH.test(rule)) &&
+        (first.month !== day.month || first.day !== day.day)
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * The day an "Ends on" date defaults from and can't be before: the
+ * occurrence's own day (not the series' first, which can be years back),
+ * or today when that's later, in the series' zone.
+ */
+export function untilDefaultDay(
+  from: Temporal.PlainDate,
+  timeZone: string
+): Temporal.PlainDate {
+  const today = Temporal.Now.plainDateISO(timeZone);
+  return defaultUntilDay(
+    Temporal.PlainDate.compare(from, today) > 0 ? from : today
+  );
 }
 
 /** Whether a save moves an occurrence to another day (not just its time). */

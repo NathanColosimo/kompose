@@ -17,7 +17,6 @@ import {
 import {
   buildGoogleEventRecurrenceRule,
   dayInZone,
-  defaultUntilDay,
   type EventRecurrenceFrequency,
   type EventRecurrencePattern,
   eventTimeZone,
@@ -32,6 +31,7 @@ import {
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
+  untilDefaultDay,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { getMapsSearchUrl } from "@kompose/state/locations";
@@ -246,7 +246,7 @@ function repeatDayOf(
       | undefined;
     seriesTimeZone: string;
   }
-): Temporal.PlainDate {
+): { counting: Temporal.PlainDate; formDay: Temporal.PlainDate } {
   const formDay = dayInZone(
     values.startDate,
     values.allDay ? null : values.startTime,
@@ -263,15 +263,15 @@ function repeatDayOf(
     recurrence: values.recurrence,
     source,
   });
-  return (
+  const counting =
     repeatCountingDay({
       changed,
       event: where.event,
       formDay,
       seriesStart: where.seriesStart,
       timeZone: where.seriesTimeZone,
-    }) ?? formDay
-  );
+    }) ?? formDay;
+  return { counting, formDay };
 }
 
 /**
@@ -314,6 +314,7 @@ const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 function RecurrenceEditorSection({
   allDay,
+  endFrom,
   parsedRecurrence,
   rule,
   startDate,
@@ -323,6 +324,11 @@ function RecurrenceEditorSection({
 }: {
   /** An all-day series ends on a date; a timed one after that day. */
   allDay: boolean;
+  /**
+   * The day an end date defaults from and can't be before: the event's own
+   * (an occurrence's, not its series' first, which can be years back).
+   */
+  endFrom: Temporal.PlainDate;
   parsedRecurrence: EventRecurrencePattern;
   /** The RRULE being edited, for what the pattern alone doesn't say. */
   rule: string | undefined;
@@ -429,8 +435,8 @@ function RecurrenceEditorSection({
       {parsedRecurrence.freq === "none" ? null : (
         <RecurrenceEndSection
           allDay={allDay}
+          endFrom={endFrom}
           parsedRecurrence={parsedRecurrence}
-          startDate={startDate}
           timeZone={timeZone}
           updateRecurrence={updateRecurrence}
         />
@@ -554,14 +560,15 @@ function ChipLabel({ children }: { children: string }) {
 
 function RecurrenceEndSection({
   allDay,
+  endFrom,
   parsedRecurrence,
-  startDate,
   timeZone,
   updateRecurrence,
 }: {
   allDay: boolean;
+  /** The event's own day: an end date's default and minimum. */
+  endFrom: Temporal.PlainDate;
   parsedRecurrence: EventRecurrencePattern;
-  startDate: Temporal.PlainDate;
   /** The series' zone, where its end day is counted. */
   timeZone: string;
   updateRecurrence: (patch: RecurrencePatch) => void;
@@ -587,11 +594,11 @@ function RecurrenceEndSection({
             if (end.type === "until") {
               return;
             }
-            // Three months after the series starts.
+            // Three months on from this event (or today).
             updateRecurrence({
               end: {
                 date: untilRuleForDay(
-                  defaultUntilDay(startDate),
+                  untilDefaultDay(endFrom, timeZone),
                   allDay,
                   timeZone
                 ),
@@ -623,7 +630,7 @@ function RecurrenceEndSection({
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
             displayValue={untilDay ? formatPlainDateLong(untilDay) : undefined}
-            minimumDate={plainDateToPickerDate(startDate)}
+            minimumDate={plainDateToPickerDate(endFrom)}
             mode="date"
             onChange={(date) => {
               if (date) {
@@ -1577,7 +1584,7 @@ export function EventEditorSheet({
   // An existing series' days (its end day, its start's weekday) count in
   // its own zone; a new event's in the app's.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
-  const repeatDay = repeatDayOf(values, {
+  const { counting: repeatDay, formDay } = repeatDayOf(values, {
     appTimeZone,
     event: sourceEvent,
     seriesRecurrence: masterRecurrence,
@@ -1617,12 +1624,13 @@ export function EventEditorSheet({
       allDay={values.allDay}
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
       disabled={recurrenceDisabled}
+      // The day its repeat's implicit days count from, in the series' zone.
+      endFrom={formDay}
       isExpanded={isRecurrenceExpanded}
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
       recurrence={shownRepeat.rules}
       rule={primaryRule}
-      // The day its repeat's implicit days count from, in the series' zone.
       startDate={repeatDay}
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}

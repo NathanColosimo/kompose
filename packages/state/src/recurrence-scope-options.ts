@@ -37,9 +37,12 @@ export const SCOPE_DIALOG_COPY = {
   },
   /** Shown instead of the description when an occurrence's day moves. */
   moveDate: "A new day applies to this occurrence, or from it on.",
-  /** A new repeat on an occurrence moved off its series' day. */
+  /** A new repeat that takes its day from this occurrence, not the series'. */
   repeatOffDay:
-    "A new repeat counts from this occurrence, so it applies from here on. To change the whole series, edit its first occurrence.",
+    "The new repeat takes its day from this occurrence, so it applies from here on. To change the whole series, pick the repeat's day.",
+  /** The same, on an occurrence added on its own (no new series there). */
+  repeatOffDayAdded:
+    "The new repeat takes its day from this occurrence, which was added to the series on its own. Pick the repeat's day to save it for the entire series.",
   /** Shown when the series' rule couldn't load. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
@@ -92,9 +95,9 @@ export interface EventSaveChanges {
   /** It moves an occurrence to another day. */
   dateMoved: boolean;
   /**
-   * The occurrence ends up on another day than its series puts it (moved
-   * now or rescheduled before): a new repeat can't apply to the whole
-   * series (`occurrenceOffSeriesDay`).
+   * The new repeat leaves its day implicit and takes it from this
+   * occurrence, not the series' first day: it can't apply to the whole
+   * series as shown (`repeatOffSeriesDay`).
    */
   offSeriesDay?: boolean;
   /** The user changed the repeat. */
@@ -267,17 +270,28 @@ export function chosenScope(
     : allowedEventSaveScope(preferred, disabled);
 }
 
+/** The scope dialog's line where This and following can't start a series. */
+function splitBlockedDescription(
+  changes: EventSaveChanges,
+  block: SplitBlock
+): string {
+  const why = SCOPE_DIALOG_COPY.splitBlocked[block];
+  if (changes.dateMoved && changes.patternChanged) {
+    return SCOPE_DIALOG_COPY.splitBlockedAll;
+  }
+  if (allEventsOff(changes) && changes.patternChanged) {
+    return SCOPE_DIALOG_COPY.repeatOffDayAdded;
+  }
+  return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
+}
+
 /** The scope dialog's line for a save. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
     return SCOPE_DIALOG_COPY.moveEvent;
   }
   if (changes.splitBlocked) {
-    const why = SCOPE_DIALOG_COPY.splitBlocked[changes.splitBlocked];
-    if (allEventsOff(changes) && changes.patternChanged) {
-      return SCOPE_DIALOG_COPY.splitBlockedAll;
-    }
-    return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
+    return splitBlockedDescription(changes, changes.splitBlocked);
   }
   if (
     !(changes.seriesRuleLoaded || (changes.patternChanged && changes.dateMoved))

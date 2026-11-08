@@ -47,8 +47,8 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
   occurrenceDayMoved,
-  occurrenceOffSeriesDay,
   otherTimeZone,
+  repeatOffSeriesDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
@@ -1641,9 +1641,10 @@ export default function CalendarTab() {
         occurrence: draft.sourceEvent,
         timeZone,
       }),
-      offSeriesDay: occurrenceOffSeriesDay({
+      offSeriesDay: repeatOffSeriesDay({
         editedStart: buildEventPayload(draft).start,
         occurrence: draft.sourceEvent,
+        recurrence: recurrenceToSend(draft, masterRecurrence),
         seriesStart: recurringMasterEvent.data?.start,
         timeZone,
       }),

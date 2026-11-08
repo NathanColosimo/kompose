@@ -255,3 +255,22 @@ describe("a new repeat on an occurrence off its series' day", () => {
     ).toEqual({});
   });
 });
+
+test("a new repeat from an added occurrence that takes its day there says to pick the day", () => {
+  const changes = {
+    calendarChanged: false,
+    dateMoved: false,
+    offSeriesDay: true,
+    patternChanged: true,
+    seriesRuleLoaded: true,
+    splitBlocked: "addedOccurrence" as const,
+  };
+  expect(eventSaveDisabledScopes(changes)).toEqual({
+    all: true,
+    following: true,
+    this: true,
+  });
+  expect(eventSaveDescription(changes)).toBe(
+    SCOPE_DIALOG_COPY.repeatOffDayAdded
+  );
+});

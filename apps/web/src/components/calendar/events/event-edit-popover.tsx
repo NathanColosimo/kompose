@@ -24,24 +24,24 @@ import {
 import {
   buildGoogleEventRecurrenceRule,
   dayInZone,
-  defaultUntilDay,
   type EventRecurrencePattern,
   eventTimeZone,
   type EventRecurrenceFrequency as Frequency,
   followStart,
   getPrimaryRecurrenceRule,
   occurrenceDayMoved,
-  occurrenceOffSeriesDay,
   otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatChanged,
   repeatCountingDay,
+  repeatOffSeriesDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
+  untilDefaultDay,
   weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
@@ -238,7 +238,7 @@ export type CloseSaveRequest =
       patternChanged: boolean;
       /** An occurrence moved to another day. */
       dateMoved: boolean;
-      /** It ends up off its series' day (`occurrenceOffSeriesDay`). */
+      /** Its new repeat takes its day from here (`repeatOffSeriesDay`). */
       offSeriesDay: boolean;
     }
   | {
@@ -369,6 +369,7 @@ const UNIT_WORDS: Record<Exclude<Frequency, "none">, [string, string]> = {
 
 function RecurrenceEditor({
   allDay,
+  endFrom,
   recurrenceRule,
   onChange,
   start,
@@ -377,6 +378,11 @@ function RecurrenceEditor({
 }: {
   /** An all-day series ends on a date; a timed one after that day. */
   allDay: boolean;
+  /**
+   * The day an end date defaults from and can't be before: the event's own
+   * (an occurrence's, not its series' first, which can be years back).
+   */
+  endFrom: Temporal.PlainDate;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
   /** The series' start: its weekday and day of the month are the defaults. */
@@ -461,6 +467,7 @@ function RecurrenceEditor({
         <RepeatEnds
           allDay={allDay}
           emit={emit}
+          endFrom={endFrom}
           pattern={pattern}
           start={start}
           timeZone={timeZone}
@@ -558,10 +565,14 @@ function RepeatDays({
 function RepeatEnds({
   allDay,
   emit,
+  endFrom,
   pattern,
-  start,
   timeZone,
-}: RepeatPartProps & { allDay: boolean; timeZone: string }) {
+}: RepeatPartProps & {
+  allDay: boolean;
+  endFrom: Temporal.PlainDate;
+  timeZone: string;
+}) {
   const [untilOpen, setUntilOpen] = useState(false);
   const untilDay =
     pattern.end.type === "until"
@@ -591,7 +602,7 @@ function RepeatEnds({
                   ...pattern,
                   end: {
                     date: untilRuleForDay(
-                      defaultUntilDay(start),
+                      untilDefaultDay(endFrom, timeZone),
                       allDay,
                       timeZone
                     ),
@@ -633,8 +644,8 @@ function RepeatEnds({
           <PopoverContent align="start" className="w-auto p-0">
             <Calendar
               defaultMonth={untilDate}
-              // A series can't end before it starts.
-              disabled={{ before: temporalToPickerDate(start) }}
+              // A series can't end before it starts (from here).
+              disabled={{ before: temporalToPickerDate(endFrom) }}
               mode="single"
               onSelect={(date) => {
                 if (date) {
@@ -1372,9 +1383,10 @@ function buildEditPayload(
       : false,
     isRecurring,
     offSeriesDay: ctx.event
-      ? occurrenceOffSeriesDay({
+      ? repeatOffSeriesDay({
           editedStart: variables.event.start,
           occurrence: ctx.event,
+          recurrence: values.recurrence,
           seriesStart: ctx.masterStart,
           timeZone: ctx.timeZone,
         })
@@ -1625,10 +1637,13 @@ function RepeatControl({
   seriesStart,
   seriesTimeZone,
   showsZone,
+  endFrom,
 }: {
   allDay: boolean;
   city: string | null;
   disabled: boolean;
+  /** The event's own day, for an end date's default and minimum. */
+  endFrom: Temporal.PlainDate | null;
   /**
    * The occurrence's series rule hasn't loaded yet: it repeats, but how
    * isn't known, so it mustn't read as "doesn't repeat".
@@ -1678,6 +1693,9 @@ function RepeatControl({
       <PopoverContent align="end" className="w-[360px]">
         <RecurrenceEditor
           allDay={allDay}
+          endFrom={
+            endFrom ?? seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)
+          }
           onChange={(rule) => {
             if (!disabled) {
               onRecurrenceChange(rule);
@@ -1722,6 +1740,7 @@ function EventAllDayAndRecurrenceRow({
   seriesStart,
   seriesTimeZone,
   showsZone,
+  endFrom,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1747,6 +1766,8 @@ function EventAllDayAndRecurrenceRow({
   seriesTimeZone: string;
   /** The series' zone isn't the app's: the editor says its days are there. */
   showsZone: boolean;
+  /** The event's own day in the series' zone, for an end date's minimum. */
+  endFrom: Temporal.PlainDate | null;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1805,6 +1826,7 @@ function EventAllDayAndRecurrenceRow({
           allDay={allDay}
           city={city}
           disabled={readOnly || recurrenceLoading}
+          endFrom={endFrom}
           loading={recurrenceLoading}
           onRecurrenceChange={onRecurrenceChange}
           recurrenceRule={recurrenceRule}
@@ -2893,6 +2915,7 @@ export function EventEditForm({
         allDay={watchedValues.allDay}
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
+        endFrom={seriesDayOf(watchedValues)}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val

@@ -10,14 +10,15 @@ import {
   lastWeekdayOf,
   monthlyWeekdayOf,
   occurrenceDayMoved,
-  occurrenceOffSeriesDay,
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatCountingDay,
+  repeatOffSeriesDay,
   seriesCountingDays,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
+  untilDefaultDay,
 } from "./google-event-recurrence";
 
 describe("setPrimaryRecurrenceRule", () => {
@@ -1686,77 +1687,75 @@ describe("repeatCountingDay", () => {
   });
 });
 
-describe("occurrenceOffSeriesDay", () => {
+describe("repeatOffSeriesDay", () => {
   const zone = "America/New_York";
-  const rescheduled = {
-    // Sunday's meeting, rescheduled to Tuesday in an earlier edit.
-    originalStartTime: { dateTime: "2026-11-08T16:00:00-05:00" },
+  // The series started Sun Nov 1; this is its Sunday Nov 15 meeting.
+  const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
+  const later = {
+    originalStartTime: { dateTime: "2026-11-15T16:00:00-05:00" },
     recurringEventId: "m1",
-    start: { dateTime: "2026-11-10T16:00:00-05:00" },
+    start: { dateTime: "2026-11-15T16:00:00-05:00" },
   };
+  const off = (recurrence: string[], occurrence = later) =>
+    repeatOffSeriesDay({
+      editedStart: occurrence.start,
+      occurrence,
+      recurrence,
+      seriesStart,
+      timeZone: zone,
+    });
 
-  test("a rescheduled occurrence left where it is is off its series' day", () => {
-    expect(
-      occurrenceOffSeriesDay({
-        editedStart: rescheduled.start,
-        occurrence: rescheduled,
-        timeZone: zone,
-      })
-    ).toBe(true);
+  test("monthly on 'Day N' from a later date: the series would count from the 1st", () => {
+    expect(off(["RRULE:FREQ=MONTHLY"])).toBe(true);
   });
 
-  test("moved back to its series' day, it isn't", () => {
-    expect(
-      occurrenceOffSeriesDay({
-        editedStart: { dateTime: "2026-11-08T18:00:00-05:00" },
-        occurrence: rescheduled,
-        timeZone: zone,
-      })
-    ).toBe(false);
+  test("monthly on a picked weekday of the month applies as shown", () => {
+    expect(off(["RRULE:FREQ=MONTHLY;BYDAY=3SU"])).toBe(false);
   });
 
-  test("a later occurrence of a loaded series is off its first day", () => {
-    // Nov 15 of a weekly series from Nov 1: "monthly" from here is the
-    // 15th, but the whole series would count from the 1st.
-    const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
-    const later = {
-      originalStartTime: { dateTime: "2026-11-15T16:00:00-05:00" },
-      recurringEventId: "m1",
-      start: { dateTime: "2026-11-15T16:00:00-05:00" },
+  test("weekly from a meeting on the series' weekday applies as shown", () => {
+    expect(off(["RRULE:FREQ=WEEKLY;INTERVAL=2"])).toBe(false);
+  });
+
+  test("weekly with no days from a meeting on another weekday doesn't", () => {
+    const tuesday = {
+      ...later,
+      start: { dateTime: "2026-11-17T16:00:00-05:00" },
     };
+    expect(off(["RRULE:FREQ=WEEKLY;INTERVAL=2"], tuesday)).toBe(true);
+    expect(off(["RRULE:FREQ=WEEKLY;BYDAY=TU"], tuesday)).toBe(false);
+  });
+
+  test("daily, or no repeat, never", () => {
+    expect(off(["RRULE:FREQ=DAILY"])).toBe(false);
+    expect(off([])).toBe(false);
+  });
+
+  test("before the series loads, counts from the meeting's own place", () => {
     expect(
-      occurrenceOffSeriesDay({
+      repeatOffSeriesDay({
         editedStart: later.start,
         occurrence: later,
-        seriesStart,
-        timeZone: zone,
-      })
-    ).toBe(true);
-  });
-
-  test("the series' first occurrence isn't", () => {
-    const seriesStart = { dateTime: "2026-11-01T16:00:00-05:00" };
-    expect(
-      occurrenceOffSeriesDay({
-        editedStart: seriesStart,
-        occurrence: {
-          originalStartTime: seriesStart,
-          recurringEventId: "m1",
-          start: seriesStart,
-        },
-        seriesStart,
+        recurrence: ["RRULE:FREQ=MONTHLY"],
         timeZone: zone,
       })
     ).toBe(false);
   });
+});
 
-  test("not an occurrence: never", () => {
+describe("untilDefaultDay", () => {
+  const zone = "America/New_York";
+
+  test("three months after a day still ahead", () => {
+    const ahead = Temporal.Now.plainDateISO(zone).add({ days: 10 });
+    expect(untilDefaultDay(ahead, zone).toString()).toBe(
+      ahead.add({ months: 3 }).toString()
+    );
+  });
+
+  test("a series' first day long past counts from today", () => {
     expect(
-      occurrenceOffSeriesDay({
-        editedStart: rescheduled.start,
-        occurrence: { ...rescheduled, recurringEventId: undefined },
-        timeZone: zone,
-      })
-    ).toBe(false);
+      untilDefaultDay(Temporal.PlainDate.from("2024-01-07"), zone).toString()
+    ).toBe(Temporal.Now.plainDateISO(zone).add({ months: 3 }).toString());
   });
 });
