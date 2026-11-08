@@ -696,7 +696,6 @@ export function TaskEditForm({
         if (!payload) {
           return true;
         }
-        setFailure(null);
         const created = createTask
           .mutateAsync({
             ...payload,
@@ -705,15 +704,19 @@ export function TaskEditForm({
           })
           .then(
             () => true,
-            () => {
-              setFailure(TASK_CREATE_FAILURE_MESSAGE);
-              return false;
-            }
+            () => false
           );
         if (!showActionButtons) {
+          // The caller holds, and shows a failure beside its own Save.
           return created;
         }
-        holdForSave(created);
+        setFailure(null);
+        holdForSave(
+          created.then((saved) => {
+            setFailure(saved ? null : TASK_CREATE_FAILURE_MESSAGE);
+            return saved;
+          })
+        );
         return false;
       }
 

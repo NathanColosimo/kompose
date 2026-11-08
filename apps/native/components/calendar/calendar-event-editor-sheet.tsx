@@ -34,6 +34,8 @@ import {
 import { useAtomValue } from "jotai";
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   Lock,
   MapPin,
   Repeat2,
@@ -145,36 +147,49 @@ function buildRecurrenceRuleFromCurrent(
 }
 
 /**
- * The repeat editor when open; otherwise how the event repeats, so a series
- * reads as one without opening it (tap to edit).
+ * The Repeat row under the times: how the event repeats, in words, and a
+ * tap opens the editor below it. Its own full-width row keeps the date and
+ * time pills above it the same widths.
  */
 function RecurrenceRow({
+  disabled,
   isExpanded,
-  onExpand,
+  onToggle,
   recurrence,
   ...editor
 }: React.ComponentProps<typeof RecurrenceEditorSection> & {
+  /** The occurrence's pattern is still loading. */
+  disabled: boolean;
   isExpanded: boolean;
-  onExpand: () => void;
+  onToggle: () => void;
   recurrence: string[];
 }) {
-  if (isExpanded) {
-    return <RecurrenceEditorSection {...editor} />;
-  }
-  const repeats = describeEventRecurrence({ rules: recurrence });
-  if (!repeats) {
-    return null;
-  }
+  const repeats =
+    describeEventRecurrence({ rules: recurrence }) ?? "Doesn't repeat";
   return (
-    <Pressable
-      accessibilityHint="Edits the repeat"
-      accessibilityRole="button"
-      className="-mt-1 mb-2.5 self-start"
-      hitSlop={8}
-      onPress={onExpand}
-    >
-      <Text className="text-muted-foreground text-xs">{repeats}</Text>
-    </Pressable>
+    <>
+      <Pressable
+        accessibilityLabel="Repeat"
+        accessibilityRole="button"
+        accessibilityState={{ disabled, expanded: isExpanded }}
+        accessibilityValue={{ text: repeats }}
+        className="mb-2.5 min-h-[38px] flex-row items-center gap-2 rounded-full border border-border px-3"
+        disabled={disabled}
+        onPress={onToggle}
+        style={{ opacity: disabled ? 0.5 : 1 }}
+      >
+        <Icon as={Repeat2} className="text-muted-foreground" size={14} />
+        <Text className="flex-1 text-[13px] text-foreground" numberOfLines={1}>
+          {repeats}
+        </Text>
+        <Icon
+          as={isExpanded ? ChevronUp : ChevronDown}
+          className="text-muted-foreground"
+          size={14}
+        />
+      </Pressable>
+      {isExpanded ? <RecurrenceEditorSection {...editor} /> : null}
+    </>
   );
 }
 
@@ -187,7 +202,7 @@ function RecurrenceEditorSection({
   applyPrimaryRecurrenceRule,
 }: {
   parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
-  /** Weekly starts on the event's own weekday, so the series doesn't move. */
+  /** Its weekday is the one a weekly series repeats on by default. */
   startDate: Temporal.PlainDate;
   updateRecurrence: (patch: {
     freq?: EventRecurrenceFrequency;
@@ -196,6 +211,11 @@ function RecurrenceEditorSection({
   }) => void;
   applyPrimaryRecurrenceRule: (rule: string | null) => void;
 }) {
+  // With no days picked, a weekly series repeats on the start's weekday.
+  const shownDays =
+    parsedRecurrence.byDay.length > 0
+      ? parsedRecurrence.byDay
+      : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
       <View className="flex-row flex-wrap gap-2">
@@ -210,13 +230,10 @@ function RecurrenceEditorSection({
                   return;
                 }
 
-                let byDay: string[] = [];
-                if (frequency.value === "WEEKLY") {
-                  byDay =
-                    parsedRecurrence.byDay.length > 0
-                      ? parsedRecurrence.byDay
-                      : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
-                }
+                // Weekly with no days picked repeats on the start's weekday
+                // (no BYDAY), so moving the start moves the series with it.
+                const byDay =
+                  frequency.value === "WEEKLY" ? parsedRecurrence.byDay : [];
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
@@ -231,21 +248,28 @@ function RecurrenceEditorSection({
       {parsedRecurrence.freq === "WEEKLY" ? (
         <View className="mt-3">
           <Text className="text-muted-foreground text-xs">On days</Text>
-          <View className="mt-1 flex-row flex-wrap gap-2">
+          {/* Seven equal circles in one row. */}
+          <View className="mt-1 flex-row gap-1.5">
             {GOOGLE_EVENT_WEEKDAYS.map((weekday) => {
-              const selected = parsedRecurrence.byDay.includes(weekday.value);
+              const selected = shownDays.includes(weekday.value);
               return (
                 <Button
+                  accessibilityLabel={weekday.label}
+                  accessibilityState={{ selected }}
                   key={weekday.value}
                   onPress={() => {
                     const nextByDay = selected
-                      ? parsedRecurrence.byDay.filter(
-                          (value) => value !== weekday.value
-                        )
-                      : [...parsedRecurrence.byDay, weekday.value];
+                      ? shownDays.filter((value) => value !== weekday.value)
+                      : [...shownDays, weekday.value];
                     updateRecurrence({ byDay: nextByDay });
                   }}
                   size="sm"
+                  style={{
+                    borderRadius: 999,
+                    flex: 1,
+                    height: 36,
+                    paddingHorizontal: 0,
+                  }}
                   variant={selected ? "default" : "outline"}
                 >
                   <Text>{weekday.label.slice(0, 1)}</Text>
@@ -320,7 +344,7 @@ function RecurrenceEndSection({
             parsedRecurrence.end.type === "count" ? "default" : "outline"
           }
         >
-          <Text>After N</Text>
+          <Text>After…</Text>
         </Button>
       </View>
 
@@ -365,7 +389,7 @@ function RecurrenceEndSection({
             value={String(parsedRecurrence.end.count)}
             variant="outline"
           />
-          <Text className="text-foreground text-xs">occurrences</Text>
+          <Text className="text-foreground text-xs">times</Text>
         </View>
       ) : null}
     </View>
@@ -809,27 +833,20 @@ function EventLocationInput({
 
 function EventDateTimeRow({
   allDay,
-  recurrenceDisabled,
   endDate,
   getValues,
   endDatePickerValue,
   endTimePickerValue,
-  isRecurrenceExpanded,
-  onToggleRecurrence,
   setValue,
   startDate,
   startDatePickerValue,
   startTimePickerValue,
 }: {
   allDay: boolean;
-  /** The occurrence's pattern is still loading. */
-  recurrenceDisabled: boolean;
   endDate: Temporal.PlainDate;
   endDatePickerValue: Date;
   endTimePickerValue: Date;
   getValues: UseFormGetValues<EventDraft>;
-  isRecurrenceExpanded: boolean;
-  onToggleRecurrence: () => void;
   setValue: UseFormSetValue<EventDraft>;
   startDate: Temporal.PlainDate;
   startDatePickerValue: Date;
@@ -937,29 +954,6 @@ function EventDateTimeRow({
             />
           </View>
         )}
-        <Button
-          accessibilityLabel="Repeat"
-          accessibilityRole="button"
-          accessibilityState={{
-            disabled: recurrenceDisabled,
-            expanded: isRecurrenceExpanded,
-          }}
-          disabled={recurrenceDisabled}
-          onPress={onToggleRecurrence}
-          size="icon"
-          style={{ height: 38, width: 38 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
       </View>
     </View>
   );
@@ -1186,8 +1180,9 @@ export function EventEditorSheet({
   const recurrenceEditor = (
     <RecurrenceRow
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
+      disabled={recurrenceDisabled}
       isExpanded={isRecurrenceExpanded}
-      onExpand={() => setIsRecurrenceExpanded(true)}
+      onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
       recurrence={recurrence}
       startDate={values.startDate}
@@ -1287,11 +1282,6 @@ export function EventEditorSheet({
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}
           getValues={getValues}
-          isRecurrenceExpanded={isRecurrenceExpanded}
-          onToggleRecurrence={() =>
-            setIsRecurrenceExpanded((current) => !current)
-          }
-          recurrenceDisabled={recurrenceDisabled}
           setValue={setValue}
           startDate={startDate}
           startDatePickerValue={startDatePickerValue}

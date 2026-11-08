@@ -1,11 +1,15 @@
 "use client";
 
-import { EVENT_CREATE_FAILURE_MESSAGE } from "@kompose/state/held-save";
+import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
+import { SaveFailure } from "@/components/ui/held-fieldset";
 import {
   Popover,
   PopoverContent,
@@ -116,17 +120,26 @@ export function EventCreationPopover() {
   // failed one keeps the draft. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
-  /** Why the last event create failed, shown in the form until the next. */
-  const [eventFailure, setEventFailure] = useState<string | null>(null);
+  /** Why the last create failed, shown beside Save until the next one. */
+  const [failure, setFailure] = useState<string | null>(null);
+  // A failure belongs to its draft: a new one starts clean.
+  useEffect(() => {
+    if (!state.showPopover) {
+      setFailure(null);
+    }
+  }, [state.showPopover]);
   const holdForCreate = useCallback(
-    (created: Promise<boolean>) => {
+    (created: Promise<boolean>, failureMessage: string) => {
       savingRef.current = true;
       setIsSaving(true);
+      setFailure(null);
       created.then((saved) => {
         savingRef.current = false;
         setIsSaving(false);
         if (saved) {
           actions.closePopover();
+        } else {
+          setFailure(failureMessage);
         }
       });
     },
@@ -148,7 +161,7 @@ export function EventCreationPopover() {
       if (result === true) {
         actions.closePopover();
       } else if (result !== false) {
-        holdForCreate(result);
+        holdForCreate(result, TASK_CREATE_FAILURE_MESSAGE);
       }
       return;
     }
@@ -162,22 +175,19 @@ export function EventCreationPopover() {
       actions.closePopover();
       return;
     }
-    setEventFailure(null);
     holdForCreate(
       createEvent
         .mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-          // The form says what failed; a toast could land on the popover.
+          // Shown beside Save; a toast could land on the popover.
           quiet: true,
         })
         .then(
           () => true,
-          () => {
-            setEventFailure(EVENT_CREATE_FAILURE_MESSAGE);
-            return false;
-          }
-        )
+          () => false
+        ),
+      EVENT_CREATE_FAILURE_MESSAGE
     );
   }, [actions, createEvent, holdForCreate, mode]);
 
@@ -213,7 +223,10 @@ export function EventCreationPopover() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[420px] p-4"
+        // Fits the space Radix measured, scrolling a long draft rather than
+        // running off screen, as the edit popover does.
+        className="max-h-(--radix-popover-content-available-height) w-[420px] overflow-y-auto p-4"
+        collisionPadding={8}
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           handleCancel();
@@ -253,6 +266,8 @@ export function EventCreationPopover() {
                 </Button>
               </div>
             </div>
+            {/* Beside Save, where the click was: the form can be long. */}
+            <SaveFailure className="text-right" message={failure} />
 
             {/* Keep both forms mounted so tab switches can transfer values in-place. */}
             <TabsContent
@@ -271,7 +286,6 @@ export function EventCreationPopover() {
                 onDelete={() => undefined}
                 onSave={handleSave}
                 open={state.showPopover}
-                saveFailure={eventFailure}
                 start={startDate}
               />
             </TabsContent>

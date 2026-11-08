@@ -655,6 +655,12 @@ export function EventEditPopover({
   const savingRef = useRef(false);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
+  // A failure belongs to the save it came from: reopening starts clean.
+  useEffect(() => {
+    if (!open) {
+      setSaveFailure(null);
+    }
+  }, [open]);
   const holdForSave = useCallback(
     (save: Promise<unknown>, failureMessage: string) => {
       savingRef.current = true;
@@ -1960,7 +1966,9 @@ export function EventEditForm({
   );
   const canCreateMeeting = !(meetingLink || isConferencePending);
   const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
-  const locationPopoverOpen = locationOpen && locationQuery.length >= 2;
+  // Closed while a save runs: its suggestions render outside the fieldset.
+  const locationPopoverOpen =
+    locationOpen && !isSaving && locationQuery.length >= 2;
 
   const effectiveAccountId = watchedValues.selectedAccountId ?? accountId;
   const effectiveCalendarId = watchedValues.selectedCalendarId ?? calendarId;

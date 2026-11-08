@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * A form's fields, read-only while its save runs: a change made then
@@ -29,11 +30,30 @@ export function HeldFieldset({
 
 /**
  * Why a held save failed, beside the editor's Save button: a toast in a
- * corner could land on the editor it's about.
+ * corner could land on the editor it's about. It takes focus when it
+ * appears, since the fields remounted when the save started and focus was
+ * lost; a screen reader reads it, and Tab carries on from here.
  */
-export function SaveFailure({ message }: { message: string | null }) {
+export function SaveFailure({
+  className,
+  message,
+}: {
+  className?: string;
+  message: string | null;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (message) {
+      ref.current?.focus();
+    }
+  }, [message]);
   return message ? (
-    <p className="text-destructive text-xs" role="alert">
+    <p
+      className={cn("text-destructive text-xs outline-none", className)}
+      ref={ref}
+      role="alert"
+      tabIndex={-1}
+    >
       {message}
     </p>
   ) : null;
