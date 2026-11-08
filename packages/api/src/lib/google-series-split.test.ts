@@ -121,6 +121,18 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
+  test("counts starts written with fractional seconds", () => {
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
+        newStart: "2026-11-03T14:00:00.000Z",
+        originalStart: "2026-11-03T14:00:00.000Z",
+        seriesZone: "America/New_York",
+        starts: [1, 2, 3, 4, 5].map((day) => `2026-11-0${day}T14:00:00.000Z`),
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
   test("ends a moved new part after its last day, at any time that day", () => {
     // With an added day, moved from 9:00 to 10:00 and a day later: the
     // old rule's last day (Nov 5) becomes Nov 6, through its last second.
