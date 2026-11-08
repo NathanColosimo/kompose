@@ -41,6 +41,13 @@ Unified inline editor for Google calendar events. Supports both **create** and *
   - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
   - The repeat is sent only when the user changed it with the Repeat control. An occurrence's pattern lives on its master, which can load after the editor opens.
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs).
+
+### Repeat editor (web and iOS)
+- Rules are read and built with `packages/state/src/google-event-recurrence.ts`, shared by both editors. The editors set frequency, interval, BYDAY and the end; every other part of a rule (WKST, BYMONTH...) is kept.
+- Picking a frequency (`pickRecurrenceFrequency`): the same one changes nothing. A new one starts at every 1, drops parts tied to the old frequency, and keeps only plain weekdays for Weekly ("2TU" isn't valid weekly).
+- Monthly offers the start's day of the month or its weekday of the month ("The 2nd Tue"; a 5th is "last"). A weekday of the month replaces any BYMONTHDAY.
+- "On date" ends after that day's occurrence: UNTIL is the date for an all-day series and the day's last second (in UTC) for a timed one. It starts three months after the series' start; earlier dates can't be picked.
+- The rule shows in words ("Repeats every 2 months on the 2nd Tue").
 - When `EventEditForm` is used inside `EventCreationPopover`, `onCancel` is not passed, so the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
 
 ### Create Mode
@@ -130,6 +137,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Recurring event edit; click Save: scope dialog appears; each scope behaves correctly.
 - Recurrence editor: set Frequency to **None**; RRULE is cleared.
 - Recurrence editor: weekly BYDAY changes persist; UNTIL/COUNT modes work.
+- Recurrence editor: "every 2 weeks" and monthly "The 2nd Tue" save; an end date includes that day's occurrence; re-picking the current frequency changes nothing.
 - Click-outside: discards changes (no save).
 - Delete: confirmation dialog for non-recurring; scope dialog for recurring.
 
