@@ -9,6 +9,7 @@ import {
   ruleTimesOf,
   untilMoment,
   untilRuleForDay,
+  withRuleClock,
 } from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
@@ -25,6 +26,7 @@ const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
 const COUNT_PART = /([:;])COUNT=[^;]+/;
 const SEVERAL_TIMES = /[:;]BY(?:HOUR|MINUTE|SECOND)=[^;]*,/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 
 /**
  * The series' rule cut to end just before the occurrence that started at
@@ -537,20 +539,15 @@ export function carryCount(
         !latest || order(value) > order(latest) ? value : latest,
       null
     );
-    // The new part may start a day (or days) off the split; its last
-    // occurrence is that far off the old rule's last one. UNTIL is that
-    // day's end, so a later time that day still counts.
-    const from = asValue(originalStart, seriesZone);
-    const to = asValue(newStart, seriesZone);
-    const shift = from && to ? from.day.until(to.day).days : 0;
     return last
       ? untilInstead(
           recurrence,
-          untilRuleForDay(
-            last.day.add({ days: shift }),
-            DATE_ONLY.test(newStart),
-            seriesZone
-          )
+          movedLastUntil(recurrence, last, {
+            allDay: DATE_ONLY.test(newStart),
+            from: asValue(originalStart, seriesZone),
+            seriesZone,
+            to: asValue(newStart, seriesZone),
+          })
         )
       : recurrence;
   }
@@ -566,6 +563,53 @@ export function carryCount(
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/**
+ * UNTIL for a new part that ends at the old rule's `last` meeting, moved
+ * as the split's start moved (`from` to `to`): as many days on, and at
+ * the time each rule would meet then (a time a rule sets is its own, a
+ * part it leaves out follows the start), and never before the new start
+ * (the last meeting may be the one the split moved). A timed part ends
+ * at that meeting, not its day's end, so a later time that day isn't
+ * added; an all-day one, or one without times to go by, ends with the day.
+ */
+function movedLastUntil(
+  recurrence: string[],
+  last: RecurrenceValue,
+  move: {
+    allDay: boolean;
+    from: RecurrenceValue | null;
+    seriesZone: string;
+    to: RecurrenceValue | null;
+  }
+): string {
+  const { allDay, from, seriesZone, to } = move;
+  const day = last.day.add({
+    days: from && to ? from.day.until(to.day).days : 0,
+  });
+  const rules = recurrence.filter(isRule);
+  if (allDay || !(last.instant && to?.instant) || rules.length === 0) {
+    return untilRuleForDay(day, allDay, seriesZone);
+  }
+  const lastClock = last.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
+  const startClock = to.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
+  const ends = rules.map((rule) =>
+    day
+      .toZonedDateTime({
+        plainTime: SUB_DAILY.test(rule)
+          ? lastClock
+          : withRuleClock(rule, lastClock, startClock),
+        timeZone: seriesZone,
+      })
+      .toInstant()
+  );
+  const end = ends.reduce(
+    (latest, moment) =>
+      Temporal.Instant.compare(moment, latest) > 0 ? moment : latest,
+    to.instant
+  );
+  return end.toString({ smallestUnit: "second" }).replace(/[-:]/g, "");
+}
 
 /**
  * The new part's rules with each counted rule's meetings left: the
@@ -778,6 +822,8 @@ export function countOf(recurrence: string[] | undefined): number | undefined {
 export function sanitizeEventPayload(event: Event): CreateEvent {
   const {
     id: _id,
+    // A new event can't reuse it; an update doesn't need it.
+    iCalUID: _iCalUID,
     htmlLink: _htmlLink,
     organizer: _organizer,
     recurringEventId: _recurringEventId,

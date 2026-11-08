@@ -167,23 +167,56 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
-  test("ends a moved new part after its last day, at any time that day", () => {
-    // A rule not walked here (several times a day) with an added day, moved from 9:00 to
-    // 10:00 and a day later: the old rule's last day (Nov 5) becomes Nov 6,
-    // through its last second.
+  // Twice a day at 9:00 and 15:00, five times from Nov 1 (Nov 1 and 2 at
+  // both, Nov 3 at 9:00), plus an added Nov 20: a rule not walked here.
+  const twiceDaily = {
+    masterRecurrence: [
+      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
+      "RDATE;TZID=America/New_York:20261120T090000",
+    ],
+    seriesStart: nyDaily(1),
+    seriesZone: "America/New_York",
+    starts: [
+      nyDaily(1),
+      nyDaily(1, 15),
+      nyDaily(2),
+      nyDaily(2, 15),
+      nyDaily(3),
+      nyDaily(20),
+    ],
+  };
+
+  test("ends a several-a-day new part at the old rule's last meeting", () => {
+    // Split at Nov 2 9:00: three left (Nov 2 9:00 and 15:00, Nov 3 9:00),
+    // so it ends at Nov 3 9:00, not that day's end (which adds 15:00).
     expect(
       carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
-        masterRecurrence: [
-          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-          "RDATE;TZID=America/New_York:20261120T090000",
-        ],
+        ...twiceDaily,
+        newStart: nyDaily(2),
+        originalStart: nyDaily(2),
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261103T140000Z"]);
+  });
+
+  test("moves a several-a-day new part's end as many days as its start", () => {
+    // Split at Nov 2 9:00 and moved to Nov 3 10:00: its rule keeps its
+    // hours, so it meets Nov 3 10:00 and 15:00, then Nov 4 9:00, the
+    // old last meeting a day on.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
+        ...twiceDaily,
+        newStart: nyDaily(3, 10),
+        originalStart: nyDaily(2),
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261104T140000Z"]);
+    // Split at its last meeting and moved there: it ends at its start.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5"], {
+        ...twiceDaily,
         newStart: nyDaily(4, 10),
         originalStart: nyDaily(3),
-        seriesStart: nyDaily(1),
-        seriesZone: "America/New_York",
-        starts: [1, 2, 3, 4, 5, 20].map((day) => nyDaily(day)),
       })
-    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261107T045959Z"]);
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15;UNTIL=20261104T150000Z"]);
   });
 
   test("keeps an added day that's also the rule's last day", () => {
@@ -269,7 +302,7 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
   });
 
-  test("carries Sol's Mondays exactly, with an added day on a rule day", () => {
+  test("carries a weekly COUNT exactly onto new days, with an added rule day", () => {
     // Mondays Nov 2, 9, 16 (COUNT=3) plus added Nov 3 and Nov 16, split at
     // Nov 9 and moved to Tuesdays: two left (Nov 10, 17).
     expect(
@@ -286,7 +319,7 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2"]);
   });
-  test("walks the first-Monday rule Sol found miscounted", () => {
+  test("walks a first-Monday-of-the-month rule (BYDAY with BYMONTHDAY)", () => {
     // BYDAY=MO with the 1st to 7th, COUNT=3 from Jun 1 2026: Jun 1, Jul 6,
     // Aug 3. Split at Jul 6: two left.
     expect(
@@ -304,7 +337,7 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=MO;BYMONTHDAY=1,2,3,4,5,6,7;COUNT=2"]);
   });
 
-  test("walks a single-hour rule with added days, as Sol's Mondays", () => {
+  test("walks a single-hour weekly rule with added days", () => {
     // Mondays 9:00 Nov 2/9/16 COUNT=3 with added Nov 3 and Nov 16, split at
     // Nov 9 onto Tuesdays: two left.
     expect(
@@ -319,6 +352,7 @@ describe("splitting a series", () => {
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
   });
+
   test("counts each counted rule on its own", () => {
     // Daily COUNT=10 and Mondays COUNT=5 from Mon Nov 9, split at Nov 16:
     // three days left (16-18) and four Mondays (Nov 16 to Dec 7).

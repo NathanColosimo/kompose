@@ -3,6 +3,7 @@
  * one of its occurrences.
  */
 import { Temporal } from "temporal-polyfill";
+import { startInstant } from "./until";
 
 export interface EventTime {
   date?: string;
@@ -11,26 +12,6 @@ export interface EventTime {
 }
 
 const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
-
-/**
- * The moment a Google dateTime names. Google also takes one without an
- * offset when a time zone comes with it, read in that zone; null for one
- * that doesn't parse.
- */
-export function instantOf(
-  dateTime: string,
-  timeZone: string
-): Temporal.Instant | null {
-  try {
-    return OFFSET.test(dateTime)
-      ? Temporal.Instant.from(dateTime)
-      : Temporal.PlainDateTime.from(dateTime)
-          .toZonedDateTime(timeZone)
-          .toInstant();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The zone to read and write times in: the series' (Google repeats a
@@ -47,22 +28,12 @@ function zoneOf(edited: EventTime, master: EventTime): string {
   );
 }
 
-/**
- * The moment a Google time names: a date-time without an offset is read in
- * its own time zone (as Google does), or `fallback` when it has none.
- */
-function momentOf(time: EventTime, fallback: string): Temporal.Instant | null {
-  return time.dateTime
-    ? instantOf(time.dateTime, time.timeZone ?? fallback)
-    : null;
-}
-
 /** The local day `time` falls on, in `timeZone`. */
 function dayIn(time: EventTime, timeZone: string): Temporal.PlainDate | null {
   if (time.date) {
     return Temporal.PlainDate.from(time.date);
   }
-  const instant = momentOf(time, timeZone);
+  const instant = startInstant(time, timeZone);
   return instant ? instant.toZonedDateTimeISO(timeZone).toPlainDate() : null;
 }
 
@@ -71,8 +42,8 @@ function lengthMs(
   end: EventTime,
   timeZone: string
 ): number | null {
-  const from = momentOf(start, timeZone);
-  const to = momentOf(end, timeZone);
+  const from = startInstant(start, timeZone);
+  const to = startInstant(end, timeZone);
   return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
 }
 
@@ -86,8 +57,8 @@ function sameTime(a: EventTime, b: EventTime, timeZone: string): boolean {
   if (a.date || b.date) {
     return a.date === b.date;
   }
-  const from = momentOf(a, timeZone);
-  const to = momentOf(b, timeZone);
+  const from = startInstant(a, timeZone);
+  const to = startInstant(b, timeZone);
   return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
 }
 
@@ -135,7 +106,7 @@ export function seriesTimesForEdit(params: {
   }
   // Read in its own zone, then projected onto the series' first day in
   // the series' zone.
-  const editedInstant = momentOf(editedStart, timeZone);
+  const editedInstant = startInstant(editedStart, timeZone);
   if (!editedInstant) {
     return null;
   }
