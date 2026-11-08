@@ -70,11 +70,12 @@ export const TaskItem = memo(function TaskItemInner({
 
   // The row drags (pointer only); its checkbox and the button that opens
   // the editor sit side by side, so neither control holds the other. The
-  // button's ::after stretches over the row, so a click anywhere opens it.
+  // button's ::after stretches over the row, so a click anywhere opens it,
+  // and the button reaches the row's right edge, where the editor opens.
   return (
     <div
       className={cn(
-        "group relative flex cursor-grab items-start gap-2.5 rounded-md px-2 py-2 transition-colors",
+        "group relative flex cursor-grab items-start gap-2.5 rounded-md py-2 pl-2 transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         // Hide original when dragging - DragOverlay shows the preview
         isDragging ? "opacity-0" : ""
@@ -94,7 +95,7 @@ export const TaskItem = memo(function TaskItemInner({
           // The drag instructions ("Press Enter to open. Drag with a
           // pointer to move.").
           aria-describedby={attributes["aria-describedby"]}
-          className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+          className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 pr-2 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
           type="button"
         >
           <span
