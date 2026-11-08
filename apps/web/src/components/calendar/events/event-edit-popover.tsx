@@ -23,9 +23,10 @@ import {
   type EventRecurrenceFrequency as Frequency,
   followStart,
   getPrimaryRecurrenceRule,
+  matchUntilToStart,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
-  seriesRecurrenceAfterMove,
+  seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
   untilRuleToDay,
@@ -1090,6 +1091,8 @@ function buildCreatePayload(
     e: Date | null
   ) => { start: Date | null; end: Date | null },
   conferenceData: GoogleEvent["conferenceData"] | null | undefined,
+  /** The zone the editor shows days in. */
+  timeZone: string,
   calendarTimeZone?: string
 ): CloseSaveRequest {
   const trimmedTitle = values.summary.trim();
@@ -1114,8 +1117,11 @@ function buildCreatePayload(
         description: values.description?.trim() || undefined,
         end: temporalPayload.endPayload,
         location: values.location?.trim() || undefined,
+        // An all-day series ends on a date, a timed one on a date-time.
         recurrence:
-          values.recurrence?.length > 0 ? values.recurrence : undefined,
+          values.recurrence?.length > 0
+            ? matchUntilToStart(values.recurrence, values.allDay, timeZone)
+            : undefined,
         start: temporalPayload.startPayload,
         summary: trimmedTitle,
       },
@@ -1219,7 +1225,14 @@ function buildEditPayload(
       },
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      recurrence: patternChanged ? (values.recurrence ?? []) : undefined,
+      // An all-day series ends on a date, a timed one on a date-time.
+      recurrence: patternChanged
+        ? matchUntilToStart(
+            values.recurrence ?? [],
+            values.allDay,
+            ctx.timeZone
+          )
+        : undefined,
       start: {
         ...ctx.event?.start,
         ...temporalPayload.startPayload,
@@ -1239,7 +1252,7 @@ function buildEditPayload(
     patternChanged,
     seriesRecurrence:
       ctx.event &&
-      seriesRecurrenceAfterMove({
+      seriesRecurrenceForSave({
         editedStart: variables.event.start,
         masterRecurrence: ctx.masterRecurrence,
         occurrence: ctx.event,
@@ -2329,6 +2342,7 @@ export function EventEditForm({
           values,
           clampToStartIfNeeded,
           resolvedConference,
+          timeZone,
           calendar?.calendar.timeZone
         );
       }

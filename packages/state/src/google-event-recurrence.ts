@@ -230,8 +230,9 @@ export function buildGoogleEventRecurrenceRule(
     parts.push(`INTERVAL=${interval}`);
   }
   parts.push(...keptRuleParts(baseRule, pattern));
-  // A weekday of the month ("2nd Tue") replaces a day of the month.
-  if (monthDays.length > 0 && !byDay.some(isWeekdayOfMonth)) {
+  // Both can stand together ("the 2nd Tue, if it's the 8th to the 10th");
+  // a day choice in the editors sets the one it means and clears the other.
+  if (monthDays.length > 0) {
     parts.push(`BYMONTHDAY=${monthDays.join(",")}`);
   }
   if (byDay.length > 0) {
@@ -333,11 +334,21 @@ function followedWeekday(
 }
 
 const BY_SET_POS = /(?:^|;)BYSETPOS=(-?\d)(?:;|$)/;
+const HAS_SET_POS = /(?:^|;)BYSETPOS=/;
 const BY_MONTH = /(?:^|;)BYMONTH=(\d{1,2})(?:;|$)/;
 
-/** The BYSETPOS a rule picks with, if it has one. */
-export function setPositionOf(rule: string | undefined): string | undefined {
-  return BY_SET_POS.exec(rule ?? "")?.[1];
+/**
+ * The BYSETPOS a rule picks with, when it's one position ("-1"); null when
+ * it has several ("1,3"), which nothing here puts in words or follows;
+ * undefined when it has none.
+ */
+export function setPositionOf(
+  rule: string | undefined
+): string | null | undefined {
+  if (!HAS_SET_POS.test(rule ?? "")) {
+    return;
+  }
+  return BY_SET_POS.exec(rule ?? "")?.[1] ?? null;
 }
 
 /**
@@ -452,13 +463,48 @@ function dayOfStart(
 }
 
 /**
- * The series' rule to send when a save moves an occurrence's date and
- * applies to its series ("following" or "all"; one occurrence never sends
- * a rule): the rule follows the move (followStart), so "Book club, 1st
- * Sat" moved to the 2nd Sat repeats on 2nd Sats. Undefined (the series
- * keeps its rule) when the save sends its own rule or nothing follows.
+ * `recurrence` with its UNTIL in the form the series' start takes: a date
+ * for an all-day series, a date-time (that day's last second) for a timed
+ * one, as Google requires. The same array when it already is.
  */
-export function seriesRecurrenceAfterMove(params: {
+export function matchUntilToStart(
+  recurrence: string[],
+  allDay: boolean,
+  timeZone: string
+): string[] {
+  const rule = getPrimaryRecurrenceRule(recurrence);
+  const pattern = parseGoogleEventRecurrenceRule(rule);
+  if (
+    pattern.end.type !== "until" ||
+    pattern.end.date.includes("T") !== allDay
+  ) {
+    return recurrence;
+  }
+  const day = untilRuleToDay(pattern.end.date, timeZone);
+  if (!day) {
+    return recurrence;
+  }
+  return setPrimaryRecurrenceRule(
+    recurrence,
+    buildGoogleEventRecurrenceRule(
+      {
+        ...pattern,
+        end: { date: untilRuleForDay(day, allDay, timeZone), type: "until" },
+      },
+      rule
+    )
+  );
+}
+
+/**
+ * The series' rule to send when a save applies to an occurrence's series
+ * ("following" or "all"; one occurrence never sends a rule) without the
+ * user changing it: it follows a moved date (followStart), so "Book club,
+ * 1st Sat" moved to the 2nd Sat repeats on 2nd Sats, and its UNTIL takes
+ * the form an all-day or timed start needs. Undefined (the series keeps
+ * its rule) when the save sends its own rule or nothing changes.
+ */
+export function seriesRecurrenceForSave(params: {
   /** The edited start. */
   editedStart: { date?: string | null; dateTime?: string | null };
   masterRecurrence: string[] | null | undefined;
@@ -478,22 +524,24 @@ export function seriesRecurrenceAfterMove(params: {
   ) {
     return;
   }
+  const allDay = Boolean(editedStart.date);
   const from = dayOfStart(
     occurrence.originalStartTime ?? occurrence.start,
     timeZone
   );
   const to = dayOfStart(editedStart, timeZone);
-  if (!(from && to)) {
-    return;
-  }
-  const followed = followStart({
-    allDay: Boolean(editedStart.date),
-    from,
-    recurrence: masterRecurrence,
-    timeZone,
-    to,
-  });
-  return followed === masterRecurrence ? undefined : followed;
+  const followed =
+    from && to
+      ? followStart({
+          allDay,
+          from,
+          recurrence: masterRecurrence,
+          timeZone,
+          to,
+        })
+      : masterRecurrence;
+  const matched = matchUntilToStart(followed, allDay, timeZone);
+  return matched === masterRecurrence ? undefined : matched;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

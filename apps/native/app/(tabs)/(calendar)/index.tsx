@@ -44,7 +44,8 @@ import {
 import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
-  seriesRecurrenceAfterMove,
+  matchUntilToStart,
+  seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
@@ -688,6 +689,15 @@ function savedSeriesRecurrence(
   return draft.sourceEvent.recurrence?.length
     ? draft.sourceEvent.recurrence
     : masterRecurrence;
+}
+
+/** An all-day series ends on a date, a timed one on a date-time. */
+function matchedRecurrence(
+  recurrence: string[] | undefined,
+  allDay: boolean,
+  timeZone: string
+): string[] | undefined {
+  return recurrence && matchUntilToStart(recurrence, allDay, timeZone);
 }
 
 /**
@@ -1470,7 +1480,11 @@ export default function CalendarTab() {
         description: currentDraft.description.trim() || undefined,
         end: endPayload,
         location: currentDraft.location.trim() || undefined,
-        recurrence: recurrenceToSend(currentDraft, masterRecurrence),
+        recurrence: matchedRecurrence(
+          recurrenceToSend(currentDraft, masterRecurrence),
+          currentDraft.allDay,
+          timeZone
+        ),
         start: startPayload,
         summary: currentDraft.summary.trim(),
       };
@@ -1491,7 +1505,7 @@ export default function CalendarTab() {
         scope === "this"
           ? eventPayload.recurrence
           : (eventPayload.recurrence ??
-            seriesRecurrenceAfterMove({
+            seriesRecurrenceForSave({
               editedStart: eventPayload.start,
               masterRecurrence,
               occurrence: draft.sourceEvent,

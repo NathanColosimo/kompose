@@ -87,7 +87,11 @@ function monthlyWeekdayLabel(
   byDay: string[]
 ): string | null {
   const setPos = setPositionOf(rule);
-  if (!setPos) {
+  // Several positions ("BYSETPOS=1,3") aren't put in words.
+  if (setPos === null) {
+    return null;
+  }
+  if (setPos === undefined) {
     const labels = byDay.map(ordinalDayLabel);
     return labels.length > 0 && labels.every(Boolean)
       ? labels.join(", ")
@@ -325,7 +329,7 @@ export function monthlyDayOptions(
     return (
       pattern.monthDays.length === 0 &&
       (sameList(choice.byDay, pattern.byDay) ||
-        (setPos !== undefined &&
+        (typeof setPos === "string" &&
           sameList(
             choice.byDay,
             pattern.byDay.map((d) => `${setPos}${d}`)

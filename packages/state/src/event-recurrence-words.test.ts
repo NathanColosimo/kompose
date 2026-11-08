@@ -81,6 +81,11 @@ describe("describeEventRecurrence", () => {
       // Only a Friday the 15th.
       ["RRULE:FREQ=MONTHLY;BYMONTHDAY=15;BYDAY=FR", "Repeats monthly (custom)"],
       ["RRULE:FREQ=MONTHLY;BYMONTHDAY=-2", "Repeats monthly (custom)"],
+      // Only the 1st Monday survives "BYSETPOS=1,3".
+      [
+        "RRULE:FREQ=MONTHLY;BYDAY=1MO,2MO;BYSETPOS=1,3",
+        "Repeats monthly (custom)",
+      ],
     ] as const) {
       expect(words(rule)).toBe(said);
     }
