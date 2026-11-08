@@ -475,5 +475,5 @@ export function repeatChangeNote(params: {
   }
   return params.next
     ? "Applies to this and later occurrences."
-    : "Stops repeating here. Later occurrences are removed.";
+    : "Stops repeating here. Later ones you haven't edited are removed.";
 }
