@@ -281,6 +281,7 @@ describe("the server refuses a split that can't start a series", () => {
 
   const master: Event = {
     end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+    iCalUID: "series@google.com",
     id: "series",
     recurrence: [
       "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;COUNT=4",
