@@ -336,51 +336,24 @@ function entireSeriesTimes(
 }
 
 /**
- * An Entire series edit's times for the occurrence it was made through:
- * the edit's time of day and length (read in the series' zone), or its
- * span of days when both are all day, on the occurrence's own day, as the
- * series keeps its dates. The edit's times as they are when it changes
- * the form (timed to all day, or back).
+ * An Entire series edit's times for the occurrence it was made through,
+ * as the series takes them (`seriesTimesForEdit`) but on the occurrence's
+ * own day, since the series keeps its dates: the edit's form, time of day
+ * and length (or span of days). Its own times when they don't parse.
  */
 function timesOnOwnDay(
   occurrence: Event,
   edited: CreateEvent,
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
-  const zone = seriesZoneOf(master);
-  if (occurrence.start.date && edited.start.date) {
-    const days = Math.max(
-      1,
-      edited.end.date
-        ? Temporal.PlainDate.from(edited.start.date).until(edited.end.date).days
-        : 1
-    );
-    const own = Temporal.PlainDate.from(occurrence.start.date);
-    return {
-      end: { date: own.add({ days }).toString() },
-      start: { date: own.toString() },
-    };
-  }
-  const start = inSeriesZone(edited.start, master.start);
-  const end = inSeriesZone(edited.end, master.end);
-  const day = startInstant(occurrence.start, zone)
-    ?.toZonedDateTimeISO(zone)
-    .toPlainDate();
-  const from = startInstant(start, zone);
-  const to = startInstant(end, zone);
-  if (!(day && from && to)) {
-    return { end, start };
-  }
-  const at = day.toZonedDateTime({
-    plainTime: from.toZonedDateTimeISO(zone).toPlainTime(),
-    timeZone: zone,
-  });
-  const written = (time: Temporal.ZonedDateTime) =>
-    time.toString({ smallestUnit: "second", timeZoneName: "never" });
-  return {
-    end: { ...end, dateTime: written(at.add(from.until(to))) },
-    start: { ...start, dateTime: written(at) },
-  };
+  return (
+    seriesTimesForEdit({
+      editedEnd: inSeriesZone(edited.end, master.end),
+      editedStart: inSeriesZone(edited.start, master.start),
+      masterEnd: occurrence.end,
+      masterStart: inSeriesZone(occurrence.start, master.start),
+    }) ?? { end: occurrence.end, start: occurrence.start }
+  );
 }
 
 /**
