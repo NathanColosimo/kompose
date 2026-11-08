@@ -18,6 +18,7 @@ import type {
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -687,9 +688,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Update recurring task</AlertDialogTitle>
+            <AlertDialogTitle>
+              {SCOPE_DIALOG_COPY.saveTask.title}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This is a recurring task. Which occurrences do you want to update?
+              {SCOPE_DIALOG_COPY.saveTask.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col">

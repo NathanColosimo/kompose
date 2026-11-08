@@ -6,6 +6,11 @@
 export interface HeldSave {
   /** Shown instead of the server's error when the save fails. */
   failureMessage?: string;
+  /**
+   * The editor shows the failure itself, beside its Save button, so there's
+   * no toast to land on top of it (web).
+   */
+  quiet?: boolean;
 }
 
 export const SAVE_FAILURE_MESSAGE =
@@ -17,4 +22,15 @@ export const EVENT_CREATE_FAILURE_MESSAGE =
 
 export function heldSaveError(error: Error, failureMessage?: string): Error {
   return failureMessage ? new Error(failureMessage, { cause: error }) : error;
+}
+
+/** Report a failed save, unless its editor shows the failure (quiet). */
+export function reportHeldSaveFailure(
+  notifyError: ((error: Error) => void) | undefined,
+  error: Error,
+  { failureMessage, quiet }: HeldSave
+): void {
+  if (!quiet) {
+    notifyError?.(heldSaveError(error, failureMessage));
+  }
 }

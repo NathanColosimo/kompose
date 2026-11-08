@@ -26,3 +26,15 @@ export function HeldFieldset({
     </fieldset>
   );
 }
+
+/**
+ * Why a held save failed, beside the editor's Save button: a toast in a
+ * corner could land on the editor it's about.
+ */
+export function SaveFailure({ message }: { message: string | null }) {
+  return message ? (
+    <p className="text-destructive text-xs" role="alert">
+      {message}
+    </p>
+  ) : null;
+}

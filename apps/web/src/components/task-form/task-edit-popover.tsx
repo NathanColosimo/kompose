@@ -22,7 +22,10 @@ import {
   getProviderLabel,
   URL_REGEX,
 } from "@kompose/state/link-meta-utils";
-import { TASK_UPDATE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import {
+  SCOPE_DIALOG_COPY,
+  TASK_UPDATE_SCOPE_OPTIONS,
+} from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
@@ -77,7 +80,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { DurationPicker } from "@/components/ui/duration-picker";
-import { HeldFieldset } from "@/components/ui/held-fieldset";
+import { HeldFieldset, SaveFailure } from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -461,6 +464,8 @@ export function TaskEditForm({
    * ("save"). It closes when the save succeeds and keeps the draft if not.
    */
   const [saving, setSaving] = useState<"done" | "save" | null>(null);
+  /** Why the last held save failed, shown beside Save until the next one. */
+  const [failure, setFailure] = useState<string | null>(null);
   const isSavingStatus = isHolding(saving, externalSaving);
   useEffect(() => {
     onSavingChange?.(isSavingStatus);
@@ -560,6 +565,9 @@ export function TaskEditForm({
       if (!task) {
         return Promise.resolve(false);
       }
+      if (hold) {
+        setFailure(null);
+      }
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -570,6 +578,8 @@ export function TaskEditForm({
           failureMessage: hold?.failureMessage,
           id: task.id,
           optimistic: !hold,
+          // The held editor says what failed, beside Save.
+          quiet: Boolean(hold),
           scope,
           task: {
             description: values.description ?? "",
@@ -593,7 +603,10 @@ export function TaskEditForm({
         })
         .then(
           () => true,
-          () => false
+          () => {
+            setFailure(hold?.failureMessage ?? null);
+            return false;
+          }
         );
     },
     [resolvedRecurrence, task, updateTask]
@@ -683,14 +696,19 @@ export function TaskEditForm({
         if (!payload) {
           return true;
         }
+        setFailure(null);
         const created = createTask
           .mutateAsync({
             ...payload,
             failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+            quiet: true,
           })
           .then(
             () => true,
-            () => false
+            () => {
+              setFailure(TASK_CREATE_FAILURE_MESSAGE);
+              return false;
+            }
           );
         if (!showActionButtons) {
           return created;
@@ -1104,6 +1122,7 @@ export function TaskEditForm({
           )}
         />
 
+        <SaveFailure message={failure} />
         {showActionButtons ? (
           <>
             <Separator />
@@ -1130,7 +1149,7 @@ export function TaskEditForm({
                       <AlertDialogTitle>Delete task?</AlertDialogTitle>
                       <AlertDialogDescription>
                         {isRecurring
-                          ? "This is a recurring task. Choose what to delete."
+                          ? SCOPE_DIALOG_COPY.deleteTask.description
                           : "This action cannot be undone."}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -1186,7 +1205,7 @@ export function TaskEditForm({
         {isCreateMode ? null : (
           <RecurrenceScopeDialog
             confirmLabel="Apply"
-            description="This is a recurring task. Choose how broadly to apply the change."
+            description={SCOPE_DIALOG_COPY.saveTask.description}
             onConfirm={() => {
               const pendingUpdate = pendingUpdateRef.current;
               if (!pendingUpdate) {
@@ -1228,7 +1247,7 @@ export function TaskEditForm({
             onValueChange={(value) => setTagScope(value as UpdateScope)}
             open={showTagScopeDialog}
             options={TASK_UPDATE_SCOPE_OPTIONS}
-            title="Apply task update"
+            title={SCOPE_DIALOG_COPY.saveTask.title}
             value={tagScope}
           />
         )}

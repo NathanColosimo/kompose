@@ -116,6 +116,8 @@ export function EventCreationPopover() {
   // failed one keeps the draft. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  /** Why the last event create failed, shown in the form until the next. */
+  const [eventFailure, setEventFailure] = useState<string | null>(null);
   const holdForCreate = useCallback(
     (created: Promise<boolean>) => {
       savingRef.current = true;
@@ -160,15 +162,21 @@ export function EventCreationPopover() {
       actions.closePopover();
       return;
     }
+    setEventFailure(null);
     holdForCreate(
       createEvent
         .mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+          // The form says what failed; a toast could land on the popover.
+          quiet: true,
         })
         .then(
           () => true,
-          () => false
+          () => {
+            setEventFailure(EVENT_CREATE_FAILURE_MESSAGE);
+            return false;
+          }
         )
     );
   }, [actions, createEvent, holdForCreate, mode]);
@@ -263,6 +271,7 @@ export function EventCreationPopover() {
                 onDelete={() => undefined}
                 onSave={handleSave}
                 open={state.showPopover}
+                saveFailure={eventFailure}
                 start={startDate}
               />
             </TabsContent>

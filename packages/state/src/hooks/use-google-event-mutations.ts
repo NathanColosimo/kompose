@@ -10,7 +10,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { uuidv7 } from "uuidv7";
 import { useStateConfig } from "../config";
 import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
-import { type HeldSave, heldSaveError } from "../held-save";
+import { type HeldSave, reportHeldSaveFailure } from "../held-save";
 
 /**
  * Extended update input that includes the full Event for client-side sanitization.
@@ -30,6 +30,7 @@ export function useGoogleEventMutations() {
   const createEvent = useMutation({
     mutationFn: async ({
       failureMessage: _failureMessage,
+      quiet: _quiet,
       ...variables
     }: CreateEventInput & HeldSave) => orpc.googleCal.events.create(variables),
     onMutate: async (variables) => {
@@ -83,8 +84,8 @@ export function useGoogleEventMutations() {
         }
       }
     },
-    onError: (err, { failureMessage }, context) => {
-      notifyError?.(heldSaveError(err, failureMessage));
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousQueries) {
         for (const [qk, data] of context.previousQueries) {
           queryClient.setQueryData(qk, data);
@@ -154,8 +155,8 @@ export function useGoogleEventMutations() {
 
       return { previousQueries };
     },
-    onError: (err, { failureMessage }, context) => {
-      notifyError?.(heldSaveError(err, failureMessage));
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
 
       if (context?.previousQueries) {
         for (const [queryKey, data] of context.previousQueries) {

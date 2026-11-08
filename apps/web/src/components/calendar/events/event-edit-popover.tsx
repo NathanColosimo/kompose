@@ -35,6 +35,7 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
+import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -48,7 +49,6 @@ import {
   MapPin,
   Palette,
   Repeat,
-  Timer,
   Trash2,
   Video,
 } from "lucide-react";
@@ -92,7 +92,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { HeldFieldset } from "@/components/ui/held-fieldset";
+import { HeldFieldset, SaveFailure } from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -653,15 +653,20 @@ export function EventEditPopover({
   // save keeps the edits. Escape and outside clicks wait too.
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  /** Why the last save failed, shown beside Save until the next one. */
+  const [saveFailure, setSaveFailure] = useState<string | null>(null);
   const holdForSave = useCallback(
-    (save: Promise<unknown>) => {
+    (save: Promise<unknown>, failureMessage: string) => {
       savingRef.current = true;
       setIsSaving(true);
+      setSaveFailure(null);
       const settle = (saved: boolean) => {
         savingRef.current = false;
         setIsSaving(false);
         if (saved) {
           setOpen(false);
+        } else {
+          setSaveFailure(failureMessage);
         }
       };
       save.then(
@@ -686,6 +691,8 @@ export function EventEditPopover({
           ...edits.variables,
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
+          // The editor says what failed, beside Save.
+          quiet: true,
           recurrenceScope: scope,
         });
       }
@@ -707,7 +714,7 @@ export function EventEditPopover({
       return;
     }
     dispatchDialog({ type: "clear-pending-save" });
-    holdForSave(saveEdits(pendingSave, selectedScope));
+    holdForSave(saveEdits(pendingSave, selectedScope), SAVE_FAILURE_MESSAGE);
   }, [holdForSave, pendingSave, saveEdits, selectedScope]);
 
   const handleDelete = useCallback(() => {
@@ -780,7 +787,9 @@ export function EventEditPopover({
         createEvent.mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-        })
+          quiet: true,
+        }),
+        EVENT_CREATE_FAILURE_MESSAGE
       );
       return;
     }
@@ -805,7 +814,7 @@ export function EventEditPopover({
         return;
       }
 
-      holdForSave(saveEdits(request, "this"));
+      holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
     }
   }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
 
@@ -869,6 +878,7 @@ export function EventEditPopover({
             open={open}
             readOnly={readOnly}
             readOnlyReason={readOnlyReason}
+            saveFailure={saveFailure}
             start={start}
           />
         </PopoverContent>
@@ -878,8 +888,8 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         description={
           pendingSave?.calendarChanged
-            ? "Moving to a different calendar applies to all events in the series."
-            : "Choose how broadly to apply your changes."
+            ? SCOPE_DIALOG_COPY.moveEvent
+            : SCOPE_DIALOG_COPY.saveEvent.description
         }
         disabledScopes={saveDisabledScopes(pendingSave)}
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
@@ -891,14 +901,14 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-selected-scope", value })
         }
         open={scopeDialogOpen}
-        title="Save recurring event changes"
+        title={SCOPE_DIALOG_COPY.saveEvent.title}
         value={selectedScope}
       />
 
       {/* Delete scope dialog for recurring events */}
       <RecurrenceScopeDialog
         confirmLabel="Delete"
-        description="Choose how broadly to apply the deletion."
+        description={SCOPE_DIALOG_COPY.deleteEvent.description}
         onCancel={() =>
           dispatchDialog({ type: "set-delete-dialog-open", value: false })
         }
@@ -910,7 +920,7 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-delete-scope", value })
         }
         open={deleteDialogOpen}
-        title="Delete recurring event"
+        title={SCOPE_DIALOG_COPY.deleteEvent.title}
         value={deleteScope}
       />
 
@@ -1254,7 +1264,7 @@ const FIRST_LETTER = /^./;
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
-  canEditRecurrence,
+  recurrenceLoading,
   readOnly = false,
   recurrenceRule,
   onRecurrenceChange,
@@ -1264,7 +1274,8 @@ function EventAllDayAndRecurrenceRow({
 }: {
   allDay: boolean;
   onToggleAllDay: () => void;
-  canEditRecurrence: boolean;
+  /** The occurrence's pattern is still loading. */
+  recurrenceLoading: boolean;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
   onRecurrenceChange: (rule: string | null) => void;
@@ -1310,42 +1321,41 @@ function EventAllDayAndRecurrenceRow({
           All day
         </Button>
       )}
-      {canEditRecurrence ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            {/* Says how the event repeats, so the editor shows it's a series. */}
-            <Button
-              aria-label={`Repeat: ${repeatLabel ?? "None"}`}
-              className={cn(
-                repeatLabel ? "h-8 min-w-0 gap-1.5 px-2 text-xs" : "size-8"
-              )}
-              disabled={readOnly}
-              size={repeatLabel ? "sm" : "icon"}
-              title={repeatLabel ?? "Repeat"}
-              variant={repeatLabel ? "secondary" : "outline"}
-            >
-              <Repeat className="size-4 shrink-0" />
-              {repeatLabel ? (
-                <span className="truncate">{repeatLabel}</span>
-              ) : null}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[360px]">
-            <RecurrenceEditor
-              onChange={onRecurrenceChange}
-              recurrenceRule={recurrenceRule}
-              visible
-            />
-          </PopoverContent>
-        </Popover>
-      ) : null}
+      <Popover>
+        <PopoverTrigger asChild>
+          {/* Says how the event repeats, so the editor shows it's a series. */}
+          <Button
+            aria-label={`Repeat: ${repeatLabel ?? "None"}`}
+            className={cn(
+              // The rule gives way first: the calendar beside it stays readable.
+              repeatLabel ? "h-8 min-w-0 shrink gap-1.5 px-2 text-xs" : "size-8"
+            )}
+            disabled={readOnly || recurrenceLoading}
+            size={repeatLabel ? "sm" : "icon"}
+            title={repeatLabel ?? "Repeat"}
+            variant={repeatLabel ? "secondary" : "outline"}
+          >
+            <Repeat className="size-4 shrink-0" />
+            {repeatLabel ? (
+              <span className="truncate">{repeatLabel}</span>
+            ) : null}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-[360px]">
+          <RecurrenceEditor
+            onChange={onRecurrenceChange}
+            recurrenceRule={recurrenceRule}
+            visible
+          />
+        </PopoverContent>
+      </Popover>
       <Select
         disabled={readOnly}
         onValueChange={onCalendarChange}
         value={calendarValue}
       >
         <SelectTrigger
-          className="ml-auto h-8 w-auto min-w-0 gap-1.5 px-2 text-xs"
+          className="ml-auto h-8 w-auto min-w-28 max-w-44 shrink-0 gap-1.5 px-2 text-xs"
           disabled={readOnly}
         >
           <SelectValue placeholder="Calendar" />
@@ -1768,6 +1778,7 @@ export function EventEditForm({
   mode,
   closeSaveRequestRef,
   isSaving = false,
+  saveFailure = null,
   onSave,
   onCancel,
   onDelete,
@@ -1786,6 +1797,8 @@ export function EventEditForm({
   closeSaveRequestRef: React.Ref<() => CloseSaveRequest>;
   /** A save is running: the fields are read-only and Save says "Saving…". */
   isSaving?: boolean;
+  /** Why the last save failed, shown beside Save. */
+  saveFailure?: string | null;
   /** Trigger the save flow (builds close-save request and processes it). */
   onSave: () => void;
   /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
@@ -2207,13 +2220,10 @@ export function EventEditForm({
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
-  const canEditRecurrence =
-    isCreateMode ||
-    Boolean(
-      event?.recurrence?.length ||
-        event?.recurringEventId ||
-        masterQuery.data?.recurrence?.length
-    );
+  // Any editable event can repeat, a one-off one included. While an
+  // occurrence's pattern loads, the control waits: a change made before it
+  // arrives would be compared against nothing.
+  const recurrenceLoading = masterQuery.isLoading;
 
   if (readOnly) {
     const source = calendars.find(
@@ -2276,7 +2286,6 @@ export function EventEditForm({
         allDay={watchedValues.allDay}
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
-        canEditRecurrence={canEditRecurrence}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val
@@ -2306,6 +2315,7 @@ export function EventEditForm({
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
         readOnly={readOnly}
+        recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
       />
       <div className="grid grid-cols-2 gap-2">
@@ -2411,7 +2421,6 @@ export function EventEditForm({
           />
           <TimePicker
             disabled={readOnly}
-            icon={<Timer className="size-4 shrink-0" />}
             onChange={(v) => handleTimeChange("endTime", v)}
             placeholder="End time"
             value={endTimeValue}
@@ -2441,6 +2450,7 @@ export function EventEditForm({
         readOnly={readOnly}
         suggestions={locationSuggestions}
       />
+      <SaveFailure message={saveFailure} />
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}

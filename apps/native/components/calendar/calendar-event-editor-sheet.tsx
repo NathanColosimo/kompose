@@ -15,7 +15,6 @@ import {
   type EventRecurrenceFrequency,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
-  isRecurringGoogleEvent,
   parseGoogleEventRecurrenceRule,
   setPrimaryRecurrenceRule,
   untilRuleToDate,
@@ -805,7 +804,7 @@ function EventLocationInput({
 
 function EventDateTimeRow({
   allDay,
-  canEditRecurrence,
+  recurrenceDisabled,
   endDate,
   getValues,
   endDatePickerValue,
@@ -818,7 +817,8 @@ function EventDateTimeRow({
   startTimePickerValue,
 }: {
   allDay: boolean;
-  canEditRecurrence: boolean;
+  /** The occurrence's pattern is still loading. */
+  recurrenceDisabled: boolean;
   endDate: Temporal.PlainDate;
   endDatePickerValue: Date;
   endTimePickerValue: Date;
@@ -932,27 +932,29 @@ function EventDateTimeRow({
             />
           </View>
         )}
-        {canEditRecurrence ? (
-          <Button
-            accessibilityLabel="Repeat"
-            accessibilityRole="button"
-            accessibilityState={{ expanded: isRecurrenceExpanded }}
-            onPress={onToggleRecurrence}
-            size="icon"
-            style={{ height: 38, width: 38 }}
-            variant={isRecurrenceExpanded ? "default" : "outline"}
-          >
-            <Icon
-              as={Repeat2}
-              className={
-                isRecurrenceExpanded
-                  ? "text-primary-foreground"
-                  : "text-foreground"
-              }
-              size={14}
-            />
-          </Button>
-        ) : null}
+        <Button
+          accessibilityLabel="Repeat"
+          accessibilityRole="button"
+          accessibilityState={{
+            disabled: recurrenceDisabled,
+            expanded: isRecurrenceExpanded,
+          }}
+          disabled={recurrenceDisabled}
+          onPress={onToggleRecurrence}
+          size="icon"
+          style={{ height: 38, width: 38 }}
+          variant={isRecurrenceExpanded ? "default" : "outline"}
+        >
+          <Icon
+            as={Repeat2}
+            className={
+              isRecurrenceExpanded
+                ? "text-primary-foreground"
+                : "text-foreground"
+            }
+            size={14}
+          />
+        </Button>
       </View>
     </View>
   );
@@ -1027,6 +1029,8 @@ interface EventEditorSheetProps {
    * dismissal) until it ends.
    */
   isSaving?: boolean;
+  /** The occurrence's series pattern is loading. */
+  masterLoading?: boolean;
   /**
    * The series' pattern when the event is an occurrence; it can load after
    * the editor opens.
@@ -1046,6 +1050,7 @@ interface EventEditorSheetProps {
 export function EventEditorSheet({
   draft,
   isSaving = false,
+  masterLoading = false,
   masterRecurrence,
   onClose,
   overlay,
@@ -1086,12 +1091,10 @@ export function EventEditorSheet({
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
 
-  const canEditRecurrence =
-    isCreateMode ||
-    isRecurringGoogleEvent({
-      event: isCreateMode ? null : draft.sourceEvent,
-      masterRecurrence: recurrence,
-    });
+  // Any editable event can repeat, a one-off one included. While an
+  // occurrence's pattern loads, the control waits: a change made before it
+  // arrives would be compared against nothing.
+  const recurrenceDisabled = masterLoading;
 
   const primaryRule = getPrimaryRecurrenceRule(recurrence);
   const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
@@ -1175,7 +1178,7 @@ export function EventEditorSheet({
     [applyPrimaryRecurrenceRule, getValues]
   );
 
-  const recurrenceEditor = canEditRecurrence ? (
+  const recurrenceEditor = (
     <RecurrenceRow
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
       isExpanded={isRecurrenceExpanded}
@@ -1184,7 +1187,7 @@ export function EventEditorSheet({
       recurrence={recurrence}
       updateRecurrence={updateRecurrence}
     />
-  ) : null;
+  );
 
   const calendarPickerOptions = React.useMemo(
     () =>
@@ -1274,7 +1277,6 @@ export function EventEditorSheet({
       <HeldWhileSaving isSaving={isSaving}>
         <EventDateTimeRow
           allDay={allDay}
-          canEditRecurrence={canEditRecurrence}
           endDate={endDate}
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}
@@ -1283,6 +1285,7 @@ export function EventEditorSheet({
           onToggleRecurrence={() =>
             setIsRecurrenceExpanded((current) => !current)
           }
+          recurrenceDisabled={recurrenceDisabled}
           setValue={setValue}
           startDate={startDate}
           startDatePickerValue={startDatePickerValue}

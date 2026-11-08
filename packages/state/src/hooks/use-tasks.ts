@@ -24,7 +24,7 @@ import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
-import { type HeldSave, heldSaveError } from "../held-save";
+import { type HeldSave, reportHeldSaveFailure } from "../held-save";
 import { mergeSavedTasks } from "../task-cache";
 
 interface UseTasksOptions {
@@ -47,14 +47,15 @@ export function useTasks(options: UseTasksOptions = {}) {
   const createTask = useMutation({
     mutationFn: async ({
       failureMessage: _failureMessage,
+      quiet: _quiet,
       ...task
     }: ClientTaskInsertDecoded & HeldSave) => {
       const encoded = clientTaskInsertCodec.encode(task);
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, { failureMessage }, context) => {
-      notifyError?.(heldSaveError(err, failureMessage));
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -129,6 +130,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       id: string;
       /** Shown instead of the generic error when the save fails. */
       failureMessage?: string;
+      /** The editor shows the failure itself; no toast. */
+      quiet?: boolean;
       /** False to wait for the server instead of updating the cache first. */
       optimistic?: boolean;
       task: TaskUpdateDecoded;
@@ -142,8 +145,8 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, { failureMessage }, context) => {
-      notifyError?.(heldSaveError(err, failureMessage));
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
@@ -157,6 +160,7 @@ export function useTasks(options: UseTasksOptions = {}) {
       id: string;
       failureMessage?: string;
       optimistic?: boolean;
+      quiet?: boolean;
       task: TaskUpdateDecoded;
       scope: UpdateScope;
     }) => {

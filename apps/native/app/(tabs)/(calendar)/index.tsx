@@ -50,7 +50,10 @@ import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
+import {
+  RECURRENCE_SCOPE_OPTIONS,
+  SCOPE_DIALOG_COPY,
+} from "@kompose/state/recurrence-scope-options";
 import {
   formatTimeRange,
   nearestSlotMinutes,
@@ -670,6 +673,19 @@ function WorkoutSheet({
 }
 
 /**
+ * The saved event's series pattern: its own rules, or its master's. Not the
+ * draft's, which may add a repeat to a one-off event that isn't a series yet.
+ */
+function savedSeriesRecurrence(
+  draft: EditEventDraft,
+  masterRecurrence: string[]
+): string[] {
+  return draft.sourceEvent.recurrence?.length
+    ? draft.sourceEvent.recurrence
+    : masterRecurrence;
+}
+
+/**
  * The repeat to send with an event save: only when it changed, so an empty
  * list means "Repeat: None" and leaving it out keeps the series' pattern
  * (also while the master's pattern is still loading).
@@ -716,14 +732,14 @@ function EventDeleteDialogs({
       <AlertDialog
         closeOnConfirm={false}
         confirmText="Delete"
-        description="This is a recurring event. Choose what to delete."
+        description={SCOPE_DIALOG_COPY.deleteEvent.description}
         isVisible={dialog === "delete"}
         onCancel={onCancel}
         onClose={noop}
         onConfirm={() => onConfirm(scope)}
         pending={pending}
         pendingText="Deleting…"
-        title="Delete recurring event"
+        title={SCOPE_DIALOG_COPY.deleteEvent.title}
       >
         <View className="mt-2">
           <RadioGroup
@@ -785,8 +801,8 @@ function EventSaveScopeDialog({
       confirmText="Apply"
       description={
         isMoving
-          ? "Moving to a different calendar applies to all events in the series."
-          : "This is a recurring event. Choose how broadly to apply these changes."
+          ? SCOPE_DIALOG_COPY.moveEvent
+          : SCOPE_DIALOG_COPY.saveEvent.description
       }
       isVisible={isVisible}
       onCancel={onCancel}
@@ -794,7 +810,7 @@ function EventSaveScopeDialog({
       onClose={noop}
       onConfirm={onConfirm}
       pending={pending}
-      title="Save recurring event"
+      title={SCOPE_DIALOG_COPY.saveEvent.title}
     >
       <View className="mt-2">
         <RadioGroup
@@ -1513,8 +1529,10 @@ export default function CalendarTab() {
         return;
       }
 
-      const masterSeriesRecurrence =
-        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const masterSeriesRecurrence = savedSeriesRecurrence(
+        draft,
+        masterRecurrence
+      );
       const recurring =
         isRecurringGoogleEvent({
           event: draft.sourceEvent,
@@ -1576,8 +1594,10 @@ export default function CalendarTab() {
 
   const requestDeleteEvent = useCallback(
     (draft: EditEventDraft) => {
-      const recurringMasterRecurrence =
-        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const recurringMasterRecurrence = savedSeriesRecurrence(
+        draft,
+        masterRecurrence
+      );
       const recurring =
         isRecurringGoogleEvent({
           event: draft.sourceEvent,
@@ -2146,6 +2166,7 @@ export default function CalendarTab() {
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
           isSaving={isSavingEvent || isDeletingEvent}
+          masterLoading={recurringMasterEvent.isLoading}
           masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}

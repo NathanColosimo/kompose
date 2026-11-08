@@ -3,6 +3,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import {
+  SCOPE_DIALOG_COPY,
   TASK_DELETE_SCOPE_OPTIONS,
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
@@ -25,7 +26,7 @@ export function TaskSaveScopeDialog({ flow }: { flow: TaskEditorFlow }) {
     <AlertDialog
       closeOnConfirm={false}
       confirmText="Apply"
-      description="This is a recurring task. Choose how broadly to apply these updates."
+      description={SCOPE_DIALOG_COPY.saveTask.description}
       isVisible={flow.scopeDialog === "save"}
       // Over the editor: Cancel goes back to it, edits kept. After Apply
       // the flow hides this dialog itself (it may be saving).
@@ -36,7 +37,7 @@ export function TaskSaveScopeDialog({ flow }: { flow: TaskEditorFlow }) {
       onClose={noop}
       onConfirm={flow.confirmScopedSave}
       pending={flow.isSavingStatus}
-      title="Apply task update"
+      title={SCOPE_DIALOG_COPY.saveTask.title}
     >
       <View className="mt-2">
         <RadioGroup
@@ -54,11 +55,11 @@ export function TaskDeleteScopeDialog({ flow }: { flow: TaskEditorFlow }) {
   return (
     <AlertDialog
       confirmText="Delete"
-      description="This is a recurring task. Choose what to delete."
+      description={SCOPE_DIALOG_COPY.deleteTask.description}
       isVisible={flow.scopeDialog === "delete"}
       onClose={flow.close}
       onConfirm={flow.confirmScopedDelete}
-      title="Delete recurring task"
+      title={SCOPE_DIALOG_COPY.deleteTask.title}
     >
       <View className="mt-2">
         <RadioGroup
