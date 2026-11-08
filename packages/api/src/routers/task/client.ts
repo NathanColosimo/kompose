@@ -318,31 +318,6 @@ function isSameRecurrence(
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-/**
- * Occurrence rows in a recurring series may store recurrence as null while the
- * master stores the actual pattern. When an occurrence edit submits null
- * recurrence unchanged, treat it as "no recurrence update" instead of a
- * destructive recurrence-change request.
- */
-function shouldCompareFollowingRecurrenceChange(
-  task: TaskSelect,
-  input: TaskUpdateInput
-): boolean {
-  if (input.recurrence === undefined) {
-    return false;
-  }
-
-  if (
-    task.seriesMasterId &&
-    task.recurrence === null &&
-    input.recurrence === null
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
 /** Resolve recurrence for comparison (occurrences may store null while master stores pattern). */
 const resolveComparableRecurrence = Effect.fn("resolveComparableRecurrence")(
   function* (userId: string, task: TaskSelect) {
@@ -362,7 +337,10 @@ const changesSeriesRecurrence = (
   input: TaskUpdateInput
 ) =>
   Effect.gen(function* () {
-    if (!shouldCompareFollowingRecurrenceChange(task, input)) {
+    // Omitted means unchanged. An explicit null ends the repeat ("Repeat:
+    // None"), even on an occurrence that stores none of its own: clients
+    // omit recurrence when it didn't change.
+    if (input.recurrence === undefined) {
       return false;
     }
     const comparableRecurrence = yield* resolveComparableRecurrence(
@@ -637,6 +615,19 @@ function editsThisTask(
   return hasDbUpdates || (task.seriesMasterId !== null && tagIds !== undefined);
 }
 
+/**
+ * An update's written rows, and which of them take the edit's tags (a
+ * pattern change keeps other exceptions' own tags).
+ */
+interface WrittenRows {
+  retagIds: string[];
+  rows: TaskSelect[];
+}
+
+function allRetagged(rows: TaskSelect[]): WrittenRows {
+  return { retagIds: ids(rows), rows };
+}
+
 /** Writes an update's rows for its scope (no tags), returning them. */
 const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   dbInput: TaskUpdateInput;
@@ -657,16 +648,18 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
     );
   }
   if (!task.seriesMasterId && dbInput.recurrence) {
-    return yield* convertToRecurring(userId, task, dbInput);
+    return allRetagged(yield* convertToRecurring(userId, task, dbInput));
   }
   if (editsThisTask(task, params.hasDbUpdates, params.normalizedTagIds)) {
     // Edit this task alone, marked as an exception to its series.
-    return yield* dbUpdate(userId, task.id, {
-      ...dbInput,
-      isException: true,
-    });
+    return allRetagged(
+      yield* dbUpdate(userId, task.id, {
+        ...dbInput,
+        isException: true,
+      })
+    );
   }
-  return [task];
+  return allRetagged([task]);
 });
 
 /** A series occurrence with a start date, which "following" edits need. */
@@ -694,7 +687,11 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   task: DatedSeriesTask,
   input: TaskUpdateInput
 ) {
-  const keepEdited = keepsEditedOccurrence(task, input);
+  const { recurrence, ...occurrenceFields } = input;
+  // Ending the repeat ("Repeat: None") keeps the edited task, as a
+  // standalone task, and drops the later ordinary occurrences.
+  const ending = !recurrence;
+  const keepEdited = ending || keepsEditedOccurrence(task, input);
   yield* dbDeleteNonExceptionsBySeriesFrom(
     userId,
     task.seriesMasterId,
@@ -702,18 +699,17 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     keepEdited ? task.id : undefined
   );
 
-  const { recurrence, ...occurrenceFields } = input;
   const updatedAnchor = keepEdited
     ? yield* dbUpdate(userId, task.id, {
         ...occurrenceFields,
-        isException: true,
+        isException: !ending,
         recurrence: null,
+        ...(ending ? { seriesMasterId: null } : {}),
       })
     : [];
 
-  // If recurrence is being removed, we're done
   if (!recurrence) {
-    return updatedAnchor;
+    return { retagIds: ids(updatedAnchor), rows: updatedAnchor };
   }
 
   const keptDates = new Set(
@@ -736,7 +732,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     userId,
   });
   if (taskRows.length === 0) {
-    return updatedAnchor;
+    return { retagIds: ids(updatedAnchor), rows: updatedAnchor };
   }
   const inserted = yield* dbInsert(taskRows);
   // Kept occurrences from the boundary on (and the edited one, wherever it
@@ -749,11 +745,19 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  // The caller gives returned rows the edit's tags: return the edited
-  // occurrence and the new rows, not the other kept exceptions, which keep
-  // their own.
-  return [...moved.filter((row) => row.id === task.id), ...inserted];
+  // Every changed row goes back (so clients see the moved exceptions in
+  // their new series), but only the edited occurrence and the new rows take
+  // the edit's tags: the other kept exceptions keep their own.
+  const edited = moved.filter((row) => row.id === task.id);
+  return {
+    retagIds: [...ids(edited), ...ids(inserted)],
+    rows: [...moved, ...inserted],
+  };
 });
+
+function ids(rows: TaskSelect[]): string[] {
+  return rows.map((row) => row.id);
+}
 
 /** Update a recurring series by scaling date/time offsets across occurrences. */
 const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
@@ -866,7 +870,9 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
 ) {
   // Without a start date there is no "following"; edit this occurrence alone.
   if (!isDatedSeriesTask(task)) {
-    return yield* dbUpdate(userId, task.id, { ...input, isException: true });
+    return allRetagged(
+      yield* dbUpdate(userId, task.id, { ...input, isException: true })
+    );
   }
 
   // If recurrence pattern is changing, regenerate future occurrences (inside
@@ -877,7 +883,7 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
 
   // No recurrence change: update this and following with scaled date/time
   // offsets.
-  return yield* updateSeriesWithScaledDates(userId, task, input);
+  return allRetagged(yield* updateSeriesWithScaledDates(userId, task, input));
 });
 
 // ============================================================================
@@ -995,7 +1001,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const db = yield* Database;
       const updatedTasks = yield* db.transaction(() =>
         Effect.gen(function* () {
-          const rows = yield* writeTaskUpdate({
+          const written = yield* writeTaskUpdate({
             dbInput,
             hasDbUpdates,
             normalizedTagIds,
@@ -1009,12 +1015,9 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
             normalizedTagIds ??
             (carriedTagIds.length > 0 ? carriedTagIds : undefined);
           if (tagIdsToSet !== undefined) {
-            yield* replaceTaskTagsForTasks(
-              rows.map((updated) => updated.id),
-              tagIdsToSet
-            );
+            yield* replaceTaskTagsForTasks(written.retagIds, tagIdsToSet);
           }
-          return rows;
+          return written.rows;
         })
       );
 

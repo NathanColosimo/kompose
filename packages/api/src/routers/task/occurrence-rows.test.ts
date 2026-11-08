@@ -86,6 +86,26 @@ describe("regeneratedOccurrenceRows", () => {
     ]);
   });
 
+  test("measures due dates from the edited task's new start", () => {
+    const rowsWithDue = regeneratedOccurrenceRows({
+      input: {
+        dueDate: "2026-11-11",
+        recurrence: tuesdays,
+        startDate: "2026-11-10",
+      },
+      keepEdited: true,
+      keptDates: new Set(["2026-11-10"]),
+      seriesMasterId: "new-master",
+      task: nov9,
+      userId: "user",
+    });
+    expect(rowsWithDue.map((r) => `${r.startDate}>${r.dueDate}`)).toEqual([
+      "2026-11-17>2026-11-18",
+      "2026-11-24>2026-11-25",
+      "2026-12-01>2026-12-02",
+    ]);
+  });
+
   test("keeps a field the edit clears cleared", () => {
     const [first] = regeneratedOccurrenceRows({
       input: { dueDate: null, recurrence: tuesdays, startTime: null },

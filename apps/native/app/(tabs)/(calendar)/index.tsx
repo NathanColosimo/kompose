@@ -61,6 +61,7 @@ import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionSheetIOS,
+  Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -1484,6 +1485,7 @@ export default function CalendarTab() {
     if (!pendingEventSaveDraft) {
       return;
     }
+    Keyboard.dismiss();
     setIsSavingEvent(true);
     try {
       // Closes the editor (and this dialog) when it saves.
@@ -2063,6 +2065,8 @@ export default function CalendarTab() {
           onSubmit={(draft) => {
             // The sheet holds ("Saving…") until the save ends; a failure
             // leaves it open with the draft.
+            // Typing after this point wouldn't be saved: close the keyboard.
+            Keyboard.dismiss();
             setIsSavingEvent(true);
             saveEvent(draft)
               .catch(() => null)

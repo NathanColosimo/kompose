@@ -804,106 +804,112 @@ function EventDateTimeRow({
     setValue("endDate", moved.endDate, { shouldDirty: true });
     setValue("endTime", moved.endTime, { shouldDirty: true });
   };
+  // Two rows, starts then ends, so a 12-hour time ("10:00 AM") never has to
+  // shrink to fit beside three other controls.
   return (
-    <View className="mb-2.5 flex-row items-center gap-1.5">
-      <View className="min-w-0 flex-1">
-        <DatePicker
-          displayValue={formatPlainDateCompact(startDate)}
-          mode="date"
-          onChange={(date) => {
-            if (!date) {
-              return;
-            }
-            moveStart({ date: dateToPlainDate(date) });
-          }}
-          placeholder="Start date"
-          showIcon={false}
-          style={{ minHeight: 38, paddingHorizontal: 10 }}
-          value={startDatePickerValue}
-          valueTextStyle={{ fontSize: 13 }}
-          variant="outline"
-        />
-      </View>
-      {allDay ? null : (
+    <View className="mb-2.5 gap-1.5">
+      <View className="flex-row items-center gap-1.5">
         <View className="min-w-0 flex-1">
           <DatePicker
-            mode="time"
+            displayValue={formatPlainDateCompact(startDate)}
+            mode="date"
             onChange={(date) => {
               if (!date) {
                 return;
               }
-              moveStart({ time: dateToPlainTime(date) });
+              moveStart({ date: dateToPlainDate(date) });
             }}
-            placeholder="Start time"
+            placeholder="Start date"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat={localeTimeFormat()}
-            value={startTimePickerValue}
+            value={startDatePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
           />
         </View>
-      )}
-      <View className="min-w-0 flex-1">
-        <DatePicker
-          displayValue={formatPlainDateCompact(endDate)}
-          mode="date"
-          onChange={(date) => {
-            if (!date) {
-              return;
-            }
-            setValue("endDate", dateToPlainDate(date), {
-              shouldDirty: true,
-            });
-          }}
-          placeholder="End date"
-          showIcon={false}
-          style={{ minHeight: 38, paddingHorizontal: 10 }}
-          value={endDatePickerValue}
-          valueTextStyle={{ fontSize: 13 }}
-          variant="outline"
-        />
+        {allDay ? null : (
+          <View className="min-w-0 flex-1">
+            <DatePicker
+              mode="time"
+              onChange={(date) => {
+                if (!date) {
+                  return;
+                }
+                moveStart({ time: dateToPlainTime(date) });
+              }}
+              placeholder="Start time"
+              showIcon={false}
+              style={{ minHeight: 38, paddingHorizontal: 10 }}
+              timeFormat={localeTimeFormat()}
+              value={startTimePickerValue}
+              valueTextStyle={{ fontSize: 13 }}
+              variant="outline"
+            />
+          </View>
+        )}
       </View>
-      {allDay ? null : (
+      <View className="flex-row items-center gap-1.5">
         <View className="min-w-0 flex-1">
           <DatePicker
-            mode="time"
+            displayValue={formatPlainDateCompact(endDate)}
+            mode="date"
             onChange={(date) => {
               if (!date) {
                 return;
               }
-              setValue("endTime", dateToPlainTime(date), {
+              setValue("endDate", dateToPlainDate(date), {
                 shouldDirty: true,
               });
             }}
-            placeholder="End time"
+            placeholder="End date"
             showIcon={false}
             style={{ minHeight: 38, paddingHorizontal: 10 }}
-            timeFormat={localeTimeFormat()}
-            value={endTimePickerValue}
+            value={endDatePickerValue}
             valueTextStyle={{ fontSize: 13 }}
             variant="outline"
           />
         </View>
-      )}
-      {canEditRecurrence ? (
-        <Button
-          onPress={onToggleRecurrence}
-          size="icon"
-          style={{ height: 38, width: 38 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
-      ) : null}
+        {allDay ? null : (
+          <View className="min-w-0 flex-1">
+            <DatePicker
+              mode="time"
+              onChange={(date) => {
+                if (!date) {
+                  return;
+                }
+                setValue("endTime", dateToPlainTime(date), {
+                  shouldDirty: true,
+                });
+              }}
+              placeholder="End time"
+              showIcon={false}
+              style={{ minHeight: 38, paddingHorizontal: 10 }}
+              timeFormat={localeTimeFormat()}
+              value={endTimePickerValue}
+              valueTextStyle={{ fontSize: 13 }}
+              variant="outline"
+            />
+          </View>
+        )}
+        {canEditRecurrence ? (
+          <Button
+            onPress={onToggleRecurrence}
+            size="icon"
+            style={{ height: 38, width: 38 }}
+            variant={isRecurrenceExpanded ? "default" : "outline"}
+          >
+            <Icon
+              as={Repeat2}
+              className={
+                isRecurrenceExpanded
+                  ? "text-primary-foreground"
+                  : "text-foreground"
+              }
+              size={14}
+            />
+          </Button>
+        ) : null}
+      </View>
     </View>
   );
 }

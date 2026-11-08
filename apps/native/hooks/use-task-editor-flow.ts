@@ -127,7 +127,14 @@ export function useTaskEditorFlow() {
           dueDate: nextDraft.dueDate,
           durationMinutes: nextDraft.durationMinutes,
           links: nextDraft.links,
-          recurrence: nextDraft.recurrence,
+          // Sent only when it changed: an explicit null ends the repeat, so
+          // an untouched occurrence must not send one.
+          recurrence: taskRecurrenceEquals(
+            editingTask.recurrence,
+            nextDraft.recurrence
+          )
+            ? undefined
+            : nextDraft.recurrence,
           startDate: nextDraft.startDate,
           startTime: nextDraft.startTime,
           tagIds: nextDraft.tagIds,

@@ -23,6 +23,7 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
 import {
@@ -515,7 +516,14 @@ export function TaskEditForm({
             dueDate: values.dueDate,
             durationMinutes: normalizedDuration,
             links: values.links,
-            recurrence: values.recurrence,
+            // Sent only when it changed: an explicit null ends the repeat,
+            // so an untouched occurrence must not send one.
+            recurrence: taskRecurrenceEquals(
+              resolvedRecurrence,
+              values.recurrence
+            )
+              ? undefined
+              : values.recurrence,
             startDate: values.startDate,
             startTime: values.startTime,
             tagIds: values.tagIds,
@@ -528,7 +536,7 @@ export function TaskEditForm({
           () => false
         );
     },
-    [task, updateTask]
+    [resolvedRecurrence, task, updateTask]
   );
 
   /**

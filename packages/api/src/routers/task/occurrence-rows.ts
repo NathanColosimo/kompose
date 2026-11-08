@@ -136,7 +136,12 @@ export function regeneratedOccurrenceRows(params: {
     input,
     occurrenceDates,
     seriesMasterId: params.seriesMasterId,
-    seriesStartDate,
+    // Due dates keep the edited task's own start-to-due offset: from its new
+    // start when the edit moves it (Nov 10 due Nov 11 → Nov 17 due Nov 18),
+    // not from the regeneration boundary.
+    seriesStartDate: input.startDate
+      ? Temporal.PlainDate.from(input.startDate)
+      : seriesStartDate,
     task,
     userId: params.userId,
   }).map((row, index) => ({
