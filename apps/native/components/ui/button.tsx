@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/icon";
 import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
 import { Text, TextClassContext } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
+import { THEME } from "@/lib/theme";
 import type { Colors } from "@/theme/colors";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
@@ -102,8 +103,10 @@ export const Button = forwardRef<ViewInstance, ButtonProps>(
   ) => {
     const primaryColor = useColor("primary");
     const secondaryColor = useColor("secondary");
-    // The theme's destructive, tuned for white text, not the brighter iOS red.
-    const destructiveColor = useColor("destructive");
+    // The light theme's destructive in both themes: it carries white text
+    // (about 6.4:1), where the dark theme's brighter red, tuned for red text
+    // on dark, and the iOS red would not (under 4:1).
+    const destructiveColor = THEME.light.destructive;
     const greenColor = useColor("green");
     const borderColor = useColor("border");
     const labelColor = useColor(LABEL_COLORS[variant].color);
