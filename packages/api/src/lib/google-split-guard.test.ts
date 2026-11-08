@@ -37,6 +37,38 @@ describe("where This and following can start", () => {
     }
   });
 
+  test("not at an added meeting after the rule's end that same day", () => {
+    // Daily 9:00 until Nov 13 at 8:00 (13:00Z): an added Nov 13 9:00 is
+    // after the rule's end, by the minute.
+    expect(
+      blocked(
+        [
+          "RRULE:FREQ=DAILY;UNTIL=20261113T130000Z",
+          "RDATE;TZID=America/New_York:20261113T090000",
+        ],
+        "2026-11-13T09:00:00-05:00"
+      )
+    ).toBe("addedOccurrence");
+  });
+
+  test("a cut always ends a rule that still runs past the split", () => {
+    // Twice a day ten times (to Nov 13), and every 4 hours ten times:
+    // cut at Nov 10 9:00, both end the second before, whatever the rule.
+    for (const rule of [
+      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=10",
+      "RRULE:FREQ=HOURLY;INTERVAL=4;COUNT=10",
+    ]) {
+      const [cut] = truncateRecurrenceForFollowing(
+        [rule],
+        "2026-11-10T09:00:00-05:00",
+        zone,
+        seriesStart.dateTime
+      );
+      expect(cut).toContain("UNTIL=20261110T135959Z");
+      expect(cut).not.toContain("COUNT=");
+    }
+  });
+
   test("a cut never lengthens a rule that already ended", () => {
     // Deleting from that Nov 20 meeting on keeps the rule's own end.
     for (const rule of [

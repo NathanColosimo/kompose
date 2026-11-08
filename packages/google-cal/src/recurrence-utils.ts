@@ -2,12 +2,13 @@ import { Temporal } from "temporal-polyfill";
 import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
 import {
+  countedRuleMeetings,
   parseDateList,
   type RecurrenceValue,
   readRecurrenceValue,
+  ruleTimesOf,
   untilMoment,
   untilRuleForDay,
-  untilRuleToDay,
 } from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
@@ -41,7 +42,6 @@ export function truncateRecurrenceForFollowing(
         .toString()
         .slice(0, 19)
         .replace(/[-:]/g, "")}Z`;
-  const first = seriesStart ? asValue(seriesStart, seriesZone)?.day : null;
   const splitDay = DATE_ONLY.test(originalStart)
     ? Temporal.PlainDate.from(originalStart)
     : Temporal.Instant.from(originalStart)
@@ -51,21 +51,11 @@ export function truncateRecurrenceForFollowing(
   const splitMoment = DATE_ONLY.test(originalStart)
     ? splitDay.toZonedDateTime({ timeZone: seriesZone }).toInstant()
     : Temporal.Instant.from(originalStart);
-  // Whether a rule already ends before the split: its UNTIL's moment, or
-  // its last COUNT position's day (unreadable counts as ended).
-  const endsBeforeSplit = (line: string) => {
-    const ownUntil = UNTIL_VALUE.exec(line)?.[1];
-    if (ownUntil) {
-      const end = untilMoment(ownUntil, seriesZone);
-      return !end || Temporal.Instant.compare(end, splitMoment) < 0;
-    }
-    const count = Number(COUNT_REGEX.exec(line)?.[1]);
-    if (!(first && Number.isFinite(count))) {
-      return false;
-    }
-    const last = countedRuleDays(line, first, count)?.at(-1);
-    return !last || Temporal.PlainDate.compare(last, splitDay) < 0;
-  };
+  const firstValue = seriesStart ? asValue(seriesStart, seriesZone) : null;
+  // A rule that ends before the split keeps its end; one that can't be
+  // told is cut, so nothing after the split is left running.
+  const endsBeforeSplit = (line: string) =>
+    ruleEndsBefore(line, firstValue, splitMoment, seriesZone) === true;
   return splitAddedDays(recurrence, originalStart, seriesZone, "before").map(
     (line) => {
       if (!line.startsWith("RRULE:")) {
@@ -173,6 +163,17 @@ function hasAddedDays(recurrence: string[]): boolean {
 /** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
 function asValue(start: string, seriesZone: string): RecurrenceValue | null {
   return readRecurrenceValue(start, seriesZone, seriesZone);
+}
+
+/** A value as a moment: its own, or its day's start in `seriesZone`. */
+function momentOf(
+  value: RecurrenceValue,
+  seriesZone: string
+): Temporal.Instant {
+  return (
+    value.instant ??
+    value.day.toZonedDateTime({ timeZone: seriesZone }).toInstant()
+  );
 }
 
 /** A value's place in time: its moment, or its day's start (UTC). */
@@ -314,7 +315,12 @@ export function followingSplitBlocked(params: {
     rule &&
     first &&
     isRuleDay(rule, first.day, split.day) === true &&
-    !ruleEndedBy(rule, first.day, split.day, params.seriesZone) &&
+    ruleEndsBefore(
+      rule,
+      first,
+      momentOf(split, params.seriesZone),
+      params.seriesZone
+    ) === false &&
     (!(firstClock && splitClock) ||
       Temporal.PlainTime.compare(ruleClock(rule, firstClock), splitClock) ===
         0);
@@ -322,27 +328,53 @@ export function followingSplitBlocked(params: {
 }
 
 /**
- * Whether `rule`, from the series' first day, has ended before `day`:
- * past its UNTIL day, or past its last COUNT position (or its positions
- * can't be walked, taken as ended so nothing extends it).
+ * Whether `rule` ends before `split` (a moment): its UNTIL's moment is
+ * earlier, or its last COUNT meeting is (counted from the series' `first`
+ * start, each time of a rule meeting several times a day). Null when that
+ * can't be told: a rule it can't walk, or no first start.
  */
-function ruleEndedBy(
+function ruleEndsBefore(
   rule: string,
-  first: Temporal.PlainDate,
-  day: Temporal.PlainDate,
+  first: RecurrenceValue | null,
+  split: Temporal.Instant,
   seriesZone: string
-): boolean {
+): boolean | null {
   const until = UNTIL_VALUE.exec(rule)?.[1];
   if (until) {
-    const last = untilRuleToDay(until, seriesZone);
-    return !last || Temporal.PlainDate.compare(day, last) > 0;
+    const end = untilMoment(until, seriesZone);
+    return end ? Temporal.Instant.compare(end, split) < 0 : null;
   }
   const count = Number(COUNT_REGEX.exec(rule)?.[1]);
   if (!Number.isFinite(count)) {
     return false;
   }
-  const last = countedRuleDays(rule, first, count)?.at(-1);
-  return !last || Temporal.PlainDate.compare(day, last) > 0;
+  if (!first) {
+    return null;
+  }
+  const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
+  const times = clock ? ruleTimesOf(rule, clock) : null;
+  if (clock && times && times.length > 1) {
+    const meetings = countedRuleMeetings({
+      base: clock,
+      count,
+      from: first.day,
+      rule,
+      times,
+      timeZone: seriesZone,
+    });
+    return meetings && meetings.size === count
+      ? Math.max(...meetings) < split.epochMilliseconds
+      : null;
+  }
+  const last = countedRuleDays(rule, first.day, count)?.at(-1);
+  if (!last) {
+    return null;
+  }
+  // Its last day's meeting, at the series' time (or that day's start).
+  const lastAt = last
+    .toZonedDateTime({ plainTime: clock ?? undefined, timeZone: seriesZone })
+    .toInstant();
+  return Temporal.Instant.compare(lastAt, split) < 0;
 }
 
 /**

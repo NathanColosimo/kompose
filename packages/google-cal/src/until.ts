@@ -456,7 +456,7 @@ function matchDateList(
  * time `base`; null when they can't be listed (a sub-daily rule, or a
  * part left out with no `base`).
  */
-function ruleTimesOf(
+export function ruleTimesOf(
   rule: string,
   base: Temporal.PlainTime | null
 ): Temporal.PlainTime[] | null {
@@ -548,7 +548,7 @@ function existsOn(
  * order from the series' first day `from` (from its start time `base`
  * that day), up to `count`; null when its days can't be read.
  */
-function countedRuleMeetings(params: {
+export function countedRuleMeetings(params: {
   base: Temporal.PlainTime | null;
   count: number;
   from: Temporal.PlainDate;
