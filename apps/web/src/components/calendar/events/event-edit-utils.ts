@@ -1,9 +1,15 @@
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { dayOfStart } from "@kompose/google-cal/until";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
 import { GOOGLE_EVENT_WEEKDAYS } from "@kompose/state/google-event-recurrence";
+import {
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+} from "@kompose/state/recurrence-scope-options";
 import { seriesEditFields } from "@kompose/state/series-edit";
 import { ORPCError } from "@orpc/client";
-import type { Temporal } from "temporal-polyfill";
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
 
 export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
@@ -118,12 +124,12 @@ export function seriesSave(
 
 /**
  * The server's refusal of a series write, from a failed save: a
- * BAD_REQUEST whose data says why (packages/google-cal's SeriesRefusal,
- * worded in its message). Retrying won't help, so the editor shows it.
+ * BAD_REQUEST whose data says why (packages/google-cal's SeriesRefusal),
+ * worded in its message. A retry won't help, so the editor shows it.
  */
 export function seriesRefusal(
   error: unknown
-): { message: string; originalStarts: unknown; reason: unknown } | null {
+): { message: string; reason: unknown } | null {
   if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
     return null;
   }
@@ -131,38 +137,42 @@ export function seriesRefusal(
   if (!(typeof data === "object" && data !== null && "reason" in data)) {
     return null;
   }
-  return {
-    message: error.message,
-    originalStarts: "originalStarts" in data ? data.originalStarts : undefined,
-    reason: data.reason,
-  };
+  return { message: error.message, reason: data.reason };
+}
+
+/** The scopes the server refused for one pending save, and its latest reason. */
+export interface Refusals {
+  message: string;
+  scopes: Partial<Record<RecurrenceScope, true>>;
+}
+
+/** `refused` with `scope` refused too, for `message`. */
+export function refuse(
+  refused: Refusals | null,
+  scope: RecurrenceScope,
+  message: string
+): Refusals {
+  return { message, scopes: { ...refused?.scopes, [scope]: true } };
 }
 
 /**
- * The day of the first moved (rescheduled) meeting a series save would
- * have undone, when the server refused it for that
- * (`dropsChangedOccurrences`, with the meetings' original starts as Google
- * writes them), in the series' zone; null for any other failure.
+ * The save scope dialog: the shared rules and the line saying why each
+ * scope that's off is, plus the scopes the server refused for this save,
+ * turned off and led by its latest reason.
  */
-export function refusedDropDay(
-  error: unknown,
-  timeZone: string
-): Temporal.PlainDate | null {
-  const refusal = seriesRefusal(error);
-  if (
-    !(
-      refusal?.reason === "dropsChangedOccurrences" &&
-      Array.isArray(refusal.originalStarts)
-    )
-  ) {
-    return null;
-  }
-  const [first] = refusal.originalStarts;
-  if (typeof first !== "string") {
-    return null;
-  }
-  return dayOfStart(
-    first.includes("T") ? { dateTime: first } : { date: first },
-    timeZone
-  );
+export function saveScopeDialog(
+  changes: EventSaveChanges,
+  refused: Refusals | null
+): {
+  description: string;
+  disabled: Partial<Record<RecurrenceScope, boolean>>;
+} {
+  const description = eventSaveDescription(changes);
+  const disabled = eventSaveDisabledScopes(changes);
+  return refused
+    ? {
+        description: `${refused.message} ${description}`,
+        disabled: { ...disabled, ...refused.scopes },
+      }
+    : { description, disabled };
 }

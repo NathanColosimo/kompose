@@ -588,6 +588,7 @@ function RepeatNote({
 }
 
 const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
+const CHIP_SLOT_STYLE = { flexGrow: 1, maxWidth: "100%" } as const;
 
 /**
  * The schedule row: duration, start date and time, due date, and the
@@ -612,12 +613,14 @@ function TaskScheduleChips({
   // A date, time or due chip: as wide as its text (the picker's trigger
   // otherwise spans its parent), so it fits any locale's format, with its
   // text centered when the chip grows. (Centering the text itself would
-  // make iOS measure it at the full width available.) The side padding
-  // grows with the text.
+  // make iOS measure it at the full width available.) Never under 44pt
+  // wide, for a short value like "Due"; the side padding grows with the
+  // text.
   const chipStyle = {
     borderRadius: 999,
     justifyContent: "center",
     minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: scaled(6),
     width: "auto",
   } as const;
@@ -660,8 +663,8 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Fills what's left of its line. */}
-      <View style={{ flexGrow: 1, maxWidth: "100%" }}>
+      {/* The date, time and due chips share what's left of their line. */}
+      <View style={CHIP_SLOT_STYLE}>
         <DatePicker
           accessibilityLabel="Start date"
           displayValue={
@@ -683,7 +686,7 @@ function TaskScheduleChips({
           variant="outline"
         />
       </View>
-      <View style={{ maxWidth: "100%" }}>
+      <View style={CHIP_SLOT_STYLE}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -705,52 +708,49 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Due and Repeat stay together when the row wraps. */}
-      <View className="max-w-full flex-row items-center gap-1">
-        <View style={{ flexShrink: 1 }}>
-          <DatePicker
-            accessibilityLabel="Due date"
-            displayValue={
-              draft.dueDate ? `Due ${formatShortDate(draft.dueDate)}` : "Due"
-            }
-            mode="date"
-            onChange={(date) =>
-              setDraft((current) => ({
-                ...current,
-                dueDate: date ? dateToPlainDate(date) : null,
-              }))
-            }
-            placeholder="Due"
-            showIcon={false}
-            style={chipStyle}
-            value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={CHIP_TEXT_STYLE}
-            variant="outline"
-          />
-        </View>
-
-        <Button
-          accessibilityLabel="Repeat"
-          accessibilityState={{ expanded: isRecurrenceExpanded }}
-          accessibilityValue={{
-            text: draft.recurrence ? recurrenceSummary : "None",
-          }}
-          onPress={onToggleRecurrence}
-          size="icon"
-          style={{ borderRadius: 999, height: 44, width: 44 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
+      {/* Due and Repeat wrap on their own: when the due date needs a whole
+          line, Repeat moves to the next one rather than squeezing it. */}
+      <View style={CHIP_SLOT_STYLE}>
+        <DatePicker
+          accessibilityLabel="Due date"
+          displayValue={
+            draft.dueDate ? `Due ${formatShortDate(draft.dueDate)}` : "Due"
+          }
+          mode="date"
+          onChange={(date) =>
+            setDraft((current) => ({
+              ...current,
+              dueDate: date ? dateToPlainDate(date) : null,
+            }))
+          }
+          placeholder="Due"
+          showIcon={false}
+          style={chipStyle}
+          value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
+          valueTextStyle={CHIP_TEXT_STYLE}
+          variant="outline"
+        />
       </View>
+
+      <Button
+        accessibilityLabel="Repeat"
+        accessibilityState={{ expanded: isRecurrenceExpanded }}
+        accessibilityValue={{
+          text: draft.recurrence ? recurrenceSummary : "None",
+        }}
+        onPress={onToggleRecurrence}
+        size="icon"
+        style={{ borderRadius: 999, height: 44, width: 44 }}
+        variant={isRecurrenceExpanded ? "default" : "outline"}
+      >
+        <Icon
+          as={Repeat2}
+          className={
+            isRecurrenceExpanded ? "text-primary-foreground" : "text-foreground"
+          }
+          size={14}
+        />
+      </Button>
     </View>
   );
 }
@@ -1076,62 +1076,87 @@ function NativeLinkListEditor({
 
   return (
     <>
-      {links.map((meta, index) => (
-        <View
-          className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
-          key={meta.url}
-        >
-          {meta.thumbnailUrl ? (
-            <Pressable onPress={() => Linking.openURL(meta.url)}>
-              <Image
-                source={{ uri: meta.thumbnailUrl }}
-                style={{ borderRadius: 4, height: 40, width: 40 }}
-              />
-            </Pressable>
-          ) : null}
-          <Pressable
-            className="min-w-0 flex-1"
-            onPress={() => Linking.openURL(meta.url)}
+      {links.map((meta, index) => {
+        const providerLabel = getProviderLabel(meta.provider);
+        const durationMinutes = getLinkDurationMinutes(meta);
+        const wordCount = getLinkWordCount(meta);
+        return (
+          <View
+            className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
+            key={meta.url}
           >
-            <Text
-              className="font-semibold text-foreground text-sm"
-              numberOfLines={1}
+            {meta.thumbnailUrl ? (
+              <Pressable
+                // The title beside it opens the same link, so VoiceOver reads
+                // that one only. 40pt; the slop (inside the card's padding)
+                // makes the target 44pt.
+                accessibilityElementsHidden
+                hitSlop={2}
+                importantForAccessibility="no-hide-descendants"
+                onPress={() => Linking.openURL(meta.url)}
+              >
+                <Image
+                  source={{ uri: meta.thumbnailUrl }}
+                  style={{ borderRadius: 4, height: 40, width: 40 }}
+                />
+              </Pressable>
+            ) : null}
+            <Pressable
+              // Spoken as one link; "12m" would be read as meters.
+              accessibilityLabel={[
+                meta.title ?? "Untitled",
+                providerLabel,
+                durationMinutes === null
+                  ? null
+                  : spokenDuration(durationMinutes),
+                wordCount === null
+                  ? null
+                  : `${wordCount.toLocaleString()} words`,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+              accessibilityRole="link"
+              className="min-w-0 flex-1"
+              // About 38pt tall; the slop (inside the card's padding) makes 44.
+              hitSlop={{ bottom: 3, top: 3 }}
+              onPress={() => Linking.openURL(meta.url)}
             >
-              {meta.title ?? "Untitled"}
-            </Text>
-            <Text className="mt-0.5 text-muted-foreground text-xs">
-              {getProviderLabel(meta.provider)}
-              {(() => {
-                const dur = getLinkDurationMinutes(meta);
-                return dur === null ? "" : ` · ${dur}m`;
-              })()}
-              {(() => {
-                const wc = getLinkWordCount(meta);
-                return wc === null ? "" : ` · ${wc.toLocaleString()} words`;
-              })()}
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
-            accessibilityRole="button"
-            onPress={() => onRemoveLink(index)}
-            // 44pt to touch around the 16pt icon, laid out as before (16pt,
-            // 2pt down) by the negative margins; hitSlop would be clipped
-            // at the card's edge.
-            style={{
-              alignItems: "center",
-              height: 44,
-              justifyContent: "center",
-              marginBottom: -14,
-              marginHorizontal: -14,
-              marginTop: -12,
-              width: 44,
-            }}
-          >
-            <Icon as={XCircle} className="text-muted-foreground" size={16} />
-          </Pressable>
-        </View>
-      ))}
+              <Text
+                className="font-semibold text-foreground text-sm"
+                numberOfLines={1}
+              >
+                {meta.title ?? "Untitled"}
+              </Text>
+              <Text className="mt-0.5 text-muted-foreground text-xs">
+                {providerLabel}
+                {durationMinutes === null ? "" : ` · ${durationMinutes}m`}
+                {wordCount === null
+                  ? ""
+                  : ` · ${wordCount.toLocaleString()} words`}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
+              accessibilityRole="button"
+              onPress={() => onRemoveLink(index)}
+              // 44pt to touch around the 16pt icon, laid out as before (16pt,
+              // 2pt down) by the negative margins; hitSlop would be clipped
+              // at the card's edge.
+              style={{
+                alignItems: "center",
+                height: 44,
+                justifyContent: "center",
+                marginBottom: -14,
+                marginHorizontal: -14,
+                marginTop: -12,
+                width: 44,
+              }}
+            >
+              <Icon as={XCircle} className="text-muted-foreground" size={16} />
+            </Pressable>
+          </View>
+        );
+      })}
 
       <View className="mb-2.5 flex-row items-center gap-2">
         <View
