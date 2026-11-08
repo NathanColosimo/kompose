@@ -32,7 +32,8 @@ export function HeldFieldset({
  * Why a held save failed, beside the editor's Save button: a toast in a
  * corner could land on the editor it's about. It takes focus when it
  * appears, since the fields remounted when the save started and focus was
- * lost; a screen reader reads it, and Tab carries on from here.
+ * lost; a screen reader reads it then (no alert role, which would read it
+ * twice), and Tab carries on from here.
  */
 export function SaveFailure({
   className,
@@ -50,8 +51,8 @@ export function SaveFailure({
   return message ? (
     <p
       className={cn("text-destructive text-xs outline-none", className)}
+      data-slot="save-failure"
       ref={ref}
-      role="alert"
       tabIndex={-1}
     >
       {message}

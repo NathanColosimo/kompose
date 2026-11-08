@@ -1273,6 +1273,7 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading,
   readOnly = false,
   recurrenceRule,
+  startWeekday,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1284,6 +1285,8 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading: boolean;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
+  /** The start's weekday (1 Monday to 7 Sunday), for the rule's words. */
+  startWeekday: number | undefined;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1296,7 +1299,7 @@ function EventAllDayAndRecurrenceRow({
 }) {
   // "Repeats weekly on Mon" reads as "Weekly on Mon" on the button.
   const repeats = recurrenceRule
-    ? describeEventRecurrence({ rules: [recurrenceRule] })
+    ? describeEventRecurrence({ rules: [recurrenceRule], startWeekday })
     : null;
   const repeatLabel = repeats
     ? repeats
@@ -1585,6 +1588,7 @@ function ReadOnlyEventDetails({
     eventType: event?.eventType,
     recurringEventId: event?.recurringEventId,
     rules: recurrence,
+    startWeekday: start.getDay() || 7,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -2325,6 +2329,11 @@ export function EventEditForm({
         readOnly={readOnly}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
+        startWeekday={
+          watchedValues.startDate
+            ? watchedValues.startDate.getDay() || 7
+            : undefined
+        }
       />
       <div className="grid grid-cols-2 gap-2">
         <Controller

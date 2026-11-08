@@ -234,6 +234,9 @@ const DAY_NAMES: Record<string, string> = {
 
 const INTERVAL_PATTERN = /INTERVAL=(\d+)/;
 
+/** RRULE weekday codes by Temporal dayOfWeek (1 Monday to 7 Sunday). */
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 const FREQUENCY_WORDS: Record<string, [string, string] | undefined> = {
   DAILY: ["daily", "days"],
   MONTHLY: ["monthly", "months"],
@@ -251,6 +254,11 @@ export function describeEventRecurrence(params: {
   eventType?: string | null;
   recurringEventId?: string | null;
   rules: string[] | null | undefined;
+  /**
+   * The start's weekday (1 Monday to 7 Sunday): a weekly rule with no days
+   * repeats on it, and says so ("Repeats weekly on Sat").
+   */
+  startWeekday?: number;
 }): string | null {
   const rule = getPrimaryRecurrenceRule(params.rules ?? []) ?? undefined;
   const { byDay, freq } = parseGoogleEventRecurrenceRule(rule);
@@ -269,7 +277,11 @@ export function describeEventRecurrence(params: {
     interval > 1
       ? `Repeats every ${interval} ${words[1]}`
       : `Repeats ${words[0]}`;
-  const days = byDay
+  const startDay = params.startWeekday
+    ? WEEKDAY_CODES[params.startWeekday - 1]
+    : undefined;
+  const shownDays = byDay.length > 0 || !startDay ? byDay : [startDay];
+  const days = shownDays
     .map((code) => DAY_NAMES[code.slice(-2)])
     .filter(Boolean)
     .join(", ");

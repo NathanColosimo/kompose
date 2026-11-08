@@ -165,7 +165,10 @@ function RecurrenceRow({
   recurrence: string[];
 }) {
   const repeats =
-    describeEventRecurrence({ rules: recurrence }) ?? "Doesn't repeat";
+    describeEventRecurrence({
+      rules: recurrence,
+      startWeekday: editor.startDate.dayOfWeek,
+    }) ?? "Doesn't repeat";
   return (
     <>
       <Pressable
@@ -218,7 +221,8 @@ function RecurrenceEditorSection({
       : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
-      <View className="flex-row flex-wrap gap-2">
+      {/* Four equal chips in one row. */}
+      <View className="flex-row gap-1.5">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
           const active = parsedRecurrence.freq === frequency.value;
           return (
@@ -237,6 +241,7 @@ function RecurrenceEditorSection({
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
+              style={{ borderRadius: 999, flex: 1, paddingHorizontal: 0 }}
               variant={active ? "default" : "outline"}
             >
               <Text>{frequency.label}</Text>
@@ -525,6 +530,7 @@ function ReadOnlyEventView({
     eventType: source?.eventType,
     recurringEventId: source?.recurringEventId,
     rules: draft.recurrence,
+    startWeekday: draft.startDate.dayOfWeek,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -1276,26 +1282,8 @@ export function EventEditorSheet({
       title={sheetTitle}
     >
       <HeldWhileSaving isSaving={isSaving}>
-        <EventDateTimeRow
-          allDay={allDay}
-          endDate={endDate}
-          endDatePickerValue={endDatePickerValue}
-          endTimePickerValue={endTimePickerValue}
-          getValues={getValues}
-          setValue={setValue}
-          startDate={startDate}
-          startDatePickerValue={startDatePickerValue}
-          startTimePickerValue={startTimePickerValue}
-        />
-        {/* Save stays off until the end comes after the start; say why. */}
-        {endsAfterStart(values) ? null : (
-          <Text className="-mt-1 mb-2.5 text-destructive text-xs">
-            Ends before it starts.
-          </Text>
-        )}
-
-        {recurrenceEditor}
-
+        {/* The title first: it's the most-edited field, and on create the
+            first thing typed. */}
         <View className="mb-2.5 flex-row items-center gap-2">
           <EventColorPicker
             borderColor={borderColor}
@@ -1318,6 +1306,26 @@ export function EventEditorSheet({
             variant="outline"
           />
         </View>
+
+        <EventDateTimeRow
+          allDay={allDay}
+          endDate={endDate}
+          endDatePickerValue={endDatePickerValue}
+          endTimePickerValue={endTimePickerValue}
+          getValues={getValues}
+          setValue={setValue}
+          startDate={startDate}
+          startDatePickerValue={startDatePickerValue}
+          startTimePickerValue={startTimePickerValue}
+        />
+        {/* Save stays off until the end comes after the start; say why. */}
+        {endsAfterStart(values) ? null : (
+          <Text className="-mt-1 mb-2.5 text-destructive text-xs">
+            Ends before it starts.
+          </Text>
+        )}
+
+        {recurrenceEditor}
 
         <EventAllDayAndMeetingRow
           allDay={allDay}

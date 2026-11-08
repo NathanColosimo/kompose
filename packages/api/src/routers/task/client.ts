@@ -698,9 +698,9 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
 
 /**
  * Replace this and later non-exception occurrences with a new recurrence
- * pattern. The old series ends before the edited occurrence's original
- * date; the new one starts where it now is (its new date when the edit
- * moves it). Exceptions (edited
+ * pattern. The old series ends before the edit's boundary (the earlier of
+ * the edited occurrence's original and new dates); the new one starts
+ * where it now is. Exceptions (edited
  * alone, or done) stay, and the new pattern leaves their dates out instead
  * of doubling them.
  *
@@ -718,10 +718,17 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // standalone task, and drops the later ordinary occurrences.
   const ending = !recurrence;
   const keepEdited = ending || keepsEditedOccurrence(task, input);
+  // The series splits where the edit starts: the earlier of the edited
+  // occurrence's original and new dates, so a move earlier doesn't leave
+  // old occurrences under the new ones.
+  const boundary =
+    input.startDate && input.startDate < task.startDate
+      ? input.startDate
+      : task.startDate;
   yield* dbDeleteNonExceptionsBySeriesFrom(
     userId,
     task.seriesMasterId,
-    task.startDate,
+    boundary,
     keepEdited ? task.id : undefined
   );
 
@@ -736,7 +743,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
 
   // The earlier part of the series stops the day before the edit, so its
   // master no longer claims to repeat past it.
-  const endedMaster = yield* endSeriesBefore(userId, task);
+  const endedMaster = yield* endSeriesBefore(userId, task, boundary);
 
   if (!recurrence) {
     // Exceptions after the boundary (moved, renamed, or done alone) become
@@ -744,7 +751,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     // repeats there.
     const detached = yield* dbDetachExceptionsFrom({
       editedId: task.id,
-      fromDate: task.startDate,
+      fromDate: boundary,
       seriesMasterId: task.seriesMasterId,
       userId,
     });
@@ -758,7 +765,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     (yield* dbSelectExceptionDatesBySeriesFrom(
       userId,
       task.seriesMasterId,
-      task.startDate
+      boundary
     )).flatMap((row) => (row.startDate ? [row.startDate] : []))
   );
   if (updatedAnchor[0]?.startDate) {
@@ -785,7 +792,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // pattern rather than the old one.
   const moved = yield* dbMoveExceptionsToSeries({
     editedId: task.id,
-    fromDate: task.startDate,
+    fromDate: boundary,
     fromSeriesMasterId: task.seriesMasterId,
     toSeriesMasterId: seriesMasterId,
     userId,
@@ -807,7 +814,9 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
  */
 const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   userId: string,
-  task: DatedSeriesTask
+  task: DatedSeriesTask,
+  /** The first date the earlier part no longer covers. */
+  boundary: string
 ) {
   if (task.seriesMasterId === task.id) {
     return [] as TaskSelect[];
@@ -820,9 +829,7 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   return yield* dbUpdate(userId, master.id, {
     recurrence: {
       ...pattern,
-      until: Temporal.PlainDate.from(task.startDate)
-        .subtract({ days: 1 })
-        .toString(),
+      until: Temporal.PlainDate.from(boundary).subtract({ days: 1 }).toString(),
     },
   });
 });

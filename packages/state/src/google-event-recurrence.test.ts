@@ -26,6 +26,18 @@ describe("describeEventRecurrence", () => {
   });
 });
 
+test("names the start's weekday for a weekly rule with no days", () => {
+  expect(
+    describeEventRecurrence({ rules: ["RRULE:FREQ=WEEKLY"], startWeekday: 6 })
+  ).toBe("Repeats weekly on Sat");
+  expect(
+    describeEventRecurrence({
+      rules: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+      startWeekday: 6,
+    })
+  ).toBe("Repeats weekly on Mon");
+});
+
 describe("setPrimaryRecurrenceRule", () => {
   const exdate = "EXDATE;TZID=America/New_York:20261117T090000";
   test("swaps the rule and keeps deleted occurrences", () => {

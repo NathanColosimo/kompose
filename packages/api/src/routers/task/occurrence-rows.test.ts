@@ -61,11 +61,11 @@ describe("keepsEditedOccurrence", () => {
 
 describe("regeneratedOccurrenceRows", () => {
   test("starts every new occurrence open, even from a done one", () => {
+    // Nov 9 (a Monday, kept) is the first of the four; three are new.
     expect(rows({ recurrence: tuesdays }, true, ["2026-11-09"])).toEqual([
       "2026-11-10 todo R",
       "2026-11-17 todo",
       "2026-11-24 todo",
-      "2026-12-01 todo",
     ]);
   });
 
@@ -119,6 +119,19 @@ describe("regeneratedOccurrenceRows", () => {
     expect(first?.startTime).toBeNull();
   });
 
+  test("keeps a moved occurrence the new pattern wouldn't land on", () => {
+    // Moved to Tuesday Nov 10, every 2 weeks on Monday: Nov 10 stays first.
+    expect(
+      rows(
+        {
+          recurrence: { ...tuesdays, byDay: ["MO"], count: 3, interval: 2 },
+          startDate: "2026-11-10",
+        },
+        false
+      )
+    ).toEqual(["2026-11-10 done R", "2026-11-23 todo", "2026-12-07 todo"]);
+  });
+
   test("starts the new pattern where the edit moves the occurrence", () => {
     // Moved to Nov 12 with Daily x3, nothing else: the series is Nov 12-14,
     // the moved occurrence first, keeping its status.
@@ -136,11 +149,6 @@ describe("regeneratedOccurrenceRows", () => {
       rows({ recurrence: tuesdays, startDate: "2026-11-23" }, true, [
         "2026-11-23",
       ])
-    ).toEqual([
-      "2026-11-24 todo R",
-      "2026-12-01 todo",
-      "2026-12-08 todo",
-      "2026-12-15 todo",
-    ]);
+    ).toEqual(["2026-11-24 todo R", "2026-12-01 todo", "2026-12-08 todo"]);
   });
 });

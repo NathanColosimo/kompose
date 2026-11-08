@@ -102,6 +102,8 @@ export function EventCreationPopover() {
     if (nextMode === mode) {
       return;
     }
+    // A failed create's message belongs to the other form.
+    setFailure(null);
 
     const currentInterop =
       mode === "event" ? eventInteropRef.current : taskInteropRef.current;
