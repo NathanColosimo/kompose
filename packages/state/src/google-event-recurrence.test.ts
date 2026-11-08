@@ -1608,6 +1608,7 @@ describe("repeatCountingDay", () => {
       timeZone: zone,
     },
     recurringEventId: "m1",
+    start: { dateTime: "2026-11-08T16:00:00-05:00", timeZone: zone },
   };
   const tuesday = Temporal.PlainDate.from("2026-11-10");
 
@@ -1636,7 +1637,7 @@ describe("repeatCountingDay", () => {
     ).toBe("2026-11-08");
   });
 
-  test("a moved occurrence's changed repeat counts from the moved day", () => {
+  test("a changed repeat on a day moved in this edit counts from the new day", () => {
     // The only save left starts a new series on Tuesday.
     expect(
       repeatCountingDay({
@@ -1648,6 +1649,24 @@ describe("repeatCountingDay", () => {
     ).toBe("2026-11-10");
   });
 
+  test("a changed repeat on one moved before counts from its own place", () => {
+    // Sunday's meeting was moved to Tuesday earlier; this edit only
+    // changes the repeat. The new series starts at its place in the
+    // series, Sunday, not at the day it was moved to.
+    const movedBefore = {
+      ...sunday,
+      start: { dateTime: "2026-11-10T11:00:00-05:00", timeZone: zone },
+    };
+    expect(
+      repeatCountingDay({
+        changed: true,
+        event: movedBefore,
+        formDay: tuesday,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-11-08");
+  });
+
   test("an all-day occurrence's day is its date", () => {
     expect(
       repeatCountingDay({
@@ -1655,6 +1674,7 @@ describe("repeatCountingDay", () => {
         event: {
           originalStartTime: { date: "2026-11-30" },
           recurringEventId: "m1",
+          start: { date: "2026-11-30" },
         },
         formDay: tuesday,
         timeZone: zone,
@@ -1670,6 +1690,7 @@ describe("repeatCountingDay", () => {
         event: {
           originalStartTime: { dateTime: "2026-11-08T20:00:00-05:00" },
           recurringEventId: "m1",
+          start: { dateTime: "2026-11-08T20:00:00-05:00" },
         },
         formDay: null,
         timeZone: "Asia/Tokyo",
@@ -1685,6 +1706,7 @@ describe("repeatCountingDay", () => {
         event: {
           originalStartTime: { dateTime: "2026-11-10T16:00:00-05:00" },
           recurringEventId: "m1",
+          start: { dateTime: "2026-11-10T16:00:00-05:00" },
         },
         formDay: tuesday,
         seriesStart: { dateTime: "2026-10-04T16:00:00-04:00" },

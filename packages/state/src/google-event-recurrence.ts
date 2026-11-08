@@ -555,9 +555,11 @@ function sameStart(a: StartTime, b: StartTime | undefined): boolean {
  * occurrence's place in the series (where the rule puts it): moving
  * this one occurrence doesn't change how the series is described
  * ("weekly" stays on the series' Sunday, not the Tuesday it's moved to).
- * A repeat the user changed, or any other event's, counts from the form's
- * start, where the save puts the series (a changed repeat on a moved
- * occurrence can only start a new series there).
+ * A repeat the user changed counts from where the save starts the new
+ * series: a day this edit moves it to (a changed repeat on a newly moved
+ * day can only start a new series there), else its place in the series,
+ * even if it was moved there before (that move is its own, not the new
+ * series'). Any other event's counts from the form's start.
  */
 export function repeatCountingDay(params: {
   /**
@@ -566,7 +568,7 @@ export function repeatCountingDay(params: {
    */
   changed: boolean;
   event:
-    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
     | null
     | undefined;
   /** The form's start day, in the series' zone. */
@@ -575,17 +577,24 @@ export function repeatCountingDay(params: {
   seriesStart?: StartTime | null;
   timeZone: string;
 }): Temporal.PlainDate | null {
-  const { changed, event, timeZone } = params;
-  if (changed || !event?.recurringEventId) {
-    return params.formDay;
+  const { changed, event, formDay, timeZone } = params;
+  if (!event?.recurringEventId) {
+    return formDay;
+  }
+  const placed = event.originalStartTime
+    ? dayOfStart(event.originalStartTime, timeZone)
+    : null;
+  if (changed) {
+    const now = dayOfStart(event.start, timeZone);
+    const movedNow = Boolean(
+      formDay && now && Temporal.PlainDate.compare(formDay, now) !== 0
+    );
+    return movedNow ? formDay : (placed ?? formDay);
   }
   const first = params.seriesStart
     ? dayOfStart(params.seriesStart, timeZone)
     : null;
-  const placed = event.originalStartTime
-    ? dayOfStart(event.originalStartTime, timeZone)
-    : null;
-  return first ?? placed ?? params.formDay;
+  return first ?? placed ?? formDay;
 }
 
 /**
