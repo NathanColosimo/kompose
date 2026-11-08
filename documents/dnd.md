@@ -73,6 +73,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 - Tasks: `orpc.tasks.update` with optimistic updates and refetch on settle.
 - Google events: `orpc.googleCal.events.update` with invalidate on settle.
+- A recurring event's occurrence (moved or resized) asks for the scope first, in the shared event scope dialog (`eventSaveDisabledScopes`), as the editor does: a new day applies to this occurrence, or from it on (the rule following the new day, once the series' rule has loaded); a time-only change can also apply to the entire series. Recurring tasks ask this-or-following the same way.
 - Payloads built via `buildTaskMoveUpdate`, `buildTaskResizeUpdate`, `buildGoogleMoveUpdate`, `buildGoogleResizeUpdate`.
 - Task payloads carry `Temporal.PlainDate` and `Temporal.PlainTime`; Google event payloads carry offset date-time strings plus `timeZone`. See [temporal.md](./temporal.md#task-scheduling) for task storage and codecs.
 

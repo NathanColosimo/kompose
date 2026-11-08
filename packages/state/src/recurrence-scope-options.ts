@@ -78,10 +78,13 @@ export function eventSaveDisabledScopes(
   if (changes.calendarChanged) {
     return { following: true, this: true };
   }
+  // A changed rule is the user's own, sent with the save: it doesn't wait
+  // for the series' rule to load.
+  const ruleKnown = changes.seriesRuleLoaded || changes.patternChanged;
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(changes.dateMoved
-      ? { all: true, ...(changes.seriesRuleLoaded ? {} : { following: true }) }
+      ? { all: true, ...(ruleKnown ? {} : { following: true }) }
       : {}),
   };
 }

@@ -8,7 +8,7 @@ describe("seriesTimesForEdit", () => {
   const masterStart = { dateTime: "2026-10-06T09:00:00-04:00", timeZone: zone };
   const masterEnd = { dateTime: "2026-10-06T09:30:00-04:00", timeZone: zone };
 
-  test("keeps the series' first day and wall-clock time across a DST change", () => {
+  test("a rename leaves the series' times alone", () => {
     // A title edit through a 9:00 EST occurrence, sent in UTC.
     expect(
       seriesTimesForEdit({
@@ -96,5 +96,41 @@ describe("seriesTimesForEdit", () => {
         occurrenceStart: rescheduledStart,
       })
     ).toEqual({ end: masterEnd, start: masterStart });
+  });
+
+  test("reads the edit's offset when no zone comes with it", () => {
+    // An all-day series made 9:00 at -05:00, with no time zone sent.
+    expect(
+      seriesTimesForEdit({
+        editedEnd: { dateTime: "2026-11-10T10:00:00-05:00" },
+        editedStart: { dateTime: "2026-11-10T09:00:00-05:00" },
+        masterEnd: { date: "2026-10-07" },
+        masterStart: { date: "2026-10-06" },
+        occurrenceEnd: { date: "2026-11-11" },
+        occurrenceStart: { date: "2026-11-10" },
+      })
+    ).toEqual({
+      end: { dateTime: "2026-10-06T10:00:00-05:00" },
+      start: { dateTime: "2026-10-06T09:00:00-05:00" },
+    });
+  });
+
+  test("reads a dateTime without an offset in its zone", () => {
+    expect(
+      seriesTimesForEdit({
+        editedEnd: { dateTime: "2026-11-10T11:00:00", timeZone: zone },
+        editedStart: { dateTime: "2026-11-10T10:00:00", timeZone: zone },
+        masterEnd,
+        masterStart,
+        occurrenceEnd: { dateTime: "2026-11-10T14:30:00.000Z", timeZone: zone },
+        occurrenceStart: {
+          dateTime: "2026-11-10T14:00:00.000Z",
+          timeZone: zone,
+        },
+      })
+    ).toEqual({
+      end: { dateTime: "2026-10-06T11:00:00-04:00", timeZone: zone },
+      start: { dateTime: "2026-10-06T10:00:00-04:00", timeZone: zone },
+    });
   });
 });

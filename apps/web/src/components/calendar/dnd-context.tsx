@@ -15,13 +15,31 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
-import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
+import {
+  occurrenceDayMoved,
+  seriesRecurrenceForSave,
+} from "@kompose/state/google-event-recurrence";
+import {
+  type UpdateGoogleEventInput,
+  useGoogleEventMutations,
+} from "@kompose/state/hooks/use-google-event-mutations";
+import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
+import {
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+  SCOPE_DIALOG_COPY,
+} from "@kompose/state/recurrence-scope-options";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
+import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import {
   AlertDialog,
@@ -62,6 +80,12 @@ import { TaskEventPreview } from "./events/task-event";
 interface PendingTaskUpdate {
   id: string;
   task: object;
+}
+
+/** A recurring event's dropped move or resize, waiting for its scope. */
+interface PendingGoogleUpdate {
+  occurrence: GoogleEvent;
+  update: UpdateGoogleEventInput;
 }
 
 interface SidebarDropData {
@@ -143,6 +167,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
     null
   );
+  // A recurring event's move or resize waits for its scope, as in the
+  // editor: a new day applies to this occurrence or from it on.
+  const [pendingGoogleUpdate, setPendingGoogleUpdate] =
+    useState<PendingGoogleUpdate | null>(null);
+  const [googleScope, setGoogleScope] = useState<RecurrenceScope>("this");
+  const pendingMaster = useRecurringEventMaster({
+    accountId: pendingGoogleUpdate?.update.accountId ?? "",
+    calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
+    enabled: pendingGoogleUpdate !== null,
+    event: pendingGoogleUpdate?.occurrence ?? null,
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -258,6 +293,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       start: Temporal.ZonedDateTime
     ) => {
       const update = buildGoogleMoveUpdate(data, start);
+      if (data.event.recurringEventId) {
+        setGoogleScope("this");
+        setPendingGoogleUpdate({ occurrence: data.event, update });
+        return;
+      }
       updateGoogleEventMutation.mutate(update);
     },
     [updateGoogleEventMutation]
@@ -273,6 +313,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }) => {
       const update = buildGoogleResizeUpdate({ data, targetDateTime });
       if (!update) {
+        return;
+      }
+      if (data.event.recurringEventId) {
+        setGoogleScope("this");
+        setPendingGoogleUpdate({ occurrence: data.event, update });
         return;
       }
 
@@ -646,6 +691,49 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     setPendingUpdate(null);
   }, []);
 
+  const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
+    ? {
+        calendarChanged: false,
+        dateMoved: occurrenceDayMoved({
+          editedStart: pendingGoogleUpdate.update.event.start,
+          occurrence: pendingGoogleUpdate.occurrence,
+          timeZone,
+        }),
+        patternChanged: false,
+        seriesRuleLoaded: Boolean(pendingMaster.data),
+      }
+    : null;
+
+  const confirmGoogleScope = useCallback(() => {
+    if (!pendingGoogleUpdate) {
+      return;
+    }
+    const { occurrence, update } = pendingGoogleUpdate;
+    // For the series, a moved day carries its rule along.
+    const recurrence =
+      googleScope === "this"
+        ? undefined
+        : seriesRecurrenceForSave({
+            editedStart: update.event.start,
+            masterRecurrence: pendingMaster.data?.recurrence,
+            occurrence,
+            recurrence: undefined,
+            timeZone,
+          });
+    updateGoogleEventMutation.mutate({
+      ...update,
+      event: { ...update.event, recurrence },
+      recurrenceScope: googleScope,
+    });
+    setPendingGoogleUpdate(null);
+  }, [
+    googleScope,
+    pendingGoogleUpdate,
+    pendingMaster.data,
+    timeZone,
+    updateGoogleEventMutation,
+  ]);
+
   return (
     <>
       <DndContext
@@ -683,6 +771,28 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           <DragOverlay dropAnimation={null}>{overlayContent}</DragOverlay>
         ) : null}
       </DndContext>
+
+      <RecurrenceScopeDialog
+        description={
+          googleSaveChanges
+            ? eventSaveDescription(googleSaveChanges)
+            : SCOPE_DIALOG_COPY.saveEvent.description
+        }
+        disabledScopes={
+          googleSaveChanges ? eventSaveDisabledScopes(googleSaveChanges) : {}
+        }
+        onCancel={() => setPendingGoogleUpdate(null)}
+        onConfirm={confirmGoogleScope}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingGoogleUpdate(null);
+          }
+        }}
+        onValueChange={setGoogleScope}
+        open={pendingGoogleUpdate !== null}
+        title={SCOPE_DIALOG_COPY.saveEvent.title}
+        value={googleScope}
+      />
 
       <AlertDialog
         onOpenChange={(open) => !open && handleScopeDialogClose()}

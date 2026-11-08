@@ -10,44 +10,73 @@ export interface EventTime {
   timeZone?: string;
 }
 
+const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
+
+/**
+ * The moment a Google dateTime names. Google also takes one without an
+ * offset when a time zone comes with it, read in that zone; null for one
+ * that doesn't parse.
+ */
+function instantOf(
+  dateTime: string,
+  timeZone: string
+): Temporal.Instant | null {
+  try {
+    return OFFSET.test(dateTime)
+      ? Temporal.Instant.from(dateTime)
+      : Temporal.PlainDateTime.from(dateTime)
+          .toZonedDateTime(timeZone)
+          .toInstant();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The zone to read and write times in: the edit's, the series', or, when
+ * neither says, the fixed offset the edit was written with.
+ */
+function zoneOf(edited: EventTime, master: EventTime): string {
+  const offset = edited.dateTime ? OFFSET.exec(edited.dateTime)?.[1] : null;
+  return (
+    edited.timeZone ??
+    master.timeZone ??
+    (offset && offset !== "Z" ? offset : "UTC")
+  );
+}
+
 /** The local day `time` falls on, in `timeZone`. */
 function dayIn(time: EventTime, timeZone: string): Temporal.PlainDate | null {
   if (time.date) {
     return Temporal.PlainDate.from(time.date);
   }
-  return time.dateTime
-    ? Temporal.Instant.from(time.dateTime).toZonedDateTimeISO(timeZone).toPlainDate()
-    : null;
+  const instant = time.dateTime ? instantOf(time.dateTime, timeZone) : null;
+  return instant ? instant.toZonedDateTimeISO(timeZone).toPlainDate() : null;
 }
 
-function lengthMs(start: EventTime, end: EventTime): number | null {
-  if (!(start.dateTime && end.dateTime)) {
-    return null;
-  }
-  return (
-    Temporal.Instant.from(end.dateTime).epochMilliseconds -
-    Temporal.Instant.from(start.dateTime).epochMilliseconds
-  );
+function lengthMs(
+  start: EventTime,
+  end: EventTime,
+  timeZone: string
+): number | null {
+  const from = start.dateTime ? instantOf(start.dateTime, timeZone) : null;
+  const to = end.dateTime ? instantOf(end.dateTime, timeZone) : null;
+  return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
 }
 
 /** "2026-10-06T09:00:00-04:00": a zoned time as Google takes it. */
 function googleDateTime(time: Temporal.ZonedDateTime): string {
-  return time.toString({ timeZoneName: "never", smallestUnit: "second" });
+  return time.toString({ smallestUnit: "second", timeZoneName: "never" });
 }
 
 /** Whether two Google times are the same moment (or the same date). */
-function sameTime(a: EventTime, b: EventTime): boolean {
+function sameTime(a: EventTime, b: EventTime, timeZone: string): boolean {
   if (a.date || b.date) {
     return a.date === b.date;
   }
-  return Boolean(
-    a.dateTime &&
-      b.dateTime &&
-      Temporal.Instant.compare(
-        Temporal.Instant.from(a.dateTime),
-        Temporal.Instant.from(b.dateTime)
-      ) === 0
-  );
+  const from = a.dateTime ? instantOf(a.dateTime, timeZone) : null;
+  const to = b.dateTime ? instantOf(b.dateTime, timeZone) : null;
+  return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
 }
 
 /**
@@ -57,7 +86,8 @@ function sameTime(a: EventTime, b: EventTime): boolean {
  * series begun before a daylight-saving change keeps its 9:00 (pasting the
  * edit's UTC time onto that day would move it an hour). An edit that left
  * the occurrence's times alone leaves the series' alone, so renaming an
- * occurrence rescheduled before doesn't move the series to its slot.
+ * occurrence rescheduled before doesn't move the series to its slot. Null
+ * only for times that don't parse; the series then keeps its own.
  */
 export function seriesTimesForEdit(params: {
   editedEnd: EventTime;
@@ -69,15 +99,12 @@ export function seriesTimesForEdit(params: {
   occurrenceStart: EventTime;
 }): { end: EventTime; start: EventTime } | null {
   const { editedEnd, editedStart, masterEnd, masterStart } = params;
+  const timeZone = zoneOf(editedStart, masterStart);
   if (
-    sameTime(editedStart, params.occurrenceStart) &&
-    sameTime(editedEnd, params.occurrenceEnd)
+    sameTime(editedStart, params.occurrenceStart, timeZone) &&
+    sameTime(editedEnd, params.occurrenceEnd, timeZone)
   ) {
     return { end: masterEnd, start: masterStart };
-  }
-  const timeZone = editedStart.timeZone ?? masterStart.timeZone;
-  if (!timeZone) {
-    return null;
   }
   const day = dayIn(masterStart, timeZone);
   if (!day) {
@@ -94,20 +121,23 @@ export function seriesTimesForEdit(params: {
       start: { date: day.toString() },
     };
   }
-  if (!editedStart.dateTime) {
+  const editedInstant = editedStart.dateTime
+    ? instantOf(editedStart.dateTime, timeZone)
+    : null;
+  if (!editedInstant) {
     return null;
   }
-  const wallClock = Temporal.Instant.from(editedStart.dateTime)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainTime();
+  const wallClock = editedInstant.toZonedDateTimeISO(timeZone).toPlainTime();
   const start = day.toZonedDateTime({ plainTime: wallClock, timeZone });
   const length =
-    lengthMs(editedStart, editedEnd) ?? lengthMs(masterStart, masterEnd) ?? 0;
+    lengthMs(editedStart, editedEnd, timeZone) ??
+    lengthMs(masterStart, masterEnd, timeZone) ??
+    0;
+  // A fixed offset reads times but isn't a zone Google takes back.
+  const named = editedStart.timeZone ?? masterStart.timeZone;
+  const zone = named ? { timeZone: named } : {};
   return {
-    end: {
-      dateTime: googleDateTime(start.add({ milliseconds: length })),
-      timeZone,
-    },
-    start: { dateTime: googleDateTime(start), timeZone },
+    end: { dateTime: googleDateTime(start.add({ milliseconds: length })), ...zone },
+    start: { dateTime: googleDateTime(start), ...zone },
   };
 }
