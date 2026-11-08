@@ -32,9 +32,10 @@ export function repeatEndsBeforeStart(
 }
 
 /**
- * Whether two patterns repeat the same way (missing counts as none). Keys
- * and days are compared in a fixed order: Postgres jsonb returns keys in
- * its own order, not the order a request sent them in.
+ * Whether two patterns repeat the same way (a missing pattern counts as
+ * none, a missing or undefined field as unset). Keys and days are compared
+ * in a fixed order: Postgres jsonb returns keys in its own order, not the
+ * order a request sent them in.
  */
 export function sameRecurrence(
   a: TaskRecurrence | null | undefined,
@@ -53,8 +54,11 @@ function canonicalRecurrence(
   if ("byDay" in recurrence && recurrence.byDay) {
     fields.byDay = [...recurrence.byDay].sort();
   }
+  // A key set to undefined is a key left out, as it is once sent as JSON.
   return JSON.stringify(
-    Object.entries(fields).sort(([a], [b]) => a.localeCompare(b))
+    Object.entries(fields)
+      .filter(([, value]) => value !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
   );
 }
 

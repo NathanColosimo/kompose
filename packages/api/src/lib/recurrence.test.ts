@@ -53,6 +53,11 @@ describe("sameRecurrence", () => {
     ).toBe(true);
   });
 
+  test("treats a key set to undefined as missing", () => {
+    const daily = { freq: "DAILY" as const, interval: 1 };
+    expect(sameRecurrence({ ...daily, count: undefined }, daily)).toBe(true);
+  });
+
   test("tells patterns apart", () => {
     const daily = { freq: "DAILY" as const, interval: 1 };
     expect(sameRecurrence(daily, { ...daily, count: 3 })).toBe(false);
