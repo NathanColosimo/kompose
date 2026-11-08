@@ -36,18 +36,31 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 ### Save / Cancel behavior
 - Explicit **Save** / **Cancel** buttons at the bottom of the form (edit mode).
 - **Save**: builds a close-save request from the form, then processes mutations (update, move, create).
-  - The editor stays open ("Saving…", fields read-only) until the save succeeds. A failure keeps it open with the edits and a toast ("Couldn't save your changes. They're still here.").
+  - The editor stays open ("Saving…", fields read-only) until the save succeeds. A failure keeps it open with the edits and says so beside Save ("Couldn't save your changes. They're still here."). If the edits saved but the move to another calendar that followed didn't, it says that instead, and Save tries again.
   - A recurring event asks for the scope in a dialog over the editor. Cancel goes back to the editor with the edits; Save there holds the editor the same way.
   - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
   - The repeat is sent only when the user changed it with the Repeat control. An occurrence's pattern lives on its master, which can load after the editor opens.
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs).
+- Opening an event's editor (click, or Enter on a focused block) focuses the editor itself, not its title: Tab goes into the fields, and the calendar's shortcuts stay out of it.
 
 ### Repeat editor (web and iOS)
 - Rules are read and built with `packages/state/src/google-event-recurrence.ts`, shared by both editors; the words and the monthly choices are in `packages/state/src/event-recurrence-words.ts`. The editors set frequency, interval, BYDAY, BYMONTHDAY and the end; every other part of a rule (WKST, BYMONTH...) is kept.
 - Picking a frequency (`pickRecurrenceFrequency`): the same one changes nothing. A new one starts at every 1, drops the old frequency's day parts, and keeps only plain weekdays for Weekly ("2TU" isn't valid weekly).
 - Monthly offers the start's day of the month ("Day 27"), its weekday of the month ("The 4th Fri"), and in its last week the last one ("The last Fri"). A rule set another way ("The last weekday", "Day 15") comes first, selected, so opening the editor never changes it. A weekday of the month replaces BYMONTHDAY; BYSETPOS goes with the BYDAY it picks from.
 - "On date" ends after that day's occurrence: UNTIL is the date for an all-day series and the day's last second, in the app's time zone, for a timed one. It starts three months after the event's own day (an occurrence's, not its series' first) or today, whichever is later, and earlier dates than the event's day can't be picked (`untilDefaultDay`). A repeat the save sends whose end comes before the event's start (an end picked, then the start moved past it) can't be saved: both editors say so (`repeatEndsBeforeStart`), and the server refuses a new series that would end before it starts, before cutting the old one.
-- An occurrence's save for the series sends a rule only when it moves the day (the rule follows it); otherwise the server lines the series' own rule, freshly read, up with the new time or form, so a copy cached on the client can't write an old rule back. The client's copy of a series counts as ready only once loaded and not being fetched again after a write (pending, paused offline, or failed). Moving a series' start carries its days with it (`followStart`), and its skipped occurrences too (`moveSkippedDays`): a skip moves in its own period as the pattern did (by the move's shift within the week or INTERVAL, or only by the weeks when a weekly rule kept its days; to the new rule's day nearest its time in a month or year, either way, the move counted in months and days so February doesn't throw it off), never onto the moved meeting or a day the old pattern met on; a skip the new pattern still has is a date and stays; and the day the start moves to is never left skipped (in a series several times a day, only its start's time; rules at different hours count as several a day, so their times and skipped times stay their own; a part a rule leaves out is the series' start's, so BYHOUR=9 and BYHOUR=9;BYMINUTE=0 are one time; in such a series only the moved rule's skipped times move, another rule's stay, a skip another rule still needs stays, one never lands on another rule's meeting, and a time part the moved rule leaves out follows the new start, for its skips that stay on their day too, and on a time-only edit; an hourly rule's times stay its own). An added (RDATE) meeting's skip keeps its time, and no skip moves onto an added meeting. Made all day, a series loses its rule times; a cancelled added meeting goes from both lists, and a timed skip becomes its date only when every meeting that day was skipped (rules counted from where they start, COUNT meeting by meeting from the series' first day, UNTIL to its moment); a COUNT over several times a day becomes the days they fell on. A rule the editor can't write (hourly, say) is kept as it is when the start's day moves. A weekly rule with several days keeps its set when the new start is already one of them: a weekly series' start weekday, the start's day or weekday of the month ("2nd Tue" to "3rd Wed"; `BYDAY=SA;BYSETPOS=1` too; a last stays a last when the new day is in its month's last week, and otherwise becomes the new day's weekday of the month, so the series still lands on the day picked), a yearly series' month; an end date the start passed moves three months on.
+- An occurrence's save for the series sends a rule only when it moves the day (the rule follows it); otherwise the server lines the series' own rule, freshly read, up with the new time or form, so a copy cached on the client can't write an old rule back.
+- The Repeat button shows the rule Save sends: an occurrence moved from a Wednesday to a Thursday reads "Weekly on Thu", and one moved from the 30th to the 29th "Monthly on day 29" (`repeatForSeries`).
+- A save for an occurrence's series sends only what the user changed, measured against the series: a field left alone takes the series' value, and an occurrence rescheduled on its own sends its series slot, not its own time (`seriesEventForSave`). So adding a day to the repeat from a rescheduled, renamed occurrence doesn't move or rename the rest.
+- The client's copy of a series counts as ready only once loaded and not being fetched again after a write (pending, paused offline, or failed).
+- Moving a series' start carries its days with it (`followStart`), and its skipped occurrences too (`moveSkippedDays`). In short:
+  - A skip moves in its own period as the pattern did, never onto the moved meeting or a day the old pattern met on; a skip the new pattern still has stays.
+  - The day the start moves to is never left skipped.
+  - In a series that meets several times a day, each rule's times and skipped times stay its own.
+  - Made all day, a series loses its rule times, and a timed skip becomes its date only when every meeting that day was skipped.
+  - A rule the editor can't write (hourly, say) is kept as it is.
+  - A weekly rule with several days keeps its set when the new start is one of them; a monthly "2nd Tue" becomes "3rd Wed", and a last stays a last in its month's last week.
+  - An end date the start passed moves three months on.
+  - The full rules, with examples, are the `followStart` and `moveSkippedDays` tests in `packages/state/src/google-event-recurrence.test.ts`.
   - Editing the series itself (or a new one), it applies as the start moves.
   - Moving an occurrence to another day offers "Only this occurrence" (a reschedule; the series keeps its rule) or "This and following" (a new series from the moved day, its rule following that day: `seriesRecurrenceForSave`), as Google's editor does. "Entire series" is off for a moved day, since the series keeps its first date, and "This and following" waits until the series' rule has loaded (`eventSaveDisabledScopes`).
   - A new repeat set from an occurrence describes its implicit days from that occurrence (`repeatCountingDay`; an unchanged one from the series' first meeting). An Entire series save keeps the series' first meeting and counts the rule from there, so it's off when the rule counted that way would skip this occurrence: its day (an implicit weekday or date, an interval's phase) or its end (COUNT/UNTIL) (`repeatSkipsOccurrence`, `eventSaveDisabledScopes`); the dialog says which. A calendar move (whole series only) with such a repeat offers no scope and asks for two saves.
@@ -98,7 +111,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 #### Components
 - `DaysView` — Holds creation state (`useEventCreationState`) and provides `EventCreationContext`
 - `useEventCreation` — Reads creation state and actions from that context
-- `CreationPreview` — Visual preview during hover/drag
+- `CreationPreview` — Visual preview during hover/drag; a drag shows the time range it will create ("1:00 – 2:30 PM")
 - `EventCreationPopover` — Renders the shared create popover with `Event` / `Task` tabs and Save/Cancel buttons
 
 ### Edit Mode Behavior
@@ -111,8 +124,8 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Recurrence scope is no longer selected inline in the main popover.
 - If the event is recurring *and* the user clicks Save, a **scope dialog** (shadcn `RadioGroup`) appears with:
   - Only this occurrence
-  - Entire series
   - This and following
+  - Entire series
 
 #### Recurrence master hydration + prefetch — Edit Mode Only
 - Recurring instances often do not include the RRULE on the instance.
@@ -131,10 +144,8 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server; the edit UI only offers `following` for updates.
 
 #### Error feedback
-- Mutations surface failures via toast errors:
-  - `createEvent` (create mode)
-  - `updateEvent` (edit mode)
-  - `moveEvent` (move flow)
+- The editor's saves (`createEvent`, `updateEvent`) are held and quiet: a failure shows beside Save, with the edits kept, not as a toast.
+- `moveEvent` (the calendar move) reports its failure as a toast, and the editor says beside Save whether the edits before it saved.
 
 ### Manual test checklist
 
