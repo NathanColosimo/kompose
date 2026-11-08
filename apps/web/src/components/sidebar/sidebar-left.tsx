@@ -11,11 +11,12 @@ import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { useAtom, useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
-import { CalendarClock, Inbox } from "lucide-react";
+import { CalendarClock, CalendarDays, Inbox } from "lucide-react";
 import { type ComponentProps, useEffect, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +33,7 @@ import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import {
   defaultSidebarLeftViewSelection,
+  isNarrowViewportAtom,
   type SidebarLeftBaseViewId,
   sidebarLeftViewSelectionAtom,
 } from "@/state/sidebar";
@@ -329,6 +331,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   const currentDate = useAtomValue(currentDateAtom);
   const today = useAtomValue(todayPlainDateAtom);
   const { open, setOpen } = useSidebar();
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
   const { tagsQuery } = useTags();
   const dateTitle = useMemo(
     () => formatDateSidebarTitle(currentDate, today),
@@ -542,6 +545,19 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                     : []
                 }
               />
+              {/* In a narrow window the list fills the view; this is the
+                  visible way back (the rail's active icon does the same). */}
+              {isNarrow ? (
+                <Button
+                  aria-label="Show calendar"
+                  className="size-8 text-muted-foreground"
+                  onClick={() => setOpen(false)}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <CalendarDays />
+                </Button>
+              ) : null}
             </div>
           </SidebarHeader>
           <SidebarContent className="flex-1">

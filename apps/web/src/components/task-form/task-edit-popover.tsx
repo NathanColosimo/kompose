@@ -247,6 +247,11 @@ export function TaskEditPopover({
     setOpen(false);
   }, []);
   const contentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // Radix types the trigger as a button; the child here can be any element.
+  const setTrigger = useCallback((element: HTMLElement | null) => {
+    triggerRef.current = element;
+  }, []);
   const hold = useHeldSave({ editorRef: contentRef, onClose: handleCancel });
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
@@ -257,6 +262,12 @@ export function TaskEditPopover({
       if (!(matchesOpenRequest && openRequest)) {
         return;
       }
+      // Opened from search, the task can be scrolled out of its list or
+      // the calendar's hours; the editor follows it, so bring it into view.
+      triggerRef.current?.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+      });
 
       setOpen(true);
       setOpenRequest((currentRequest) =>
@@ -277,7 +288,9 @@ export function TaskEditPopover({
       }}
       open={open || matchesOpenRequest}
     >
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverTrigger asChild ref={setTrigger}>
+        {children}
+      </PopoverTrigger>
       <PopoverContent
         align={align}
         className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-3 overflow-y-auto p-4"
