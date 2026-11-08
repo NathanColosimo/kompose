@@ -15,6 +15,22 @@ const DAY_MAP: Record<string, number> = {
 /** Safety cap when count is absent, even if an until date is set. */
 const DEFAULT_MAX_OCCURRENCES = 52; // ~1 year of weekly occurrences
 
+/** The API's error and the editors' note when a repeat has no start date. */
+export const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
+
+/**
+ * Whether a repeat ends before the task starts. It would have no
+ * occurrences, so replacing a series with it would only delete tasks.
+ */
+export function repeatEndsBeforeStart(
+  recurrence: TaskRecurrence | null | undefined,
+  startDate: string | null | undefined
+): boolean {
+  return Boolean(
+    recurrence?.until && startDate && recurrence.until < startDate
+  );
+}
+
 /**
  * Whether two patterns repeat the same way (a missing pattern counts as
  * none, a missing or undefined field as unset). Keys and days are compared

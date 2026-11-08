@@ -318,7 +318,6 @@ export type TaskUpdateScopeDecision =
 
 export function getTaskUpdateScopeDecision(params: {
   isRecurring: boolean;
-  isSeriesMaster: boolean;
   hasCoreFieldChanges: boolean;
   previousRecurrence: TaskRecurrence | null | undefined;
   nextRecurrence: TaskRecurrence | null | undefined;
@@ -344,12 +343,12 @@ export function getTaskUpdateScopeDecision(params: {
     return { action: "apply", scope: "this" };
   }
 
-  if (params.isSeriesMaster) {
-    return { action: "prompt", defaultScope: "this" };
+  // A new pattern (or "Repeat: None") can only apply from this occurrence on:
+  // one occurrence can't repeat differently from its series. So there's no
+  // choice to offer.
+  if (recurrenceChanged) {
+    return { action: "apply", scope: "following" };
   }
 
-  return {
-    action: "prompt",
-    defaultScope: recurrenceChanged ? "following" : "this",
-  };
+  return { action: "prompt", defaultScope: "this" };
 }

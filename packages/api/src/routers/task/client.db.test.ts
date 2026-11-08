@@ -229,12 +229,17 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         return row;
       });
     return {
-      create: (startDate: string, recurrence: TaskRecurrence) =>
+      create: (
+        startDate: string,
+        recurrence: TaskRecurrence,
+        extra: { dueDate?: string } = {}
+      ) =>
         service.createTask(userId, {
           recurrence,
           startDate,
           title: "Review",
           userId,
+          ...extra,
         }),
       remove: (date: string, scope: DeleteScope) =>
         Effect.flatMap(find(date), (task) =>
@@ -256,6 +261,75 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     ]);
   });
 
+  test("moves due dates with an occurrence a pattern change moves", async () => {
+    const every2Days: TaskRecurrence = { count: 3, freq: "DAILY", interval: 2 };
+    // Nov 10 (due Nov 11) moved to Nov 13, every 2 days x3.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5), { dueDate: "2026-11-10" });
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: every2Days, startDate: "2026-11-13" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo due 2026-11-10 MASTER DAILY/1 until 2026-11-09",
+      "2026-11-13 Review todo due 2026-11-14 MASTER DAILY/2 x3",
+      "2026-11-15 Review todo due 2026-11-16 in 2026-11-13",
+      "2026-11-17 Review todo due 2026-11-18 in 2026-11-13",
+    ]);
+  });
+
+  test("rejects a new pattern with no start date, before any write", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { status: "done" }, "this");
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: daily(2), startDate: null },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "error: Pick a start date to repeat this task.",
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-10 Review done exc in 2026-11-09",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
+  });
+
+  test("keeps an occurrence moved onto a kept task's date, with its edits", async () => {
+    // Nov 16 done alone; Nov 9 renamed and moved onto it, Mondays x3.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", mondays(4));
+          yield* u.update("2026-11-16", { status: "done" }, "this");
+          yield* u.update(
+            "2026-11-09",
+            {
+              recurrence: mondays(3),
+              startDate: "2026-11-16",
+              title: "Review v2",
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-16 Review done exc in 2026-11-16",
+      "2026-11-16 Review v2 todo exc MASTER WEEKLY/1 MO x3",
+      "2026-11-23 Review v2 todo in 2026-11-16",
+      "2026-11-30 Review v2 todo in 2026-11-16",
+    ]);
+  });
+
   test("hands a deleted master's role to the next occurrence, counting what's left", async () => {
     expect(
       await scenario((u) =>
@@ -268,6 +342,53 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     ).toEqual([
       "2026-11-11 Review todo MASTER DAILY/1 x2",
       "2026-11-12 Review todo in 2026-11-11",
+    ]);
+  });
+
+  test("keeps the earlier part of a series whose master moved later", async () => {
+    // Daily x5; the Nov 9 master moved alone to Nov 20; then Nov 11 takes
+    // Wednesdays x2 from there on.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.update(
+            "2026-11-11",
+            {
+              recurrence: {
+                byDay: ["WE"],
+                count: 2,
+                freq: "WEEKLY",
+                interval: 1,
+              },
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10",
+      "2026-11-11 Review todo MASTER WEEKLY/1 WE x2",
+      "2026-11-18 Review todo in 2026-11-11",
+      "2026-11-20 Review todo exc in 2026-11-11",
+    ]);
+  });
+
+  test("ends a repeat at an occurrence, keeping later edited ones alone", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-13", { title: "Renamed" }, "this");
+          yield* u.update("2026-11-11", { recurrence: null }, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 until 2026-11-10",
+      "2026-11-10 Review todo in 2026-11-09",
+      "2026-11-11 Review todo alone",
+      "2026-11-13 Renamed todo alone",
     ]);
   });
 
