@@ -332,7 +332,9 @@ function matchDateList(
         day: Temporal.PlainDate,
         time: Temporal.PlainTime
       ) => Temporal.PlainTime[])
-    | null = null
+    | null = null,
+  /** The series' added (RDATE) meetings, as epoch milliseconds. */
+  added: Set<number> = new Set()
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -362,24 +364,72 @@ function matchDateList(
       : line;
   }
   const time = wallClock(start, seriesZone);
-  const moments = values.map((value) =>
-    value.day.toZonedDateTime({ plainTime: time, timeZone: seriesZone })
-  );
+  // A skipped added meeting is that meeting's: it keeps its time. And a
+  // skip never moves onto an added meeting, which it would cancel.
+  const moments = values.map((value) => {
+    const moment = value.day
+      .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
+      .toInstant();
+    const keep =
+      list.name === "EXDATE" &&
+      value.instant &&
+      (added.has(value.instant.epochMilliseconds) ||
+        added.has(moment.epochMilliseconds));
+    return keep ? (value.instant as Temporal.Instant) : moment;
+  });
   const same = moments.every(
     (moment, index) =>
       values[index]?.instant &&
       Temporal.Instant.compare(
-        moment.toInstant(),
+        moment,
         values[index].instant as Temporal.Instant
       ) === 0
   );
   if (same) {
     return line;
   }
-  const clock = time.toString({ smallestUnit: "second" }).replace(/:/g, "");
-  return `${list.name};TZID=${seriesZone}:${values
-    .map((value) => `${compactDate(value.day)}T${clock}`)
-    .join(",")}`;
+  return `${list.name};TZID=${seriesZone}:${[
+    ...new Set(
+      moments.map((moment) => {
+        const local = moment.toZonedDateTimeISO(seriesZone);
+        return `${compactDate(local.toPlainDate())}T${compactTime(local.toPlainTime())}`;
+      })
+    ),
+  ].join(",")}`;
+}
+
+/** A series' all-day added (RDATE) days ("2026-11-16"). */
+function addedDates(recurrence: string[], seriesZone: string): Set<string> {
+  const days = new Set<string>();
+  for (const line of recurrence) {
+    const list = line.startsWith("RDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
+    for (const value of list?.values ?? []) {
+      const read = list && readRecurrenceValue(value, list.zone, seriesZone);
+      if (read && !read.instant) {
+        days.add(read.day.toString());
+      }
+    }
+  }
+  return days;
+}
+
+/** A series' added (RDATE) meetings with a time, as epoch milliseconds. */
+function addedMoments(recurrence: string[], seriesZone: string): Set<number> {
+  const moments = new Set<number>();
+  for (const line of recurrence) {
+    const list = line.startsWith("RDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
+    for (const value of list?.values ?? []) {
+      const read = list && readRecurrenceValue(value, list.zone, seriesZone);
+      if (read?.instant) {
+        moments.add(read.instant.epochMilliseconds);
+      }
+    }
+  }
+  return moments;
 }
 
 /**
@@ -485,6 +535,11 @@ export function matchRecurrenceToStart(
   const startDay = start.dateTime ? dayOfStart(start, timeZone) : null;
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const baseDay = seriesStart ? dayOfStart(seriesStart, timeZone) : null;
+  const added = addedMoments(recurrence, timeZone);
+  const isAdded = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
+    added.has(
+      day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds
+    );
   const retime =
     severalADay &&
     base &&
@@ -502,7 +557,8 @@ export function matchRecurrenceToStart(
               !endedBefore(rule, baseDay, day, timeZone) &&
               ruleMeetsAt(rule, time, base)
           );
-          if (owners.length === 0) {
+          // A skipped added meeting is its own: it stays.
+          if (owners.length === 0 || isAdded(day, time)) {
             return [time];
           }
           // Another rule's meeting at `at`: any rule but an owner that
@@ -533,7 +589,7 @@ export function matchRecurrenceToStart(
             ) {
               return [];
             }
-            return meetsThen(next) ? [time] : [next];
+            return meetsThen(next) || isAdded(day, next) ? [time] : [next];
           });
         }
       : null;
@@ -546,7 +602,7 @@ export function matchRecurrenceToStart(
           timeZone,
           severalADay
         )
-      : matchDateList(line, start, timeZone, severalADay, retime);
+      : matchDateList(line, start, timeZone, severalADay, retime, added);
     changed ||= matched !== line;
     // A list whose every value went (onto the new start) goes too.
     return matched ? [matched] : [];
@@ -811,9 +867,24 @@ export function moveSkippedDays(params: {
     );
   // Where a skip moves, at its time: a part of it the moved rule leaves
   // out (it meets at the start's hour, say) follows the new start.
+  // An added (RDATE) meeting is its own: its skip stays with it, and no
+  // skip moves onto one, which it would cancel.
+  const added = addedMoments(recurrence, seriesZone);
+  const addedDays = addedDates(recurrence, seriesZone);
+  const isAdded = (day: Temporal.PlainDate, time: Temporal.PlainTime | null) =>
+    time
+      ? added.has(
+          day.toZonedDateTime({ plainTime: time, timeZone: seriesZone })
+            .epochMilliseconds
+        )
+      : addedDays.has(day.toString());
   const movedSkip = (value: RecurrenceValue) => {
     const time = wallTime(value);
-    if (!ownSkip(value) || othersMeet(value.day, time, from, fromTime)) {
+    if (
+      !ownSkip(value) ||
+      isAdded(value.day, time) ||
+      othersMeet(value.day, time, from, fromTime)
+    ) {
       return null;
     }
     const day = placeOf(value.day);
@@ -821,7 +892,9 @@ export function moveSkippedDays(params: {
       time && toTime && !SUB_DAILY.test(oldRule)
         ? withRuleClock(oldRule, time, toTime)
         : time;
-    return day && !othersMeet(day, movedTime, to, toTime ?? null)
+    return day &&
+      !isAdded(day, movedTime) &&
+      !othersMeet(day, movedTime, to, toTime ?? null)
       ? { day, time: movedTime }
       : null;
   };
@@ -835,12 +908,14 @@ export function moveSkippedDays(params: {
       SUB_DAILY.test(oldRule) ||
       // The moved rule must have met that day: another rule's day isn't its.
       isRuleDay(oldRule, from, value.day) === false ||
+      isAdded(value.day, time) ||
       othersMeet(value.day, time, from, fromTime)
     ) {
       return null;
     }
     const retimed = withRuleClock(oldRule, time, toTime);
     return Temporal.PlainTime.compare(retimed, time) === 0 ||
+      isAdded(value.day, retimed) ||
       othersMeet(value.day, retimed, to, toTime)
       ? null
       : { day: value.day, time: retimed };

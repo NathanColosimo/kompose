@@ -288,6 +288,38 @@ describe("skipped occurrences on the series' days", () => {
     ).toBe("EXDATE;TZID=America/New_York:20261110T093000,20261110T153000");
   });
 
+  test("leaves a skipped added meeting's time alone", () => {
+    // Mondays 9:00 plus an added Nov 16 15:00 that was then skipped: a
+    // save (here, nothing changed) keeps that skip at 15:00, not 9:00.
+    const kept = [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261116T150000",
+      "EXDATE;TZID=America/New_York:20261116T150000",
+    ];
+    expect(
+      matchRecurrenceToStart(
+        kept,
+        { dateTime: "2026-11-09T09:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      )
+    ).toBe(kept);
+    // Moved to 10:00, a regular Nov 16 skip would land on the added 10:00
+    // meeting and cancel it: it stays at 9:00.
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261116T100000",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+        { dateTime: "2026-11-09T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261116T090000");
+  });
+
   test("moves a single BYHOUR with the series, and its skipped time", () => {
     // The rule's 9:00 is the series' time: moving it to 10:00 moves both.
     expect(
