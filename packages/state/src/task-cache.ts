@@ -1,17 +1,15 @@
+import { sameRecurrence } from "@kompose/api/lib/recurrence";
 import type {
   TaskSelectDecoded,
   TaskUpdateDecoded,
 } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
-import {
-  resolveTaskRecurrenceForEditor,
-  taskRecurrenceEquals,
-} from "./task-recurrence";
+import { resolveTaskRecurrenceForEditor } from "./task-recurrence";
 
 /**
  * The edit without a pattern its task's series already has. Editors may
  * send the pattern along unchanged; the server ignores it, so the cache
- * must too.
+ * must too, comparing the same way the server does.
  */
 export function withoutUnchangedPattern(
   cached: TaskSelectDecoded[],
@@ -22,7 +20,7 @@ export function withoutUnchangedPattern(
   if (
     task.recurrence === undefined ||
     !edited ||
-    !taskRecurrenceEquals(
+    !sameRecurrence(
       task.recurrence,
       resolveTaskRecurrenceForEditor(edited, cached)
     )

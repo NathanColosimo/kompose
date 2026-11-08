@@ -44,9 +44,8 @@ function rule(recurrence: TaskRecurrence): string {
 
 /**
  * A user's tasks, one line each, by date (inbox last) then title: date,
- * title, status,
- * "exc" for an exception, and its series role: "alone", "MASTER <rule>", or
- * "in <its master's date>".
+ * title, status, "exc" for an exception, the due date, and its series
+ * role: "alone", "MASTER <rule>", or "in <its master's date>".
  */
 function describeRows(rows: TaskSelect[]): string[] {
   const dates = new Map(rows.map((row) => [row.id, row.startDate ?? "inbox"]));

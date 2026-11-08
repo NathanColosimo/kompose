@@ -128,4 +128,35 @@ describe("mergeSavedTasks", () => {
       )
     ).toEqual(["nov9:todo", "nov11:todo"]);
   });
+
+  test("splits for a count change even when the pattern also has an end date", () => {
+    // Daily x4 until Nov 30 from Nov 9; Nov 11 moved to Nov 8 with x2: the
+    // server replaces Nov 9-12 with Nov 8 and 9.
+    const until = { freq: "DAILY" as const, interval: 1, until: "2026-11-30" };
+    const series = [
+      row("nov9", "2026-11-09", {
+        recurrence: { ...until, count: 4 },
+        seriesMasterId: "nov9",
+      }),
+      row("nov10", "2026-11-10", { seriesMasterId: "nov9" }),
+      row("nov11", "2026-11-11", { seriesMasterId: "nov9" }),
+      row("nov12", "2026-11-12", { seriesMasterId: "nov9" }),
+    ];
+    const saved = [
+      row("new8", "2026-11-08", { seriesMasterId: "new8" }),
+      row("new9", "2026-11-09", { seriesMasterId: "new8" }),
+    ];
+    expect(
+      ids(
+        mergeSavedTasks(series, saved, {
+          id: "nov11",
+          scope: "following",
+          task: {
+            recurrence: { ...until, count: 2 },
+            startDate: Temporal.PlainDate.from("2026-11-08"),
+          },
+        })
+      )
+    ).toEqual(["new8:todo", "new9:todo"]);
+  });
 });

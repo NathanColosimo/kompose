@@ -34,6 +34,7 @@ import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, TaskNotFoundError } from "./errors";
 import {
   buildOccurrenceRowsFromTask,
+  type CheckedPattern,
   endedBefore,
   getDueDateForOccurrence,
   heirPattern,
@@ -687,12 +688,6 @@ function buildSeriesOccurrenceUpdate(
 
 const REPEAT_ENDS_BEFORE_START = "The repeat ends before the task starts.";
 
-/** A pattern a create or edit sets, with the date it counts from. */
-interface CheckedPattern {
-  recurrence: TaskRecurrence;
-  startDate: string;
-}
-
 /**
  * Check a pattern a create or edit sets (a new task's, a series' new one,
  * or one that makes a lone task repeat). It counts from the start date, so
@@ -842,10 +837,12 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
 const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   userId: string,
   task: DatedSeriesTask,
-  edit: TaskUpdateInput
+  edit: TaskUpdateInput,
+  /** The new pattern, checked; null ends the repeat ("Repeat: None"). */
+  pattern: CheckedPattern | null
 ) {
   const input = withMovedDueDate(task, edit);
-  const { recurrence, ...occurrenceFields } = input;
+  const { recurrence: _pattern, ...occurrenceFields } = input;
   // The series splits where the edit starts: the earlier of the edited
   // occurrence's original and new dates, so a move earlier doesn't leave
   // old occurrences under the new ones.
@@ -856,7 +853,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // The dates other exceptions from the boundary on hold: they stay, and
   // the new pattern leaves their dates out.
   const otherKeptDates = new Set(
-    recurrence
+    pattern
       ? (yield* dbSelectExceptionsBySeriesFrom(
           userId,
           task.seriesMasterId,
@@ -868,9 +865,14 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   );
   // Ending the repeat ("Repeat: None") keeps the edited task, as a
   // standalone task, and drops the later ordinary occurrences.
-  const ending = !recurrence;
   const keepEdited =
-    ending || keepsEditedOccurrence({ input, keptDates: otherKeptDates, task });
+    !pattern ||
+    keepsEditedOccurrence({
+      input,
+      keptDates: otherKeptDates,
+      start: pattern.startDate,
+      task,
+    });
   // The earlier part of the series stops before the edit, so its master no
   // longer claims to repeat past it. First, while the master is still
   // there: a split before it deletes it below, and its undated and earlier
@@ -893,22 +895,18 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // its master and carries the pattern (even when the pattern adds no other
   // dates: Daily x1 from a done occurrence). Ending the repeat leaves it a
   // standalone task.
-  let anchorSeries: Partial<TaskUpdateInput> = {
-    recurrence,
-    seriesMasterId: task.id,
-  };
-  if (ending) {
-    anchorSeries = { recurrence: null, seriesMasterId: null };
-  }
+  const anchorSeries: Partial<TaskUpdateInput> = pattern
+    ? {
+        isException: true,
+        recurrence: pattern.recurrence,
+        seriesMasterId: task.id,
+      }
+    : { isException: false, recurrence: null, seriesMasterId: null };
   const updatedAnchor = keepEdited
-    ? yield* dbUpdate(userId, task.id, {
-        ...occurrenceFields,
-        ...anchorSeries,
-        isException: !ending,
-      })
+    ? yield* dbUpdate(userId, task.id, { ...occurrenceFields, ...anchorSeries })
     : [];
 
-  if (!recurrence) {
+  if (!pattern) {
     // Exceptions after the boundary (moved, renamed, or done alone) become
     // standalone tasks rather than members of a series that no longer
     // repeats there.
@@ -924,17 +922,16 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
-  // A kept edited occurrence holds the new series' first date. (updateTask
-  // rejects a pattern without a start, so there is one.)
-  const seriesStart = input.startDate ?? task.startDate;
+  // A kept edited occurrence holds the new series' first date.
   const keptDates = keepEdited
-    ? new Set([...otherKeptDates, seriesStart])
+    ? new Set([...otherKeptDates, pattern.startDate])
     : otherKeptDates;
   const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
-    input: { ...input, recurrence },
+    input,
     keepEdited,
     keptDates,
+    pattern,
     seriesMasterId,
     task,
     userId,
@@ -1252,7 +1249,7 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   // If recurrence pattern is changing, regenerate future occurrences (inside
   // updateTask's transaction, like everything below).
   if (recurrenceChanged) {
-    return yield* regenerateOccurrences(userId, task, input);
+    return yield* regenerateOccurrences(userId, task, input, params.newPattern);
   }
 
   // No recurrence change: update this and following with scaled date/time
