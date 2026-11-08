@@ -744,7 +744,8 @@ export function TaskEditForm({
                 title: task.title,
               },
             }),
-            hasFollowing: hasFollowing(task),
+            // Moving it to the inbox (no date) changes it alone.
+            hasFollowing: hasFollowing(task) && values.startDate !== null,
             isRecurring,
             nextRecurrence: values.recurrence,
             nextTagIds: values.tagIds,
