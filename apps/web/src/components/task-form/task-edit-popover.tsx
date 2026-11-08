@@ -568,7 +568,7 @@ export function TaskEditForm({
     setShowTagScopeDialog(true);
   }, []);
   const { holdOpen, saving } = hold;
-  /** Why the last held save failed, shown above the buttons until the next one. */
+  /** Why the last held save failed, shown above the buttons until the next. */
   const [failure, setFailure] = useState<string | null>(null);
   const isSavingStatus = saving !== null;
   const isRecurring = task.seriesMasterId !== null;
@@ -640,9 +640,9 @@ export function TaskEditForm({
 
   /**
    * Saves the edits, plus `extra` fields, while the editor holds open.
-   * Resolves to whether it saved; a failure shows above the buttons, and the cache
-   * waits for the server (no optimistic update) so it can't roll back over
-   * the draft.
+   * Resolves to whether it saved; a failure shows above the buttons, and
+   * the cache waits for the server (no optimistic update) so it can't roll
+   * back over the draft.
    */
   const commitUpdate = useCallback(
     (
