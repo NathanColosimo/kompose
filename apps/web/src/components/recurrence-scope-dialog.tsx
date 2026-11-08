@@ -62,8 +62,11 @@ export function RecurrenceScopeDialog({
   // would otherwise send the change twice while the first is running.
   const pendingRef = useRef(false);
   const [pending, setPending] = useState(false);
+  // The chosen scope can turn off after the dialog opens (the series
+  // loads): nothing is sent until an available one is chosen.
+  const chosenOff = Boolean(disabledScopes?.[value]);
   const confirm = async () => {
-    if (pendingRef.current) {
+    if (pendingRef.current || chosenOff) {
       return;
     }
     pendingRef.current = true;
@@ -159,7 +162,7 @@ export function RecurrenceScopeDialog({
             {cancelLabel}
           </Button>
           <Button
-            disabled={pending}
+            disabled={pending || chosenOff}
             onClick={() => {
               confirm().catch(() => null);
             }}

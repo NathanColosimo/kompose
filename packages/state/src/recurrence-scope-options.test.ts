@@ -132,4 +132,27 @@ test("turns This and following off where a new series can't start", () => {
     "This occurrence was added to the series on its own, so This and following isn't available."
   );
   expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
+  // A moved day keeps its own sentence, with the reason after it.
+  expect(eventSaveDescription({ ...blocked, dateMoved: true })).toBe(
+    "A new day applies to this occurrence, or from it on. This occurrence was added to the series on its own, so This and following isn't available."
+  );
+  // A new day and a new repeat at once: no scope fits, and it says so.
+  const stuck = { ...blocked, dateMoved: true, patternChanged: true };
+  expect(off(stuck)).toEqual(["all", "following", "this"]);
+  expect(eventSaveDescription(stuck)).toBe(
+    "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other."
+  );
+});
+
+test("keeps This and following off until the series loads", () => {
+  const loading = { ...none, seriesRuleLoaded: false };
+  expect(off(loading)).toEqual(["following"]);
+  expect(eventSaveDescription(loading)).toBe(
+    "Loading the series… This and following opens once it's in."
+  );
+  expect(eventSaveDescription({ ...loading, seriesRuleFailed: true })).toBe(
+    "Couldn't load the series, so This and following isn't available. Try again later."
+  );
+  // A repeat the user set doesn't wait for the series'.
+  expect(off({ ...loading, patternChanged: true })).toEqual(["this"]);
 });

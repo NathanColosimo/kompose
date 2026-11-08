@@ -39,7 +39,10 @@ export const SCOPE_DIALOG_COPY = {
   /** Shown when the series' rule couldn't load. */
   seriesFailed:
     "Couldn't load the series, so the new day applies to this occurrence only. Try again later for the rest.",
-  /** Shown while a moved day waits for the series' rule. */
+  /** Shown when the series' rule couldn't load, for a save in place. */
+  seriesFailedSave:
+    "Couldn't load the series, so This and following isn't available. Try again later.",
+  /** Shown while a save waits for the series' rule. */
   seriesLoading: "Loading the series… This and following opens once it's in.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
@@ -54,6 +57,9 @@ export const SCOPE_DIALOG_COPY = {
     severalRules:
       "This series repeats by more than one rule, so This and following isn't available.",
   } satisfies Record<SplitBlock, string>,
+  /** An added occurrence moved to a new day with a new repeat: no scope fits. */
+  splitBlockedAll:
+    "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other.",
   saveTask: {
     description: "Apply your changes to:",
     title: "Save recurring task",
@@ -138,10 +144,10 @@ export function eventSaveDisabledScopes(
   const ruleKnown = changes.seriesRuleLoaded || changes.patternChanged;
   return {
     ...(changes.patternChanged ? { this: true } : {}),
-    ...(changes.dateMoved
-      ? { all: true, ...(ruleKnown ? {} : { following: true }) }
-      : {}),
-    ...(changes.splitBlocked ? { following: true } : {}),
+    ...(changes.dateMoved ? { all: true } : {}),
+    // Until the series loads, it isn't known whether a new series can
+    // start here (or where the rule follows a new day to).
+    ...(ruleKnown && !changes.splitBlocked ? {} : { following: true }),
   };
 }
 
@@ -165,15 +171,22 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
     return SCOPE_DIALOG_COPY.moveEvent;
   }
   if (changes.splitBlocked) {
-    return SCOPE_DIALOG_COPY.splitBlocked[changes.splitBlocked];
+    const why = SCOPE_DIALOG_COPY.splitBlocked[changes.splitBlocked];
+    if (changes.dateMoved && changes.patternChanged) {
+      return SCOPE_DIALOG_COPY.splitBlockedAll;
+    }
+    return changes.dateMoved ? `${SCOPE_DIALOG_COPY.moveDate} ${why}` : why;
+  }
+  if (!(changes.seriesRuleLoaded || changes.patternChanged)) {
+    if (changes.seriesRuleFailed) {
+      return changes.dateMoved
+        ? SCOPE_DIALOG_COPY.seriesFailed
+        : SCOPE_DIALOG_COPY.seriesFailedSave;
+    }
+    return SCOPE_DIALOG_COPY.seriesLoading;
   }
   if (!changes.dateMoved) {
     return SCOPE_DIALOG_COPY.saveEvent.description;
-  }
-  if (!(changes.seriesRuleLoaded || changes.patternChanged)) {
-    return changes.seriesRuleFailed
-      ? SCOPE_DIALOG_COPY.seriesFailed
-      : SCOPE_DIALOG_COPY.seriesLoading;
   }
   const city = changes.seriesTimeZone
     ? timeZoneCity(changes.seriesTimeZone)

@@ -6,9 +6,11 @@ import {
   type RecurrenceValue,
   readRecurrenceValue,
   untilRuleForDay,
+  untilRuleToDay,
 } from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
+const UNTIL_VALUE = /[:;]UNTIL=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
 const SEVERAL_TIMES = /[:;]BY(?:HOUR|MINUTE|SECOND)=[^;]*,/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,7 +26,9 @@ export function truncateRecurrenceForFollowing(
   recurrence: string[],
   originalStart: string,
   /** The series' zone, for the days of its RDATE values. */
-  seriesZone = "UTC"
+  seriesZone = "UTC",
+  /** The series' first start, where a COUNT counts from. */
+  seriesStart?: string
 ): string[] {
   const until = DATE_ONLY.test(originalStart)
     ? Temporal.PlainDate.from(originalStart)
@@ -36,9 +40,23 @@ export function truncateRecurrenceForFollowing(
         .toString()
         .slice(0, 19)
         .replace(/[-:]/g, "")}Z`;
+  const first = seriesStart ? asValue(seriesStart, seriesZone)?.day : null;
+  const splitDay = DATE_ONLY.test(originalStart)
+    ? Temporal.PlainDate.from(originalStart)
+    : Temporal.Instant.from(originalStart)
+        .toZonedDateTimeISO(seriesZone)
+        .toPlainDate();
   return splitAddedDays(recurrence, originalStart, seriesZone, "before").map(
     (line) => {
       if (!line.startsWith("RRULE:")) {
+        return line;
+      }
+      // A rule that already ends before the split (its UNTIL, or its
+      // last COUNT position) keeps its end: the cut never lengthens it.
+      if (
+        first &&
+        ruleEndedBy(line, first, splitDay.subtract({ days: 1 }), seriesZone)
+      ) {
         return line;
       }
       // Part by part, so a rule written COUNT-first ("RRULE:COUNT=5;...")
@@ -279,10 +297,35 @@ export function followingSplitBlocked(params: {
     rule &&
     first &&
     isRuleDay(rule, first.day, split.day) === true &&
+    !ruleEndedBy(rule, first.day, split.day, params.seriesZone) &&
     (!(firstClock && splitClock) ||
       Temporal.PlainTime.compare(ruleClock(rule, firstClock), splitClock) ===
         0);
   return ruleMeeting ? null : "addedOccurrence";
+}
+
+/**
+ * Whether `rule`, from the series' first day, has ended before `day`:
+ * past its UNTIL day, or past its last COUNT position (or its positions
+ * can't be walked, taken as ended so nothing extends it).
+ */
+function ruleEndedBy(
+  rule: string,
+  first: Temporal.PlainDate,
+  day: Temporal.PlainDate,
+  seriesZone: string
+): boolean {
+  const until = UNTIL_VALUE.exec(rule)?.[1];
+  if (until) {
+    const last = untilRuleToDay(until, seriesZone);
+    return !last || Temporal.PlainDate.compare(day, last) > 0;
+  }
+  const count = Number(COUNT_REGEX.exec(rule)?.[1]);
+  if (!Number.isFinite(count)) {
+    return false;
+  }
+  const last = countedRuleDays(rule, first, count)?.at(-1);
+  return !last || Temporal.PlainDate.compare(day, last) > 0;
 }
 
 /**

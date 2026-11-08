@@ -827,6 +827,8 @@ function EventSaveScopeDialog({
   return (
     <AlertDialog
       closeOnConfirm={false}
+      // The chosen scope can turn off once the series loads.
+      confirmDisabled={Boolean(disabled[scope])}
       confirmText="Apply"
       description={
         changes

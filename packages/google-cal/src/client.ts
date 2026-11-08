@@ -954,7 +954,8 @@ export function makeGoogleCalendarService(
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
         startIso,
-        seriesZoneOf(master)
+        seriesZoneOf(master),
+        master.start.dateTime ?? master.start.date
       );
 
       const truncatedPayload = sanitizeEventPayload({
@@ -1169,7 +1170,8 @@ export function makeGoogleCalendarService(
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
         originalStartIso,
-        seriesZoneOf(master)
+        seriesZoneOf(master),
+        master.start.dateTime ?? master.start.date
       );
 
       yield* Effect.tryPromise({
@@ -1300,7 +1302,8 @@ export function makeGoogleCalendarService(
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
         originalStartIso,
-        seriesZoneOf(master)
+        seriesZoneOf(master),
+        master.start.dateTime ?? master.start.date
       );
 
       const truncatedMasterResponse = yield* Effect.tryPromise({

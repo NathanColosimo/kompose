@@ -1,0 +1,154 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { makeGoogleCalendarService } from "@kompose/google-cal/client";
+import {
+  followingSplitBlocked,
+  truncateRecurrenceForFollowing,
+} from "@kompose/google-cal/recurrence-utils";
+import type { Event } from "@kompose/google-cal/schema";
+import { Effect, Exit } from "effect";
+
+const zone = "America/New_York";
+const seriesStart = { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone };
+
+describe("where This and following can start", () => {
+  const blocked = (recurrence: string[], originalStart: string) =>
+    followingSplitBlocked({
+      masterRecurrence: recurrence,
+      masterStart: seriesStart,
+      originalStart,
+      seriesZone: zone,
+    });
+
+  test("not at an added meeting after the rule has ended", () => {
+    // Daily 9:00 five times (Nov 9-13), or until Nov 13, plus an added
+    // Nov 20 9:00: a weekday and time the rule has, but past its end.
+    for (const rule of [
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "RRULE:FREQ=DAILY;UNTIL=20261114T045959Z",
+    ]) {
+      expect(
+        blocked(
+          [rule, "RDATE;TZID=America/New_York:20261120T090000"],
+          "2026-11-20T09:00:00-05:00"
+        )
+      ).toBe("addedOccurrence");
+      // One of the rule's own meetings still can.
+      expect(blocked([rule], "2026-11-12T09:00:00-05:00")).toBeNull();
+    }
+  });
+
+  test("a cut never lengthens a rule that already ended", () => {
+    // Deleting from that Nov 20 meeting on keeps the rule's own end.
+    for (const rule of [
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "RRULE:FREQ=DAILY;UNTIL=20261114T045959Z",
+    ]) {
+      expect(
+        truncateRecurrenceForFollowing(
+          [rule, "RDATE;TZID=America/New_York:20261120T090000"],
+          "2026-11-20T09:00:00-05:00",
+          zone,
+          seriesStart.dateTime
+        )
+      ).toEqual([rule]);
+    }
+    // A rule still running is cut the second before the split.
+    expect(
+      truncateRecurrenceForFollowing(
+        ["RRULE:FREQ=DAILY;COUNT=10"],
+        "2026-11-12T09:00:00-05:00",
+        zone,
+        seriesStart.dateTime
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261112T135959Z"]);
+  });
+});
+
+describe("the server refuses a split that can't start a series", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /**
+   * Google answers each request with `answer(url)`; every request is
+   * recorded. (The client takes fetch when it's made: stub it first.)
+   */
+  const stubGoogle = (answer: (url: string) => Event) => {
+    const requests: string[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      requests.push(`${method} ${String(input)}`);
+      return Promise.resolve(
+        new Response(JSON.stringify(answer(String(input))), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        })
+      );
+    }) as typeof fetch;
+    return requests;
+  };
+
+  const master: Event = {
+    end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+    id: "series",
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;COUNT=4",
+      "RDATE;TZID=America/New_York:20261116T090000",
+    ],
+    start: seriesStart,
+    summary: "Planning",
+  } as Event;
+  // The added off-week Monday.
+  const added: Event = {
+    ...master,
+    id: "series_20261116T140000Z",
+    originalStartTime: {
+      dateTime: "2026-11-16T09:00:00-05:00",
+      timeZone: zone,
+    },
+    recurrence: undefined,
+    recurringEventId: "series",
+    start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+    end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+  } as Event;
+
+  const failsBeforeWriting = async (
+    run: Effect.Effect<unknown, unknown>,
+    requests: string[]
+  ) => {
+    const exit = await Effect.runPromiseExit(run);
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
+      "This and following isn't available"
+    );
+    expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
+  };
+
+  test("when saving from an added meeting", async () => {
+    const requests = stubGoogle(() => master);
+    const service = makeGoogleCalendarService("token");
+    await failsBeforeWriting(
+      service.updateEvent(
+        "primary",
+        added.id,
+        { ...added, summary: "Planning (moved)" },
+        "following",
+        added
+      ),
+      requests
+    );
+  });
+
+  test("when moving it to another calendar from there", async () => {
+    // The instance first, then its series' master.
+    const requests = stubGoogle((url) =>
+      url.includes(added.id) ? added : master
+    );
+    const service = makeGoogleCalendarService("token");
+    await failsBeforeWriting(
+      service.moveEvent("primary", added.id, "work", "following"),
+      requests
+    );
+  });
+});

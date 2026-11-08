@@ -39,6 +39,8 @@ export type AlertDialogProps = {
    */
   pending?: boolean;
   pendingText?: string;
+  /** The confirm button is off (nothing to confirm yet). */
+  confirmDisabled?: boolean;
   /**
    * False when the caller closes the dialog itself (by `isVisible`), as
    * after an async confirm.
@@ -60,6 +62,7 @@ export function AlertDialog({
   onConfirm,
   onCancel,
   pending = false,
+  confirmDisabled = false,
   pendingText = "Saving…",
   closeOnConfirm = true,
   dismissible = true,
@@ -165,7 +168,7 @@ export function AlertDialog({
                   </Button>
                 )}
                 <Button
-                  disabled={pending}
+                  disabled={pending || confirmDisabled}
                   onPress={handleConfirm}
                   style={{ flex: 1 }}
                 >
