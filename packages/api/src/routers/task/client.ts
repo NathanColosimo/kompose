@@ -8,13 +8,24 @@ import type {
   TaskUpdate,
 } from "@kompose/db/schema/task";
 import { taskTable } from "@kompose/db/schema/task";
-import { and, asc, EmptyFilter, eq, gte, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  EmptyFilter,
+  eq,
+  gte,
+  inArray,
+  lt,
+  ne,
+} from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { generateOccurrences, sameRecurrence } from "../../lib/recurrence";
 import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, TaskNotFoundError } from "./errors";
+import { endedBefore, heirPattern } from "./occurrence-rows";
 
 type TaskInsertRow = typeof taskTable.$inferInsert;
 
@@ -142,6 +153,66 @@ const dbDelete = (userId: string, taskId: string) =>
       .delete(taskTable)
       .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)));
   });
+
+/**
+ * Pass a master's role and pattern to the series' next dated occurrence
+ * (counting the dated ones left), the rest of the series following it.
+ */
+const handOffMasterRole = Effect.fn("handOffMasterRole")(function* (
+  userId: string,
+  master: TaskSelect
+) {
+  const db = yield* Database;
+  const rest = yield* db
+    .select()
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        ne(taskTable.id, master.id)
+      )
+    )
+    .orderBy(asc(taskTable.startDate));
+  const dated = rest.filter((row) => row.startDate);
+  const [heir] = dated;
+  if (!heir) {
+    return [] as TaskSelect[];
+  }
+  return yield* makeMaster(userId, {
+    heir,
+    recurrence: heirPattern(master.recurrence, dated.length),
+    rows: rest,
+  });
+});
+
+/**
+ * Make `heir` the master of `rows` (itself among them), carrying
+ * `recurrence`: the part of a series that outlives its master.
+ */
+const makeMaster = Effect.fn("makeMaster")(function* (
+  userId: string,
+  params: {
+    heir: TaskSelect;
+    recurrence: TaskSelect["recurrence"];
+    rows: TaskSelect[];
+  }
+) {
+  const db = yield* Database;
+  const followed = yield* db
+    .update(taskTable)
+    .set({ seriesMasterId: params.heir.id })
+    .where(
+      and(eq(taskTable.userId, userId), inArray(taskTable.id, ids(params.rows)))
+    )
+    .returning();
+  const [newMaster] = yield* dbUpdate(userId, params.heir.id, {
+    recurrence: params.recurrence,
+  });
+  return newMaster
+    ? [...followed.filter((row) => row.id !== params.heir.id), newMaster]
+    : followed;
+});
 
 const dbDeleteBySeriesFrom = (
   userId: string,
@@ -704,6 +775,94 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   return yield* dbInsert(taskRows);
 });
 
+/**
+ * Ends the series' pattern the day before `task` (when `task` isn't its
+ * first): the master keeps its days up to there, and stops claiming the
+ * ones from `task` on.
+ */
+const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
+  userId: string,
+  task: DatedSeriesTask
+) {
+  // The first date the earlier part no longer covers.
+  const boundary = task.startDate;
+  if (task.seriesMasterId === task.id) {
+    return yield* handOffEarlierPart(userId, task, boundary);
+  }
+  const [master] = yield* dbSelectById(userId, task.seriesMasterId);
+  if (!master?.recurrence) {
+    return [] as TaskSelect[];
+  }
+  // The split starts on or before the master, so the master's pattern goes
+  // rather than ending before its own start. Occurrences before the split
+  // (the master was moved later alone) keep the original pattern as a
+  // series of their own first.
+  if (master.startDate && boundary <= master.startDate) {
+    const handedOff = yield* handOffEarlierPart(userId, master, boundary);
+    const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
+    return [...handedOff, ...cleared];
+  }
+  const db = yield* Database;
+  const [last] = yield* db
+    .select({ startDate: taskTable.startDate })
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        lt(taskTable.startDate, boundary)
+      )
+    )
+    .orderBy(desc(taskTable.startDate))
+    .limit(1);
+  return yield* dbUpdate(userId, master.id, {
+    recurrence: endedBefore(master.recurrence, boundary, last?.startDate),
+  });
+});
+
+/**
+ * Occurrences of `master`'s series before `boundary` (the master was moved
+ * later alone, then the series split at or before it) keep the original
+ * pattern, ended the day before, under the earliest of them as their own
+ * master, so what happens to the master from there on doesn't reach them.
+ */
+const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
+  userId: string,
+  master: Pick<TaskSelect, "id" | "recurrence">,
+  boundary: string
+) {
+  const db = yield* Database;
+  const earlier = yield* db
+    .select()
+    .from(taskTable)
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        ne(taskTable.id, master.id),
+        lt(taskTable.startDate, boundary)
+      )
+    )
+    .orderBy(asc(taskTable.startDate));
+  const [heir] = earlier;
+  if (!(heir && master.recurrence)) {
+    return [] as TaskSelect[];
+  }
+  return yield* makeMaster(userId, {
+    heir,
+    recurrence: endedBefore(
+      master.recurrence,
+      boundary,
+      earlier.at(-1)?.startDate
+    ),
+    rows: earlier,
+  });
+});
+
+function ids(rows: Pick<TaskSelect, "id">[]): string[] {
+  return rows.map((row) => row.id);
+}
+
 /** Update a recurring series by scaling date/time offsets across occurrences. */
 const updateSeriesWithScaledDates = Effect.fn("updateSeriesWithScaledDates")(
   function* (userId: string, task: DatedSeriesTask, input: TaskUpdateInput) {
@@ -977,20 +1136,40 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
-      // Non-recurring or scope=this: delete single task
-      if (!task.seriesMasterId || scope === "this") {
+      const db = yield* Database;
+      // Without a start date there's no "following": delete it alone.
+      const alone = scope === "this" || !task.startDate;
+      // A series master deleted alone hands its role and pattern to the
+      // next occurrence, so the rest keep a master to read the pattern from.
+      if (alone && task.seriesMasterId === task.id) {
+        yield* db.transaction(() =>
+          Effect.gen(function* () {
+            yield* handOffMasterRole(userId, task);
+            yield* dbDelete(userId, taskId);
+          })
+        );
+        return;
+      }
+
+      // Non-recurring or alone: delete single task
+      if (alone || !isDatedSeriesTask(task)) {
         yield* dbDelete(userId, taskId);
         return;
       }
 
-      // scope=following: delete this task and all future tasks in series
-      if (scope === "following" && task.startDate) {
-        yield* dbDeleteBySeriesFrom(
-          userId,
-          task.seriesMasterId,
-          task.startDate
-        );
-      }
+      // scope=following: delete this task and all future tasks in series.
+      // What's left before it ends its pattern there, or, when this is a
+      // master moved later alone, keeps it as a series of its own.
+      yield* db.transaction(() =>
+        Effect.gen(function* () {
+          yield* endSeriesBefore(userId, task);
+          yield* dbDeleteBySeriesFrom(
+            userId,
+            task.seriesMasterId,
+            task.startDate
+          );
+        })
+      );
     });
 
     return { createTask, deleteTask, getTask, listTasks, updateTask };

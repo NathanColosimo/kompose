@@ -20,7 +20,7 @@ import type { Database } from "@kompose/db";
 import type { TaskRecurrence, TaskSelect } from "@kompose/db/schema/task";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { TaskService } from "./client";
-import type { UpdateScope } from "./contract";
+import type { DeleteScope, UpdateScope } from "./contract";
 
 type TaskUpdateInput = Parameters<TaskService["Service"]["updateTask"]>[2];
 
@@ -236,6 +236,10 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           title: "Review",
           userId,
         }),
+      remove: (date: string, scope: DeleteScope) =>
+        Effect.flatMap(find(date), (task) =>
+          service.deleteTask(userId, task.id, scope)
+        ),
       update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
@@ -250,6 +254,46 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-16 Review todo in 2026-11-10",
       "2026-11-23 Review todo in 2026-11-10",
     ]);
+  });
+
+  test("hands a deleted master's role to the next occurrence, counting what's left", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(4));
+          yield* u.remove("2026-11-10", "this");
+          yield* u.remove("2026-11-09", "this");
+        })
+      )
+    ).toEqual([
+      "2026-11-11 Review todo MASTER DAILY/1 x2",
+      "2026-11-12 Review todo in 2026-11-11",
+    ]);
+  });
+
+  test("deleting from an occurrence on ends the series there", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.remove("2026-11-10", "following");
+        })
+      )
+    ).toEqual(["2026-11-09 Review todo MASTER DAILY/1 until 2026-11-09"]);
+  });
+
+  test("deleting from an occurrence before a master moved later keeps the earlier part", async () => {
+    // Daily x5; the Nov 9 master moved alone to Nov 20; then Nov 11 and
+    // following deleted, the moved master with them.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.remove("2026-11-11", "following");
+        })
+      )
+    ).toEqual(["2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10"]);
   });
 
   test("treats a pattern sent along unchanged, in another key order, as no change", async () => {
