@@ -870,6 +870,7 @@ export function EventEditPopover({
               seriesRecurrenceForSave({
                 editedStart,
                 masterRecurrence: seriesMaster.data?.recurrence,
+                masterStart: seriesMaster.data?.start,
                 occurrence: event,
                 recurrence: sent,
                 timeZone,
@@ -900,6 +901,7 @@ export function EventEditPopover({
       event,
       moveEvent,
       seriesMaster.data?.recurrence,
+      seriesMaster.data?.start,
       timeZone,
       updateEvent,
     ]

@@ -1062,6 +1062,60 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
+  test("counts from the occurrence's place when its day didn't move", () => {
+    // Mon Nov 9, rescheduled before to Tue Nov 10, made all day there for
+    // the series: the day didn't move, so the rule and its skip stay on
+    // the series' days (Nov 16, Dec 9).
+    const madeAllDay = (rule: string, exdate: string) =>
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-10" },
+        masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
+        masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-10T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      });
+    expect(madeAllDay("RRULE:FREQ=WEEKLY", "20261116T090000")).toEqual([
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE;VALUE=DATE:20261116",
+    ]);
+    expect(madeAllDay("RRULE:FREQ=MONTHLY", "20261209T090000")).toEqual([
+      "RRULE:FREQ=MONTHLY",
+      "EXDATE;VALUE=DATE:20261209",
+    ]);
+  });
+
+  test("counts a COUNT from the series' first day", () => {
+    // From Nov 2: daily 9:00, and 15:00 five times (Nov 2-6). Made all day
+    // through the Nov 12 occurrence: Nov 9's only meeting was skipped.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-12" },
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;BYHOUR=9",
+          "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+          "EXDATE;TZID=America/New_York:20261109T090000",
+        ],
+        masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-12T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-12T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=DAILY",
+      "RRULE:FREQ=DAILY;COUNT=5",
+      "EXDATE;VALUE=DATE:20261109",
+    ]);
+  });
+
   describe("making a timed series all day", () => {
     const allDay = (recurrence: string[]) =>
       matchRecurrenceToStart(
@@ -1136,6 +1190,42 @@ describe("seriesRecurrenceForSave", () => {
           "EXDATE;VALUE=DATE:20261116",
         ]);
       }
+    });
+
+    test("ends a rule at its UNTIL's moment, not its day", () => {
+      // 15:00 until Nov 16 12:00 (17:00Z): Nov 16's 15:00 doesn't meet, so
+      // its 9:00, skipped, was its only meeting.
+      expect(
+        allDay([
+          "RRULE:FREQ=DAILY;BYHOUR=9",
+          "RRULE:FREQ=DAILY;BYHOUR=15;UNTIL=20261116T170000Z",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ])
+      ).toEqual([
+        "RRULE:FREQ=DAILY",
+        "RRULE:FREQ=DAILY;UNTIL=20261116",
+        "EXDATE;VALUE=DATE:20261116",
+      ]);
+    });
+
+    test("takes a skipped added meeting as the rule's when its time is unknown", () => {
+      // No start time to read the rule's from: an added Nov 16 9:00, also
+      // skipped, may be the Monday meeting's, so Nov 16 stays skipped.
+      expect(
+        matchRecurrenceToStart(
+          [
+            "RRULE:FREQ=WEEKLY;BYDAY=MO",
+            "RDATE;TZID=America/New_York:20261116T090000",
+            "EXDATE;TZID=America/New_York:20261116T090000",
+          ],
+          { date: "2026-11-09" },
+          "America/New_York"
+        )
+      ).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;VALUE=DATE:20261116",
+        "EXDATE;VALUE=DATE:20261116",
+      ]);
     });
 
     test("keeps a several-a-day day unless all its times were skipped", () => {

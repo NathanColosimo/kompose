@@ -573,6 +573,8 @@ export function seriesRecurrenceForSave(params: {
     timeZone?: string | null;
   };
   masterRecurrence: string[] | null | undefined;
+  /** The series' own start, its first day (where COUNT counts from). */
+  masterStart?: { date?: string | null; dateTime?: string | null } | null;
   occurrence: Pick<
     GoogleEvent,
     "originalStartTime" | "recurringEventId" | "start"
@@ -621,11 +623,19 @@ export function seriesRecurrenceForSave(params: {
           toTime: timeOfStart(editedStart, timeZone),
         })
       : masterRecurrence;
+  // The rules count from the edited day only when they followed it there;
+  // otherwise from the series' first day (or, not known, the occurrence's
+  // place in it).
+  const firstDay = params.masterStart
+    ? dayOfStart(params.masterStart, timeZone)
+    : null;
+  const rulesFrom = (moved ? to : (firstDay ?? from)) ?? undefined;
   const matched = matchRecurrenceToStart(
     followed,
     editedStart,
     timeZone,
-    occurrence.originalStartTime ?? occurrence.start
+    occurrence.originalStartTime ?? occurrence.start,
+    { firstDay, rulesFrom }
   );
   return matched === masterRecurrence ? undefined : matched;
 }

@@ -1103,6 +1103,7 @@ export default function CalendarTab() {
     event: editingEventDraft?.sourceEvent ?? null,
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
+  const masterStart = recurringMasterEvent.data?.start;
   const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
   const [eventDeleteScope, setEventDeleteScope] =
     useState<RecurrenceScope>("this");
@@ -1524,6 +1525,7 @@ export default function CalendarTab() {
             seriesRecurrenceForSave({
               editedStart: eventPayload.start,
               masterRecurrence,
+              masterStart,
               occurrence: draft.sourceEvent,
               recurrence: eventPayload.recurrence,
               timeZone,
@@ -1561,6 +1563,7 @@ export default function CalendarTab() {
       buildEventPayload,
       closeEventModal,
       masterRecurrence,
+      masterStart,
       moveEvent,
       timeZone,
       updateEvent,

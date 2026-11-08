@@ -749,6 +749,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         : seriesRecurrenceForSave({
             editedStart: update.event.start,
             masterRecurrence: pendingMaster.data?.recurrence,
+            masterStart: pendingMaster.data?.start,
             occurrence,
             recurrence: undefined,
             timeZone,
