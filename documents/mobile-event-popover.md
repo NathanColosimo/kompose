@@ -36,7 +36,7 @@ Top-to-bottom:
 3. Repeat row (its own full-width row)
 - Says how the event repeats, in words ("Repeats weekly on Tue"), with "· Tokyo time" when the series' zone isn't the app's
 - Tapping it opens the repeat editor under it: frequency chips, the interval stepper, weekday chips (weekly), the monthly day choice, and the end (never / on date / after N)
-- For an occurrence it shows the series' rule, which can load after the editor opens ("Loading repeat…"); if the load fails, a "Repeat didn't load · Try again" button replaces it
+- For an occurrence it shows the series' rule, which can load after the editor opens ("Loading repeat…"); if the load fails, "The repeat didn't load." (or "didn't refresh.") sits beside a Try again button
 - It shows the rule the save sends (`seriesRepeatForEdit`): an occurrence moved to another day shows the series' rule following that day, and a rescheduled occurrence left where it is counts from its place in the series
 
 4. All-day + meeting row
@@ -84,8 +84,8 @@ Edit (recurring):
   - This and following
   - Entire series
 - A scope that can't apply is off, and the dialog's line says why (a moved day, the series still loading, a repeat that would skip this occurrence; see [event-popover.md](./event-popover.md)). If the calendar changes, only `all` is enabled and the entire series moves.
-- A save for the series (`following`/`all`) sends only the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
-- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server still refuses a save (its typed refusal names the meetings it would have undone), the app shows its words and the dialog stays, with Entire series off.
+- A save for the series (`following`/`all`) sends only its times, its repeat, and the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
+- Entire series is off, with the reason in the dialog, when a new repeat would cancel a meeting the user moved (`movedMeetingDropped`, among the series' loaded occurrences), or when a new time can't apply to a series of several rules. If the server refuses a save, the app shows its words. When the refusal is for a moved meeting a new repeat would drop, the dialog stays open with Entire series off and names that meeting by the day the calendar shows it on.
 
 Delete:
 - Non-recurring: simple confirm dialog.

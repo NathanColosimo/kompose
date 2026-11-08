@@ -764,7 +764,10 @@ function noop() {
   // Intentionally empty: the sheet holds while its save runs.
 }
 
-/** The sheet's fields, dimmed and inert while its save runs. */
+/**
+ * The sheet's fields, dimmed and inert while its save runs: out of reach
+ * of touch and of VoiceOver, so nothing changes after the save took them.
+ */
 function HeldWhileSaving({
   children,
   isSaving,
@@ -774,6 +777,8 @@ function HeldWhileSaving({
 }) {
   return (
     <View
+      accessibilityElementsHidden={isSaving}
+      importantForAccessibility={isSaving ? "no-hide-descendants" : "auto"}
       pointerEvents={isSaving ? "none" : "auto"}
       style={isSaving ? { opacity: 0.6 } : undefined}
     >

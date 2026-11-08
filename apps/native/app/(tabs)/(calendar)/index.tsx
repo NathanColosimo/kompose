@@ -5,7 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { canWriteCalendar } from "@kompose/google-cal/schema";
-import { matchRecurrenceToStart } from "@kompose/google-cal/until";
+import { dayOfStart, matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -58,6 +58,7 @@ import {
 } from "@kompose/state/google-event-recurrence";
 import {
   keepsEventTimes,
+  sameEventTime,
   withEditedTime,
 } from "@kompose/state/google-event-times";
 import {
@@ -737,19 +738,22 @@ function seriesRefusalOf(
 }
 
 /**
- * The day of the first moved or edited meeting a refused Entire series
- * save would have dropped, by its original start; null for anything else.
+ * The original start of the first moved or edited meeting a refused save
+ * would have dropped; null for any other failure.
  */
-function droppedMeetingOf(error: unknown): Temporal.PlainDate | null {
+function droppedOriginalStart(error: unknown): string | null {
   const refusal = seriesRefusalOf(error);
   const first =
     refusal?.reason === "dropsChangedOccurrences" &&
     Array.isArray(refusal.originalStarts)
       ? refusal.originalStarts[0]
       : null;
-  return typeof first === "string"
-    ? Temporal.PlainDate.from(first.slice(0, 10))
-    : null;
+  return typeof first === "string" ? first : null;
+}
+
+/** A Google original start as the refusal sends it: a date, or a date-time. */
+function startOf(original: string): { date?: string; dateTime?: string } {
+  return original.includes("T") ? { dateTime: original } : { date: original };
 }
 
 /**
@@ -1645,7 +1649,10 @@ export default function CalendarTab() {
           // Reported below: a refusal says what it would have undone.
           quiet: true,
           event: {
-            ...draft.sourceEvent,
+            // One occurrence keeps its other fields; a save for the series
+            // sends only its changes, so a field the editor never showed
+            // (guests, say) can't carry an old copy onto the series.
+            ...(scope === "this" ? draft.sourceEvent : { id: draft.eventId }),
             ...eventPayload,
             recurrence,
             end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
@@ -1655,16 +1662,14 @@ export default function CalendarTab() {
           recurrenceScope: scope,
         })
         .catch((error: Error) => {
-          // A refusal in the server's words (it names the meetings it would
-          // have undone); anything else as a failed save.
+          // A refusal in the server's words (a dropped meeting's names its
+          // day); anything else as a failed save.
           notifyError?.(
             heldSaveError(
               error,
               seriesRefusalOf(error) ? undefined : SAVE_FAILURE_MESSAGE
             )
           );
-          // The scope dialog stays, and turns Entire series off for it.
-          setRefusedMovedDay(droppedMeetingOf(error));
           throw error;
         });
 
@@ -1831,6 +1836,31 @@ export default function CalendarTab() {
     ]
   );
 
+  /**
+   * The day a refused save's moved meeting is on now, as the calendar shows
+   * it (its loaded occurrence), else its original day in the series' zone.
+   */
+  const movedMeetingDay = useCallback(
+    (original: string, draft: EditEventDraft): Temporal.PlainDate | null => {
+      const occurrence = draft.sourceEvent;
+      const seriesZone = eventTimeZone(occurrence, timeZone);
+      const moved = googleEvents.find(
+        (item) =>
+          item.event.recurringEventId === occurrence.recurringEventId &&
+          item.event.originalStartTime &&
+          sameEventTime(
+            item.event.originalStartTime,
+            startOf(original),
+            seriesZone
+          )
+      );
+      return moved
+        ? dayOfStart(moved.event.start, timeZone)
+        : dayOfStart(startOf(original), seriesZone);
+    },
+    [googleEvents, timeZone]
+  );
+
   const confirmScopedEventSave = useCallback(
     async (scope: RecurrenceScope) => {
       if (!pendingEventSaveDraft) {
@@ -1842,9 +1872,24 @@ export default function CalendarTab() {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
       } catch (error) {
-        // A save refused for a moved meeting it would drop keeps the dialog,
-        // which now says so; otherwise the editor stays with the edits.
-        if (!droppedMeetingOf(error)) {
+        // A save refused for a moved meeting it would drop keeps the dialog
+        // when that turns Entire series off, so the dialog says why;
+        // otherwise the editor stays with the edits.
+        const original = droppedOriginalStart(error);
+        const day = original
+          ? movedMeetingDay(original, pendingEventSaveDraft)
+          : null;
+        const turnsOff =
+          day !== null &&
+          Boolean(
+            eventSaveDisabledScopes({
+              ...eventSaveChanges(pendingEventSaveDraft),
+              droppedMovedDay: day,
+            }).all
+          );
+        if (turnsOff) {
+          setRefusedMovedDay(day);
+        } else {
           setEventDialog(null);
           setPendingEventSaveDraft(null);
         }
@@ -1852,7 +1897,12 @@ export default function CalendarTab() {
         setIsSavingEvent(false);
       }
     },
-    [commitEventUpdate, pendingEventSaveDraft]
+    [
+      commitEventUpdate,
+      eventSaveChanges,
+      movedMeetingDay,
+      pendingEventSaveDraft,
+    ]
   );
 
   const requestDeleteEvent = useCallback(
