@@ -508,7 +508,14 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         </SidebarContent>
       </Sidebar>
 
-      <Sidebar className="min-w-0 flex-1" collapsible="none" mobile="inline">
+      {/* Folded, the panel is out of the tab order and hidden from screen
+          readers; the icon rail stays. */}
+      <Sidebar
+        className="min-w-0 flex-1"
+        collapsible="none"
+        inert={!open}
+        mobile="inline"
+      >
         <div
           className={cn(
             "flex size-full min-h-[200px] flex-1 flex-col transition-colors",

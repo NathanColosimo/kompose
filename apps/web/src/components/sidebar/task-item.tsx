@@ -13,9 +13,8 @@ import {
 } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
-import { memo, useCallback, useId } from "react";
+import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
-import { openOnEnterOrSpace } from "@/lib/keyboard";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../tags/tag-icon-map";
@@ -34,11 +33,8 @@ export const TaskItem = memo(function TaskItemInner({
 }: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
-  const titleId = useId();
-  const detailsId = useId();
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    attributes: { roleDescription: "task" },
     data: {
       task,
       type: "task",
@@ -72,47 +68,45 @@ export const TaskItem = memo(function TaskItemInner({
     task.dueDate !== null &&
     Temporal.PlainDate.compare(task.dueDate, today) < 0;
 
+  // The row drags (pointer only); its checkbox and the button that opens
+  // the editor sit side by side, so neither control holds the other. The
+  // button's ::after stretches over the row, so a click anywhere opens it.
   return (
-    <TaskEditPopover surface="sidebar" task={task}>
-      {/* biome-ignore lint/a11y/useSemanticElements: a button can't hold the task checkbox (see openOnEnterOrSpace) */}
-      <div
-        className={cn(
-          "group flex cursor-grab items-start gap-2.5 rounded-md px-2 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          // Hide original when dragging - DragOverlay shows the preview
-          isDragging ? "opacity-0" : ""
-        )}
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        // Named by its title and details, not the checkbox's label.
-        aria-labelledby={`${titleId} ${detailsId}`}
-        onKeyDown={openOnEnterOrSpace}
-        role="button"
-        tabIndex={0}
-      >
-        <Checkbox
-          aria-label={`Done: ${task.title}`}
-          checked={isDone}
-          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground transition-colors group-hover:border-foreground"
-          onClick={handleStatusToggle}
-        />
+    <div
+      className={cn(
+        "group relative flex cursor-grab items-start gap-2.5 rounded-md px-2 py-2 transition-colors",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        // Hide original when dragging - DragOverlay shows the preview
+        isDragging ? "opacity-0" : ""
+      )}
+      ref={setNodeRef}
+      {...listeners}
+    >
+      <Checkbox
+        aria-label={`Done: ${task.title}`}
+        checked={isDone}
+        className="z-10 mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground transition-colors group-hover:border-foreground"
+        onClick={handleStatusToggle}
+      />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <TaskEditPopover surface="sidebar" task={task}>
+        <button
+          // The drag instructions ("Press Enter to open. Drag with a
+          // pointer to move.").
+          aria-describedby={attributes["aria-describedby"]}
+          className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+          type="button"
+        >
           <span
             className={cn(
               "text-sm leading-snug",
               isDone ? "text-muted-foreground line-through" : ""
             )}
-            id={titleId}
           >
             {task.title}
           </span>
 
-          <div
-            className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums"
-            id={detailsId}
-          >
+          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums">
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
@@ -138,6 +132,8 @@ export const TaskItem = memo(function TaskItemInner({
                   day: "numeric",
                   month: "short",
                 })}
+                {/* Tag and Inbox lists have no Overdue heading to say so. */}
+                {isPastDue ? <span className="sr-only">(overdue)</span> : null}
               </span>
             ) : null}
             {task.tags
@@ -154,9 +150,9 @@ export const TaskItem = memo(function TaskItemInner({
                   </span>
                 );
               })}
-          </div>
-        </div>
-      </div>
-    </TaskEditPopover>
+          </span>
+        </button>
+      </TaskEditPopover>
+    </div>
   );
 });

@@ -251,12 +251,13 @@ export function TaskEditPopover({
   const handleCancel = useCallback(() => {
     setOpen(false);
   }, []);
+  const contentRef = useRef<HTMLDivElement>(null);
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
       // Focus moves into the editor, so Tab reaches its fields, but not to
       // the title: there Backspace would edit it instead of deleting the task.
       event.preventDefault();
-      (event.currentTarget as HTMLElement).focus();
+      contentRef.current?.focus();
       if (!(matchesOpenRequest && openRequest)) {
         return;
       }
@@ -290,8 +291,8 @@ export function TaskEditPopover({
         align={align}
         className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-3 overflow-y-auto p-4"
         collisionPadding={8}
-        // While Mark done saves, the editor holds: closing would drop the
-        // edits if the save fails.
+        // While a save runs, the editor holds: closing would drop the edits
+        // if it fails.
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           if (!savingRef.current) {
@@ -305,6 +306,7 @@ export function TaskEditPopover({
           }
         }}
         onOpenAutoFocus={handleOpenAutoFocus}
+        ref={contentRef}
         // A phone has no room beside the task, and Radix only slides a side
         // placement up or down, so the editor opens below it instead.
         side={isNarrow ? "bottom" : side}
