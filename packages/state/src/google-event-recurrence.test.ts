@@ -886,6 +886,43 @@ describe("seriesRecurrenceForSave", () => {
         "10:00"
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261117T100000,20261118T100000");
+    // Moved onto a Wednesday whose 9:00 was skipped, at 10:00: retimed,
+    // that skip would hide the meeting just placed, so it goes (also for
+    // one rule at 9:00 and 15:00 moved to 9:30).
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
+          "EXDATE;TZID=America/New_York:20261111T090000",
+        ],
+        "2026-11-11",
+        "10:00"
+      ).some((line) => line.startsWith("EXDATE"))
+    ).toBe(false);
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9,15",
+          "EXDATE;TZID=America/New_York:20261111T090000",
+        ],
+        "2026-11-11",
+        "09:30"
+      ).some((line) => line.startsWith("EXDATE"))
+    ).toBe(false);
+    // Retimed to 10:00, the Wednesday skip would land on another rule's
+    // real 10:00 meeting: it stays at 9:00.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+          "RRULE:FREQ=WEEKLY;BYDAY=WE;BYHOUR=10",
+          "EXDATE;TZID=America/New_York:20261118T090000",
+        ],
+        "2026-11-10",
+        "10:00"
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261118T090000");
     // A skip moved onto one already there is written once.
     expect(
       followed(

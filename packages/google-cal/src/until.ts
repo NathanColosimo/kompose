@@ -87,7 +87,10 @@ function endedBefore(
   }
   const count = Number(COUNT_VALUE.exec(rule)?.[1]);
   const last = Number.isFinite(count)
-    ? countedRuleDays(rule, start, count, false)?.at(-1)
+    ? // Not counting the start as one of its own (RFC 5545 does when it
+      // isn't a rule day) can only put the end a position late: a skip
+      // is then kept where it is, the safe way to be wrong.
+      countedRuleDays(rule, start, count, false)?.at(-1)
     : undefined;
   return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
 }
@@ -195,6 +198,22 @@ interface StartTime {
 }
 
 /** The start's wall-clock time in `timeZone` ("09:00"), for a timed one. */
+/** The day a timed start falls on in `timeZone`; null if it doesn't parse. */
+function dayOfStart(
+  start: StartTime,
+  timeZone: string
+): Temporal.PlainDate | null {
+  try {
+    return start.dateTime
+      ? Temporal.Instant.from(start.dateTime)
+          .toZonedDateTimeISO(timeZone)
+          .toPlainDate()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function wallClock(start: StartTime, timeZone: string): Temporal.PlainTime {
   try {
     return start.dateTime
@@ -298,10 +317,16 @@ function matchDateList(
   /** The rule repeats more than once a day: a skipped time is its own. */
   severalADay: boolean,
   /**
-   * In such a series, where a skipped time goes when the start's time
-   * changes (its rule's new time); null when it doesn't change.
+   * In such a series, where a skipped time on a day goes when the start's
+   * time changes (its rule's new time; null drops it); null when the time
+   * doesn't change.
    */
-  retime: ((time: Temporal.PlainTime) => Temporal.PlainTime) | null = null
+  retime:
+    | ((
+        day: Temporal.PlainDate,
+        time: Temporal.PlainTime
+      ) => Temporal.PlainTime | null)
+    | null = null
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -359,21 +384,27 @@ function retimedList(
   name: string,
   values: RecurrenceValue[],
   seriesZone: string,
-  retime: (time: Temporal.PlainTime) => Temporal.PlainTime,
+  retime: (
+    day: Temporal.PlainDate,
+    time: Temporal.PlainTime
+  ) => Temporal.PlainTime | null,
   line: string
 ): string {
   let moved = false;
-  const written = values.map((value) => {
+  const written = values.flatMap((value) => {
     const time = (value.instant as Temporal.Instant)
       .toZonedDateTimeISO(seriesZone)
       .toPlainTime();
-    const next = retime(time);
-    moved ||= Temporal.PlainTime.compare(next, time) !== 0;
-    return `${compactDate(value.day)}T${compactTime(next)}`;
+    const next = retime(value.day, time);
+    moved ||= !next || Temporal.PlainTime.compare(next, time) !== 0;
+    return next ? [`${compactDate(value.day)}T${compactTime(next)}`] : [];
   });
-  return moved
+  if (!moved) {
+    return line;
+  }
+  return written.length > 0
     ? `${name};TZID=${seriesZone}:${[...new Set(written)].join(",")}`
-    : line;
+    : "";
 }
 
 /**
@@ -441,21 +472,40 @@ export function matchRecurrenceToStart(
   // time moves with the rule it belongs to (a rule without BYHOUR meets
   // at the start's hour), others' stay.
   const newTime = start.dateTime ? wallClock(start, timeZone) : null;
+  const startDay = start.dateTime ? dayOfStart(start, timeZone) : null;
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const retime =
     severalADay &&
     base &&
     newTime &&
+    startDay &&
     Temporal.PlainTime.compare(base, newTime) !== 0
-      ? (time: Temporal.PlainTime) => {
+      ? (day: Temporal.PlainDate, time: Temporal.PlainTime) => {
           const rule = rules.find((line) => ruleMeetsAt(line, time, base));
-          return rule && !SUB_DAILY.test(rule)
-            ? withRuleClock(rule, time, newTime)
-            : time;
+          if (!rule || SUB_DAILY.test(rule)) {
+            return time;
+          }
+          const next = withRuleClock(rule, time, newTime);
+          // Onto the start's own slot: that meeting was just placed, so
+          // the skip goes. Onto another rule's meeting: it stays put.
+          if (
+            Temporal.PlainDate.compare(day, startDay) === 0 &&
+            Temporal.PlainTime.compare(next, newTime) === 0
+          ) {
+            return null;
+          }
+          const othersThere = rules.some(
+            (other) =>
+              other !== rule &&
+              isRuleDay(other, startDay, day) !== false &&
+              !endedBefore(other, startDay, day, timeZone) &&
+              ruleMeetsAt(other, next, newTime)
+          );
+          return othersThere ? time : next;
         }
       : null;
   let changed = false;
-  const next = recurrence.map((line) => {
+  const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchClock(
           matchUntil(line, allDay, timeZone),
@@ -465,7 +515,8 @@ export function matchRecurrenceToStart(
         )
       : matchDateList(line, start, timeZone, severalADay, retime);
     changed ||= matched !== line;
-    return matched;
+    // A list whose every value went (onto the new start) goes too.
+    return matched ? [matched] : [];
   });
   return changed ? next : recurrence;
 }
@@ -754,10 +805,22 @@ export function moveSkippedDays(params: {
       return null;
     }
     const retimed = withRuleClock(oldRule, time, toTime);
-    return Temporal.PlainTime.compare(retimed, time) === 0
+    return Temporal.PlainTime.compare(retimed, time) === 0 ||
+      othersMeet(value.day, retimed, to, toTime)
       ? null
       : { day: value.day, time: retimed };
   };
+  // A skip moved or retimed onto the new start's own slot would hide the
+  // meeting just placed there: it goes instead.
+  const landsOnStart = (
+    target: { day: Temporal.PlainDate; time: Temporal.PlainTime | null } | null
+  ) =>
+    Boolean(
+      target?.time &&
+        toTime &&
+        Temporal.PlainDate.compare(target.day, to) === 0 &&
+        Temporal.PlainTime.compare(target.time, toTime) === 0
+    );
   const isNewStart = (value: RecurrenceValue | null) =>
     Boolean(
       value &&
@@ -788,7 +851,9 @@ export function moveSkippedDays(params: {
     const moved = read.map((value) =>
       value ? (movedSkip(value) ?? retimedSkip(value)) : null
     );
-    const dropped = read.map((value) => isNewStart(value));
+    const dropped = read.map(
+      (value, index) => isNewStart(value) || landsOnStart(moved[index] ?? null)
+    );
     if (moved.every((day) => day === null) && !dropped.some(Boolean)) {
       return [line];
     }

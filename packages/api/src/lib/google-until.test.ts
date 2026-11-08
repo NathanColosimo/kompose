@@ -203,6 +203,33 @@ describe("skipped occurrences on the series' days", () => {
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261116T100000,20261116T150000");
+    // Moved onto a skipped Wednesday at 10:00: that skip is the start's
+    // own slot now, so it goes; and a skip retimed onto another rule's
+    // real meeting stays where it was.
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
+          "EXDATE;TZID=America/New_York:20261111T090000",
+        ],
+        { dateTime: "2026-11-11T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      ).some((line) => line.startsWith("EXDATE"))
+    ).toBe(false);
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+          "RRULE:FREQ=WEEKLY;BYDAY=WE;BYHOUR=10",
+          "EXDATE;TZID=America/New_York:20261118T090000",
+        ],
+        { dateTime: "2026-11-09T10:00:00-05:00" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261118T090000");
     // 9:00 and 15:00 as one rule, the start moved to 9:30: the minutes
     // follow it.
     expect(
