@@ -783,9 +783,11 @@ function matchClock(
   line: string,
   start: StartTime,
   timeZone: string,
-  severalADay: boolean
+  severalADay: boolean,
+  /** Made all day: drop the rule's times (it has none). */
+  dropTimes = true
 ): string {
-  if (start.date && !SUB_DAILY.test(line)) {
+  if (start.date && dropTimes && !SUB_DAILY.test(line)) {
     // An all-day rule has no time of day.
     return `RRULE:${line
       .slice("RRULE:".length)
@@ -859,6 +861,12 @@ export function matchRecurrenceToStart(
   // Where COUNT counts from: without word from the caller, the new start
   // is the series' first (on the server it is the series' own start).
   let countFrom: Temporal.PlainDate | null = null;
+  // Made all day, the rule loses its times (and a COUNT over several a day
+  // becomes days) where the start is the series' own: on the server, or
+  // editing the series itself. Edited through an occurrence (days given),
+  // the rule goes as it is, so the server can carry a split's COUNT on
+  // and convert it from the new series' start.
+  const convertsRule = Boolean(start.date) && !days;
   if (start.date) {
     countFrom = days ? days.firstDay : Temporal.PlainDate.from(start.date);
   }
@@ -938,13 +946,14 @@ export function matchRecurrenceToStart(
     const matched = line.startsWith("RRULE:")
       ? matchClock(
           matchUntil(
-            start.date ? countInDays(line, base, countFrom, timeZone) : line,
+            convertsRule ? countInDays(line, base, countFrom, timeZone) : line,
             allDay,
             timeZone
           ),
           start,
           timeZone,
-          severalADay
+          severalADay,
+          convertsRule
         )
       : matchDateList(
           line,

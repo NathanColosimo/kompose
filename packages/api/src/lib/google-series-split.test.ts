@@ -7,6 +7,7 @@ import {
   withRemainingCount,
 } from "@kompose/google-cal/recurrence-utils";
 import { isRuleDay } from "@kompose/google-cal/rule-days";
+import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
 
 describe("splitting a series", () => {
@@ -407,6 +408,35 @@ describe("splitting a series", () => {
       "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2",
       "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=2",
     ]);
+  });
+
+  test("carries a several-a-day COUNT made all day into days", () => {
+    // 9:00 and 15:00, ten meetings from Mon Nov 9 (Nov 9-13); "This and
+    // following" from Nov 11 9:00, made all day: six meetings left, three
+    // days, once the server lines the rule up with the new series' start.
+    const rule = ["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=10"];
+    const starts = ["09", "10", "11", "12", "13"].flatMap((day) => [
+      `2026-11-${day}T09:00:00-05:00`,
+      `2026-11-${day}T15:00:00-05:00`,
+    ]);
+    const carried = carryCount(rule, {
+      masterRecurrence: rule,
+      newStart: "2026-11-11",
+      originalStart: "2026-11-11T09:00:00-05:00",
+      seriesStart: "2026-11-09T09:00:00-05:00",
+      seriesZone: "America/New_York",
+      starts,
+    });
+    expect(
+      matchRecurrenceToStart(
+        carried,
+        { date: "2026-11-11" },
+        "America/New_York",
+        {
+          dateTime: "2026-11-09T09:00:00-05:00",
+        }
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
   test("leaves a count across a DST gap to Google's list", () => {

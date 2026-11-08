@@ -1198,9 +1198,11 @@ describe("seriesRecurrenceForSave", () => {
         recurrence: undefined,
         timeZone: "America/New_York",
       })
+      // Edited through an occurrence, the rules go with their times: the
+      // server converts them from the series' own start.
     ).toEqual([
-      "RRULE:FREQ=DAILY",
-      "RRULE:FREQ=DAILY;COUNT=5",
+      "RRULE:FREQ=DAILY;BYHOUR=9",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
       "EXDATE;VALUE=DATE:20261109",
     ]);
   });
