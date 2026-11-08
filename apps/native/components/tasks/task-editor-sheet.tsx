@@ -588,6 +588,7 @@ function RepeatNote({
 }
 
 const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
+const CHIP_SLOT_STYLE = { flexGrow: 1, maxWidth: "100%" } as const;
 
 /**
  * The schedule row: duration, start date and time, due date, and the
@@ -662,8 +663,8 @@ function TaskScheduleChips({
         />
       </View>
 
-      {/* Fills what's left of its line. */}
-      <View style={{ flexGrow: 1, maxWidth: "100%" }}>
+      {/* The date, time and due chips share what's left of their line. */}
+      <View style={CHIP_SLOT_STYLE}>
         <DatePicker
           accessibilityLabel="Start date"
           displayValue={
@@ -685,7 +686,7 @@ function TaskScheduleChips({
           variant="outline"
         />
       </View>
-      <View style={{ maxWidth: "100%" }}>
+      <View style={CHIP_SLOT_STYLE}>
         <DatePicker
           accessibilityLabel="Start time"
           disabled={!draft.startDate}
@@ -709,7 +710,7 @@ function TaskScheduleChips({
 
       {/* Due and Repeat wrap on their own: when the due date needs a whole
           line, Repeat moves to the next one rather than squeezing it. */}
-      <View style={{ maxWidth: "100%" }}>
+      <View style={CHIP_SLOT_STYLE}>
         <DatePicker
           accessibilityLabel="Due date"
           displayValue={
