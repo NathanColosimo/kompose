@@ -61,6 +61,7 @@ import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
 import {
+  DEFAULT_EVENT_DURATION_MINUTES,
   EventCreationContext,
   useEventCreation,
   useEventCreationState,
@@ -392,6 +393,9 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       return;
     }
     const start = keyboardCreateStart({
+      length: Temporal.Duration.from({
+        minutes: DEFAULT_EVENT_DURATION_MINUTES,
+      }),
       now: Temporal.Now.zonedDateTimeISO(timeZone),
       visibleDays,
     });

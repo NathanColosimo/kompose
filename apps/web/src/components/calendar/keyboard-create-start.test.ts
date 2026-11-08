@@ -5,13 +5,14 @@ import { Temporal } from "temporal-polyfill";
 import { keyboardCreateStart } from "./keyboard-create-start";
 
 const zone = "America/New_York";
+const length = Temporal.Duration.from({ minutes: 30 });
 const now = (time: string) =>
   Temporal.PlainDateTime.from(`2026-11-09T${time}`).toZonedDateTime(zone);
 const week = Array.from({ length: 7 }, (_, i) =>
   Temporal.PlainDate.from("2026-11-08").add({ days: i })
 );
 const start = (time: string, days = week) =>
-  keyboardCreateStart({ now: now(time), visibleDays: days })
+  keyboardCreateStart({ length, now: now(time), visibleDays: days })
     .toPlainDateTime()
     .toString();
 
@@ -22,27 +23,29 @@ describe("keyboardCreateStart", () => {
     expect(start("09:10")).toBe("2026-11-09T09:30:00");
   });
 
-  test("never a time the editor would save as an earlier moment", () => {
+  test("never a range the editor would save as an earlier moment", () => {
     // The form keeps a date and an "HH:mm", and a wall time the clocks
-    // repeat saves as its first occurrence: the second 1:30 AM as the
-    // clocks fall back would save 40 minutes in the past.
+    // repeat saves as its first occurrence: a start or end in the second
+    // 1 AM as the clocks fall back would save an hour early.
     const created = (at: string) =>
       keyboardCreateStart({
+        length,
         now: Temporal.ZonedDateTime.from(at),
         visibleDays: [Temporal.PlainDate.from("2026-11-01")],
       });
-    const savesAs = (time: Temporal.ZonedDateTime) =>
-      time.toPlainDateTime().toZonedDateTime(time.timeZoneId);
+    const savesAsItself = (time: Temporal.ZonedDateTime) =>
+      time.toPlainDateTime().toZonedDateTime(time.timeZoneId).equals(time);
     for (const [at, expected] of [
-      // The first 1 AM saves as itself.
+      // In the first 1 AM, as long as the end is too.
       ["2026-11-01T00:50-04:00", "2026-11-01T01:00:00-04:00"],
-      ["2026-11-01T01:10-04:00", "2026-11-01T01:30:00-04:00"],
-      // The second one doesn't: start after it.
+      // 1:30 EDT would end at 1:00 EST, read back as 1:00 EDT.
+      ["2026-11-01T01:10-04:00", "2026-11-01T02:00:00-05:00"],
       ["2026-11-01T01:10-05:00", "2026-11-01T02:00:00-05:00"],
     ] as const) {
       const begins = created(`${at}[America/New_York]`);
       expect(begins.toString()).toBe(`${expected}[America/New_York]`);
-      expect(savesAs(begins).equals(begins)).toBe(true);
+      expect(savesAsItself(begins)).toBe(true);
+      expect(savesAsItself(begins.add(length))).toBe(true);
     }
   });
 
