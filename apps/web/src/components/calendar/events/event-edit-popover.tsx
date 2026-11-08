@@ -1612,8 +1612,12 @@ function RepeatControl({
   showsZone: boolean;
 }) {
   const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleLabel;
+  // While the series' rule isn't usable (it's being fetched again), an
+  // open editor closes and its changes are dropped: one then would keep
+  // the old rule.
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover onOpenChange={setOpen} open={open && !disabled}>
       <PopoverTrigger asChild>
         {/* Says how the event repeats, so the editor shows it's a series. */}
         <Button
@@ -1634,7 +1638,11 @@ function RepeatControl({
       <PopoverContent align="end" className="w-[360px]">
         <RecurrenceEditor
           allDay={allDay}
-          onChange={onRecurrenceChange}
+          onChange={(rule) => {
+            if (!disabled) {
+              onRecurrenceChange(rule);
+            }
+          }}
           recurrenceRule={recurrenceRule}
           start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
           timeZone={seriesTimeZone}

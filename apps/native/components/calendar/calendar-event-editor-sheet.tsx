@@ -206,7 +206,9 @@ function RecurrenceRow({
           size={14}
         />
       </Pressable>
-      {isExpanded ? <RecurrenceEditorSection {...editor} /> : null}
+      {/* While the series' rule isn't usable (it's being fetched again),
+          the controls close: an edit then would keep the old rule. */}
+      {isExpanded && !disabled ? <RecurrenceEditorSection {...editor} /> : null}
     </>
   );
 }
