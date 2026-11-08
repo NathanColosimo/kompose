@@ -36,6 +36,15 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
 }
 
 /**
+ * Whether a task is listed on its own (inbox, search, tag views): one that
+ * doesn't repeat, or a series occurrence moved to the inbox alone. A
+ * series' dated occurrences show on the calendar instead.
+ */
+export function isListedAlone(task: TaskSelectDecoded): boolean {
+  return task.seriesMasterId === null || task.startDate === null;
+}
+
+/**
  * Inbox: open tasks with no date. That includes an occurrence of a series
  * moved there alone ("I'll do this one later"); a series' scheduled
  * occurrences always have a date. Leaving those out hid them everywhere.

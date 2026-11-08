@@ -1,9 +1,10 @@
 "use client";
 
 import type { CreateEventInput } from "@kompose/api/routers/google-cal/contract";
-import type {
-  Event as GoogleEvent,
-  RecurrenceScope,
+import {
+  canWriteCalendar,
+  type Event as GoogleEvent,
+  type RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
@@ -1995,8 +1996,7 @@ export function EventEditForm({
         }>
       >((acc, c) => {
         if (
-          (c.calendar.accessRole === "writer" ||
-            c.calendar.accessRole === "owner") &&
+          canWriteCalendar(c.calendar.accessRole) &&
           (isCreateMode || c.accountId === accountId)
         ) {
           acc.push({

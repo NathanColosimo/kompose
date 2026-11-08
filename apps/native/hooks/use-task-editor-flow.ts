@@ -8,6 +8,7 @@ import {
   TASK_CREATE_FAILURE_MESSAGE,
 } from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
@@ -286,7 +287,8 @@ export function useTaskEditorFlow() {
 
     // No undo, and the trash sits beside Save: confirm first, as web does.
     const id = editingTask.id;
-    Alert.alert("Delete task?", "This can't be undone.", [
+    const { description, title } = SCOPE_DIALOG_COPY.deleteTaskAlone;
+    Alert.alert(title, description, [
       { style: "cancel", text: "Cancel" },
       {
         onPress: () => {
@@ -299,10 +301,6 @@ export function useTaskEditorFlow() {
     ]);
   }
 
-  /**
-   * Saves an edited task, holding the editor ("Saving…") until the save
-   * succeeds, so a failure keeps the draft (and closes any scope dialog).
-   */
   /**
    * The editor stays open ("Saving…") until `saved` resolves true, so a
    * failed save or create keeps the draft.

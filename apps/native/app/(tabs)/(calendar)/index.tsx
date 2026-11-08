@@ -1151,12 +1151,11 @@ export default function CalendarTab() {
     [allCalendarOptions, visibleCalendarIds]
   );
 
-  // New events go to a calendar the user can write to, a shown one first.
-  const defaultCalendar =
-    visibleCalendarOptions.find((option) =>
-      canWriteCalendar(option.accessRole)
-    ) ??
-    allCalendarOptions.find((option) => canWriteCalendar(option.accessRole));
+  // New events go to a shown calendar the user can write to, so they don't
+  // land somewhere hidden (as on web).
+  const defaultCalendar = visibleCalendarOptions.find((option) =>
+    canWriteCalendar(option.accessRole)
+  );
   // Editing keeps the event within its account; creating can use any calendar.
   const eventCalendarOptions = useMemo(() => {
     if (!editingEventDraft) {
@@ -2289,7 +2288,7 @@ export default function CalendarTab() {
           </Button>
           {defaultCalendar ? null : (
             <Text className="text-muted-foreground text-xs">
-              Event creation needs at least one writable calendar.
+              Show a calendar you can edit to create events.
             </Text>
           )}
         </View>

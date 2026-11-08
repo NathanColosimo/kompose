@@ -10,6 +10,7 @@ import {
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   createCommandBarTaskOpenRequest,
+  isListedAlone,
   resolveTaskSearchDestination,
   serializeCommandBarTaskOpenRequest,
   type TaskSearchDestination,
@@ -164,8 +165,7 @@ export function CommandBarSearchTasks({
     }
 
     const searchable = tasks.filter(
-      (task: TaskSelectDecoded) =>
-        task.status !== "done" && task.seriesMasterId === null
+      (task: TaskSelectDecoded) => task.status !== "done" && isListedAlone(task)
     );
 
     if (!search.trim()) {

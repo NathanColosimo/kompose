@@ -15,10 +15,6 @@ import {
 } from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
-/** Recurring masters also carry seriesMasterId, so this excludes the whole series. */
-export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
-  task.seriesMasterId === null;
-
 /** Planned: scheduled on the target calendar date. Today excludes overdue tasks. */
 const isPlanned = (
   task: TaskSelectDecoded,

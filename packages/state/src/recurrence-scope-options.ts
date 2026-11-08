@@ -21,6 +21,11 @@ export const RECURRENCE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<Recurrence
 export const SCOPE_DIALOG_COPY = {
   deleteEvent: { description: "Delete:", title: "Delete recurring event" },
   deleteTask: { description: "Delete:", title: "Delete recurring task" },
+  /** A task that doesn't repeat (or an inbox occurrence): no undo. */
+  deleteTaskAlone: {
+    description: "This can't be undone.",
+    title: "Delete task?",
+  },
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
   saveEvent: {

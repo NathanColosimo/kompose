@@ -1211,7 +1211,7 @@ export function TaskEditForm({
                       <AlertDialogDescription>
                         {hasFollowing(task)
                           ? SCOPE_DIALOG_COPY.deleteTask.description
-                          : "This action cannot be undone."}
+                          : SCOPE_DIALOG_COPY.deleteTaskAlone.description}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter
