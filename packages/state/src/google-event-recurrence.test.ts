@@ -648,14 +648,16 @@ describe("followStart", () => {
         "2026-11-16"
       )
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
-    // Twice a day (9:00, 15:00) moved onto a day with both skipped: the
-    // start's own 9:00 meets; the skipped 15:00 stays skipped.
+    // Twice a day, as Google takes it: two rules, at the start's 9:00 and
+    // at 15:00. Moved onto a day with both skipped: the start's own 9:00
+    // meets; the other rule's skipped 15:00 stays skipped.
     expect(
       followStart({
         allDay: false,
         from: day("2026-11-09"),
         recurrence: [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
           "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
         ],
         timeZone: "America/New_York",
@@ -663,7 +665,8 @@ describe("followStart", () => {
         toTime: Temporal.PlainTime.from("09:00"),
       })
     ).toEqual([
-      "RRULE:FREQ=WEEKLY;BYHOUR=9,15;BYDAY=MO",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
       "EXDATE;TZID=America/New_York:20261116T150000",
     ]);
   });
@@ -843,12 +846,12 @@ describe("seriesRecurrenceForSave", () => {
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
     // Another rule still meets at the skipped Monday 9:00 (Mondays and
-    // Fridays at 9:00 and 15:00): the skip stays where that rule needs it.
+    // Fridays at 9:00): the skip stays where that rule needs it.
     expect(
       followed(
         [
           "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
-          "RRULE:FREQ=WEEKLY;BYDAY=MO,FR;BYHOUR=9,15",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,FR;BYHOUR=9",
           "EXDATE;TZID=America/New_York:20261116T090000",
         ],
         "2026-11-10",
@@ -912,7 +915,7 @@ describe("seriesRecurrenceForSave", () => {
     ).toBe("EXDATE;TZID=America/New_York:20261117T100000,20261118T100000");
     // Moved onto a Wednesday whose 9:00 was skipped, at 10:00: retimed,
     // that skip would hide the meeting just placed, so it goes (also for
-    // one rule at 9:00 and 15:00 moved to 9:30).
+    // one rule moved to 9:30).
     expect(
       followed(
         [
@@ -927,7 +930,7 @@ describe("seriesRecurrenceForSave", () => {
     expect(
       followed(
         [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9,15",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
           "EXDATE;TZID=America/New_York:20261111T090000",
         ],
         "2026-11-11",
@@ -984,17 +987,6 @@ describe("seriesRecurrenceForSave", () => {
         "10:00"
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
-    // One rule at 9:00 and 15:00 moved to Tuesdays: both skips move.
-    expect(
-      followed(
-        [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
-          "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
-        ],
-        "2026-11-10",
-        "09:00"
-      ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T090000,20261117T150000");
     // BYHOUR=9 and BYHOUR=9;BYMINUTE=0 are one 9:00: moved onto Friday
     // Nov 13 at 10:00, that day's skipped 9:00 is the picked start's.
     expect(
@@ -1183,41 +1175,6 @@ describe("seriesRecurrenceForSave", () => {
     ).toEqual(["RRULE:FREQ=MONTHLY;COUNT=3", "EXDATE;VALUE=DATE:20270103"]);
   });
 
-  test("counts from the series' own start time, not the occurrence's", () => {
-    // 9:00 and 15:00 five times from Nov 9 9:00 (the fifth Nov 11 9:00,
-    // skipped); the Nov 9 15:00 occurrence made all day for the series:
-    // the client sends nothing, and the server counts from the series' own
-    // 9:00, so Nov 11's only meeting stays skipped (three days).
-    const recurrence = [
-      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-      "EXDATE;TZID=America/New_York:20261111T090000",
-    ];
-    expect(
-      seriesRecurrenceForSave({
-        editedStart: { date: "2026-11-09" },
-        masterRecurrence: recurrence,
-        masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
-        occurrence: {
-          originalStartTime: { dateTime: "2026-11-09T15:00:00-05:00" },
-          recurringEventId: "series",
-          start: { dateTime: "2026-11-09T15:00:00-05:00" },
-        },
-        recurrence: undefined,
-        timeZone: "America/New_York",
-      })
-    ).toBeUndefined();
-    expect(
-      matchRecurrenceToStart(
-        recurrence,
-        { date: "2026-11-09" },
-        "America/New_York",
-        {
-          dateTime: "2026-11-09T09:00:00-05:00",
-        }
-      )
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", "EXDATE;VALUE=DATE:20261111"]);
-  });
-
   test("names the series' first day for an occurrence's edit", () => {
     const masterStart = { dateTime: "2026-11-02T09:00:00-05:00" };
     expect(
@@ -1395,53 +1352,17 @@ describe("seriesRecurrenceForSave", () => {
         "EXDATE;VALUE=DATE:20261116",
       ]);
     });
-
-    test("counts a several-a-day COUNT meeting by meeting", () => {
-      // 9:00 and 15:00 five times from Nov 9 9:00: the fifth is Nov 11
-      // 9:00, so that day's only meeting, skipped, keeps it skipped; and
-      // the all-day rule keeps the series' three days (COUNT=3).
-      expect(
-        allDay([
-          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
-          "EXDATE;TZID=America/New_York:20261111T090000",
-        ])
-      ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", "EXDATE;VALUE=DATE:20261111"]);
-    });
-
-    test("doesn't count a time the clocks skip", () => {
-      // 2:30 and 15:00 four times from Sat Mar 13 2027 2:30: Sun Mar 14
-      // has no 2:30 (spring forward), so the four meetings take three days.
-      expect(
-        matchRecurrenceToStart(
-          ["RRULE:FREQ=DAILY;BYHOUR=2,15;BYMINUTE=30;COUNT=4"],
-          { date: "2027-03-13" },
-          "America/New_York",
-          { dateTime: "2027-03-13T02:30:00-05:00" }
-        )
-      ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
-    });
-
-    test("keeps a several-a-day day unless all its times were skipped", () => {
-      // 9:00 and 15:00: only Nov 16's 15:00 skipped keeps Nov 16; both of
-      // Nov 17's skipped skips the day. The rule loses its times.
-      expect(
-        allDay([
-          "RRULE:FREQ=DAILY;BYHOUR=9,15",
-          "EXDATE;TZID=America/New_York:20261116T150000,20261117T090000,20261117T150000",
-        ])
-      ).toEqual(["RRULE:FREQ=DAILY", "EXDATE;VALUE=DATE:20261117"]);
-    });
   });
 
   test("keeps a retimed skip off another rule's real meeting", () => {
-    // Mondays at the start's time plus Mondays fixed at 9:00 and 10:00,
-    // Nov 16 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the
+    // Mondays at the start's time plus Mondays fixed at 10:00, Nov 16
+    // 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the
     // series. The client sends nothing (the series keeps its rule), and
     // the server lines that rule up with the new start: the 9:00 skip
     // stays, and the fixed 10:00 meeting isn't hidden.
     const rules = [
       "RRULE:FREQ=WEEKLY;BYDAY=MO",
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,10;BYMINUTE=0",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0",
       "EXDATE;TZID=America/New_York:20261116T090000",
     ];
     expect(
