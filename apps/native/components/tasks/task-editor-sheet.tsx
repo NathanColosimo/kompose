@@ -17,6 +17,7 @@ import {
   getTaskRecurrenceDisplayText,
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
+  repeatChangeNote,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceEditorState,
   type TaskRecurrenceFrequency,
@@ -76,6 +77,11 @@ interface TaskEditorSheetProps {
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
   /** Dialogs that open over the editor (iOS presents them from its modal). */
   overlay?: React.ReactNode;
+  /**
+   * The saved pattern of the recurring task being edited; undefined when
+   * it's new or doesn't repeat. A change shows what it will do.
+   */
+  savedRecurrence?: TaskRecurrence | null;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
 }
@@ -544,6 +550,13 @@ function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
   return draft.title.trim().length > 0 || draft.links.length > 0;
 }
 
+/** What a repeat change will do; it saves with no scope question. */
+function RepeatChangeNote({ note }: { note: string | null }) {
+  return note ? (
+    <Text className="mb-2.5 text-muted-foreground text-xs">{note}</Text>
+  ) : null;
+}
+
 export function TaskEditorSheet({
   overlay,
   isSaving = false,
@@ -555,6 +568,7 @@ export function TaskEditorSheet({
   onSave,
   onDelete,
   onToggleDone,
+  savedRecurrence,
   timeZone,
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
@@ -816,6 +830,13 @@ export function TaskEditorSheet({
             updateRecurrence={updateRecurrence}
           />
         ) : null}
+        <RepeatChangeNote
+          note={repeatChangeNote({
+            isRecurring: savedRecurrence !== undefined,
+            next: draft.recurrence,
+            previous: savedRecurrence ?? null,
+          })}
+        />
 
         <View className="mb-2.5 flex-row items-center gap-2">
           <Checkbox

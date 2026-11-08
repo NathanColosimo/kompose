@@ -14,6 +14,8 @@ import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
   dateToUntilRule,
   describeEventRecurrence,
+  getPrimaryRecurrenceRule,
+  setPrimaryRecurrenceRule,
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
@@ -947,6 +949,38 @@ function buildCreatePayload(
   };
 }
 
+/**
+ * Whether the save changes the series' pattern, and the scope to suggest.
+ * The repeat is sent only when the user changed it: an empty list then
+ * means "Repeat: None", and leaving it out keeps the series' pattern. The
+ * form's value alone can't say, since the master's pattern may load after
+ * the editor opened.
+ */
+function editedPattern(
+  values: EventFormValues,
+  ctx: {
+    event: GoogleEvent | undefined;
+    masterRecurrence: string[] | null | undefined;
+    recurrenceEdited: boolean;
+  }
+): { defaultScope: RecurrenceScope; patternChanged: boolean } {
+  const sourceRecurrence = ctx.event?.recurrence?.length
+    ? ctx.event.recurrence
+    : (ctx.masterRecurrence ?? []);
+  const patternChanged =
+    ctx.recurrenceEdited &&
+    JSON.stringify(values.recurrence ?? []) !==
+      JSON.stringify(sourceRecurrence);
+  if (!ctx.event?.recurringEventId) {
+    return { defaultScope: "all", patternChanged };
+  }
+  // A pattern change on an occurrence applies from it on, as for tasks.
+  return {
+    defaultScope: patternChanged ? "following" : "this",
+    patternChanged,
+  };
+}
+
 function buildEditPayload(
   values: EventFormValues,
   ctx: {
@@ -961,6 +995,8 @@ function buildEditPayload(
     event: GoogleEvent | undefined;
     hasEdits: boolean;
     masterRecurrence: string[] | null | undefined;
+    /** The user used the Repeat control. */
+    recurrenceEdited: boolean;
   }
 ): CloseSaveRequest {
   const calendarChanged = values.selectedCalendarId !== ctx.calendarId;
@@ -990,17 +1026,7 @@ function buildEditPayload(
       ctx.event?.recurrence?.length ||
       ctx.masterRecurrence?.length
   );
-  // The repeat is sent only when it changed: an empty list then means
-  // "Repeat: None", and leaving it out keeps the series' pattern (also while
-  // the master's pattern is still loading).
-  const sourceRecurrence = ctx.event?.recurrence?.length
-    ? ctx.event.recurrence
-    : (ctx.masterRecurrence ?? []);
-  const patternChanged =
-    JSON.stringify(values.recurrence ?? []) !==
-    JSON.stringify(sourceRecurrence);
-  const defaultScope: RecurrenceScope =
-    ctx.event?.recurringEventId && !patternChanged ? "this" : "all";
+  const { defaultScope, patternChanged } = editedPattern(values, ctx);
 
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
@@ -1190,6 +1216,9 @@ function EventColorAndTitleRow({
   );
 }
 
+const REPEATS_PREFIX = /^Repeats /;
+const FIRST_LETTER = /^./;
+
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
@@ -1216,6 +1245,15 @@ function EventAllDayAndRecurrenceRow({
   calendarValue: string;
   onCalendarChange: (value: string) => void;
 }) {
+  // "Repeats weekly on Mon" reads as "Weekly on Mon" on the button.
+  const repeats = recurrenceRule
+    ? describeEventRecurrence({ rules: [recurrenceRule] })
+    : null;
+  const repeatLabel = repeats
+    ? repeats
+        .replace(REPEATS_PREFIX, "")
+        .replace(FIRST_LETTER, (c) => c.toUpperCase())
+    : null;
   return (
     <div className="flex items-center gap-2">
       {/* Read-only: the dates above already say whether it's all day. */}
@@ -1243,14 +1281,21 @@ function EventAllDayAndRecurrenceRow({
       {canEditRecurrence ? (
         <Popover>
           <PopoverTrigger asChild>
+            {/* Says how the event repeats, so the editor shows it's a series. */}
             <Button
-              className="size-8"
+              aria-label={`Repeat: ${repeatLabel ?? "None"}`}
+              className={cn(
+                repeatLabel ? "h-8 min-w-0 gap-1.5 px-2 text-xs" : "size-8"
+              )}
               disabled={readOnly}
-              size="icon"
-              variant="outline"
+              size={repeatLabel ? "sm" : "icon"}
+              title={repeatLabel ?? "Repeat"}
+              variant={repeatLabel ? "secondary" : "outline"}
             >
-              <Repeat className="size-4" />
-              <span className="sr-only">Edit recurrence</span>
+              <Repeat className="size-4 shrink-0" />
+              {repeatLabel ? (
+                <span className="truncate">{repeatLabel}</span>
+              ) : null}
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[360px]">
@@ -1733,6 +1778,8 @@ export function EventEditForm({
   );
   // Closing the popover alone discards edits; the wrapper owns saves and dialogs.
   const hasUserEditedRef = useRef(false);
+  /** The user used the Repeat control; only then is the repeat saved. */
+  const recurrenceEditedRef = useRef(false);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
@@ -1816,6 +1863,13 @@ export function EventEditForm({
     setValue("endDate", initialValues.endDate);
     setValue("endTime", initialValues.endTime);
   }, [initialValues, scheduleKey, setValue]);
+  // An occurrence's pattern lives on its master, which may load after the
+  // editor opened: show it then, unless the user has already changed it.
+  useEffect(() => {
+    if (!recurrenceEditedRef.current) {
+      setValue("recurrence", recurrenceSource);
+    }
+  }, [recurrenceSource, setValue]);
   const [pendingConference, setPendingConference] = useState<
     GoogleEvent["conferenceData"] | null
   >(null);
@@ -2047,6 +2101,7 @@ export function EventEditForm({
         event,
         hasEdits: hasUserEditedRef.current,
         masterRecurrence: masterQuery.data?.recurrence,
+        recurrenceEdited: recurrenceEditedRef.current,
       });
     },
     [
@@ -2108,7 +2163,7 @@ export function EventEditForm({
 
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const recurrenceRule = watchedValues.recurrence?.[0];
+  const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
   const canEditRecurrence =
     isCreateMode ||
     Boolean(
@@ -2195,7 +2250,13 @@ export function EventEditForm({
         }}
         onRecurrenceChange={(rule) => {
           hasUserEditedRef.current = true;
-          setValue("recurrence", rule ? [rule] : [], { shouldDirty: true });
+          recurrenceEditedRef.current = true;
+          // Keeps the series' deleted occurrences (EXDATE lines).
+          setValue(
+            "recurrence",
+            setPrimaryRecurrenceRule(getValues("recurrence"), rule),
+            { shouldDirty: true }
+          );
         }}
         onToggleAllDay={() => {
           hasUserEditedRef.current = true;

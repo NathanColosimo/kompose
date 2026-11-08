@@ -677,6 +677,9 @@ function recurrenceToSend(
   if (draft.mode === "create") {
     return draft.recurrence.length > 0 ? draft.recurrence : undefined;
   }
+  if (!draft.recurrenceEdited) {
+    return undefined;
+  }
   const source = draft.sourceEvent.recurrence?.length
     ? draft.sourceEvent.recurrence
     : masterRecurrence;
@@ -1075,26 +1078,6 @@ export default function CalendarTab() {
   const closeEventModal = useCallback(() => {
     showEventEditor(null);
   }, [showEventEditor]);
-
-  useEffect(() => {
-    if (
-      !(
-        editingEventDraft &&
-        editingEventDraft.recurrence.length === 0 &&
-        masterRecurrence.length > 0
-      )
-    ) {
-      return;
-    }
-
-    setEventDraft((current) =>
-      current &&
-      isEditEventDraft(current) &&
-      current.eventId === editingEventDraft.eventId
-        ? { ...current, recurrence: masterRecurrence }
-        : current
-    );
-  }, [editingEventDraft, masterRecurrence]);
 
   const taskFlow = useTaskEditorFlow();
   const openCreateTask = taskFlow.openCreate;
@@ -2155,6 +2138,7 @@ export default function CalendarTab() {
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
           isSaving={isSavingEvent || isDeletingEvent}
+          masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onSubmit={(draft) => {
@@ -2286,6 +2270,7 @@ export default function CalendarTab() {
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
         overlay={<TaskSaveScopeDialog flow={taskFlow} />}
+        savedRecurrence={taskFlow.savedRecurrence}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />

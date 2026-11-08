@@ -393,3 +393,24 @@ export function markStatusFailureMessage(
 /** The error for a save that failed while the editor held open on it. */
 export const SAVE_FAILURE_MESSAGE =
   "Couldn't save your changes. They're still here.";
+
+/**
+ * What a repeat change on a recurring task will do, shown before Save: it
+ * applies from the edited occurrence on, with no scope question. Null when
+ * the task doesn't repeat or the pattern is unchanged.
+ */
+export function repeatChangeNote(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+}): string | null {
+  if (
+    !params.isRecurring ||
+    taskRecurrenceEquals(params.previous, params.next ?? null)
+  ) {
+    return null;
+  }
+  return params.next
+    ? "Applies to this and later occurrences."
+    : "Stops repeating here. Later occurrences are removed.";
+}

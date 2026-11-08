@@ -23,6 +23,7 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
+  repeatChangeNote,
   resolveTaskRecurrenceForEditor,
   SAVE_FAILURE_MESSAGE,
   taskRecurrenceEquals,
@@ -365,6 +366,11 @@ function TaskEditorCloseActions({
   );
 }
 
+/** What a repeat change will do; it saves with no scope question. */
+function RepeatChangeNote({ note }: { note: string | null }) {
+  return note ? <p className="text-muted-foreground text-xs">{note}</p> : null;
+}
+
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
   disabled,
@@ -522,6 +528,7 @@ export function TaskEditForm({
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const recurrence = useWatch({ control, name: "recurrence" });
 
   /**
    * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
@@ -814,9 +821,10 @@ export function TaskEditForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      {/* While Mark done saves, the fields are read-only too: a change typed
-          then would be dropped when the editor closes. */}
-      <fieldset className="contents" disabled={isSavingStatus}>
+      {/* While a save runs, the fields are read-only too: a change typed
+          then would be dropped when the editor closes. (A block, not
+          display: contents, so the form's spacing still reaches the fields.) */}
+      <fieldset className="min-w-0 space-y-3" disabled={isSavingStatus}>
         <Input
           onChange={(e) =>
             setValue("title", e.target.value, { shouldDirty: true })
@@ -999,6 +1007,13 @@ export function TaskEditForm({
             )}
           />
         </div>
+        <RepeatChangeNote
+          note={repeatChangeNote({
+            isRecurring,
+            next: recurrence,
+            previous: resolvedRecurrence,
+          })}
+        />
 
         <Separator />
 

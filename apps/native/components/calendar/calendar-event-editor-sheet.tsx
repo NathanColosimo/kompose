@@ -993,6 +993,11 @@ interface EventEditorSheetProps {
    * dismissal) until it ends.
    */
   isSaving?: boolean;
+  /**
+   * The series' pattern when the event is an occurrence; it can load after
+   * the editor opens.
+   */
+  masterRecurrence?: string[];
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
@@ -1007,6 +1012,7 @@ interface EventEditorSheetProps {
 export function EventEditorSheet({
   draft,
   isSaving = false,
+  masterRecurrence,
   onClose,
   overlay,
   onSubmit,
@@ -1025,6 +1031,18 @@ export function EventEditorSheet({
     setIsRecurrenceExpanded(false);
     setIsLocationSuggestionsOpen(false);
   }, [draft, reset]);
+
+  // Show the series' pattern once it loads, keeping the other edits, unless
+  // the user has already changed the repeat.
+  React.useEffect(() => {
+    if (
+      masterRecurrence?.length &&
+      !getValues("recurrenceEdited") &&
+      getValues("recurrence").length === 0
+    ) {
+      setValue("recurrence", masterRecurrence);
+    }
+  }, [getValues, masterRecurrence, setValue]);
 
   const { summary, description, location, recurrence, allDay } = values;
 
@@ -1105,6 +1123,7 @@ export function EventEditorSheet({
         rule
       );
       setValue("recurrence", nextRecurrence, { shouldDirty: true });
+      setValue("recurrenceEdited", true);
     },
     [getValues, setValue]
   );

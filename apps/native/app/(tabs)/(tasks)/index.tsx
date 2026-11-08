@@ -484,6 +484,7 @@ export default function TasksScreen() {
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
         overlay={<TaskSaveScopeDialog flow={taskFlow} />}
+        savedRecurrence={taskFlow.savedRecurrence}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />

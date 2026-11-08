@@ -174,21 +174,28 @@ export function buildGoogleEventRecurrenceRule(
   return `RRULE:${parts.join(";")}`;
 }
 
+const isRule = (line: string) => line.startsWith("RRULE:");
+
+/** The series' RRULE line; Google may list EXDATE/RDATE lines with it. */
 export function getPrimaryRecurrenceRule(
   recurrence: string[] | null | undefined
 ): string | undefined {
-  return recurrence?.[0];
+  return recurrence?.find(isRule);
 }
 
+/**
+ * Replace the RRULE, keeping the series' other lines (deleted occurrences
+ * stay deleted). Without a rule nothing repeats, so the whole list clears:
+ * EXDATE lines alone aren't a series.
+ */
 export function setPrimaryRecurrenceRule(
   recurrence: string[] | null | undefined,
   rule: string | null
 ): string[] {
-  const extras = recurrence?.slice(1) ?? [];
   if (!rule) {
-    return extras;
+    return [];
   }
-  return [rule, ...extras];
+  return [rule, ...(recurrence ?? []).filter((line) => !isRule(line))];
 }
 
 export function isRecurringGoogleEvent(params: {

@@ -403,6 +403,12 @@ export function useTaskEditorFlow() {
     });
   }
 
+  // The saved pattern of the recurring task being edited, for the editor's
+  // note on what a repeat change does.
+  const savedRecurrence = editingTask?.seriesMasterId
+    ? editingTask.recurrence
+    : undefined;
+
   return {
     cancelScopedSave,
     close,
@@ -417,6 +423,7 @@ export function useTaskEditorFlow() {
     openEdit,
     requestDelete,
     save,
+    savedRecurrence,
     saveScope,
     scopeDialog,
     setDeleteScope,

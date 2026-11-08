@@ -17,6 +17,11 @@ interface EventDraftBase {
   endTime: Temporal.PlainTime | null;
   location: string;
   recurrence: string[];
+  /**
+   * The user used the Repeat control. Only then is the repeat saved, since
+   * an occurrence's pattern may load after the editor opened.
+   */
+  recurrenceEdited?: boolean;
   startDate: Temporal.PlainDate;
   startTime: Temporal.PlainTime | null;
   summary: string;
