@@ -5,7 +5,7 @@
  * a timed one). Shared by the server and both apps.
  */
 import { Temporal } from "temporal-polyfill";
-import { isRuleDay } from "./rule-days";
+import { countedRuleDays, isRuleDay } from "./rule-days";
 
 const UNTIL_DATE = /^(\d{4})(\d{2})(\d{2})$/;
 const UNTIL_DATE_TIME =
@@ -18,6 +18,7 @@ const SEVERAL_A_DAY =
   /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
 const INTERVAL_PART = /INTERVAL=(\d+)/;
+const COUNT_VALUE = /[:;]COUNT=(\d+)/;
 /** A rule that repeats within a day: its times don't follow the start's. */
 const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ_PART = /FREQ=([A-Z]+)/;
@@ -67,6 +68,28 @@ function ruleMeetsAt(
     }
     return !fallback || fallback[index] === actual[index];
   });
+}
+
+/**
+ * Whether `rule` (counted from `start`) has ended before `day`: past its
+ * UNTIL day, or its COUNT spent. False when that can't be told.
+ */
+function endedBefore(
+  rule: string,
+  start: Temporal.PlainDate,
+  day: Temporal.PlainDate,
+  timeZone: string
+): boolean {
+  const until = UNTIL_PART.exec(rule)?.[2];
+  const untilDay = until ? untilRuleToDay(until, timeZone) : null;
+  if (untilDay) {
+    return Temporal.PlainDate.compare(day, untilDay) > 0;
+  }
+  const count = Number(COUNT_VALUE.exec(rule)?.[1]);
+  const last = Number.isFinite(count)
+    ? countedRuleDays(rule, start, count, false)?.at(-1)
+    : undefined;
+  return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
 }
 
 /**
@@ -699,6 +722,7 @@ export function moveSkippedDays(params: {
     otherRules.some(
       (rule) =>
         isRuleDay(rule, start, day) !== false &&
+        !endedBefore(rule, start, day, seriesZone) &&
         (!time || ruleMeetsAt(rule, time, base))
     );
   // Where a skip moves, at its time: a part of it the moved rule leaves

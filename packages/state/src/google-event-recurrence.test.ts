@@ -831,6 +831,21 @@ describe("seriesRecurrenceForSave", () => {
         "09:00"
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261116T090000");
+    // That rule ended (UNTIL Nov 23, or after 4 Mondays/Fridays): a later
+    // Monday skip is the moved rule's alone, and moves.
+    for (const end of ["UNTIL=20261124T045959Z", "COUNT=4"]) {
+      expect(
+        followed(
+          [
+            "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+            `RRULE:FREQ=WEEKLY;BYDAY=MO,FR;BYHOUR=9;${end}`,
+            "EXDATE;TZID=America/New_York:20261130T090000",
+          ],
+          "2026-11-10",
+          "09:00"
+        ).at(-1)
+      ).toBe("EXDATE;TZID=America/New_York:20261201T090000");
+    }
     // Another rule already meets on Tuesdays at 9:00: the skip doesn't
     // land on its real meeting.
     expect(
