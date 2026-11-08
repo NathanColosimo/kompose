@@ -565,9 +565,8 @@ export function TaskEditForm({
     [task, tasksQuery.data]
   );
 
-  const handleDeleteClick = useCallback(() => {
-    setShowDeleteConfirm(true);
-  }, []);
+  /** The delete question came from Backspace, not from the trash icon. */
+  const deleteFromKeyRef = useRef(false);
 
   const confirmDelete = useCallback(
     (scope: DeleteScope) => {
@@ -592,7 +591,8 @@ export function TaskEditForm({
         return;
       }
       e.preventDefault();
-      handleDeleteClick();
+      deleteFromKeyRef.current = true;
+      setShowDeleteConfirm(true);
     },
     // Not behind a dialog over the editor, where it would delete the task
     // out from under the question being asked.
@@ -600,13 +600,7 @@ export function TaskEditForm({
       enabled:
         open && !isSavingStatus && !showTagScopeDialog && !showDeleteConfirm,
     },
-    [
-      handleDeleteClick,
-      isSavingStatus,
-      open,
-      showDeleteConfirm,
-      showTagScopeDialog,
-    ]
+    [isSavingStatus, open, showDeleteConfirm, showTagScopeDialog]
   );
 
   const form = useForm<TaskFormValues>({
@@ -870,11 +864,16 @@ export function TaskEditForm({
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
             <AlertDialogContent
-              // Back to the editor, not the Delete icon: there its tooltip
-              // would open and take the next Escape, so closing the editor
-              // took two. Backspace (the usual way here) came from the editor.
+              // Opened with Backspace, focus goes back to the editor it came
+              // from. (Radix would send it to the trash icon, whose tooltip
+              // would then take the next Escape.) Opened from the icon, it
+              // returns to the icon, as a dialog should.
               onCloseAutoFocus={(e) => {
+                if (!deleteFromKeyRef.current) {
+                  return;
+                }
                 e.preventDefault();
+                deleteFromKeyRef.current = false;
                 hold.editorRef.current?.focus();
               }}
             >
@@ -938,6 +937,10 @@ export function TaskEditForm({
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             const editor = hold.editorRef.current;
+            // A save that already failed focused its message; keep it there.
+            if (editor?.contains(document.activeElement)) {
+              return;
+            }
             const before = focusBeforeScopeRef.current;
             if (before?.isConnected && editor?.contains(before)) {
               before.focus();
