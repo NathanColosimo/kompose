@@ -42,6 +42,9 @@ function rule(recurrence: TaskRecurrence): string {
   return `${recurrence.freq}/${recurrence.interval}${days}${count}${until}`;
 }
 
+// Sorts undated (inbox) tasks after every date.
+const INBOX_LAST = "9999-12-31";
+
 /**
  * A user's tasks, one line each, by date (inbox last) then title: date,
  * title, status, "exc" for an exception, the due date, and its series
@@ -52,7 +55,7 @@ function describeRows(rows: TaskSelect[]): string[] {
   return rows
     .toSorted(
       (a, b) =>
-        (a.startDate ?? "~").localeCompare(b.startDate ?? "~") ||
+        (a.startDate ?? INBOX_LAST).localeCompare(b.startDate ?? INBOX_LAST) ||
         a.title.localeCompare(b.title)
     )
     .map((row) => {
@@ -383,6 +386,26 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-10 Renamed todo in 2026-11-09",
       "2026-11-11 Renamed todo in 2026-11-09",
       "2026-11-14 Renamed todo exc in 2026-11-09",
+    ]);
+  });
+
+  test("moves only the occurrence itself to the inbox, even from following", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(4));
+          yield* u.update(
+            "2026-11-10",
+            { startDate: null, title: "Later" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x4",
+      "2026-11-11 Review todo in 2026-11-09",
+      "2026-11-12 Review todo in 2026-11-09",
+      "inbox Later todo exc in 2026-11-09",
     ]);
   });
 

@@ -443,7 +443,7 @@ export function TaskEditForm({
             title: task.title,
           },
         }),
-        hasFollowing: task.startDate !== null,
+        hasFollowing: task.startDate !== null && values.startDate !== null,
         isRecurring,
         nextRecurrence: values.recurrence,
         nextTagIds: values.tagIds,

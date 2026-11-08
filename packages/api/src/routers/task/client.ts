@@ -842,7 +842,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   pattern: CheckedPattern | null
 ) {
   const input = withMovedDueDate(task, edit);
-  const { recurrence: _pattern, ...occurrenceFields } = input;
+  const { recurrence: _sentRecurrence, ...occurrenceFields } = input;
   // The series splits where the edit starts: the earlier of the edited
   // occurrence's original and new dates, so a move earlier doesn't leave
   // old occurrences under the new ones.
@@ -1250,6 +1250,14 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   // updateTask's transaction, like everything below).
   if (recurrenceChanged) {
     return yield* regenerateOccurrences(userId, task, input, params.newPattern);
+  }
+
+  // Moving it to the inbox takes this occurrence alone: an undated task has
+  // no place in the pattern, and the later ones keep their dates.
+  if (input.startDate === null) {
+    return allRetagged(
+      yield* dbUpdate(userId, task.id, { ...input, isException: true })
+    );
   }
 
   // No recurrence change: update this and following with scaled date/time
