@@ -36,6 +36,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   SCOPE_DIALOG_COPY,
+  seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -734,6 +735,11 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         seriesRuleFailed: pendingMaster.isError,
         seriesRuleLoaded: Boolean(pendingMaster.data),
         seriesTimeZone: otherTimeZone(pendingGoogleUpdate.occurrence, timeZone),
+        splitBlocked: seriesSplitBlock(
+          pendingGoogleUpdate.occurrence,
+          pendingMaster.data,
+          timeZone
+        ),
       }
     : null;
 

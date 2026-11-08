@@ -6,7 +6,7 @@ import {
   carryCount,
   carryCountExactly,
   countOf,
-  pinRuleTimes,
+  followingSplitBlocked,
   sanitizeEventPayload,
   splitAddedDays,
   truncateRecurrenceForFollowing,
@@ -88,6 +88,33 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Refuses "This and following" where a new series can't start: at an
+ * added meeting, or in a series with several rules (the apps don't offer
+ * it there either). Null when the split is fine.
+ */
+function splitBlockedError(
+  master: Event,
+  originalStart: string
+): GoogleApiError | null {
+  const blocked = followingSplitBlocked({
+    masterRecurrence: master.recurrence,
+    masterStart: master.start,
+    originalStart,
+    seriesZone: seriesZoneOf(master),
+  });
+  if (!blocked) {
+    return null;
+  }
+  return new GoogleApiError({
+    cause: new Error(
+      blocked === "severalRules"
+        ? "This and following isn't available for a series with more than one rule"
+        : "This and following isn't available for an occurrence added to the series on its own"
+    ),
+  });
+}
+
+/**
  * A series' rule as written with its `start`: UNTIL and EXDATE/RDATE in
  * the start's form, skipped occurrences at its time, all counted on the
  * series' days in its zone. Applied to whatever the series ends up with,
@@ -105,29 +132,14 @@ function ruleForStart(
   splitAt?: string
 ): string[] | undefined {
   const zone = seriesZoneOf(master);
-  const clockOf = (dateTime: string | undefined) =>
-    dateTime && !DATE_ONLY.test(dateTime)
-      ? Temporal.Instant.from(dateTime).toZonedDateTimeISO(zone).toPlainTime()
+  const splitClock =
+    splitAt && !DATE_ONLY.test(splitAt)
+      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
       : null;
-  const splitClock = clockOf(splitAt);
-  const seriesClock = clockOf(master.start.dateTime);
-  // Split at a meeting off the series' own time (an added one, another
-  // rule's): the rules keep the times pinRuleTimes wrote.
-  const keepTimes = Boolean(
-    start.dateTime &&
-      splitClock &&
-      seriesClock &&
-      Temporal.PlainTime.compare(splitClock, seriesClock) !== 0
-  );
-  let days: Parameters<typeof matchRecurrenceToStart>[4];
-  if (start.date && splitClock) {
-    days = {
-      firstDay: Temporal.PlainDate.from(start.date),
-      firstTime: splitClock,
-    };
-  } else if (keepTimes) {
-    days = { firstDay: null, keepTimes };
-  }
+  const days =
+    start.date && splitClock
+      ? { firstDay: Temporal.PlainDate.from(start.date), firstTime: splitClock }
+      : undefined;
   return rule && matchRecurrenceToStart(rule, start, zone, master.start, days);
 }
 
@@ -706,16 +718,8 @@ export function makeGoogleCalendarService(
       const zone = seriesZoneOf(master);
       // The new part repeats from the split on: added days before it stay
       // with the old part.
-      // A rule that took its time from the series' start keeps it when
-      // the new part starts at another rule's time.
       const fromSplit =
-        rule &&
-        pinRuleTimes(
-          splitAddedDays(rule, originalStart, zone, "from"),
-          master.start,
-          originalStart,
-          zone
-        );
+        rule && splitAddedDays(rule, originalStart, zone, "from");
       if (!fromSplit || count === undefined || countOf(fromSplit) !== count) {
         return fromSplit;
       }
@@ -922,6 +926,11 @@ export function makeGoogleCalendarService(
       // (possibly moved) date.
       if (occurrenceStart.getTime() <= masterStart.getTime()) {
         return yield* updateEventAll(calendarId, event, currentEvent, true);
+      }
+
+      const blocked = splitBlockedError(master, startIso);
+      if (blocked) {
+        return yield* Effect.fail(blocked);
       }
 
       const originalRecurrence = [...master.recurrence];
@@ -1261,6 +1270,10 @@ export function makeGoogleCalendarService(
             cause: new Error("Event start is not a date or dateTime"),
           })
         );
+      }
+      const blocked = splitBlockedError(master, originalStartIso);
+      if (blocked) {
+        return yield* Effect.fail(blocked);
       }
 
       // The new series is the series from this occurrence's place on:

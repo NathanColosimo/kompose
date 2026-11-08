@@ -65,6 +65,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   SCOPE_DIALOG_COPY,
+  seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import {
   formatAllDayWhen,
@@ -200,7 +201,7 @@ function saveChanges(
   > | null,
   series: Pick<
     EventSaveChanges,
-    "seriesRuleFailed" | "seriesRuleLoaded" | "seriesTimeZone"
+    "seriesRuleFailed" | "seriesRuleLoaded" | "seriesTimeZone" | "splitBlocked"
   >
 ): EventSaveChanges {
   return {
@@ -799,6 +800,7 @@ export function EventEditPopover({
     seriesRuleFailed: seriesMaster.isError,
     seriesRuleLoaded,
     seriesTimeZone: otherTimeZone(event, timeZone),
+    splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
 
   const [dialogState, dispatchDialog] = useReducer(
@@ -1004,6 +1006,7 @@ export function EventEditPopover({
             dateMoved: request.dateMoved,
             patternChanged: request.patternChanged,
             seriesRuleLoaded,
+            splitBlocked: seriesStatus.splitBlocked,
           })
         );
         dispatchDialog({
@@ -1029,6 +1032,7 @@ export function EventEditPopover({
     readOnly,
     saveEdits,
     seriesRuleLoaded,
+    seriesStatus.splitBlocked,
     setOpen,
   ]);
 

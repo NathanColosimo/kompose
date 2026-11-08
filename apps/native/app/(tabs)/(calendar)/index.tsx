@@ -68,6 +68,7 @@ import {
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
+  seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import {
   formatTimeRange,
@@ -1592,6 +1593,11 @@ export default function CalendarTab() {
         draft.sourceEvent.recurrence?.length || recurringMasterEvent.data
       ),
       seriesTimeZone: otherTimeZone(draft.sourceEvent, timeZone),
+      splitBlocked: seriesSplitBlock(
+        draft.sourceEvent,
+        recurringMasterEvent.data,
+        timeZone
+      ),
     }),
     [
       buildEventPayload,

@@ -2,8 +2,15 @@ import type {
   DeleteScope,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
-import type { RecurrenceScope } from "@kompose/google-cal/schema";
-import { timeZoneCity } from "./google-event-recurrence";
+import {
+  followingSplitBlocked,
+  type SplitBlock,
+} from "@kompose/google-cal/recurrence-utils";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
+import { eventTimeZone, timeZoneCity } from "./google-event-recurrence";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
   label: string;
@@ -40,6 +47,13 @@ export const SCOPE_DIALOG_COPY = {
     description: "Apply your changes to:",
     title: "Save recurring event",
   },
+  /** Why This and following is off for an occurrence. */
+  splitBlocked: {
+    addedOccurrence:
+      "This occurrence was added to the series on its own, so This and following isn't available.",
+    severalRules:
+      "This series repeats by more than one rule, so This and following isn't available.",
+  } satisfies Record<SplitBlock, string>,
   saveTask: {
     description: "Apply your changes to:",
     title: "Save recurring task",
@@ -75,6 +89,34 @@ export interface EventSaveChanges {
    * are counted there, so the dialog says so.
    */
   seriesTimeZone?: string;
+  /** Why a new series can't start at this occurrence (`seriesSplitBlock`). */
+  splitBlocked?: SplitBlock | null;
+}
+
+/**
+ * Why "This and following" can't start a new series at `occurrence`: an
+ * added (RDATE) meeting, or a series with several rules. Null when it
+ * can, or before the series' master loads.
+ */
+export function seriesSplitBlock(
+  occurrence:
+    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
+    | null
+    | undefined,
+  master: Pick<GoogleEvent, "recurrence" | "start"> | null | undefined,
+  appTimeZone: string
+): SplitBlock | null {
+  const original = occurrence?.originalStartTime;
+  const originalStart = original?.dateTime ?? original?.date;
+  if (!(occurrence?.recurringEventId && master && originalStart)) {
+    return null;
+  }
+  return followingSplitBlocked({
+    masterRecurrence: master.recurrence,
+    masterStart: master.start,
+    originalStart,
+    seriesZone: eventTimeZone(occurrence, appTimeZone),
+  });
 }
 
 /**
@@ -99,6 +141,7 @@ export function eventSaveDisabledScopes(
     ...(changes.dateMoved
       ? { all: true, ...(ruleKnown ? {} : { following: true }) }
       : {}),
+    ...(changes.splitBlocked ? { following: true } : {}),
   };
 }
 
@@ -120,6 +163,9 @@ export function allowedEventSaveScope(
 export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
     return SCOPE_DIALOG_COPY.moveEvent;
+  }
+  if (changes.splitBlocked) {
+    return SCOPE_DIALOG_COPY.splitBlocked[changes.splitBlocked];
   }
   if (!changes.dateMoved) {
     return SCOPE_DIALOG_COPY.saveEvent.description;

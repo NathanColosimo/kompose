@@ -228,6 +228,63 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
     : Temporal.PlainDate.compare(a.day, b.day) === 0;
 }
 
+/** Why a series can't be split at an occurrence ("This and following"). */
+export type SplitBlock = "addedOccurrence" | "severalRules";
+
+/**
+ * Whether "This and following" can't start a new series at the
+ * occurrence whose original start is `originalStart`: a new series repeats
+ * from its start, so it must be one of the rule's own meetings. A series
+ * with several rules (only imported calendars write them) can't keep each
+ * rule's days and phase from one start, nor can an added (RDATE) meeting
+ * that isn't a rule meeting too. Null when the split is fine.
+ */
+export function followingSplitBlocked(params: {
+  masterRecurrence: string[] | null | undefined;
+  masterStart: { date?: string | null; dateTime?: string | null };
+  originalStart: string;
+  seriesZone: string;
+}): SplitBlock | null {
+  const recurrence = params.masterRecurrence ?? [];
+  const rules = recurrence.filter(isRule);
+  if (rules.length > 1) {
+    return "severalRules";
+  }
+  const split = asValue(params.originalStart, params.seriesZone);
+  const added = recurrence.flatMap((line) => {
+    const list = line.startsWith("RDATE")
+      ? parseDateList(line, params.seriesZone)
+      : null;
+    return (list?.values ?? []).flatMap((value) => {
+      const read =
+        list && readRecurrenceValue(value, list.zone, params.seriesZone);
+      return read ? [read] : [];
+    });
+  });
+  if (!(split && added.some((value) => sameValue(value, split)))) {
+    return null;
+  }
+  // An added meeting that's also a rule meeting (its day, the series'
+  // time) is the rule's: it can start a new series.
+  const first = asValue(
+    params.masterStart.dateTime ?? params.masterStart.date ?? "",
+    params.seriesZone
+  );
+  const rule = rules[0];
+  const clock = (value: RecurrenceValue | null) =>
+    value?.instant?.toZonedDateTimeISO(params.seriesZone).toPlainTime();
+  const firstClock = clock(first);
+  const splitClock = clock(split);
+  const ruleMeeting =
+    rule &&
+    first &&
+    isRuleDay(rule, first.day, split.day) === true &&
+    (!(firstClock && splitClock) ||
+      Temporal.PlainTime.compare(ruleClock(rule, firstClock), splitClock) ===
+        0);
+  return ruleMeeting ? null : "addedOccurrence";
+}
+
 /**
  * The following part of a split series' rule, with the COUNT the user
  * kept carried on. COUNT counts rule positions, EXDATE-skipped ones
@@ -477,73 +534,6 @@ export function carryCountExactly(
 }
 
 const SINGLE_CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
-
-const CLOCK_NAMES = ["BYHOUR", "BYMINUTE", "BYSECOND"] as const;
-const FREQ_REGEX = /FREQ=([A-Z]+)/;
-/** The clock parts a sub-daily rule takes from its start (others meet at every value). */
-const INHERITED_CLOCK: Record<string, (typeof CLOCK_NAMES)[number][]> = {
-  HOURLY: ["BYMINUTE", "BYSECOND"],
-  MINUTELY: ["BYSECOND"],
-  SECONDLY: [],
-};
-
-/**
- * A series split at a meeting not at the series' own time (another rule's
- * 15:00, or an added one): the new part's start takes that time,
- * so a rule that left its time (or part of it) to the start would move
- * there. Its left-out parts are written from the series' time instead.
- * The same recurrence when nothing needs pinning.
- */
-export function pinRuleTimes(
-  recurrence: string[],
-  seriesStart: { dateTime?: string | null },
-  originalStart: string,
-  seriesZone: string
-): string[] {
-  const rules = recurrence.filter(isRule);
-  const series = seriesStart.dateTime
-    ? asValue(seriesStart.dateTime, seriesZone)?.instant
-    : null;
-  const split = asValue(originalStart, seriesZone)?.instant;
-  // One rule too: its start's time differs from the split's only at an
-  // added meeting (or across a clock change), and it keeps its own.
-  if (rules.length === 0 || !(series && split)) {
-    return recurrence;
-  }
-  const seriesClock = series.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const splitClock = split.toZonedDateTimeISO(seriesZone).toPlainTime();
-  if (Temporal.PlainTime.compare(seriesClock, splitClock) === 0) {
-    return recurrence;
-  }
-  const values = {
-    BYHOUR: seriesClock.hour,
-    BYMINUTE: seriesClock.minute,
-    BYSECOND: seriesClock.second,
-  };
-  let changed = false;
-  const next = recurrence.map((line) => {
-    if (!isRule(line)) {
-      return line;
-    }
-    // Only the parts the rule takes from its start: an hourly rule meets
-    // every hour (its minute and second are the start's), a minutely one
-    // every minute.
-    const inherited = INHERITED_CLOCK[FREQ_REGEX.exec(line)?.[1] ?? ""] ?? [
-      ...CLOCK_NAMES,
-    ];
-    const missing = inherited.filter(
-      (name) =>
-        !(line.includes(`;${name}=`) || line.includes(`:${name}=`)) &&
-        (name !== "BYSECOND" || values.BYSECOND !== splitClock.second)
-    );
-    if (missing.length === 0) {
-      return line;
-    }
-    changed = true;
-    return `${line};${missing.map((name) => `${name}=${values[name]}`).join(";")}`;
-  });
-  return changed ? next : recurrence;
-}
 
 /** The time of day a rule meets: its single BYHOUR / BYMINUTE / BYSECOND over `base`. */
 function ruleClock(rule: string, base: Temporal.PlainTime): Temporal.PlainTime {

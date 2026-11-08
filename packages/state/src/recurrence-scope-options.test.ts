@@ -5,6 +5,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  seriesSplitBlock,
 } from "./recurrence-scope-options";
 
 const none: EventSaveChanges = {
@@ -85,4 +86,50 @@ test("says why the scopes are what they are", () => {
   expect(
     eventSaveDescription({ ...none, calendarChanged: true, dateMoved: true })
   ).toBe("Moving to another calendar moves the whole series.");
+});
+
+test("turns This and following off where a new series can't start", () => {
+  const zone = "America/New_York";
+  const master = {
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;COUNT=4",
+      "RDATE;TZID=America/New_York:20261116T090000",
+    ],
+    start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+  };
+  const occurrence = (dateTime: string) => ({
+    originalStartTime: { dateTime, timeZone: zone },
+    recurringEventId: "series",
+    start: { dateTime, timeZone: zone },
+  });
+  // The off-week Monday was added on its own: a new series from it would
+  // move every later meeting a week.
+  expect(
+    seriesSplitBlock(occurrence("2026-11-16T09:00:00-05:00"), master, zone)
+  ).toBe("addedOccurrence");
+  // The rule's own Nov 23 can start one.
+  expect(
+    seriesSplitBlock(occurrence("2026-11-23T09:00:00-05:00"), master, zone)
+  ).toBeNull();
+  // Several rules (every 2 days, and Tuesdays): never.
+  expect(
+    seriesSplitBlock(
+      occurrence("2026-11-10T09:00:00-05:00"),
+      {
+        ...master,
+        recurrence: [
+          "RRULE:FREQ=DAILY;INTERVAL=2",
+          "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        ],
+      },
+      zone
+    )
+  ).toBe("severalRules");
+  // The scope dialog then offers the rest, and says why.
+  const blocked = { ...none, splitBlocked: "addedOccurrence" as const };
+  expect(off(blocked)).toEqual(["following"]);
+  expect(eventSaveDescription(blocked)).toBe(
+    "This occurrence was added to the series on its own, so This and following isn't available."
+  );
+  expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
 });

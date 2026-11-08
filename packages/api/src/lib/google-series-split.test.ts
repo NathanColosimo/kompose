@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   carryCount,
   carryCountExactly,
-  pinRuleTimes,
   splitAddedDays,
   truncateRecurrenceForFollowing,
   withRemainingCount,
@@ -587,46 +586,6 @@ describe("splitting a series", () => {
     }
   });
 
-  test("keeps a rule's time when split at another rule's meeting", () => {
-    // Daily at the series' 9:00 (no time of its own) and daily 15:00,
-    // split at Nov 11 15:00: the first rule is pinned to 9:00, so its
-    // Nov 12 and 13 meetings stay at 9:00 (two left), not 15:00.
-    const rules = [
-      "RRULE:FREQ=DAILY;COUNT=5",
-      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
-    ];
-    const pinned = pinRuleTimes(
-      rules,
-      { dateTime: "2026-11-09T09:00:00-05:00" },
-      "2026-11-11T15:00:00-05:00",
-      "America/New_York"
-    );
-    expect(pinned).toEqual([
-      "RRULE:FREQ=DAILY;COUNT=5;BYHOUR=9;BYMINUTE=0",
-      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5;BYMINUTE=0",
-    ]);
-    expect(
-      carryCountExactly(pinned, {
-        masterRecurrence: rules,
-        originalStart: "2026-11-11T15:00:00-05:00",
-        seriesStart: "2026-11-09T09:00:00-05:00",
-        seriesZone: "America/New_York",
-      })
-    ).toEqual([
-      "RRULE:FREQ=DAILY;COUNT=2;BYHOUR=9;BYMINUTE=0",
-      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3;BYMINUTE=0",
-    ]);
-    // Split at the series' own time, or with one rule: nothing to pin.
-    expect(
-      pinRuleTimes(
-        rules,
-        { dateTime: "2026-11-09T09:00:00-05:00" },
-        "2026-11-11T09:00:00-05:00",
-        "America/New_York"
-      )
-    ).toBe(rules);
-  });
-
   test("ends a part whose rules are all spent at its start", () => {
     // Daily at the series' 9:00 and daily 15:00, three each from Nov 9,
     // split at an added Nov 20 15:00: both rules are spent, so the part is
@@ -640,105 +599,17 @@ describe("splitting a series", () => {
     ]) {
       const master = [...rules, added];
       const split = "2026-11-20T15:00:00-05:00";
-      const carried = carryCountExactly(
-        pinRuleTimes(
-          master,
-          { dateTime: "2026-11-09T09:00:00-05:00" },
-          split,
-          "America/New_York"
-        ),
-        {
-          masterRecurrence: master,
-          originalStart: split,
-          seriesStart: "2026-11-09T09:00:00-05:00",
-          seriesZone: "America/New_York",
-        }
-      );
+      const carried = carryCountExactly(master, {
+        masterRecurrence: master,
+        originalStart: split,
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      });
       const kept = carried?.filter((line) => line.startsWith("RRULE:")) ?? [];
       expect(kept).toHaveLength(1);
       expect(kept[0]).toContain("UNTIL=20261120T200000Z");
       expect(kept[0]).not.toContain("COUNT=");
     }
-  });
-
-  test("keeps a lone rule's time when split at an added meeting", () => {
-    // Daily 9:00 five times from Nov 9 plus an added Nov 11 15:00, split
-    // there: the new part's meetings after its start stay at 9:00 (Nov 12
-    // and 13), not 15:00.
-    const master = [
-      "RRULE:FREQ=DAILY;COUNT=5",
-      "RDATE;TZID=America/New_York:20261111T150000",
-    ];
-    const split = "2026-11-11T15:00:00-05:00";
-    const pinned = pinRuleTimes(
-      master,
-      { dateTime: "2026-11-09T09:00:00-05:00" },
-      split,
-      "America/New_York"
-    );
-    expect(
-      carryCountExactly(pinned, {
-        masterRecurrence: master,
-        originalStart: split,
-        seriesStart: "2026-11-09T09:00:00-05:00",
-        seriesZone: "America/New_York",
-      })?.[0]
-    ).toBe("RRULE:FREQ=DAILY;COUNT=2;BYHOUR=9;BYMINUTE=0");
-  });
-
-  test("keeps pinned times through the server's lining-up", () => {
-    // Daily five times and Mondays three times, both at the series' 9:00,
-    // plus an added Nov 9 15:00; split there, as the server does it: pin,
-    // count, then line up with the new 15:00 start keeping the rules'
-    // times. Both keep their 9:00 and every meeting: Nov 10-13, Nov 16
-    // and 23.
-    const zone = "America/New_York";
-    const seriesStart = { dateTime: "2026-11-09T09:00:00-05:00" };
-    const split = "2026-11-09T15:00:00-05:00";
-    const master = [
-      "RRULE:FREQ=DAILY;COUNT=5",
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
-      "RDATE;TZID=America/New_York:20261109T150000",
-    ];
-    const carried = carryCountExactly(
-      pinRuleTimes(master, seriesStart, split, zone),
-      {
-        masterRecurrence: master,
-        originalStart: split,
-        seriesStart: seriesStart.dateTime,
-        seriesZone: zone,
-      }
-    );
-    expect(
-      matchRecurrenceToStart(
-        carried ?? [],
-        { dateTime: split, timeZone: zone },
-        zone,
-        seriesStart,
-        { firstDay: null, keepTimes: true }
-      )
-    ).toEqual([
-      "RRULE:FREQ=DAILY;COUNT=4;BYHOUR=9;BYMINUTE=0",
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2;BYHOUR=9;BYMINUTE=0",
-      "RDATE;TZID=America/New_York:20261109T150000",
-    ]);
-  });
-
-  test("pins only the time parts a rule takes from its start", () => {
-    // Every 4 hours plus daily 15:00, split at 15:00 off the series' 9:00:
-    // the hourly rule keeps meeting every few hours (only its minute is
-    // the start's), never just at 9:00.
-    expect(
-      pinRuleTimes(
-        ["RRULE:FREQ=HOURLY;INTERVAL=4", "RRULE:FREQ=DAILY;BYHOUR=15"],
-        { dateTime: "2026-11-09T09:00:00-05:00" },
-        "2026-11-09T15:00:00-05:00",
-        "America/New_York"
-      )
-    ).toEqual([
-      "RRULE:FREQ=HOURLY;INTERVAL=4;BYMINUTE=0",
-      "RRULE:FREQ=DAILY;BYHOUR=15;BYMINUTE=0",
-    ]);
   });
 
   test("leaves a count across a DST gap to Google's list", () => {
