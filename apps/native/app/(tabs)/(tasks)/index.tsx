@@ -487,6 +487,7 @@ export default function TasksScreen() {
         savedRecurrence={taskFlow.savedRecurrence}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
+        undatedMember={taskFlow.undatedMember}
       />
 
       <TaskDeleteScopeDialog flow={taskFlow} />

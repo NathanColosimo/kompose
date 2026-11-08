@@ -85,6 +85,8 @@ interface TaskEditorSheetProps {
   savedRecurrence?: TaskRecurrence | null;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
+  /** A series occurrence moved to the inbox (no date). */
+  undatedMember?: boolean;
 }
 
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];
@@ -602,6 +604,7 @@ export function TaskEditorSheet({
   onToggleDone,
   savedRecurrence,
   timeZone,
+  undatedMember = false,
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
   const { parseLink } = useTasks();
@@ -876,6 +879,7 @@ export function TaskEditorSheet({
             next: draft.recurrence,
             previous: savedRecurrence ?? null,
             startDate: draft.startDate,
+            undatedMember,
           })}
         />
 

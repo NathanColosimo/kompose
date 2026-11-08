@@ -275,7 +275,8 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    if (editingTask.seriesMasterId) {
+    // An occurrence moved to the inbox has nothing after it: no scope to ask.
+    if (editingTask.seriesMasterId && editingTask.startDate) {
       setDeleteScope("this");
       setIsEditorOpen(false);
       setScopeDialog("delete");
@@ -427,6 +428,11 @@ export function useTaskEditorFlow() {
   const savedRecurrence = editingTask?.seriesMasterId
     ? editingTask.recurrence
     : undefined;
+  // An occurrence moved to the inbox: a repeat change takes it out of its
+  // series (the editor says so).
+  const undatedMember = Boolean(
+    editingTask?.seriesMasterId && !editingTask.startDate
+  );
 
   return {
     cancelScopedSave,
@@ -444,6 +450,7 @@ export function useTaskEditorFlow() {
     save,
     savedRecurrence,
     saveScope,
+    undatedMember,
     scopeDialog,
     setDeleteScope,
     setSaveScope,

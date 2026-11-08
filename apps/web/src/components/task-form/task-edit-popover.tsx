@@ -377,6 +377,19 @@ function TaskEditorCloseActions({
   );
 }
 
+/**
+ * A series occurrence moved to the inbox (no date): nothing follows it,
+ * and a repeat change takes it out of its series.
+ */
+function isUndatedMember(task: TaskSelectDecoded | undefined): boolean {
+  return Boolean(task?.seriesMasterId && !task.startDate);
+}
+
+/** A dated series occurrence, which "this and following" can start from. */
+function hasFollowing(task: TaskSelectDecoded | undefined): boolean {
+  return Boolean(task?.seriesMasterId && task.startDate);
+}
+
 /** Mark done waits while Save runs, or while the repeat can't save. */
 function isDoneBlocked(saving: "done" | "save" | null, repeatBlocked: boolean) {
   return saving === "save" || repeatBlocked;
@@ -1103,6 +1116,7 @@ export function TaskEditForm({
             next: recurrence,
             previous: resolvedRecurrence,
             startDate,
+            undatedMember: isUndatedMember(task),
           })}
         />
 
@@ -1194,18 +1208,18 @@ export function TaskEditForm({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete task?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        {isRecurring
+                        {hasFollowing(task)
                           ? SCOPE_DIALOG_COPY.deleteTask.description
                           : "This action cannot be undone."}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter
                       className={
-                        isRecurring ? "flex-col gap-2 sm:flex-col" : ""
+                        hasFollowing(task) ? "flex-col gap-2 sm:flex-col" : ""
                       }
                     >
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      {isRecurring ? (
+                      {hasFollowing(task) ? (
                         <>
                           <AlertDialogAction
                             onClick={() => confirmDelete("this")}

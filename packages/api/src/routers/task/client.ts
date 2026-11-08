@@ -165,6 +165,20 @@ const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
   userId: string,
   master: TaskSelect
 ) {
+  yield* handOffMasterRole(userId, master);
+  yield* dbDelete(userId, master.id);
+});
+
+/**
+ * Pass a master's role and pattern to the series' next dated occurrence
+ * (counting the dated ones left), the rest of the series following it. When
+ * only undated ones (moved to the inbox) are left, they stand alone: an
+ * undated task can't carry a repeat.
+ */
+const handOffMasterRole = Effect.fn("handOffMasterRole")(function* (
+  userId: string,
+  master: TaskSelect
+) {
   const db = yield* Database;
   const rest = yield* db
     .select()
@@ -177,22 +191,49 @@ const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
       )
     )
     .orderBy(asc(taskTable.startDate));
-  const [heir] = rest;
-  if (heir) {
-    yield* db
-      .update(taskTable)
-      .set({ seriesMasterId: heir.id })
-      .where(
-        and(
-          eq(taskTable.userId, userId),
-          eq(taskTable.seriesMasterId, master.id)
-        )
-      );
-    yield* dbUpdate(userId, heir.id, {
-      recurrence: heirPattern(master.recurrence, rest.length),
-    });
+  const dated = rest.filter((row) => row.startDate);
+  const [heir] = dated;
+  if (!heir) {
+    return yield* dbDetachUndated(userId, master.id);
   }
-  yield* dbDelete(userId, master.id);
+  const followed = yield* db
+    .update(taskTable)
+    .set({ seriesMasterId: heir.id })
+    .where(
+      and(
+        eq(taskTable.userId, userId),
+        eq(taskTable.seriesMasterId, master.id),
+        ne(taskTable.id, master.id)
+      )
+    )
+    .returning();
+  const [newMaster] = yield* dbUpdate(userId, heir.id, {
+    recurrence: heirPattern(master.recurrence, dated.length),
+  });
+  return newMaster
+    ? [...followed.filter((row) => row.id !== heir.id), newMaster]
+    : followed;
+});
+
+/**
+ * Take an undated occurrence (moved to the inbox) out of its series, as a
+ * standalone task: it has no place in a pattern. A master hands its role
+ * to the next occurrence first.
+ */
+const releaseFromSeries = Effect.fn("releaseFromSeries")(function* (
+  userId: string,
+  task: TaskSelect
+) {
+  const handedOff =
+    task.seriesMasterId === task.id
+      ? yield* handOffMasterRole(userId, task)
+      : [];
+  const released = yield* dbUpdate(userId, task.id, {
+    isException: false,
+    recurrence: null,
+    seriesMasterId: null,
+  });
+  return [...handedOff, ...released];
 });
 
 const dbDeleteBySeriesFrom = (
@@ -914,6 +955,23 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (!master?.recurrence) {
     return [] as TaskSelect[];
   }
+  // The master was moved to the inbox: it can't carry the earlier part's
+  // pattern, so that part becomes a series of its own (or a lone task), and
+  // the master and any other undated occurrences stand alone.
+  if (!master.startDate) {
+    const handedOff = yield* handOffEarlierPart(
+      userId,
+      { ...master, seriesMasterId: master.id, startDate: boundary },
+      boundary
+    );
+    const detached = yield* dbDetachUndated(userId, master.id);
+    const released = yield* dbUpdate(userId, master.id, {
+      isException: false,
+      recurrence: null,
+      seriesMasterId: null,
+    });
+    return [...handedOff, ...detached, ...released];
+  }
   // The edit starts on or before the master, so the master's pattern goes
   // rather than ending before its own start. Occurrences before the edit
   // (the master was moved later alone) keep the original pattern as a
@@ -948,8 +1006,9 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
 
 /**
  * A series' undated occurrences (moved to the inbox alone) have no place
- * before or after a split, so when the split retires their master they
- * become standalone tasks rather than members of a series that's gone.
+ * before or after a split, so when a split starts at or before their master
+ * they become standalone tasks rather than members of a series that's
+ * changed or gone.
  */
 const dbDetachUndated = (userId: string, seriesMasterId: string) =>
   Effect.gen(function* () {
@@ -1133,6 +1192,37 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
 });
 
 /** Handle scope=following update for recurring task */
+/**
+ * A repeat change on an undated occurrence (moved to the inbox): it leaves
+ * its series as a standalone task, and a new pattern makes it a series of
+ * its own, from the start date the edit gives it (one is required).
+ */
+const repatternUndated = Effect.fn("repatternUndated")(function* (
+  userId: string,
+  task: TaskSelect,
+  input: TaskUpdateInput
+) {
+  if (input.recurrence && !input.startDate) {
+    return yield* Effect.fail(
+      new InvalidTaskError({ message: PICK_START_TO_REPEAT })
+    );
+  }
+  const released = yield* releaseFromSeries(userId, task);
+  const standalone: TaskSelect = {
+    ...task,
+    isException: false,
+    recurrence: null,
+    seriesMasterId: null,
+  };
+  const rows = input.recurrence
+    ? yield* convertToRecurring(userId, standalone, input)
+    : yield* dbUpdate(userId, task.id, { ...input, recurrence: null });
+  const written = new Map([...released, ...rows].map((row) => [row.id, row]));
+  return { retagIds: ids(rows), rows: [...written.values()] };
+});
+
+const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
+
 const updateFollowing = Effect.fn("updateFollowing")(function* (
   userId: string,
   task: TaskSelect,
@@ -1141,6 +1231,9 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
 ) {
   // Without a start date there is no "following"; edit this occurrence alone.
   if (!isDatedSeriesTask(task)) {
+    if (recurrenceChanged) {
+      return yield* repatternUndated(userId, task, input);
+    }
     return allRetagged(
       yield* dbUpdate(userId, task.id, { ...input, isException: true })
     );
@@ -1342,15 +1435,17 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
+      // Without a start date there's no "following": delete it alone.
+      const alone = scope === "this" || !task.startDate;
       // A series master deleted alone hands its role to the next one.
-      if (scope === "this" && task.seriesMasterId === task.id) {
+      if (alone && task.seriesMasterId === task.id) {
         const db = yield* Database;
         yield* db.transaction(() => deleteMasterAlone(userId, task));
         return;
       }
 
-      // Non-recurring or scope=this: delete single task
-      if (!task.seriesMasterId || scope === "this") {
+      // Non-recurring or alone: delete single task
+      if (!task.seriesMasterId || alone) {
         yield* dbDelete(userId, taskId);
         return;
       }

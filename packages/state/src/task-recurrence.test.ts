@@ -38,4 +38,41 @@ describe("repeatBlocksSave", () => {
       text: "The repeat ends Nov\u00A014, before the task starts on Nov\u00A016.",
     });
   });
+
+  test("needs a start date for a repeat the edit sets", () => {
+    const weekly = {
+      byDay: ["MO" as const],
+      freq: "WEEKLY" as const,
+      interval: 1,
+    };
+    expect(
+      repeatNote({
+        isRecurring: false,
+        next: weekly,
+        previous: null,
+        startDate: null,
+      })
+    ).toEqual({
+      blocking: true,
+      text: "Pick a start date to repeat this task.",
+    });
+  });
+
+  test("says what a repeat change does to an inbox occurrence", () => {
+    const base = {
+      isRecurring: true,
+      previous: dailyUntil14,
+      undatedMember: true,
+    };
+    expect(repeatNote({ ...base, next: null, startDate: null })?.text).toBe(
+      "Takes this task out of its series."
+    );
+    expect(
+      repeatNote({
+        ...base,
+        next: { ...dailyUntil14, until: undefined },
+        startDate: nov16,
+      })?.text
+    ).toBe("Makes this task a series of its own.");
+  });
 });

@@ -429,11 +429,17 @@ export function repeatBlocksSave(params: {
   previous: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null | undefined;
 }): boolean {
-  return (
-    !taskRecurrenceEquals(params.previous, params.next ?? null) &&
-    repeatEndsBeforeStart(params.next, params.startDate)
-  );
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return false;
+  }
+  // A repeat counts from the start date, so it needs one.
+  if (params.next && !params.startDate) {
+    return true;
+  }
+  return repeatEndsBeforeStart(params.next, params.startDate);
 }
+
+const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
 
 /**
  * What the editor says under Repeat: why it can't save ("ends before the
@@ -446,15 +452,37 @@ export function repeatNote(params: {
   next: TaskRecurrence | null | undefined;
   previous: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null | undefined;
+  /**
+   * An occurrence moved to the inbox (no date): a repeat change takes it
+   * out of its series, or makes it a series of its own.
+   */
+  undatedMember?: boolean;
 }): { blocking: boolean; text: string } | null {
-  if (repeatBlocksSave(params) && params.next?.until && params.startDate) {
+  if (repeatBlocksSave(params)) {
     return {
       blocking: true,
-      text: repeatEndsBeforeStartText(params.next.until, params.startDate),
+      text:
+        params.next?.until && params.startDate
+          ? repeatEndsBeforeStartText(params.next.until, params.startDate)
+          : PICK_START_TO_REPEAT,
     };
   }
-  const text = repeatChangeNote(params);
+  const text = params.undatedMember
+    ? undatedRepeatNote(params)
+    : repeatChangeNote(params);
   return text ? { blocking: false, text } : null;
+}
+
+function undatedRepeatNote(params: {
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+}): string | null {
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return null;
+  }
+  return params.next
+    ? "Makes this task a series of its own."
+    : "Takes this task out of its series.";
 }
 
 /**
