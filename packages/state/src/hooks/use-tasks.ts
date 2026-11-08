@@ -27,6 +27,19 @@ import { useStateConfig } from "../config";
 import { type HeldSave, reportHeldSaveFailure } from "../held-save";
 import { mergeSavedTasks } from "../task-cache";
 
+interface UpdateTaskVariables extends HeldSave {
+  id: string;
+  /** False to wait for the server instead of updating the cache first. */
+  optimistic?: boolean;
+  scope: UpdateScope;
+  /**
+   * Send `recurrence` only when the pattern changes: the server reads null
+   * as "stop repeating", and a held save's cache update reads any pattern
+   * as a split at the new start date.
+   */
+  task: TaskUpdateDecoded;
+}
+
 interface UseTasksOptions {
   refetchOnMount?: boolean | "always";
   refetchOnWindowFocus?: boolean | "always";
@@ -122,21 +135,7 @@ export function useTasks(options: UseTasksOptions = {}) {
   });
 
   const updateTask = useMutation({
-    mutationFn: async ({
-      id,
-      task,
-      scope,
-    }: {
-      id: string;
-      /** Shown instead of the generic error when the save fails. */
-      failureMessage?: string;
-      /** The editor shows the failure itself; no toast. */
-      quiet?: boolean;
-      /** False to wait for the server instead of updating the cache first. */
-      optimistic?: boolean;
-      task: TaskUpdateDecoded;
-      scope: UpdateScope;
-    }) => {
+    mutationFn: async ({ id, task, scope }: UpdateTaskVariables) => {
       const encoded = taskUpdateCodec.encode(task);
       const results = await orpc.tasks.update({
         id,
@@ -156,14 +155,7 @@ export function useTasks(options: UseTasksOptions = {}) {
       optimistic: isOptimistic = true,
       task,
       scope,
-    }: {
-      id: string;
-      failureMessage?: string;
-      optimistic?: boolean;
-      quiet?: boolean;
-      task: TaskUpdateDecoded;
-      scope: UpdateScope;
-    }) => {
+    }: UpdateTaskVariables) => {
       // An editor that holds open until its save ends (Mark done with edits)
       // skips this: an early update could unmount it (the task leaves its
       // list) or roll its fields back over the draft on failure.

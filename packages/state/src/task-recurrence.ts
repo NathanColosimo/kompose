@@ -1,3 +1,7 @@
+import {
+  PICK_START_TO_REPEAT,
+  repeatEndsBeforeStart,
+} from "@kompose/api/lib/recurrence";
 import type {
   TaskRecurrence,
   TaskSelectDecoded,
@@ -347,7 +351,7 @@ export function getTaskUpdateScopeDecision(params: {
    * The task has a date, so later occurrences follow it. An occurrence
    * moved to the inbox has none: its edits apply to it alone, no question.
    */
-  hasFollowing?: boolean;
+  hasFollowing: boolean;
   hasCoreFieldChanges: boolean;
   previousRecurrence: TaskRecurrence | null | undefined;
   nextRecurrence: TaskRecurrence | null | undefined;
@@ -380,7 +384,7 @@ export function getTaskUpdateScopeDecision(params: {
     return { action: "apply", scope: "following" };
   }
 
-  if (params.hasFollowing === false) {
+  if (!params.hasFollowing) {
     return { action: "apply", scope: "this" };
   }
 
@@ -417,16 +421,6 @@ function repeatEndsBeforeStartText(
   return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
 }
 
-/** A repeat whose end comes before the task's start has no occurrences. */
-export function repeatEndsBeforeStart(
-  recurrence: TaskRecurrence | null | undefined,
-  startDate: Temporal.PlainDate | null | undefined
-): boolean {
-  return Boolean(
-    recurrence?.until && startDate && recurrence.until < startDate.toString()
-  );
-}
-
 /**
  * Whether the editor's repeat stops it saving: only a pattern the edit sets
  * (a new task's, or a changed one) that ends before the start. An unchanged
@@ -445,10 +439,8 @@ export function repeatBlocksSave(params: {
   if (params.next && !params.startDate) {
     return true;
   }
-  return repeatEndsBeforeStart(params.next, params.startDate);
+  return repeatEndsBeforeStart(params.next, params.startDate?.toString());
 }
-
-const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
 
 /**
  * What the editor says under Repeat: why it can't save ("ends before the
