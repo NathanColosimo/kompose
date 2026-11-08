@@ -530,6 +530,22 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(eventSaveDescription(first)).toBe(
       "Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
     );
+    // With a new repeat too, nothing is on: the time and the repeat take
+    // two saves. Not so for a repeat that itself undoes the meeting.
+    const firstRepeat = { ...first, patternChanged: true };
+    expect(off(firstRepeat)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(firstRepeat)).toBe(
+      "Changing the time for the entire series would reset your changed Dec 7 meeting. Change the times and the repeat in two saves. From its first meeting, This and following is the entire series too."
+    );
+    expect(
+      eventSaveDescription({
+        ...firstRepeat,
+        entireSeriesCost: { day: dec7, reason: "lostSlot" },
+        retimed: false,
+      })
+    ).toBe(
+      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. From its first meeting, This and following is the entire series too."
+    );
     // A series meeting several times a day, given a new time there.
     const several = {
       ...none,
@@ -538,6 +554,13 @@ describe("an Entire series save that would cost a meeting its own changes", () =
       severalRules: true,
     };
     expect(off(several)).toEqual(["all", "following"]);
+    // With a new repeat too, nothing is on: the times and the repeat take
+    // two saves.
+    const severalRepeat = { ...several, patternChanged: true };
+    expect(off(severalRepeat)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(severalRepeat)).toBe(
+      `${SCOPE_DIALOG_COPY.severalRulesTimeAndRepeat} From its first meeting, This and following is the entire series too.`
+    );
     // A new day for the first meeting moves the whole series: only Entire
     // series' own rule keeps it off.
     expect(off({ ...none, dateMoved: true, opensSeries: true })).toEqual([
@@ -553,7 +576,7 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     const newDayRepeat = { ...newDay, patternChanged: true };
     expect(off(newDayRepeat)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(newDayRepeat)).toBe(
-      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
+      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. Change the times and the repeat in two saves. From its first meeting, This and following is the entire series too."
     );
   });
 

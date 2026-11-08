@@ -115,6 +115,12 @@ export const SCOPE_DIALOG_COPY = {
     "Moving to another calendar moves the whole series, but its meetings keep times of their own, so a new time can't go with it. Move the calendar and change the time in two saves.",
   /** A new time for a series meeting several times a day (the server's words). */
   severalRulesTime: refusalMessage({ reason: "severalTimesADay" }),
+  /**
+   * The same with a new repeat, where no scope takes both: from the
+   * series' first meeting, This and following is the entire series too.
+   */
+  severalRulesTimeAndRepeat:
+    "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. Change the times and the repeat in two saves.",
   /** After why Entire series is off, from the series' first meeting. */
   firstMeetingFollowing:
     "From its first meeting, This and following is the entire series too.",
@@ -608,7 +614,8 @@ function firstMeetingRefused(changes: EventSaveChanges): boolean {
  * which it saves as the whole series from that day, in its order: a new
  * time of day for a series meeting several times a day, then a meeting
  * changed on its own, which the new start resets (Google cancels them
- * all, so the line names the earliest whatever the cost's reason). Null when
+ * all, so whatever the cost's reason, the line says the earliest is
+ * reset). Null when
  * it takes it. Only `movesSeveralADay` tells a new time of day here:
  * `retimed` is set by the new day alone.
  */
@@ -640,8 +647,12 @@ function firstMeetingNewDayLine(
       return changes.patternChanged
         ? SCOPE_DIALOG_COPY.splitBlockedThen.timesAndRepeat
         : SCOPE_DIALOG_COPY.severalRulesTime;
-    case "changedMeeting":
-      return `Moving the series to this day would reset your changed ${shortDay(refusal.cost.day)} meeting.`;
+    case "changedMeeting": {
+      const reset = `Moving the series to this day would reset your changed ${shortDay(refusal.cost.day)} meeting.`;
+      return changes.patternChanged
+        ? `${reset} ${SCOPE_DIALOG_COPY.splitBlockedThen.timesAndRepeat}`
+        : reset;
+    }
     default:
       return refusal satisfies never;
   }
@@ -933,9 +944,18 @@ function whyScopesOff(changes: EventSaveChanges): string {
     case "repeatEnd":
       return SCOPE_DIALOG_COPY.repeatEndOff;
     case "changedMeeting":
-      return changedMeetingLine(off.cost);
+      // From the first meeting with a new repeat, no scope is left; a new
+      // time or length then takes its own save (not a repeat that itself
+      // undoes the meeting).
+      return changes.patternChanged &&
+        firstMeetingRefused(changes) &&
+        off.cost.reason !== "lostSlot"
+        ? `${changedMeetingLine(off.cost)} ${SCOPE_DIALOG_COPY.splitBlockedThen.timesAndRepeat}`
+        : changedMeetingLine(off.cost);
     case "severalRulesTime":
-      return SCOPE_DIALOG_COPY.severalRulesTime;
+      return changes.patternChanged && firstMeetingRefused(changes)
+        ? SCOPE_DIALOG_COPY.severalRulesTimeAndRepeat
+        : SCOPE_DIALOG_COPY.severalRulesTime;
     case "seriesPending":
       return seriesPendingDescription(changes);
     default:
