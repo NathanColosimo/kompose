@@ -6,7 +6,7 @@ import { Sidebar, SidebarRail } from "@/components/ui/sidebar";
 import {
   dashboardResponsiveLayoutAtom,
   SIDEBAR_RIGHT_WIDTH,
-  sidebarRightOverlayOpenAtom,
+  sidebarRightViewAtom,
 } from "@/state/sidebar";
 
 export function SidebarRight({
@@ -14,7 +14,8 @@ export function SidebarRight({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
   const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
-  const overlayOpen = useAtomValue(sidebarRightOverlayOpenAtom);
+  const view = useAtomValue(sidebarRightViewAtom);
+  const overlayOpen = view === "overlay";
   if (!responsiveLayout.canDockRightSidebar) {
     return (
       <div

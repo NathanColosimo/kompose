@@ -5,7 +5,7 @@ import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "better-auth";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   LogOut,
   PanelRight,
@@ -61,11 +61,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
-import {
-  dashboardResponsiveLayoutAtom,
-  sidebarRightOpenAtom,
-  sidebarRightOverlayOpenAtom,
-} from "@/state/sidebar";
+import { sidebarRightViewAtom, toggleSidebarRightAtom } from "@/state/sidebar";
 import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
 import { TagIconPickerPopover } from "./tags/tag-icon-picker";
 
@@ -97,34 +93,16 @@ export function AppHeader({ user }: { user: User }) {
 }
 
 function RightSidebarToggleButton() {
-  const responsiveLayout = useAtomValue(dashboardResponsiveLayoutAtom);
-  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
-  const [rightOverlayOpen, setRightOverlayOpen] = useAtom(
-    sidebarRightOverlayOpenAtom
-  );
-
-  const isOpen = responsiveLayout.canDockRightSidebar
-    ? rightSidebarOpen
-    : rightOverlayOpen;
-
-  const toggleRightSidebar = useCallback(() => {
-    if (responsiveLayout.canDockRightSidebar) {
-      setRightSidebarOpen((prev) => !prev);
-      return;
-    }
-    setRightOverlayOpen((prev) => !prev);
-  }, [
-    responsiveLayout.canDockRightSidebar,
-    setRightSidebarOpen,
-    setRightOverlayOpen,
-  ]);
+  const view = useAtomValue(sidebarRightViewAtom);
+  const toggleRightSidebar = useSetAtom(toggleSidebarRightAtom);
+  const isOpen = view !== "closed";
 
   return (
     <Button
       aria-label="Right sidebar"
       aria-pressed={isOpen}
       className="text-muted-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
-      onClick={toggleRightSidebar}
+      onClick={() => toggleRightSidebar()}
       size="icon"
       type="button"
       variant="ghost"

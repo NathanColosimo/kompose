@@ -5,7 +5,7 @@ import { tagsQueryAtom } from "@kompose/state/atoms/tags";
 import { tasksQueryAtom } from "@kompose/state/atoms/tasks";
 import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
-import { useAtom, useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
@@ -24,13 +24,10 @@ import { usePreloadTaskParserAfterData } from "@/lib/use-magic-task";
 import { createEventRequestedAtom } from "@/state/calendar-navigation";
 import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
-  dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
   isNarrowViewportAtom,
   SIDEBAR_LEFT_WIDTH,
   sidebarLeftNarrowOpenAtom,
-  sidebarRightOpenAtom,
-  sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
 
 /** Its own component, so task and tag updates don't re-render the layout. */
@@ -64,13 +61,8 @@ export default function DashboardLayout({
     refetch: refetchSession,
   } = authClient.useSession();
   const sessionUser = session?.user;
-  const [rightSidebarOpen, setRightSidebarOpen] = useAtom(sidebarRightOpenAtom);
-  // The first viewport measurement runs in a layout effect, before useAtomValue subscribes.
-  const responsiveLayout = useAtomValueRawSync(dashboardResponsiveLayoutAtom);
-  const viewportWidth = useAtomValueRawSync(dashboardViewportWidthAtom);
   const { push } = useRouter();
   const setViewportWidth = useSetAtom(dashboardViewportWidthAtom);
-  const setRightSidebarOverlayOpen = useSetAtom(sidebarRightOverlayOpenAtom);
   const applyCommandBarTaskOpenRequest = useSetAtom(
     applyCommandBarTaskOpenRequestAtom
   );
@@ -86,24 +78,6 @@ export default function DashboardLayout({
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, [setViewportWidth]);
-
-  // Constrained widths use overlay mode for right sidebar, so docked open must reset.
-  useEffect(() => {
-    // Do not clear the saved preference before the first viewport measurement.
-    if (
-      viewportWidth === 0 ||
-      responsiveLayout.canDockRightSidebar ||
-      !rightSidebarOpen
-    ) {
-      return;
-    }
-    setRightSidebarOpen(false);
-  }, [
-    responsiveLayout.canDockRightSidebar,
-    rightSidebarOpen,
-    setRightSidebarOpen,
-    viewportWidth,
-  ]);
 
   // Below the md breakpoint the task panel would leave the calendar about
   // one cramped day, so it folds each time the window narrows. The saved
@@ -139,14 +113,6 @@ export default function DashboardLayout({
       setNarrowOpen(false);
     }
   }, [isNarrow, setNarrowOpen]);
-
-  // When dock mode becomes available again, close overlay-only right sidebar.
-  useEffect(() => {
-    if (!responsiveLayout.canDockRightSidebar) {
-      return;
-    }
-    setRightSidebarOverlayOpen(false);
-  }, [responsiveLayout.canDockRightSidebar, setRightSidebarOverlayOpen]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) {
