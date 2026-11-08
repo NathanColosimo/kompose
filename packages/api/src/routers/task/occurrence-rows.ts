@@ -109,10 +109,11 @@ export function keepsEditedOccurrence(
 }
 
 /**
- * The new occurrences for a "this and following" pattern change, from the
- * edited occurrence's original date (`task.startDate`). Dates in
- * `keptDates` (exceptions, including the kept edited occurrence wherever it
- * moved) are left out. The first row is the new series master. New
+ * The new occurrences for a "this and following" pattern change, from where
+ * the edited occurrence now starts: its new date when the edit moves it
+ * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
+ * one. Dates in `keptDates` (exceptions, including the kept edited
+ * occurrence) are left out. The first row is the new series master. New
  * occurrences start open; when the edited occurrence is replaced, the new
  * one on its date keeps its status.
  */
@@ -127,7 +128,9 @@ export function regeneratedOccurrenceRows(params: {
   userId: string;
 }): TaskInsertRow[] {
   const { input, task } = params;
-  const seriesStartDate = Temporal.PlainDate.from(task.startDate);
+  const seriesStartDate = Temporal.PlainDate.from(
+    input.startDate ?? task.startDate
+  );
   const occurrenceDates = generateOccurrences(
     input.recurrence,
     seriesStartDate
@@ -136,12 +139,9 @@ export function regeneratedOccurrenceRows(params: {
     input,
     occurrenceDates,
     seriesMasterId: params.seriesMasterId,
-    // Due dates keep the edited task's own start-to-due offset: from its new
-    // start when the edit moves it (Nov 10 due Nov 11 → Nov 17 due Nov 18),
-    // not from the regeneration boundary.
-    seriesStartDate: input.startDate
-      ? Temporal.PlainDate.from(input.startDate)
-      : seriesStartDate,
+    // Due dates keep the edited task's own start-to-due offset, from its
+    // start (Nov 10 due Nov 11 → Nov 17 due Nov 18).
+    seriesStartDate,
     task,
     userId: params.userId,
   }).map((row, index) => ({
@@ -149,7 +149,7 @@ export function regeneratedOccurrenceRows(params: {
     ...(index === 0
       ? { id: params.seriesMasterId, recurrence: input.recurrence }
       : {}),
-    ...(!params.keepEdited && row.startDate === task.startDate
+    ...(!params.keepEdited && row.startDate === seriesStartDate.toString()
       ? { status: task.status }
       : {}),
   }));

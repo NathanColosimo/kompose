@@ -119,17 +119,28 @@ describe("regeneratedOccurrenceRows", () => {
     expect(first?.startTime).toBeNull();
   });
 
-  test("regenerates from the original date when the edit moves it", () => {
-    // Moved to Nov 23 (kept there); the series still starts after Nov 9.
+  test("starts the new pattern where the edit moves the occurrence", () => {
+    // Moved to Nov 12 with Daily x3, nothing else: the series is Nov 12-14,
+    // the moved occurrence first, keeping its status.
+    expect(
+      rows(
+        {
+          recurrence: { count: 3, freq: "DAILY", interval: 1 },
+          startDate: "2026-11-12",
+        },
+        false
+      )
+    ).toEqual(["2026-11-12 done R", "2026-11-13 todo", "2026-11-14 todo"]);
+    // Moved to Nov 23 and kept there (Mark done): the series follows it.
     expect(
       rows({ recurrence: tuesdays, startDate: "2026-11-23" }, true, [
         "2026-11-23",
       ])
     ).toEqual([
-      "2026-11-10 todo R",
-      "2026-11-17 todo",
-      "2026-11-24 todo",
+      "2026-11-24 todo R",
       "2026-12-01 todo",
+      "2026-12-08 todo",
+      "2026-12-15 todo",
     ]);
   });
 });

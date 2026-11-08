@@ -698,7 +698,9 @@ function isDatedSeriesTask(task: TaskSelect): task is DatedSeriesTask {
 
 /**
  * Replace this and later non-exception occurrences with a new recurrence
- * pattern, from the edited occurrence's original date. Exceptions (edited
+ * pattern. The old series ends before the edited occurrence's original
+ * date; the new one starts where it now is (its new date when the edit
+ * moves it). Exceptions (edited
  * alone, or done) stay, and the new pattern leaves their dates out instead
  * of doubling them.
  *
