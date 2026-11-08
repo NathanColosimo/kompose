@@ -594,11 +594,12 @@ interface RepeatSkipParams {
  * series' first meeting (its DTSTART; before the series loads, where the
  * series puts this occurrence) and counts the rule from there, so a day
  * left implicit (weekly with no days picked, monthly on "Day N", yearly)
- * comes from that first meeting, an interval counts its weeks or months from it, and a
- * COUNT or UNTIL can end the series before today. When the rule counted
- * that way doesn't meet on the occurrence's day, the editor's words (which
- * count from it) aren't what Entire series would save, and it would drop
- * the very meeting being edited: so the change applies from here on.
+ * comes from that first meeting, an interval counts its weeks or months
+ * from it, and a COUNT or UNTIL can end the series before today. When the
+ * rule counted that way doesn't meet on the occurrence's day, the editor's
+ * words (which count from it) aren't what Entire series would save, and it
+ * would drop the very meeting being edited: so the change applies from
+ * here on.
  */
 export function repeatSkipsOccurrence(
   params: RepeatSkipParams
