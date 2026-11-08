@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect";
+import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
@@ -83,6 +84,8 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
   return master.start.timeZone ?? "UTC";
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * A series' rule as written with its `start`: UNTIL and EXDATE/RDATE in
  * the start's form, skipped occurrences at its time, all counted on the
@@ -93,11 +96,29 @@ function seriesZoneOf(master: { start: { timeZone?: string } }): string {
 function ruleForStart(
   rule: string[] | undefined,
   master: { start: { date?: string; dateTime?: string; timeZone?: string } },
-  start: { date?: string; dateTime?: string }
+  start: { date?: string; dateTime?: string },
+  /**
+   * A split's original start: the new series' first meeting, whose time
+   * its COUNT counts from when it's made all day.
+   */
+  splitAt?: string
 ): string[] | undefined {
+  const zone = seriesZoneOf(master);
+  const firstTime =
+    start.date && splitAt && !DATE_ONLY.test(splitAt)
+      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
+      : null;
   return (
     rule &&
-    matchRecurrenceToStart(rule, start, seriesZoneOf(master), master.start)
+    matchRecurrenceToStart(
+      rule,
+      start,
+      zone,
+      master.start,
+      start.date && firstTime
+        ? { firstDay: Temporal.PlainDate.from(start.date), firstTime }
+        : undefined
+    )
   );
 }
 
@@ -900,7 +921,8 @@ export function makeGoogleCalendarService(
           event.start.dateTime ?? event.start.date ?? startIso
         ),
         master,
-        event.start
+        event.start,
+        startIso
       );
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
@@ -1239,7 +1261,8 @@ export function makeGoogleCalendarService(
           originalStartIso
         ),
         master,
-        slot.start
+        slot.start,
+        originalStartIso
       );
 
       // 1) Cut off the original series up to the edited occurrence.

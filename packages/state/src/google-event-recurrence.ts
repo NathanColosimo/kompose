@@ -636,8 +636,16 @@ export function seriesRecurrenceForSave(params: {
     timeZone,
     occurrence.originalStartTime ?? occurrence.start,
     // Rules that followed the start count their COUNT from there too (a
-    // later occurrence's day can only run long, which keeps skips).
-    { firstDay: moved ? to : firstDay, rulesFrom }
+    // later occurrence's day can only run long, which keeps skips), from
+    // the series' own start time.
+    {
+      firstDay: moved ? to : firstDay,
+      firstTime: params.masterStart
+        ? timeOfStart(params.masterStart, timeZone)
+        : null,
+      rulesFrom,
+      viaOccurrence: true,
+    }
   );
   return matched === masterRecurrence ? undefined : matched;
 }
@@ -656,13 +664,25 @@ export function seriesCountingDays(
     | undefined,
   timeZone: string
 ):
-  | { firstDay: Temporal.PlainDate | null; rulesFrom?: Temporal.PlainDate }
+  | {
+      firstDay: Temporal.PlainDate | null;
+      firstTime: Temporal.PlainTime | null;
+      rulesFrom?: Temporal.PlainDate;
+      viaOccurrence: true;
+    }
   | undefined {
   const firstDay =
     event?.recurringEventId && masterStart
       ? dayOfStart(masterStart, timeZone)
       : null;
-  return firstDay ? { firstDay, rulesFrom: firstDay } : undefined;
+  return firstDay && masterStart
+    ? {
+        firstDay,
+        firstTime: timeOfStart(masterStart, timeZone),
+        rulesFrom: firstDay,
+        viaOccurrence: true,
+      }
+    : undefined;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

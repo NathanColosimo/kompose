@@ -520,6 +520,20 @@ function countInDays(
   return line.replace(COUNT_SWAP, `$1COUNT=${days.size}`);
 }
 
+/** Whether `time` is on the clock on `day` in `timeZone` (not skipped by DST). */
+function existsOn(
+  day: Temporal.PlainDate,
+  time: Temporal.PlainTime,
+  timeZone: string
+): boolean {
+  return (
+    Temporal.PlainTime.compare(
+      day.toZonedDateTime({ plainTime: time, timeZone }).toPlainTime(),
+      time
+    ) === 0
+  );
+}
+
 /**
  * A COUNT rule's meetings as moments, every time of every day counted in
  * order from the series' first day `from` (from its start time `base`
@@ -545,8 +559,10 @@ function countedRuleMeetings(params: {
     if (onRuleDay === null) {
       return null;
     }
+    // A time the clocks skip that day (spring forward) isn't a meeting.
     const moments = onRuleDay
       ? times
+          .filter((time) => existsOn(day, time, timeZone))
           .map((time) => at(day, time))
           .filter((ms) => !(first && ms < first))
       : [];
@@ -644,6 +660,7 @@ function allDayDates(params: {
     const until = UNTIL_PART.exec(rule)?.[2];
     const last = until ? untilMoment(until, timeZone)?.epochMilliseconds : null;
     return times
+      .filter((time) => existsOn(day, time, timeZone))
       .map((time) => at(day, time))
       .filter((ms) => !(last && ms > last) && (!counted || counted.has(ms)));
   };
@@ -845,6 +862,16 @@ export function matchRecurrenceToStart(
     rulesFrom?: Temporal.PlainDate;
     /** The series' first day (COUNT counts from it); null if not known. */
     firstDay: Temporal.PlainDate | null;
+    /**
+     * The series' first meeting's time that day (COUNT counts from it, and
+     * a rule's left-out time parts are its), when not `seriesStart`'s.
+     */
+    firstTime?: Temporal.PlainTime | null;
+    /**
+     * Edited through an occurrence: an all-day rule keeps its times and
+     * COUNT for the server to carry and convert from the series' start.
+     */
+    viaOccurrence?: boolean;
   }
 ): string[] {
   const allDay = Boolean(start.date);
@@ -866,7 +893,9 @@ export function matchRecurrenceToStart(
   // editing the series itself. Edited through an occurrence (days given),
   // the rule goes as it is, so the server can carry a split's COUNT on
   // and convert it from the new series' start.
-  const convertsRule = Boolean(start.date) && !days;
+  const convertsRule = Boolean(start.date) && !days?.viaOccurrence;
+  // The series' own first meeting time, for counting its meetings.
+  const countBase = days?.firstTime ?? base;
   if (start.date) {
     countFrom = days ? days.firstDay : Temporal.PlainDate.from(start.date);
   }
@@ -876,8 +905,8 @@ export function matchRecurrenceToStart(
         // one (followStart has moved them and their skips there), unless
         // the caller says they didn't move.
         anchor: days?.rulesFrom ?? Temporal.PlainDate.from(start.date),
+        base: countBase,
         countFrom,
-        base,
         recurrence,
         rules,
         severalADay,
@@ -946,7 +975,9 @@ export function matchRecurrenceToStart(
     const matched = line.startsWith("RRULE:")
       ? matchClock(
           matchUntil(
-            convertsRule ? countInDays(line, base, countFrom, timeZone) : line,
+            convertsRule
+              ? countInDays(line, countBase, countFrom, timeZone)
+              : line,
             allDay,
             timeZone
           ),

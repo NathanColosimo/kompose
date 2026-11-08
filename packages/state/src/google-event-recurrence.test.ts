@@ -1153,6 +1153,32 @@ describe("seriesRecurrenceForSave", () => {
     ).toEqual(["RRULE:FREQ=MONTHLY;COUNT=3", "EXDATE;VALUE=DATE:20270103"]);
   });
 
+  test("counts from the series' own start time, not the occurrence's", () => {
+    // 9:00 and 15:00 five times from Nov 9 9:00 (the fifth Nov 11 9:00,
+    // skipped); the Nov 9 15:00 occurrence made all day for the series:
+    // Nov 11's only meeting stays skipped.
+    expect(
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-09" },
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
+          "EXDATE;TZID=America/New_York:20261111T090000",
+        ],
+        masterStart: { dateTime: "2026-11-09T09:00:00-05:00" },
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T15:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T15:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
+      "EXDATE;VALUE=DATE:20261111",
+    ]);
+  });
+
   test("names the series' first day for an occurrence's edit", () => {
     const masterStart = { dateTime: "2026-11-02T09:00:00-05:00" };
     expect(
@@ -1163,7 +1189,9 @@ describe("seriesRecurrenceForSave", () => {
       )
     ).toEqual({
       firstDay: Temporal.PlainDate.from("2026-11-02"),
+      firstTime: Temporal.PlainTime.from("09:00"),
       rulesFrom: Temporal.PlainDate.from("2026-11-02"),
+      viaOccurrence: true,
     });
     // The series itself, or its master not loaded: the start is its own.
     expect(
@@ -1329,6 +1357,19 @@ describe("seriesRecurrenceForSave", () => {
           "EXDATE;TZID=America/New_York:20261111T090000",
         ])
       ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", "EXDATE;VALUE=DATE:20261111"]);
+    });
+
+    test("doesn't count a time the clocks skip", () => {
+      // 2:30 and 15:00 four times from Sat Mar 13 2027 2:30: Sun Mar 14
+      // has no 2:30 (spring forward), so the four meetings take three days.
+      expect(
+        matchRecurrenceToStart(
+          ["RRULE:FREQ=DAILY;BYHOUR=2,15;BYMINUTE=30;COUNT=4"],
+          { date: "2027-03-13" },
+          "America/New_York",
+          { dateTime: "2027-03-13T02:30:00-05:00" }
+        )
+      ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
     });
 
     test("keeps a several-a-day day unless all its times were skipped", () => {

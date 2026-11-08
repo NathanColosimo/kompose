@@ -439,6 +439,24 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
   });
 
+  test("counts a split made all day from the split meeting's time", () => {
+    // The same five 9:00/15:00 meetings from Nov 9, split from Nov 9 15:00
+    // and made all day: four left (Nov 9 15:00 to Nov 11 9:00), three days.
+    const rule = ["RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=4"];
+    expect(
+      matchRecurrenceToStart(
+        rule,
+        { date: "2026-11-09" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" },
+        {
+          firstDay: Temporal.PlainDate.from("2026-11-09"),
+          firstTime: Temporal.PlainTime.from("15:00"),
+        }
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(
