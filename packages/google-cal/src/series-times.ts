@@ -3,7 +3,7 @@
  * one of its occurrences.
  */
 import { Temporal } from "temporal-polyfill";
-import { OFFSET, startInstant } from "./until";
+import { googleDateTime, OFFSET, startInstant } from "./until";
 
 export interface EventTime {
   date?: string;
@@ -43,11 +43,6 @@ function lengthMs(
   const from = startInstant(start, timeZone);
   const to = startInstant(end, timeZone);
   return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
-}
-
-/** "2026-10-06T09:00:00-04:00": a zoned time as Google takes it. */
-function googleDateTime(time: Temporal.ZonedDateTime): string {
-  return time.toString({ smallestUnit: "second", timeZoneName: "never" });
 }
 
 /**
