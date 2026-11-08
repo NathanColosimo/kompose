@@ -11,12 +11,7 @@ import {
   untilRuleToDay,
 } from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
-
-/** A start as Google writes it: a date (all day) or a date-time. */
-interface StartTime {
-  date?: string | null;
-  dateTime?: string | null;
-}
+import { type StartTime, sameEventTime } from "./google-event-times";
 
 export type EventRecurrenceFrequency =
   | "none"
@@ -524,42 +519,19 @@ export function otherTimeZone(
   return zone && zone !== appZone ? zone : undefined;
 }
 
-/** Whether two Google starts are the same moment (or the same date). */
-function sameStart(a: StartTime, b: StartTime | undefined): boolean {
-  if (!b) {
-    return false;
-  }
-  if (a.date || b.date) {
-    return a.date === b.date;
-  }
-  try {
-    return Boolean(
-      a.dateTime &&
-        b.dateTime &&
-        Temporal.Instant.compare(
-          Temporal.Instant.from(a.dateTime),
-          Temporal.Instant.from(b.dateTime)
-        ) === 0
-    );
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The day a repeat counts its implicit days from ("weekly" on which
- * weekday, "monthly" on which date), in the series' zone. An occurrence's
- * unchanged repeat is the series', so it counts from the series' first day
- * (its DTSTART, which anchors the rule's implicit days; an added RDATE
- * meeting needn't share them), or, before the series loads, the
- * occurrence's place in the series (where the rule puts it): moving
- * this one occurrence doesn't change how the series is described
- * ("weekly" stays on the series' Sunday, not the Tuesday it's moved to).
- * A repeat the user changed counts from where the save starts the new
- * series: a day this edit moves it to (a changed repeat on a newly moved
- * day can only start a new series there), else its place in the series,
- * even if it was moved there before (that move is its own, not the new
- * series'). Any other event's counts from the form's start.
+ * weekday, "monthly" on which date), in the series' zone. A day this edit
+ * moves an occurrence to is where a save for the series starts again (its
+ * rule follows the day, `seriesRecurrenceForSave`), so it counts from
+ * there. Otherwise an occurrence's unchanged repeat is the series', so it
+ * counts from the series' first day (its DTSTART, which anchors the
+ * rule's implicit days; an added RDATE meeting needn't share them), or,
+ * before the series loads, the occurrence's place in the series (where
+ * the rule puts it). A repeat the user changed counts from where the new
+ * series starts: the occurrence's place in the series, even if it was
+ * moved before (that move is its own, not the new series'). Any other
+ * event's counts from the form's start.
  */
 export function repeatCountingDay(params: {
   /**
@@ -571,7 +543,7 @@ export function repeatCountingDay(params: {
     | Pick<GoogleEvent, "originalStartTime" | "recurringEventId" | "start">
     | null
     | undefined;
-  /** The form's start day, in the series' zone. */
+  /** The form's start day (not the kept series slot), in the series' zone. */
   formDay: Temporal.PlainDate | null;
   /** The series' own start (its master's), once loaded. */
   seriesStart?: StartTime | null;
@@ -581,15 +553,15 @@ export function repeatCountingDay(params: {
   if (!event?.recurringEventId) {
     return formDay;
   }
+  const now = dayOfStart(event.start, timeZone);
+  if (formDay && now && Temporal.PlainDate.compare(formDay, now) !== 0) {
+    return formDay;
+  }
   const placed = event.originalStartTime
     ? dayOfStart(event.originalStartTime, timeZone)
     : null;
   if (changed) {
-    const now = dayOfStart(event.start, timeZone);
-    const movedNow = Boolean(
-      formDay && now && Temporal.PlainDate.compare(formDay, now) !== 0
-    );
-    return movedNow ? formDay : (placed ?? formDay);
+    return placed ?? formDay;
   }
   const first = params.seriesStart
     ? dayOfStart(params.seriesStart, timeZone)
@@ -665,7 +637,7 @@ export function movedMeetingDropped(params: {
       event.recurringEventId === occurrence.recurringEventId &&
       event.id !== occurrence.id &&
       slot &&
-      !sameStart(event.start, slot);
+      !sameEventTime(event.start, slot);
     if (!moved) {
       return [];
     }
@@ -874,7 +846,7 @@ export function seriesRecurrenceForSave(params: {
   // An edit that leaves the occurrence's start as it was changes nothing
   // about the series' days, times or form: renaming one rescheduled before
   // mustn't retarget the series to its slot.
-  if (sameStart(editedStart, occurrence.start)) {
+  if (sameEventTime(editedStart, occurrence.start)) {
     return;
   }
   const allDay = Boolean(editedStart.date);

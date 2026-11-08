@@ -27,12 +27,15 @@
 - `hooks/use-google-events.ts`: Query hook for events, one query per calendar and month window (`eventWindowsAtom`: each month the visible days ±7 touch, so the page after the visible one is already loaded). Events crossing a month boundary come back in both months and are deduped by ID.
 - `hooks/use-google-account-profiles.ts`: Shared profile hook for linked Google accounts using Better Auth `OAuth2UserInfo`. It can fetch eagerly, but only surfaces that actually render linked-account metadata should depend on it for display.
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation.
-- `hooks/use-recurring-event-master.ts`: Recurring master query hook.
+- `hooks/use-recurring-event-master.ts`: Recurring master query hook. Its failure shows beside Repeat (`meta.quietError`, typed in `state-provider.tsx`), not as a toast.
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar invalidation only happens after an explicit `reconnect` event.
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations.
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
-- `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh.
+- `google-event-recurrence.ts`: The repeat rule model the editors share (parse, build, follow a moved start) and the checks behind the scope dialog, modelled on what Google does, checked against its API: a rule meets once a day at the series' start time (a BYHOUR list is ignored; two times a day are two rules), and a moved (rescheduled) occurrence survives a new rule only while the rule still has its original slot. `repeatSkipsOccurrence` and `movedMeetingDropped` say when Entire series would cancel the edited occurrence or another moved one.
+- `recurrence-scope-options.ts`: Which of Only this, This and following and Entire series a save or delete can use, and the dialog's line saying why any is off.
+- `series-edit.ts`: What an edit made through one occurrence sends for its series: only the fields the user changed (`seriesEditFields`; the server lays them over the series), the occurrence's place in the series when its start is untouched, and the repeat the save would send after a day move (`seriesRepeatForEdit`).
+- `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh. It also declares the typed query meta (`quietError`) both apps' query error handlers read.
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
 - `temporal-utils.ts`: Shared Temporal helpers for date math.
 - `types.ts`: Shared auth client types.
