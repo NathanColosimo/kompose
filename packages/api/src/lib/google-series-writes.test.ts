@@ -1703,3 +1703,94 @@ describe("an Entire series edit that moves the rule's own hour with the start", 
     ]);
   });
 });
+
+describe("skips for deleted occurrences when the series' time moves", () => {
+  const toTen = (series: Event, recurrence?: string[]) =>
+    edit("all", series, {
+      end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+      ...(recurrence ? { recurrence } : {}),
+      start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+    });
+  const cancelled = (series: Event, original: string): Event => ({
+    ...occurrenceOf(series, original),
+    status: "cancelled",
+  });
+
+  test("a deleted first meeting stays deleted when the rule's hour is sent too", async () => {
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9"],
+    };
+    const google = fakeGoogle(series, [
+      cancelled(series, "2026-11-09T09:00:00-05:00"),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(toTen(series, ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10"]))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
+      "EXDATE:20261109T150000Z",
+    ]);
+  });
+
+  test("a deleted added meeting off the rule's days keeps one skip, its own", async () => {
+    // Mondays plus an added Tue Dec 1 9:00, deleted on its own.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261201T090000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      cancelled(series, "2026-12-01T09:00:00-05:00"),
+    ]);
+    expect(Exit.isSuccess(await run(toTen(series)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261201T090000",
+      "EXDATE:20261201T140000Z",
+    ]);
+  });
+
+  test("a deleted added meeting at another time on a rule day doesn't skip the rule's", async () => {
+    // Mondays plus an added Nov 30 15:00, deleted on its own: the rule's
+    // Nov 30 meeting, now at 10:00, stays.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261130T150000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      cancelled(series, "2026-11-30T15:00:00-05:00"),
+    ]);
+    expect(Exit.isSuccess(await run(toTen(series)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261130T150000",
+      "EXDATE:20261130T200000Z",
+    ]);
+  });
+
+  test("a deleted meeting's skip doesn't land on an added meeting still on", async () => {
+    // Mondays 9:00 plus an added Nov 30 10:00 (still on); the rule's
+    // Nov 30 9:00 was deleted. At 10:00 the added meeting stays.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261130T100000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      cancelled(series, "2026-11-30T09:00:00-05:00"),
+    ]);
+    expect(Exit.isSuccess(await run(toTen(series)))).toBe(true);
+    const recurrence = google.writes()[0]?.body?.recurrence as string[];
+    expect(recurrence.filter((line) => line.startsWith("EXDATE"))).toEqual([]);
+  });
+});

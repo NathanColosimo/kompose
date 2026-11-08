@@ -40,6 +40,8 @@ import {
   DATE_ONLY,
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
+  parseDateList,
+  readRecurrenceValue,
   startInstant,
   untilMoment,
 } from "./until";
@@ -107,53 +109,117 @@ function repeats(recurrence: string[] | undefined): boolean {
 }
 
 /**
- * Occurrences deleted on their own (`cancelled`, original starts) as
- * skips for a series that now starts at `start`: in a series meeting once
- * a day, each day's meeting moves to the new start's time, and so does
- * its skip, whatever rule the edit sends (BYHOUR=10 sent with a 10:00
- * start reads as a time of its own against the old start). One that was
- * an added (RDATE) meeting keeps its own skip too, as that one keeps its
- * time. Unchanged otherwise.
+ * The start's time of day before and after an edit to `start`, when both
+ * are timed and it changes; null otherwise.
  */
-function skipsAtNewTime(
-  cancelled: string[],
+function timeOfDayChange(
   master: Event,
   start: Event["start"]
-): string[] {
+): { from: Temporal.PlainTime; to: Temporal.PlainTime } | null {
   const zone = seriesZoneOf(master);
   const clockOf = (time: Event["start"]) =>
     startInstant(time, zone)?.toZonedDateTimeISO(zone).toPlainTime();
   const from = clockOf(master.start);
   const to = clockOf(start);
-  if (
-    !(from && to) ||
-    Temporal.PlainTime.compare(from, to) === 0 ||
-    meetsSeveralTimesADay(master.recurrence ?? [], from)
-  ) {
-    return cancelled;
+  return from && to && Temporal.PlainTime.compare(from, to) !== 0
+    ? { from, to }
+    : null;
+}
+
+/**
+ * Where the skips for occurrences deleted on their own (`cancelled`,
+ * original starts) go when a series that meets once a day moves to
+ * `start`'s time of day. A rule's (or the start's) meeting moves there,
+ * so its skip is placed there as final (`atNewTime`), whatever rule the
+ * edit sends (BYHOUR=10 with a 10:00 start reads as a time of its own
+ * against the old start); never onto an added (RDATE) meeting that's
+ * still on, which it would cancel. An added meeting keeps its time, so
+ * its skip is lined up with the rule like any other (`withRule`), and is
+ * placed at the new time too only if a rule or the start met there as
+ * well. All of them go `withRule` when the time of day doesn't change or
+ * the series meets several times a day.
+ */
+function placeSkips(
+  cancelled: string[],
+  master: Event,
+  start: Event["start"]
+): { atNewTime: string[]; withRule: string[] } {
+  const zone = seriesZoneOf(master);
+  const recurrence = master.recurrence ?? [];
+  const change = timeOfDayChange(master, start);
+  if (!change || meetsSeveralTimesADay(recurrence, change.from)) {
+    return { atNewTime: [], withRule: cancelled };
   }
-  return cancelled.flatMap((slot) => {
+  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const atNewTime: string[] = [];
+  const withRule: string[] = [];
+  for (const slot of cancelled) {
     const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
     if (!moment) {
-      return [slot];
+      withRule.push(slot);
+      continue;
     }
     const moved = moment
       .toZonedDateTimeISO(zone)
       .toPlainDate()
-      .toZonedDateTime({ plainTime: to, timeZone: zone })
+      .toZonedDateTime({ plainTime: change.to, timeZone: zone })
       .toString({ smallestUnit: "second", timeZoneName: "never" });
-    return addsSlot(master.recurrence ?? [], slot, zone)
-      ? [slot, moved]
-      : [moved];
-  });
+    const added = addsSlot(recurrence, slot, zone);
+    if (added) {
+      withRule.push(slot);
+    }
+    // A rule whose days can't be read may meet there: a skip where
+    // nothing meets does nothing.
+    const ruleMet =
+      !added ||
+      seriesMeetsAt({
+        recurrence: rules,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) !== false;
+    const onAddedMeeting =
+      addsSlot(recurrence, moved, zone) && !cancelled.includes(moved);
+    if (ruleMet && !onAddedMeeting) {
+      atNewTime.push(moved);
+    }
+  }
+  return { atNewTime, withRule };
 }
 
 /**
  * `recurrence` with the occurrences at `starts` (original starts, as
  * Google writes them) skipped. Unchanged when it doesn't repeat.
  */
-function skipping(recurrence: string[], starts: string[]): string[] {
-  if (starts.length === 0 || !repeats(recurrence)) {
+function skipping(recurrence: string[], given: string[]): string[] {
+  if (given.length === 0 || !repeats(recurrence)) {
+    return recurrence;
+  }
+  // Each skip once: one the series already has isn't written again.
+  const keyOf = (start: string) =>
+    DATE_ONLY.test(start)
+      ? start
+      : String(Temporal.Instant.from(start).epochMilliseconds);
+  const skipped = new Set(
+    recurrence.flatMap((line) => {
+      const list = line.startsWith("EXDATE")
+        ? parseDateList(line, "UTC")
+        : null;
+      return (list?.values ?? []).flatMap((value) => {
+        const read = list && readRecurrenceValue(value, list.zone, "UTC");
+        if (!read) {
+          return [];
+        }
+        return [
+          read.instant
+            ? String(read.instant.epochMilliseconds)
+            : read.day.toString(),
+        ];
+      });
+    })
+  );
+  const starts = given.filter((start) => !skipped.has(keyOf(start)));
+  if (starts.length === 0) {
     return recurrence;
   }
   const dates = starts
@@ -408,18 +474,9 @@ function timesOnOwnDay(
  * without moving one of them onto another's, or off its own.
  */
 function movesSeveralADay(master: Event, start: Event["start"]): boolean {
-  const zone = seriesZoneOf(master);
-  const clockOf = (time: Event["start"]) =>
-    time.dateTime
-      ? startInstant(time, zone)?.toZonedDateTimeISO(zone).toPlainTime()
-      : undefined;
-  const from = clockOf(master.start);
-  const to = clockOf(start);
+  const change = timeOfDayChange(master, start);
   return Boolean(
-    from &&
-      to &&
-      Temporal.PlainTime.compare(from, to) !== 0 &&
-      meetsSeveralTimesADay(master.recurrence ?? [], from)
+    change && meetsSeveralTimesADay(master.recurrence ?? [], change.from)
   );
 }
 
@@ -1277,13 +1334,16 @@ export function makeGoogleCalendarService(
       if (!counted) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const recurrence =
+      const skips = placeSkips(params.cancelled, master, start);
+      const recurrence = skipping(
         ruleForStart(
-          skipping(counted, skipsAtNewTime(params.cancelled, master, start)),
+          skipping(counted, skips.withRule),
           master,
           start,
           originalStart
-        ) ?? [];
+        ) ?? [],
+        skips.atNewTime
+      );
       if (endsBeforeStart(recurrence, start, repeatZone(master, start))) {
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
       }
@@ -1542,12 +1602,12 @@ export function makeGoogleCalendarService(
           master,
           null
         );
-        recurrence =
-          ruleForStart(
-            skipping(rule, skipsAtNewTime(cancelled, master, times.start)),
-            master,
-            times.start
-          ) ?? [];
+        const skips = placeSkips(cancelled, master, times.start);
+        recurrence = skipping(
+          ruleForStart(skipping(rule, skips.withRule), master, times.start) ??
+            [],
+          skips.atNewTime
+        );
         const lost = changed
           .map(({ originalStart }) => originalStart)
           .filter(
