@@ -36,9 +36,12 @@ export function HeldFieldset({
 export function SavingLabel({
   children,
   saving,
+  savingLabel = "Saving…",
 }: {
   children: ReactNode;
   saving: boolean;
+  /** What it says while saving: "Deleting…" for a delete. */
+  savingLabel?: string;
 }) {
   return (
     <span className="grid justify-items-center">
@@ -51,7 +54,7 @@ export function SavingLabel({
         {children}
       </span>
       <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
-        Saving…
+        {savingLabel}
       </span>
     </span>
   );

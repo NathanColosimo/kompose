@@ -131,6 +131,7 @@ function DeleteScopeDialog({
       onValueChange={setPick}
       open={open}
       options={RECURRENCE_SCOPE_OPTIONS}
+      pendingLabel="Deleting…"
       title={SCOPE_DIALOG_COPY.deleteEvent.title}
       value={scope}
     />

@@ -3,7 +3,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { eventTimeZone } from "@kompose/state/google-event-recurrence";
+import { seriesTimeZone } from "@kompose/state/google-event-recurrence";
 import type { UpdateGoogleEventInput } from "@kompose/state/hooks/use-google-event-mutations";
 import type { Temporal } from "temporal-polyfill";
 import { durationInMinutes, resizedRange } from "./helpers";
@@ -94,9 +94,10 @@ function buildGoogleUpdatePayload(
     organizer: _organizer,
     ...rest
   } = event.event;
-  // Written in the event's own zone: Google repeats a series in its start's
-  // zone, so a Tokyo meeting dragged from New York stays on Tokyo's days.
-  const zone = eventTimeZone(event.event, start.timeZoneId);
+  // Written in the series' zone: Google repeats a series in its start's
+  // zone, so a Tokyo meeting dragged from New York stays on Tokyo's days,
+  // even one rescheduled in New York. A single event's own zone otherwise.
+  const zone = seriesTimeZone(event.event, null, start.timeZoneId);
 
   return {
     id: event.event.id,
