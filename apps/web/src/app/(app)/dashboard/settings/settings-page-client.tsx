@@ -267,6 +267,10 @@ export default function SettingsPageClient() {
                         {unlinkingAccountId === account.id
                           ? "Unlinking…"
                           : "Unlink"}
+                        <span className="sr-only">
+                          {" "}
+                          {profile?.email || profile?.name || "Google account"}
+                        </span>
                       </Button>
                     }
                     detail={profile?.email || "Email unavailable"}
@@ -320,6 +324,7 @@ export default function SettingsPageClient() {
                       {unlinkingAccountId === account.id
                         ? "Unlinking…"
                         : "Unlink"}
+                      <span className="sr-only"> WHOOP account</span>
                     </Button>
                   }
                   detail={profile?.email || "Email unavailable"}

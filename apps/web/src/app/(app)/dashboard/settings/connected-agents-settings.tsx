@@ -62,6 +62,7 @@ export function ConnectedAgentsSettings() {
               {revokeAgent.isPending && revokeAgent.variables === agent.clientId
                 ? "Removing…"
                 : "Remove"}
+              <span className="sr-only"> {agent.name}</span>
             </Button>
           }
           detail={`Connected ${new Date(agent.connectedAt).toLocaleDateString()}`}

@@ -154,13 +154,18 @@ interface TaskSection {
   tone?: "overdue";
 }
 
-function renderTaskSections(
-  sections: TaskSection[],
-  emptyMessage: string,
-  emptyHint?: string,
+function renderTaskSections({
+  emptyHint,
+  emptyMessage,
+  hiddenTagId,
+  sections,
+}: {
+  emptyHint?: string;
+  emptyMessage: string;
   /** In a tag's own list, rows don't repeat that tag. */
-  hiddenTagId?: string
-) {
+  hiddenTagId?: string;
+  sections: TaskSection[];
+}) {
   const visibleSections = sections.filter(({ tasks }) => tasks.length > 0);
   if (visibleSections.length === 0) {
     return renderEmptyMessage(emptyMessage, emptyHint);
@@ -214,15 +219,15 @@ function renderTodayContent({
   doneTasks: TaskSelectDecoded[];
   unplannedTasks: TaskSelectDecoded[];
 }) {
-  return renderTaskSections(
-    [
+  return renderTaskSections({
+    emptyMessage: formatDateSidebarEmptyMessage(dateTitle),
+    sections: [
       { label: "Overdue", tasks: overdueTasks, tone: "overdue" },
       { label: "Unplanned", tasks: unplannedTasks },
       { label: "Planned", tasks: plannedTasks },
       { label: "Done", tasks: doneTasks },
     ],
-    formatDateSidebarEmptyMessage(dateTitle)
-  );
+  });
 }
 
 function renderTagContent({
@@ -236,17 +241,17 @@ function renderTagContent({
   todoTasks: TaskSelectDecoded[];
   doneTasks: TaskSelectDecoded[];
 }) {
-  return renderTaskSections(
-    [
+  return renderTaskSections({
+    // Dropping on a tag list unschedules a task without tagging it.
+    emptyHint: "Use + above to add a task with this tag.",
+    emptyMessage: "No tasks with this tag yet.",
+    hiddenTagId: tagId,
+    sections: [
       { label: "Overdue", tasks: overdueTasks, tone: "overdue" },
       { label: "To do", tasks: todoTasks },
       { label: "Done", tasks: doneTasks },
     ],
-    "No tasks with this tag yet.",
-    // Dropping on a tag list unschedules a task without tagging it.
-    "Use + above to add a task with this tag.",
-    tagId
-  );
+  });
 }
 
 function getSidebarContent({

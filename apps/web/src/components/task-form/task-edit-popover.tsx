@@ -56,6 +56,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import {
   Controller,
@@ -252,7 +253,10 @@ export function TaskEditPopover({
   }, []);
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
+      // Focus moves into the editor, so Tab reaches its fields, but not to
+      // the title: there Backspace would edit it instead of deleting the task.
       event.preventDefault();
+      (event.currentTarget as HTMLElement).focus();
       if (!(matchesOpenRequest && openRequest)) {
         return;
       }
@@ -423,6 +427,27 @@ function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
   return saving !== null || externalSaving;
 }
 
+/**
+ * Holds the editor open on a save, for Mark done ("done") or Save ("save"):
+ * it closes when the save succeeds and keeps the draft if not.
+ */
+function useHeldSave(onClose: () => void) {
+  const [isPending, startTransition] = useTransition();
+  const [kind, setKind] = useState<"done" | "save">("save");
+  const holdOpen = useCallback(
+    (nextKind: "done" | "save", save: Promise<boolean>) => {
+      setKind(nextKind);
+      startTransition(async () => {
+        if (await save) {
+          onClose();
+        }
+      });
+    },
+    [onClose]
+  );
+  return { holdOpen, saving: isPending ? kind : null };
+}
+
 /** What the repeat will do, or why it can't save (repeatNote). */
 function RepeatNote({
   note,
@@ -519,12 +544,7 @@ export function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
-  /** Mark done is saving the edits; the editor stays open until it has. */
-  /**
-   * What the editor is holding open for: Mark done ("done") or Save
-   * ("save"). It closes when the save succeeds and keeps the draft if not.
-   */
-  const [saving, setSaving] = useState<"done" | "save" | null>(null);
+  const { holdOpen, saving } = useHeldSave(onClose);
   /** Why the last held save failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
   const isSavingStatus = isHolding(saving, externalSaving);
@@ -756,19 +776,6 @@ export function TaskEditForm({
     [isRecurring, resolvedRecurrence, task]
   );
 
-  const holdForSave = useCallback(
-    (save: Promise<boolean>) => {
-      setSaving("save");
-      save.then((saved) => {
-        setSaving(null);
-        if (saved) {
-          onClose();
-        }
-      });
-    },
-    [onClose]
-  );
-
   /**
    * True when the editor can close now, false when it stays (a dialog, or a
    * save it holds for), or the create to wait for when the caller holds.
@@ -805,7 +812,8 @@ export function TaskEditForm({
           return created;
         }
         setFailure(null);
-        holdForSave(
+        holdOpen(
+          "save",
           created.then((saved) => {
             setFailure(saved ? null : TASK_CREATE_FAILURE_MESSAGE);
             return saved;
@@ -830,13 +838,10 @@ export function TaskEditForm({
         return false;
       }
 
-      if (!showActionButtons) {
-        commitUpdate(values, decision.scope);
-        return true;
-      }
       // The editor holds open ("Saving…") until the save succeeds, so a
       // failed save keeps the edits.
-      holdForSave(
+      holdOpen(
+        "save",
         commitUpdate(
           values,
           decision.scope,
@@ -849,7 +854,7 @@ export function TaskEditForm({
     [
       commitUpdate,
       createTask,
-      holdForSave,
+      holdOpen,
       isCreateMode,
       resolvedRecurrence,
       scopeDecisionFor,
@@ -886,16 +891,11 @@ export function TaskEditForm({
       setShowTagScopeDialog(true);
       return;
     }
-    setSaving("done");
-    commitWithStatus(values, decision.scope, status).then((saved) => {
-      setSaving(null);
-      if (saved) {
-        onClose();
-      }
-    });
+    holdOpen("done", commitWithStatus(values, decision.scope, status));
   }, [
     commitWithStatus,
     getValues,
+    holdOpen,
     isDirty,
     onClose,
     scopeDecisionFor,
@@ -1328,7 +1328,8 @@ export function TaskEditForm({
               pendingUpdateRef.current = null;
               pendingStatusRef.current = null;
               if (!status) {
-                holdForSave(
+                holdOpen(
+                  "save",
                   commitUpdate(
                     pendingUpdate,
                     tagScope,
@@ -1340,14 +1341,9 @@ export function TaskEditForm({
               }
               // With Mark done, the editor stays open ("Saving…") until the
               // save succeeds, so a failed save keeps the edits.
-              setSaving("done");
-              commitWithStatus(pendingUpdate, tagScope, status).then(
-                (saved) => {
-                  setSaving(null);
-                  if (saved) {
-                    onClose();
-                  }
-                }
+              holdOpen(
+                "done",
+                commitWithStatus(pendingUpdate, tagScope, status)
               );
             }}
             onOpenChange={(nextOpen) => {

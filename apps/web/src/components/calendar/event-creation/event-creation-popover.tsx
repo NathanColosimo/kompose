@@ -6,14 +6,7 @@ import {
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useAtomValue } from "jotai";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
@@ -60,15 +53,43 @@ function buildInitialSharedFields(start: Date, end: Date) {
 
 /** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
-  const { state, actions, eventUnavailableReason, popoverTimes } =
-    useEventCreation();
-  const { createEvent } = useGoogleEventMutations();
-  const isNarrow = useAtomValue(isNarrowViewportAtom);
+  const { state, popoverTimes } = useEventCreation();
   // The type the user last picked; the chooser reopens on it.
   const [mode, setMode] = useState<CreationMode>("event");
-  // Set when the chooser opens with no calendar to write to: it shows Task
-  // this time, without changing the user's pick.
-  const [forcedTask, setForcedTask] = useState(false);
+
+  if (!(state.showPopover && popoverTimes)) {
+    return null;
+  }
+  // Mounted per opening, so each draft starts clean.
+  return (
+    <CreationChooser
+      mode={mode}
+      onModeChange={setMode}
+      popoverTimes={popoverTimes}
+    />
+  );
+}
+
+function CreationChooser({
+  mode,
+  onModeChange,
+  popoverTimes,
+}: {
+  mode: CreationMode;
+  onModeChange: (mode: CreationMode) => void;
+  popoverTimes: NonNullable<
+    ReturnType<typeof useEventCreation>["popoverTimes"]
+  >;
+}) {
+  const { state, actions, eventUnavailableReason } = useEventCreation();
+  const { createEvent } = useGoogleEventMutations();
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
+  // With no calendar to write to on opening, it shows Task (the Event tab
+  // says why) without changing the user's pick. A calendar that loads
+  // later doesn't switch tabs.
+  const [forcedTask, setForcedTask] = useState(
+    () => eventUnavailableReason !== null
+  );
   const shownMode: CreationMode = forcedTask ? "task" : mode;
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
@@ -78,12 +99,12 @@ export function EventCreationPopover() {
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
 
   const startDate = useMemo(
-    () => (popoverTimes ? zonedDateTimeToDate(popoverTimes.start) : new Date()),
+    () => zonedDateTimeToDate(popoverTimes.start),
     [popoverTimes]
   );
 
   const endDate = useMemo(
-    () => (popoverTimes ? zonedDateTimeToDate(popoverTimes.end) : new Date()),
+    () => zonedDateTimeToDate(popoverTimes.end),
     [popoverTimes]
   );
 
@@ -132,45 +153,21 @@ export function EventCreationPopover() {
     }
 
     setForcedTask(false);
-    setMode(nextMode);
+    onModeChange(nextMode);
   };
 
   // The popover stays open ("Saving…") until the create succeeds, so a
   // failed one keeps the draft. Escape and outside clicks wait too.
-  const [isSaving, setIsSaving] = useState(false);
-  const savingRef = useRef(false);
-  // Each time it opens: on Task when there's no calendar to write to (the
-  // Event tab says why), else on the user's pick. Before paint, so the
-  // Event tab never flashes.
-  const blockedRef = useRef(false);
-  useLayoutEffect(() => {
-    blockedRef.current = eventUnavailableReason !== null;
-  }, [eventUnavailableReason]);
-  // Only on opening: a calendar that loads later doesn't switch tabs.
-  useLayoutEffect(() => {
-    if (state.showPopover) {
-      setForcedTask(blockedRef.current);
-    }
-  }, [state.showPopover]);
+  const [isSaving, startSaving] = useTransition();
   const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
 
   /** Why the last create failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
-  // A failure belongs to its draft: a new one starts clean.
-  useEffect(() => {
-    if (!state.showPopover) {
-      setFailure(null);
-    }
-  }, [state.showPopover]);
   const holdForCreate = useCallback(
     (created: Promise<boolean>, failureMessage: string) => {
-      savingRef.current = true;
-      setIsSaving(true);
       setFailure(null);
-      created.then((saved) => {
-        savingRef.current = false;
-        setIsSaving(false);
-        if (saved) {
+      startSaving(async () => {
+        if (await created) {
           actions.closePopover();
         } else {
           setFailure(failureMessage);
@@ -181,15 +178,15 @@ export function EventCreationPopover() {
   );
 
   const handleCancel = useCallback(() => {
-    if (!savingRef.current) {
+    if (!isSaving) {
       actions.closePopover();
     }
-  }, [actions]);
+  }, [actions, isSaving]);
 
   const handleSave = useCallback(() => {
     // Cmd+Enter too: the blocked Event tab has nothing to save, and closing
     // would drop the draft.
-    if (savingRef.current || eventBlocked) {
+    if (isSaving || eventBlocked) {
       return;
     }
     if (shownMode === "task") {
@@ -225,7 +222,7 @@ export function EventCreationPopover() {
         ),
       EVENT_CREATE_FAILURE_MESSAGE
     );
-  }, [actions, createEvent, eventBlocked, holdForCreate, shownMode]);
+  }, [actions, createEvent, eventBlocked, holdForCreate, isSaving, shownMode]);
 
   useHotkeys(
     "mod+enter",
@@ -233,16 +230,12 @@ export function EventCreationPopover() {
       e.preventDefault();
       handleSave();
     },
-    { enabled: state.showPopover, enableOnFormTags: true },
-    [handleSave, state.showPopover]
+    { enableOnFormTags: true },
+    [handleSave]
   );
 
-  if (!(state.showPopover && popoverTimes)) {
-    return null;
-  }
-
   return (
-    <Popover open={state.showPopover}>
+    <Popover open>
       <PopoverTrigger asChild>
         <span
           style={{
@@ -338,7 +331,7 @@ export function EventCreationPopover() {
                   mode="create"
                   onDelete={() => undefined}
                   onSave={handleSave}
-                  open={state.showPopover}
+                  open
                   start={startDate}
                 />
               ) : (
@@ -359,7 +352,7 @@ export function EventCreationPopover() {
                 initialValues={initialTaskValues}
                 mode="create"
                 onClose={handleCancel}
-                open={state.showPopover}
+                open
                 submitRef={taskSubmitRef}
               />
             </TabsContent>

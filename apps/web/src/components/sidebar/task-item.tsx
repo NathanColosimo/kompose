@@ -13,7 +13,7 @@ import {
 } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useId } from "react";
 import { Temporal } from "temporal-polyfill";
 import { openOnEnterOrSpace } from "@/lib/keyboard";
 import { formatPlainDate } from "@/lib/temporal-utils";
@@ -34,6 +34,8 @@ export const TaskItem = memo(function TaskItemInner({
 }: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
   const today = useAtomValue(todayPlainDateAtom);
+  const titleId = useId();
+  const detailsId = useId();
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     attributes: { roleDescription: "task" },
@@ -83,13 +85,16 @@ export const TaskItem = memo(function TaskItemInner({
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        // Named by its title and details, not the checkbox's label.
+        aria-labelledby={`${titleId} ${detailsId}`}
         onKeyDown={openOnEnterOrSpace}
         role="button"
         tabIndex={0}
       >
         <Checkbox
+          aria-label={`Done: ${task.title}`}
           checked={isDone}
-          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground/50 transition-colors group-hover:border-foreground"
+          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground transition-colors group-hover:border-foreground"
           onClick={handleStatusToggle}
         />
 
@@ -99,11 +104,15 @@ export const TaskItem = memo(function TaskItemInner({
               "text-sm leading-snug",
               isDone ? "text-muted-foreground line-through" : ""
             )}
+            id={titleId}
           >
             {task.title}
           </span>
 
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums">
+          <div
+            className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums"
+            id={detailsId}
+          >
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
