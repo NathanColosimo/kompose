@@ -9,19 +9,22 @@ import {
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
 import {
+  describeEventRecurrence,
+  monthlyDayOptions,
+} from "@kompose/state/event-recurrence-words";
+import {
   buildGoogleEventRecurrenceRule,
   defaultUntilDay,
-  describeEventRecurrence,
   type EventRecurrenceFrequency,
   type EventRecurrencePattern,
+  followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
-  monthlyWeekdayOption,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
-  untilRuleToDate,
+  untilRuleToDay,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { getMapsSearchUrl } from "@kompose/state/locations";
@@ -170,7 +173,7 @@ function RecurrenceRow({
   const repeats =
     describeEventRecurrence({
       rules: recurrence,
-      startWeekday: editor.startDate.dayOfWeek,
+      start: editor.startDate,
     }) ?? "Doesn't repeat";
   return (
     <>
@@ -304,8 +307,8 @@ function RecurrenceEditorSection({
 
       {parsedRecurrence.freq === "MONTHLY" ? (
         <MonthlyDayChoice
-          byDay={parsedRecurrence.byDay}
-          onChange={(byDay) => updateRecurrence({ byDay })}
+          onChange={updateRecurrence}
+          pattern={parsedRecurrence}
           rule={rule}
           startDate={startDate}
         />
@@ -330,11 +333,12 @@ const UNIT_WORDS: Record<string, [string, string]> = {
   YEARLY: ["year", "years"],
 };
 
+/** Round steppers as tall as the number field between them (48pt). */
 const STEP_STYLE = {
   borderRadius: 999,
-  height: 32,
+  height: 48,
   paddingHorizontal: 0,
-  width: 32,
+  width: 48,
 };
 
 /** "Every − 2 + weeks": how many days, weeks... apart the series repeats. */
@@ -361,13 +365,13 @@ function IntervalStepper({
       >
         <Icon as={Minus} className="text-foreground" size={14} />
       </Button>
-      <Text
-        accessibilityLabel={`Every ${interval} ${unit}`}
-        className="min-w-6 text-center text-foreground text-sm"
-        style={{ fontVariant: ["tabular-nums"] }}
-      >
-        {interval}
-      </Text>
+      {/* Typed for a big jump ("every 26 weeks"), stepped for a small one. */}
+      <CountInput
+        label={`Every how many ${UNIT_WORDS[freq]?.[1] ?? ""}`}
+        max={99}
+        onValue={onChange}
+        value={interval}
+      />
       <Button
         accessibilityLabel="Increase interval"
         disabled={interval >= 99}
@@ -384,52 +388,41 @@ function IntervalStepper({
 }
 
 /**
- * Monthly on the start's day of the month, or on a weekday of the month
- * (the rule's own, or the start's: "The 2nd Tue").
+ * Monthly on the start's day, its weekday of the month, or in its last
+ * week the last one; a rule set another way comes first, selected.
  */
 function MonthlyDayChoice({
-  byDay,
   onChange,
+  pattern,
   rule,
   startDate,
 }: {
-  byDay: string[];
-  onChange: (byDay: string[]) => void;
+  onChange: (patch: RecurrencePatch) => void;
+  pattern: EventRecurrencePattern;
   rule: string | undefined;
   startDate: Temporal.PlainDate;
 }) {
-  const onWeekday = byDay.length > 0;
-  const weekdayOption = monthlyWeekdayOption(rule, byDay, startDate);
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">On</Text>
-      <View className="mt-1 flex-row gap-1.5">
-        <Button
-          accessibilityState={{ selected: !onWeekday }}
-          onPress={() => {
-            if (onWeekday) {
-              onChange([]);
-            }
-          }}
-          size="sm"
-          style={CHIP_STYLE}
-          variant={onWeekday ? "outline" : "default"}
-        >
-          <ChipLabel>{`Day ${startDate.day}`}</ChipLabel>
-        </Button>
-        <Button
-          accessibilityState={{ selected: onWeekday }}
-          onPress={() => {
-            if (!onWeekday) {
-              onChange(weekdayOption.byDay);
-            }
-          }}
-          size="sm"
-          style={CHIP_STYLE}
-          variant={onWeekday ? "default" : "outline"}
-        >
-          <ChipLabel>{weekdayOption.label}</ChipLabel>
-        </Button>
+      {/* Chips at their own width, wrapping, like the frequency chips. */}
+      <View className="mt-1 flex-row flex-wrap gap-2">
+        {monthlyDayOptions(pattern, rule, startDate).map((option) => (
+          <Button
+            accessibilityState={{ selected: option.selected }}
+            key={option.label}
+            onPress={() => {
+              if (!option.selected) {
+                onChange({ byDay: option.byDay, monthDays: option.monthDays });
+              }
+            }}
+            size="sm"
+            style={{ borderRadius: 999 }}
+            variant={option.selected ? "default" : "outline"}
+          >
+            <Text>{option.label}</Text>
+          </Button>
+        ))}
       </View>
     </View>
   );
@@ -457,8 +450,10 @@ function RecurrenceEndSection({
   startDate: Temporal.PlainDate;
   updateRecurrence: (patch: RecurrencePatch) => void;
 }) {
-  const start = plainDateToPickerDate(startDate);
   const { end } = parsedRecurrence;
+  const timeZone = Temporal.Now.timeZoneId();
+  const untilDay =
+    end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">Ends</Text>
@@ -480,7 +475,11 @@ function RecurrenceEndSection({
             // Three months after the series starts.
             updateRecurrence({
               end: {
-                date: untilRuleForDay(defaultUntilDay(start), allDay),
+                date: untilRuleForDay(
+                  defaultUntilDay(startDate),
+                  allDay,
+                  timeZone
+                ),
                 type: "until",
               },
             });
@@ -508,18 +507,29 @@ function RecurrenceEndSection({
       {end.type === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
-            displayValue={untilDisplay(end.date)}
-            minimumDate={start}
+            displayValue={untilDay ? formatPlainDateLong(untilDay) : undefined}
+            minimumDate={plainDateToPickerDate(startDate)}
             mode="date"
             onChange={(date) => {
               if (date) {
                 updateRecurrence({
-                  end: { date: untilRuleForDay(date, allDay), type: "until" },
+                  end: {
+                    date: untilRuleForDay(
+                      Temporal.PlainDate.from({
+                        day: date.getDate(),
+                        month: date.getMonth() + 1,
+                        year: date.getFullYear(),
+                      }),
+                      allDay,
+                      timeZone
+                    ),
+                    type: "until",
+                  },
                 });
               }
             }}
             placeholder="Until"
-            value={untilRuleToDate(end.date) ?? undefined}
+            value={untilDay ? plainDateToPickerDate(untilDay) : undefined}
             variant="outline"
           />
         </View>
@@ -528,6 +538,7 @@ function RecurrenceEndSection({
       {end.type === "count" ? (
         <View className="mt-2 flex-row items-center gap-2">
           <CountInput
+            label="Occurrences"
             onValue={(count) =>
               updateRecurrence({ end: { count, type: "count" } })
             }
@@ -543,15 +554,12 @@ function RecurrenceEndSection({
 }
 
 /** "Feb 7, 2027", as on web. */
-function untilDisplay(rule: string): string | undefined {
-  const date = untilRuleToDate(rule);
-  return date
-    ? new Intl.DateTimeFormat(undefined, {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      }).format(date)
-    : undefined;
+function formatPlainDateLong(date: Temporal.PlainDate): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(plainDateToPickerDate(date));
 }
 
 /**
@@ -559,24 +567,30 @@ function untilDisplay(rule: string): string | undefined {
  * number is passed on, and leaving the field shows the last one.
  */
 function CountInput({
+  label,
+  max = 999,
   onValue,
   value,
 }: {
+  label: string;
+  max?: number;
   onValue: (value: number) => void;
   value: number;
 }) {
   const [draft, setDraft] = React.useState<string | null>(null);
   return (
     <Input
-      accessibilityLabel="Occurrences"
-      className="h-9 w-20"
+      accessibilityLabel={label}
+      // A narrow field: the Input fills its row otherwise.
+      containerStyle={{ width: 64 }}
+      inputStyle={{ textAlign: "center" }}
       keyboardType="number-pad"
       onBlur={() => setDraft(null)}
       onChangeText={(text) => {
         const next = text.replace(NON_DIGITS, "");
         setDraft(next);
         const parsed = Number.parseInt(next, 10);
-        if (parsed >= 1 && parsed <= 999) {
+        if (parsed >= 1 && parsed <= max) {
           onValue(parsed);
         }
       }}
@@ -727,7 +741,7 @@ function ReadOnlyEventView({
     eventType: source?.eventType,
     recurringEventId: source?.recurringEventId,
     rules: draft.recurrence,
-    startWeekday: draft.startDate.dayOfWeek,
+    start: draft.startDate,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -1037,6 +1051,7 @@ function EventLocationInput({
 function EventDateTimeRow({
   allDay,
   endDate,
+  followsRepeat,
   getValues,
   endDatePickerValue,
   endTimePickerValue,
@@ -1048,6 +1063,11 @@ function EventDateTimeRow({
   allDay: boolean;
   endDate: Temporal.PlainDate;
   endDatePickerValue: Date;
+  /**
+   * The repeat follows the start ("2nd Tue" to "3rd Wed"). Not for one
+   * occurrence: moving it is a reschedule, and its series stays.
+   */
+  followsRepeat: boolean;
   endTimePickerValue: Date;
   getValues: UseFormGetValues<EventDraft>;
   setValue: UseFormSetValue<EventDraft>;
@@ -1060,8 +1080,22 @@ function EventDateTimeRow({
     date?: Temporal.PlainDate;
     time?: Temporal.PlainTime;
   }) => {
-    const moved = moveEventStart(getValues(), next);
+    const before = getValues();
+    const moved = moveEventStart(before, next);
     setValue("startDate", moved.startDate, { shouldDirty: true });
+    const recurrence = followsRepeat
+      ? followStart({
+          allDay: before.allDay,
+          from: before.startDate,
+          recurrence: before.recurrence,
+          timeZone: Temporal.Now.timeZoneId(),
+          to: moved.startDate,
+        })
+      : before.recurrence;
+    if (recurrence !== before.recurrence) {
+      setValue("recurrence", recurrence, { shouldDirty: true });
+      setValue("recurrenceEdited", true);
+    }
     setValue("startTime", moved.startTime, { shouldDirty: true });
     setValue("endDate", moved.endDate, { shouldDirty: true });
     setValue("endTime", moved.endTime, { shouldDirty: true });
@@ -1510,6 +1544,7 @@ export function EventEditorSheet({
           endDate={endDate}
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}
+          followsRepeat={!sourceEvent?.recurringEventId}
           getValues={getValues}
           setValue={setValue}
           startDate={startDate}

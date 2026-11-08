@@ -1,104 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { Temporal } from "temporal-polyfill";
 import {
   buildGoogleEventRecurrenceRule,
-  describeEventRecurrence,
   type EventRecurrencePattern,
+  followStart,
   getPrimaryRecurrenceRule,
+  lastWeekdayOf,
   monthlyWeekdayOf,
-  monthlyWeekdayOption,
-  ordinalDayLabel,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
-  untilRuleToDate,
+  untilRuleToDay,
 } from "./google-event-recurrence";
-
-describe("describeEventRecurrence", () => {
-  test("says how a series repeats", () => {
-    expect(
-      describeEventRecurrence({ rules: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"] })
-    ).toBe("Repeats weekly on Mon, Wed");
-    expect(
-      describeEventRecurrence({ rules: ["RRULE:FREQ=DAILY;INTERVAL=2"] })
-    ).toBe("Repeats every 2 days");
-  });
-
-  test("names the day of a monthly or yearly series", () => {
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=2TU"],
-      })
-    ).toBe("Repeats every 2 months on the 2nd Tue");
-    expect(
-      describeEventRecurrence({ rules: ["RRULE:FREQ=MONTHLY;BYDAY=-1FR"] })
-    ).toBe("Repeats monthly on the last Fri");
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH"],
-      })
-    ).toBe("Repeats yearly on the 4th Thu of Nov");
-    expect(
-      describeEventRecurrence({ rules: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=15"] })
-    ).toBe("Repeats monthly on day 15");
-    // The 4th Thursday of the year, not of a month: marked custom.
-    expect(
-      describeEventRecurrence({ rules: ["RRULE:FREQ=YEARLY;BYDAY=4TH"] })
-    ).toBe("Repeats yearly (custom)");
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2"],
-      })
-    ).toBe("Repeats monthly on the 2nd Mon");
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1"],
-      })
-    ).toBe("Repeats monthly on the last weekday");
-    // Parts the words don't cover are marked, not hidden.
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"],
-      })
-    ).toBe("Repeats daily (custom)");
-    expect(
-      describeEventRecurrence({
-        rules: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15"],
-      })
-    ).toBe("Repeats monthly (custom)");
-  });
-
-  test("still says an instance repeats when its rule isn't loaded", () => {
-    expect(
-      describeEventRecurrence({ recurringEventId: "series", rules: [] })
-    ).toBe("Repeats");
-    expect(
-      describeEventRecurrence({ eventType: "birthday", rules: undefined })
-    ).toBe("Repeats yearly");
-    expect(describeEventRecurrence({ rules: [] })).toBeNull();
-  });
-});
-
-test("describes a yearly rule, and any other as repeating", () => {
-  expect(describeEventRecurrence({ rules: ["RRULE:FREQ=YEARLY"] })).toBe(
-    "Repeats yearly"
-  );
-  expect(describeEventRecurrence({ rules: ["RRULE:FREQ=HOURLY"] })).toBe(
-    "Repeats"
-  );
-});
-
-test("names the start's weekday for a weekly rule with no days", () => {
-  expect(
-    describeEventRecurrence({ rules: ["RRULE:FREQ=WEEKLY"], startWeekday: 6 })
-  ).toBe("Repeats weekly on Sat");
-  expect(
-    describeEventRecurrence({
-      rules: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-      startWeekday: 6,
-    })
-  ).toBe("Repeats weekly on Mon");
-});
 
 describe("setPrimaryRecurrenceRule", () => {
   const exdate = "EXDATE;TZID=America/New_York:20261117T090000";
@@ -199,16 +113,12 @@ describe("buildGoogleEventRecurrenceRule", () => {
         byDay: [],
       }))
     ).toBe("RRULE:FREQ=MONTHLY");
+  });
+
+  test("picking the start's day drops the rule's own day of the month", () => {
     expect(
-      monthlyWeekdayOption(
-        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
-        ["MO", "TU", "WE", "TH", "FR"],
-        { day: 7, dayOfWeek: 6 }
-      ).label
-    ).toBe("The last weekday");
-    expect(
-      monthlyWeekdayOption("RRULE:FREQ=MONTHLY", [], { day: 7, dayOfWeek: 6 })
-    ).toEqual({ byDay: ["1SA"], label: "The 1st Sat" });
+      edit("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1", (p) => ({ ...p, monthDays: [] }))
+    ).toBe("RRULE:FREQ=MONTHLY");
   });
 
   test("a weekday of the month replaces a day of the month", () => {
@@ -221,22 +131,83 @@ describe("buildGoogleEventRecurrenceRule", () => {
   });
 });
 
-describe("monthlyWeekdayOf", () => {
-  test("names the weekday of the month, a 5th as the last", () => {
-    // Nov 10, 2026 is the 2nd Tuesday; Dec 29 the 5th (last) Tuesday.
-    expect(monthlyWeekdayOf({ day: 10, dayOfWeek: 2 })).toBe("2TU");
-    expect(monthlyWeekdayOf({ day: 29, dayOfWeek: 2 })).toBe("-1TU");
-    expect(ordinalDayLabel("-1TU")).toBe("last Tue");
+const day = (iso: string) => Temporal.PlainDate.from(iso);
+
+describe("weekdays of the month", () => {
+  test("name the start's, a 5th as the last", () => {
+    expect(monthlyWeekdayOf(day("2026-11-10"))).toBe("2TU");
+    expect(monthlyWeekdayOf(day("2026-12-29"))).toBe("-1TU");
+    // Nov 27, 2026 is the 4th Friday and the last.
+    expect(monthlyWeekdayOf(day("2026-11-27"))).toBe("4FR");
+    expect(lastWeekdayOf(day("2026-11-27"))).toBe("-1FR");
+    expect(lastWeekdayOf(day("2026-11-20"))).toBeNull();
   });
 });
 
 describe("untilRuleForDay", () => {
-  test("ends after the picked day's occurrence", () => {
-    const day = new Date(2026, 11, 5);
-    expect(untilRuleForDay(day, true)).toBe("20261205");
-    // The day's last second, so a 10 AM meeting on Dec 5 is still in.
-    const until = untilRuleToDate(untilRuleForDay(day, false));
-    expect(until?.getDate()).toBe(5);
-    expect(until && until > new Date(2026, 11, 5, 23, 58)).toBe(true);
+  const zone = "America/New_York";
+  test("ends after the picked day's occurrence, in the event's zone", () => {
+    expect(untilRuleForDay(day("2026-12-05"), true, zone)).toBe("20261205");
+    // The day's last second in New York, in UTC.
+    expect(untilRuleForDay(day("2026-12-05"), false, zone)).toBe(
+      "20261206T045959Z"
+    );
+    expect(untilRuleForDay(day("2027-03-14"), false, zone)).toBe(
+      "20270315T035959Z"
+    );
+    expect(untilRuleForDay(day("2026-12-05"), false, "Asia/Tokyo")).toBe(
+      "20261205T145959Z"
+    );
+  });
+
+  test("reads back as the same day", () => {
+    for (const allDay of [true, false]) {
+      expect(
+        untilRuleToDay(
+          untilRuleForDay(day("2026-12-05"), allDay, zone),
+          zone
+        )?.toString()
+      ).toBe("2026-12-05");
+    }
+  });
+});
+
+describe("followStart", () => {
+  const zone = "America/New_York";
+  const follow = (rule: string, from: string, to: string) =>
+    followStart({
+      allDay: false,
+      from: day(from),
+      recurrence: [rule],
+      timeZone: zone,
+      to: day(to),
+    })[0];
+
+  test("moves the start's weekday or day of the month with it", () => {
+    // The 2nd Tue (Nov 10) moved to the 3rd Wed (Nov 18).
+    expect(
+      follow("RRULE:FREQ=MONTHLY;BYDAY=2TU", "2026-11-10", "2026-11-18")
+    ).toBe("RRULE:FREQ=MONTHLY;BYDAY=3WE");
+    // A last Friday stays a last.
+    expect(
+      follow("RRULE:FREQ=MONTHLY;BYDAY=-1FR", "2026-11-27", "2026-12-31")
+    ).toBe("RRULE:FREQ=MONTHLY;BYDAY=-1TH");
+    expect(
+      follow("RRULE:FREQ=MONTHLY;BYMONTHDAY=7", "2026-11-07", "2026-11-09")
+    ).toBe("RRULE:FREQ=MONTHLY;BYMONTHDAY=9");
+    // Not the start's own: left alone.
+    expect(
+      follow("RRULE:FREQ=MONTHLY;BYDAY=1MO", "2026-11-10", "2026-11-18")
+    ).toBe("RRULE:FREQ=MONTHLY;BYDAY=1MO");
+  });
+
+  test("moves an end the start passed three months on", () => {
+    expect(
+      follow(
+        "RRULE:FREQ=WEEKLY;UNTIL=20261206T045959Z",
+        "2026-11-07",
+        "2026-12-12"
+      )
+    ).toBe("RRULE:FREQ=WEEKLY;UNTIL=20270313T045959Z");
   });
 });

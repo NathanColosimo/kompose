@@ -13,18 +13,22 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
+  describeEventRecurrence,
+  monthlyDayOptions,
+} from "@kompose/state/event-recurrence-words";
+import {
   buildGoogleEventRecurrenceRule,
   defaultUntilDay,
-  describeEventRecurrence,
   type EventRecurrencePattern,
   type EventRecurrenceFrequency as Frequency,
+  followStart,
   getPrimaryRecurrenceRule,
-  monthlyWeekdayOption,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
   untilRuleForDay,
-  untilRuleToDate,
+  untilRuleToDay,
+  weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
@@ -332,7 +336,7 @@ function RecurrenceEditor({
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
   /** The series' start: its weekday and day of the month are the defaults. */
-  start: Date;
+  start: Temporal.PlainDate;
 }) {
   const pattern = useMemo(
     () => parseGoogleEventRecurrenceRule(recurrenceRule),
@@ -346,9 +350,8 @@ function RecurrenceEditor({
     }
   };
 
-  const startWeekday = start.getDay() || 7;
   const summary = recurrenceRule
-    ? describeEventRecurrence({ rules: [recurrenceRule], startWeekday })
+    ? describeEventRecurrence({ rules: [recurrenceRule], start })
     : null;
 
   return (
@@ -417,7 +420,7 @@ function RecurrenceEditor({
 interface RepeatPartProps {
   emit: (next: EventRecurrencePattern) => void;
   pattern: EventRecurrencePattern;
-  start: Date;
+  start: Temporal.PlainDate;
 }
 
 /** Which days a weekly or monthly series repeats on. */
@@ -427,18 +430,9 @@ function RepeatDays({
   rule,
   start,
 }: RepeatPartProps & { rule: string | undefined }) {
-  const startWeekday = start.getDay() || 7;
   // Weekly with no days picked repeats on the start's weekday: show it lit.
-  const startDay = WEEKDAYS[startWeekday - 1]?.value;
   const shownDays =
-    pattern.byDay.length > 0 || !startDay ? pattern.byDay : [startDay];
-  // Monthly on the start's day of the month, or on a weekday of the month
-  // (the rule's own, or the start's: "The 2nd Tue").
-  const onWeekday = pattern.byDay.length > 0;
-  const weekdayOption = monthlyWeekdayOption(rule, pattern.byDay, {
-    day: start.getDate(),
-    dayOfWeek: startWeekday,
-  });
+    pattern.byDay.length > 0 ? pattern.byDay : [weekdayCodeOf(start)];
   return (
     <>
       {pattern.freq === "WEEKLY" && (
@@ -478,27 +472,28 @@ function RepeatDays({
       {pattern.freq === "MONTHLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On</span>
+          {/* The start's day, its weekday of the month, and in its last
+              week the last one; a rule set another way first. */}
           <div className="grid grid-cols-2 gap-1.5">
-            <Button
-              aria-pressed={!onWeekday}
-              className="h-8 text-xs"
-              onClick={() => emit({ ...pattern, byDay: [] })}
-              size="sm"
-              type="button"
-              variant={onWeekday ? "outline" : "default"}
-            >
-              Day {start.getDate()}
-            </Button>
-            <Button
-              aria-pressed={onWeekday}
-              className="h-8 text-xs"
-              onClick={() => emit({ ...pattern, byDay: weekdayOption.byDay })}
-              size="sm"
-              type="button"
-              variant={onWeekday ? "default" : "outline"}
-            >
-              {weekdayOption.label}
-            </Button>
+            {monthlyDayOptions(pattern, rule, start).map((option) => (
+              <Button
+                aria-pressed={option.selected}
+                className="h-8 text-xs"
+                key={option.label}
+                onClick={() =>
+                  emit({
+                    ...pattern,
+                    byDay: option.byDay,
+                    monthDays: option.monthDays,
+                  })
+                }
+                size="sm"
+                type="button"
+                variant={option.selected ? "default" : "outline"}
+              >
+                {option.label}
+              </Button>
+            ))}
           </div>
         </div>
       )}
@@ -514,8 +509,13 @@ function RepeatEnds({
   start,
 }: RepeatPartProps & { allDay: boolean }) {
   const [untilOpen, setUntilOpen] = useState(false);
-  const untilDate =
-    pattern.end.type === "until" ? untilRuleToDate(pattern.end.date) : null;
+  // Days in the zone the app shows (and saves) times in.
+  const timeZone = useAtomValue(timezoneAtom);
+  const untilDay =
+    pattern.end.type === "until"
+      ? untilRuleToDay(pattern.end.date, timeZone)
+      : null;
+  const untilDate = untilDay ? temporalToPickerDate(untilDay) : undefined;
   return (
     <div className="space-y-2">
       <span className="text-muted-foreground text-xs">Ends</span>
@@ -538,7 +538,11 @@ function RepeatEnds({
                 emit({
                   ...pattern,
                   end: {
-                    date: untilRuleForDay(defaultUntilDay(start), allDay),
+                    date: untilRuleForDay(
+                      defaultUntilDay(start),
+                      allDay,
+                      timeZone
+                    ),
                     type: "until",
                   },
                 });
@@ -565,8 +569,8 @@ function RepeatEnds({
               variant="outline"
             >
               <CalendarIcon className="size-3.5" />
-              {untilDate
-                ? formatPlainDate(pickerDateToTemporal(untilDate), {
+              {untilDay
+                ? formatPlainDate(untilDay, {
                     day: "numeric",
                     month: "short",
                     year: "numeric",
@@ -576,23 +580,27 @@ function RepeatEnds({
           </PopoverTrigger>
           <PopoverContent align="start" className="w-auto p-0">
             <Calendar
-              defaultMonth={untilDate ?? undefined}
+              defaultMonth={untilDate}
               // A series can't end before it starts.
-              disabled={{ before: start }}
+              disabled={{ before: temporalToPickerDate(start) }}
               mode="single"
               onSelect={(date) => {
                 if (date) {
                   emit({
                     ...pattern,
                     end: {
-                      date: untilRuleForDay(date, allDay),
+                      date: untilRuleForDay(
+                        pickerDateToTemporal(date),
+                        allDay,
+                        timeZone
+                      ),
                       type: "until",
                     },
                   });
                   setUntilOpen(false);
                 }
               }}
-              selected={untilDate ?? undefined}
+              selected={untilDate}
             />
           </PopoverContent>
         </Popover>
@@ -1406,7 +1414,7 @@ function EventAllDayAndRecurrenceRow({
   const repeats = recurrenceRule
     ? describeEventRecurrence({
         rules: [recurrenceRule],
-        startWeekday: startDate ? startDate.getDay() || 7 : undefined,
+        start: startDate ? pickerDateToTemporal(startDate) : undefined,
       })
     : null;
   const repeatLabel = repeats
@@ -1463,7 +1471,7 @@ function EventAllDayAndRecurrenceRow({
             allDay={allDay}
             onChange={onRecurrenceChange}
             recurrenceRule={recurrenceRule}
-            start={startDate ?? new Date()}
+            start={pickerDateToTemporal(startDate ?? new Date())}
           />
         </PopoverContent>
       </Popover>
@@ -1697,7 +1705,7 @@ function ReadOnlyEventDetails({
     eventType: event?.eventType,
     recurringEventId: event?.recurringEventId,
     rules: recurrence,
-    startWeekday: start.getDay() || 7,
+    start: pickerDateToTemporal(start),
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -1954,6 +1962,8 @@ export function EventEditForm({
   const hasUserEditedRef = useRef(false);
   /** The user used the Repeat control; only then is the repeat saved. */
   const recurrenceEditedRef = useRef(false);
+  // Days in the zone the app shows (and saves) times in.
+  const timeZone = useAtomValue(timezoneAtom);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
@@ -2157,7 +2167,32 @@ export function EventEditForm({
     time?: Temporal.PlainTime;
   }) => {
     hasUserEditedRef.current = true;
-    applyMovedStart(getValues(), setValue, next);
+    const before = getValues();
+    applyMovedStart(before, setValue, next);
+    followRepeat(before.startDate);
+  };
+
+  /**
+   * A series' repeat follows its start ("2nd Tue" to "3rd Wed", an end the
+   * start passed moves on). Not for one occurrence: moving it is a
+   * reschedule, and its series stays as it is.
+   */
+  const followRepeat = (from: Date | null) => {
+    const values = getValues();
+    if (event?.recurringEventId || !(from && values.startDate)) {
+      return;
+    }
+    const recurrence = followStart({
+      allDay: values.allDay,
+      from: pickerDateToTemporal(from),
+      recurrence: values.recurrence,
+      timeZone,
+      to: pickerDateToTemporal(values.startDate),
+    });
+    if (recurrence !== values.recurrence) {
+      recurrenceEditedRef.current = true;
+      setValue("recurrence", recurrence, { shouldDirty: true });
+    }
   };
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {

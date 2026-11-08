@@ -43,11 +43,12 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 - **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs).
 
 ### Repeat editor (web and iOS)
-- Rules are read and built with `packages/state/src/google-event-recurrence.ts`, shared by both editors. The editors set frequency, interval, BYDAY and the end; every other part of a rule (WKST, BYMONTH...) is kept.
-- Picking a frequency (`pickRecurrenceFrequency`): the same one changes nothing. A new one starts at every 1, drops parts tied to the old frequency, and keeps only plain weekdays for Weekly ("2TU" isn't valid weekly).
-- Monthly offers the start's day of the month or its weekday of the month ("The 2nd Tue"; a 5th is "last"). A weekday of the month replaces any BYMONTHDAY.
-- "On date" ends after that day's occurrence: UNTIL is the date for an all-day series and the day's last second (in UTC) for a timed one. It starts three months after the series' start; earlier dates can't be picked.
-- The rule shows in words ("Repeats every 2 months on the 2nd Tue").
+- Rules are read and built with `packages/state/src/google-event-recurrence.ts`, shared by both editors; the words and the monthly choices are in `packages/state/src/event-recurrence-words.ts`. The editors set frequency, interval, BYDAY, BYMONTHDAY and the end; every other part of a rule (WKST, BYMONTH...) is kept.
+- Picking a frequency (`pickRecurrenceFrequency`): the same one changes nothing. A new one starts at every 1, drops the old frequency's day parts, and keeps only plain weekdays for Weekly ("2TU" isn't valid weekly).
+- Monthly offers the start's day of the month ("Day 27"), its weekday of the month ("The 4th Fri"), and in its last week the last one ("The last Fri"). A rule set another way ("The last weekday", "Day 15") comes first, selected, so opening the editor never changes it. A weekday of the month replaces BYMONTHDAY; BYSETPOS goes with the BYDAY it picks from.
+- "On date" ends after that day's occurrence: UNTIL is the date for an all-day series and the day's last second, in the app's time zone, for a timed one. It starts three months after the series' start; earlier dates can't be picked.
+- Moving a series' start (not one occurrence's: that's a reschedule) carries the start's day or weekday of the month with it, and moves an end date it passed (`followStart`).
+- The rule shows in words ("Repeats every 2 months on the 2nd Tue"); parts the words don't cover add "(custom)", so nothing is hidden.
 - When `EventEditForm` is used inside `EventCreationPopover`, `onCancel` is not passed, so the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
 
 ### Create Mode
