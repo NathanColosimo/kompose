@@ -1438,3 +1438,64 @@ describe("This and following from the first meeting is the whole series", () => 
     expect(google.writes()).toEqual([]);
   });
 });
+
+describe("Entire series through an all-day occurrence keeps that occurrence's day", () => {
+  // Daily all day from Nov 9; Nov 16 was renamed on its own.
+  const allDay: Event = {
+    ...weekly,
+    end: { date: "2026-11-10" },
+    recurrence: ["RRULE:FREQ=DAILY"],
+    start: { date: "2026-11-09" },
+  };
+  const own: Event = {
+    ...allDay,
+    end: { date: "2026-11-17" },
+    id: "series_20261116",
+    originalStartTime: { date: "2026-11-16" },
+    recurrence: undefined,
+    recurringEventId: "series",
+    start: { date: "2026-11-16" },
+    summary: "Own",
+  };
+
+  test("a drag to another day moves nothing on its own", async () => {
+    const google = fakeGoogle(allDay, [own]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", own, {
+            end: { date: "2026-11-18" },
+            start: { date: "2026-11-17" },
+          })
+        )
+      )
+    ).toBe(true);
+    const writes = google.writes();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.body).toMatchObject({ start: { date: "2026-11-09" } });
+  });
+
+  test("a new span of days dragged to another day reaches it on its own day", async () => {
+    const google = fakeGoogle(allDay, [own]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", own, {
+            end: { date: "2026-11-19" },
+            start: { date: "2026-11-17" },
+          })
+        )
+      )
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.body).toMatchObject({
+      end: { date: "2026-11-11" },
+      start: { date: "2026-11-09" },
+    });
+    expect(opened?.body).toMatchObject({
+      end: { date: "2026-11-18" },
+      start: { date: "2026-11-16" },
+      summary: "Own",
+    });
+  });
+});

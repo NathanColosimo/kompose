@@ -337,9 +337,10 @@ function entireSeriesTimes(
 
 /**
  * An Entire series edit's times for the occurrence it was made through:
- * the edit's time of day and length (read in the series' zone) on the
- * occurrence's own day, as the series keeps its dates. The edit's times
- * as they are when either is all day.
+ * the edit's time of day and length (read in the series' zone), or its
+ * span of days when both are all day, on the occurrence's own day, as the
+ * series keeps its dates. The edit's times as they are when it changes
+ * the form (timed to all day, or back).
  */
 function timesOnOwnDay(
   occurrence: Event,
@@ -347,6 +348,19 @@ function timesOnOwnDay(
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
   const zone = seriesZoneOf(master);
+  if (occurrence.start.date && edited.start.date) {
+    const days = Math.max(
+      1,
+      edited.end.date
+        ? Temporal.PlainDate.from(edited.start.date).until(edited.end.date).days
+        : 1
+    );
+    const own = Temporal.PlainDate.from(occurrence.start.date);
+    return {
+      end: { date: own.add({ days }).toString() },
+      start: { date: own.toString() },
+    };
+  }
   const start = inSeriesZone(edited.start, master.start);
   const end = inSeriesZone(edited.end, master.end);
   const day = startInstant(occurrence.start, zone)
