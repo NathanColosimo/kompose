@@ -1887,3 +1887,47 @@ describe("skips placed against the series being saved", () => {
     }
   );
 });
+
+describe("a deleted added meeting the save removes", () => {
+  // Mondays 9:00 plus an added Nov 30 15:00, deleted on its own; the save
+  // drops that added day. The rule's Nov 30 meeting must stay.
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261130T150000",
+    ],
+  };
+  const deleted: Event = {
+    ...occurrenceOf(series, "2026-11-30T15:00:00-05:00"),
+    status: "cancelled",
+  };
+  const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+  const cases = [
+    ["all", "09:00"],
+    ["all", "10:00"],
+    ["following", "09:00"],
+    ["following", "10:00"],
+  ] as const;
+
+  test.each(cases)("leaves no skip behind (%s, at %s)", async (scope, time) => {
+    const google = fakeGoogle(series, [deleted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(scope, opened, {
+            end: {
+              dateTime: `2026-11-16T${time.replace(":00", ":30")}:00-05:00`,
+              timeZone: zone,
+            },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+            start: { dateTime: `2026-11-16T${time}:00-05:00`, timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+    ]);
+  });
+});

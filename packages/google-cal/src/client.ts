@@ -211,9 +211,27 @@ function lineUpRule(params: {
   splitAt?: string;
   start: Event["start"];
 }): string[] {
-  const { cancelled, master, rule, splitAt, start } = params;
+  const { master, rule, splitAt, start } = params;
   const zone = seriesZoneOf(master);
   const before = master.recurrence ?? [];
+  const rules = before.filter((line) => line.startsWith("RRULE:"));
+  // Whether a rule (or the start) met at `slot`; a rule whose days can't
+  // be read may have: a skip where nothing meets does nothing.
+  const ruleMetAt = (slot: string) =>
+    seriesMeetsAt({
+      recurrence: rules,
+      seriesZone: zone,
+      slot,
+      start: master.start,
+    }) !== false;
+  // A deleted added (RDATE) meeting the save removes has nothing left to
+  // skip (unless a rule met there too): kept, its skip would be lined up
+  // onto that day's other meeting.
+  const stillMeets = (slot: string) =>
+    !addsSlot(before, slot, zone) ||
+    addsSlot(rule, slot, zone) ||
+    ruleMetAt(slot);
+  const cancelled = params.cancelled.filter(stillMeets);
   const change = timeOfDayChange(master, start);
   if (!change || meetsSeveralTimesADay(before, change.from)) {
     return (
@@ -234,8 +252,9 @@ function lineUpRule(params: {
     (value.instant as Temporal.Instant)
       .toZonedDateTimeISO(zone)
       .toString({ smallestUnit: "second", timeZoneName: "never" });
-  const deleted = [...cancelled, ...ownSkips.map(slotOfValue)];
-  const rules = before.filter((line) => line.startsWith("RRULE:"));
+  const deleted = [...cancelled, ...ownSkips.map(slotOfValue)].filter(
+    stillMeets
+  );
   const atNewTime: string[] = [];
   const withRule: string[] = [];
   for (const slot of deleted) {
@@ -248,16 +267,7 @@ function lineUpRule(params: {
     if (added) {
       withRule.push(slot);
     }
-    // A rule whose days can't be read may meet there: a skip where
-    // nothing meets does nothing.
-    const ruleMet =
-      !added ||
-      seriesMeetsAt({
-        recurrence: rules,
-        seriesZone: zone,
-        slot,
-        start: master.start,
-      }) !== false;
+    const ruleMet = !added || ruleMetAt(slot);
     if (ruleMet) {
       atNewTime.push(
         moment
