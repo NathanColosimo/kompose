@@ -99,13 +99,19 @@ export function DesktopShortcutSettings() {
       {isLoading ? (
         <SettingsRowSkeleton />
       ) : (
-        <fieldset className="divide-y" disabled={form.formState.isSubmitting}>
+        // Busy, not disabled, while a choice saves: a disabled radio drops
+        // focus, and the arrow keys would stop working. handlePresetChange
+        // ignores changes meanwhile.
+        <fieldset
+          aria-busy={form.formState.isSubmitting}
+          className="divide-y transition-opacity aria-busy:opacity-50"
+        >
           <legend className="sr-only">Command bar shortcut</legend>
           {desktopCommandBarShortcutPresets.map((preset) => {
             const isSelected = preset.id === selectedPresetId;
             return (
               <label
-                className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50 has-disabled:opacity-50"
+                className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50"
                 key={preset.id}
               >
                 <input

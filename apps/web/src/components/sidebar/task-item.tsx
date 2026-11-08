@@ -44,18 +44,14 @@ export const TaskItem = memo(function TaskItemInner({
 
   const { updateTask } = useTasks();
 
-  const handleStatusToggle = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const newStatus = task.status === "done" ? "todo" : "done";
-      updateTask.mutate({
-        id: task.id,
-        scope: "this",
-        task: { status: newStatus },
-      });
-    },
-    [task.id, task.status, updateTask]
-  );
+  const handleStatusToggle = useCallback(() => {
+    const newStatus = task.status === "done" ? "todo" : "done";
+    updateTask.mutate({
+      id: task.id,
+      scope: "this",
+      task: { status: newStatus },
+    });
+  }, [task.id, task.status, updateTask]);
 
   const scheduledZdt =
     task.startDate && task.startTime
@@ -92,8 +88,7 @@ export const TaskItem = memo(function TaskItemInner({
 
       <TaskEditPopover surface="sidebar" task={task}>
         <button
-          // The drag instructions ("Press Enter to open. Drag with a
-          // pointer to move.").
+          // dnd-kit's drag instructions (set on DndContext).
           aria-describedby={attributes["aria-describedby"]}
           className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 pr-2 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
           type="button"

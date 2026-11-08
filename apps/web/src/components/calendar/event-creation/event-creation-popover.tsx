@@ -97,6 +97,7 @@ function CreationChooser({
   const taskSubmitRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const startDate = useMemo(
     () => zonedDateTimeToDate(popoverTimes.start),
@@ -265,15 +266,15 @@ function CreationChooser({
         // Typing goes to the title, the first thing to fill in.
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          const content = e.currentTarget as HTMLElement;
-          requestAnimationFrame(() => {
-            content
-              .querySelector<HTMLInputElement>(
-                '[role="tabpanel"][data-state="active"] input'
-              )
-              ?.focus();
-          });
+          contentRef.current
+            ?.querySelector<HTMLInputElement>(
+              '[role="tabpanel"][data-state="active"] input'
+            )
+            // Popper hasn't placed the content yet; scrolling to it now
+            // would jump the page.
+            ?.focus({ preventScroll: true });
         }}
+        ref={contentRef}
         // A phone has no room beside the slot, and Radix only slides a side
         // placement up or down, so the chooser opens below it instead.
         side={isNarrow ? "bottom" : "right"}
