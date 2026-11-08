@@ -8,6 +8,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - Tasks tab orchestration: `apps/native/app/(tabs)/(tasks)/index.tsx`
 - Calendar tab task-edit orchestration: `apps/native/app/(tabs)/(calendar)/index.tsx`
 - Shared editor flow: `apps/native/hooks/use-task-editor-flow.ts`
+- Pure lifecycle reducer and draft model: `packages/state/src/task-editor-flow.ts`
 - Shared task recurrence logic: `packages/state/src/task-recurrence.ts`
 - Shared recurrence scope options: `packages/state/src/recurrence-scope-options.ts`
 
@@ -26,6 +27,15 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - `recurrence`
 - `links` (array of `LinkMeta` objects)
 - `linkInput` (current add-link input value)
+
+## Editor lifecycle
+
+The flow has one state: `closed`, `create`, `edit`, `saveScope`, or `deleteScope`.
+Create and edit each get a new session ID, including reopening the same task.
+The sheet keys its form component by that ID and owns the mutable draft and
+expansion state locally, so typing does not update the Tasks or Calendar screen.
+Leaving the editor unmounts the form; closing releases the task, draft, and scope.
+Only `saveScope` retains a submitted draft while waiting for confirmation.
 
 ## Form layout
 
