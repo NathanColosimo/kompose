@@ -118,6 +118,7 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
+import { seriesEditFields } from "@/components/calendar/series-edit";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
@@ -1575,14 +1576,28 @@ export default function CalendarTab() {
         draft.calendar.calendarId === sourceCalendar.calendarId
           ? null
           : draft.calendar.calendarId;
-      const eventPayload = buildEventPayload(draft);
+      const formPayload = buildEventPayload(draft);
+      // For the series, only what the user changed: a rescheduled
+      // occurrence's own title or time doesn't spread to it.
+      const eventPayload =
+        scope === "this"
+          ? formPayload
+          : {
+              ...formPayload,
+              ...seriesEditFields({
+                edited: formPayload,
+                occurrence: draft.sourceEvent,
+                series: recurringMasterEvent.data,
+              }),
+            };
       // A moved date carries the series' rule along, for the series.
       const recurrence =
         scope === "this"
           ? eventPayload.recurrence
           : (eventPayload.recurrence ??
             seriesRecurrenceForSave({
-              editedStart: eventPayload.start,
+              // Where the user put this occurrence, against where it is.
+              editedStart: formPayload.start,
               masterRecurrence,
               masterStart,
               occurrence: draft.sourceEvent,
@@ -1624,6 +1639,7 @@ export default function CalendarTab() {
       masterRecurrence,
       masterStart,
       moveEvent,
+      recurringMasterEvent.data,
       timeZone,
       updateEvent,
     ]

@@ -23,12 +23,14 @@ import {
   followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
+  occurrenceDayMoved,
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatChanged,
   repeatCountingDay,
   repeatEndsBeforeStart,
+  seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
   timeInZone,
   timeZoneCity,
@@ -79,6 +81,11 @@ import type {
   EditEventDraft,
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
+import {
+  dayOf,
+  editedStartOf,
+  keptSeriesStart,
+} from "@/components/calendar/series-edit";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -230,8 +237,15 @@ function RecurrenceRow({
   );
 }
 
-/** The day an editor's repeat counts its implicit days from, in the series' zone. */
-function repeatDayOf(
+/**
+ * The repeat a save for the series would send, and the day its implicit
+ * days count from, in the series' zone. Moving an occurrence to another
+ * day takes the series' rule along ("weekly on Wed" to "weekly on Thu",
+ * `seriesRecurrenceForSave`), so the row says so before the save; a
+ * rescheduled occurrence left where it is saves from its place in the
+ * series (`keptSeriesStart`), so that's the day its repeat counts from.
+ */
+function seriesRepeatOf(
   values: Pick<
     EventDraft,
     "allDay" | "recurrence" | "recurrenceEdited" | "startDate" | "startTime"
@@ -251,32 +265,59 @@ function repeatDayOf(
   changed: boolean;
   counting: Temporal.PlainDate;
   formDay: Temporal.PlainDate;
+  recurrence: string[];
 } {
-  const formDay = dayInZone(
-    values.startDate,
-    values.allDay ? null : values.startTime,
-    where.appTimeZone,
-    where.seriesTimeZone
+  const { event, seriesTimeZone } = where;
+  const editedStart = editedStartOf(values, where.appTimeZone, seriesTimeZone);
+  const occurrence = event?.recurringEventId ? event : undefined;
+  const formDay = dayOf(
+    (occurrence && keptSeriesStart(editedStart, occurrence)) ?? editedStart,
+    seriesTimeZone
   );
   // Changed: differs from the series' (a change set back reads as the
   // series' again), the same test as the save's recurrenceToSend.
-  const source = where.event?.recurrence?.length
-    ? where.event.recurrence
+  const source = event?.recurrence?.length
+    ? event.recurrence
     : (where.seriesRecurrence ?? []);
   const changed = repeatChanged({
     edited: Boolean(values.recurrenceEdited),
     recurrence: values.recurrence,
     source,
   });
+  const moved = Boolean(
+    occurrence &&
+      occurrenceDayMoved({
+        editedStart,
+        occurrence,
+        timeZone: seriesTimeZone,
+      })
+  );
+  const followed =
+    occurrence && moved && !changed
+      ? seriesRecurrenceForSave({
+          editedStart,
+          masterRecurrence: where.seriesRecurrence,
+          masterStart: where.seriesStart,
+          occurrence,
+          recurrence: undefined,
+          timeZone: seriesTimeZone,
+        })
+      : undefined;
   const counting =
     repeatCountingDay({
-      changed,
-      event: where.event,
+      // A moved occurrence's series would start again on its new day.
+      changed: changed || moved,
+      event,
       formDay,
       seriesStart: where.seriesStart,
-      timeZone: where.seriesTimeZone,
+      timeZone: seriesTimeZone,
     }) ?? formDay;
-  return { changed, counting, formDay };
+  return {
+    changed,
+    counting,
+    formDay,
+    recurrence: followed ?? values.recurrence,
+  };
 }
 
 /**
@@ -1539,7 +1580,7 @@ export function EventEditorSheet({
     }
   }, [getValues, isOccurrence, masterLoading, masterRecurrence, setValue]);
 
-  const { summary, description, location, recurrence, allDay } = values;
+  const { summary, description, location, allDay } = values;
 
   const isCreateMode = draft.mode === "create";
   const readOnlyReason = readOnlyReasonFor(draft, calendarOptions);
@@ -1550,16 +1591,6 @@ export function EventEditorSheet({
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
   const recurrenceDisabled = masterLoading;
-  const shownRepeat = occurrenceRepeatShown({
-    edited: Boolean(values.recurrenceEdited),
-    recurrence,
-    seriesRecurrence: masterRecurrence,
-    unusable: recurrenceDisabled,
-  });
-
-  const primaryRule = getPrimaryRecurrenceRule(recurrence);
-  const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
-
   const mutedColor = useColor("muted");
   const borderColor = useColor("border");
 
@@ -1614,13 +1645,23 @@ export function EventEditorSheet({
     changed: repeatIsChanged,
     counting: repeatDay,
     formDay,
-  } = repeatDayOf(values, {
+    recurrence: seriesRepeat,
+  } = seriesRepeatOf(values, {
     appTimeZone,
     event: sourceEvent,
     seriesRecurrence: masterRecurrence,
     seriesStart: masterStart,
     seriesTimeZone,
   });
+  const shownRepeat = occurrenceRepeatShown({
+    edited: Boolean(values.recurrenceEdited),
+    recurrence: seriesRepeat,
+    seriesRecurrence: masterRecurrence,
+    unusable: recurrenceDisabled,
+  });
+  // The repeat editor starts from what the row shows.
+  const primaryRule = getPrimaryRecurrenceRule(seriesRepeat);
+  const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
   // Its end picked, then the start moved past it: say so, and don't save.
   const repeatEndsOn = repeatEndsBeforeStart({
     recurrence: values.recurrence,
@@ -1639,23 +1680,19 @@ export function EventEditorSheet({
 
   const applyPrimaryRecurrenceRule = React.useCallback(
     (rule: string | null) => {
-      const nextRecurrence = setPrimaryRecurrenceRule(
-        getValues("recurrence"),
-        rule
-      );
+      const nextRecurrence = setPrimaryRecurrenceRule(seriesRepeat, rule);
       setValue("recurrence", nextRecurrence, { shouldDirty: true });
       setValue("recurrenceEdited", true);
     },
-    [getValues, setValue]
+    [seriesRepeat, setValue]
   );
 
   const updateRecurrence = React.useCallback(
     (patch: RecurrencePatch) => {
-      const currentRule = getPrimaryRecurrenceRule(getValues("recurrence"));
-      const nextRule = buildRecurrenceRuleFromCurrent(currentRule, patch);
+      const nextRule = buildRecurrenceRuleFromCurrent(primaryRule, patch);
       applyPrimaryRecurrenceRule(nextRule);
     },
-    [applyPrimaryRecurrenceRule, getValues]
+    [applyPrimaryRecurrenceRule, primaryRule]
   );
 
   const recurrenceEditor = (
