@@ -1,4 +1,5 @@
 import { Temporal } from "temporal-polyfill";
+import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
 import {
   parseDateList,
@@ -6,7 +7,6 @@ import {
   readRecurrenceValue,
   untilRuleForDay,
 } from "./until";
-import { countedRuleDays, isRuleDay } from "./rule-days";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
@@ -35,21 +35,23 @@ export function truncateRecurrenceForFollowing(
         .toString()
         .slice(0, 19)
         .replace(/[-:]/g, "")}Z`;
-  return splitAddedDays(recurrence, originalStart, seriesZone, "before").map((line) => {
-    if (!line.startsWith("RRULE:")) {
-      return line;
+  return splitAddedDays(recurrence, originalStart, seriesZone, "before").map(
+    (line) => {
+      if (!line.startsWith("RRULE:")) {
+        return line;
+      }
+      // Part by part, so a rule written COUNT-first ("RRULE:COUNT=5;...")
+      // leaves no empty part behind.
+      const parts = line
+        .slice("RRULE:".length)
+        .split(";")
+        .filter(
+          (part) =>
+            part && !part.startsWith("COUNT=") && !part.startsWith("UNTIL=")
+        );
+      return `RRULE:${[...parts, `UNTIL=${until}`].join(";")}`;
     }
-    // Part by part, so a rule written COUNT-first ("RRULE:COUNT=5;...")
-    // leaves no empty part behind.
-    const parts = line
-      .slice("RRULE:".length)
-      .split(";")
-      .filter(
-        (part) =>
-          part && !part.startsWith("COUNT=") && !part.startsWith("UNTIL=")
-      );
-    return `RRULE:${[...parts, `UNTIL=${until}`].join(";")}`;
-  });
+  );
 }
 
 /**
@@ -66,10 +68,7 @@ export function withRemainingCount(
       ? Number(COUNT_REGEX.exec(line)?.[1])
       : Number.NaN;
     return Number.isFinite(count)
-      ? line.replace(
-          COUNT_PART,
-          `$1COUNT=${Math.max(1, count - used)}`
-        )
+      ? line.replace(COUNT_PART, `$1COUNT=${Math.max(1, count - used)}`)
       : line;
   });
 }
@@ -82,7 +81,10 @@ function beforeSplit(
 ): boolean {
   if (DATE_ONLY.test(originalStart)) {
     return (
-      Temporal.PlainDate.compare(value.day, Temporal.PlainDate.from(originalStart)) < 0
+      Temporal.PlainDate.compare(
+        value.day,
+        Temporal.PlainDate.from(originalStart)
+      ) < 0
     );
   }
   const split = Temporal.Instant.from(originalStart);
@@ -106,7 +108,9 @@ export function splitAddedDays(
   keep: "before" | "from"
 ): string[] {
   return recurrence.flatMap((line) => {
-    const list = line.startsWith("RDATE") ? parseDateList(line, seriesZone) : null;
+    const list = line.startsWith("RDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
     if (!list) {
       return [line];
     }
@@ -175,10 +179,12 @@ function isRuleOccurrence(
   if (!(start.instant && value.instant)) {
     return !(start.instant || value.instant);
   }
-  return Temporal.PlainTime.compare(
-    start.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
-    value.instant.toZonedDateTimeISO(seriesZone).toPlainTime()
-  ) === 0;
+  return (
+    Temporal.PlainTime.compare(
+      start.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
+      value.instant.toZonedDateTimeISO(seriesZone).toPlainTime()
+    ) === 0
+  );
 }
 
 /**
@@ -354,8 +360,8 @@ export function carryCountExactly(
       continue;
     }
     const positions = countedRuleDays(rule, seriesStartValue.day, count);
-    // Each rule meets at its own time (BYHOUR=15 at 15:00), the series'
-    // first start at its own.
+    // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
+    // first start is the first position of a rule at its time.
     const clock = seriesClock && ruleClock(rule, seriesClock);
     // A position whose time doesn't exist that day (a 2:30 AM meeting on
     // the spring-forward night) is up to Google: count from its list.
@@ -369,7 +375,10 @@ export function carryCountExactly(
     const isBefore = (day: Temporal.PlainDate, offset: number) =>
       clock && splitInstant
         ? Temporal.Instant.compare(
-            offset === 0 && seriesStartValue.instant
+            offset === 0 &&
+              seriesStartValue.instant &&
+              seriesClock &&
+              Temporal.PlainTime.compare(clock, seriesClock) === 0
               ? seriesStartValue.instant
               : day
                   .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })

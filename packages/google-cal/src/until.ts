@@ -17,6 +17,12 @@ const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
 const SEVERAL_A_DAY =
   /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
+const INTERVAL_PART = /INTERVAL=(\d+)/;
+const FREQ_PART = /FREQ=([A-Z]+)/;
+const BY_MONTH_PART = /BYMONTH=([^;]*)/;
+const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
+const BY_DAY_PART = /BYDAY=([^;]*)/;
+const WEEK_START_PART = /WKST=([A-Z]{2})/;
 const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
 
 /** A rule's own time of day, as it writes it ("BYHOUR=9;BYMINUTE=30"). */
@@ -157,14 +163,14 @@ export function readRecurrenceValue(
   const local = `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
   try {
     let instant: Temporal.Instant;
-    if (!offset) {
-      instant = Temporal.PlainDateTime.from(local)
-        .toZonedDateTime(valueZone)
-        .toInstant();
-    } else {
+    if (offset) {
       const zone =
         offset === "Z" ? "Z" : `${offset.slice(0, 3)}:${offset.slice(3)}`;
       instant = Temporal.Instant.from(`${local}${zone}`);
+    } else {
+      instant = Temporal.PlainDateTime.from(local)
+        .toZonedDateTime(valueZone)
+        .toInstant();
     }
     return {
       day: instant.toZonedDateTimeISO(seriesZone).toPlainDate(),
@@ -267,7 +273,11 @@ function matchClock(
     return line;
   }
   const time = wallClock(start, timeZone);
-  const parts = { BYHOUR: time.hour, BYMINUTE: time.minute, BYSECOND: time.second };
+  const parts = {
+    BYHOUR: time.hour,
+    BYMINUTE: time.minute,
+    BYSECOND: time.second,
+  };
   return line.replace(
     /([:;])(BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g,
     (_, separator: string, part: keyof typeof parts) =>
@@ -343,8 +353,10 @@ function withinPeriod(n: number, period: number): number {
 /**
  * Where a monthly or yearly skip sits once the move is applied in calendar
  * terms: the move's months (years for a rule in one month a year) within
- * INTERVAL, then its leftover days, so "a month and a day" is that across
- * February too, and the 1st -> the 31st is 30 days.
+ * INTERVAL, then its leftover days. Of the two ways to say a move (Temporal's
+ * "Mar 1 -> Jan 31 is a month and a day back", or month to month and day to
+ * day, "Mar 15 -> Apr 14 is a month on, a day back"), the one with fewer
+ * leftover days is the move, so February and 30-day moves land right.
  */
 function calendarTarget(
   freq: string,
@@ -353,18 +365,35 @@ function calendarTarget(
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): Temporal.PlainDate {
-  const interval = Number(/INTERVAL=(\d+)/.exec(rule)?.[1] ?? 1) || 1;
+  const interval = Number(INTERVAL_PART.exec(rule)?.[1] ?? 1) || 1;
   const byYear = freq === "YEARLY" && periodDays(freq, rule) >= YEAR_DAYS;
-  const move = from.until(to, { largestUnit: byYear ? "years" : "months" });
+  const temporal = from.until(to, { largestUnit: byYear ? "years" : "months" });
+  const monthToMonth = byYear
+    ? {
+        days: to.day - from.day,
+        months: to.month - from.month,
+        years: to.year - from.year,
+      }
+    : {
+        days: to.day - from.day,
+        months: (to.year - from.year) * 12 + to.month - from.month,
+        years: 0,
+      };
+  const move =
+    Math.abs(monthToMonth.days) < Math.abs(temporal.days)
+      ? monthToMonth
+      : { days: temporal.days, months: temporal.months, years: temporal.years };
   // A yearly rule in several months meets about monthly: a month apart.
   const step = freq === "MONTHLY" ? interval : 1;
+  // One unit at a time: a move can be a month on and a day back.
   return byYear
-    ? day.add({
-        days: move.days,
-        months: move.months,
-        years: withinPeriod(move.years, interval),
-      })
-    : day.add({ days: move.days, months: withinPeriod(move.months, step) });
+    ? day
+        .add({ years: withinPeriod(move.years, interval) })
+        .add({ months: move.months })
+        .add({ days: move.days })
+    : day
+        .add({ months: withinPeriod(move.months, step) })
+        .add({ days: move.days });
 }
 
 /** Days in a month and a year, near enough to place a skip within one. */
@@ -376,8 +405,8 @@ const YEAR_DAYS = 365;
  * months or years (a yearly rule in several months meets about monthly).
  */
 function periodDays(freq: string, rule: string): number {
-  const interval = Number(/INTERVAL=(\d+)/.exec(rule)?.[1] ?? 1) || 1;
-  const months = /BYMONTH=([^;]*)/.exec(rule)?.[1]?.split(",") ?? [];
+  const interval = Number(INTERVAL_PART.exec(rule)?.[1] ?? 1) || 1;
+  const months = BY_MONTH_PART.exec(rule)?.[1]?.split(",") ?? [];
   switch (freq) {
     case "DAILY":
       return interval;
@@ -387,7 +416,7 @@ function periodDays(freq: string, rule: string): number {
       return MONTH_DAYS * interval;
     default:
       return months.length === 1 ||
-        (months.length === 0 && !/BYMONTHDAY=/.test(rule))
+        (months.length === 0 && !BY_MONTH_DAY_PART.test(rule))
         ? YEAR_DAYS * interval
         : MONTH_DAYS;
   }
@@ -420,7 +449,8 @@ const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 /** The first day of `day`'s week, by the rule's WKST (Monday by default). */
 function weekStart(day: Temporal.PlainDate, rule: string): Temporal.PlainDate {
-  const first = WEEKDAY_CODES.indexOf(/WKST=([A-Z]{2})/.exec(rule)?.[1] ?? "MO") + 1 || 1;
+  const first =
+    WEEKDAY_CODES.indexOf(WEEK_START_PART.exec(rule)?.[1] ?? "MO") + 1 || 1;
   return day.subtract({ days: (day.dayOfWeek - first + 7) % 7 });
 }
 
@@ -430,7 +460,7 @@ function keepsWeekday(
   to: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): boolean {
-  const days = /BYDAY=([^;]*)/.exec(rule)?.[1]?.split(",") ?? [];
+  const days = BY_DAY_PART.exec(rule)?.[1]?.split(",") ?? [];
   const code = WEEKDAY_CODES[day.dayOfWeek - 1] ?? "";
   return days.length > 0 ? days.includes(code) : to.dayOfWeek === day.dayOfWeek;
 }
@@ -457,7 +487,11 @@ function placeInNewPattern(
       freq === "WEEKLY" && keepsWeekday(newRule, to, day)
         ? // The days stayed (Mon/Tue kept when the start moved onto Tue):
           // only the weeks moved, so the skip keeps its weekday.
-          shiftWithinPeriod(weekStart(from, newRule), weekStart(to, newRule), period)
+          shiftWithinPeriod(
+            weekStart(from, newRule),
+            weekStart(to, newRule),
+            period
+          )
         : shiftWithinPeriod(from, to, period);
     const target = day.add({ days: shift });
     return isRuleDay(newRule, to, target) === true ? target : null;
@@ -491,9 +525,8 @@ export function moveSkippedDays(params: {
   /** The new start's time in the series' zone; null for an all-day one. */
   toTime?: Temporal.PlainTime | null;
 }): string[] {
-  const { from, newRule, oldRule, recurrence, seriesZone, to, toTime } =
-    params;
-  const freq = /FREQ=([A-Z]+)/.exec(newRule)?.[1] ?? "";
+  const { from, newRule, oldRule, recurrence, seriesZone, to, toTime } = params;
+  const freq = FREQ_PART.exec(newRule)?.[1] ?? "";
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (Temporal.PlainDate.compare(day, from) < 0) {
       return null;
@@ -538,7 +571,9 @@ export function moveSkippedDays(params: {
     );
   let changed = false;
   const next = recurrence.flatMap((line) => {
-    const list = line.startsWith("EXDATE") ? parseDateList(line, seriesZone) : null;
+    const list = line.startsWith("EXDATE")
+      ? parseDateList(line, seriesZone)
+      : null;
     if (!list) {
       return [line];
     }

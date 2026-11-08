@@ -374,6 +374,18 @@ describe("splitting a series", () => {
       "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=2",
       "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3",
     ]);
+    // Split at 15:00 on the first day: only the 9:00 rule's first is gone.
+    expect(
+      carryCountExactly(rules, {
+        masterRecurrence: rules,
+        originalStart: "2026-11-09T15:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=4",
+      "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=5",
+    ]);
   });
 
   test("leaves a count across a DST gap to Google's list", () => {

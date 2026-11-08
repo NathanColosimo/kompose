@@ -535,6 +535,51 @@ describe("followStart", () => {
         "20270601",
         "20270531",
       ],
+      // Opus's: into the next month onto an earlier day (or back onto a
+      // later one) is a month and a few days, not 30 days on.
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-15",
+        "2027-04-14",
+        "20270615",
+        "20270614",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-31",
+        "2027-04-30",
+        "20270531",
+        "20270530",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-01-31",
+        "2027-02-28",
+        "20270331",
+        "20270328",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-01-30",
+        "2027-02-27",
+        "20270430",
+        "20270427",
+      ],
+      [
+        "RRULE:FREQ=MONTHLY",
+        "2027-03-15",
+        "2027-02-16",
+        "20270615",
+        "20270616",
+      ],
+      // Every 2 months, a month on and a day back: Jul 15 -> Aug 14.
+      [
+        "RRULE:FREQ=MONTHLY;INTERVAL=2",
+        "2027-03-15",
+        "2027-04-14",
+        "20270715",
+        "20270814",
+      ],
       // Yearly moved earlier: Dec 9 -> Nov 9 keeps 2027's skip, in Nov.
       ["RRULE:FREQ=YEARLY", "2026-12-09", "2026-11-09", "20271209", "20271109"],
       // Mar 1 -> Feb 28: the 2028 skip is Feb 28 2028.
