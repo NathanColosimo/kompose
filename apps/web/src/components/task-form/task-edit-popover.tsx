@@ -30,7 +30,7 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
-  repeatEndsBeforeStart,
+  repeatBlocksSave,
   repeatNote,
   resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
@@ -377,6 +377,11 @@ function TaskEditorCloseActions({
   );
 }
 
+/** Mark done waits while Save runs, or while the repeat can't save. */
+function isDoneBlocked(saving: "done" | "save" | null, repeatBlocked: boolean) {
+  return saving === "save" || repeatBlocked;
+}
+
 /** Whether the editor holds for a save: its own, or the caller's. */
 function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
   return saving !== null || externalSaving;
@@ -566,6 +571,12 @@ export function TaskEditForm({
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" }) as LinkMeta[];
   const recurrence = useWatch({ control, name: "recurrence" });
+  // The note under Repeat says why; Save and Mark done wait for a fix.
+  const repeatBlocked = repeatBlocksSave({
+    next: recurrence,
+    previous: resolvedRecurrence,
+    startDate,
+  });
 
   /**
    * Saves the edits, plus `extra` fields. Resolves to whether it saved; a
@@ -712,7 +723,13 @@ export function TaskEditForm({
   const submit = useCallback(
     (values: TaskFormValues): boolean | Promise<boolean> => {
       // The editor says why ("The repeat ends before the task starts.").
-      if (repeatEndsBeforeStart(values.recurrence, values.startDate)) {
+      if (
+        repeatBlocksSave({
+          next: values.recurrence,
+          previous: resolvedRecurrence,
+          startDate: values.startDate,
+        })
+      ) {
         return false;
       }
       if (isCreateMode) {
@@ -781,6 +798,7 @@ export function TaskEditForm({
       createTask,
       holdForSave,
       isCreateMode,
+      resolvedRecurrence,
       scopeDecisionFor,
       showActionButtons,
       task,
@@ -1214,7 +1232,7 @@ export function TaskEditForm({
               )}
               {isCreateMode || !task ? null : (
                 <TaskDoneButton
-                  disabled={saving === "save"}
+                  disabled={isDoneBlocked(saving, repeatBlocked)}
                   isDone={task.status === "done"}
                   isSaving={saving === "done"}
                   onClick={handleToggleDone}
@@ -1223,7 +1241,7 @@ export function TaskEditForm({
               <TaskEditorCloseActions
                 onCancel={onClose}
                 onSave={handleSaveClick}
-                saveBlocked={repeatEndsBeforeStart(recurrence, startDate)}
+                saveBlocked={repeatBlocked}
                 saving={saving}
               />
             </div>

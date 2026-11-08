@@ -241,10 +241,17 @@ function RecurrenceEditorSection({
                 updateRecurrence({ byDay, freq: frequency.value });
               }}
               size="sm"
-              style={{ borderRadius: 999, flex: 1, paddingHorizontal: 0 }}
+              style={{ borderRadius: 999, flex: 1, paddingHorizontal: 6 }}
               variant={active ? "default" : "outline"}
             >
-              <Text>{frequency.label}</Text>
+              {/* Shrinks to fit a narrow phone or a large text size. */}
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                numberOfLines={1}
+              >
+                {frequency.label}
+              </Text>
             </Button>
           );
         })}
@@ -295,6 +302,8 @@ function RecurrenceEditorSection({
   );
 }
 
+const END_CHIP_STYLE = { borderRadius: 999, flex: 1, paddingHorizontal: 6 };
+
 function RecurrenceEndSection({
   parsedRecurrence,
   updateRecurrence,
@@ -305,13 +314,17 @@ function RecurrenceEndSection({
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">Ends</Text>
-      <View className="mt-1 flex-row flex-wrap gap-2">
+      {/* Three equal chips in one row. */}
+      <View className="mt-1 flex-row gap-1.5">
         <Button
           onPress={() => updateRecurrence({ end: { type: "none" } })}
           size="sm"
+          style={END_CHIP_STYLE}
           variant={parsedRecurrence.end.type === "none" ? "default" : "outline"}
         >
-          <Text>Never</Text>
+          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
+            Never
+          </Text>
         </Button>
         <Button
           onPress={() => {
@@ -326,11 +339,14 @@ function RecurrenceEndSection({
             });
           }}
           size="sm"
+          style={END_CHIP_STYLE}
           variant={
             parsedRecurrence.end.type === "until" ? "default" : "outline"
           }
         >
-          <Text>On date</Text>
+          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
+            On date
+          </Text>
         </Button>
         <Button
           onPress={() =>
@@ -345,11 +361,14 @@ function RecurrenceEndSection({
             })
           }
           size="sm"
+          style={END_CHIP_STYLE}
           variant={
             parsedRecurrence.end.type === "count" ? "default" : "outline"
           }
         >
-          <Text>After…</Text>
+          <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>
+            After…
+          </Text>
         </Button>
       </View>
 

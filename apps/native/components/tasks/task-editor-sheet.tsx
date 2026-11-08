@@ -17,7 +17,7 @@ import {
   getTaskRecurrenceDisplayText,
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
-  repeatEndsBeforeStart,
+  repeatBlocksSave,
   repeatNote,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceEditorState,
@@ -550,12 +550,22 @@ function durationOptionsFor(current: number) {
 }
 
 /** A draft saves with a title or a link, and not while Mark done is saving. */
-function canSaveDraft(draft: TaskDraft | null, isSaving: boolean): boolean {
+function canSaveDraft(
+  draft: TaskDraft | null,
+  isSaving: boolean,
+  savedRecurrence: TaskRecurrence | null | undefined
+): boolean {
   if (isSaving || !draft) {
     return false;
   }
   // A repeat that ends before the start has no occurrences (the note says so).
-  if (repeatEndsBeforeStart(draft.recurrence, draft.startDate)) {
+  if (
+    repeatBlocksSave({
+      next: draft.recurrence,
+      previous: savedRecurrence ?? null,
+      startDate: draft.startDate,
+    })
+  ) {
     return false;
   }
   return draft.title.trim().length > 0 || draft.links.length > 0;
@@ -598,7 +608,7 @@ export function TaskEditorSheet({
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = canSaveDraft(draft, isSaving);
+  const canSave = canSaveDraft(draft, isSaving, savedRecurrence);
 
   if (!draft) {
     return null;
@@ -612,7 +622,15 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone) && !isSaving;
+  // Mark done saves the edits with it, so it waits on the same repeat check.
+  const canToggleDone =
+    Boolean(mode === "edit" && onToggleDone) &&
+    !isSaving &&
+    !repeatBlocksSave({
+      next: draft.recurrence,
+      previous: savedRecurrence ?? null,
+      startDate: draft.startDate,
+    });
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));

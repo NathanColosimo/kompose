@@ -404,6 +404,23 @@ export function repeatEndsBeforeStart(
 }
 
 /**
+ * Whether the editor's repeat stops it saving: only a pattern the edit sets
+ * (a new task's, or a changed one) that ends before the start. An unchanged
+ * series pattern isn't sent, so moving its last occurrence past the end
+ * ("Daily until Nov 14", Nov 14 moved to Nov 16) still saves.
+ */
+export function repeatBlocksSave(params: {
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+}): boolean {
+  return (
+    !taskRecurrenceEquals(params.previous, params.next ?? null) &&
+    repeatEndsBeforeStart(params.next, params.startDate)
+  );
+}
+
+/**
  * What the editor says under Repeat: why it can't save ("ends before the
  * task starts", blocking), else what a change to a recurring task's
  * pattern will do (it applies from this occurrence on, with no scope
@@ -415,7 +432,7 @@ export function repeatNote(params: {
   previous: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null | undefined;
 }): { blocking: boolean; text: string } | null {
-  if (repeatEndsBeforeStart(params.next, params.startDate)) {
+  if (repeatBlocksSave(params)) {
     return { blocking: true, text: REPEAT_ENDS_BEFORE_START };
   }
   const text = repeatChangeNote(params);

@@ -828,6 +828,11 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (!master?.recurrence) {
     return [] as TaskSelect[];
   }
+  // The edit starts on or before the master: none of the old series is
+  // left, so its pattern goes rather than ending before its own start.
+  if (master.startDate && boundary <= master.startDate) {
+    return yield* dbUpdate(userId, master.id, { recurrence: null });
+  }
   const { count: _count, ...pattern } = master.recurrence;
   return yield* dbUpdate(userId, master.id, {
     recurrence: {

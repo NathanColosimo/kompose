@@ -131,10 +131,20 @@ export function regeneratedOccurrenceRows(params: {
   const seriesStartDate = Temporal.PlainDate.from(
     input.startDate ?? task.startDate
   );
-  const occurrenceDates = generateOccurrences(
-    input.recurrence,
-    seriesStartDate
-  ).filter((date) => !params.keptDates.has(date.toString()));
+  const generated = generateOccurrences(input.recurrence, seriesStartDate);
+  const occurrenceDates = generated.filter(
+    (date) => !params.keptDates.has(date.toString())
+  );
+  // The master is the first new date; kept dates before it (the edited
+  // occurrence) already used part of the count, so it stores what's left.
+  const firstNew = occurrenceDates[0];
+  const masterAt = firstNew
+    ? generated.findIndex((date) => date.equals(firstNew))
+    : 0;
+  const masterRecurrence =
+    input.recurrence.count && masterAt > 0
+      ? { ...input.recurrence, count: input.recurrence.count - masterAt }
+      : input.recurrence;
   return buildOccurrenceRowsFromTask({
     input,
     occurrenceDates,
@@ -147,7 +157,7 @@ export function regeneratedOccurrenceRows(params: {
   }).map((row, index) => ({
     ...row,
     ...(index === 0
-      ? { id: params.seriesMasterId, recurrence: input.recurrence }
+      ? { id: params.seriesMasterId, recurrence: masterRecurrence }
       : {}),
     ...(!params.keepEdited && row.startDate === seriesStartDate.toString()
       ? { status: task.status }
