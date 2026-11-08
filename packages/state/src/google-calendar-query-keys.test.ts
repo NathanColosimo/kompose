@@ -52,10 +52,12 @@ test("a stale series isn't ready until its new rule is in", async () => {
 
   const invalidated = invalidateGoogleEventQueries(queryClient, [work]);
   expect(seriesRefreshing(observer.getCurrentResult())).toBe(true);
+  expect(seriesRuleReady(observer.getCurrentResult())).toBe(false);
 
   answer({ recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2"] });
   await invalidated;
   expect(seriesRefreshing(observer.getCurrentResult())).toBe(false);
+  expect(seriesRuleReady(observer.getCurrentResult())).toBe(true);
   expect(observer.getCurrentResult().data).toEqual({
     recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2"],
   });

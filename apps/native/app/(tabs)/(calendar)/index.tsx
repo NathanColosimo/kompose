@@ -62,7 +62,7 @@ import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
-  allowedEventSaveScope,
+  chosenScope,
   type EventSaveChanges,
   eventDeleteScopeState,
   eventSaveDescription,
@@ -829,27 +829,27 @@ function EventSaveScopeDialog({
   isVisible,
   onCancel,
   onConfirm,
-  onScopeChange,
+  onPick,
   pending,
-  scope,
+  pick,
+  preferred,
 }: {
   /** What the save changes, for the scopes it can use. */
   changes: EventSaveChanges | null;
   isVisible: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
-  onScopeChange: (scope: RecurrenceScope) => void;
+  onConfirm: (scope: RecurrenceScope) => void;
+  onPick: (scope: RecurrenceScope) => void;
   pending: boolean;
-  scope: RecurrenceScope;
+  /** The user's own pick; null until they pick. */
+  pick: RecurrenceScope | null;
+  /** The scope the save suggests, shown once it's available. */
+  preferred: RecurrenceScope;
 }) {
   const disabled = changes ? eventSaveDisabledScopes(changes) : {};
-  // A choice that turns off once the series loads moves to one still on.
-  const allowed = allowedEventSaveScope(scope, disabled);
-  useEffect(() => {
-    if (isVisible && allowed !== scope) {
-      onScopeChange(allowed);
-    }
-  }, [allowed, isVisible, onScopeChange, scope]);
+  // Worked out each time: a preferred scope off for a moment (the series
+  // loading) comes back once it's on, unless the user chose another.
+  const scope = chosenScope(pick, preferred, disabled);
   return (
     <AlertDialog
       closeOnConfirm={false}
@@ -865,13 +865,13 @@ function EventSaveScopeDialog({
       onCancel={onCancel}
       // Cancel and a backdrop tap already run onCancel.
       onClose={noop}
-      onConfirm={onConfirm}
+      onConfirm={() => onConfirm(scope)}
       pending={pending}
       title={SCOPE_DIALOG_COPY.saveEvent.title}
     >
       <View className="mt-2">
         <RadioGroup
-          onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
+          onValueChange={(value) => onPick(value as RecurrenceScope)}
           options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
             disabled: Boolean(disabled[option.value]),
             label: option.label,
@@ -1157,7 +1157,11 @@ export default function CalendarTab() {
     recurringMasterEvent,
     timeZone
   );
-  const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
+  const [eventSavePick, setEventSavePick] = useState<RecurrenceScope | null>(
+    null
+  );
+  const [eventSavePreferred, setEventSavePreferred] =
+    useState<RecurrenceScope>("this");
   const [eventDeleteScope, setEventDeleteScope] =
     useState<RecurrenceScope>("this");
   const [eventDialog, setEventDialog] = useState<EventDialog>(null);
@@ -1696,15 +1700,15 @@ export default function CalendarTab() {
               event: draft.sourceEvent,
               masterRecurrence: masterSeriesRecurrence,
             });
-        const defaultScope = allowedEventSaveScope(
+        // The scope dialog opens over the editor, which stays open; it
+        // shows the nearest available to this until it's on.
+        setPendingEventSaveDraft(draft);
+        setEventSavePreferred(
           suggested === "this" && changes.patternChanged
             ? "following"
-            : suggested,
-          eventSaveDisabledScopes(changes)
+            : suggested
         );
-        // The scope dialog opens over the editor, which stays open.
-        setPendingEventSaveDraft(draft);
-        setEventSaveScope(defaultScope);
+        setEventSavePick(null);
         setEventDialog("save");
         return;
       }
@@ -1721,23 +1725,26 @@ export default function CalendarTab() {
     ]
   );
 
-  const confirmScopedEventSave = useCallback(async () => {
-    if (!pendingEventSaveDraft) {
-      return;
-    }
-    Keyboard.dismiss();
-    setIsSavingEvent(true);
-    try {
-      // Closes the editor (and this dialog) when it saves.
-      await commitEventUpdate(pendingEventSaveDraft, eventSaveScope);
-    } catch {
-      // The mutation reports the error; the editor stays with the edits.
-      setEventDialog(null);
-      setPendingEventSaveDraft(null);
-    } finally {
-      setIsSavingEvent(false);
-    }
-  }, [commitEventUpdate, eventSaveScope, pendingEventSaveDraft]);
+  const confirmScopedEventSave = useCallback(
+    async (scope: RecurrenceScope) => {
+      if (!pendingEventSaveDraft) {
+        return;
+      }
+      Keyboard.dismiss();
+      setIsSavingEvent(true);
+      try {
+        // Closes the editor (and this dialog) when it saves.
+        await commitEventUpdate(pendingEventSaveDraft, scope);
+      } catch {
+        // The mutation reports the error; the editor stays with the edits.
+        setEventDialog(null);
+        setPendingEventSaveDraft(null);
+      } finally {
+        setIsSavingEvent(false);
+      }
+    },
+    [commitEventUpdate, pendingEventSaveDraft]
+  );
 
   const requestDeleteEvent = useCallback(
     (draft: EditEventDraft) => {
@@ -2349,12 +2356,13 @@ export default function CalendarTab() {
                 }
                 isVisible={eventDialog === "save"}
                 onCancel={dismissEventSaveDialog}
-                onConfirm={() => {
-                  confirmScopedEventSave().catch(() => null);
+                onConfirm={(scope) => {
+                  confirmScopedEventSave(scope).catch(() => null);
                 }}
-                onScopeChange={setEventSaveScope}
+                onPick={setEventSavePick}
                 pending={isSavingEvent}
-                scope={eventSaveScope}
+                pick={eventSavePick}
+                preferred={eventSavePreferred}
               />
             </>
           }

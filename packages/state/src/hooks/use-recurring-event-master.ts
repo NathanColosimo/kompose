@@ -64,8 +64,12 @@ export function useRecurringEventMaster(params: {
     staleTime: 5 * 60 * 1000,
   });
   const refreshing = seriesRefreshing(query);
+  // Only the fields callers read: spreading the query would track (and
+  // re-render on) every one of its fields.
   return {
-    ...query,
+    data: query.data,
+    isError: query.isError,
+    isLoading: query.isLoading,
     /** A stale series (marked so by a write) is being fetched again. */
     refreshing,
     /** The rule isn't usable yet: first load, or a stale copy refreshing. */

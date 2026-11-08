@@ -60,7 +60,7 @@ import {
   type MeetingLink,
 } from "@kompose/state/meeting";
 import {
-  allowedEventSaveScope,
+  chosenScope,
   type EventSaveChanges,
   eventDeleteScopeState,
   eventSaveDescription,
@@ -691,7 +691,8 @@ interface EventEditDialogState {
   deleteScope: RecurrenceScope;
   pendingSave: PendingSave | null;
   scopeDialogOpen: boolean;
-  selectedScope: RecurrenceScope;
+  /** The user's own pick in the scope dialog; null until they pick. */
+  selectedScope: RecurrenceScope | null;
   simpleDeleteConfirmOpen: boolean;
 }
 
@@ -704,7 +705,6 @@ type EventEditDialogAction =
   | {
       type: "open-scope-dialog";
       pendingSave: EventEditDialogState["pendingSave"];
-      scope: RecurrenceScope;
     }
   | { type: "set-scope-dialog-open"; value: boolean }
   | { type: "set-selected-scope"; value: RecurrenceScope }
@@ -715,7 +715,7 @@ const eventEditDialogInitialState: EventEditDialogState = {
   deleteScope: "this",
   pendingSave: null,
   scopeDialogOpen: false,
-  selectedScope: "this",
+  selectedScope: null,
   simpleDeleteConfirmOpen: false,
 };
 
@@ -739,7 +739,7 @@ function eventEditDialogReducer(
         ...state,
         pendingSave: action.pendingSave,
         scopeDialogOpen: true,
-        selectedScope: action.scope,
+        selectedScope: null,
       };
     case "set-scope-dialog-open":
       return { ...state, scopeDialogOpen: action.value };
@@ -919,13 +919,19 @@ export function EventEditPopover({
     ]
   );
 
+  // The scope the save dialog shows and saves with, worked out each time.
+  const saveScope = chosenScope(
+    selectedScope,
+    pendingSave?.defaultScope ?? "this",
+    eventSaveDisabledScopes(saveChanges(pendingSave, seriesStatus))
+  );
   const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
       return;
     }
     dispatchDialog({ type: "clear-pending-save" });
-    holdForSave(saveEdits(pendingSave, selectedScope), SAVE_FAILURE_MESSAGE);
-  }, [holdForSave, pendingSave, saveEdits, selectedScope]);
+    holdForSave(saveEdits(pendingSave, saveScope), SAVE_FAILURE_MESSAGE);
+  }, [holdForSave, pendingSave, saveEdits, saveScope]);
 
   const handleDelete = useCallback(() => {
     if (readOnly || savingRef.current) {
@@ -1008,26 +1014,19 @@ export function EventEditPopover({
       // A recurring event asks for the scope over the editor, which stays
       // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
-        const scope = allowedEventSaveScope(
-          request.calendarChanged ? "all" : request.defaultScope,
-          eventSaveDisabledScopes({
-            calendarChanged: Boolean(request.calendarChanged),
-            dateMoved: request.dateMoved,
-            patternChanged: request.patternChanged,
-            seriesRuleLoaded,
-            splitBlocked: seriesStatus.splitBlocked,
-          })
-        );
+        // The preferred scope is kept as is: the dialog shows the nearest
+        // one available, and returns to it once it's on.
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
             dateMoved: request.dateMoved,
-            defaultScope: scope,
+            defaultScope: request.calendarChanged
+              ? "all"
+              : request.defaultScope,
             hasDataEdits: request.hasDataEdits,
             patternChanged: request.patternChanged,
             variables: request.variables,
           },
-          scope,
           type: "open-scope-dialog",
         });
         return;
@@ -1035,15 +1034,7 @@ export function EventEditPopover({
 
       holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
     }
-  }, [
-    createEvent,
-    holdForSave,
-    readOnly,
-    saveEdits,
-    seriesRuleLoaded,
-    seriesStatus.splitBlocked,
-    setOpen,
-  ]);
+  }, [createEvent, holdForSave, readOnly, saveEdits, setOpen]);
 
   const dialogOver =
     scopeDialogOpen || deleteDialogOpen || simpleDeleteConfirmOpen;
@@ -1135,7 +1126,7 @@ export function EventEditPopover({
         open={scopeDialogOpen}
         subject={savedSubject(pendingSave, event, timeZone)}
         title={SCOPE_DIALOG_COPY.saveEvent.title}
-        value={selectedScope}
+        value={saveScope}
       />
 
       {/* Delete scope dialog for recurring events */}

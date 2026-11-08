@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   allowedEventSaveScope,
+  chosenScope,
   type EventSaveChanges,
   eventDeleteScopeState,
   eventSaveDescription,
@@ -215,4 +216,17 @@ test("keeps deleting This and following off until the series is known", () => {
       "This occurrence was added to the series on its own, and Kompose can't tell where the series' repeat ends, so This and following isn't available.",
     disabled: { following: true },
   });
+});
+
+test("returns to the preferred scope once it's available", () => {
+  // A new repeat prefers This and following; while the series loads, only
+  // Entire series is on, so it shows that, and returns to This and
+  // following once the series is in, unless the user picked one.
+  const loading = { following: true, this: true };
+  const loaded = { this: true };
+  expect(chosenScope(null, "following", loading)).toBe("all");
+  expect(chosenScope(null, "following", loaded)).toBe("following");
+  expect(chosenScope("all", "following", loaded)).toBe("all");
+  // A pick that turns off falls back to the nearest available.
+  expect(chosenScope("following", "following", loading)).toBe("all");
 });

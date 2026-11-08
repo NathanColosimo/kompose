@@ -231,6 +231,22 @@ export function allowedEventSaveScope(
   );
 }
 
+/**
+ * The scope a save dialog shows and saves with: the user's own pick while
+ * it's available, else the nearest available to the preferred one. Worked
+ * out each time, so a preferred scope that's off for a moment (the series
+ * loading) comes back once it's on, unless the user chose another.
+ */
+export function chosenScope(
+  pick: RecurrenceScope | null,
+  preferred: RecurrenceScope,
+  disabled: Partial<Record<RecurrenceScope, boolean>>
+): RecurrenceScope {
+  return pick && !disabled[pick]
+    ? pick
+    : allowedEventSaveScope(preferred, disabled);
+}
+
 /** The scope dialog's line for a save. */
 export function eventSaveDescription(changes: EventSaveChanges): string {
   if (changes.calendarChanged) {
