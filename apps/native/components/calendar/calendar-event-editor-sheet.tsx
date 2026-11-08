@@ -155,10 +155,13 @@ function buildRecurrenceRuleFromCurrent(
   const freq = patch.freq ?? parsed.freq;
   const byDay = patch.byDay ?? parsed.byDay;
   const end = patch.end ?? parsed.end;
-  return buildGoogleEventRecurrenceRule(
-    { ...parsed, byDay, end, freq },
-    currentRule
-  );
+  return buildGoogleEventRecurrenceRule({
+    byDay,
+    end,
+    freq,
+    interval: 1,
+    monthDays: [],
+  });
 }
 
 function RecurrenceEditorSection({
