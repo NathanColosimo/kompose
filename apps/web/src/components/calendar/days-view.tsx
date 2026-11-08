@@ -393,7 +393,6 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     }
     const start = keyboardCreateStart({
       now: Temporal.Now.zonedDateTimeISO(timeZone),
-      timeZone,
       visibleDays,
     });
     const startDay = start.toPlainDate();

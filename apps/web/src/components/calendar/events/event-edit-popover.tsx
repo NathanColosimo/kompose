@@ -1017,7 +1017,8 @@ export function EventEditPopover({
     [accountId, calendarId, event, pendingSave, queryClient]
   );
   // The scope the save dialog shows and saves with, worked out each time
-  // from the pending edit and the series as loaded now.
+  // from the pending edit, the series as loaded now, and its occurrences
+  // as cached when the save went pending.
   const pendingFacts = scopeFacts(pendingSave?.variables.event, {
     event,
     loaded: pendingOccurrences,
