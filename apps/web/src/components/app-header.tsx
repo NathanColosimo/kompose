@@ -79,7 +79,7 @@ export function AppHeader({ user }: { user: User }) {
     >
       <div className="flex w-full items-center">
         {/* Left: macOS traffic-light safe area. */}
-        <div className="w-[76px] shrink-0 select-none" />
+        <div className="w-(--window-controls-width) shrink-0 select-none" />
 
         <div className="flex flex-1 justify-center">
           <SearchButton />
