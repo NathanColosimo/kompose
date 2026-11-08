@@ -126,6 +126,19 @@ describe("where This and following can start", () => {
     // 23:30 (spring forward), each with an added meeting at 5:00 the next
     // morning: which wall hour the last lands on depends on how a calendar
     // steps across the change, so a delete from the added meeting is off.
+    // A year of hourly meetings crosses both changes, which cancel out at
+    // its ends: still unsure.
+    expect(
+      followingCutUnsure({
+        masterRecurrence: [
+          "RRULE:FREQ=HOURLY;COUNT=8761",
+          "RDATE;TZID=America/New_York:20271102T100000",
+        ],
+        masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
+        originalStart: "2027-11-02T10:00:00-05:00",
+        seriesZone: zone,
+      })
+    ).toBe(true);
     const cases: [string, string, string][] = [
       [
         "2026-10-31T23:30:00-04:00",

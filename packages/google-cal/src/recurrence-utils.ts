@@ -398,9 +398,12 @@ function subDailyEndsBefore(
   }
   const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
   const last = first.instant.add({ [step]: interval * (count - 1) });
-  const offset = (at: Temporal.Instant) =>
-    at.toZonedDateTimeISO(seriesZone).offsetNanoseconds;
-  if (offset(first.instant) !== offset(last)) {
+  // Any clock change between the first and last meeting, even one undone
+  // by the next, makes the wall-time and elapsed-time readings differ.
+  const change = first.instant
+    .toZonedDateTimeISO(seriesZone)
+    .getTimeZoneTransition("next");
+  if (change && Temporal.Instant.compare(change.toInstant(), last) <= 0) {
     return null;
   }
   return Temporal.Instant.compare(last, split) < 0;

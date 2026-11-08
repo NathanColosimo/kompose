@@ -60,7 +60,7 @@ export const SCOPE_DIALOG_COPY = {
   } satisfies Record<SplitBlock, string>,
   /** Why deleting This and following is off for an occurrence. */
   deleteFollowingOff:
-    "This occurrence was added to the series on its own, so This and following can't be deleted from it.",
+    "This occurrence was added to the series on its own, and where the series' repeat ends can't be told, so This and following can't be deleted from it.",
   /** An added occurrence moved to a new day with a new repeat: no scope fits. */
   splitBlockedAll:
     "An added occurrence can't move to another day and change its repeat in one save. Change one, then the other.",
@@ -126,7 +126,9 @@ export function seriesCutUnsure(
     masterRecurrence: master.recurrence,
     masterStart: master.start,
     originalStart,
-    seriesZone: eventTimeZone(occurrence, appTimeZone),
+    // The series' own zone first, as the server reads it.
+    seriesZone:
+      master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone),
   });
 }
 
@@ -152,7 +154,9 @@ export function seriesSplitBlock(
     masterRecurrence: master.recurrence,
     masterStart: master.start,
     originalStart,
-    seriesZone: eventTimeZone(occurrence, appTimeZone),
+    // The series' own zone first, as the server reads it.
+    seriesZone:
+      master.start?.timeZone ?? eventTimeZone(occurrence, appTimeZone),
   });
 }
 
