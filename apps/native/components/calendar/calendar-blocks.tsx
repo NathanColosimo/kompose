@@ -151,6 +151,11 @@ interface BlockTextProps {
    */
   narrow?: boolean;
   /**
+   * Points the text has when the block's height bounds it to one line (a
+   * compact block, or a strip left above a later one); see `textRoom`.
+   */
+  room?: number;
+  /**
    * Narrower than a short word: one line with an ellipsis, since iOS would
    * otherwise wrap a word letter by letter.
    */
@@ -169,8 +174,33 @@ interface BlockTextProps {
  */
 const TIGHT_MINUTES = 20;
 
-/** Points of a covered strip taken by the block's ring and border. */
-const TIGHT_FRAME_PT = 2;
+/** Points the block's ring and border take on each side. */
+const BLOCK_FRAME_PT = 2;
+
+/** The top padding of a compact strip left above a later block (pt-0.5). */
+const COVERED_PAD_PT = 2;
+
+/**
+ * Points a compact block has for its one line of text: a strip left above
+ * a later block shows its visible minutes (minutes are points) less its
+ * ring, border and top padding; an uncovered one is centered in its
+ * height less its frame on both sides. Undefined for a taller block, whose
+ * padding and line cut-offs (`minutesFor`) leave room to spare.
+ */
+function textRoom(
+  textMinutes: number,
+  minutes: number,
+  height: number
+): number | undefined {
+  if (textMinutes >= COMPACT_MINUTES) {
+    return;
+  }
+  if (textMinutes < minutes) {
+    const pad = isTight(textMinutes, minutes) ? 0 : COVERED_PAD_PT;
+    return textMinutes - BLOCK_FRAME_PT - pad;
+  }
+  return height - 2 * BLOCK_FRAME_PT;
+}
 
 /** Whether a block's visible strip needs the tight title line. */
 function isTight(textMinutes: number, minutes: number) {
@@ -295,6 +325,7 @@ function BlockText({
   end,
   minutes,
   narrow = false,
+  room,
   sliver = false,
   start,
   struck = false,
@@ -305,12 +336,13 @@ function BlockText({
   const { isDarkColorScheme } = useColorScheme();
   const meta = isDarkColorScheme ? "text-foreground/70" : "text-foreground/80";
   const calendarScale = useCalendarTextScale();
-  // A thin strip left above a later block holds one 12pt line in the
-  // points showing (minutes are points), less its ring and border: its
-  // text grows only that far, so the block on top never covers it.
-  const scale = tight
-    ? Math.min(calendarScale, Math.max(1, (minutes - TIGHT_FRAME_PT) / 12))
-    : calendarScale;
+  // A block whose height bounds it to one line grows that line only as far
+  // as its room, so the line is never clipped or covered.
+  const line = tight || narrow ? 12 : 14;
+  const scale =
+    room === undefined
+      ? calendarScale
+      : Math.min(calendarScale, Math.max(1, room / line));
   // Short blocks keep one line, unless narrow: then the title takes the
   // lines (titleLines) and the time is left out.
   // The title and time line, then a detail line (13pt and a 2pt gap).
@@ -506,6 +538,7 @@ export function EventBlock({
             end={end}
             minutes={textMinutes}
             narrow={placement.width < NARROW_BLOCK_PT}
+            room={textRoom(textMinutes, minutes, placement.height)}
             sliver={placement.width < SLIVER_BLOCK_PT}
             start={start}
             tight={isTight(textMinutes, minutes)}
@@ -608,6 +641,7 @@ export function TaskBlock({
               end={end}
               minutes={textMinutes}
               narrow={narrow}
+              room={textRoom(textMinutes, minutes, placement.height)}
               sliver={placement.width < SLIVER_BLOCK_PT}
               start={start}
               struck={done}
