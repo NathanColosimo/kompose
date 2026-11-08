@@ -684,11 +684,13 @@ export function entireSeriesCost(params: {
     const day = first && dayOfStart(first.event.start, params.timeZone);
     return day ? { day, reason } : null;
   };
+  // A new length alone moves no slot, so none is checked.
   const lost = changed.filter(
     ({ slot }) =>
       movesStart ||
-      seriesMeetsAt({ recurrence, seriesZone, slot, start: times.start }) !==
-        true
+      (movesSlots &&
+        seriesMeetsAt({ recurrence, seriesZone, slot, start: times.start }) !==
+          true)
   );
   if (lost.length > 0) {
     return earliest(lost, movesStart ? "newStart" : "lostSlot");

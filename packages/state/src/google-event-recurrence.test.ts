@@ -2050,6 +2050,28 @@ describe("entireSeriesCost", () => {
     ).toBeUndefined();
   });
 
+  test("a new length alone doesn't check slots, even of a rule the check can't read", () => {
+    // Daily but weekends (an EXRULE), Dec 7 renamed, 9:00-10:00 for the
+    // series: no slot moves, so Google keeps Dec 7 as the server does.
+    const exceptWeekends = {
+      ...master,
+      recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=SA,SU"],
+    };
+    expect(
+      costOf({
+        edited: {
+          end: at("2026-12-03T10:00:00-05:00"),
+          start: at("2026-12-03T09:00:00-05:00"),
+        },
+        loaded: [opened, renamed],
+        master: exceptWeekends,
+        occurrence: opened,
+        recurrence: undefined,
+        timeZone: zone,
+      })
+    ).toBeUndefined();
+  });
+
   test("through the series' first meeting, its new time is the series'", () => {
     const first = meeting("2026-12-01T09:00:00-05:00");
     expect(
