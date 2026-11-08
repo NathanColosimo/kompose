@@ -107,15 +107,17 @@ const echo = (request: Request) => ({
 
 /**
  * A Google calendar holding `master` and its `exceptions`: it lists them
- * by iCalUID, finds a new series' occurrence by its original start, and
- * echoes writes. `answer` answers a request first when it returns one.
+ * by iCalUID, finds a series it created's occurrence by its original
+ * start, and echoes writes. `answer` answers a request first when it
+ * returns one.
  */
 const fakeGoogle = (
   master: Event,
   exceptions: Event[] = [],
   answer: (request: Request) => unknown = () => undefined
-) =>
-  stubGoogle((request) => {
+) => {
+  const created = new Map<string, Event>();
+  return stubGoogle((request) => {
     const answered = answer(request);
     if (answered) {
       return answered;
@@ -123,6 +125,11 @@ const fakeGoogle = (
     const path = request.url.pathname;
     if (request.method === "DELETE") {
       return new Response(null, { status: 204 });
+    }
+    if (request.method === "POST") {
+      const series = echo(request) as Event;
+      created.set(series.id, series);
+      return series;
     }
     if (request.method !== "GET") {
       return echo(request);
@@ -133,11 +140,13 @@ const fakeGoogle = (
     if (path.endsWith("/instances")) {
       const seriesId = path.split("/").at(-2) ?? "";
       const at = request.url.searchParams.get("originalStart") ?? "";
-      return { items: [occurrenceOf({ ...master, id: seriesId }, at)] };
+      const series = created.get(seriesId) ?? { ...master, id: seriesId };
+      return { items: [occurrenceOf(series, at)] };
     }
     const id = path.split("/").at(-1);
     return exceptions.find((exception) => exception.id === id) ?? master;
   });
+};
 
 const run = (effect: Effect.Effect<unknown, unknown>) =>
   Effect.runPromiseExit(effect);
@@ -307,7 +316,7 @@ describe("This and following", () => {
         reason: "dropsChangedOccurrences",
       },
       message:
-        "This would remove changes made to single occurrences (Nov 23), so it wasn't saved. Change the repeat from a later occurrence, or undo those changes first.",
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -504,6 +513,7 @@ describe("Entire series", () => {
     // Daily all day Nov 8-12, Nov 10 skipped, made 21:00 New York.
     const master: Event = {
       end: { date: "2026-11-09" },
+      iCalUID: "series@google.com",
       id: "series",
       recurrence: [
         "RRULE:FREQ=DAILY;UNTIL=20261112",
@@ -647,5 +657,234 @@ describe("Entire series", () => {
         )
       )
     ).toBe(true);
+  });
+});
+
+describe("what Google keeps as an occurrence's own", () => {
+  // Every other Monday from Nov 9: Nov 23, then Dec 7; no Nov 30.
+  const everyOtherWeek = ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"];
+
+  test("an exception just like the series (moved and moved back) holds nothing", async () => {
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("all", nov16, { recurrence: everyOtherWeek }))
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
+  test("an attendee's answer to one occurrence isn't a change to it", async () => {
+    // A guest accepted the series and declined Nov 30.
+    const guest = { email: "guest@example.com", responseStatus: "accepted" };
+    const series = { ...weekly, attendees: [guest] };
+    const declined = {
+      ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+      attendees: [{ ...guest, responseStatus: "declined" }],
+    };
+    const google = fakeGoogle(series, [declined]);
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    expect(
+      Exit.isSuccess(
+        await run(edit("all", opened, { recurrence: everyOtherWeek }))
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
+  test("an Entire series time change keeps a deleted occurrence deleted", async () => {
+    // Nov 30 was deleted on its own (a cancelled exception at 9:00); at
+    // 10:00 it would be a new meeting unless skipped there.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    const exit = await run(
+      edit("all", weekly, {
+        end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE;TZID=America/New_York:20261130T100000",
+    ]);
+  });
+
+  test("an Entire series time change is refused while an occurrence is moved", async () => {
+    // Google ties Nov 23's move to its 9:00 slot, which a 10:00 series
+    // no longer has.
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T11:30:00-05:00",
+        start: "2026-11-23T11:00:00-05:00",
+      }),
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a rule with an exclusion it can't read is refused, not guessed", async () => {
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-30T09:00:00-05:00", {
+        end: "2026-11-30T11:30:00-05:00",
+        start: "2026-11-30T11:00:00-05:00",
+      }),
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", nov16, {
+          recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=MO"],
+        })
+      )
+    ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a deleted occurrence Google lists with only its ids is still read", async () => {
+    const google = fakeGoogle(weekly, [
+      {
+        id: "series_20261130T140000Z",
+        originalStartTime: {
+          dateTime: "2026-11-30T09:00:00-05:00",
+          timeZone: zone,
+        },
+        recurringEventId: "series",
+        status: "cancelled",
+      } as Event,
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", nov16, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    // Skipped at the series' own time (Google takes it in UTC).
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20261130T140000Z",
+    ]);
+  });
+
+  test("a carried occurrence keeps its own meeting link", async () => {
+    const meet = {
+      conferenceId: "abc-defg-hij",
+      conferenceSolution: { key: { type: "hangoutsMeet" } },
+    };
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        conferenceData: meet,
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", nov16, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    const [, carried] = google.writes();
+    expect(carried?.body?.conferenceData).toEqual(meet);
+    expect(carried?.url.searchParams.get("conferenceDataVersion")).toBe("1");
+    // It keeps its place in the new series.
+    expect(carried?.body?.recurringEventId).toBe(google.writes()[0]?.body?.id);
+  });
+
+  test("an original start written without an offset is read in its zone", async () => {
+    const opened = {
+      ...nov16,
+      originalStartTime: { dateTime: "2026-11-16T09:00:00", timeZone: zone },
+    };
+    const google = fakeGoogle(weekly, [opened]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    const [created, cut] = google.writes();
+    expect(created?.body?.start).toEqual({
+      dateTime: "2026-11-16T09:00:00-05:00",
+      timeZone: zone,
+    });
+    expect(cut?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261116T135959Z",
+    ]);
+  });
+});
+
+describe("a series save sends only what the user changed", () => {
+  // As a client may save it: the opened occurrence's own times (left as
+  // they were) and the one field changed, nothing else.
+  const save = (
+    scope: "all" | "following",
+    occurrence: Event,
+    changes: Partial<CreateEvent>
+  ) =>
+    service().updateEvent(
+      "primary",
+      occurrence.id,
+      { end: occurrence.end, start: occurrence.start, ...changes },
+      scope,
+      occurrence
+    );
+  const moved = {
+    ...occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-17T11:30:00-05:00",
+      start: "2026-11-17T11:00:00-05:00",
+    }),
+    description: "Bring the draft",
+    summary: "Planning (moved)",
+  };
+
+  test("Entire series: the series keeps its own fields and slot", async () => {
+    const google = fakeGoogle(weekly, [moved]);
+    expect(
+      Exit.isSuccess(await run(save("all", moved, { location: "Room 2" })))
+    ).toBe(true);
+    const [written] = google.writes();
+    expect(written?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+      location: "Room 2",
+      start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+      summary: "Planning",
+    });
+    expect(written?.body).not.toHaveProperty("description");
+  });
+
+  test("This and following: the new series is the series', the moved one stays moved", async () => {
+    const google = fakeGoogle(weekly, [moved]);
+    expect(
+      Exit.isSuccess(
+        await run(save("following", moved, { location: "Room 2" }))
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body).toMatchObject({
+      location: "Room 2",
+      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+      summary: "Planning",
+    });
+    expect(created?.body).not.toHaveProperty("description");
+    expect(carried?.body).toMatchObject({
+      description: "Bring the draft",
+      location: "Room 2",
+      start: { dateTime: "2026-11-17T11:00:00-05:00", timeZone: zone },
+      summary: "Planning (moved)",
+    });
   });
 });

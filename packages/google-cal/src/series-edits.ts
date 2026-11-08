@@ -7,7 +7,7 @@
  */
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
-import { startInstant } from "./until";
+import { DATE_ONLY, startInstant } from "./until";
 
 /**
  * Why Kompose won't make a series write. Each is refused before anything
@@ -51,7 +51,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This series meets more than once a day, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences": {
       const days = refusal.originalStarts.map(dayName).join(", ");
-      return `This would remove changes made to single occurrences (${days}), so it wasn't saved. Change the repeat from a later occurrence, or undo those changes first.`;
+      return `This would undo changes made to single occurrences (${days}), so it wasn't saved. Save it with This and following from a later occurrence, or undo those changes first.`;
     }
     default:
       return refusal satisfies never;
@@ -63,7 +63,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
  * say which event this is (its ids, its place in the series, its
  * status), or are its times and rule, which each write sets itself.
  */
-const NOT_SERIES_FIELDS = new Set<string>([
+const NOT_SERIES_FIELDS = new Set<keyof Event>([
   "end",
   "eventType",
   "htmlLink",
@@ -77,25 +77,46 @@ const NOT_SERIES_FIELDS = new Set<string>([
   "start",
   "status",
 ]);
-const SERIES_FIELDS = Object.keys(EventSchema.shape).filter(
-  (field) => !NOT_SERIES_FIELDS.has(field)
-) as (keyof CreateEvent)[];
+// Object.keys loses the schema's key type: every key is an Event field,
+// and those left are CreateEvent's too.
+const SERIES_FIELDS = (
+  Object.keys(EventSchema.shape) as (keyof Event)[]
+).filter((field) => !NOT_SERIES_FIELDS.has(field)) as (keyof CreateEvent)[];
 
-const same = (a: unknown, b: unknown) =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+type Attendee = NonNullable<Event["attendees"]>[number];
 
 /**
- * The fields of `edited` that differ from `from`, the event it was made
- * from: what the user changed.
+ * A field's value as compared across a series: attendees without their
+ * answers, which each one gives per occurrence (a decline to one meeting
+ * is that attendee's, not a change made to the occurrence).
+ */
+function comparable(field: keyof CreateEvent, value: unknown): unknown {
+  if (field !== "attendees" || !Array.isArray(value)) {
+    return value ?? null;
+  }
+  return (value as Attendee[]).map(
+    ({ comment: _comment, responseStatus: _response, ...attendee }) => attendee
+  );
+}
+
+const same = (field: keyof CreateEvent, a: unknown, b: unknown) =>
+  JSON.stringify(comparable(field, a)) === JSON.stringify(comparable(field, b));
+
+/**
+ * The fields the user changed in a save made from `from`, the occurrence
+ * as the client loaded it: those `edited` has and that differ from it. A
+ * field left out is unchanged (send "" or [] to clear one), so a client
+ * may send the whole form or only what changed.
  */
 export function changedFields(
-  edited: CreateEvent,
+  edited: Partial<CreateEvent>,
   from: Event
 ): Partial<CreateEvent> {
   return Object.fromEntries(
-    SERIES_FIELDS.filter((field) => !same(edited[field], from[field])).map(
-      (field) => [field, edited[field]]
-    )
+    SERIES_FIELDS.filter(
+      (field) =>
+        edited[field] !== undefined && !same(field, edited[field], from[field])
+    ).map((field) => [field, edited[field]])
   );
 }
 
@@ -138,7 +159,7 @@ export function ownChanges(
 ): Partial<CreateEvent> {
   const fields = Object.fromEntries(
     SERIES_FIELDS.filter(
-      (field) => !same(occurrence[field], master[field])
+      (field) => !same(field, occurrence[field], master[field])
     ).map((field) => [field, occurrence[field]])
   );
   return keepsTimes(occurrence, slot, zone)
@@ -191,5 +212,3 @@ export function placeInNewSeries(params: {
     })
     .toString({ smallestUnit: "second", timeZoneName: "never" });
 }
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
