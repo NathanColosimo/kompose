@@ -1089,6 +1089,44 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
+  test("keeps skips before the occurrence made all day for the series", () => {
+    // Daily from Nov 9, Nov 10 and Nov 17 skipped; the Nov 16 occurrence
+    // made all day for the series: both skips stay, with or without the
+    // series' own start to count from, and on the server's lining-up.
+    const rule = [
+      "RRULE:FREQ=DAILY",
+      "EXDATE;TZID=America/New_York:20261110T090000,20261117T090000",
+    ];
+    const expected = [
+      "RRULE:FREQ=DAILY",
+      "EXDATE;VALUE=DATE:20261110,20261117",
+    ];
+    for (const masterStart of [
+      { dateTime: "2026-11-09T09:00:00-05:00" },
+      undefined,
+    ]) {
+      expect(
+        seriesRecurrenceForSave({
+          editedStart: { date: "2026-11-16" },
+          masterRecurrence: rule,
+          masterStart,
+          occurrence: {
+            originalStartTime: { dateTime: "2026-11-16T09:00:00-05:00" },
+            recurringEventId: "series",
+            start: { dateTime: "2026-11-16T09:00:00-05:00" },
+          },
+          recurrence: undefined,
+          timeZone: "America/New_York",
+        })
+      ).toEqual(expected);
+    }
+    expect(
+      matchRecurrenceToStart(rule, { date: "2026-11-09" }, "America/New_York", {
+        dateTime: "2026-11-09T09:00:00-05:00",
+      })
+    ).toEqual(expected);
+  });
+
   test("counts a COUNT from the series' first day", () => {
     // From Nov 2: daily 9:00, and 15:00 five times (Nov 2-6). Made all day
     // through the Nov 12 occurrence: Nov 9's only meeting was skipped.
