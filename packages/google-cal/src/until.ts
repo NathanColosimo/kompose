@@ -446,9 +446,6 @@ function allDayDates(params: {
   };
   const skipped = new Set(momentsOf("EXDATE").map((m) => m.epochMilliseconds));
   const added = momentsOf("RDATE");
-  const cancelled = new Set(
-    added.map((m) => m.epochMilliseconds).filter((ms) => skipped.has(ms))
-  );
   const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
   // The times a rule meets on a day, or null when they can't be listed.
@@ -478,6 +475,32 @@ function allDayDates(params: {
       )
     );
   };
+  // The rules' meetings on a day, as moments; null when they can't be listed.
+  const ruleMeetings = (day: Temporal.PlainDate): number[] | null => {
+    const meetings: number[] = [];
+    for (const rule of rules) {
+      if (isRuleDay(rule, anchor, day) === false) {
+        continue;
+      }
+      const times = ruleTimes(rule);
+      if (!times) {
+        return null;
+      }
+      meetings.push(...times.map((time) => at(day, time)));
+    }
+    return meetings;
+  };
+  // An added meeting that was skipped adds nothing, unless a rule meets
+  // then too: that skip is the rule's meeting's.
+  const cancelled = new Set(
+    added
+      .filter((moment) => {
+        const ms = moment.epochMilliseconds;
+        const day = moment.toZonedDateTimeISO(timeZone).toPlainDate();
+        return skipped.has(ms) && !ruleMeetings(day)?.includes(ms);
+      })
+      .map((moment) => moment.epochMilliseconds)
+  );
   return (name, value) => {
     const ms = value.instant?.epochMilliseconds;
     if (ms === undefined || cancelled.has(ms)) {
@@ -486,18 +509,12 @@ function allDayDates(params: {
     if (name !== "EXDATE") {
       return true;
     }
-    const meetings: number[] = [];
-    for (const rule of rules) {
-      if (isRuleDay(rule, anchor, value.day) === false) {
-        continue;
-      }
-      const times = ruleTimes(rule);
-      if (!times) {
-        // A once-a-day series' time unknown: the skip is its meeting's.
-        return !severalADay;
-      }
-      meetings.push(...times.map((time) => at(value.day, time)));
+    const listed = ruleMeetings(value.day);
+    if (!listed) {
+      // A once-a-day series' time unknown: the skip is its meeting's.
+      return !severalADay;
     }
+    const meetings = [...listed];
     for (const moment of added) {
       const local = moment.toZonedDateTimeISO(timeZone).toPlainDate();
       if (
@@ -661,7 +678,9 @@ export function matchRecurrenceToStart(
   const added = addedMoments(recurrence, timeZone);
   const keepAsDate = start.date
     ? allDayDates({
-        anchor: baseDay ?? Temporal.PlainDate.from(start.date),
+        // Rules that take their day from the start count from the new
+        // one (followStart has moved them and their skips there).
+        anchor: Temporal.PlainDate.from(start.date),
         base,
         recurrence,
         rules,

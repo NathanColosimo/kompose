@@ -1036,6 +1036,32 @@ describe("seriesRecurrenceForSave", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU", "RDATE;VALUE=DATE:20261110"]);
   });
 
+  test("keeps skips when a series moves a day and goes all day", () => {
+    // Rules that take their day from the start (monthly on the 9th, or
+    // weekly on the start's weekday) moved to Nov 10 and made all day:
+    // their moved skip becomes its date.
+    const movedAllDay = (rule: string, exdate: string) =>
+      seriesRecurrenceForSave({
+        editedStart: { date: "2026-11-10" },
+        masterRecurrence: [rule, `EXDATE;TZID=America/New_York:${exdate}`],
+        occurrence: {
+          originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+          recurringEventId: "series",
+          start: { dateTime: "2026-11-09T09:00:00-05:00" },
+        },
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      });
+    expect(movedAllDay("RRULE:FREQ=MONTHLY", "20261209T090000")).toEqual([
+      "RRULE:FREQ=MONTHLY",
+      "EXDATE;VALUE=DATE:20261210",
+    ]);
+    expect(movedAllDay("RRULE:FREQ=WEEKLY", "20261116T090000")).toEqual([
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE;VALUE=DATE:20261117",
+    ]);
+  });
+
   describe("making a timed series all day", () => {
     const allDay = (recurrence: string[]) =>
       matchRecurrenceToStart(
@@ -1072,6 +1098,22 @@ describe("seriesRecurrenceForSave", () => {
           "EXDATE;TZID=America/New_York:20261116T150000",
         ])
       ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
+    });
+
+    test("treats a skip at a rule's own time as the rule's", () => {
+      // An added Nov 16 9:00 on top of the Monday 9:00 meeting, skipped:
+      // that skip is the Monday meeting's, so Nov 16 stays skipped.
+      expect(
+        allDay([
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261116T090000",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ])
+      ).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;VALUE=DATE:20261116",
+        "EXDATE;VALUE=DATE:20261116",
+      ]);
     });
 
     test("keeps a several-a-day day unless all its times were skipped", () => {
