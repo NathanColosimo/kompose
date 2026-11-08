@@ -22,18 +22,34 @@ describe("keyboardCreateStart", () => {
     expect(start("09:10")).toBe("2026-11-09T09:30:00");
   });
 
-  test("in the hour the clocks repeat, the next half hour of that same hour", () => {
-    // 1:10 AM in the second 1 AM (EST), as the clocks fall back.
-    const repeated = Temporal.ZonedDateTime.from(
-      "2026-11-01T01:10-05:00[America/New_York]"
-    );
-    const created = keyboardCreateStart({
-      now: repeated,
-      visibleDays: [Temporal.PlainDate.from("2026-11-01")],
-    });
-    expect(created.toString()).toBe(
-      "2026-11-01T01:30:00-05:00[America/New_York]"
-    );
+  test("never a time the clocks repeat, which the editor's form can't tell apart", () => {
+    // The form keeps a date and an "HH:mm", so a 1:30 AM as the clocks
+    // fall back would save as the first 1:30, 40 minutes in the past.
+    const names = (start: Temporal.ZonedDateTime) =>
+      ["earlier", "later"].map((disambiguation) =>
+        start
+          .toPlainDateTime()
+          .toZonedDateTime(start.timeZoneId, {
+            disambiguation: disambiguation as "earlier" | "later",
+          })
+          .toString()
+      );
+    const fallBack = Temporal.PlainDate.from("2026-11-01");
+    for (const at of [
+      "2026-11-01T00:50-04:00[America/New_York]",
+      "2026-11-01T01:10-04:00[America/New_York]",
+      "2026-11-01T01:10-05:00[America/New_York]",
+    ]) {
+      const created = keyboardCreateStart({
+        now: Temporal.ZonedDateTime.from(at),
+        visibleDays: [fallBack],
+      });
+      expect(created.toString()).toBe(
+        "2026-11-01T02:00:00-05:00[America/New_York]"
+      );
+      const [earlier, later] = names(created);
+      expect(earlier).toBe(later);
+    }
   });
 
   test("9 AM tomorrow once today has no half hour left", () => {
