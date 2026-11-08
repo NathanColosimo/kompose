@@ -5,7 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { canWriteCalendar } from "@kompose/google-cal/schema";
-import { matchUntilToStart } from "@kompose/google-cal/until";
+import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -699,13 +699,16 @@ function savedSeriesRecurrence(
     : masterRecurrence;
 }
 
-/** An all-day series ends on a date, a timed one on a date-time. */
+/**
+ * The repeat in the start's form: an all-day series' UNTIL and skipped
+ * days are dates, a timed one's date-times.
+ */
 function matchedRecurrence(
   recurrence: string[] | undefined,
-  allDay: boolean,
+  start: { date?: string; dateTime?: string },
   timeZone: string
 ): string[] | undefined {
-  return recurrence && matchUntilToStart(recurrence, allDay, timeZone);
+  return recurrence && matchRecurrenceToStart(recurrence, start, timeZone);
 }
 
 /**
@@ -1487,7 +1490,7 @@ export default function CalendarTab() {
         location: currentDraft.location.trim() || undefined,
         recurrence: matchedRecurrence(
           recurrenceToSend(currentDraft, masterRecurrence),
-          currentDraft.allDay,
+          startPayload,
           zone
         ),
         start: startPayload,

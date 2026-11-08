@@ -1,39 +1,66 @@
+import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
 
-const STRIP_TIME_SEPARATORS = /[-:]/g;
-const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/;
 const UNTIL_REGEX = /;?UNTIL=[^;]+/;
-const COUNT_REGEX = /;?COUNT=[^;]+/;
+const COUNT_REGEX = /;?COUNT=([^;]+)/;
+const COUNT_PART = /([:;])COUNT=[^;]+/;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * The series' rule cut to end just before the occurrence that started at
+ * `originalStart` (a "2026-11-10" date for an all-day series, a date-time
+ * otherwise): the day before as a date for an all-day series (UNTIL takes
+ * its start's form), the second before otherwise. COUNT goes; UNTIL
+ * replaces it.
+ */
 export function truncateRecurrenceForFollowing(
   recurrence: string[],
-  occurrenceStart: Date,
-  allDay: boolean
+  originalStart: string
 ): string[] {
-  const baseRule = recurrence[0];
-  if (!baseRule) {
-    return recurrence;
-  }
+  const until = DATE_ONLY.test(originalStart)
+    ? Temporal.PlainDate.from(originalStart)
+        .subtract({ days: 1 })
+        .toString()
+        .replace(/-/g, "")
+    : `${Temporal.Instant.from(originalStart)
+        .subtract({ seconds: 1 })
+        .toString()
+        .slice(0, 19)
+        .replace(/[-:]/g, "")}Z`;
+  return recurrence.map((line) =>
+    line.startsWith("RRULE:")
+      ? `${line.replace(COUNT_REGEX, "").replace(UNTIL_REGEX, "")};UNTIL=${until}`
+      : line
+  );
+}
 
-  const untilDate = new Date(occurrenceStart);
-  if (allDay) {
-    untilDate.setDate(untilDate.getDate() - 1);
-    untilDate.setHours(0, 0, 0, 0);
-  } else {
-    untilDate.setSeconds(untilDate.getSeconds() - 1);
-  }
-  const untilIso = untilDate
-    .toISOString()
-    .replace(STRIP_TIME_SEPARATORS, "")
-    .replace(STRIP_MILLIS_SUFFIX, "Z");
+/**
+ * The rule for a series' following part when it keeps the series' COUNT:
+ * what's left of it after the `used` occurrences before the split, so a
+ * five-time series split at its third doesn't run five more times.
+ */
+export function withRemainingCount(
+  recurrence: string[],
+  used: number
+): string[] {
+  return recurrence.map((line) => {
+    const count = line.startsWith("RRULE:")
+      ? Number(COUNT_REGEX.exec(line)?.[1])
+      : Number.NaN;
+    return Number.isFinite(count)
+      ? line.replace(
+          COUNT_PART,
+          `$1COUNT=${Math.max(1, count - used)}`
+        )
+      : line;
+  });
+}
 
-  // COUNT and UNTIL are mutually exclusive per RFC 5545 — strip COUNT before adding UNTIL.
-  const withoutCountOrUntil = baseRule
-    .replace(COUNT_REGEX, "")
-    .replace(UNTIL_REGEX, "");
-  const nextRule = `${withoutCountOrUntil};UNTIL=${untilIso}`;
-
-  return [nextRule, ...recurrence.slice(1)];
+/** Whether a series' rule ends after a number of times. */
+export function hasCount(recurrence: string[]): boolean {
+  return recurrence.some(
+    (line) => line.startsWith("RRULE:") && COUNT_REGEX.test(line)
+  );
 }
 
 // Strip server-managed fields so create/update inputs stay valid.

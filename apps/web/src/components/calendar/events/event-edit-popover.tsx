@@ -7,7 +7,7 @@ import {
   type RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
-  matchUntilToStart,
+  matchRecurrenceToStart,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
@@ -23,6 +23,7 @@ import {
 } from "@kompose/state/event-recurrence-words";
 import {
   buildGoogleEventRecurrenceRule,
+  dayInZone,
   defaultUntilDay,
   type EventRecurrencePattern,
   eventTimeZone,
@@ -35,6 +36,7 @@ import {
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
   setPrimaryRecurrenceRule,
+  timeZoneCity,
   weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
@@ -357,6 +359,7 @@ function RecurrenceEditor({
   onChange,
   start,
   timeZone,
+  zoneCity,
 }: {
   /** An all-day series ends on a date; a timed one after that day. */
   allDay: boolean;
@@ -366,6 +369,8 @@ function RecurrenceEditor({
   start: Temporal.PlainDate;
   /** The series' zone, where its end day is counted. */
   timeZone: string;
+  /** The series' zone's city when it isn't the app's ("Tokyo"). */
+  zoneCity: string | null;
 }) {
   const pattern = useMemo(
     () => parseGoogleEventRecurrenceRule(recurrenceRule),
@@ -390,6 +395,10 @@ function RecurrenceEditor({
         <Repeat className="mt-px size-3.5 shrink-0 text-muted-foreground" />
         <span className={summary ? "" : "text-muted-foreground"}>
           {summary ?? "Doesn't repeat"}
+          {/* Its days are the series' zone's, not the ones shown here. */}
+          {zoneCity ? (
+            <span className="text-muted-foreground"> · {zoneCity} time</span>
+          ) : null}
         </span>
       </div>
 
@@ -1189,7 +1198,11 @@ function buildCreatePayload(
         // An all-day series ends on a date, a timed one on a date-time.
         recurrence:
           values.recurrence?.length > 0
-            ? matchUntilToStart(values.recurrence, values.allDay, timeZone)
+            ? matchRecurrenceToStart(
+                values.recurrence,
+                temporalPayload.startPayload,
+                timeZone
+              )
             : undefined,
         start: temporalPayload.startPayload,
         summary: trimmedTitle,
@@ -1294,9 +1307,9 @@ function buildEditPayload(
       location: values.location ?? "",
       // An all-day series ends on a date, a timed one on a date-time.
       recurrence: patternChanged
-        ? matchUntilToStart(
+        ? matchRecurrenceToStart(
             values.recurrence ?? [],
-            values.allDay,
+            temporalPayload.startPayload,
             eventTimeZone(ctx.event, ctx.timeZone)
           )
         : undefined,
@@ -1486,8 +1499,9 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading,
   readOnly = false,
   recurrenceRule,
-  startDate,
+  seriesStart,
   seriesTimeZone,
+  showsZone,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1499,10 +1513,15 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading: boolean;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
-  /** The series' start, for the rule's words and the editor's defaults. */
-  startDate: Date | null;
+  /**
+   * The series' start day in its own zone, for the rule's words and the
+   * editor's defaults.
+   */
+  seriesStart: Temporal.PlainDate | null;
   /** The series' zone (the app's for a new one), where its days count. */
   seriesTimeZone: string;
+  /** The series' zone isn't the app's: the editor says its days are there. */
+  showsZone: boolean;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1517,7 +1536,7 @@ function EventAllDayAndRecurrenceRow({
   const repeats = recurrenceRule
     ? describeEventRecurrence({
         rules: [recurrenceRule],
-        start: startDate ? pickerDateToTemporal(startDate) : undefined,
+        start: seriesStart ?? undefined,
       })
     : null;
   const repeatLabel = repeats
@@ -1574,8 +1593,9 @@ function EventAllDayAndRecurrenceRow({
             allDay={allDay}
             onChange={onRecurrenceChange}
             recurrenceRule={recurrenceRule}
-            start={pickerDateToTemporal(startDate ?? new Date())}
+            start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
             timeZone={seriesTimeZone}
+            zoneCity={showsZone ? timeZoneCity(seriesTimeZone) : null}
           />
         </PopoverContent>
       </Popover>
@@ -2068,6 +2088,8 @@ export function EventEditForm({
   const recurrenceEditedRef = useRef(false);
   // Days in the zone the app shows (and saves) times in.
   const timeZone = useAtomValue(timezoneAtom);
+  // An existing series' days count in its own zone; a new one's here.
+  const seriesTimeZone = eventTimeZone(event, timeZone);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
@@ -2273,25 +2295,44 @@ export function EventEditForm({
     hasUserEditedRef.current = true;
     const before = getValues();
     applyMovedStart(before, setValue, next);
-    followRepeat(before.startDate);
+    followRepeat(before);
   };
+
+  /** The day a form start falls on in the series' zone. */
+  const seriesDayOf = (values: {
+    allDay: boolean;
+    startDate?: Date | null;
+    startTime: string;
+  }): Temporal.PlainDate | null =>
+    values.startDate
+      ? dayInZone(
+          pickerDateToTemporal(values.startDate),
+          values.allDay || !values.startTime
+            ? null
+            : Temporal.PlainTime.from(values.startTime),
+          timeZone,
+          seriesTimeZone
+        )
+      : null;
 
   /**
    * A series' repeat follows its start ("2nd Tue" to "3rd Wed", an end the
    * start passed moves on). Not for one occurrence: moving it is a
    * reschedule, and its series stays as it is.
    */
-  const followRepeat = (from: Date | null) => {
+  const followRepeat = (before: EventFormValues) => {
     const values = getValues();
-    if (event?.recurringEventId || !(from && values.startDate)) {
+    const from = seriesDayOf(before);
+    const to = seriesDayOf(values);
+    if (event?.recurringEventId || !(from && to)) {
       return;
     }
     const recurrence = followStart({
       allDay: values.allDay,
-      from: pickerDateToTemporal(from),
+      from,
       recurrence: values.recurrence,
-      timeZone: eventTimeZone(event, timeZone),
-      to: pickerDateToTemporal(values.startDate),
+      timeZone: seriesTimeZone,
+      to,
     });
     if (recurrence !== values.recurrence) {
       recurrenceEditedRef.current = true;
@@ -2583,8 +2624,9 @@ export function EventEditForm({
         readOnly={readOnly}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
-        seriesTimeZone={eventTimeZone(event, timeZone)}
-        startDate={watchedValues.startDate ?? null}
+        seriesStart={seriesDayOf(watchedValues)}
+        seriesTimeZone={seriesTimeZone}
+        showsZone={seriesTimeZone !== timeZone}
       />
       <div className="grid grid-cols-2 gap-2">
         <Controller

@@ -3,6 +3,7 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
+import { timeZoneCity } from "./google-event-recurrence";
 
 export interface RecurrenceScopeOption<TValue extends string = string> {
   label: string;
@@ -77,16 +78,6 @@ export interface EventSaveChanges {
 }
 
 /**
- * "Tokyo" for "Asia/Tokyo", "New York" for "America/New_York"; null for a
- * zone that isn't a place ("UTC", "Etc/GMT-9", whose sign reads backwards).
- */
-function zoneCity(timeZone: string): string | null {
-  const [area, ...rest] = timeZone.split("/");
-  const city = rest.at(-1);
-  return area === "Etc" || !city ? null : city.replace(/_/g, " ");
-}
-
-/**
  * Scopes a recurring event's save can't use. A calendar move applies to
  * the whole series. One occurrence can't repeat differently from its
  * series. A day moved through one occurrence can't apply to the whole
@@ -138,7 +129,9 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
       ? SCOPE_DIALOG_COPY.seriesFailed
       : SCOPE_DIALOG_COPY.seriesLoading;
   }
-  const city = changes.seriesTimeZone ? zoneCity(changes.seriesTimeZone) : null;
+  const city = changes.seriesTimeZone
+    ? timeZoneCity(changes.seriesTimeZone)
+    : null;
   return city
     ? `A new day in ${city} time applies to this occurrence, or from it on.`
     : SCOPE_DIALOG_COPY.moveDate;

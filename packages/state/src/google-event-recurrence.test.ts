@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
 import {
   buildGoogleEventRecurrenceRule,
+  dayInZone,
   type EventRecurrencePattern,
   followStart,
   getPrimaryRecurrenceRule,
@@ -240,6 +241,29 @@ describe("followStart", () => {
         "2026-12-12"
       )
     ).toBe("RRULE:FREQ=WEEKLY;UNTIL=20270313T045959Z");
+  });
+});
+
+describe("dayInZone", () => {
+  test("names the day a shown start falls on in the series' zone", () => {
+    // Monday 7 PM in New York is Tuesday 9 AM in Tokyo.
+    expect(
+      dayInZone(
+        day("2026-11-09"),
+        Temporal.PlainTime.from("19:00"),
+        "America/New_York",
+        "Asia/Tokyo"
+      ).toString()
+    ).toBe("2026-11-10");
+    // All day: the same day everywhere.
+    expect(
+      dayInZone(
+        day("2026-11-09"),
+        null,
+        "America/New_York",
+        "Asia/Tokyo"
+      ).toString()
+    ).toBe("2026-11-09");
   });
 });
 

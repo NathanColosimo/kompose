@@ -16,6 +16,7 @@ import {
 } from "@kompose/state/event-recurrence-words";
 import {
   buildGoogleEventRecurrenceRule,
+  dayInZone,
   defaultUntilDay,
   type EventRecurrenceFrequency,
   type EventRecurrencePattern,
@@ -26,6 +27,7 @@ import {
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
+  timeZoneCity,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
 import { getMapsSearchUrl } from "@kompose/state/locations";
@@ -163,6 +165,7 @@ function RecurrenceRow({
   isExpanded,
   onToggle,
   recurrence,
+  zoneCity,
   ...editor
 }: React.ComponentProps<typeof RecurrenceEditorSection> & {
   /** The occurrence's pattern is still loading. */
@@ -170,12 +173,16 @@ function RecurrenceRow({
   isExpanded: boolean;
   onToggle: () => void;
   recurrence: string[];
+  /** The series' zone's city when it isn't the app's ("Tokyo"). */
+  zoneCity: string | null;
 }) {
-  const repeats =
+  const said =
     describeEventRecurrence({
       rules: recurrence,
       start: editor.startDate,
     }) ?? "Doesn't repeat";
+  // Its days are the series' zone's, not the ones shown here.
+  const repeats = zoneCity ? `${said} · ${zoneCity} time` : said;
   return (
     <>
       <Pressable
@@ -1067,6 +1074,7 @@ function EventDateTimeRow({
   startDatePickerValue,
   startTimePickerValue,
   timeZone,
+  appTimeZone,
 }: {
   allDay: boolean;
   endDate: Temporal.PlainDate;
@@ -1084,6 +1092,8 @@ function EventDateTimeRow({
   startTimePickerValue: Date;
   /** The series' zone, where its days count. */
   timeZone: string;
+  /** The zone the start is shown (and picked) in. */
+  appTimeZone: string;
 }) {
   // Moving the start keeps the event's length (shared with web).
   const moveStart = (next: {
@@ -1093,13 +1103,18 @@ function EventDateTimeRow({
     const before = getValues();
     const moved = moveEventStart(before, next);
     setValue("startDate", moved.startDate, { shouldDirty: true });
+    // Days in the series' zone, where its repeat counts them.
+    const seriesDay = (
+      date: Temporal.PlainDate,
+      time: Temporal.PlainTime | null
+    ) => dayInZone(date, before.allDay ? null : time, appTimeZone, timeZone);
     const recurrence = followsRepeat
       ? followStart({
           allDay: before.allDay,
-          from: before.startDate,
+          from: seriesDay(before.startDate, before.startTime),
           recurrence: before.recurrence,
           timeZone,
-          to: moved.startDate,
+          to: seriesDay(moved.startDate, moved.startTime),
         })
       : before.recurrence;
     if (recurrence !== before.recurrence) {
@@ -1434,9 +1449,18 @@ export function EventEditorSheet({
       parsedRecurrence={parsedRecurrence}
       recurrence={recurrence}
       rule={primaryRule}
-      startDate={values.startDate}
+      // The start's day in the series' zone: its repeat's days count there.
+      startDate={dayInZone(
+        values.startDate,
+        values.allDay ? null : values.startTime,
+        appTimeZone,
+        seriesTimeZone
+      )}
       timeZone={seriesTimeZone}
       updateRecurrence={updateRecurrence}
+      zoneCity={
+        seriesTimeZone === appTimeZone ? null : timeZoneCity(seriesTimeZone)
+      }
     />
   );
 
@@ -1556,6 +1580,7 @@ export function EventEditorSheet({
 
         <EventDateTimeRow
           allDay={allDay}
+          appTimeZone={appTimeZone}
           endDate={endDate}
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}

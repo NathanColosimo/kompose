@@ -3,7 +3,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
-  matchUntilToStart,
+  matchRecurrenceToStart,
   untilRuleForDay,
   untilRuleToDay,
 } from "@kompose/google-cal/until";
@@ -430,6 +430,34 @@ export function eventTimeZone(
   return event?.start?.timeZone ?? fallback;
 }
 
+/**
+ * The day a start shown in `fromZone` falls on in the series' zone: a
+ * Tuesday 9:00 Tokyo meeting shown Monday evening in New York is on
+ * Tuesday, which is the day its repeat counts. An all-day start (no time)
+ * is the same day everywhere.
+ */
+export function dayInZone(
+  date: Temporal.PlainDate,
+  time: Temporal.PlainTime | null,
+  fromZone: string,
+  toZone: string
+): Temporal.PlainDate {
+  if (!time || fromZone === toZone) {
+    return date;
+  }
+  return date
+    .toZonedDateTime({ plainTime: time, timeZone: fromZone })
+    .withTimeZone(toZone)
+    .toPlainDate();
+}
+
+/** "Tokyo" for "Asia/Tokyo"; null for a zone that isn't a place ("UTC"). */
+export function timeZoneCity(timeZone: string): string | null {
+  const [area, ...rest] = timeZone.split("/");
+  const city = rest.at(-1);
+  return area === "Etc" || !city ? null : city.replace(/_/g, " ");
+}
+
 /** The event's own zone when it isn't `appZone`, for saying so. */
 export function otherTimeZone(
   event: Pick<GoogleEvent, "start"> | undefined,
@@ -517,7 +545,7 @@ export function seriesRecurrenceForSave(params: {
           to,
         })
       : masterRecurrence;
-  const matched = matchUntilToStart(followed, allDay, timeZone);
+  const matched = matchRecurrenceToStart(followed, editedStart, timeZone);
   return matched === masterRecurrence ? undefined : matched;
 }
 

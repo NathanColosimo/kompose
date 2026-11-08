@@ -13,11 +13,13 @@ import {
   RecurrenceScope,
 } from "./schema";
 import {
+  hasCount,
   sanitizeEventPayload,
   truncateRecurrenceForFollowing,
+  withRemainingCount,
 } from "./recurrence-utils";
 import { seriesTimesForEdit } from "./series-times";
-import { matchUntilToStart } from "./until";
+import { matchRecurrenceToStart } from "./until";
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -43,9 +45,9 @@ function keptRecurrence(
   start: { date?: string; timeZone?: string }
 ): string[] | undefined {
   return master.recurrence
-    ? matchUntilToStart(
+    ? matchRecurrenceToStart(
         master.recurrence,
-        Boolean(start.date),
+        start,
         start.timeZone ?? master.start.timeZone ?? "UTC"
       )
     : undefined;
@@ -526,6 +528,73 @@ export function makeGoogleCalendarService(
       return yield* parseEventResponse(response);
     });
 
+  /**
+   * How many of a series' occurrences came before the one that started at
+   * `before` (cancelled ones too: COUNT counts them), for what's left of
+   * its COUNT after a split.
+   */
+  const countOccurrencesBefore = (
+    calendarId: string,
+    masterId: string,
+    before: string
+  ) =>
+    Effect.gen(function* () {
+      const allDay = !before.includes("T");
+      const cutoff = allDay ? null : Date.parse(before);
+      // A day past the start, then filtered exactly (an all-day start's
+      // own midnight depends on the calendar's zone).
+      const timeMax = new Date(
+        (allDay ? Date.parse(`${before}T00:00:00Z`) : (cutoff ?? 0)) + 86_400_000
+      ).toISOString();
+      let count = 0;
+      let pageToken: string | undefined;
+      do {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            client.calendars.events.instances(masterId, {
+              calendarId,
+              maxResults: 2500,
+              pageToken,
+              showDeleted: true,
+              timeMax,
+            }),
+          catch: (cause) => new GoogleApiError({ cause }),
+        });
+        for (const item of response.items ?? []) {
+          const start = item.originalStartTime ?? item.start;
+          const isBefore = allDay
+            ? (start?.date ?? "") < before
+            : Date.parse(start?.dateTime ?? "") < (cutoff ?? 0);
+          count += isBefore ? 1 : 0;
+        }
+        pageToken = response.nextPageToken ?? undefined;
+      } while (pageToken);
+      return count;
+    });
+
+  /**
+   * The rule a series' following part repeats with: the edit's own, or
+   * the series' kept rule with what's left of its COUNT.
+   */
+  const followingRecurrence = (
+    calendarId: string,
+    master: Event,
+    kept: string[] | undefined,
+    edited: string[] | undefined,
+    originalStart: string
+  ) =>
+    Effect.gen(function* () {
+      if (edited !== undefined || !kept || !hasCount(kept)) {
+        return edited ?? kept;
+      }
+      const used = yield* countOccurrencesBefore(
+        calendarId,
+        master.id,
+        originalStart
+      );
+      return withRemainingCount(kept, used);
+    });
+
   const updateEventAll = (
     calendarId: string,
     event: CreateEvent,
@@ -626,12 +695,18 @@ export function makeGoogleCalendarService(
       const originalRecurrence = [...master.recurrence];
       // Left out keeps the series' pattern (its UNTIL in the form the
       // new start takes); an empty list ends it ("Repeat: None").
-      const recurrence = event.recurrence ?? keptRecurrence(master, event.start);
+      // A kept COUNT carries on from where the series is cut.
+      const recurrence = yield* followingRecurrence(
+        calendarId,
+        master,
+        keptRecurrence(master, event.start),
+        event.recurrence,
+        startIso
+      );
 
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
-        occurrenceStart,
-        Boolean(master.start.date)
+        startIso
       );
 
       const truncatedPayload = sanitizeEventPayload({
@@ -846,12 +921,9 @@ export function makeGoogleCalendarService(
         );
       }
 
-      const occurrenceStart = new Date(originalStartIso);
-
       const truncatedRecurrence = truncateRecurrenceForFollowing(
         master.recurrence,
-        occurrenceStart,
-        Boolean(master.start.date)
+        originalStartIso
       );
 
       yield* Effect.tryPromise({
@@ -964,14 +1036,20 @@ export function makeGoogleCalendarService(
           );
         }
 
-        const occurrenceStart = new Date(originalStartIso);
+        // The new series carries on with what's left of a COUNT.
+        const movedRecurrence = yield* followingRecurrence(
+          calendarId,
+          master,
+          master.recurrence,
+          undefined,
+          originalStartIso
+        );
 
         // 1) Cut off the original series up to the edited occurrence.
         const originalRecurrence = [...master.recurrence];
         const truncatedRecurrence = truncateRecurrenceForFollowing(
           master.recurrence,
-          occurrenceStart,
-          Boolean(master.start.date)
+          originalStartIso
         );
 
         const truncatedMasterResponse = yield* Effect.tryPromise({
@@ -999,7 +1077,7 @@ export function makeGoogleCalendarService(
           ...instance,
           start: instance.start,
           end: instance.end,
-          recurrence: master.recurrence,
+          recurrence: movedRecurrence,
         });
 
         const restoreMasterRecurrence = Effect.tryPromise({
