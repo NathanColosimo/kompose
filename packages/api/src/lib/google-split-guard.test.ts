@@ -135,7 +135,7 @@ describe("where This and following can start", () => {
           "RDATE;TZID=America/New_York:20271102T100000",
         ],
         masterStart: { dateTime: "2026-11-02T09:00:00-05:00" },
-        originalStart: "2027-11-02T10:00:00-05:00",
+        originalStart: "2027-11-02T10:00:00-04:00",
         seriesZone: zone,
       })
     ).toBe(true);
