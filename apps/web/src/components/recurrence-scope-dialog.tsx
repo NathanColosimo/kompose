@@ -149,9 +149,9 @@ export function RecurrenceScopeDialog({
                 key={opt.value}
               >
                 <RadioGroupItem
-                  // The label dims the whole row; the circle keeps a
-                  // visible border rather than fading twice.
-                  className="disabled:border-muted-foreground disabled:opacity-100"
+                  // A circle that stands out on the paper (3:1), dimmed
+                  // once with its row when off, not twice.
+                  className="border-muted-foreground disabled:opacity-100"
                   disabled={isDisabled}
                   id={id}
                   value={opt.value}
