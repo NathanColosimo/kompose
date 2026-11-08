@@ -244,6 +244,24 @@ export function followingCutUnsure(params: {
     );
 }
 
+/**
+ * Whether `slot` (an original start, as Google writes them) is one of the
+ * series' added (RDATE) meetings.
+ */
+export function addsSlot(
+  recurrence: string[],
+  slot: string,
+  seriesZone: string
+): boolean {
+  const value = asValue(slot, seriesZone);
+  return Boolean(
+    value &&
+      addedValues(recurrence, seriesZone).some((added) =>
+        sameValue(added, value)
+      )
+  );
+}
+
 /** A series' added (RDATE) values. */
 function addedValues(
   recurrence: string[],
@@ -433,7 +451,7 @@ function subDailyEndsBefore(
 /**
  * Whether `rule` ends before `split` (a moment): its UNTIL's moment is
  * earlier, or its last COUNT meeting is (counted from the series' `first`
- * start, each time of a rule meeting several times a day). Null when that
+ * start, one meeting a day at the rule's time). Null when that
  * can't be told: a rule it can't walk, or no first start.
  */
 function ruleEndsBefore(

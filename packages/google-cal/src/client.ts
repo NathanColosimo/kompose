@@ -3,6 +3,7 @@ import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
+  addsSlot,
   carryCount,
   carryCountExactly,
   countOf,
@@ -473,16 +474,25 @@ function followingOccurrences(params: {
       originalStart,
     },
     ...params.exceptions.map((exception) => ({
-      at: placeInNewSeries({
-        newStart: start,
-        originalStart: exception.originalStart,
-        splitStart: originalStart,
-        zone,
-      }),
+      // An added (RDATE) meeting keeps its own slot in the new series, as
+      // its RDATE does; a rule meeting moves as the series did.
+      at: addsSlot(master.recurrence ?? [], exception.originalStart, zone)
+        ? sameForm(exception.originalStart, start)
+        : placeInNewSeries({
+            newStart: start,
+            originalStart: exception.originalStart,
+            splitStart: originalStart,
+            zone,
+          }),
       changes: changesOwnTo(exception.occurrence, master, changes, zone),
       originalStart: exception.originalStart,
     })),
   ];
+}
+
+/** `slot` when it has `start`'s form (a date, or a date-time); else null. */
+function sameForm(slot: string, start: Event["start"]): string | null {
+  return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
 }
 
 /**

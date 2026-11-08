@@ -42,9 +42,7 @@ const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
  * isn't known.
  */
 function ruleTime(line: string, base: Temporal.PlainTime | null): string {
-  const parts = new Map(
-    [...line.matchAll(CLOCK_PART)].map((match) => [match[1], Number(match[2])])
-  );
+  const parts = clockParts(line);
   const fallback = base ? [base.hour, base.minute, base.second] : [];
   return ["BYHOUR", "BYMINUTE", "BYSECOND"]
     .map((name, index) => parts.get(name) ?? fallback[index] ?? "*")
@@ -824,8 +822,8 @@ function retimedList(
 /**
  * An RRULE whose single BYHOUR / BYMINUTE / BYSECOND fixes the time set to
  * the start's (moving a "BYHOUR=9" series to 10:00 moves the rule too, or
- * it keeps meeting at 9). A series that meets several times a day (several
- * values, or rules at different times) keeps its own times.
+ * it keeps meeting at 9). A series that meets several times a day (rules
+ * at different times, or a sub-daily one) keeps its own times.
  */
 function matchClock(
   line: string,
@@ -853,9 +851,8 @@ function matchClock(
     BYSECOND: time.second,
   };
   return line.replace(
-    /([:;])(BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g,
-    (_, separator: string, part: keyof typeof parts) =>
-      `${separator}${part}=${parts[part]}`
+    CLOCK_PART,
+    (whole, part: keyof typeof parts) => `${whole[0]}${part}=${parts[part]}`
   );
 }
 
@@ -919,8 +916,8 @@ export function matchRecurrenceToStart(
   // Where COUNT counts from: without word from the caller, the new start
   // is the series' first (on the server it is the series' own start).
   let countFrom: Temporal.PlainDate | null = null;
-  // Made all day, the rule loses its times (and a COUNT over several a day
-  // becomes days) where the start is the series' own: on the server, or
+  // Made all day, the rule loses its time where the start is the
+  // series' own: on the server, or
   // editing the series itself. Edited through an occurrence (days given),
   // the rule goes as it is, so the server can carry a split's COUNT on
   // and convert it from the new series' start.
